@@ -82,7 +82,7 @@ struct MarkdownPanelView: View {
                 .textSelection(.enabled)
                 .padding(.horizontal, 24)
                 .padding(.vertical, 8)
-        case .mermaid(_, let code, let image):
+        case .fencedCode(_, let language, let code, let image):
             if let image {
                 Image(nsImage: image)
                     .resizable()
@@ -91,13 +91,14 @@ struct MarkdownPanelView: View {
                     .padding(.horizontal, 24)
                     .padding(.vertical, 8)
             } else {
-                mermaidFallbackView(code: code)
+                fencedCodeFallbackView(language: language, code: code)
             }
         }
     }
 
-    private func mermaidFallbackView(code: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+    private func fencedCodeFallbackView(language: String, code: String) -> some View {
+        let renderer = FencedCodeRendererRegistry.shared.renderer(for: language)
+        return VStack(alignment: .leading, spacing: 4) {
             ScrollView(.horizontal, showsIndicators: true) {
                 Text(code)
                     .font(.system(size: 13, design: .monospaced))
@@ -112,9 +113,8 @@ struct MarkdownPanelView: View {
                 : Color(nsColor: NSColor(white: 0.93, alpha: 1.0)))
             .clipShape(RoundedRectangle(cornerRadius: 6))
 
-            if !MermaidRenderer.shared.isAvailable {
-                Text(String(localized: "markdown.mermaid.installHint",
-                     defaultValue: "Install @mermaid-js/mermaid-cli for diagram rendering"))
+            if let renderer, !renderer.isAvailable, let hint = renderer.installHint {
+                Text(hint)
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
             }

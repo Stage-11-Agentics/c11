@@ -3,8 +3,15 @@ import CryptoKit
 
 /// Renders Mermaid diagram code to images via the `mmdc` CLI tool.
 /// Falls back gracefully when mmdc is not installed.
-final class MermaidRenderer {
+final class MermaidRenderer: FencedCodeRenderer {
     static let shared = MermaidRenderer()
+
+    let languageTag = "mermaid"
+
+    @MainActor var installHint: String? {
+        String(localized: "markdown.mermaid.installHint",
+               defaultValue: "Install @mermaid-js/mermaid-cli for diagram rendering")
+    }
 
     /// Maximum input size (50 KB) to prevent runaway rendering.
     private static let maxInputBytes = 50 * 1024

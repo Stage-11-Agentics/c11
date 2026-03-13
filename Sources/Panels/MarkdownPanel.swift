@@ -1,5 +1,19 @@
+import AppKit
 import Foundation
 import Combine
+
+/// A segment of markdown content — either regular markdown or a mermaid diagram.
+enum MarkdownSegment: Identifiable {
+    case markdown(id: UUID, content: String)
+    case mermaid(id: UUID, code: String, renderedImage: NSImage?)
+
+    var id: UUID {
+        switch self {
+        case .markdown(let id, _): return id
+        case .mermaid(let id, _, _): return id
+        }
+    }
+}
 
 /// A panel that renders a markdown file with live file-watching.
 /// When the file changes on disk, the content is automatically reloaded.
@@ -28,6 +42,9 @@ final class MarkdownPanel: Panel, ObservableObject {
 
     /// Token incremented to trigger focus flash animation.
     @Published private(set) var focusFlashToken: Int = 0
+
+    /// Parsed segments of the content (markdown + mermaid blocks).
+    @Published private(set) var segments: [MarkdownSegment] = []
 
     // MARK: - File watching
 
@@ -96,6 +113,81 @@ final class MarkdownPanel: Panel, ObservableObject {
                 isFileUnavailable = false
             } else {
                 isFileUnavailable = true
+            }
+        }
+        parseSegments()
+    }
+
+    // MARK: - Mermaid segment parsing
+
+    /// Regex pattern to match fenced mermaid code blocks.
+    private static let mermaidPattern = try! NSRegularExpression(
+        pattern: "```mermaid\\s*\\n([\\s\\S]*?)```",
+        options: []
+    )
+
+    /// Parse content into segments, splitting on mermaid fenced code blocks.
+    private func parseSegments() {
+        let text = content
+        guard !text.isEmpty else {
+            segments = []
+            return
+        }
+
+        let nsText = text as NSString
+        let fullRange = NSRange(location: 0, length: nsText.length)
+        let matches = Self.mermaidPattern.matches(in: text, range: fullRange)
+
+        guard !matches.isEmpty else {
+            // No mermaid blocks — single markdown segment
+            segments = [.markdown(id: UUID(), content: text)]
+            return
+        }
+
+        var result: [MarkdownSegment] = []
+        var lastEnd = 0
+
+        for match in matches {
+            let matchRange = match.range
+            // Add preceding markdown text
+            if matchRange.location > lastEnd {
+                let mdRange = NSRange(location: lastEnd, length: matchRange.location - lastEnd)
+                let mdText = nsText.substring(with: mdRange)
+                if !mdText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    result.append(.markdown(id: UUID(), content: mdText))
+                }
+            }
+            // Extract mermaid code (capture group 1)
+            let codeRange = match.range(at: 1)
+            let code = nsText.substring(with: codeRange).trimmingCharacters(in: .whitespacesAndNewlines)
+            result.append(.mermaid(id: UUID(), code: code, renderedImage: nil))
+            lastEnd = matchRange.location + matchRange.length
+        }
+
+        // Add trailing markdown text
+        if lastEnd < nsText.length {
+            let mdText = nsText.substring(from: lastEnd)
+            if !mdText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                result.append(.markdown(id: UUID(), content: mdText))
+            }
+        }
+
+        segments = result
+        renderMermaidSegments()
+    }
+
+    /// Render mermaid segments asynchronously and update when images are ready.
+    private func renderMermaidSegments() {
+        for (index, segment) in segments.enumerated() {
+            guard case .mermaid(let id, let code, _) = segment else { continue }
+            // Use dark theme detection — check appearance
+            let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            MermaidRenderer.shared.render(code: code, isDark: isDark) { [weak self] image in
+                guard let self else { return }
+                guard index < self.segments.count,
+                      case .mermaid(let currentId, _, _) = self.segments[index],
+                      currentId == id else { return }
+                self.segments[index] = .mermaid(id: id, code: code, renderedImage: image)
             }
         }
     }

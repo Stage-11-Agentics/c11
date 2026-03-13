@@ -57,14 +57,70 @@ struct MarkdownPanelView: View {
                 Divider()
                     .padding(.horizontal, 16)
 
-                // Rendered markdown
-                Markdown(panel.content)
-                    .markdownTheme(cmuxMarkdownTheme)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 16)
+                // Rendered content segments
+                if panel.segments.isEmpty {
+                    Markdown(panel.content)
+                        .markdownTheme(cmuxMarkdownTheme)
+                        .textSelection(.enabled)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 16)
+                } else {
+                    ForEach(panel.segments) { segment in
+                        segmentView(segment)
+                    }
+                }
             }
         }
+    }
+
+    @ViewBuilder
+    private func segmentView(_ segment: MarkdownSegment) -> some View {
+        switch segment {
+        case .markdown(_, let content):
+            Markdown(content)
+                .markdownTheme(cmuxMarkdownTheme)
+                .textSelection(.enabled)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 8)
+        case .mermaid(_, let code, let image):
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 8)
+            } else {
+                mermaidFallbackView(code: code)
+            }
+        }
+    }
+
+    private func mermaidFallbackView(code: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ScrollView(.horizontal, showsIndicators: true) {
+                Text(code)
+                    .font(.system(size: 13, design: .monospaced))
+                    .foregroundColor(colorScheme == .dark
+                        ? Color(red: 0.9, green: 0.9, blue: 0.9)
+                        : Color(red: 0.2, green: 0.2, blue: 0.2))
+                    .textSelection(.enabled)
+                    .padding(12)
+            }
+            .background(colorScheme == .dark
+                ? Color(nsColor: NSColor(white: 0.08, alpha: 1.0))
+                : Color(nsColor: NSColor(white: 0.93, alpha: 1.0)))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            if !MermaidRenderer.shared.isAvailable {
+                Text(String(localized: "markdown.mermaid.installHint",
+                     defaultValue: "Install @mermaid-js/mermaid-cli for diagram rendering"))
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 8)
     }
 
     private var filePathHeader: some View {

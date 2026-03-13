@@ -73,18 +73,18 @@ final class MermaidRenderer {
             }
 
             let key = cacheKey(code: code, isDark: isDark)
-            let cachedSvg = cacheDirectory.appendingPathComponent("\(key).svg")
+            let cachedPng = cacheDirectory.appendingPathComponent("\(key).png")
 
             // Check cache
-            if FileManager.default.fileExists(atPath: cachedSvg.path),
-               let image = NSImage(contentsOf: cachedSvg) {
+            if FileManager.default.fileExists(atPath: cachedPng.path),
+               let image = NSImage(contentsOf: cachedPng) {
                 DispatchQueue.main.async { completion(image) }
                 return
             }
 
             // Write temp input file
             let inputFile = cacheDirectory.appendingPathComponent("\(key).mmd")
-            let outputFile = cacheDirectory.appendingPathComponent("\(key)-out.svg")
+            let outputFile = cacheDirectory.appendingPathComponent("\(key)-out.png")
             do {
                 try code.write(to: inputFile, atomically: true, encoding: .utf8)
             } catch {
@@ -101,7 +101,8 @@ final class MermaidRenderer {
                 "-i", inputFile.path,
                 "-o", outputFile.path,
                 "-t", isDark ? "dark" : "default",
-                "-b", "transparent"
+                "-b", "transparent",
+                "-s", "2"
             ]
             process.standardOutput = FileHandle.nullDevice
             process.standardError = FileHandle.nullDevice
@@ -141,8 +142,8 @@ final class MermaidRenderer {
                 return
             }
 
-            // mmdc may produce output with -1 suffix (e.g. key-out-1.svg)
-            let altOutputFile = cacheDirectory.appendingPathComponent("\(key)-out-1.svg")
+            // mmdc may produce output with -1 suffix (e.g. key-out-1.png)
+            let altOutputFile = cacheDirectory.appendingPathComponent("\(key)-out-1.png")
             let actualOutput: URL
             if FileManager.default.fileExists(atPath: outputFile.path) {
                 actualOutput = outputFile
@@ -154,12 +155,12 @@ final class MermaidRenderer {
             }
 
             // Move to cache location
-            try? FileManager.default.removeItem(at: cachedSvg)
-            try? FileManager.default.moveItem(at: actualOutput, to: cachedSvg)
+            try? FileManager.default.removeItem(at: cachedPng)
+            try? FileManager.default.moveItem(at: actualOutput, to: cachedPng)
             // Clean up alternate if it exists
             try? FileManager.default.removeItem(at: altOutputFile)
 
-            guard let image = NSImage(contentsOf: cachedSvg) else {
+            guard let image = NSImage(contentsOf: cachedPng) else {
                 DispatchQueue.main.async { completion(nil) }
                 return
             }

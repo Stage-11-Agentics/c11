@@ -4,10 +4,10 @@ import Combine
 
 /// A segment of markdown content — either regular markdown or a mermaid diagram.
 enum MarkdownSegment: Identifiable {
-    case markdown(id: UUID, content: String)
-    case mermaid(id: UUID, code: String, renderedImage: NSImage?)
+    case markdown(id: String, content: String)
+    case mermaid(id: String, code: String, renderedImage: NSImage?)
 
-    var id: UUID {
+    var id: String {
         switch self {
         case .markdown(let id, _): return id
         case .mermaid(let id, _, _): return id
@@ -46,6 +46,12 @@ final class MarkdownPanel: Panel, ObservableObject {
     /// Parsed segments of the content (markdown + mermaid blocks).
     @Published private(set) var segments: [MarkdownSegment] = []
 
+    /// Tracks the appearance used for the last mermaid render pass.
+    private var lastRenderedDark: Bool?
+
+    /// Observer for system appearance changes.
+    private var appearanceObserver: NSObjectProtocol?
+
     // MARK: - File watching
 
     // nonisolated(unsafe) because deinit is not guaranteed to run on the
@@ -75,6 +81,7 @@ final class MarkdownPanel: Panel, ObservableObject {
             // Retry briefly so atomic-rename recreations can reconnect.
             scheduleReattach(attempt: 1)
         }
+        startAppearanceObserver()
     }
 
     // MARK: - Panel protocol
@@ -90,6 +97,7 @@ final class MarkdownPanel: Panel, ObservableObject {
     func close() {
         isClosed = true
         stopFileWatcher()
+        stopAppearanceObserver()
     }
 
     func triggerFlash() {
@@ -126,6 +134,12 @@ final class MarkdownPanel: Panel, ObservableObject {
         options: []
     )
 
+    /// Stable ID from segment index and content prefix.
+    private static func segmentId(index: Int, content: String) -> String {
+        let prefix = String(content.prefix(64))
+        return "\(index):\(prefix.hashValue)"
+    }
+
     /// Parse content into segments, splitting on mermaid fenced code blocks.
     private func parseSegments() {
         let text = content
@@ -140,12 +154,13 @@ final class MarkdownPanel: Panel, ObservableObject {
 
         guard !matches.isEmpty else {
             // No mermaid blocks — single markdown segment
-            segments = [.markdown(id: UUID(), content: text)]
+            segments = [.markdown(id: Self.segmentId(index: 0, content: text), content: text)]
             return
         }
 
         var result: [MarkdownSegment] = []
         var lastEnd = 0
+        var segIndex = 0
 
         for match in matches {
             let matchRange = match.range
@@ -154,13 +169,15 @@ final class MarkdownPanel: Panel, ObservableObject {
                 let mdRange = NSRange(location: lastEnd, length: matchRange.location - lastEnd)
                 let mdText = nsText.substring(with: mdRange)
                 if !mdText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    result.append(.markdown(id: UUID(), content: mdText))
+                    result.append(.markdown(id: Self.segmentId(index: segIndex, content: mdText), content: mdText))
+                    segIndex += 1
                 }
             }
             // Extract mermaid code (capture group 1)
             let codeRange = match.range(at: 1)
             let code = nsText.substring(with: codeRange).trimmingCharacters(in: .whitespacesAndNewlines)
-            result.append(.mermaid(id: UUID(), code: code, renderedImage: nil))
+            result.append(.mermaid(id: Self.segmentId(index: segIndex, content: code), code: code, renderedImage: nil))
+            segIndex += 1
             lastEnd = matchRange.location + matchRange.length
         }
 
@@ -168,7 +185,18 @@ final class MarkdownPanel: Panel, ObservableObject {
         if lastEnd < nsText.length {
             let mdText = nsText.substring(from: lastEnd)
             if !mdText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                result.append(.markdown(id: UUID(), content: mdText))
+                result.append(.markdown(id: Self.segmentId(index: segIndex, content: mdText), content: mdText))
+            }
+        }
+
+        // Preserve rendered images for segments whose content hasn't changed
+        let oldSegments = segments
+        for (i, seg) in result.enumerated() {
+            if case .mermaid(let id, let code, _) = seg,
+               let old = oldSegments.first(where: { $0.id == id }),
+               case .mermaid(_, _, let oldImage) = old,
+               oldImage != nil {
+                result[i] = .mermaid(id: id, code: code, renderedImage: oldImage)
             }
         }
 
@@ -178,10 +206,22 @@ final class MarkdownPanel: Panel, ObservableObject {
 
     /// Render mermaid segments asynchronously and update when images are ready.
     private func renderMermaidSegments() {
+        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        lastRenderedDark = isDark
+
+        // Build set of active render keys so stale in-flight processes can be cancelled
+        var activeKeys = Set<String>()
+        for segment in segments {
+            guard case .mermaid(_, let code, let existingImage) = segment else { continue }
+            if existingImage != nil { continue }
+            activeKeys.insert(MermaidRenderer.shared.renderCacheKey(code: code, isDark: isDark))
+        }
+        MermaidRenderer.shared.cancelRendersExcept(activeKeys: activeKeys)
+
         for (index, segment) in segments.enumerated() {
-            guard case .mermaid(let id, let code, _) = segment else { continue }
-            // Use dark theme detection — check appearance
-            let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            guard case .mermaid(let id, let code, let existingImage) = segment else { continue }
+            // Skip if already rendered
+            if existingImage != nil { continue }
             MermaidRenderer.shared.render(code: code, isDark: isDark) { [weak self] image in
                 guard let self else { return }
                 guard index < self.segments.count,
@@ -190,6 +230,52 @@ final class MarkdownPanel: Panel, ObservableObject {
                 self.segments[index] = .mermaid(id: id, code: code, renderedImage: image)
             }
         }
+    }
+
+    // MARK: - Appearance change observation
+
+    private func startAppearanceObserver() {
+        appearanceObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeOcclusionStateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleAppearanceChangeIfNeeded()
+        }
+        // Also observe the effective appearance key path
+        // NSApp posts this when system appearance changes
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(systemAppearanceDidChange),
+            name: NSNotification.Name("AppleInterfaceThemeChangedNotification"),
+            object: nil
+        )
+    }
+
+    private func stopAppearanceObserver() {
+        if let observer = appearanceObserver {
+            NotificationCenter.default.removeObserver(observer)
+            appearanceObserver = nil
+        }
+        DistributedNotificationCenter.default().removeObserver(self)
+    }
+
+    @objc private nonisolated func systemAppearanceDidChange(_ notification: Notification) {
+        DispatchQueue.main.async { [weak self] in
+            self?.handleAppearanceChangeIfNeeded()
+        }
+    }
+
+    private func handleAppearanceChangeIfNeeded() {
+        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        guard isDark != lastRenderedDark else { return }
+        // Clear rendered images so they re-render with the new theme
+        for (i, segment) in segments.enumerated() {
+            if case .mermaid(let id, let code, let image) = segment, image != nil {
+                segments[i] = .mermaid(id: id, code: code, renderedImage: nil)
+            }
+        }
+        renderMermaidSegments()
     }
 
     // MARK: - File watcher via DispatchSource
@@ -271,5 +357,9 @@ final class MarkdownPanel: Panel, ObservableObject {
     deinit {
         // DispatchSource cancel is safe from any thread.
         fileWatchSource?.cancel()
+        if let observer = appearanceObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        DistributedNotificationCenter.default().removeObserver(self)
     }
 }

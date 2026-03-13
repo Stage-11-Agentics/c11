@@ -2794,6 +2794,31 @@ class TerminalController {
         return PanelType(rawValue: s.lowercased())
     }
 
+    /// Validate and resolve a markdown file path from raw input.
+    /// Returns nil on success (resolved path stored in `resolved`), or a V2CallResult error.
+    private func v2ValidateMarkdownPath(_ rawPath: String?, context: String, resolved: inout String?) -> V2CallResult? {
+        guard let rawPath else {
+            return .err(code: "invalid_params", message: "Missing --file for markdown \(context)", data: nil)
+        }
+        let expandedPath = NSString(string: rawPath).expandingTildeInPath
+        let resolvedPath = NSString(string: expandedPath).standardizingPath
+        guard resolvedPath.hasPrefix("/") else {
+            return .err(code: "invalid_params", message: "Path must be absolute: \(resolvedPath)", data: ["path": resolvedPath])
+        }
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: resolvedPath, isDirectory: &isDir) else {
+            return .err(code: "not_found", message: "File not found: \(resolvedPath)", data: ["path": resolvedPath])
+        }
+        guard !isDir.boolValue else {
+            return .err(code: "invalid_params", message: "Path is a directory, not a file: \(resolvedPath)", data: ["path": resolvedPath])
+        }
+        guard FileManager.default.isReadableFile(atPath: resolvedPath) else {
+            return .err(code: "permission_denied", message: "File not readable: \(resolvedPath)", data: ["path": resolvedPath])
+        }
+        resolved = resolvedPath
+        return nil
+    }
+
     // MARK: - V2 Context Resolution
 
     private func v2ResolveTabManager(params: [String: Any]) -> TabManager? {
@@ -3858,25 +3883,11 @@ class TerminalController {
         let url = urlStr.flatMap { URL(string: $0) }
         let filePath = v2String(params, "file")
 
-        // Validate markdown requires --file
+        // Validate and resolve markdown file path
+        var resolvedMarkdownPath: String?
         if panelType == .markdown {
-            guard let rawPath = filePath else {
-                return .err(code: "invalid_params", message: "Missing --file for markdown surface", data: nil)
-            }
-            let expandedPath = NSString(string: rawPath).expandingTildeInPath
-            let resolvedPath = NSString(string: expandedPath).standardizingPath
-            guard resolvedPath.hasPrefix("/") else {
-                return .err(code: "invalid_params", message: "Path must be absolute: \(resolvedPath)", data: ["path": resolvedPath])
-            }
-            var isDir: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: resolvedPath, isDirectory: &isDir) else {
-                return .err(code: "not_found", message: "File not found: \(resolvedPath)", data: ["path": resolvedPath])
-            }
-            guard !isDir.boolValue else {
-                return .err(code: "invalid_params", message: "Path is a directory, not a file: \(resolvedPath)", data: ["path": resolvedPath])
-            }
-            guard FileManager.default.isReadableFile(atPath: resolvedPath) else {
-                return .err(code: "permission_denied", message: "File not readable: \(resolvedPath)", data: ["path": resolvedPath])
+            if let err = v2ValidateMarkdownPath(filePath, context: "surface", resolved: &resolvedMarkdownPath) {
+                return err
             }
         }
 
@@ -3907,10 +3918,7 @@ class TerminalController {
             case .browser:
                 newPanelId = ws.newBrowserSurface(inPane: paneId, url: url, focus: v2FocusAllowed())?.id
             case .markdown:
-                let rawPath = filePath!
-                let expandedPath = NSString(string: rawPath).expandingTildeInPath
-                let resolvedPath = NSString(string: expandedPath).standardizingPath
-                newPanelId = ws.newMarkdownSurface(inPane: paneId, filePath: resolvedPath, focus: v2FocusAllowed())?.id
+                newPanelId = ws.newMarkdownSurface(inPane: paneId, filePath: resolvedMarkdownPath!, focus: v2FocusAllowed())?.id
             case .terminal:
                 newPanelId = ws.newTerminalSurface(inPane: paneId, focus: v2FocusAllowed())?.id
             }
@@ -4858,25 +4866,11 @@ class TerminalController {
         let url = urlStr.flatMap { URL(string: $0) }
         let filePath = v2String(params, "file")
 
-        // Validate markdown requires --file
+        // Validate and resolve markdown file path
+        var resolvedMarkdownPath: String?
         if panelType == .markdown {
-            guard let rawPath = filePath else {
-                return .err(code: "invalid_params", message: "Missing --file for markdown pane", data: nil)
-            }
-            let expandedPath = NSString(string: rawPath).expandingTildeInPath
-            let resolvedPath = NSString(string: expandedPath).standardizingPath
-            guard resolvedPath.hasPrefix("/") else {
-                return .err(code: "invalid_params", message: "Path must be absolute: \(resolvedPath)", data: ["path": resolvedPath])
-            }
-            var isDir: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: resolvedPath, isDirectory: &isDir) else {
-                return .err(code: "not_found", message: "File not found: \(resolvedPath)", data: ["path": resolvedPath])
-            }
-            guard !isDir.boolValue else {
-                return .err(code: "invalid_params", message: "Path is a directory, not a file: \(resolvedPath)", data: ["path": resolvedPath])
-            }
-            guard FileManager.default.isReadableFile(atPath: resolvedPath) else {
-                return .err(code: "permission_denied", message: "File not readable: \(resolvedPath)", data: ["path": resolvedPath])
+            if let err = v2ValidateMarkdownPath(filePath, context: "pane", resolved: &resolvedMarkdownPath) {
+                return err
             }
         }
 
@@ -4907,14 +4901,11 @@ class TerminalController {
                     focus: v2FocusAllowed()
                 )?.id
             case .markdown:
-                let rawPath = filePath!
-                let expandedPath = NSString(string: rawPath).expandingTildeInPath
-                let resolvedPath = NSString(string: expandedPath).standardizingPath
                 newPanelId = ws.newMarkdownSplit(
                     from: focusedPanelId,
                     orientation: orientation,
                     insertFirst: insertFirst,
-                    filePath: resolvedPath,
+                    filePath: resolvedMarkdownPath!,
                     focus: v2FocusAllowed()
                 )?.id
             case .terminal:

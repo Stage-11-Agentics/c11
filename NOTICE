@@ -1,0 +1,37 @@
+c11mux
+======
+
+c11mux is a modified work derived from cmux.
+
+Original work
+-------------
+Name:     cmux
+Author:   manaflow-ai
+Source:   https://github.com/manaflow-ai/cmux
+License:  GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
+
+Modifications
+-------------
+Modified by: Stage 11 Agentics
+Fork date:   2026-04-16
+
+Summary of modifications:
+- Rebranded app identity (display name "c11mux", bundle ID "com.stage11.c11mux").
+- New Homebrew tap (stage-11-agentics/c11mux) and release artifacts
+  (c11mux-macos.dmg) published from the Stage 11 fork.
+- Sparkle auto-update feed retargeted to Stage 11 releases.
+- Diverged development after the fork point.
+
+The CLI binary name, environment variables, socket protocol, shell
+integration files, and source/module names remain identical to upstream
+cmux for backward compatibility.
+
+A complete, ongoing record of modifications is available in the git
+history of the Stage 11 fork.
+
+License
+-------
+c11mux is distributed under the same license as the original work,
+AGPL-3.0-or-later. See LICENSE for the full text. Original copyright
+notices from manaflow-ai are preserved in their respective source
+files and in LICENSE.

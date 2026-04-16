@@ -1,9 +1,9 @@
-<h1 align="center">cmux</h1>
-<p align="center">A Ghostty-based macOS terminal with vertical tabs and notifications for AI coding agents</p>
+<h1 align="center">c11mux</h1>
+<p align="center">A Stage 11 fork of <a href="https://github.com/manaflow-ai/cmux">cmux</a> — a Ghostty-based macOS terminal with vertical tabs and notifications for AI coding agents</p>
 
 <p align="center">
-  <a href="https://github.com/manaflow-ai/cmux/releases/latest/download/cmux-macos.dmg">
-    <img src="./docs/assets/macos-badge.png" alt="Download cmux for macOS" width="180" />
+  <a href="https://github.com/Stage-11-Agentics/c11mux/releases/latest/download/c11mux-macos.dmg">
+    <img src="./docs/assets/macos-badge.png" alt="Download c11mux for macOS" width="180" />
   </a>
 </p>
 
@@ -12,17 +12,21 @@
 </p>
 
 <p align="center">
-  <a href="https://x.com/manaflowai"><img src="https://img.shields.io/badge/@manaflow-555?logo=x" alt="X / Twitter" /></a>
-  <a href="https://discord.gg/xsgFEVrWCZ"><img src="https://img.shields.io/badge/Discord-555?logo=discord" alt="Discord" /></a>
-</p>
-
-<p align="center">
-  <img src="./docs/assets/main-first-image.png" alt="cmux screenshot" width="900" />
+  <img src="./docs/assets/main-first-image.png" alt="c11mux screenshot" width="900" />
 </p>
 
 <p align="center">
   <a href="https://www.youtube.com/watch?v=i-WxO5YUTOs">▶ Demo video</a> · <a href="https://cmux.com/blog/zen-of-cmux">The Zen of cmux</a>
 </p>
+
+## Fork notice
+
+**c11mux is a Stage 11 Agentics fork of [cmux](https://github.com/manaflow-ai/cmux) by [manaflow-ai](https://github.com/manaflow-ai).** All credit for the underlying terminal, browser, notification, and CLI work belongs to the upstream authors. This fork exists so Stage 11 can ship its own distribution, experiment with agent-orchestration features that don't fit upstream's direction, and iterate on changes that may or may not land back in cmux.
+
+What changes in the fork: app display name (**c11mux**), bundle ID (`com.stage11.c11mux`), release artifacts, Homebrew tap, and the Sparkle auto-update feed. What stays identical to upstream: the `cmux` CLI binary name, every `CMUX_*` environment variable, socket paths and protocol, shell integration scripts, and all CLI subcommands — so existing scripts, dotfiles, and third-party tools keep working unchanged.
+
+- Upstream: <https://github.com/manaflow-ai/cmux>
+- License: [AGPL-3.0-or-later](./LICENSE) (inherited from upstream; see [NOTICE](./NOTICE) for attribution and a summary of modifications).
 
 ## Features
 
@@ -74,28 +78,30 @@ Sidebar shows git branch, linked PR status/number, working directory, listening 
 
 ### DMG (recommended)
 
-<a href="https://github.com/manaflow-ai/cmux/releases/latest/download/cmux-macos.dmg">
-  <img src="./docs/assets/macos-badge.png" alt="Download cmux for macOS" width="180" />
+<a href="https://github.com/Stage-11-Agentics/c11mux/releases/latest/download/c11mux-macos.dmg">
+  <img src="./docs/assets/macos-badge.png" alt="Download c11mux for macOS" width="180" />
 </a>
 
-Open the `.dmg` and drag cmux to your Applications folder. cmux auto-updates via Sparkle, so you only need to download once.
+Open the `.dmg` and drag c11mux to your Applications folder. c11mux auto-updates via Sparkle, so you only need to download once.
 
 ### Homebrew
 
 ```bash
-brew tap manaflow-ai/cmux
-brew install --cask cmux
+brew tap stage-11-agentics/c11mux
+brew install --cask c11mux
 ```
 
 To update later:
 
 ```bash
-brew upgrade --cask cmux
+brew upgrade --cask c11mux
 ```
 
-On first launch, macOS may ask you to confirm opening an app from an identified developer. Click **Open** to proceed.
+The c11mux cask conflicts with the upstream `cmux` cask — installing one will ask you to remove the other. On first launch, macOS may ask you to confirm opening an app from an identified developer. Click **Open** to proceed.
 
 ## Why cmux?
+
+_The following section is from the upstream cmux README and describes the original motivation for the project. c11mux inherits all of it._
 
 I run a lot of Claude Code and Codex sessions in parallel. I was using Ghostty with a bunch of split panes, and relying on native macOS notifications to know when an agent needed me. But Claude Code's notification body is always just "Claude is waiting for your input" with no context, and with enough tabs open I couldn't even read the titles anymore.
 
@@ -209,23 +215,25 @@ Browser developer-tool shortcuts follow Safari defaults and are customizable in 
 
 ## Nightly Builds
 
-[Download cmux NIGHTLY](https://github.com/manaflow-ai/cmux/releases/download/nightly/cmux-nightly-macos.dmg)
+[Download c11mux NIGHTLY](https://github.com/Stage-11-Agentics/c11mux/releases/download/nightly/c11mux-nightly-macos.dmg)
 
-cmux NIGHTLY is a separate app with its own bundle ID, so it runs alongside the stable version. Built automatically from the latest `main` commit and auto-updates via its own Sparkle feed.
+c11mux NIGHTLY is a separate app with its own bundle ID, so it runs alongside the stable version. Built automatically from the latest `main` commit and auto-updates via its own Sparkle feed.
 
-Report nightly bugs on [GitHub Issues](https://github.com/manaflow-ai/cmux/issues) or in [#nightly-bugs on Discord](https://discord.gg/xsgFEVrWCZ).
+Report nightly bugs on [Stage 11's GitHub Issues](https://github.com/Stage-11-Agentics/c11mux/issues). Nightly feedback that applies to behavior inherited from upstream is also welcome on [manaflow-ai/cmux issues](https://github.com/manaflow-ai/cmux/issues).
 
 ## Session restore (current behavior)
 
-On relaunch, cmux currently restores app layout and metadata only:
+On relaunch, c11mux currently restores app layout and metadata only:
 - Window/workspace/pane layout
 - Working directories
 - Terminal scrollback (best effort)
 - Browser URL and navigation history
 
-cmux does **not** restore live process state inside terminal apps. For example, active Claude Code/tmux/vim sessions are not resumed after restart yet.
+c11mux does **not** restore live process state inside terminal apps. For example, active Claude Code/tmux/vim sessions are not resumed after restart yet.
 
-## Star History
+## Star History (upstream)
+
+The chart below tracks stars on the upstream [manaflow-ai/cmux](https://github.com/manaflow-ai/cmux) repository, which c11mux is derived from.
 
 <a href="https://star-history.com/#manaflow-ai/cmux&Date">
  <picture>
@@ -237,14 +245,15 @@ cmux does **not** restore live process state inside terminal apps. For example, 
 
 ## Contributing
 
-Ways to get involved:
+c11mux contributions that are specific to the Stage 11 fork (branding, Stage 11-only features, fork-specific infrastructure) can be opened against [Stage-11-Agentics/c11mux](https://github.com/Stage-11-Agentics/c11mux). For anything that would benefit all cmux users — bug fixes, general features, upstream-applicable improvements — please consider contributing to the upstream project so the whole community benefits:
 
-- Follow us on X for updates [@manaflowai](https://x.com/manaflowai), [@lawrencecchen](https://x.com/lawrencecchen), and [@austinywang](https://x.com/austinywang)
-- Join the conversation on [Discord](https://discord.gg/xsgFEVrWCZ)
-- Create and participate in [GitHub issues](https://github.com/manaflow-ai/cmux/issues) and [discussions](https://github.com/manaflow-ai/cmux/discussions)
-- Let us know what you're building with cmux
+- [manaflow-ai/cmux issues](https://github.com/manaflow-ai/cmux/issues) and [discussions](https://github.com/manaflow-ai/cmux/discussions)
+- [manaflow-ai Discord](https://discord.gg/xsgFEVrWCZ)
+- Follow upstream on X: [@manaflowai](https://x.com/manaflowai), [@lawrencecchen](https://x.com/lawrencecchen), [@austinywang](https://x.com/austinywang)
 
-## Community
+## Upstream community
+
+c11mux inherits its lineage and spirit from upstream. These are the upstream cmux community channels:
 
 - [Discord](https://discord.gg/xsgFEVrWCZ)
 - [GitHub](https://github.com/manaflow-ai/cmux)
@@ -253,9 +262,11 @@ Ways to get involved:
 - [LinkedIn](https://www.linkedin.com/company/manaflow-ai/)
 - [Reddit](https://www.reddit.com/r/cmux/)
 
-## Founder's Edition
+## Founder's Edition (upstream)
 
-cmux is free, open source, and always will be. If you'd like to support development and get early access to what's coming next:
+The Founder's Edition below is offered by the upstream cmux project. It is not affiliated with Stage 11 Agentics, and supporting it supports the upstream authors — which we encourage.
+
+cmux is free, open source, and always will be. If you'd like to support upstream development and get early access to what's coming next:
 
 **[Get Founder's Edition](https://buy.stripe.com/3cI00j2Ld0it5OU33r5EY0q)**
 
@@ -264,10 +275,10 @@ cmux is free, open source, and always will be. If you'd like to support developm
 - **Early access: iOS app with terminals synced between desktop and phone**
 - **Early access: Cloud VMs**
 - **Early access: Voice mode**
-- **My personal iMessage/WhatsApp**
+- **Personal iMessage/WhatsApp access**
 
 ## License
 
-This project is licensed under the GNU Affero General Public License v3.0 or later (`AGPL-3.0-or-later`).
+c11mux is licensed under the GNU Affero General Public License v3.0 or later (`AGPL-3.0-or-later`), the same license as upstream cmux.
 
-See `LICENSE` for the full text.
+See [`LICENSE`](./LICENSE) for the full text and [`NOTICE`](./NOTICE) for attribution and a summary of modifications made in this fork.

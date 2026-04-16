@@ -1,6 +1,11 @@
 # Changelog
 
-All notable changes to cmux are documented here.
+All notable changes to c11mux (and, before the fork, cmux) are documented here.
+
+## [Unreleased]
+
+### Changed
+- Forked from [manaflow-ai/cmux](https://github.com/manaflow-ai/cmux) as **c11mux**. Bundle ID (`com.stage11.c11mux`), app display name, Homebrew tap (`stage-11-agentics/c11mux`), release artifacts (`c11mux-macos.dmg`), and Sparkle auto-update feed are now under Stage 11 Agentics. The `cmux` CLI binary, all `CMUX_*` environment variables, socket paths and protocol, and shell integration files are preserved unchanged for backward compatibility. See [NOTICE](./NOTICE) for attribution and modification details.
 
 ## [0.62.2] - 2026-03-14
 

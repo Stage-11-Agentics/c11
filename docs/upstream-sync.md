@@ -51,7 +51,7 @@ while accepting upstream's functional changes.
 | `CHANGELOG.md` | Release notes | Merge entries; prefix our c11mux-only changes clearly. |
 | `Sources/SocketControlSettings.swift` | Socket path constants, `baseDebugBundleIdentifier` | Keep `com.stage11.c11mux` debug base. Socket filenames stay upstream-compatible per the contract. |
 | `Package.swift` | Product executable name | Keep executable product name as per contract (`cmux` internal, display `c11mux` only in bundle). |
-| `Resources/shell-integration/*` | `C11MUX_SHELL_INTEGRATION` env gate plus upstream `CMUX_*` vars | Keep both gates live; never remove the upstream `CMUX_*` env names. |
+| `Resources/shell-integration/*` | `CMUX_*` env contract (gate: `CMUX_SHELL_INTEGRATION`, plus `CMUX_WORKSPACE_ID`, `CMUX_SURFACE_ID`, etc.) | Keep the `CMUX_*` namespace as-is — it is the canonical, upstream-compatible public contract. Do not rename to `C11MUX_*`. |
 | `Sources/cmuxApp.swift` | About dialog attribution | Keep "c11mux — a fork of cmux by manaflow-ai" string. |
 | `GhosttyTabs.xcodeproj/project.pbxproj` | Bundle IDs, `PRODUCT_NAME` for DEV variant | Keep `com.stage11.c11mux(.debug/.apptests/...)`. `PRODUCT_NAME` stays upstream-compatible per contract; only the DEV variant is renamed. |
 | `Sources/AppDelegate.swift` | Prefs migration shim | Keep `migrateLegacyPreferencesIfNeeded()` + its call at the top of `applicationDidFinishLaunching`. |

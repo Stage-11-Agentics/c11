@@ -12,6 +12,8 @@ four surfaces around you. a terminal. a browser. this page. a waiting agent. one
 
 a terminal — reimagined — for human:digital operators. built by stage 11 for those who run coding agents the way flight engineers run consoles: several at a time, in parallel, with nerve. not an IDE. not a multiplexer in the old sense. a room. one you share with the models.
 
+**lineage.** tmux taught the terminal to split. [cmux](https://github.com/manaflow-ai/cmux) rebuilt that idea as a macOS-native app on a GPU-accelerated renderer, shaped for coding agents. c11mux is stage 11's fork — same bones, different room, tuned for the spike.
+
 stage 11 is a small outpost in a very large dark. we built this because we needed it. it is now yours.
 
 ---

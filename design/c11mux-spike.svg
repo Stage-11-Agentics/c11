@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  c11mux spike icon — Concept A (see docs/c11mux-module-5-brand-identity-spec.md).
+
+  One gold wedge rising from 20% to 80% of icon height on a void squircle.
+  Proportions are computed for a 1024x1024 canvas; scale linearly for other sizes.
+  Squircle uses Apple-style superellipse approximation via rounded rectangle.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Squircle (rounded rect approximation, radius tuned for macOS Sequoia) -->
+  <rect x="0" y="0" width="1024" height="1024" rx="228" ry="228" fill="#0a0a0a"/>
+  <!-- Inner stroke, --gold-faint -->
+  <rect x="8" y="8" width="1008" height="1008" rx="222" ry="222"
+        fill="none" stroke="#c9a84c" stroke-opacity="0.2" stroke-width="4"/>
+  <!--
+    Spike: tapered wedge centered horizontally, base at 80% height, tip at 20% height.
+    Base width ~8% of icon = ~82px, tip width ~1.5% = ~15px.
+    Apex (tip) is UP.
+  -->
+  <polygon points="512,204 520,820 504,820" fill="#c9a84c"/>
+</svg>

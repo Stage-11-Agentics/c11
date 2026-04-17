@@ -4668,6 +4668,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return nil
     }
 
+    /// Resolve the workspace that owns the pane with the given ID. Used by
+    /// commands like `markdown.open --pane P` to route independent of
+    /// workspace_id so stale env-injected IDs don't misroute the request.
+    func locatePane(paneId: UUID) -> (workspace: Workspace, tabManager: TabManager)? {
+        for ctx in mainWindowContexts.values {
+            for ws in ctx.tabManager.tabs
+            where ws.bonsplitController.allPaneIds.contains(where: { $0.id == paneId }) {
+                return (ws, ctx.tabManager)
+            }
+        }
+        return nil
+    }
+
     /// Resolve the workspace that currently owns a panel/surface ID.
     /// Prefer the provided workspace when available, then fall back to global lookup.
     func workspaceContainingPanel(
@@ -5900,6 +5913,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 UserDefaults.standard.set(true, forKey: WelcomeSettings.shownKey)
             }
         }
+    }
+
+    /// Module 4: opens a new terminal surface in the active main window and sends
+    /// `cmux install <tui>` to run the installer interactively (with TTY confirm).
+    /// Focus-intent: raises the window and creates a visible surface per the spec.
+    func openIntegrationInstallSurface(tui: String) {
+        guard let context = preferredMainWindowContextForWorkspaceCreation(event: nil, debugSource: "menu.integrations") else {
+            return
+        }
+        if let window = context.window ?? windowForMainWindowId(context.windowId) {
+            setActiveMainWindow(window)
+            bringToFront(window)
+        }
+        let workspace = context.tabManager.addWorkspace(select: true, autoWelcomeIfNeeded: false)
+        let safeName = tui.replacingOccurrences(of: "\"", with: "")
+        sendTextWhenReady("cmux install \(safeName)\n", to: workspace)
     }
 
     @objc func applyUpdateIfAvailable(_ sender: Any?) {
@@ -8863,7 +8892,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = String(localized: "dialog.quitCmux.title", defaultValue: "Quit cmux?")
+        alert.messageText = String(localized: "dialog.quitCmux.title", defaultValue: "Quit c11mux?")
         alert.informativeText = String(localized: "dialog.quitCmux.message", defaultValue: "This will close all windows and workspaces.")
         alert.addButton(withTitle: String(localized: "dialog.quitCmux.quit", defaultValue: "Quit"))
         alert.addButton(withTitle: String(localized: "common.cancel", defaultValue: "Cancel"))
@@ -11373,7 +11402,9 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
     private let clearAllItem = NSMenuItem(title: String(localized: "statusMenu.clearAll", defaultValue: "Clear All"), action: nil, keyEquivalent: "")
     private let checkForUpdatesItem = NSMenuItem(title: String(localized: "menu.checkForUpdates", defaultValue: "Check for Updates…"), action: nil, keyEquivalent: "")
     private let preferencesItem = NSMenuItem(title: String(localized: "menu.preferences", defaultValue: "Preferences…"), action: nil, keyEquivalent: "")
-    private let quitItem = NSMenuItem(title: String(localized: "menu.quitCmux", defaultValue: "Quit cmux"), action: nil, keyEquivalent: "")
+    private let integrationsItem = NSMenuItem(title: String(localized: "menu.integrations", defaultValue: "Integrations"), action: nil, keyEquivalent: "")
+    private let integrationsSubmenu = NSMenu(title: String(localized: "menu.integrations", defaultValue: "Integrations"))
+    private let quitItem = NSMenuItem(title: String(localized: "menu.quitCmux", defaultValue: "Quit c11mux"), action: nil, keyEquivalent: "")
 
     private var notificationItems: [NSMenuItem] = []
     private let maxInlineNotificationItems = 6
@@ -11460,13 +11491,68 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        integrationsItem.submenu = integrationsSubmenu
+        rebuildIntegrationsSubmenu()
+        menu.addItem(integrationsItem)
+
+        menu.addItem(.separator())
+
         quitItem.target = self
         quitItem.action = #selector(quitAction)
         menu.addItem(quitItem)
     }
 
+    private func rebuildIntegrationsSubmenu() {
+        integrationsSubmenu.removeAllItems()
+        let tuis: [(id: String, displayName: String)] = [
+            ("claude-code", "Claude Code"),
+            ("codex", "Codex"),
+            ("opencode", "OpenCode"),
+            ("kimi", "Kimi")
+        ]
+        let installedSet = currentInstalledIntegrations()
+        for tui in tuis {
+            let installed = installedSet.contains(tui.id)
+            let glyph = installed ? "✓ " : ""
+            let title = "\(glyph)Install \(tui.displayName)…"
+            let item = NSMenuItem(title: title, action: #selector(installIntegrationAction(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = tui.id
+            if installed {
+                item.toolTip = String(localized: "menu.integrations.installed", defaultValue: "Already installed — running again will re-apply or update")
+            } else {
+                item.toolTip = String(localized: "menu.integrations.install", defaultValue: "Opens a new terminal tab and runs cmux install")
+            }
+            integrationsSubmenu.addItem(item)
+        }
+    }
+
+    /// Reads filesystem markers without touching the running cmux socket.
+    /// Non-focus-stealing — this runs every time the menu opens.
+    private func currentInstalledIntegrations() -> Set<String> {
+        let home = NSHomeDirectory()
+        let paths: [(id: String, config: String)] = [
+            ("claude-code", "\(home)/.claude/settings.json"),
+            ("codex", "\(home)/.codex/config.toml"),
+            ("opencode", "\(home)/.config/opencode/opencode.json"),
+            ("kimi", "\(home)/.kimi/config.toml")
+        ]
+        var installed: Set<String> = []
+        for entry in paths {
+            guard let data = try? Data(contentsOf: URL(fileURLWithPath: entry.config)),
+                  let text = String(data: data, encoding: .utf8) else {
+                continue
+            }
+            if text.contains("c11mux-v1") {
+                installed.insert(entry.id)
+            }
+        }
+        return installed
+    }
+
     func menuWillOpen(_ menu: NSMenu) {
         refreshUI()
+        rebuildIntegrationsSubmenu()
     }
 
     func refreshForDebugControls() {
@@ -11582,6 +11668,11 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
 
     @objc private func preferencesAction() {
         onOpenPreferences()
+    }
+
+    @objc private func installIntegrationAction(_ sender: NSMenuItem) {
+        guard let tui = sender.representedObject as? String else { return }
+        AppDelegate.shared?.openIntegrationInstallSurface(tui: tui)
     }
 
     @objc private func quitAction() {

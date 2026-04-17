@@ -1,5 +1,10 @@
 <h1 align="center">c11mux</h1>
-<p align="center">A Stage 11 fork of <a href="https://github.com/manaflow-ai/cmux">cmux</a> — a Ghostty-based macOS terminal with vertical tabs and notifications for AI coding agents</p>
+<p align="center">
+  <i>the Stage 11 terminal multiplexer for AI coding agents</i>
+</p>
+<p align="center">
+  <img src="./docs/assets/c11mux-header.png" alt="c11mux" width="720" />
+</p>
 
 <p align="center">
   <a href="https://github.com/Stage-11-Agentics/c11mux/releases/latest/download/c11mux-macos.dmg">

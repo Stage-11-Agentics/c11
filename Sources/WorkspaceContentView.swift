@@ -74,6 +74,7 @@ struct WorkspaceContentView: View {
                     isManuallyUnread: workspace.manualUnreadPanelIds.contains(panel.id)
                 )
                 PanelContentView(
+                    workspace: workspace,
                     panel: panel,
                     paneId: paneId,
                     isFocused: isFocused,

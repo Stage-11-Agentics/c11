@@ -1,11 +1,11 @@
 ---
 name: cmux-debug-windows
-description: Manage cmux debug windows and related debug menu wiring for Sidebar Debug, Background Debug, and Menu Bar Extra Debug. Use this when the user asks to open/tune these debug controls, add or adjust Debug menu entries, or capture/copy a combined debug config snapshot.
+description: Manage c11mux debug windows and related debug menu wiring for Sidebar Debug, Background Debug, and Menu Bar Extra Debug. Use this when the user asks to open/tune these debug controls, add or adjust Debug menu entries, or capture/copy a combined debug config snapshot. Applies to the c11mux macOS app (binary `cmux`).
 ---
 
-# cmux Debug Windows
+# c11mux Debug Windows
 
-Keep this workflow focused on existing debug windows and menu entries. Do not add a new utility/debug control window unless the user asks explicitly.
+Developer-focused workflow for the c11mux macOS app's Debug menu (DEBUG builds only). Covers existing debug windows and menu wiring — do not add a new utility/debug control window unless the user asks explicitly.
 
 ## Workflow
 

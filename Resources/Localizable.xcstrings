@@ -1032,13 +1032,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Welcome to cmux!"
+            "value": "Welcome to c11mux!"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmuxへようこそ！"
+            "value": "c11muxへようこそ！"
           }
         }
       }
@@ -4995,13 +4995,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Created cmux profiles: %@"
+            "value": "Created c11mux profiles: %@"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "作成した cmux プロファイル: %@"
+            "value": "作成した c11mux プロファイル: %@"
           }
         }
       }
@@ -5284,13 +5284,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "All selected source profiles go into one cmux profile."
+            "value": "All selected source profiles go into one c11mux profile."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "選択した元プロファイルは、1つの cmux プロファイルにまとめて取り込まれます。"
+            "value": "選択した元プロファイルは、1つの c11mux プロファイルにまとめて取り込まれます。"
           }
         }
       }
@@ -5301,13 +5301,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Missing cmux profiles are created on import."
+            "value": "Missing c11mux profiles are created on import."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "不足している cmux プロファイルは、インポート時に作成されます。"
+            "value": "不足している c11mux プロファイルは、インポート時に作成されます。"
           }
         }
       }
@@ -5454,13 +5454,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux could not create the destination profile \"%@\"."
+            "value": "c11mux could not create the destination profile \"%@\"."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux は保存先プロファイル「%@」を作成できませんでした。"
+            "value": "c11mux は保存先プロファイル「%@」を作成できませんでした。"
           }
         }
       }
@@ -5471,13 +5471,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The selected cmux browser profile no longer exists. Pick a destination profile again."
+            "value": "The selected c11mux browser profile no longer exists. Pick a destination profile again."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "選択した cmux ブラウザープロファイルが見つかりません。保存先プロファイルを選び直してください。"
+            "value": "選択した c11mux ブラウザープロファイルが見つかりません。保存先プロファイルを選び直してください。"
           }
         }
       }
@@ -5539,7 +5539,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux could not find browser profiles to import from on this Mac."
+            "value": "c11mux could not find browser profiles to import from on this Mac."
           }
         },
         "ja": {
@@ -6315,13 +6315,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Always allow this host in cmux"
+            "value": "Always allow this host in c11mux"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "このホストを cmux で常に許可"
+            "value": "このホストを c11mux で常に許可"
           }
         },
         "zh-Hans": {
@@ -7784,13 +7784,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ uses plain HTTP, so traffic can be read or modified on the network.\n\nOpen this URL in your default browser, or proceed in cmux."
+            "value": "%@ uses plain HTTP, so traffic can be read or modified on the network.\n\nOpen this URL in your default browser, or proceed in c11mux."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ は HTTP 接続を使用しているため、通信内容がネットワーク上で読み取られたり改ざんされる可能性があります。\n\nデフォルトブラウザで開くか、cmux で続行してください。"
+            "value": "%@ は HTTP 接続を使用しているため、通信内容がネットワーク上で読み取られたり改ざんされる可能性があります。\n\nデフォルトブラウザで開くか、c11mux で続行してください。"
           }
         },
         "zh-Hans": {
@@ -8914,13 +8914,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Loading\u2026"
+            "value": "Loading…"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "\u8aad\u307f\u8fbc\u307f\u4e2d\u2026"
+            "value": "読み込み中…"
           }
         }
       }
@@ -8931,13 +8931,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Proceed in cmux"
+            "value": "Proceed in c11mux"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux で続行"
+            "value": "c11mux で続行"
           }
         },
         "zh-Hans": {
@@ -30159,13 +30159,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Notifications are disabled for cmux. Enable them in System Settings to see alerts."
+            "value": "Notifications are disabled for c11mux. Enable them in System Settings to see alerts."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmuxの通知が無効になっています。アラートを表示するにはシステム設定で有効にしてください。"
+            "value": "c11muxの通知が無効になっています。アラートを表示するにはシステム設定で有効にしてください。"
           }
         },
         "zh-Hans": {
@@ -30498,13 +30498,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enable Notifications for cmux"
+            "value": "Enable Notifications for c11mux"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmuxの通知を有効にする"
+            "value": "c11muxの通知を有効にする"
           }
         },
         "zh-Hans": {
@@ -31628,13 +31628,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Quit cmux?"
+            "value": "Quit c11mux?"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux を終了しますか？"
+            "value": "c11mux を終了しますか？"
           }
         },
         "zh-Hans": {
@@ -32645,13 +32645,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "About cmux"
+            "value": "About c11mux"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmuxについて"
+            "value": "c11muxについて"
           }
         },
         "zh-Hans": {
@@ -37521,13 +37521,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Quit cmux"
+            "value": "Quit c11mux"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux を終了"
+            "value": "c11mux を終了"
           }
         },
         "zh-Hans": {
@@ -42544,13 +42544,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Keep cmux in the menu bar for unread notifications and quick actions."
+            "value": "Keep c11mux in the menu bar for unread notifications and quick actions."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "未読通知の確認やクイック操作のために、cmuxをメニューバーに表示します。"
+            "value": "未読通知の確認やクイック操作のために、c11muxをメニューバーに表示します。"
           }
         }
       }
@@ -43013,13 +43013,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Restart cmux to apply"
+            "value": "Restart c11mux to apply"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmuxを再起動して適用"
+            "value": "c11muxを再起動して適用"
           }
         },
         "zh-Hans": {
@@ -43341,13 +43341,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Sidebar PR Links in cmux Browser"
+            "value": "Open Sidebar PR Links in c11mux Browser"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "サイドバーのPRリンクをcmuxブラウザで開く"
+            "value": "サイドバーのPRリンクをc11muxブラウザで開く"
           }
         },
         "zh-Hans": {
@@ -43567,13 +43567,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Clicks open inside cmux browser."
+            "value": "Clicks open inside c11mux browser."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "クリックするとcmuxブラウザ内で開きます。"
+            "value": "クリックするとc11muxブラウザ内で開きます。"
           }
         },
         "zh-Hans": {
@@ -46551,13 +46551,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Share anonymized crash and usage data to help improve cmux."
+            "value": "Share anonymized crash and usage data to help improve c11mux."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmuxの改善に役立てるため、匿名化されたクラッシュおよび使用状況データを共有します。"
+            "value": "c11muxの改善に役立てるため、匿名化されたクラッシュおよび使用状況データを共有します。"
           }
         },
         "zh-Hans": {
@@ -47467,13 +47467,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Briefly flash a blue outline when cmux highlights a pane."
+            "value": "Briefly flash a blue outline when c11mux highlights a pane."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux がペインを強調表示するときに短い青いアウトラインを表示します。"
+            "value": "c11mux がペインを強調表示するときに短い青いアウトラインを表示します。"
           }
         }
       }
@@ -47648,13 +47648,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "When enabled, cmux wraps the claude command to inject session tracking and notification hooks. Disable if you prefer to manage Claude Code hooks yourself."
+            "value": "When enabled, c11mux wraps the claude command to inject session tracking and notification hooks. Disable if you prefer to manage Claude Code hooks yourself."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "有効にすると、cmuxはclaudeコマンドをラップしてセッション追跡と通知フックを挿入します。Claude Codeのフックを自分で管理する場合は無効にしてください。"
+            "value": "有効にすると、c11muxはclaudeコマンドをラップしてセッション追跡と通知フックを挿入します。Claude Codeのフックを自分で管理する場合は無効にしてください。"
           }
         },
         "zh-Hans": {
@@ -47761,13 +47761,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code runs without cmux integration."
+            "value": "Claude Code runs without c11mux integration."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Codeはcmux連携なしで実行されます。"
+            "value": "Claude Codeはc11mux連携なしで実行されます。"
           }
         },
         "zh-Hans": {
@@ -52547,13 +52547,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Applies to terminal link clicks and intercepted `open https://...` calls. Only these hosts open in cmux. Others open in your default browser. One host or wildcard per line (for example: example.com, *.internal.example). Leave empty to open all hosts in cmux."
+            "value": "Applies to terminal link clicks and intercepted `open https://...` calls. Only these hosts open in c11mux. Others open in your default browser. One host or wildcard per line (for example: example.com, *.internal.example). Leave empty to open all hosts in c11mux."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ターミナルのリンククリックおよびインターセプトされた`open https://...`呼び出しに適用されます。これらのホストのみcmuxで開きます。その他はデフォルトブラウザで開きます。1行に1つのホストまたはワイルドカード（例: example.com, *.internal.example）。空欄にするとすべてのホストをcmuxで開きます。"
+            "value": "ターミナルのリンククリックおよびインターセプトされた`open https://...`呼び出しに適用されます。これらのホストのみc11muxで開きます。その他はデフォルトブラウザで開きます。1行に1つのホストまたはワイルドカード（例: example.com, *.internal.example）。空欄にするとすべてのホストをc11muxで開きます。"
           }
         },
         "zh-Hans": {
@@ -52773,13 +52773,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Controls which HTTP (non-HTTPS) hosts can open in cmux without a warning prompt. Defaults include localhost, 127.0.0.1, ::1, 0.0.0.0, and *.localtest.me."
+            "value": "Controls which HTTP (non-HTTPS) hosts can open in c11mux without a warning prompt. Defaults include localhost, 127.0.0.1, ::1, 0.0.0.0, and *.localtest.me."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "警告プロンプトなしでcmuxで開けるHTTP（非HTTPS）ホストを制御します。デフォルトにはlocalhost、127.0.0.1、::1、0.0.0.0、*.localtest.meが含まれます。"
+            "value": "警告プロンプトなしでc11muxで開けるHTTP（非HTTPS）ホストを制御します。デフォルトにはlocalhost、127.0.0.1、::1、0.0.0.0、*.localtest.meが含まれます。"
           }
         },
         "zh-Hans": {
@@ -53338,13 +53338,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Terminal Links in cmux Browser"
+            "value": "Open Terminal Links in c11mux Browser"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ターミナルのリンクをcmuxブラウザで開く"
+            "value": "ターミナルのリンクをc11muxブラウザで開く"
           }
         },
         "zh-Hans": {
@@ -65006,13 +65006,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Only processes started inside cmux terminals can send commands."
+            "value": "Only processes started inside c11mux terminals can send commands."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux ターミナル内で起動したプロセスのみがコマンドを送信できます。"
+            "value": "c11mux ターミナル内で起動したプロセスのみがコマンドを送信できます。"
           }
         },
         "zh-Hans": {
@@ -65119,13 +65119,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux processes only"
+            "value": "c11mux processes only"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux プロセスのみ"
+            "value": "c11mux プロセスのみ"
           }
         },
         "zh-Hans": {
@@ -69413,13 +69413,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux couldn't download the update feed. Check your connection and try again."
+            "value": "c11mux couldn't download the update feed. Check your connection and try again."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux はアップデートフィードをダウンロードできませんでした。接続を確認してもう一度お試しください。"
+            "value": "c11mux はアップデートフィードをダウンロードできませんでした。接続を確認してもう一度お試しください。"
           }
         },
         "zh-Hans": {
@@ -70204,13 +70204,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux can't reach the update server. Check your internet connection and try again."
+            "value": "c11mux can't reach the update server. Check your internet connection and try again."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux はアップデートサーバーに接続できません。インターネット接続を確認してもう一度お試しください。"
+            "value": "c11mux はアップデートサーバーに接続できません。インターネット接続を確認してもう一度お試しください。"
           }
         },
         "zh-Hans": {
@@ -70430,13 +70430,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Move cmux into Applications and relaunch to enable updates."
+            "value": "Move c11mux into Applications and relaunch to enable updates."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "アップデートを有効にするには、cmux を「アプリケーション」に移動して再起動してください。"
+            "value": "アップデートを有効にするには、c11mux を「アプリケーション」に移動して再起動してください。"
           }
         },
         "zh-Hans": {
@@ -71108,13 +71108,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux couldn't connect to the update server. Check your connection or try again later."
+            "value": "c11mux couldn't connect to the update server. Check your connection or try again later."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux はアップデートサーバーに接続できませんでした。接続を確認するか、後でもう一度お試しください。"
+            "value": "c11mux はアップデートサーバーに接続できませんでした。接続を確認するか、後でもう一度お試しください。"
           }
         },
         "zh-Hans": {
@@ -72690,13 +72690,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux can automatically check for updates in the background."
+            "value": "c11mux can automatically check for updates in the background."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux はバックグラウンドで自動的にアップデートを確認できます。"
+            "value": "c11mux はバックグラウンドで自動的にアップデートを確認できます。"
           }
         },
         "zh-Hans": {

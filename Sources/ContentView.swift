@@ -40,39 +40,24 @@ func sidebarActiveForegroundNSColor(
     return baseColor.withAlphaComponent(clampedOpacity)
 }
 
+// c11mux brand accent. Stage 11 is void-dominant; accent is a single gold
+// regardless of appearance. See `BrandColors` and docs/c11mux-module-5-brand-identity-spec.md.
 func cmuxAccentNSColor(for colorScheme: ColorScheme) -> NSColor {
-    switch colorScheme {
-    case .dark:
-        return NSColor(
-            srgbRed: 0,
-            green: 145.0 / 255.0,
-            blue: 1.0,
-            alpha: 1.0
-        )
-    default:
-        return NSColor(
-            srgbRed: 0,
-            green: 136.0 / 255.0,
-            blue: 1.0,
-            alpha: 1.0
-        )
-    }
+    _ = colorScheme
+    return BrandColors.gold
 }
 
 func cmuxAccentNSColor(for appAppearance: NSAppearance?) -> NSColor {
-    let bestMatch = appAppearance?.bestMatch(from: [.darkAqua, .aqua])
-    let scheme: ColorScheme = (bestMatch == .darkAqua) ? .dark : .light
-    return cmuxAccentNSColor(for: scheme)
+    _ = appAppearance
+    return BrandColors.gold
 }
 
 func cmuxAccentNSColor() -> NSColor {
-    NSColor(name: nil) { appearance in
-        cmuxAccentNSColor(for: appearance)
-    }
+    BrandColors.gold
 }
 
 func cmuxAccentColor() -> Color {
-    Color(nsColor: cmuxAccentNSColor())
+    BrandColors.goldSwiftUI
 }
 
 struct SidebarRemoteErrorCopyEntry: Equatable {
@@ -113,7 +98,8 @@ enum SidebarRemoteErrorCopySupport {
 }
 
 func sidebarSelectedWorkspaceBackgroundNSColor(for colorScheme: ColorScheme) -> NSColor {
-    cmuxAccentNSColor(for: colorScheme)
+    _ = colorScheme
+    return BrandColors.gold
 }
 
 func sidebarSelectedWorkspaceForegroundNSColor(opacity: CGFloat) -> NSColor {
@@ -8172,12 +8158,26 @@ struct VerticalTabsSidebar: View {
                                 let remoteContextMenuTargets = tabManager.tabs.filter { workspace in
                                     contextTargetIds.contains(workspace.id) && workspace.isRemoteWorkspace
                                 }
+                                let agentChip: AgentChip? = {
+                                    guard let focusedId = tab.focusedPanelId else {
+                                        return nil
+                                    }
+                                    let (values, sources) = TerminalController.canonicalMetadataSnapshot(
+                                        workspaceId: tab.id, surfaceId: focusedId
+                                    )
+                                    return AgentChipResolver.resolve(
+                                        focusedSurfaceId: focusedId,
+                                        metadata: values,
+                                        sources: sources
+                                    )
+                                }()
                                 TabItemView(
                                     tabManager: tabManager,
                                     notificationStore: notificationStore,
                                     tab: tab,
                                     index: index,
                                     isActive: tabManager.selectedTabId == tab.id,
+                                    agentChip: agentChip,
                                     workspaceShortcutDigit: WorkspaceShortcutMapper.commandDigitForWorkspace(
                                         at: index,
                                         workspaceCount: workspaceCount
@@ -9963,7 +9963,7 @@ private struct SidebarHelpMenuButton: View {
     private var helpPopover: some View {
         VStack(alignment: .leading, spacing: 2) {
             helpOptionButton(
-                title: String(localized: "sidebar.help.welcome", defaultValue: "Welcome to cmux!"),
+                title: String(localized: "sidebar.help.welcome", defaultValue: "Welcome to c11mux!"),
                 action: .welcome,
                 accessibilityIdentifier: "SidebarHelpMenuOptionWelcome",
                 isExternalLink: false
@@ -10563,6 +10563,7 @@ private struct TabItemView: View, Equatable {
         lhs.tab === rhs.tab &&
         lhs.index == rhs.index &&
         lhs.isActive == rhs.isActive &&
+        lhs.agentChip == rhs.agentChip &&
         lhs.workspaceShortcutDigit == rhs.workspaceShortcutDigit &&
         lhs.canCloseWorkspace == rhs.canCloseWorkspace &&
         lhs.accessibilityWorkspaceCount == rhs.accessibilityWorkspaceCount &&
@@ -10584,6 +10585,7 @@ private struct TabItemView: View, Equatable {
     @ObservedObject var tab: Tab
     let index: Int
     let isActive: Bool
+    let agentChip: AgentChip?
     let workspaceShortcutDigit: Int?
     let canCloseWorkspace: Bool
     let accessibilityWorkspaceCount: Int
@@ -10621,6 +10623,12 @@ private struct TabItemView: View, Equatable {
     private var sidebarHideAllDetails = SidebarWorkspaceDetailSettings.defaultHideAllDetails
     @AppStorage(SidebarActiveTabIndicatorSettings.styleKey)
     private var activeTabIndicatorStyleRaw = SidebarActiveTabIndicatorSettings.defaultStyle.rawValue
+    @AppStorage(WorkspacePresentationModeSettings.modeKey)
+    private var workspacePresentationMode = WorkspacePresentationModeSettings.defaultMode.rawValue
+
+    private var isMinimalMode: Bool {
+        WorkspacePresentationModeSettings.mode(for: workspacePresentationMode) == .minimal
+    }
 
     var isMultiSelected: Bool {
         selectedTabIds.contains(tab.id)
@@ -10869,7 +10877,14 @@ private struct TabItemView: View, Equatable {
                         .foregroundColor(activeSecondaryColor(0.8))
                 }
 
-                Text(tab.title)
+                AgentChipBadge(
+                    chip: agentChip,
+                    showsLabel: !isMinimalMode,
+                    foreground: activePrimaryTextColor,
+                    secondary: activeSecondaryColor(0.75)
+                )
+
+                Text(TitleFormatting.sidebarLabel(from: tab.title))
                     .font(.system(size: 12.5, weight: titleFontWeight))
                     .foregroundColor(activePrimaryTextColor)
                     .lineLimit(1)

@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import CryptoKit
 import Foundation
 import Bonsplit
 import WebKit
@@ -1803,6 +1804,9 @@ class TerminalController {
         case "ports_kick":
             return portsKick(args)
 
+        case "agent_kick":
+            return agentKick(args)
+
         case "report_shell_state":
             return reportShellState(args)
 
@@ -2025,6 +2029,8 @@ class TerminalController {
 
         case "system.identify":
             return v2Ok(id: id, result: v2Identify(params: params))
+        case "system.brand":
+            return v2Ok(id: id, result: v2SystemBrand())
         case "system.tree":
             return v2Result(id: id, self.v2SystemTree(params: params))
         case "auth.login":
@@ -2132,6 +2138,12 @@ class TerminalController {
             return v2Result(id: id, self.v2SurfaceClearHistory(params: params))
         case "surface.trigger_flash":
             return v2Result(id: id, self.v2SurfaceTriggerFlash(params: params))
+        case "surface.set_metadata":
+            return v2Result(id: id, self.v2SurfaceSetMetadata(params: params))
+        case "surface.get_metadata":
+            return v2Result(id: id, self.v2SurfaceGetMetadata(params: params))
+        case "surface.clear_metadata":
+            return v2Result(id: id, self.v2SurfaceClearMetadata(params: params))
 
         // Panes
         case "pane.list":
@@ -2344,9 +2356,23 @@ class TerminalController {
         // Markdown
         case "markdown.open":
             return v2Result(id: id, self.v2MarkdownOpen(params: params))
+        case "markdown.get_content":
+            return v2Result(id: id, self.v2MarkdownGetContent(params: params))
+
+        // M3 — structured sidebar state (extends v1 `sidebar_state` with agent_chip)
+        case "sidebar.state":
+            return v2Result(id: id, self.v2SidebarState(params: params))
 
         case "surface.read_text":
             return v2Result(id: id, self.v2SurfaceReadText(params: params))
+
+        // M7 — title bar projection (read-only sugar)
+        case "surface.get_titlebar_state":
+            return v2Result(id: id, self.v2SurfaceGetTitleBarState(params: params))
+        case "surface.set_titlebar_visibility":
+            return v2Result(id: id, self.v2SurfaceSetTitleBarVisibility(params: params))
+        case "surface.set_titlebar_collapsed":
+            return v2Result(id: id, self.v2SurfaceSetTitleBarCollapsed(params: params))
 
 
 #if DEBUG
@@ -2426,6 +2452,7 @@ class TerminalController {
             "system.ping",
             "system.capabilities",
             "system.identify",
+            "system.brand",
             "system.tree",
             "auth.login",
             "window.list",
@@ -2472,6 +2499,9 @@ class TerminalController {
             "surface.read_text",
             "surface.clear_history",
             "surface.trigger_flash",
+            "surface.set_metadata",
+            "surface.get_metadata",
+            "surface.clear_metadata",
             "pane.list",
             "pane.focus",
             "pane.surfaces",
@@ -2489,6 +2519,8 @@ class TerminalController {
             "app.focus_override.set",
             "app.simulate_active",
             "markdown.open",
+            "markdown.get_content",
+            "sidebar.state",
             "browser.open_split",
             "browser.navigate",
             "browser.back",
@@ -2705,12 +2737,80 @@ class TerminalController {
         ]
     }
 
+    private func v2SystemBrand() -> [String: Any] {
+        // Bundle info is read from the running process — verifies the built
+        // plist, not the source tree. Matches socket threading policy: this
+        // is a fast snapshot with no UI mutation.
+        let infoDict: [String: Any] = Bundle.main.infoDictionary ?? [:]
+        let bundleIdentifier = (Bundle.main.bundleIdentifier ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayName = (infoDict["CFBundleDisplayName"] as? String) ?? (infoDict["CFBundleName"] as? String) ?? ""
+        let bundleName = (infoDict["CFBundleName"] as? String) ?? displayName
+        let iconName = (infoDict["CFBundleIconName"] as? String)
+            ?? (infoDict["CFBundleIconFile"] as? String)
+            ?? "AppIcon"
+        let shortVersion = (infoDict["CFBundleShortVersionString"] as? String) ?? ""
+        let build = (infoDict["CFBundleVersion"] as? String) ?? ""
+
+        let channel: String
+        if bundleIdentifier.contains(".debug") {
+            channel = "dev"
+        } else if bundleIdentifier.hasSuffix(".nightly") {
+            channel = "nightly"
+        } else if bundleIdentifier.hasSuffix(".staging") {
+            channel = "staging"
+        } else {
+            channel = "stable"
+        }
+
+        var palette: [String: String] = [:]
+        for (key, hex) in BrandColors.paletteHex {
+            palette[key] = hex
+        }
+
+        return [
+            "channel": channel,
+            "bundle": [
+                "identifier": bundleIdentifier,
+                "display_name": displayName,
+                "name": bundleName,
+                "icon_name": iconName,
+                "short_version": shortVersion,
+                "build": build
+            ],
+            "palette": palette,
+            "accent_hex": BrandColors.goldHex,
+            "font_family": BrandColors.fontFamily
+        ]
+    }
+
     private func v2SystemTree(params: [String: Any]) -> V2CallResult {
         let workspaceFilter = v2UUID(params, "workspace_id")
         if params["workspace_id"] != nil && workspaceFilter == nil {
             return .err(code: "invalid_params", message: "Missing or invalid workspace_id", data: nil)
         }
-        let includeAllWindows = v2Bool(params, "all_windows") ?? false
+
+        // Resolve scope: explicit `scope` wins, then legacy `all_windows`, then default workspace.
+        // Legal scope values: "workspace" | "window" | "all".
+        let rawScope = (params["scope"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let scope: String
+        if let rawScope, !rawScope.isEmpty {
+            switch rawScope {
+            case "workspace", "window", "all":
+                scope = rawScope
+            default:
+                return .err(
+                    code: "invalid_params",
+                    message: "Invalid scope: \(rawScope) (expected workspace|window|all)",
+                    data: ["scope": rawScope]
+                )
+            }
+        } else if let legacy = v2Bool(params, "all_windows") {
+            scope = legacy ? "all" : "window"
+        } else if workspaceFilter != nil {
+            scope = "workspace"
+        } else {
+            scope = "workspace"
+        }
 
         var identifyParams: [String: Any] = [:]
         if let caller = params["caller"] as? [String: Any], !caller.isEmpty {
@@ -2720,6 +2820,8 @@ class TerminalController {
         let focused = identifyPayload["focused"] as? [String: Any] ?? [:]
         let caller = identifyPayload["caller"] as? [String: Any] ?? [:]
         let focusedWindowId = v2UUIDAny(focused["window_id"]) ?? v2UUIDAny(focused["window_ref"])
+        let focusedWorkspaceId = v2UUIDAny(focused["workspace_id"]) ?? v2UUIDAny(focused["workspace_ref"])
+        let callerWorkspaceId = v2UUIDAny(caller["workspace_id"]) ?? v2UUIDAny(caller["workspace_ref"])
 
         var windowNodes: [[String: Any]] = []
         var workspaceFound = (workspaceFilter == nil)
@@ -2728,6 +2830,13 @@ class TerminalController {
             guard let app = AppDelegate.shared else { return }
             let summaries = app.listMainWindowSummaries()
             let defaultWindowId = focusedWindowId ?? summaries.first?.windowId
+
+            // Caller-current-workspace lookup for `scope == "workspace"`. Priority:
+            //   1. Explicit --workspace (handled below by workspaceFilter branch)
+            //   2. Caller env (CMUX_WORKSPACE_ID, propagated via params.caller)
+            //   3. Focused workspace
+            //   4. Selected workspace of the current window
+            let callerScopeWorkspaceId: UUID? = callerWorkspaceId ?? focusedWorkspaceId
 
             for (windowIndex, summary) in summaries.enumerated() {
                 guard let manager = app.tabManagerFor(windowId: summary.windowId) else { continue }
@@ -2753,25 +2862,65 @@ class TerminalController {
                     break
                 }
 
-                if !includeAllWindows && summary.windowId != defaultWindowId {
-                    continue
-                }
+                switch scope {
+                case "all":
+                    let workspaceNodesForWindow = manager.tabs.enumerated().map { workspaceIndex, workspace in
+                        v2TreeWorkspaceNode(
+                            workspace: workspace,
+                            index: workspaceIndex,
+                            selected: workspace.id == manager.selectedTabId
+                        )
+                    }
+                    windowNodes.append(
+                        v2TreeWindowNode(
+                            summary: summary,
+                            index: windowIndex,
+                            workspaceNodes: workspaceNodesForWindow
+                        )
+                    )
 
-                let workspaceNodesForWindow = manager.tabs.enumerated().map { workspaceIndex, workspace in
-                    v2TreeWorkspaceNode(
+                case "window":
+                    if summary.windowId != defaultWindowId { continue }
+                    let workspaceNodesForWindow = manager.tabs.enumerated().map { workspaceIndex, workspace in
+                        v2TreeWorkspaceNode(
+                            workspace: workspace,
+                            index: workspaceIndex,
+                            selected: workspace.id == manager.selectedTabId
+                        )
+                    }
+                    windowNodes.append(
+                        v2TreeWindowNode(
+                            summary: summary,
+                            index: windowIndex,
+                            workspaceNodes: workspaceNodesForWindow
+                        )
+                    )
+
+                case "workspace":
+                    // Find the caller's current workspace; only include the window that owns it.
+                    let target: UUID? = callerScopeWorkspaceId ?? manager.selectedTabId
+                    guard let targetId = target,
+                          let workspaceIndex = manager.tabs.firstIndex(where: { $0.id == targetId }) else {
+                        continue
+                    }
+                    let workspace = manager.tabs[workspaceIndex]
+                    let workspaceNode = v2TreeWorkspaceNode(
                         workspace: workspace,
                         index: workspaceIndex,
                         selected: workspace.id == manager.selectedTabId
                     )
-                }
+                    windowNodes = [
+                        v2TreeWindowNode(
+                            summary: summary,
+                            index: windowIndex,
+                            workspaceNodes: [workspaceNode]
+                        )
+                    ]
+                    return  // Only one workspace per "workspace" scope; exit the v2MainSync closure.
 
-                windowNodes.append(
-                    v2TreeWindowNode(
-                        summary: summary,
-                        index: windowIndex,
-                        workspaceNodes: workspaceNodesForWindow
-                    )
-                )
+                default:
+                    continue
+                }
             }
         }
 
@@ -2789,6 +2938,7 @@ class TerminalController {
         return .ok([
             "active": focused.isEmpty ? (NSNull() as Any) : focused,
             "caller": caller.isEmpty ? (NSNull() as Any) : caller,
+            "scope": scope,
             "windows": windowNodes
         ])
     }
@@ -2857,6 +3007,9 @@ class TerminalController {
             } else {
                 item["url"] = NSNull()
             }
+            if let markdownPanel = panel as? MarkdownPanel {
+                item["file_path"] = markdownPanel.filePath
+            }
             if let paneUUID {
                 surfacesByPane[paneUUID, default: []].append(item)
             }
@@ -2870,12 +3023,68 @@ class TerminalController {
             }
         }
 
+        // M8: derive content area + per-pane layout from bonsplit's snapshot.
+        // Percent values are workspace-relative regardless of split nesting depth.
+        let snapshot = workspace.bonsplitController.layoutSnapshot()
+        let contentSize = snapshot.containerFrame
+        let contentWidth = contentSize.width
+        let contentHeight = contentSize.height
+        let hasLayout = contentWidth > 0 && contentHeight > 0
+
+        var pixelByPaneId: [UUID: (h0: Int, h1: Int, v0: Int, v1: Int)] = [:]
+        var percentByPaneId: [UUID: (h0: Double, h1: Double, v0: Double, v1: Double)] = [:]
+        if hasLayout {
+            for geom in snapshot.panes {
+                guard let paneUUID = UUID(uuidString: geom.paneId) else { continue }
+                // Subtract the content origin so coordinates are relative to the workspace
+                // content area rather than the host window.
+                let relX = geom.frame.x - contentSize.x
+                let relY = geom.frame.y - contentSize.y
+                let h0 = Int((relX).rounded())
+                let h1 = Int((relX + geom.frame.width).rounded())
+                let v0 = Int((relY).rounded())
+                let v1 = Int((relY + geom.frame.height).rounded())
+                pixelByPaneId[paneUUID] = (h0, h1, v0, v1)
+                percentByPaneId[paneUUID] = (
+                    relX / contentWidth,
+                    (relX + geom.frame.width) / contentWidth,
+                    relY / contentHeight,
+                    (relY + geom.frame.height) / contentHeight
+                )
+            }
+        }
+
+        let splitPathByPaneId = m8SplitPathByPaneId(workspace: workspace)
+
         let focusedPaneId = workspace.bonsplitController.focusedPaneId
         let panes: [[String: Any]] = paneIds.enumerated().map { paneIndex, paneId in
             let tabs = workspace.bonsplitController.tabs(inPane: paneId)
             let surfaceUUIDs: [UUID] = tabs.compactMap { workspace.panelIdFromSurfaceId($0.id) }
             let selectedTab = workspace.bonsplitController.selectedTab(inPane: paneId)
             let selectedSurfaceUUID = selectedTab.flatMap { workspace.panelIdFromSurfaceId($0.id) }
+
+            // M8 layout sub-object.
+            let path = splitPathByPaneId[paneId.id] ?? []
+            let layoutObj: [String: Any]
+            if hasLayout, let pix = pixelByPaneId[paneId.id], let pct = percentByPaneId[paneId.id] {
+                layoutObj = [
+                    "percent": [
+                        "H": [pct.h0, pct.h1],
+                        "V": [pct.v0, pct.v1]
+                    ],
+                    "pixels": [
+                        "H": [pix.h0, pix.h1],
+                        "V": [pix.v0, pix.v1]
+                    ],
+                    "split_path": path
+                ]
+            } else {
+                layoutObj = [
+                    "percent": NSNull(),
+                    "pixels": NSNull(),
+                    "split_path": path
+                ]
+            }
 
             return [
                 "id": paneId.id.uuidString,
@@ -2887,8 +3096,21 @@ class TerminalController {
                 "selected_surface_id": v2OrNull(selectedSurfaceUUID?.uuidString),
                 "selected_surface_ref": v2Ref(kind: .surface, uuid: selectedSurfaceUUID),
                 "surface_count": surfaceUUIDs.count,
-                "surfaces": surfacesByPane[paneId.id] ?? []
+                "surfaces": surfacesByPane[paneId.id] ?? [],
+                "layout": layoutObj
             ]
+        }
+
+        let contentArea: Any
+        if hasLayout {
+            contentArea = [
+                "pixels": [
+                    "width": Int(contentWidth.rounded()),
+                    "height": Int(contentHeight.rounded())
+                ]
+            ]
+        } else {
+            contentArea = NSNull()
         }
 
         return [
@@ -2898,8 +3120,35 @@ class TerminalController {
             "title": workspace.title,
             "selected": selected,
             "pinned": workspace.isPinned,
+            "content_area": contentArea,
             "panes": panes
         ]
+    }
+
+    /// Walk the workspace's split tree and produce a root-to-leaf path of
+    /// `H:left | H:right | V:top | V:bottom` tokens for every pane. The path is
+    /// recomputed on every call — it is **not** a stable identifier and changes
+    /// whenever the surrounding splits change.
+    private func m8SplitPathByPaneId(workspace: Workspace) -> [UUID: [String]] {
+        var result: [UUID: [String]] = [:]
+        let tree = workspace.bonsplitController.treeSnapshot()
+        m8WalkSplitTree(node: tree, path: [], into: &result)
+        return result
+    }
+
+    private func m8WalkSplitTree(node: ExternalTreeNode, path: [String], into result: inout [UUID: [String]]) {
+        switch node {
+        case .pane(let paneNode):
+            if let uuid = UUID(uuidString: paneNode.id) {
+                result[uuid] = path
+            }
+        case .split(let splitNode):
+            let isHorizontal = splitNode.orientation.lowercased() == "horizontal"
+            let firstToken = isHorizontal ? "H:left" : "V:top"
+            let secondToken = isHorizontal ? "H:right" : "V:bottom"
+            m8WalkSplitTree(node: splitNode.first, path: path + [firstToken], into: &result)
+            m8WalkSplitTree(node: splitNode.second, path: path + [secondToken], into: &result)
+        }
     }
 
     // MARK: - V2 Helpers (encoding + result plumbing)
@@ -4419,6 +4668,9 @@ class TerminalController {
                 if let browserPanel = panel as? BrowserPanel {
                     item["developer_tools_visible"] = browserPanel.isDeveloperToolsVisible()
                 }
+                if let markdownPanel = panel as? MarkdownPanel {
+                    item["file_path"] = markdownPanel.filePath
+                }
                 return item
             }
 
@@ -5439,6 +5691,71 @@ class TerminalController {
         return result
     }
 
+    // MARK: - M7 title bar
+
+    /// Resolve `(Workspace, surfaceId)` for M7 title bar handlers from the generic
+    /// `surface_id` / `workspace_id` / focused-surface fallback.
+    private func v2ResolveWorkspaceForTitleBar(params: [String: Any]) -> (Workspace, UUID)? {
+        guard let tabManager = v2ResolveTabManager(params: params) else { return nil }
+        var located: (Workspace, UUID)?
+        v2MainSync {
+            if let surfaceId = v2UUID(params, "surface_id") {
+                if let ws = tabManager.tabs.first(where: { $0.panels[surfaceId] != nil }) {
+                    located = (ws, surfaceId)
+                    return
+                }
+                return
+            }
+            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager),
+                  let focused = ws.focusedPanelId else { return }
+            located = (ws, focused)
+        }
+        return located
+    }
+
+    private func v2SurfaceGetTitleBarState(params: [String: Any]) -> V2CallResult {
+        guard let (ws, surfaceId) = v2ResolveWorkspaceForTitleBar(params: params) else {
+            return .err(code: "surface_not_found", message: "Surface not found", data: nil)
+        }
+        var payload: [String: Any] = [:]
+        v2MainSync { payload = ws.titleBarStatePayload(panelId: surfaceId) }
+        payload["surface_ref"] = v2Ref(kind: .surface, uuid: surfaceId)
+        payload["workspace_id"] = ws.id.uuidString
+        payload["workspace_ref"] = v2Ref(kind: .workspace, uuid: ws.id)
+        return .ok(payload)
+    }
+
+    private func v2SurfaceSetTitleBarVisibility(params: [String: Any]) -> V2CallResult {
+        guard let (ws, _) = v2ResolveWorkspaceForTitleBar(params: params) else {
+            return .err(code: "surface_not_found", message: "Surface not found", data: nil)
+        }
+        guard let visible = params["visible"] as? Bool else {
+            return .err(code: "invalid_params", message: "visible (bool) required", data: nil)
+        }
+        v2MainSync { ws.titleBarVisible = visible }
+        return .ok(["visible": visible, "workspace_id": ws.id.uuidString])
+    }
+
+    private func v2SurfaceSetTitleBarCollapsed(params: [String: Any]) -> V2CallResult {
+        guard let (ws, surfaceId) = v2ResolveWorkspaceForTitleBar(params: params) else {
+            return .err(code: "surface_not_found", message: "Surface not found", data: nil)
+        }
+        guard let collapsed = params["collapsed"] as? Bool else {
+            return .err(code: "invalid_params", message: "collapsed (bool) required", data: nil)
+        }
+        let userInitiated = (params["user"] as? Bool) ?? false
+        v2MainSync {
+            ws.titleBarCollapsed[surfaceId] = collapsed
+            if userInitiated && collapsed {
+                ws.titleBarUserCollapsed.insert(surfaceId)
+            }
+            if !collapsed {
+                ws.titleBarUserCollapsed.remove(surfaceId)
+            }
+        }
+        return .ok(["collapsed": collapsed, "surface_id": surfaceId.uuidString])
+    }
+
     private func readTerminalTextBase64(terminalPanel: TerminalPanel, includeScrollback: Bool = false, lineLimit: Int? = nil) -> String {
         guard let surface = terminalPanel.surface.surface else { return "ERROR: Terminal surface not found" }
 
@@ -5689,6 +6006,220 @@ class TerminalController {
             result = .ok(["workspace_id": ws.id.uuidString, "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id), "surface_id": surfaceId.uuidString, "surface_ref": v2Ref(kind: .surface, uuid: surfaceId), "window_id": v2OrNull(v2ResolveWindowId(tabManager: tabManager)?.uuidString), "window_ref": v2Ref(kind: .window, uuid: v2ResolveWindowId(tabManager: tabManager))])
         }
         return result
+    }
+
+    // MARK: - V2 Surface Metadata (Module 2)
+
+    /// Resolve the (workspaceId, surfaceId) pair for a metadata call.
+    /// Runs off-main — touches only `TabManager.tabs` snapshot + v2 handle refs.
+    private func v2ResolveSurfaceForMetadata(
+        params: [String: Any]
+    ) -> (workspaceId: UUID, surfaceId: UUID, tabManager: TabManager)? {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return nil
+        }
+        return v2MainSync {
+            let ws: Workspace?
+            if let surfaceId = v2UUID(params, "surface_id") {
+                ws = tabManager.tabs.first(where: { $0.panels[surfaceId] != nil })
+                guard let workspace = ws else { return nil }
+                return (workspace.id, surfaceId, tabManager)
+            }
+            // Fallback: explicit workspace_id, then default to focused.
+            guard let workspace = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+                return nil
+            }
+            if let focused = workspace.focusedPanelId {
+                return (workspace.id, focused, tabManager)
+            }
+            return nil
+        }
+    }
+
+    private func v2SurfaceSetMetadata(params: [String: Any]) -> V2CallResult {
+        guard let metadataObj = params["metadata"] as? [String: Any] else {
+            return .err(code: "invalid_json", message: "metadata must be a JSON object", data: nil)
+        }
+
+        let modeStr = (v2String(params, "mode") ?? "merge").lowercased()
+        guard let mode = SurfaceMetadataStore.WriteMode(rawValue: modeStr) else {
+            return .err(code: "invalid_mode", message: "mode must be 'merge' or 'replace'", data: nil)
+        }
+
+        let sourceStr = (v2String(params, "source") ?? "explicit").lowercased()
+        guard let source = MetadataSource(rawValue: sourceStr) else {
+            return .err(code: "invalid_source", message: "source must be one of: explicit, declare, osc, heuristic", data: nil)
+        }
+
+        guard let resolved = v2ResolveSurfaceForMetadata(params: params) else {
+            return .err(code: "surface_not_found", message: "Surface not found", data: nil)
+        }
+
+        do {
+            let result = try SurfaceMetadataStore.shared.setMetadata(
+                workspaceId: resolved.workspaceId,
+                surfaceId: resolved.surfaceId,
+                partial: metadataObj,
+                mode: mode,
+                source: source
+            )
+            applyTitleDescriptionSideEffects(
+                workspaceId: resolved.workspaceId,
+                surfaceId: resolved.surfaceId,
+                tabManager: resolved.tabManager,
+                applied: result.applied,
+                autoExpand: (params["auto_expand"] as? Bool) ?? true
+            )
+            return .ok(buildMetadataOkPayload(
+                workspaceId: resolved.workspaceId,
+                surfaceId: resolved.surfaceId,
+                tabManager: resolved.tabManager,
+                result: result
+            ))
+        } catch let err as SurfaceMetadataStore.WriteError {
+            return .err(code: err.code, message: err.message, data: err.detailData)
+        } catch {
+            return .err(code: "internal_error", message: "\(error)", data: nil)
+        }
+    }
+
+    /// M7 side effect: sync render cache + auto-expand title bar when
+    /// `title` / `description` is written through M2's metadata API.
+    private func applyTitleDescriptionSideEffects(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        tabManager: TabManager,
+        applied: [String: Bool],
+        autoExpand: Bool
+    ) {
+        let titleApplied = applied[MetadataKey.title] == true
+        let descriptionApplied = applied[MetadataKey.description] == true
+        guard titleApplied || descriptionApplied else { return }
+        v2MainSync {
+            guard let ws = tabManager.tabs.first(where: { $0.id == workspaceId }) else { return }
+            if titleApplied {
+                ws.syncPanelTitleFromMetadata(panelId: surfaceId)
+            }
+            if descriptionApplied && autoExpand {
+                ws.maybeAutoExpandTitleBar(panelId: surfaceId)
+            }
+        }
+    }
+
+    private func v2SurfaceGetMetadata(params: [String: Any]) -> V2CallResult {
+        let keys: [String]?
+        if params["keys"] is NSNull || params["keys"] == nil {
+            keys = nil
+        } else if let arr = v2StringArray(params, "keys") {
+            keys = arr
+        } else {
+            return .err(code: "invalid_keys_param", message: "keys must be an array of strings", data: nil)
+        }
+
+        let includeSources = v2Bool(params, "include_sources") ?? false
+
+        guard let resolved = v2ResolveSurfaceForMetadata(params: params) else {
+            return .err(code: "surface_not_found", message: "Surface not found", data: nil)
+        }
+
+        let (fullMetadata, fullSources) = SurfaceMetadataStore.shared.getMetadata(
+            workspaceId: resolved.workspaceId,
+            surfaceId: resolved.surfaceId
+        )
+
+        var metadataOut: [String: Any] = fullMetadata
+        var sourcesOut: [String: [String: Any]] = fullSources
+        if let filterKeys = keys {
+            metadataOut = [:]
+            sourcesOut = [:]
+            for k in filterKeys {
+                if let v = fullMetadata[k] { metadataOut[k] = v }
+                if let s = fullSources[k] { sourcesOut[k] = s }
+            }
+        }
+
+        var payload: [String: Any] = [
+            "workspace_id": resolved.workspaceId.uuidString,
+            "workspace_ref": v2Ref(kind: .workspace, uuid: resolved.workspaceId),
+            "surface_id": resolved.surfaceId.uuidString,
+            "surface_ref": v2Ref(kind: .surface, uuid: resolved.surfaceId),
+            "metadata": metadataOut
+        ]
+        if includeSources {
+            payload["metadata_sources"] = sourcesOut
+        }
+        return .ok(payload)
+    }
+
+    private func v2SurfaceClearMetadata(params: [String: Any]) -> V2CallResult {
+        let keys: [String]?
+        if params["keys"] == nil || params["keys"] is NSNull {
+            keys = nil
+        } else if let arr = v2StringArray(params, "keys") {
+            keys = arr
+        } else {
+            return .err(code: "invalid_keys_param", message: "keys must be an array of strings", data: nil)
+        }
+
+        let sourceStr = (v2String(params, "source") ?? "explicit").lowercased()
+        guard let source = MetadataSource(rawValue: sourceStr) else {
+            return .err(code: "invalid_source", message: "source must be one of: explicit, declare, osc, heuristic", data: nil)
+        }
+
+        guard let resolved = v2ResolveSurfaceForMetadata(params: params) else {
+            return .err(code: "surface_not_found", message: "Surface not found", data: nil)
+        }
+
+        do {
+            let result = try SurfaceMetadataStore.shared.clearMetadata(
+                workspaceId: resolved.workspaceId,
+                surfaceId: resolved.surfaceId,
+                keys: keys,
+                source: source
+            )
+            applyTitleDescriptionSideEffects(
+                workspaceId: resolved.workspaceId,
+                surfaceId: resolved.surfaceId,
+                tabManager: resolved.tabManager,
+                applied: result.applied,
+                autoExpand: false
+            )
+            return .ok(buildMetadataOkPayload(
+                workspaceId: resolved.workspaceId,
+                surfaceId: resolved.surfaceId,
+                tabManager: resolved.tabManager,
+                result: result
+            ))
+        } catch let err as SurfaceMetadataStore.WriteError {
+            return .err(code: err.code, message: err.message, data: err.detailData)
+        } catch {
+            return .err(code: "internal_error", message: "\(error)", data: nil)
+        }
+    }
+
+    private func buildMetadataOkPayload(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        tabManager: TabManager,
+        result: SurfaceMetadataStore.WriteResult
+    ) -> [String: Any] {
+        var appliedAny: [String: Any] = [:]
+        for (k, v) in result.applied { appliedAny[k] = v }
+        var reasonsAny: [String: Any] = [:]
+        for (k, v) in result.reasons { reasonsAny[k] = v }
+        let windowId = v2ResolveWindowId(tabManager: tabManager)
+        return [
+            "workspace_id": workspaceId.uuidString,
+            "workspace_ref": v2Ref(kind: .workspace, uuid: workspaceId),
+            "surface_id": surfaceId.uuidString,
+            "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+            "window_id": v2OrNull(windowId?.uuidString),
+            "window_ref": v2Ref(kind: .window, uuid: windowId),
+            "applied": appliedAny,
+            "reasons": reasonsAny,
+            "metadata": result.metadata,
+            "metadata_sources": result.sources
+        ]
     }
 
     // MARK: - V2 Pane Methods
@@ -7155,12 +7686,67 @@ class TerminalController {
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to create markdown panel", data: nil)
         v2MainSync {
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+            // M6 — if pane_id is supplied, locate the owning workspace across all
+            // windows so `markdown.open --pane P` works standalone (spec: --pane
+            // uniquely identifies). This takes precedence over workspace_id/window_id
+            // (which may be injected from env vars by the CLI).
+            var resolvedTabManager: TabManager = tabManager
+            var resolvedWorkspace: Workspace?
+            if v2HasNonNullParam(params, "pane_id") {
+                guard let paneUUID = v2UUID(params, "pane_id") else {
+                    result = .err(code: "invalid_params", message: "Invalid pane_id", data: nil)
+                    return
+                }
+                if let located = AppDelegate.shared?.locatePane(paneId: paneUUID) {
+                    resolvedWorkspace = located.workspace
+                    resolvedTabManager = located.tabManager
+                }
+            }
+            guard let ws = resolvedWorkspace ?? v2ResolveWorkspace(params: params, tabManager: resolvedTabManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
-            v2MaybeFocusWindow(for: tabManager)
-            v2MaybeSelectWorkspace(tabManager, workspace: ws)
+            v2MaybeFocusWindow(for: resolvedTabManager)
+            v2MaybeSelectWorkspace(resolvedTabManager, workspace: ws)
+
+            // M6 — if pane_id is supplied, open as a tab inside that pane (no split).
+            if v2HasNonNullParam(params, "pane_id") {
+                guard let paneUUID = v2UUID(params, "pane_id") else {
+                    result = .err(code: "invalid_params", message: "Invalid pane_id", data: nil)
+                    return
+                }
+                guard let targetPaneId = ws.bonsplitController.allPaneIds.first(where: { $0.id == paneUUID }) else {
+                    result = .err(code: "not_found", message: "Pane not found in workspace", data: ["pane_id": paneUUID.uuidString])
+                    return
+                }
+
+                let createdPanel = ws.newMarkdownSurface(
+                    inPane: targetPaneId,
+                    filePath: filePath,
+                    focus: v2FocusAllowed()
+                )
+
+                guard let markdownPanelId = createdPanel?.id else {
+                    result = .err(code: "internal_error", message: "Failed to create markdown panel", data: nil)
+                    return
+                }
+
+                let windowId = v2ResolveWindowId(tabManager: resolvedTabManager)
+                result = .ok([
+                    "window_id": v2OrNull(windowId?.uuidString),
+                    "window_ref": v2Ref(kind: .window, uuid: windowId),
+                    "workspace_id": ws.id.uuidString,
+                    "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
+                    "pane_id": targetPaneId.id.uuidString,
+                    "pane_ref": v2Ref(kind: .pane, uuid: targetPaneId.id),
+                    "surface_id": markdownPanelId.uuidString,
+                    "surface_ref": v2Ref(kind: .surface, uuid: markdownPanelId),
+                    "target_pane_id": targetPaneId.id.uuidString,
+                    "target_pane_ref": v2Ref(kind: .pane, uuid: targetPaneId.id),
+                    "path": filePath
+                ])
+                return
+            }
 
             let sourceSurfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
             guard let sourceSurfaceId else {
@@ -7207,6 +7793,165 @@ class TerminalController {
             ])
         }
         return result
+    }
+
+    // MARK: - M3 — structured sidebar.state
+
+    /// Structured `sidebar_state` — JSON variant that includes the M3 `agent_chip` block.
+    private func v2SidebarState(params: [String: Any]) -> V2CallResult {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+        var payload: [String: Any]?
+        v2MainSync {
+            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else { return }
+            let statusEntries = ws.sidebarStatusEntriesInDisplayOrder()
+            let metadataBlocks = ws.sidebarMetadataBlocksInDisplayOrder()
+
+            var out: [String: Any] = [
+                "workspace_id": ws.id.uuidString,
+                "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
+                "status_count": statusEntries.count,
+                "meta_block_count": metadataBlocks.count,
+                "log_count": ws.logEntries.count
+            ]
+            if let focused = ws.focusedPanelId {
+                out["focused_surface_id"] = focused.uuidString
+                out["focused_surface_ref"] = v2Ref(kind: .surface, uuid: focused)
+            }
+
+            // Agent chip resolution.
+            let chipDict: [String: Any] = self.resolveAgentChipDict(workspace: ws)
+            out["agent_chip"] = chipDict
+
+            payload = out
+        }
+        guard let out = payload else {
+            return .err(code: "not_found", message: "Workspace not found", data: nil)
+        }
+        return .ok(out)
+    }
+
+    /// Build the agent_chip payload for inclusion in `sidebar.state` (v2) and `sidebar_state` (v1 text).
+    private func resolveAgentChipDict(workspace ws: Workspace) -> [String: Any] {
+        guard let focusedId = ws.focusedPanelId else {
+            return ["present": false]
+        }
+        let (values, sources) = Self.canonicalMetadataSnapshot(workspaceId: ws.id, surfaceId: focusedId)
+        guard let chip = AgentChipResolver.resolve(
+            focusedSurfaceId: focusedId,
+            metadata: values,
+            sources: sources
+        ) else {
+            return ["present": false]
+        }
+
+        var out: [String: Any] = [
+            "present": true,
+            "terminal_type": chip.terminalType,
+            "icon_asset": chip.iconAsset,
+            "source_surface_id": chip.sourceSurfaceId.uuidString,
+            "source_surface_ref": v2Ref(kind: .surface, uuid: chip.sourceSurfaceId)
+        ]
+        if let model = chip.model { out["model"] = model }
+        if let modelLabel = chip.modelLabel { out["model_label"] = modelLabel }
+        if let displayLabel = chip.displayLabel { out["display_label"] = displayLabel }
+        if let source = chip.source { out["source"] = source }
+        var perKey: [String: Any] = [:]
+        if let tts = chip.terminalTypeSource { perKey["terminal_type"] = tts }
+        if let ms = chip.modelSource { perKey["model"] = ms }
+        out["per_key_sources"] = perKey
+        return out
+    }
+
+    // MARK: - M3/M6 helpers
+
+    /// Pair (metadata, per-key source enum) for consumers that only read the
+    /// canonical subset. Parses the JSON-shaped sidecar returned by
+    /// SurfaceMetadataStore into typed `MetadataSource` values.
+    static func canonicalMetadataSnapshot(
+        workspaceId: UUID,
+        surfaceId: UUID
+    ) -> (values: [String: Any], sources: [String: MetadataSource]) {
+        let (values, rawSources) = SurfaceMetadataStore.shared.getMetadata(
+            workspaceId: workspaceId, surfaceId: surfaceId
+        )
+        var sources: [String: MetadataSource] = [:]
+        for (key, entry) in rawSources {
+            if let name = entry["source"] as? String,
+               let src = MetadataSource(rawValue: name) {
+                sources[key] = src
+            }
+        }
+        return (values, sources)
+    }
+
+    /// Resolve `(Workspace, surfaceId)` for markdown/sidebar code paths.
+    private func v2ResolveWorkspaceSurface(params: [String: Any]) -> (Workspace, UUID)? {
+        guard let tabManager = v2ResolveTabManager(params: params) else { return nil }
+        var out: (Workspace, UUID)?
+        v2MainSync {
+            if let surfaceId = v2UUID(params, "surface_id") {
+                for ws in tabManager.tabs where ws.panels[surfaceId] != nil {
+                    out = (ws, surfaceId)
+                    return
+                }
+                return
+            }
+            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager),
+                  let surfaceId = ws.focusedPanelId else { return }
+            out = (ws, surfaceId)
+        }
+        return out
+    }
+
+    // MARK: - M6 — markdown.get_content
+
+    private func v2MarkdownGetContent(params: [String: Any]) -> V2CallResult {
+        guard let resolved = v2ResolveWorkspaceSurface(params: params) else {
+            return .err(code: "not_found", message: "Surface not found", data: nil)
+        }
+        let (ws, surfaceId) = resolved
+
+        var payload: [String: Any]?
+        var errResult: V2CallResult?
+        v2MainSync {
+            guard let panel = ws.panels[surfaceId] else {
+                errResult = .err(code: "not_found", message: "Surface not found", data: ["surface_id": surfaceId.uuidString])
+                return
+            }
+            guard let markdown = panel as? MarkdownPanel else {
+                errResult = .err(code: "invalid_params", message: "Surface is not a markdown panel", data: ["surface_id": surfaceId.uuidString])
+                return
+            }
+
+            let content = markdown.content
+            let contentBytes = content.data(using: .utf8) ?? Data()
+            let sha = SHA256.hash(data: contentBytes).map { String(format: "%02x", $0) }.joined()
+            let softCap = 256 * 1024
+
+            var out: [String: Any] = [
+                "surface_id": surfaceId.uuidString,
+                "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                "type": PanelType.markdown.rawValue,
+                "file_path": markdown.filePath,
+                "content_length": contentBytes.count,
+                "content_sha256": sha,
+                "is_file_unavailable": markdown.isFileUnavailable
+            ]
+            if contentBytes.count > softCap {
+                out["truncated"] = true
+                out["reason"] = "content_too_large"
+            } else {
+                out["content"] = content
+            }
+            payload = out
+        }
+        if let errResult { return errResult }
+        guard let out = payload else {
+            return .err(code: "not_found", message: "Surface not found", data: nil)
+        }
+        return .ok(out)
     }
 
     // MARK: - Browser
@@ -14946,6 +15691,7 @@ class TerminalController {
                 guard validSurfaceIds.contains(scope.panelId) else { return }
                 tab.surfaceTTYNames[scope.panelId] = ttyName
                 PortScanner.shared.registerTTY(workspaceId: scope.workspaceId, panelId: scope.panelId, ttyName: ttyName)
+                AgentDetector.shared.registerTTY(workspaceId: scope.workspaceId, panelId: scope.panelId, ttyName: ttyName)
             }
             return "OK"
         }
@@ -14985,6 +15731,54 @@ class TerminalController {
 
             tab.surfaceTTYNames[surfaceId] = ttyName
             PortScanner.shared.registerTTY(workspaceId: tab.id, panelId: surfaceId, ttyName: ttyName)
+            AgentDetector.shared.registerTTY(workspaceId: tab.id, panelId: surfaceId, ttyName: ttyName)
+        }
+        return result
+    }
+
+    private func agentKick(_ args: String) -> String {
+        let parsed = parseOptions(args)
+        if let scope = Self.explicitSocketScope(options: parsed.options) {
+            DispatchQueue.main.async {
+                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
+                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
+                    return
+                }
+                let validSurfaceIds = Set(tab.panels.keys)
+                guard validSurfaceIds.contains(scope.panelId) else { return }
+                AgentDetector.shared.kick(workspaceId: scope.workspaceId, panelId: scope.panelId)
+            }
+            return "OK"
+        }
+
+        var result = "OK"
+        DispatchQueue.main.sync {
+            guard let tab = resolveTabForReport(args) else {
+                result = parsed.options["tab"] != nil ? "ERROR: Tab not found" : "ERROR: No tab selected"
+                return
+            }
+
+            let panelArg = parsed.options["panel"] ?? parsed.options["surface"]
+            let surfaceId: UUID
+            if let panelArg {
+                if panelArg.isEmpty {
+                    result = "ERROR: Missing panel id — usage: agent_kick [--tab=X] [--panel=Y]"
+                    return
+                }
+                guard let parsedId = UUID(uuidString: panelArg) else {
+                    result = "ERROR: Invalid panel id '\(panelArg)'"
+                    return
+                }
+                surfaceId = parsedId
+            } else {
+                guard let focused = tab.focusedPanelId else {
+                    result = "ERROR: Missing panel id (no focused surface)"
+                    return
+                }
+                surfaceId = focused
+            }
+
+            AgentDetector.shared.kick(workspaceId: tab.id, panelId: surfaceId)
         }
         return result
     }
@@ -15098,6 +15892,30 @@ class TerminalController {
             lines.append("meta_block_count=\(metadataBlocks.count)")
             for block in metadataBlocks {
                 lines.append("  \(sidebarMetadataBlockLine(block))")
+            }
+
+            // M3 — agent_chip block (derived from focused surface's canonical metadata).
+            if let focusedId = tab.focusedPanelId,
+               case let (values, sources) = Self.canonicalMetadataSnapshot(
+                   workspaceId: tab.id, surfaceId: focusedId),
+               let chip = AgentChipResolver.resolve(
+                   focusedSurfaceId: focusedId,
+                   metadata: values,
+                   sources: sources
+               ) {
+                lines.append("agent_chip=present")
+                lines.append("  terminal_type=\(chip.terminalType)")
+                lines.append("  model=\(chip.model ?? "none")")
+                lines.append("  model_label=\(chip.modelLabel ?? "none")")
+                lines.append("  display_label=\(chip.displayLabel ?? "none")")
+                lines.append("  icon_asset=\(chip.iconAsset)")
+                lines.append("  source_surface_id=\(chip.sourceSurfaceId.uuidString)")
+                lines.append("  source_surface_ref=\(v2Ref(kind: .surface, uuid: chip.sourceSurfaceId))")
+                lines.append("  source=\(chip.source ?? "none")")
+                lines.append("  terminal_type_source=\(chip.terminalTypeSource ?? "none")")
+                lines.append("  model_source=\(chip.modelSource ?? "none")")
+            } else {
+                lines.append("agent_chip=none")
             }
 
             lines.append("log_count=\(tab.logEntries.count)")

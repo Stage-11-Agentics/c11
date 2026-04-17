@@ -1,5 +1,5 @@
 name: Bug Report
-description: Report a bug in cmux
+description: Report a bug in c11mux
 labels: ["bug"]
 body:
   - type: markdown
@@ -10,8 +10,8 @@ body:
   - type: input
     id: cmux-version
     attributes:
-      label: cmux version
-      description: "Run `cmux --version` or check About cmux in the menu bar."
+      label: c11mux version
+      description: "Run `cmux --version` or check About c11mux in the menu bar."
       placeholder: "e.g. 0.3.2"
     validations:
       required: true

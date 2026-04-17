@@ -192,6 +192,14 @@ struct GhosttyConfig {
     private static func loadFromDisk(preferredColorScheme: ColorSchemePreference) -> GhosttyConfig {
         var config = GhosttyConfig()
 
+        // Layer the c11mux default terminal palette first so that the user's
+        // Ghostty config can still override anything it wants. The fragment
+        // only fills in defaults for keys the user has not set (background,
+        // foreground, cursor, palette 0-15, selection).
+        if let bundleDefaults = readBundledC11muxDefaults() {
+            config.parse(bundleDefaults)
+        }
+
         // Match Ghostty's default load order on macOS.
         let configPaths = [
             "~/.config/ghostty/config",
@@ -520,6 +528,20 @@ struct GhosttyConfig {
         appendUniquePath("~/Library/Application Support/com.mitchellh.ghostty/themes/\(themeName)")
 
         return paths
+    }
+
+    private static func readBundledC11muxDefaults() -> String? {
+        guard let resourceURL = Bundle.main.resourceURL else { return nil }
+        let candidates = [
+            resourceURL.appendingPathComponent("ghostty/c11mux-default.conf"),
+            resourceURL.appendingPathComponent("c11mux-default.conf"),
+        ]
+        for url in candidates {
+            if FileManager.default.fileExists(atPath: url.path) {
+                return try? String(contentsOf: url, encoding: .utf8)
+            }
+        }
+        return nil
     }
 
     private static func readConfigFile(at path: String) -> String? {

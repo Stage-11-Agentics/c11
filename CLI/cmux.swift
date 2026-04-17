@@ -1463,6 +1463,19 @@ struct CMUXCLI {
             return
         }
 
+        if command == "install" || command == "uninstall" {
+            // Integration installers (Module 4) are filesystem-local; they do
+            // not connect to the running cmux socket. Exit codes are carried
+            // via a dedicated thrown error type that CMUXTermMain routes to
+            // the proper numeric exit.
+            try runIntegrationInstallerCommand(
+                command: command,
+                commandArgs: commandArgs,
+                jsonOutput: jsonOutput
+            )
+            return
+        }
+
         let client = SocketClient(path: resolvedSocketPath)
         if resolvedSocketPath != socketPath {
             cliTelemetry.breadcrumb(
@@ -1512,6 +1525,14 @@ struct CMUXCLI {
         case "capabilities":
             let response = try client.sendV2(method: "system.capabilities")
             print(jsonString(formatIDs(response, mode: idFormat)))
+
+        case "brand":
+            let response = try client.sendV2(method: "system.brand")
+            if jsonOutput || hasFlag(commandArgs, name: "--json") {
+                print(jsonString(response))
+            } else {
+                printBrandHuman(response)
+            }
 
         case "identify":
             var params: [String: Any] = [:]
@@ -1625,6 +1646,15 @@ struct CMUXCLI {
 
         case "rename-tab":
             try runRenameTab(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat, windowOverride: windowId)
+
+        case "set-title":
+            try runSetTitle(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
+
+        case "set-description":
+            try runSetDescription(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
+
+        case "get-titlebar-state":
+            try runGetTitleBarState(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
 
         case "list-workspaces":
             let payload = try client.sendV2(method: "workspace.list")
@@ -2184,13 +2214,65 @@ struct CMUXCLI {
             print(response)
 
         case "sidebar-state":
-            let response = try forwardSidebarMetadataCommand(
-                "sidebar_state",
+            // --json emits the v2 sidebar.state response (includes agent_chip).
+            if commandArgs.contains("--json") || jsonOutput {
+                let (workspaceRaw, _) = parseOption(commandArgs, name: "--workspace")
+                var params: [String: Any] = [:]
+                if let workspaceRaw {
+                    if let ws = try normalizeWorkspaceHandle(workspaceRaw, client: client) {
+                        params["workspace_id"] = ws
+                    }
+                } else if let envWs = ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"],
+                          let ws = try normalizeWorkspaceHandle(envWs, client: client) {
+                    params["workspace_id"] = ws
+                }
+                let payload = try client.sendV2(method: "sidebar.state", params: params)
+                print(jsonString(formatIDs(payload, mode: idFormat)))
+            } else {
+                let response = try forwardSidebarMetadataCommand(
+                    "sidebar_state",
+                    commandArgs: commandArgs,
+                    client: client,
+                    windowOverride: windowId
+                )
+                print(response)
+            }
+
+        case "set-agent":
+            try runSetAgentCommand(
                 commandArgs: commandArgs,
                 client: client,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat,
                 windowOverride: windowId
             )
-            print(response)
+
+        case "set-metadata":
+            try runSetMetadataCommand(
+                commandArgs: commandArgs,
+                client: client,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat,
+                windowOverride: windowId
+            )
+
+        case "get-metadata":
+            try runGetMetadataCommand(
+                commandArgs: commandArgs,
+                client: client,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat,
+                windowOverride: windowId
+            )
+
+        case "clear-metadata":
+            try runClearMetadataCommand(
+                commandArgs: commandArgs,
+                client: client,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat,
+                windowOverride: windowId
+            )
 
         case "claude-hook":
             cliTelemetry.breadcrumb("claude-hook.dispatch")
@@ -2296,6 +2378,9 @@ struct CMUXCLI {
         case "markdown":
             try runMarkdownCommand(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
 
+        case "markdown-content":
+            try runMarkdownGetContentCommand(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
+
         default:
             print(usage())
             throw CLIError(message: "Unknown command: \(command)")
@@ -2362,7 +2447,8 @@ struct CMUXCLI {
         let (workspaceOpt, argsAfterWorkspace) = parseOption(args, name: "--workspace")
         let (windowOpt, argsAfterWindow) = parseOption(argsAfterWorkspace, name: "--window")
         let (surfaceOpt, argsAfterSurface) = parseOption(argsAfterWindow, name: "--surface")
-        args = argsAfterSurface
+        let (paneOpt, argsAfterPane) = parseOption(argsAfterSurface, name: "--pane")
+        args = argsAfterPane
 
         // Determine subcommand. Explicit "open" is supported, otherwise treat
         // a single positional argument as shorthand path.
@@ -2425,6 +2511,12 @@ struct CMUXCLI {
                 params["window_id"] = window
             }
         }
+        if let paneRaw = paneOpt {
+            let workspaceHandle = params["workspace_id"] as? String
+            if let pane = try normalizePaneHandle(paneRaw, client: client, workspaceHandle: workspaceHandle) {
+                params["pane_id"] = pane
+            }
+        }
 
         let payload = try client.sendV2(method: "markdown.open", params: params)
 
@@ -2435,6 +2527,38 @@ struct CMUXCLI {
             let paneText = formatHandle(payload, kind: "pane", idFormat: idFormat) ?? "unknown"
             let filePath = (payload["path"] as? String) ?? absolutePath
             print("OK surface=\(surfaceText) pane=\(paneText) path=\(filePath)")
+        }
+    }
+
+    // MARK: - M6 markdown.get_content
+
+    private func runMarkdownGetContentCommand(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) throws {
+        let (surfaceOpt, _) = parseOption(commandArgs, name: "--surface")
+        let surfaceArg = surfaceOpt ?? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
+        guard let surfaceArg else {
+            throw CLIError(message: "markdown-content requires --surface <handle> (or CMUX_SURFACE_ID env)")
+        }
+        guard let surface = try normalizeSurfaceHandle(surfaceArg, client: client) else {
+            throw CLIError(message: "markdown-content: invalid surface handle")
+        }
+        let params: [String: Any] = ["surface_id": surface]
+        let payload = try client.sendV2(method: "markdown.get_content", params: params)
+        if jsonOutput {
+            print(jsonString(formatIDs(payload, mode: idFormat)))
+            return
+        }
+        if (payload["truncated"] as? Bool) == true {
+            let reason = (payload["reason"] as? String) ?? "truncated"
+            print("TRUNCATED \(reason)")
+            return
+        }
+        if let content = payload["content"] as? String {
+            print(content)
         }
     }
 
@@ -3467,6 +3591,180 @@ struct CMUXCLI {
             windowOverride: windowOverride
         )
     }
+
+    // MARK: - M7: Surface title bar CLI
+
+    private func runSetTitle(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) throws {
+        try runSetTitleBarText(
+            key: "title",
+            commandArgs: commandArgs,
+            client: client,
+            jsonOutput: jsonOutput,
+            idFormat: idFormat
+        )
+    }
+
+    private func runSetDescription(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) throws {
+        try runSetTitleBarText(
+            key: "description",
+            commandArgs: commandArgs,
+            client: client,
+            jsonOutput: jsonOutput,
+            idFormat: idFormat
+        )
+    }
+
+    private func runSetTitleBarText(
+        key: String,
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) throws {
+        let commandName = key == "title" ? "set-title" : "set-description"
+
+        let (workspaceOpt, rem0) = parseOption(commandArgs, name: "--workspace")
+        let (surfaceOpt, rem1) = parseOption(rem0, name: "--surface")
+        let (fromFileOpt, rem2) = parseOption(rem1, name: "--from-file")
+        let (sourceOpt, rem3) = parseOption(rem2, name: "--source")
+
+        var autoExpand = true
+        var remaining: [String] = []
+        for arg in rem3 {
+            if arg == "--auto-expand=false" {
+                autoExpand = false
+            } else if arg == "--auto-expand=true" {
+                autoExpand = true
+            } else {
+                remaining.append(arg)
+            }
+        }
+
+        if let unknown = remaining.first(where: { $0.hasPrefix("--") && $0 != "--" }) {
+            throw CLIError(message: "\(commandName): unknown flag '\(unknown)'")
+        }
+
+        let value: String
+        if let fromFileOpt {
+            value = try readFromFileArgument(fromFileOpt, commandName: commandName)
+        } else {
+            let positional = remaining
+                .dropFirst(remaining.first == "--" ? 1 : 0)
+                .joined(separator: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            value = positional
+        }
+
+        if key == "title" && value.isEmpty {
+            throw CLIError(message: "missing_title: \(commandName) requires a non-empty title (or --from-file <path>). To clear: cmux clear-metadata --key title")
+        }
+
+        let surfaceRaw = surfaceOpt ?? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
+        let workspaceRaw = workspaceOpt ?? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
+        let workspaceId = try resolveWorkspaceId(workspaceRaw, client: client)
+        let surfaceId = try resolveSurfaceId(surfaceRaw, workspaceId: workspaceId, client: client)
+
+        let source = sourceOpt?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "explicit"
+
+        var params: [String: Any] = [
+            "surface_id": surfaceId,
+            "workspace_id": workspaceId,
+            "mode": "merge",
+            "source": source,
+            "metadata": [key: value]
+        ]
+        if key == "description" && !autoExpand {
+            params["auto_expand"] = false
+        }
+
+        let payload = try client.sendV2(method: "surface.set_metadata", params: params)
+
+        if jsonOutput {
+            print(jsonString(formatIDs(payload, mode: idFormat)))
+        } else {
+            let applied = (payload["applied"] as? [String: Any])?[key] as? Bool ?? false
+            let reason = (payload["reasons"] as? [String: Any])?[key] as? String
+            if applied {
+                print("OK \(key) applied=true source=\(source)")
+            } else {
+                let reasonText = reason ?? "unknown"
+                FileHandle.standardError.write(Data("Error: \(key) applied=false reason=\(reasonText)\n".utf8))
+                exit(1)
+            }
+        }
+    }
+
+    private func runGetTitleBarState(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) throws {
+        let (workspaceOpt, rem0) = parseOption(commandArgs, name: "--workspace")
+        let (surfaceOpt, remaining) = parseOption(rem0, name: "--surface")
+
+        if let unknown = remaining.first(where: { $0.hasPrefix("--") && $0 != "--" }) {
+            throw CLIError(message: "get-titlebar-state: unknown flag '\(unknown)'")
+        }
+
+        let surfaceRaw = surfaceOpt ?? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
+        let workspaceRaw = workspaceOpt ?? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
+        let workspaceId = try resolveWorkspaceId(workspaceRaw, client: client)
+        let surfaceId = try resolveSurfaceId(surfaceRaw, workspaceId: workspaceId, client: client)
+
+        let params: [String: Any] = [
+            "surface_id": surfaceId,
+            "workspace_id": workspaceId
+        ]
+        let payload = try client.sendV2(method: "surface.get_titlebar_state", params: params)
+
+        if jsonOutput {
+            print(jsonString(formatIDs(payload, mode: idFormat)))
+        } else {
+            let surfaceStr = (payload["surface_id"] as? String) ?? surfaceId
+            var lines: [String] = ["surface=\(surfaceStr)"]
+            if let title = payload["title"] as? String {
+                let src = (payload["title_source"] as? String) ?? "?"
+                lines.append("title=\(title)   [\(src)]")
+            }
+            if let desc = payload["description"] as? String {
+                let src = (payload["description_source"] as? String) ?? "?"
+                lines.append("description=\(desc)   [\(src)]")
+            }
+            let collapsed = (payload["collapsed"] as? Bool) ?? true
+            let visible = (payload["visible"] as? Bool) ?? true
+            lines.append("collapsed=\(collapsed)  visible=\(visible)")
+            if let sidebar = payload["sidebar_label"] as? String {
+                lines.append("sidebar_label=\(sidebar)")
+            }
+            print(lines.joined(separator: "\n"))
+        }
+    }
+
+    private func readFromFileArgument(_ path: String, commandName: String) throws -> String {
+        if path == "-" {
+            let data = FileHandle.standardInput.readDataToEndOfFile()
+            return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let url = URL(fileURLWithPath: resolvePath(path))
+        do {
+            let data = try Data(contentsOf: url)
+            return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            throw CLIError(message: "\(commandName): unable to read --from-file '\(path)': \(error)")
+        }
+    }
+
     struct SSHCommandOptions {
         let destination: String
         let port: Int?
@@ -6154,6 +6452,65 @@ struct CMUXCLI {
               cmux rename-tab --tab tab:3 "staging server"
               cmux rename-tab --workspace workspace:2 --surface surface:5 --title "agent run"
             """
+        case "set-title":
+            return """
+            Usage: cmux set-title [--surface <ref>] [--workspace <ref>] [--source <src>] <title-text>
+                   cmux set-title [--surface <ref>] [--workspace <ref>] [--source <src>] --from-file <path>
+                   cmux set-title [--surface <ref>] --json
+
+            Set the surface's canonical `title` metadata key (M7 + M2).
+
+            Flags:
+              --surface <ref>     Target surface (default: $CMUX_SURFACE_ID, then focused)
+              --workspace <ref>   Workspace context (default: current/$CMUX_WORKSPACE_ID)
+              --source <src>      Write source: explicit | declare | osc | heuristic (default: explicit)
+              --from-file <path>  Read title text from file (use '-' for stdin)
+              --json              Emit raw v2 socket result as JSON
+
+            Exit non-zero when precedence gate blocks the write (applied=false).
+
+            Examples:
+              cmux set-title "Running smoke tests"
+              cmux set-title --surface surface:3 "build logs"
+              echo "Agent: gemini" | cmux set-title --source declare --from-file -
+            """
+        case "set-description":
+            return """
+            Usage: cmux set-description [--surface <ref>] [--workspace <ref>] [--source <src>] [--auto-expand=false] <description-text>
+                   cmux set-description [--surface <ref>] [--workspace <ref>] [--source <src>] --from-file <path>
+
+            Set the surface's canonical `description` metadata key (M7 + M2).
+
+            Description supports inline Markdown: **bold**, *italic*, `inline code`.
+            Block-level Markdown and links render as literal text.
+
+            Flags:
+              --surface <ref>       Target surface (default: $CMUX_SURFACE_ID, then focused)
+              --workspace <ref>     Workspace context (default: current/$CMUX_WORKSPACE_ID)
+              --source <src>        Write source: explicit | declare | osc | heuristic (default: explicit)
+              --from-file <path>    Read description text from file (use '-' for stdin)
+              --auto-expand=false   Suppress first-set auto-expand behavior for this write
+              --json                Emit raw v2 socket result as JSON
+
+            Examples:
+              cmux set-description "Running **10 shards** in parallel"
+              cmux set-description --auto-expand=false --from-file ./notes.md
+            """
+        case "get-titlebar-state":
+            return """
+            Usage: cmux get-titlebar-state [--surface <ref>] [--workspace <ref>] [--json]
+
+            Read the title bar's current state for a surface: title, description, sources,
+            collapsed flag, visibility flag, and the truncated `sidebar_label` projection.
+
+            Flags:
+              --surface <ref>     Target surface (default: $CMUX_SURFACE_ID, then focused)
+              --workspace <ref>   Workspace context (default: current/$CMUX_WORKSPACE_ID)
+              --json              Emit raw v2 socket result as JSON
+
+            Example:
+              cmux get-titlebar-state --json
+            """
         case "new-workspace":
             return """
             Usage: cmux new-workspace [--cwd <path>] [--command <text>]
@@ -6253,24 +6610,39 @@ struct CMUXCLI {
             return """
             Usage: cmux tree [flags]
 
-            Print the hierarchy of windows, workspaces, panes, and surfaces.
+            Print the hierarchy of windows, workspaces, panes, and surfaces, with
+            spatial coordinates and an ASCII floor plan of the current workspace.
 
             Flags:
-              --all                         Include all windows (default: current window only)
-              --workspace <id|ref|index>   Show only one workspace
-              --json                        Structured JSON output
+              --all                         Include all windows and all workspaces
+              --window                      Include all workspaces in the current window
+              --workspace <id|ref|index>    Show only one workspace
+              --layout                      Render the floor plan even when scope > 1 workspace
+              --no-layout                   Suppress the floor plan unconditionally
+              --canvas-cols <N>             Override the floor-plan canvas width (default: auto, min 40)
+              --json                        Structured JSON output (layout in `layout`/`content_area` keys)
+
+            Default scope: the caller's current workspace. Use --window for the
+            pre-M8 behavior (current window, all workspaces); --all for every window.
+
+            Note: `layout.split_path` is recomputed on every call from the live
+            split tree — it is NOT a stable identifier. A pane's split_path will
+            change whenever the surrounding splits change. Use the pane ref/UUID
+            to track a pane across layout mutations.
 
             Output:
-              Text mode prints a box-drawing tree with markers:
+              Text mode prints the floor plan (single-workspace scope) followed
+              by a box-drawing tree with markers:
               - ◀ active (true focused window/workspace/pane/surface path)
               - ◀ here (caller surface where `cmux tree` was invoked)
               - workspace [selected]
-              - pane [focused]
+              - pane [focused] size=W%×H% px=W×H split=H:left|...
               - surface [selected]
               Browser surfaces also include their current URL.
 
             Example:
               cmux tree
+              cmux tree --window
               cmux tree --all
               cmux tree --workspace workspace:2
               cmux --json tree --all
@@ -6878,6 +7250,95 @@ struct CMUXCLI {
             Example:
               cmux sidebar-state
               cmux sidebar-state --workspace workspace:2
+            """
+        case "set-agent":
+            return """
+            Usage: cmux set-agent --type <terminal_type>
+                                  [--model <id>] [--task <id>] [--role <id>]
+                                  [--surface <id|ref>] [--workspace <id|ref>]
+                                  [--json]
+
+            Declare agent identity for a surface. Writes through
+            surface.set_metadata with source=declare, mode=merge.
+
+            Only flags present are written (omitting --model does not clear an
+            existing declared model). --type is kebab-case, ≤ 32 chars.
+
+            Flags:
+              --type <terminal_type>   Canonical or custom kebab-case type (required)
+              --model <id>             Agent model (e.g. claude-opus-4-7)
+              --task <id>              Opaque task identifier
+              --role <id>              Opaque role identifier
+              --surface <id|ref>       Target surface (default: $CMUX_SURFACE_ID / focused)
+              --workspace <id|ref>     Target workspace (default: $CMUX_WORKSPACE_ID)
+              --json                   Emit raw JSON-RPC result
+
+            Examples:
+              cmux set-agent --type claude-code --model claude-opus-4-7
+              cmux set-agent --type opencode --task task-42 --surface surface:1
+            """
+        case "set-metadata":
+            return """
+            Usage: cmux set-metadata [--surface <id|ref>] [--workspace <id|ref>]
+                                     (--json '{...}' | --key <K> --value <V> [--type string|number|bool|json])
+                                     [--mode merge|replace] [--source explicit|declare|osc|heuristic]
+                                     [--json]
+
+            Set one or more metadata keys on a surface via surface.set_metadata.
+            Defaults: mode=merge, source=explicit.
+
+            Flags:
+              --json '{...}'           Full JSON object of keys/values
+              --key <K> --value <V>    Single-key write; use --type to coerce
+              --type <string|number|bool|json>   Value coercion (default: string)
+              --mode <merge|replace>   Merge (default) or full replace (source=explicit only)
+              --source <src>           Write source (default: explicit)
+              --surface <id|ref>       Target surface (default: $CMUX_SURFACE_ID / focused)
+              --workspace <id|ref>     Target workspace (default: $CMUX_WORKSPACE_ID)
+
+            Examples:
+              cmux set-metadata --key title --value "My Surface"
+              cmux set-metadata --json '{"title":"x","role":"review"}'
+              cmux set-metadata --key progress --value 0.5 --type number
+            """
+        case "get-metadata":
+            return """
+            Usage: cmux get-metadata [--surface <id|ref>] [--workspace <id|ref>]
+                                     [--key <K> ...] [--sources] [--json]
+
+            Read metadata (and optional per-key sidecar) for a surface via
+            surface.get_metadata. Repeat --key to filter to specific keys.
+
+            Flags:
+              --key <K>                Restrict to one key (repeatable)
+              --sources                Include metadata_sources sidecar
+              --surface <id|ref>       Target surface (default: $CMUX_SURFACE_ID / focused)
+              --workspace <id|ref>     Target workspace (default: $CMUX_WORKSPACE_ID)
+              --json                   Emit raw JSON result
+
+            Examples:
+              cmux get-metadata
+              cmux get-metadata --key terminal_type --sources
+            """
+        case "clear-metadata":
+            return """
+            Usage: cmux clear-metadata [--surface <id|ref>] [--workspace <id|ref>]
+                                       [--key <K> ...] [--source explicit|declare|osc|heuristic]
+                                       [--json]
+
+            Clear keys from a surface's metadata via surface.clear_metadata. With no
+            --key flags, clears the entire blob (requires source=explicit).
+
+            Flags:
+              --key <K>                Key to clear (repeatable)
+              --source <src>           Precedence source (default: explicit)
+              --surface <id|ref>       Target surface (default: $CMUX_SURFACE_ID / focused)
+              --workspace <id|ref>     Target workspace (default: $CMUX_WORKSPACE_ID)
+              --json                   Emit raw JSON result
+
+            Examples:
+              cmux clear-metadata --key terminal_type
+              cmux clear-metadata --surface surface:2
             """
         case "set-app-focus":
             return """
@@ -7840,6 +8301,290 @@ struct CMUXCLI {
         return ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
     }
 
+    // MARK: - Module 1 / Module 2 metadata CLI
+
+    /// Collect all `--<name> <value>` and `--<name>=<value>` occurrences.
+    /// Used for repeated flags like `--key foo --key bar`.
+    private func collectRepeatedOption(_ args: [String], name: String) -> [String] {
+        var out: [String] = []
+        var i = 0
+        while i < args.count {
+            let arg = args[i]
+            if arg == name, i + 1 < args.count {
+                out.append(args[i + 1])
+                i += 2
+                continue
+            }
+            if arg.hasPrefix("\(name)=") {
+                out.append(String(arg.dropFirst(name.count + 1)))
+                i += 1
+                continue
+            }
+            i += 1
+        }
+        return out
+    }
+
+    /// Resolve `(workspace_id, surface_id)` for a metadata-style CLI call.
+    /// Honors --surface, --workspace, `CMUX_SURFACE_ID`, `CMUX_WORKSPACE_ID`, and falls back
+    /// to the focused surface when no explicit target is supplied.
+    private func resolveMetadataTarget(
+        commandArgs: [String],
+        client: SocketClient,
+        windowOverride: String?
+    ) throws -> (workspaceId: String?, surfaceId: String?) {
+        let workspaceRaw = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowOverride)
+        let workspaceId = try normalizeWorkspaceHandle(workspaceRaw, client: client)
+
+        let surfaceRaw = optionValue(commandArgs, name: "--surface")
+            ?? optionValue(commandArgs, name: "--panel")
+            ?? (workspaceRaw == nil && windowOverride == nil
+                ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
+                : nil)
+        let surfaceId = try normalizeSurfaceHandle(
+            surfaceRaw,
+            client: client,
+            workspaceHandle: workspaceId,
+            allowFocused: surfaceRaw == nil
+        )
+        return (workspaceId, surfaceId)
+    }
+
+    /// `cmux set-agent` — M1 sugar over `surface.set_metadata { source: declare, mode: merge }`.
+    private func runSetAgentCommand(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat,
+        windowOverride: String?
+    ) throws {
+        guard let type = optionValue(commandArgs, name: "--type") else {
+            throw CLIError(message: "set-agent requires --type <terminal_type>")
+        }
+        // Pre-validate per spec: kebab-case, ≤ 32 chars.
+        let kebab = try NSRegularExpression(pattern: "^[a-z][a-z0-9-]*$")
+        let range = NSRange(type.startIndex..<type.endIndex, in: type)
+        guard type.count <= 32,
+              kebab.firstMatch(in: type, options: [], range: range) != nil else {
+            throw CLIError(message: "invalid_value: --type must be kebab-case and ≤ 32 chars (got: \(type))")
+        }
+
+        var metadata: [String: Any] = ["terminal_type": type]
+        if let model = optionValue(commandArgs, name: "--model") { metadata["model"] = model }
+        if let task = optionValue(commandArgs, name: "--task") { metadata["task"] = task }
+        if let role = optionValue(commandArgs, name: "--role") { metadata["role"] = role }
+
+        let (workspaceId, surfaceId) = try resolveMetadataTarget(
+            commandArgs: commandArgs,
+            client: client,
+            windowOverride: windowOverride
+        )
+        var params: [String: Any] = [
+            "metadata": metadata,
+            "mode": "merge",
+            "source": "declare"
+        ]
+        if let workspaceId { params["workspace_id"] = workspaceId }
+        if let surfaceId { params["surface_id"] = surfaceId }
+
+        let payload = try client.sendV2(method: "surface.set_metadata", params: params)
+        printMetadataResult(payload, jsonOutput: jsonOutput, idFormat: idFormat)
+    }
+
+    /// `cmux set-metadata` — M2 sugar over `surface.set_metadata { source: explicit }`.
+    private func runSetMetadataCommand(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat,
+        windowOverride: String?
+    ) throws {
+        var metadata: [String: Any] = [:]
+        if let jsonStr = optionValue(commandArgs, name: "--json-input")
+            ?? optionValue(commandArgs, name: "--body") {
+            guard let data = jsonStr.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw CLIError(message: "invalid_json: --json must be a JSON object string")
+            }
+            metadata = obj
+        } else if let rawJSON = optionValue(commandArgs, name: "--json"),
+                  let data = rawJSON.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            // Accept --json '{...}' when it parses as an object. If it doesn't parse
+            // (e.g. user meant the output toggle), fall through to key/value handling.
+            metadata = obj
+        }
+
+        if metadata.isEmpty {
+            guard let key = optionValue(commandArgs, name: "--key"),
+                  let valueRaw = optionValue(commandArgs, name: "--value") else {
+                throw CLIError(message: "set-metadata requires --key/--value or --json '{...}'")
+            }
+            let typeHint = (optionValue(commandArgs, name: "--type") ?? "string").lowercased()
+            switch typeHint {
+            case "string": metadata[key] = valueRaw
+            case "number":
+                if let n = Int(valueRaw) {
+                    metadata[key] = n
+                } else if let d = Double(valueRaw) {
+                    metadata[key] = d
+                } else {
+                    throw CLIError(message: "invalid_value: --value is not a number (got: \(valueRaw))")
+                }
+            case "bool", "boolean":
+                let v = valueRaw.lowercased()
+                if v == "true" || v == "1" || v == "yes" { metadata[key] = true }
+                else if v == "false" || v == "0" || v == "no" { metadata[key] = false }
+                else { throw CLIError(message: "invalid_value: --value is not a bool (got: \(valueRaw))") }
+            case "json":
+                guard let data = valueRaw.data(using: .utf8),
+                      let parsed = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) else {
+                    throw CLIError(message: "invalid_json: --value is not JSON (got: \(valueRaw))")
+                }
+                metadata[key] = parsed
+            default:
+                throw CLIError(message: "invalid_value: --type must be string|number|bool|json")
+            }
+        }
+
+        let mode = (optionValue(commandArgs, name: "--mode") ?? "merge").lowercased()
+        let source = (optionValue(commandArgs, name: "--source") ?? "explicit").lowercased()
+        let (workspaceId, surfaceId) = try resolveMetadataTarget(
+            commandArgs: commandArgs,
+            client: client,
+            windowOverride: windowOverride
+        )
+        var params: [String: Any] = [
+            "metadata": metadata,
+            "mode": mode,
+            "source": source
+        ]
+        if let workspaceId { params["workspace_id"] = workspaceId }
+        if let surfaceId { params["surface_id"] = surfaceId }
+
+        let payload = try client.sendV2(method: "surface.set_metadata", params: params)
+        printMetadataResult(payload, jsonOutput: jsonOutput, idFormat: idFormat)
+    }
+
+    /// `cmux get-metadata` — M2 sugar over `surface.get_metadata`.
+    private func runGetMetadataCommand(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat,
+        windowOverride: String?
+    ) throws {
+        let includeSources = hasFlag(commandArgs, name: "--sources")
+            || hasFlag(commandArgs, name: "--include-sources")
+        let keys = collectRepeatedOption(commandArgs, name: "--key")
+        let (workspaceId, surfaceId) = try resolveMetadataTarget(
+            commandArgs: commandArgs,
+            client: client,
+            windowOverride: windowOverride
+        )
+        var params: [String: Any] = [:]
+        if !keys.isEmpty { params["keys"] = keys }
+        if includeSources { params["include_sources"] = true }
+        if let workspaceId { params["workspace_id"] = workspaceId }
+        if let surfaceId { params["surface_id"] = surfaceId }
+
+        let payload = try client.sendV2(method: "surface.get_metadata", params: params)
+        if jsonOutput {
+            print(jsonString(formatIDs(payload, mode: idFormat)))
+            return
+        }
+        let metadata = payload["metadata"] as? [String: Any] ?? [:]
+        let sources = payload["metadata_sources"] as? [String: [String: Any]] ?? [:]
+        if metadata.isEmpty {
+            print("(empty)")
+            return
+        }
+        let keyOrder = metadata.keys.sorted()
+        for k in keyOrder {
+            guard let v = metadata[k] else { continue }
+            let valueText = renderScalarOrJSON(v)
+            if includeSources, let sidecar = sources[k] {
+                let src = (sidecar["source"] as? String) ?? "?"
+                let ts = (sidecar["ts"] as? Double).map { String(format: "%.3f", $0) } ?? "?"
+                print("\(k) = \(valueText)  [\(src) @ \(ts)]")
+            } else {
+                print("\(k) = \(valueText)")
+            }
+        }
+    }
+
+    /// `cmux clear-metadata` — M2 sugar over `surface.clear_metadata`.
+    private func runClearMetadataCommand(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat,
+        windowOverride: String?
+    ) throws {
+        let keys = collectRepeatedOption(commandArgs, name: "--key")
+        let source = (optionValue(commandArgs, name: "--source") ?? "explicit").lowercased()
+        let (workspaceId, surfaceId) = try resolveMetadataTarget(
+            commandArgs: commandArgs,
+            client: client,
+            windowOverride: windowOverride
+        )
+        var params: [String: Any] = ["source": source]
+        if !keys.isEmpty { params["keys"] = keys }
+        if let workspaceId { params["workspace_id"] = workspaceId }
+        if let surfaceId { params["surface_id"] = surfaceId }
+
+        let payload = try client.sendV2(method: "surface.clear_metadata", params: params)
+        printMetadataResult(payload, jsonOutput: jsonOutput, idFormat: idFormat)
+    }
+
+    /// Print a `surface.set_metadata` / `surface.clear_metadata` result.
+    private func printMetadataResult(
+        _ payload: [String: Any],
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) {
+        if jsonOutput {
+            print(jsonString(formatIDs(payload, mode: idFormat)))
+            return
+        }
+        let applied = payload["applied"] as? [String: Any] ?? [:]
+        let reasons = payload["reasons"] as? [String: Any] ?? [:]
+        var parts = ["OK"]
+        if let handle = formatHandle(payload, kind: "surface", idFormat: idFormat) {
+            parts.append(handle)
+        }
+        print(parts.joined(separator: " "))
+        for key in applied.keys.sorted() {
+            let ok = (applied[key] as? Bool) == true
+            if ok {
+                print("  \(key): applied")
+            } else {
+                let reason = (reasons[key] as? String) ?? "not_applied"
+                print("  \(key): skipped (\(reason))")
+            }
+        }
+    }
+
+    /// Render an arbitrary JSON-ish metadata value for the human CLI output.
+    private func renderScalarOrJSON(_ value: Any) -> String {
+        if value is NSNull { return "null" }
+        if let s = value as? String { return s }
+        if let n = value as? NSNumber {
+            // NSNumber can wrap Bool — distinguish.
+            let cfType = CFNumberGetType(n)
+            if CFGetTypeID(n) == CFBooleanGetTypeID() || cfType == .charType {
+                return n.boolValue ? "true" : "false"
+            }
+            return n.stringValue
+        }
+        if JSONSerialization.isValidJSONObject(value),
+           let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]),
+           let str = String(data: data, encoding: .utf8) {
+            return str
+        }
+        return String(describing: value)
+    }
+
     private func forwardSidebarMetadataCommand(
         _ socketCommand: String,
         commandArgs: [String],
@@ -7912,10 +8657,19 @@ struct CMUXCLI {
         return parts.joined(separator: " ")
     }
 
+    enum TreeScope: String {
+        case workspace
+        case window
+        case all
+    }
+
     private struct TreeCommandOptions {
-        let includeAllWindows: Bool
+        let scope: TreeScope
         let workspaceHandle: String?
         let jsonOutput: Bool
+        /// Floor plan: nil = default per scope, true = force on, false = force off.
+        let layoutOverride: Bool?
+        let canvasColsOverride: Int?
     }
 
     private struct TreePath {
@@ -7936,8 +8690,7 @@ struct CMUXCLI {
         if jsonOutput || options.jsonOutput {
             print(jsonString(formatIDs(payload, mode: idFormat)))
         } else {
-            let windows = payload["windows"] as? [[String: Any]] ?? []
-            print(renderTreeText(windows: windows, idFormat: idFormat))
+            print(renderTreeText(payload: payload, options: options, idFormat: idFormat))
         }
     }
 
@@ -7947,36 +8700,123 @@ struct CMUXCLI {
             throw CLIError(message: "tree requires --workspace <id|ref|index>")
         }
 
+        let (canvasOpt, rem1) = parseOption(rem0, name: "--canvas-cols")
+        if rem1.contains("--canvas-cols") {
+            throw CLIError(message: "tree requires --canvas-cols <N>")
+        }
+
         var includeAll = false
+        var includeWindow = false
         var jsonOutput = false
+        var layoutForceOn = false
+        var layoutForceOff = false
         var remaining: [String] = []
-        for arg in rem0 {
-            if arg == "--all" {
+        for arg in rem1 {
+            switch arg {
+            case "--all":
                 includeAll = true
-                continue
-            }
-            if arg == "--json" {
+            case "--window":
+                includeWindow = true
+            case "--layout":
+                layoutForceOn = true
+            case "--no-layout":
+                layoutForceOff = true
+            case "--json":
                 jsonOutput = true
-                continue
+            default:
+                remaining.append(arg)
             }
-            remaining.append(arg)
         }
 
         if let unknown = remaining.first(where: { $0.hasPrefix("--") }) {
-            throw CLIError(message: "tree: unknown flag '\(unknown)'. Known flags: --all --workspace <id|ref|index> --json")
+            throw CLIError(message: "tree: unknown flag '\(unknown)'. Known flags: --all --window --workspace <id|ref|index> --layout --no-layout --canvas-cols <N> --json")
         }
         if let extra = remaining.first {
             throw CLIError(message: "tree: unexpected argument '\(extra)'")
         }
 
-        return TreeCommandOptions(includeAllWindows: includeAll, workspaceHandle: workspaceOpt, jsonOutput: jsonOutput)
+        // Conflict detection per spec: at most one of --all, --window, --workspace.
+        var scopeFlags: [String] = []
+        if includeAll { scopeFlags.append("--all") }
+        if includeWindow { scopeFlags.append("--window") }
+        if workspaceOpt != nil { scopeFlags.append("--workspace") }
+        if scopeFlags.count > 1 {
+            let payload: [String: Any] = ["flags": scopeFlags]
+            throw CLIError(message: makeStructuredErrorMessage(
+                code: "conflicting_flags",
+                message: "tree: conflicting scope flags \(scopeFlags.joined(separator: ", "))",
+                data: payload
+            ))
+        }
+
+        if layoutForceOn && layoutForceOff {
+            throw CLIError(message: "tree: --layout and --no-layout are mutually exclusive")
+        }
+
+        let scope: TreeScope
+        if includeAll {
+            scope = .all
+        } else if includeWindow {
+            scope = .window
+        } else {
+            // Default and --workspace both produce a single workspace in the response.
+            scope = .workspace
+        }
+
+        var canvasOverride: Int? = nil
+        if let raw = canvasOpt {
+            guard let n = Int(raw.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+                let payload: [String: Any] = ["value": raw]
+                throw CLIError(message: makeStructuredErrorMessage(
+                    code: "invalid_canvas_cols",
+                    message: "tree: --canvas-cols must be an integer",
+                    data: payload
+                ))
+            }
+            guard (40...200).contains(n) else {
+                let payload: [String: Any] = ["value": n]
+                throw CLIError(message: makeStructuredErrorMessage(
+                    code: "invalid_canvas_cols",
+                    message: "tree: --canvas-cols must be in [40, 200]",
+                    data: payload
+                ))
+            }
+            canvasOverride = n
+        }
+
+        let layoutOverride: Bool?
+        if layoutForceOn { layoutOverride = true }
+        else if layoutForceOff { layoutOverride = false }
+        else { layoutOverride = nil }
+
+        return TreeCommandOptions(
+            scope: scope,
+            workspaceHandle: workspaceOpt,
+            jsonOutput: jsonOutput,
+            layoutOverride: layoutOverride,
+            canvasColsOverride: canvasOverride
+        )
+    }
+
+    /// Encode an error code + structured data into the message string CLIError
+    /// exposes today. Tests look for the `code: ` prefix.
+    private func makeStructuredErrorMessage(code: String, message: String, data: [String: Any]) -> String {
+        if let bytes = try? JSONSerialization.data(withJSONObject: data, options: [.sortedKeys]),
+           let str = String(data: bytes, encoding: .utf8) {
+            return "\(code): \(message) (\(str))"
+        }
+        return "\(code): \(message)"
     }
 
     private func buildTreePayload(
         options: TreeCommandOptions,
         client: SocketClient
     ) throws -> [String: Any] {
-        var params: [String: Any] = ["all_windows": options.includeAllWindows]
+        var params: [String: Any] = [
+            "scope": options.scope.rawValue,
+            // Keep `all_windows` for older servers that haven't seen `scope` yet.
+            "all_windows": options.scope == .all
+        ]
         if let workspaceRaw = options.workspaceHandle {
             guard let workspaceHandle = try normalizeWorkspaceHandle(workspaceRaw, client: client) else {
                 throw CLIError(message: "Invalid workspace handle")
@@ -8052,7 +8892,7 @@ struct CMUXCLI {
         }
 
         let targetWindows: [[String: Any]]
-        if options.includeAllWindows {
+        if options.scope == .all {
             targetWindows = allWindows
         } else if let currentWindowHandle = activePath.windowHandle {
             let currentOnly = allWindows.filter { treeItemMatchesHandle($0, handle: currentWindowHandle) }
@@ -8346,38 +9186,381 @@ struct CMUXCLI {
         return (item["id"] as? String) == handle || (item["ref"] as? String) == handle
     }
 
-    private func renderTreeText(windows: [[String: Any]], idFormat: CLIIDFormat) -> String {
+    /// Render `cmux tree` text output.
+    ///
+    /// Output ordering (per M8 spec):
+    /// 1. Floor plan(s) — when enabled (default for single-workspace scope).
+    /// 2. Hierarchical tree — pane lines now carry `size=`, `px=`, `split=` badges.
+    private func renderTreeText(payload: [String: Any], options: TreeCommandOptions, idFormat: CLIIDFormat) -> String {
+        let windows = payload["windows"] as? [[String: Any]] ?? []
         guard !windows.isEmpty else { return "No windows" }
 
-        var lines: [String] = []
+        // Decide whether to render floor plan(s).
+        // Default: on for single-workspace scope, off for --window/--all.
+        // Override: --layout forces on, --no-layout forces off. Both ignored under --json (handled by caller).
+        let defaultPlanOn = (options.scope == .workspace)
+        let planEnabled: Bool
+        if let override = options.layoutOverride {
+            planEnabled = override
+        } else {
+            planEnabled = defaultPlanOn
+        }
+
+        var sections: [String] = []
+
+        if planEnabled {
+            // Render one floor plan per workspace in the response.
+            let canvasWidth = resolveFloorPlanCanvasWidth(override: options.canvasColsOverride)
+            for window in windows {
+                let workspaces = window["workspaces"] as? [[String: Any]] ?? []
+                for workspace in workspaces {
+                    if let plan = renderFloorPlan(workspace: workspace, canvasWidth: canvasWidth, idFormat: idFormat) {
+                        sections.append(plan)
+                    }
+                }
+            }
+        }
+
+        // Hierarchical tree.
+        var treeLines: [String] = []
         for window in windows {
-            lines.append(treeWindowLabel(window, idFormat: idFormat))
+            treeLines.append(treeWindowLabel(window, idFormat: idFormat))
 
             let workspaces = window["workspaces"] as? [[String: Any]] ?? []
             for (workspaceIndex, workspace) in workspaces.enumerated() {
                 let workspaceIsLast = workspaceIndex == workspaces.count - 1
                 let workspaceBranch = workspaceIsLast ? "└── " : "├── "
                 let workspaceIndent = workspaceIsLast ? "    " : "│   "
-                lines.append("\(workspaceBranch)\(treeWorkspaceLabel(workspace, idFormat: idFormat))")
+                treeLines.append("\(workspaceBranch)\(treeWorkspaceLabel(workspace, idFormat: idFormat))")
 
                 let panes = workspace["panes"] as? [[String: Any]] ?? []
                 for (paneIndex, pane) in panes.enumerated() {
                     let paneIsLast = paneIndex == panes.count - 1
                     let paneBranch = paneIsLast ? "└── " : "├── "
                     let paneIndent = paneIsLast ? "    " : "│   "
-                    lines.append("\(workspaceIndent)\(paneBranch)\(treePaneLabel(pane, idFormat: idFormat))")
+                    treeLines.append("\(workspaceIndent)\(paneBranch)\(treePaneLabel(pane, idFormat: idFormat))")
 
                     let surfaces = pane["surfaces"] as? [[String: Any]] ?? []
                     for (surfaceIndex, surface) in surfaces.enumerated() {
                         let surfaceIsLast = surfaceIndex == surfaces.count - 1
                         let surfaceBranch = surfaceIsLast ? "└── " : "├── "
-                        lines.append("\(workspaceIndent)\(paneIndent)\(surfaceBranch)\(treeSurfaceLabel(surface, idFormat: idFormat))")
+                        treeLines.append("\(workspaceIndent)\(paneIndent)\(surfaceBranch)\(treeSurfaceLabel(surface, idFormat: idFormat))")
                     }
                 }
             }
         }
+        sections.append(treeLines.joined(separator: "\n"))
 
-        return lines.joined(separator: "\n")
+        return sections.joined(separator: "\n")
+    }
+
+    // MARK: - M8 Floor plan
+
+    /// Resolve the canvas width based on `--canvas-cols` override and TTY size.
+    /// - Returns: the chosen width in columns (clamped). Caller should suppress
+    ///   the plan if the result is < 40.
+    private func resolveFloorPlanCanvasWidth(override: Int?) -> Int {
+        if let n = override {
+            return n
+        }
+        if isatty(fileno(stdout)) != 0 {
+            var ws = winsize()
+            if ioctl(fileno(stdout), UInt(TIOCGWINSZ), &ws) == 0 && ws.ws_col > 0 {
+                let cols = Int(ws.ws_col)
+                return max(40, min(cols, 160))
+            }
+        }
+        return 80
+    }
+
+    /// Render the floor-plan section for one workspace, or nil when there is
+    /// nothing to draw (no panes, no content area, or canvas too narrow).
+    private func renderFloorPlan(workspace: [String: Any], canvasWidth: Int, idFormat: CLIIDFormat) -> String? {
+        let title = (workspace["title"] as? String) ?? ""
+        let workspaceHandle = textHandle(workspace, idFormat: idFormat)
+
+        guard canvasWidth >= 40 else {
+            return [
+                "workspace \(workspaceHandle)\(title.isEmpty ? "" : " \"\(title)\"")",
+                "[layout suppressed: canvas <40 cols]"
+            ].joined(separator: "\n")
+        }
+
+        guard let contentArea = workspace["content_area"] as? [String: Any],
+              let pixels = contentArea["pixels"] as? [String: Any],
+              let widthRaw = pixels["width"],
+              let heightRaw = pixels["height"],
+              let contentWidth = doubleValue(widthRaw),
+              let contentHeight = doubleValue(heightRaw),
+              contentWidth > 0, contentHeight > 0 else {
+            return [
+                "workspace \(workspaceHandle)\(title.isEmpty ? "" : " \"\(title)\"")  content: not laid out yet",
+                "[workspace not laid out — focus it once to populate]"
+            ].joined(separator: "\n")
+        }
+
+        let panes = workspace["panes"] as? [[String: Any]] ?? []
+        guard !panes.isEmpty else { return nil }
+
+        // Canvas height: round(width * (h/w) * 0.5), floor 6, ceiling 60.
+        let rawRows = Double(canvasWidth) * (contentHeight / contentWidth) * 0.5
+        let canvasHeight = max(6, min(60, Int(rawRows.rounded())))
+
+        let header = "workspace \(workspaceHandle)\(title.isEmpty ? "" : " \"\(title)\"")  content: \(Int(contentWidth.rounded()))×\(Int(contentHeight.rounded())) px"
+
+        // Build per-pane box rectangles in canvas coordinates.
+        struct PaneBox {
+            let pane: [String: Any]
+            // Inclusive col0..col1, row0..row1 ranges in the canvas grid.
+            // Border characters live ON these rows/cols (the box body sits inside).
+            var col0: Int
+            var col1: Int
+            var row0: Int
+            var row1: Int
+        }
+
+        var boxes: [PaneBox] = []
+        for pane in panes {
+            guard let layout = pane["layout"] as? [String: Any],
+                  let percent = layout["percent"] as? [String: Any],
+                  let hArr = percent["H"] as? [Any],
+                  let vArr = percent["V"] as? [Any],
+                  hArr.count == 2, vArr.count == 2,
+                  let h0 = doubleValue(hArr[0]),
+                  let h1 = doubleValue(hArr[1]),
+                  let v0 = doubleValue(vArr[0]),
+                  let v1 = doubleValue(vArr[1]) else {
+                continue
+            }
+            // Skip degenerate panes per spec Open Question 5.
+            guard h1 > h0, v1 > v0 else { continue }
+
+            // Map percent → canvas grid. Use canvas width-1/height-1 to leave room for closing borders.
+            let col0 = Int((Double(canvasWidth - 1) * h0).rounded())
+            let col1 = Int((Double(canvasWidth - 1) * h1).rounded())
+            let row0 = Int((Double(canvasHeight - 1) * v0).rounded())
+            let row1 = Int((Double(canvasHeight - 1) * v1).rounded())
+            boxes.append(PaneBox(pane: pane, col0: col0, col1: max(col0 + 1, col1), row0: row0, row1: max(row0 + 1, row1)))
+        }
+
+        guard !boxes.isEmpty else { return header }
+
+        // Snap the rightmost/bottommost edges to canvas extents so borders close.
+        let maxCol = boxes.map { $0.col1 }.max() ?? (canvasWidth - 1)
+        let maxRow = boxes.map { $0.row1 }.max() ?? (canvasHeight - 1)
+        for i in boxes.indices {
+            if boxes[i].col1 == maxCol { boxes[i].col1 = canvasWidth - 1 }
+            if boxes[i].row1 == maxRow { boxes[i].row1 = canvasHeight - 1 }
+        }
+
+        // Initialize empty canvas.
+        var grid: [[Character]] = Array(
+            repeating: Array(repeating: " ", count: canvasWidth),
+            count: canvasHeight
+        )
+
+        // Draw each box's borders (overwriting safely; junctions get cleaned up below).
+        for box in boxes {
+            // Horizontal edges.
+            for c in box.col0...box.col1 {
+                if grid[box.row0][c] == " " { grid[box.row0][c] = "─" }
+                if grid[box.row1][c] == " " { grid[box.row1][c] = "─" }
+            }
+            // Vertical edges.
+            for r in box.row0...box.row1 {
+                if grid[r][box.col0] == " " { grid[r][box.col0] = "│" }
+                if grid[r][box.col1] == " " { grid[r][box.col1] = "│" }
+            }
+            // Corners (unconditionally — corners are the strongest signal).
+            grid[box.row0][box.col0] = "┌"
+            grid[box.row0][box.col1] = "┐"
+            grid[box.row1][box.col0] = "└"
+            grid[box.row1][box.col1] = "┘"
+        }
+
+        // Emit T-junctions where vertical/horizontal lines meet a non-corner edge.
+        // Junction promotion: pick the strongest character based on the directional
+        // signature implied by adjacent panes. Computed by checking neighbor cells.
+        for r in 0..<canvasHeight {
+            for c in 0..<canvasWidth {
+                let ch = grid[r][c]
+                if ch != "┌" && ch != "┐" && ch != "└" && ch != "┘" && ch != "─" && ch != "│" {
+                    continue
+                }
+                let up = r > 0 && isBoxChar(grid[r - 1][c])
+                let down = r < canvasHeight - 1 && isBoxChar(grid[r + 1][c])
+                let left = c > 0 && isBoxChar(grid[r][c - 1])
+                let right = c < canvasWidth - 1 && isBoxChar(grid[r][c + 1])
+                grid[r][c] = chooseBoxChar(up: up, down: down, left: left, right: right, fallback: ch)
+            }
+        }
+
+        // Render box bodies (text inside each pane).
+        for box in boxes {
+            renderBoxBody(
+                col0: box.col0, col1: box.col1,
+                row0: box.row0, row1: box.row1,
+                pane: box.pane,
+                grid: &grid,
+                idFormat: idFormat
+            )
+        }
+
+        let planLines = grid.map { String($0).trimmingTrailingWhitespace() }
+        return ([header] + planLines).joined(separator: "\n")
+    }
+
+    private func isBoxChar(_ ch: Character) -> Bool {
+        switch ch {
+        case "─", "│", "┌", "┐", "└", "┘", "├", "┤", "┬", "┴", "┼":
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func chooseBoxChar(up: Bool, down: Bool, left: Bool, right: Bool, fallback: Character) -> Character {
+        switch (up, down, left, right) {
+        case (true,  true,  true,  true ): return "┼"
+        case (true,  true,  true,  false): return "┤"
+        case (true,  true,  false, true ): return "├"
+        case (false, true,  true,  true ): return "┬"
+        case (true,  false, true,  true ): return "┴"
+        case (true,  true,  false, false): return "│"
+        case (false, false, true,  true ): return "─"
+        case (true,  false, false, true ): return "└"
+        case (true,  false, true,  false): return "┘"
+        case (false, true,  false, true ): return "┌"
+        case (false, true,  true,  false): return "┐"
+        default: return fallback
+        }
+    }
+
+    private func renderBoxBody(
+        col0: Int, col1: Int, row0: Int, row1: Int,
+        pane: [String: Any],
+        grid: inout [[Character]],
+        idFormat: CLIIDFormat
+    ) {
+        let bodyCols = max(0, col1 - col0 - 1)
+        let bodyRows = max(0, row1 - row0 - 1)
+        if bodyCols < 1 || bodyRows < 1 { return }
+
+        let paneRef = textHandle(pane, idFormat: idFormat)
+        // Surface info for selected tab title (line 5) and tab count (line 4).
+        let surfaces = pane["surfaces"] as? [[String: Any]] ?? []
+        let surfaceCount = (pane["surface_count"] as? Int) ?? surfaces.count
+        let selectedTitle: String = {
+            for s in surfaces {
+                if (s["selected"] as? Bool) == true || (s["focused"] as? Bool) == true {
+                    return (s["title"] as? String) ?? ""
+                }
+            }
+            return (surfaces.first?["title"] as? String) ?? ""
+        }()
+
+        // Layout info for lines 2/3.
+        let percentLine: String
+        let pixelLine: String
+        if let layout = pane["layout"] as? [String: Any],
+           let pct = layout["percent"] as? [String: Any],
+           let hArr = pct["H"] as? [Any],
+           let vArr = pct["V"] as? [Any],
+           hArr.count == 2, vArr.count == 2,
+           let h0 = doubleValue(hArr[0]),
+           let h1 = doubleValue(hArr[1]),
+           let v0 = doubleValue(vArr[0]),
+           let v1 = doubleValue(vArr[1]) {
+            let widthPct = Int(((h1 - h0) * 100).rounded())
+            let heightPct = Int(((v1 - v0) * 100).rounded())
+            percentLine = "\(widthPct)%W × \(heightPct)%H"
+            if let pix = layout["pixels"] as? [String: Any],
+               let pixH = pix["H"] as? [Any], pixH.count == 2,
+               let pixV = pix["V"] as? [Any], pixV.count == 2,
+               let ph0 = doubleValue(pixH[0]), let ph1 = doubleValue(pixH[1]),
+               let pv0 = doubleValue(pixV[0]), let pv1 = doubleValue(pixV[1]) {
+                pixelLine = "\(Int(ph1 - ph0))×\(Int(pv1 - pv0)) px"
+            } else {
+                pixelLine = "? px"
+            }
+        } else {
+            percentLine = "?% × ?%"
+            pixelLine = "? px"
+        }
+        let tabLine = surfaceCount == 1 ? "1 tab" : "\(surfaceCount) tabs"
+        let titleLine = "* \(selectedTitle)"
+
+        // Narrow-pane single-line collapse (per spec): inside-body width < 13 (so box width < 15).
+        if bodyCols < 13 {
+            // Collapsed: single-line "p:N W%W×H%H px×px Ntabs", truncated with "…".
+            // Use "p:N" prefix (drop "pane:" prefix).
+            let shortRef: String = {
+                if let r = pane["ref"] as? String, let colon = r.firstIndex(of: ":") {
+                    return "p:\(r[r.index(after: colon)...])"
+                }
+                return paneRef
+            }()
+            let summary = "\(shortRef) \(percentLine.replacingOccurrences(of: " × ", with: "×")) \(pixelLine) \(tabLine)"
+                .replacingOccurrences(of: "%W×", with: "%W×")
+            let row = row0 + 1
+            if row >= grid.count { return }
+            writeStringIntoRow(&grid, row: row, col: col0 + 1, maxCols: bodyCols, text: summary)
+            return
+        }
+
+        // Standard 5-line body. Drop lines from the bottom if not enough rows.
+        var lines: [String] = [paneRef, percentLine, pixelLine, tabLine, titleLine]
+        if bodyRows < 5 {
+            // Drop line 5 first, then 4, then 3.
+            let toKeep = max(2, bodyRows)
+            lines = Array(lines.prefix(toKeep))
+        }
+
+        // Truncate line 5 if title too wide. If even "*…" doesn't fit, drop it.
+        if lines.count >= 5 {
+            let maxTitle = bodyCols - 2  // "* " prefix
+            if maxTitle < 2 {
+                lines.removeLast()
+            } else if selectedTitle.count > maxTitle {
+                let cut = max(0, maxTitle - 1)
+                let prefix = String(selectedTitle.prefix(cut))
+                lines[4] = "* \(prefix)…"
+            }
+        }
+
+        for (i, line) in lines.enumerated() {
+            let row = row0 + 1 + i
+            if row >= row1 { break }
+            writeStringIntoRow(&grid, row: row, col: col0 + 1, maxCols: bodyCols, text: line)
+        }
+    }
+
+    private func writeStringIntoRow(_ grid: inout [[Character]], row: Int, col: Int, maxCols: Int, text: String) {
+        if row < 0 || row >= grid.count { return }
+        var write = text
+        if write.count > maxCols {
+            // Truncate with ellipsis if there's room, else hard-cut.
+            if maxCols >= 1 {
+                write = String(write.prefix(max(0, maxCols - 1))) + "…"
+            } else {
+                return
+            }
+        }
+        var c = col
+        for ch in write {
+            if c >= grid[row].count { break }
+            if c >= col + maxCols { break }
+            grid[row][c] = ch
+            c += 1
+        }
+    }
+
+    private func doubleValue(_ raw: Any) -> Double? {
+        if let d = raw as? Double { return d }
+        if let i = raw as? Int { return Double(i) }
+        if let n = raw as? NSNumber { return n.doubleValue }
+        if let s = raw as? String, let d = Double(s) { return d }
+        return nil
     }
 
     private func treeWindowLabel(_ window: [String: Any], idFormat: CLIIDFormat) -> String {
@@ -8408,6 +9591,47 @@ struct CMUXCLI {
 
     private func treePaneLabel(_ pane: [String: Any], idFormat: CLIIDFormat) -> String {
         var parts = ["pane \(textHandle(pane, idFormat: idFormat))"]
+
+        // M8 badges: size=W%×H% px=W×H split=...
+        // Render between the pane ref and the bracketed markers.
+        let layout = pane["layout"] as? [String: Any]
+        let percent = layout?["percent"] as? [String: Any]
+        let pixels = layout?["pixels"] as? [String: Any]
+
+        let sizeBadge: String
+        if let pct = percent,
+           let hArr = pct["H"] as? [Any], hArr.count == 2,
+           let vArr = pct["V"] as? [Any], vArr.count == 2,
+           let h0 = doubleValue(hArr[0]), let h1 = doubleValue(hArr[1]),
+           let v0 = doubleValue(vArr[0]), let v1 = doubleValue(vArr[1]) {
+            let widthPct = Int(((h1 - h0) * 100).rounded())
+            let heightPct = Int(((v1 - v0) * 100).rounded())
+            sizeBadge = "size=\(widthPct)%×\(heightPct)%"
+        } else {
+            sizeBadge = "size=?"
+        }
+        parts.append(sizeBadge)
+
+        let pxBadge: String
+        if let pix = pixels,
+           let hArr = pix["H"] as? [Any], hArr.count == 2,
+           let vArr = pix["V"] as? [Any], vArr.count == 2,
+           let h0 = doubleValue(hArr[0]), let h1 = doubleValue(hArr[1]),
+           let v0 = doubleValue(vArr[0]), let v1 = doubleValue(vArr[1]) {
+            pxBadge = "px=\(Int((h1 - h0).rounded()))×\(Int((v1 - v0).rounded()))"
+        } else {
+            pxBadge = "px=?"
+        }
+        parts.append(pxBadge)
+
+        let splitBadge: String
+        if let path = layout?["split_path"] as? [String] {
+            splitBadge = path.isEmpty ? "split=none" : "split=\(path.joined(separator: ","))"
+        } else {
+            splitBadge = "split=?"
+        }
+        parts.append(splitBadge)
+
         if (pane["focused"] as? Bool) == true {
             parts.append("[focused]")
         }
@@ -8444,6 +9668,36 @@ struct CMUXCLI {
 
     private func isUUID(_ value: String) -> Bool {
         return UUID(uuidString: value) != nil
+    }
+
+    private func printBrandHuman(_ response: Any) {
+        guard let dict = response as? [String: Any] else {
+            print(jsonString(response))
+            return
+        }
+        let channel = dict["channel"] as? String ?? "unknown"
+        let bundle = dict["bundle"] as? [String: Any] ?? [:]
+        let palette = dict["palette"] as? [String: String] ?? [:]
+        let accent = dict["accent_hex"] as? String ?? ""
+        let font = dict["font_family"] as? String ?? ""
+        let displayName = bundle["display_name"] as? String ?? ""
+        let identifier = bundle["identifier"] as? String ?? ""
+        let iconName = bundle["icon_name"] as? String ?? ""
+        let shortVersion = bundle["short_version"] as? String ?? ""
+        let build = bundle["build"] as? String ?? ""
+        print("\(displayName) \(shortVersion) (build \(build))")
+        print("channel:    \(channel)")
+        print("identifier: \(identifier)")
+        print("icon:       \(iconName)")
+        print("accent:     \(accent)")
+        print("font:       \(font)")
+        print("palette:")
+        let order = ["black", "surface", "rule", "dim", "white", "gold", "gold_faint"]
+        for key in order {
+            if let hex = palette[key] {
+                print("  \(key.padding(toLength: 11, withPad: " ", startingAt: 0)) \(hex)")
+            }
+        }
     }
 
     private func jsonString(_ object: Any) -> String {
@@ -11039,6 +12293,7 @@ struct CMUXCLI {
           ping
           version
           capabilities
+          brand [--json]
           identify [--workspace <id|ref|index>] [--surface <id|ref|index>] [--no-caller]
           list-windows
           current-window
@@ -11064,6 +12319,9 @@ struct CMUXCLI {
           reorder-surface --surface <id|ref|index> (--index <n> | --before <id|ref|index> | --after <id|ref|index>)
           tab-action --action <name> [--tab <id|ref|index>] [--surface <id|ref|index>] [--workspace <id|ref|index>] [--title <text>] [--url <url>]
           rename-tab [--workspace <id|ref>] [--tab <id|ref>] [--surface <id|ref>] <title>
+          set-title [--workspace <id|ref>] [--surface <id|ref>] [--source <src>] <title>
+          set-description [--workspace <id|ref>] [--surface <id|ref>] [--source <src>] [--auto-expand=false] <text>
+          get-titlebar-state [--workspace <id|ref>] [--surface <id|ref>] [--json]
           drag-surface-to-split --surface <id|ref> <left|right|up|down>
           refresh-surfaces
           surface-health [--workspace <id|ref>]
@@ -11084,6 +12342,10 @@ struct CMUXCLI {
           list-notifications
           clear-notifications
           claude-hook <session-start|stop|notification> [--workspace <id|ref>] [--surface <id|ref>]
+          set-agent --type <terminal_type> [--model <id>] [--task <id>] [--role <id>] [--surface <id|ref>] [--workspace <id|ref>]
+          set-metadata (--json '{...}' | --key <K> --value <V> [--type string|number|bool|json]) [--surface <id|ref>] [--workspace <id|ref>] [--mode merge|replace] [--source <src>]
+          get-metadata [--key <K> ...] [--sources] [--surface <id|ref>] [--workspace <id|ref>]
+          clear-metadata [--key <K> ...] [--source <src>] [--surface <id|ref>] [--workspace <id|ref>]
           set-app-focus <active|inactive|clear>
           simulate-app-active
 
@@ -11169,6 +12431,16 @@ struct CMUXCLI {
 #endif
 }
 
+private extension String {
+    func trimmingTrailingWhitespace() -> String {
+        var result = self
+        while let last = result.last, last == " " {
+            result.removeLast()
+        }
+        return result
+    }
+}
+
 @main
 struct CMUXTermMain {
     static func main() {
@@ -11177,9 +12449,2340 @@ struct CMUXTermMain {
         let cli = CMUXCLI(args: CommandLine.arguments)
         do {
             try cli.run()
+        } catch let installerError as IntegrationInstallerError {
+            // Installer errors carry their own exit code + structured payload.
+            installerError.emit()
+            exit(installerError.exitCode)
         } catch {
             FileHandle.standardError.write(Data("Error: \(error)\n".utf8))
             exit(1)
         }
     }
+}
+
+// MARK: - Module 4: Integration installers
+//
+// c11mux Module 4 — `cmux install <tui>` / `cmux uninstall <tui>`.
+// One-command wiring of cmux's notification shims and agent-declaration
+// calls into each first-class TUI's configuration.
+//
+// Spec: docs/c11mux-module-4-integration-installers-spec.md
+//
+// Everything here is filesystem-local; install does not touch the running
+// cmux socket. Menubar integration lives in Sources/AppDelegate.swift and
+// goes through the existing v2 surface.create + surface.send_text path.
+
+public enum IntegrationInstallerTUI: String, CaseIterable {
+    case claudeCode = "claude-code"
+    case codex = "codex"
+    case opencode = "opencode"
+    case kimi = "kimi"
+
+    public static func parse(_ raw: String) -> IntegrationInstallerTUI? {
+        let lowered = raw.lowercased()
+        if let direct = IntegrationInstallerTUI(rawValue: lowered) { return direct }
+        if lowered == "claude" { return .claudeCode }
+        return nil
+    }
+
+    public var displayName: String {
+        switch self {
+        case .claudeCode: return "Claude Code"
+        case .codex: return "Codex"
+        case .opencode: return "OpenCode"
+        case .kimi: return "Kimi"
+        }
+    }
+
+    public var usesNativeHooks: Bool { self == .claudeCode }
+
+    public func defaultConfigPath(home: String) -> String {
+        switch self {
+        case .claudeCode: return "\(home)/.claude/settings.json"
+        case .codex: return "\(home)/.codex/config.toml"
+        case .opencode: return "\(home)/.config/opencode/opencode.json"
+        case .kimi: return "\(home)/.kimi/config.toml"
+        }
+    }
+
+    public func binaryName() -> String {
+        // `claude-code` ships as `claude`, other three match rawValue.
+        switch self {
+        case .claudeCode: return "claude"
+        default: return rawValue
+        }
+    }
+
+    public func shimPath(home: String) -> String {
+        return "\(home)/.local/bin/cmux-shims/\(rawValue)"
+    }
+}
+
+public enum IntegrationInstallerState: String {
+    case notInstalled = "not_installed"
+    case installedCurrent = "installed_current"
+    case installedOutdated = "installed_outdated"
+    case schemaMismatch = "schema_mismatch"
+    case configMalformed = "config_malformed"
+    case markerHandEdit = "marker_hand_edit"
+}
+
+public struct IntegrationInstallerError: Error {
+    public let code: String
+    public let message: String
+    public let exitCode: Int32
+    public let path: String?
+    public let parserError: String?
+    public let jsonOutput: Bool
+
+    public init(
+        code: String,
+        message: String,
+        exitCode: Int32,
+        path: String? = nil,
+        parserError: String? = nil,
+        jsonOutput: Bool = false
+    ) {
+        self.code = code
+        self.message = message
+        self.exitCode = exitCode
+        self.path = path
+        self.parserError = parserError
+        self.jsonOutput = jsonOutput
+    }
+
+    public func emit() {
+        if jsonOutput {
+            var errorPayload: [String: Any] = [
+                "code": code,
+                "message": message
+            ]
+            if let path { errorPayload["path"] = path }
+            if let parserError { errorPayload["parser_error"] = parserError }
+            let payload: [String: Any] = [
+                "ok": false,
+                "error": errorPayload
+            ]
+            let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])) ?? Data()
+            if let line = String(data: data, encoding: .utf8) {
+                FileHandle.standardError.write(Data((line + "\n").utf8))
+            }
+        } else {
+            FileHandle.standardError.write(Data(("Error: \(message)\n").utf8))
+        }
+    }
+}
+
+enum InstallExitCode {
+    static let userAborted: Int32 = 1
+    static let unknownTui: Int32 = 2
+    static let configMissing: Int32 = 3
+    static let configPermissionDenied: Int32 = 4
+    static let configMalformed: Int32 = 5
+    static let schemaVersionMismatch: Int32 = 6
+    static let outdatedInstallRequiresForce: Int32 = 7
+    static let tuiBinaryNotFound: Int32 = 8
+    static let shimDirNotWritable: Int32 = 9
+    static let markerHandEditDetected: Int32 = 10
+}
+
+struct IntegrationInstallerConstants {
+    static let schemaVersion = 1
+    static let markerId = "c11mux-v1"
+    static let tomlFenceBegin = "# cmux-install-begin"
+    static let tomlFenceEnd = "# cmux-install-end"
+}
+
+/// Canonical hook entries cmux writes into `~/.claude/settings.json`.
+/// Identity is established by content-hash match against the `x-cmux.entries`
+/// table. See `docs/c11mux-module-4-integration-installers-spec.md`.
+private func claudeCanonicalEntries() -> [(event: String, entry: [String: Any])] {
+    return [
+        ("SessionStart", [
+            "matcher": "",
+            "hooks": [
+                ["type": "command", "command": "cmux claude-hook session-start", "timeout": 10],
+                ["type": "command", "command": "cmux set-agent --type claude-code --source declare", "timeout": 5]
+            ]
+        ]),
+        ("Stop", [
+            "matcher": "",
+            "hooks": [
+                ["type": "command", "command": "cmux claude-hook stop", "timeout": 10]
+            ]
+        ]),
+        ("SessionEnd", [
+            "matcher": "",
+            "hooks": [
+                ["type": "command", "command": "cmux claude-hook session-end", "timeout": 1]
+            ]
+        ]),
+        ("Notification", [
+            "matcher": "",
+            "hooks": [
+                ["type": "command", "command": "cmux claude-hook notification", "timeout": 10]
+            ]
+        ]),
+        ("UserPromptSubmit", [
+            "matcher": "",
+            "hooks": [
+                ["type": "command", "command": "cmux claude-hook prompt-submit", "timeout": 10]
+            ]
+        ]),
+        ("PreToolUse", [
+            "matcher": "",
+            "hooks": [
+                ["type": "command", "command": "cmux claude-hook pre-tool-use", "timeout": 5, "async": true]
+            ]
+        ])
+    ]
+}
+
+func integrationInstallerCanonicalJSON(_ object: Any) -> Data {
+    // Sorted keys, no whitespace. Safe for SHA256 content addressing.
+    return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data()
+}
+
+func integrationInstallerSHA256(_ data: Data) -> String {
+    let digest = SHA256.hash(data: data)
+    return digest.map { String(format: "%02x", $0) }.joined()
+}
+
+func integrationInstallerSHA256(of string: String) -> String {
+    return integrationInstallerSHA256(Data(string.utf8))
+}
+
+func integrationInstallerShimScript(for tui: IntegrationInstallerTUI) -> String {
+    let type = tui.rawValue
+    let binary = tui.binaryName()
+    return """
+    #!/usr/bin/env bash
+    # c11mux integration shim (do not edit — regenerate via `cmux install \(type)`)
+    set -u
+    CMUX_MARKER_ID=\"\(IntegrationInstallerConstants.markerId)\"
+    if [[ -n \"${CMUX_SURFACE_ID:-}\" ]]; then
+      cmux set-agent --type \(type) --source declare >/dev/null 2>&1 || true
+      cmux claude-hook session-start </dev/null >/dev/null 2>&1 || true
+    fi
+    SELF_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"
+    REAL=\"\"
+    OLD_IFS=$IFS
+    IFS=:
+    for d in $PATH; do
+      [[ \"$d\" == \"$SELF_DIR\" ]] && continue
+      if [[ -x \"$d/\(binary)\" ]]; then REAL=\"$d/\(binary)\"; break; fi
+    done
+    IFS=$OLD_IFS
+    if [[ -z \"$REAL\" ]]; then
+      echo \"cmux-shim: \(binary) not found in PATH\" >&2
+      exit 127
+    fi
+    \"$REAL\" \"$@\"
+    STATUS=$?
+    if [[ -n \"${CMUX_SURFACE_ID:-}\" ]]; then
+      cmux claude-hook session-end </dev/null >/dev/null 2>&1 || true
+    fi
+    exit $STATUS
+    """
+}
+
+struct IntegrationInstallerPlan {
+    let tui: IntegrationInstallerTUI
+    let configPath: String
+    let homePath: String
+    let preConfigText: String?          // nil if the file did not exist
+    let postConfigText: String?         // nil if no change to the config file
+    let shimPath: String?               // nil for native-hook TUIs
+    let preShimText: String?
+    let postShimText: String?
+    let priorState: IntegrationInstallerState
+    let newInstalledAt: String
+    let noop: Bool
+    let summary: [String]
+    let unifiedDiff: String
+    let tuiBinaryFound: Bool
+    let tuiBinaryPath: String?
+    let createdConfig: Bool             // true when config file didn't exist pre-install
+}
+
+struct IntegrationInstallerStatus {
+    let tui: IntegrationInstallerTUI
+    let configPath: String
+    let shimPath: String?
+    let state: IntegrationInstallerState
+    let schemaVersion: Int?
+    let markerId: String?
+    let installedAt: String?
+    let tuiBinaryFound: Bool
+    let tuiBinaryPath: String?
+    let expectedHashes: [String: String]   // event -> sha for claude-code; "shim" -> sha for shim TUIs
+    let actualHashes: [String: String]     // parallel
+    let parserError: String?
+    let note: String?
+}
+
+extension CMUXCLI {
+    fileprivate func runIntegrationInstallerCommand(
+        command: String,
+        commandArgs: [String],
+        jsonOutput: Bool
+    ) throws {
+        switch command {
+        case "install":
+            try runIntegrationInstallCommand(commandArgs: commandArgs, jsonOutput: jsonOutput)
+        case "uninstall":
+            try runIntegrationUninstallCommand(commandArgs: commandArgs, jsonOutput: jsonOutput)
+        default:
+            throw CLIError(message: "Unknown integration command: \(command)")
+        }
+    }
+
+    fileprivate func runIntegrationInstallCommand(commandArgs: [String], jsonOutput: Bool) throws {
+        // --list and --status are sub-commands implemented as flags.
+        if commandArgs.contains("--list") {
+            try runIntegrationInstallerList(commandArgs: commandArgs, jsonOutput: jsonOutput)
+            return
+        }
+        if commandArgs.contains("--status") {
+            try runIntegrationInstallerStatus(commandArgs: commandArgs, jsonOutput: jsonOutput)
+            return
+        }
+
+        // Parse flags and positional <tui>.
+        var dryRun = false
+        var noConfirm = false
+        var force = false
+        var configPathOverride: String? = nil
+        var homeOverride: String? = nil
+        var tuiArg: String? = nil
+
+        var index = 0
+        while index < commandArgs.count {
+            let arg = commandArgs[index]
+            switch arg {
+            case "--dry-run": dryRun = true
+            case "--no-confirm": noConfirm = true
+            case "--force": force = true
+            case "--json": break  // handled by top-level --json flag
+            case "--config-path":
+                guard index + 1 < commandArgs.count else {
+                    throw IntegrationInstallerError(
+                        code: "usage",
+                        message: "--config-path requires a path",
+                        exitCode: 2,
+                        jsonOutput: jsonOutput
+                    )
+                }
+                configPathOverride = commandArgs[index + 1]
+                index += 1
+            case "--home":
+                guard index + 1 < commandArgs.count else {
+                    throw IntegrationInstallerError(
+                        code: "usage",
+                        message: "--home requires a path",
+                        exitCode: 2,
+                        jsonOutput: jsonOutput
+                    )
+                }
+                homeOverride = commandArgs[index + 1]
+                index += 1
+            default:
+                if arg.hasPrefix("-") {
+                    throw IntegrationInstallerError(
+                        code: "usage",
+                        message: "Unknown flag: \(arg)",
+                        exitCode: 2,
+                        jsonOutput: jsonOutput
+                    )
+                }
+                if tuiArg == nil {
+                    tuiArg = arg
+                } else {
+                    throw IntegrationInstallerError(
+                        code: "usage",
+                        message: "Unexpected argument: \(arg)",
+                        exitCode: 2,
+                        jsonOutput: jsonOutput
+                    )
+                }
+            }
+            index += 1
+        }
+
+        guard let tuiRaw = tuiArg else {
+            throw IntegrationInstallerError(
+                code: "usage",
+                message: "Missing <tui> argument. Run `cmux install --list` to see supported TUIs.",
+                exitCode: 2,
+                jsonOutput: jsonOutput
+            )
+        }
+        guard let tui = IntegrationInstallerTUI.parse(tuiRaw) else {
+            throw IntegrationInstallerError(
+                code: "unknown_tui",
+                message: "Unknown TUI '\(tuiRaw)'. Supported: \(IntegrationInstallerTUI.allCases.map { $0.rawValue }.joined(separator: ", "))",
+                exitCode: InstallExitCode.unknownTui,
+                jsonOutput: jsonOutput
+            )
+        }
+
+        let home = resolveIntegrationInstallerHome(override: homeOverride)
+        let configPath = configPathOverride.map { resolveIntegrationInstallerPath($0, home: home) }
+            ?? tui.defaultConfigPath(home: home)
+
+        let plan: IntegrationInstallerPlan
+        do {
+            plan = try integrationInstallerPlan(
+                tui: tui,
+                configPath: configPath,
+                home: home,
+                force: force,
+                jsonOutput: jsonOutput
+            )
+        } catch let err as IntegrationInstallerError {
+            throw err
+        }
+
+        // Apply gates unrelated to the diff (schema mismatch, malformed, etc.)
+        if plan.priorState == .schemaMismatch && !force {
+            throw IntegrationInstallerError(
+                code: "schema_version_mismatch",
+                message: "Existing cmux install uses a different schema; re-run with --force to overwrite.",
+                exitCode: InstallExitCode.schemaVersionMismatch,
+                path: configPath,
+                jsonOutput: jsonOutput
+            )
+        }
+        if plan.priorState == .installedOutdated && noConfirm && !force {
+            throw IntegrationInstallerError(
+                code: "outdated_install_requires_force",
+                message: "Existing cmux install is outdated; pass --force to overwrite in non-interactive mode.",
+                exitCode: InstallExitCode.outdatedInstallRequiresForce,
+                path: configPath,
+                jsonOutput: jsonOutput
+            )
+        }
+
+        if dryRun {
+            emitInstallerResultOutput(
+                plan: plan,
+                action: "install",
+                applied: false,
+                jsonOutput: jsonOutput,
+                extraNote: plan.noop ? "would no-op" : "would apply"
+            )
+            return
+        }
+
+        if plan.noop {
+            emitInstallerResultOutput(
+                plan: plan,
+                action: "install",
+                applied: false,
+                jsonOutput: jsonOutput,
+                extraNote: "already installed, current"
+            )
+            return
+        }
+
+        if !noConfirm {
+            // Require TTY for interactive prompt.
+            let stdinTTY = isatty(STDIN_FILENO) == 1
+            let stdoutTTY = isatty(STDOUT_FILENO) == 1
+            if !stdinTTY || !stdoutTTY {
+                throw IntegrationInstallerError(
+                    code: "user_aborted",
+                    message: "Interactive confirmation requires a TTY; pass --no-confirm to apply without prompting.",
+                    exitCode: InstallExitCode.userAborted,
+                    jsonOutput: jsonOutput
+                )
+            }
+
+            if !jsonOutput {
+                print(plan.unifiedDiff)
+                print("")
+                if plan.createdConfig {
+                    print("Config not found at \(configPath). Install will create it.")
+                }
+                print("Apply these changes? [y/N] ", terminator: "")
+            }
+            let response = (readLine() ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if response != "y" && response != "yes" {
+                throw IntegrationInstallerError(
+                    code: "user_aborted",
+                    message: "Install aborted by user.",
+                    exitCode: InstallExitCode.userAborted,
+                    jsonOutput: jsonOutput
+                )
+            }
+        }
+
+        try applyIntegrationInstallerPlan(plan: plan, jsonOutput: jsonOutput)
+
+        emitInstallerResultOutput(
+            plan: plan,
+            action: "install",
+            applied: true,
+            jsonOutput: jsonOutput,
+            extraNote: nil
+        )
+    }
+
+    fileprivate func runIntegrationUninstallCommand(commandArgs: [String], jsonOutput: Bool) throws {
+        var dryRun = false
+        var noConfirm = false
+        var force = false
+        var configPathOverride: String? = nil
+        var homeOverride: String? = nil
+        var tuiArg: String? = nil
+
+        var index = 0
+        while index < commandArgs.count {
+            let arg = commandArgs[index]
+            switch arg {
+            case "--dry-run": dryRun = true
+            case "--no-confirm": noConfirm = true
+            case "--force": force = true
+            case "--json": break
+            case "--config-path":
+                guard index + 1 < commandArgs.count else {
+                    throw IntegrationInstallerError(
+                        code: "usage",
+                        message: "--config-path requires a path",
+                        exitCode: 2,
+                        jsonOutput: jsonOutput
+                    )
+                }
+                configPathOverride = commandArgs[index + 1]
+                index += 1
+            case "--home":
+                guard index + 1 < commandArgs.count else {
+                    throw IntegrationInstallerError(
+                        code: "usage",
+                        message: "--home requires a path",
+                        exitCode: 2,
+                        jsonOutput: jsonOutput
+                    )
+                }
+                homeOverride = commandArgs[index + 1]
+                index += 1
+            default:
+                if arg.hasPrefix("-") {
+                    throw IntegrationInstallerError(
+                        code: "usage",
+                        message: "Unknown flag: \(arg)",
+                        exitCode: 2,
+                        jsonOutput: jsonOutput
+                    )
+                }
+                if tuiArg == nil {
+                    tuiArg = arg
+                } else {
+                    throw IntegrationInstallerError(
+                        code: "usage",
+                        message: "Unexpected argument: \(arg)",
+                        exitCode: 2,
+                        jsonOutput: jsonOutput
+                    )
+                }
+            }
+            index += 1
+        }
+
+        guard let tuiRaw = tuiArg else {
+            throw IntegrationInstallerError(
+                code: "usage",
+                message: "Missing <tui> argument.",
+                exitCode: 2,
+                jsonOutput: jsonOutput
+            )
+        }
+        guard let tui = IntegrationInstallerTUI.parse(tuiRaw) else {
+            throw IntegrationInstallerError(
+                code: "unknown_tui",
+                message: "Unknown TUI '\(tuiRaw)'.",
+                exitCode: InstallExitCode.unknownTui,
+                jsonOutput: jsonOutput
+            )
+        }
+
+        let home = resolveIntegrationInstallerHome(override: homeOverride)
+        let configPath = configPathOverride.map { resolveIntegrationInstallerPath($0, home: home) }
+            ?? tui.defaultConfigPath(home: home)
+
+        let plan = try integrationUninstallerPlan(
+            tui: tui,
+            configPath: configPath,
+            home: home,
+            force: force,
+            jsonOutput: jsonOutput
+        )
+
+        if dryRun {
+            emitInstallerResultOutput(
+                plan: plan,
+                action: "uninstall",
+                applied: false,
+                jsonOutput: jsonOutput,
+                extraNote: plan.noop ? "nothing to uninstall" : "would remove cmux install"
+            )
+            return
+        }
+
+        if plan.noop {
+            emitInstallerResultOutput(
+                plan: plan,
+                action: "uninstall",
+                applied: false,
+                jsonOutput: jsonOutput,
+                extraNote: "nothing to uninstall"
+            )
+            return
+        }
+
+        if !noConfirm {
+            let stdinTTY = isatty(STDIN_FILENO) == 1
+            let stdoutTTY = isatty(STDOUT_FILENO) == 1
+            if !stdinTTY || !stdoutTTY {
+                throw IntegrationInstallerError(
+                    code: "user_aborted",
+                    message: "Interactive confirmation requires a TTY; pass --no-confirm to apply without prompting.",
+                    exitCode: InstallExitCode.userAborted,
+                    jsonOutput: jsonOutput
+                )
+            }
+            if !jsonOutput {
+                print(plan.unifiedDiff)
+                print("")
+                print("Remove cmux integration from \(tui.displayName)? [y/N] ", terminator: "")
+            }
+            let response = (readLine() ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if response != "y" && response != "yes" {
+                throw IntegrationInstallerError(
+                    code: "user_aborted",
+                    message: "Uninstall aborted by user.",
+                    exitCode: InstallExitCode.userAborted,
+                    jsonOutput: jsonOutput
+                )
+            }
+        }
+
+        try applyIntegrationInstallerPlan(plan: plan, jsonOutput: jsonOutput)
+
+        emitInstallerResultOutput(
+            plan: plan,
+            action: "uninstall",
+            applied: true,
+            jsonOutput: jsonOutput,
+            extraNote: nil
+        )
+    }
+
+    fileprivate func runIntegrationInstallerList(commandArgs: [String], jsonOutput: Bool) throws {
+        let home = resolveIntegrationInstallerHome(override: optionValue(commandArgs, name: "--home"))
+        var rows: [[String: Any]] = []
+        for tui in IntegrationInstallerTUI.allCases {
+            let configPath = tui.defaultConfigPath(home: home)
+            let status = integrationInstallerStatusSnapshot(tui: tui, configPath: configPath, home: home)
+            rows.append([
+                "tui": tui.rawValue,
+                "display_name": tui.displayName,
+                "installed": status.state == .installedCurrent || status.state == .installedOutdated,
+                "state": status.state.rawValue,
+                "schema_version": status.schemaVersion ?? NSNull(),
+                "config_path": configPath,
+                "shim_path": status.shimPath ?? NSNull(),
+                "tui_binary_found": status.tuiBinaryFound,
+                "tui_binary_path": status.tuiBinaryPath ?? NSNull()
+            ])
+        }
+        if jsonOutput {
+            let payload: [String: Any] = ["ok": true, "integrations": rows]
+            print(jsonString(payload))
+            return
+        }
+        // Plain table.
+        func pad(_ s: String, _ width: Int) -> String {
+            if s.count >= width { return s }
+            return s + String(repeating: " ", count: width - s.count)
+        }
+        print("TUI           INSTALLED     SCHEMA  TUI-BIN   CONFIG")
+        for row in rows {
+            let tuiName = (row["tui"] as? String) ?? ""
+            let state = (row["state"] as? String) ?? ""
+            let schema = row["schema_version"]
+            let schemaText = (schema as? Int).map(String.init) ?? "-"
+            let binFound = (row["tui_binary_found"] as? Bool) == true ? "yes" : "no"
+            let configPath = (row["config_path"] as? String) ?? ""
+            print("\(pad(tuiName, 13)) \(pad(state, 13)) \(pad(schemaText, 7)) \(pad(binFound, 9)) \(configPath)")
+        }
+    }
+
+    fileprivate func runIntegrationInstallerStatus(commandArgs: [String], jsonOutput: Bool) throws {
+        let home = resolveIntegrationInstallerHome(override: optionValue(commandArgs, name: "--home"))
+        guard let tuiRaw = optionValue(commandArgs, name: "--status") else {
+            throw IntegrationInstallerError(
+                code: "usage",
+                message: "--status requires a <tui> value",
+                exitCode: 2,
+                jsonOutput: jsonOutput
+            )
+        }
+        guard let tui = IntegrationInstallerTUI.parse(tuiRaw) else {
+            throw IntegrationInstallerError(
+                code: "unknown_tui",
+                message: "Unknown TUI '\(tuiRaw)'.",
+                exitCode: InstallExitCode.unknownTui,
+                jsonOutput: jsonOutput
+            )
+        }
+        let configPath = optionValue(commandArgs, name: "--config-path").map { resolveIntegrationInstallerPath($0, home: home) }
+            ?? tui.defaultConfigPath(home: home)
+        let status = integrationInstallerStatusSnapshot(tui: tui, configPath: configPath, home: home)
+
+        if jsonOutput {
+            var payload: [String: Any] = [
+                "ok": true,
+                "tui": tui.rawValue,
+                "display_name": tui.displayName,
+                "state": status.state.rawValue,
+                "config_path": status.configPath,
+                "shim_path": status.shimPath ?? NSNull(),
+                "schema_version": status.schemaVersion ?? NSNull(),
+                "marker_id": status.markerId ?? NSNull(),
+                "installed_at": status.installedAt ?? NSNull(),
+                "tui_binary_found": status.tuiBinaryFound,
+                "tui_binary_path": status.tuiBinaryPath ?? NSNull(),
+                "expected_hashes": status.expectedHashes,
+                "actual_hashes": status.actualHashes
+            ]
+            if let note = status.note { payload["note"] = note }
+            if let parserError = status.parserError { payload["parser_error"] = parserError }
+            print(jsonString(payload))
+            return
+        }
+
+        print("TUI:          \(tui.displayName) (\(tui.rawValue))")
+        print("State:        \(status.state.rawValue)")
+        print("Config path:  \(status.configPath)")
+        if let shimPath = status.shimPath {
+            print("Shim path:    \(shimPath)")
+        }
+        if let schema = status.schemaVersion {
+            print("Schema:       \(schema)")
+        }
+        if let installed = status.installedAt {
+            print("Installed at: \(installed)")
+        }
+        print("TUI binary:   \(status.tuiBinaryFound ? (status.tuiBinaryPath ?? "yes") : "not found")")
+        if let note = status.note {
+            print("Note:         \(note)")
+        }
+    }
+
+    fileprivate func emitInstallerResultOutput(
+        plan: IntegrationInstallerPlan,
+        action: String,
+        applied: Bool,
+        jsonOutput: Bool,
+        extraNote: String?
+    ) {
+        if jsonOutput {
+            var payload: [String: Any] = [
+                "ok": true,
+                "action": action,
+                "applied": applied,
+                "noop": plan.noop,
+                "tui": plan.tui.rawValue,
+                "display_name": plan.tui.displayName,
+                "config_path": plan.configPath,
+                "prior_state": plan.priorState.rawValue,
+                "created_config": plan.createdConfig,
+                "tui_binary_found": plan.tuiBinaryFound,
+                "tui_binary_path": plan.tuiBinaryPath ?? NSNull(),
+                "summary": plan.summary
+            ]
+            if let shimPath = plan.shimPath {
+                payload["shim_path"] = shimPath
+            }
+            if let note = extraNote {
+                payload["note"] = note
+            }
+            print(jsonString(payload))
+            return
+        }
+
+        if applied {
+            print("\(plan.tui.displayName): \(action) OK")
+        } else if let note = extraNote {
+            print("\(plan.tui.displayName): \(note)")
+        } else {
+            print("\(plan.tui.displayName): (no changes)")
+        }
+        for line in plan.summary {
+            print("  - \(line)")
+        }
+        if action == "install" && !plan.tuiBinaryFound {
+            print("  warning: \(plan.tui.binaryName()) binary not found in PATH (\(plan.tui.rawValue))")
+        }
+        if plan.shimPath != nil && action == "install" && applied {
+            let dir = IntegrationInstallerHelpers.parentDirectory(of: plan.shimPath!)
+            print("  note: ensure \(dir) is on your PATH to route \(plan.tui.binaryName()) through the cmux shim.")
+        }
+    }
+}
+
+// MARK: - Installer helpers
+
+enum IntegrationInstallerHelpers {
+    static func parentDirectory(of path: String) -> String {
+        return (path as NSString).deletingLastPathComponent
+    }
+
+    static func ensureDirectoryExists(_ path: String, mode: Int = 0o755) throws {
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: path, isDirectory: &isDir) {
+            if isDir.boolValue { return }
+            throw IntegrationInstallerError(
+                code: "config_permission_denied",
+                message: "Path exists and is not a directory: \(path)",
+                exitCode: InstallExitCode.configPermissionDenied,
+                path: path
+            )
+        }
+        do {
+            try FileManager.default.createDirectory(
+                atPath: path,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: NSNumber(value: mode)]
+            )
+        } catch {
+            throw IntegrationInstallerError(
+                code: "config_permission_denied",
+                message: "Could not create directory \(path): \(error.localizedDescription)",
+                exitCode: InstallExitCode.configPermissionDenied,
+                path: path
+            )
+        }
+    }
+
+    /// Atomic write: writes to a sibling tempfile then renames into place.
+    static func atomicWrite(_ text: String, to path: String, mode: Int = 0o644) throws {
+        let dir = parentDirectory(of: path)
+        try ensureDirectoryExists(dir)
+
+        let tempPath = "\(path).cmux-install.\(getpid()).tmp"
+        let data = Data(text.utf8)
+        let fm = FileManager.default
+        fm.createFile(atPath: tempPath, contents: data, attributes: [.posixPermissions: NSNumber(value: mode)])
+        if rename(tempPath, path) != 0 {
+            let savedErrno = errno
+            _ = unlink(tempPath)
+            if savedErrno == EACCES || savedErrno == EPERM {
+                throw IntegrationInstallerError(
+                    code: "config_permission_denied",
+                    message: "Cannot write to \(path) (EACCES)",
+                    exitCode: InstallExitCode.configPermissionDenied,
+                    path: path
+                )
+            }
+            throw IntegrationInstallerError(
+                code: "config_permission_denied",
+                message: "Atomic rename failed for \(path) (errno=\(savedErrno))",
+                exitCode: InstallExitCode.configPermissionDenied,
+                path: path
+            )
+        }
+    }
+
+    static func readUTF8IfExists(_ path: String) throws -> String? {
+        if !FileManager.default.fileExists(atPath: path) { return nil }
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: path))
+            guard let text = String(data: data, encoding: .utf8) else {
+                throw IntegrationInstallerError(
+                    code: "config_malformed",
+                    message: "File is not valid UTF-8: \(path)",
+                    exitCode: InstallExitCode.configMalformed,
+                    path: path
+                )
+            }
+            return text
+        } catch let err as IntegrationInstallerError {
+            throw err
+        } catch {
+            let e = error as NSError
+            if e.domain == NSCocoaErrorDomain && e.code == NSFileReadNoPermissionError {
+                throw IntegrationInstallerError(
+                    code: "config_permission_denied",
+                    message: "Cannot read \(path): permission denied",
+                    exitCode: InstallExitCode.configPermissionDenied,
+                    path: path
+                )
+            }
+            throw IntegrationInstallerError(
+                code: "config_permission_denied",
+                message: "Cannot read \(path): \(error.localizedDescription)",
+                exitCode: InstallExitCode.configPermissionDenied,
+                path: path
+            )
+        }
+    }
+
+    static func removeFileIfExists(_ path: String) throws {
+        if !FileManager.default.fileExists(atPath: path) { return }
+        do {
+            try FileManager.default.removeItem(atPath: path)
+        } catch {
+            throw IntegrationInstallerError(
+                code: "config_permission_denied",
+                message: "Cannot remove \(path): \(error.localizedDescription)",
+                exitCode: InstallExitCode.configPermissionDenied,
+                path: path
+            )
+        }
+    }
+
+    static func nowISO8601() -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.string(from: Date())
+    }
+
+    /// Finds `binary` in PATH, skipping the shim dir under `home`.
+    static func findBinary(named binary: String, home: String) -> String? {
+        let pathEnv = ProcessInfo.processInfo.environment["PATH"] ?? ""
+        let shimDir = "\(home)/.local/bin/cmux-shims"
+        for component in pathEnv.split(separator: ":") {
+            let dir = String(component)
+            if dir == shimDir { continue }
+            let candidate = "\(dir)/\(binary)"
+            if access(candidate, X_OK) == 0 {
+                return candidate
+            }
+        }
+        return nil
+    }
+
+    static func prettyJSON(_ obj: Any) -> String {
+        var options: JSONSerialization.WritingOptions = [.prettyPrinted]
+        options.insert(.withoutEscapingSlashes)
+        options.insert(.sortedKeys)
+        guard JSONSerialization.isValidJSONObject(obj),
+              let data = try? JSONSerialization.data(withJSONObject: obj, options: options),
+              let text = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return text
+    }
+
+    /// Pretty-prints a JSON object with 2-space indent, sorted keys, and a
+    /// trailing newline — matches the convention the claude-code installer
+    /// writes. `sortedKeys` keeps roundtrip diffs clean across runs.
+    static func claudeCodeJSONDump(_ obj: Any) -> String {
+        return prettyJSON(obj) + "\n"
+    }
+
+    /// Unified diff between two strings. Simple implementation: per-line,
+    /// prints the full before block as `-` and the full after block as `+`.
+    /// This is sufficient for the confirmation prompt; it is not a real
+    /// Myers diff.
+    static func simpleUnifiedDiff(before: String?, after: String?, label: String) -> String {
+        let beforeLines = (before ?? "").split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let afterLines = (after ?? "").split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var lines: [String] = []
+        lines.append("--- a/\(label)\(before == nil ? " (new file)" : "")")
+        lines.append("+++ b/\(label)\(after == nil ? " (removed)" : "")")
+        for line in beforeLines {
+            lines.append("-\(line)")
+        }
+        for line in afterLines {
+            lines.append("+\(line)")
+        }
+        return lines.joined(separator: "\n")
+    }
+}
+
+fileprivate func resolveIntegrationInstallerHome(override: String?) -> String {
+    if let override, !override.isEmpty {
+        return resolveIntegrationInstallerPath(override, home: NSHomeDirectory())
+    }
+    return NSHomeDirectory()
+}
+
+fileprivate func resolveIntegrationInstallerPath(_ path: String, home: String) -> String {
+    let expanded: String
+    if path.hasPrefix("~/") {
+        expanded = home + String(path.dropFirst(1))
+    } else if path == "~" {
+        expanded = home
+    } else {
+        expanded = path
+    }
+    if expanded.hasPrefix("/") { return expanded }
+    let cwd = FileManager.default.currentDirectoryPath
+    return (cwd as NSString).appendingPathComponent(expanded)
+}
+
+// MARK: - Planning (install)
+
+fileprivate func integrationInstallerPlan(
+    tui: IntegrationInstallerTUI,
+    configPath: String,
+    home: String,
+    force: Bool,
+    jsonOutput: Bool
+) throws -> IntegrationInstallerPlan {
+    switch tui {
+    case .claudeCode:
+        return try claudeCodeInstallerPlan(configPath: configPath, home: home, force: force, jsonOutput: jsonOutput)
+    case .codex, .kimi:
+        return try tomlShimInstallerPlan(tui: tui, configPath: configPath, home: home, force: force, jsonOutput: jsonOutput)
+    case .opencode:
+        return try opencodeShimInstallerPlan(configPath: configPath, home: home, force: force, jsonOutput: jsonOutput)
+    }
+}
+
+fileprivate func integrationUninstallerPlan(
+    tui: IntegrationInstallerTUI,
+    configPath: String,
+    home: String,
+    force: Bool,
+    jsonOutput: Bool
+) throws -> IntegrationInstallerPlan {
+    switch tui {
+    case .claudeCode:
+        return try claudeCodeUninstallerPlan(configPath: configPath, home: home, force: force, jsonOutput: jsonOutput)
+    case .codex, .kimi:
+        return try tomlShimUninstallerPlan(tui: tui, configPath: configPath, home: home, force: force, jsonOutput: jsonOutput)
+    case .opencode:
+        return try opencodeShimUninstallerPlan(configPath: configPath, home: home, force: force, jsonOutput: jsonOutput)
+    }
+}
+
+fileprivate func applyIntegrationInstallerPlan(
+    plan: IntegrationInstallerPlan,
+    jsonOutput: Bool
+) throws {
+    // Config file write / delete.
+    if let postText = plan.postConfigText {
+        try IntegrationInstallerHelpers.atomicWrite(postText, to: plan.configPath)
+    } else {
+        // nil means delete (empty round-trip on a file we created).
+        try IntegrationInstallerHelpers.removeFileIfExists(plan.configPath)
+    }
+    // Shim script write / delete.
+    if let shimPath = plan.shimPath {
+        if let postShim = plan.postShimText {
+            do {
+                try IntegrationInstallerHelpers.atomicWrite(postShim, to: shimPath, mode: 0o755)
+            } catch let err as IntegrationInstallerError {
+                if err.code == "config_permission_denied" {
+                    throw IntegrationInstallerError(
+                        code: "shim_dir_not_writable",
+                        message: "Could not write shim at \(shimPath): \(err.message)",
+                        exitCode: InstallExitCode.shimDirNotWritable,
+                        path: shimPath,
+                        jsonOutput: jsonOutput
+                    )
+                }
+                throw err
+            }
+        } else {
+            try IntegrationInstallerHelpers.removeFileIfExists(shimPath)
+        }
+    }
+}
+
+// MARK: - Status snapshots
+
+fileprivate func integrationInstallerStatusSnapshot(
+    tui: IntegrationInstallerTUI,
+    configPath: String,
+    home: String
+) -> IntegrationInstallerStatus {
+    let tuiBinaryPath = IntegrationInstallerHelpers.findBinary(named: tui.binaryName(), home: home)
+    let tuiBinaryFound = tuiBinaryPath != nil
+    switch tui {
+    case .claudeCode:
+        return claudeCodeStatusSnapshot(configPath: configPath, tuiBinaryFound: tuiBinaryFound, tuiBinaryPath: tuiBinaryPath)
+    case .codex, .kimi:
+        return tomlShimStatusSnapshot(tui: tui, configPath: configPath, home: home, tuiBinaryFound: tuiBinaryFound, tuiBinaryPath: tuiBinaryPath)
+    case .opencode:
+        return opencodeShimStatusSnapshot(configPath: configPath, home: home, tuiBinaryFound: tuiBinaryFound, tuiBinaryPath: tuiBinaryPath)
+    }
+}
+
+// MARK: - Claude Code native-hook installer
+
+fileprivate func claudeCodeBuildBlock(installedAt: String) -> (root: [String: Any], entryHashes: [String: String]) {
+    let canonicals = claudeCanonicalEntries()
+    var hashes: [String: String] = [:]
+    var entriesBySha: [[String: Any]] = []
+    for (event, entry) in canonicals {
+        let hash = integrationInstallerSHA256(integrationInstallerCanonicalJSON(entry))
+        hashes[event] = hash
+        entriesBySha.append(["event": event, "sha256": hash])
+    }
+    let xCmux: [String: Any] = [
+        "schema": IntegrationInstallerConstants.schemaVersion,
+        "id": IntegrationInstallerConstants.markerId,
+        "installed_at": installedAt,
+        "entries": entriesBySha
+    ]
+    var hooks: [String: Any] = [:]
+    for (event, entry) in canonicals {
+        hooks[event] = [entry]
+    }
+    let root: [String: Any] = [
+        "hooks": hooks,
+        "x-cmux": xCmux
+    ]
+    return (root, hashes)
+}
+
+fileprivate func claudeCodeMergeInto(existing: [String: Any], with fresh: [String: Any], freshHashes: [String: String], installedAt: String) -> (root: [String: Any], priorHashes: [String: String]) {
+    var result = existing
+
+    // Track prior per-event hashes from existing x-cmux.entries, if any.
+    var priorHashes: [String: String] = [:]
+    if let xCmux = existing["x-cmux"] as? [String: Any],
+       let entries = xCmux["entries"] as? [[String: Any]] {
+        for e in entries {
+            if let event = e["event"] as? String, let sha = e["sha256"] as? String {
+                priorHashes[event] = sha
+            }
+        }
+    }
+
+    var hooks = (existing["hooks"] as? [String: Any]) ?? [:]
+    let canonicals = claudeCanonicalEntries()
+    for (event, entry) in canonicals {
+        let freshEntryHash = freshHashes[event] ?? ""
+        var arr = (hooks[event] as? [Any]) ?? []
+        // Try to find an entry with a hash matching any prior-stored hash for this event.
+        var replacedIndex: Int? = nil
+        if let prior = priorHashes[event] {
+            for (idx, item) in arr.enumerated() {
+                if let dict = item as? [String: Any] {
+                    let itemHash = integrationInstallerSHA256(integrationInstallerCanonicalJSON(dict))
+                    if itemHash == prior {
+                        replacedIndex = idx
+                        break
+                    }
+                }
+            }
+        }
+        if let idx = replacedIndex {
+            arr[idx] = entry
+        } else {
+            // If an entry with the exact fresh hash already exists, don't duplicate.
+            var alreadyPresent = false
+            for item in arr {
+                if let dict = item as? [String: Any] {
+                    let itemHash = integrationInstallerSHA256(integrationInstallerCanonicalJSON(dict))
+                    if itemHash == freshEntryHash {
+                        alreadyPresent = true
+                        break
+                    }
+                }
+            }
+            if !alreadyPresent {
+                arr.append(entry)
+            }
+        }
+        hooks[event] = arr
+    }
+
+    result["hooks"] = hooks
+
+    // Build x-cmux with current fresh hashes.
+    var entriesOut: [[String: Any]] = []
+    for (event, _) in canonicals {
+        entriesOut.append(["event": event, "sha256": freshHashes[event] ?? ""])
+    }
+    result["x-cmux"] = [
+        "schema": IntegrationInstallerConstants.schemaVersion,
+        "id": IntegrationInstallerConstants.markerId,
+        "installed_at": installedAt,
+        "entries": entriesOut
+    ] as [String: Any]
+
+    return (result, priorHashes)
+}
+
+fileprivate func claudeCodeInstallerPlan(
+    configPath: String,
+    home: String,
+    force: Bool,
+    jsonOutput: Bool
+) throws -> IntegrationInstallerPlan {
+    let preText = try IntegrationInstallerHelpers.readUTF8IfExists(configPath)
+    let createdConfig = preText == nil
+
+    // Parse existing config if present. Empty file is treated as {} for merge purposes.
+    var existing: [String: Any] = [:]
+    if let text = preText, !text.isEmpty {
+        guard let data = text.data(using: .utf8) else {
+            throw IntegrationInstallerError(
+                code: "config_malformed",
+                message: "Config is not valid UTF-8",
+                exitCode: InstallExitCode.configMalformed,
+                path: configPath,
+                jsonOutput: jsonOutput
+            )
+        }
+        do {
+            let obj = try JSONSerialization.jsonObject(with: data, options: [])
+            guard let dict = obj as? [String: Any] else {
+                throw IntegrationInstallerError(
+                    code: "config_malformed",
+                    message: "Config is not a JSON object",
+                    exitCode: InstallExitCode.configMalformed,
+                    path: configPath,
+                    jsonOutput: jsonOutput
+                )
+            }
+            existing = dict
+        } catch let err as IntegrationInstallerError {
+            throw err
+        } catch {
+            throw IntegrationInstallerError(
+                code: "config_malformed",
+                message: "Config is not valid JSON: \(error.localizedDescription)",
+                exitCode: InstallExitCode.configMalformed,
+                path: configPath,
+                parserError: error.localizedDescription,
+                jsonOutput: jsonOutput
+            )
+        }
+    }
+
+    // Determine prior state.
+    let (priorState, _, priorSchema) = claudeCodeExistingState(existing: existing)
+    if priorState == .schemaMismatch && !force {
+        // Short-circuit: return a plan but signal no-op with the schema_mismatch state.
+        let summary = ["cmux install uses schema \(priorSchema ?? 0); expected \(IntegrationInstallerConstants.schemaVersion). Re-run with --force to overwrite."]
+        return IntegrationInstallerPlan(
+            tui: .claudeCode,
+            configPath: configPath,
+            homePath: home,
+            preConfigText: preText,
+            postConfigText: nil,
+            shimPath: nil,
+            preShimText: nil,
+            postShimText: nil,
+            priorState: .schemaMismatch,
+            newInstalledAt: IntegrationInstallerHelpers.nowISO8601(),
+            noop: true,
+            summary: summary,
+            unifiedDiff: "",
+            tuiBinaryFound: IntegrationInstallerHelpers.findBinary(named: "claude", home: home) != nil,
+            tuiBinaryPath: IntegrationInstallerHelpers.findBinary(named: "claude", home: home),
+            createdConfig: false
+        )
+    }
+
+    // Build fresh hashes.
+    let installedAt = IntegrationInstallerHelpers.nowISO8601()
+    let (_, freshHashes) = claudeCodeBuildBlock(installedAt: installedAt)
+    let (merged, _) = claudeCodeMergeInto(existing: existing, with: [:], freshHashes: freshHashes, installedAt: installedAt)
+
+    let newText = IntegrationInstallerHelpers.claudeCodeJSONDump(merged)
+
+    // Detect noop: if priorState is installedCurrent (all hashes match), AND
+    // the serialized post matches pre-byte-identical (modulo re-serialization),
+    // we treat as noop. Because sortedKeys gives stable output, re-serializing
+    // the same structure twice yields identical bytes.
+    let noop: Bool
+    if priorState == .installedCurrent {
+        // Re-serialize existing with sorted keys for comparison.
+        let canonicalPre = IntegrationInstallerHelpers.claudeCodeJSONDump(existing)
+        noop = canonicalPre == newText
+    } else {
+        noop = false
+    }
+
+    let diff: String
+    if noop {
+        diff = "(no changes)"
+    } else {
+        diff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: preText, after: newText, label: configPath)
+    }
+
+    var summary: [String] = []
+    switch priorState {
+    case .notInstalled:
+        summary.append(createdConfig ? "create \(configPath)" : "add cmux hooks to \(configPath)")
+    case .installedCurrent:
+        summary.append("cmux install is current (no changes)")
+    case .installedOutdated:
+        summary.append("update cmux hooks to schema \(IntegrationInstallerConstants.schemaVersion)")
+    case .schemaMismatch:
+        summary.append("schema mismatch: rewriting at schema \(IntegrationInstallerConstants.schemaVersion)")
+    case .configMalformed, .markerHandEdit:
+        summary.append("rewriting cmux hooks (prior state: \(priorState.rawValue))")
+    }
+
+    let binaryPath = IntegrationInstallerHelpers.findBinary(named: "claude", home: home)
+
+    return IntegrationInstallerPlan(
+        tui: .claudeCode,
+        configPath: configPath,
+        homePath: home,
+        preConfigText: preText,
+        postConfigText: noop ? preText : newText,
+        shimPath: nil,
+        preShimText: nil,
+        postShimText: nil,
+        priorState: priorState,
+        newInstalledAt: installedAt,
+        noop: noop,
+        summary: summary,
+        unifiedDiff: diff,
+        tuiBinaryFound: binaryPath != nil,
+        tuiBinaryPath: binaryPath,
+        createdConfig: createdConfig
+    )
+}
+
+fileprivate func claudeCodeExistingState(existing: [String: Any]) -> (state: IntegrationInstallerState, markerId: String?, schema: Int?) {
+    guard let xCmux = existing["x-cmux"] as? [String: Any] else {
+        return (.notInstalled, nil, nil)
+    }
+    let schema = xCmux["schema"] as? Int
+    let markerId = xCmux["id"] as? String
+    if let schema, schema != IntegrationInstallerConstants.schemaVersion {
+        return (.schemaMismatch, markerId, schema)
+    }
+    // Verify each canonical event hash matches and that a live entry with that hash exists.
+    var entriesByEvent: [String: String] = [:]
+    if let entries = xCmux["entries"] as? [[String: Any]] {
+        for e in entries {
+            if let event = e["event"] as? String, let sha = e["sha256"] as? String {
+                entriesByEvent[event] = sha
+            }
+        }
+    }
+    let hooks = (existing["hooks"] as? [String: Any]) ?? [:]
+    var anyOutdated = false
+    var anyMissing = false
+    for (event, freshEntry) in claudeCanonicalEntries() {
+        let freshHash = integrationInstallerSHA256(integrationInstallerCanonicalJSON(freshEntry))
+        let storedHash = entriesByEvent[event]
+        let entries = (hooks[event] as? [Any]) ?? []
+        var liveHasStored = false
+        for item in entries {
+            if let dict = item as? [String: Any] {
+                let h = integrationInstallerSHA256(integrationInstallerCanonicalJSON(dict))
+                if storedHash != nil && h == storedHash {
+                    liveHasStored = true
+                    break
+                }
+            }
+        }
+        if storedHash == nil {
+            anyMissing = true
+        } else if storedHash != freshHash {
+            anyOutdated = true
+        } else if !liveHasStored {
+            anyMissing = true
+        }
+    }
+    if anyMissing { return (.installedOutdated, markerId, schema) }
+    if anyOutdated { return (.installedOutdated, markerId, schema) }
+    return (.installedCurrent, markerId, schema)
+}
+
+fileprivate func claudeCodeUninstallerPlan(
+    configPath: String,
+    home: String,
+    force: Bool,
+    jsonOutput: Bool
+) throws -> IntegrationInstallerPlan {
+    let preText = try IntegrationInstallerHelpers.readUTF8IfExists(configPath)
+    guard let preText else {
+        // Nothing to uninstall.
+        return IntegrationInstallerPlan(
+            tui: .claudeCode,
+            configPath: configPath,
+            homePath: home,
+            preConfigText: nil,
+            postConfigText: nil,
+            shimPath: nil,
+            preShimText: nil,
+            postShimText: nil,
+            priorState: .notInstalled,
+            newInstalledAt: "",
+            noop: true,
+            summary: ["no config at \(configPath)"],
+            unifiedDiff: "",
+            tuiBinaryFound: false,
+            tuiBinaryPath: nil,
+            createdConfig: false
+        )
+    }
+
+    guard !preText.isEmpty else {
+        return IntegrationInstallerPlan(
+            tui: .claudeCode,
+            configPath: configPath,
+            homePath: home,
+            preConfigText: preText,
+            postConfigText: preText,
+            shimPath: nil,
+            preShimText: nil,
+            postShimText: nil,
+            priorState: .notInstalled,
+            newInstalledAt: "",
+            noop: true,
+            summary: ["config is empty"],
+            unifiedDiff: "",
+            tuiBinaryFound: false,
+            tuiBinaryPath: nil,
+            createdConfig: false
+        )
+    }
+
+    guard let data = preText.data(using: .utf8),
+          let existing = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
+        throw IntegrationInstallerError(
+            code: "config_malformed",
+            message: "Config at \(configPath) is not valid JSON",
+            exitCode: InstallExitCode.configMalformed,
+            path: configPath,
+            jsonOutput: jsonOutput
+        )
+    }
+
+    guard let xCmux = existing["x-cmux"] as? [String: Any] else {
+        return IntegrationInstallerPlan(
+            tui: .claudeCode,
+            configPath: configPath,
+            homePath: home,
+            preConfigText: preText,
+            postConfigText: preText,
+            shimPath: nil,
+            preShimText: nil,
+            postShimText: nil,
+            priorState: .notInstalled,
+            newInstalledAt: "",
+            noop: true,
+            summary: ["no cmux install detected"],
+            unifiedDiff: "",
+            tuiBinaryFound: false,
+            tuiBinaryPath: nil,
+            createdConfig: false
+        )
+    }
+
+    // Detect hand-edit: any stored entry whose hash no longer matches a live
+    // entry. If so, error unless --force.
+    var storedHashes: [String: String] = [:]
+    if let entries = xCmux["entries"] as? [[String: Any]] {
+        for e in entries {
+            if let event = e["event"] as? String, let sha = e["sha256"] as? String {
+                storedHashes[event] = sha
+            }
+        }
+    }
+    let storedSchema = xCmux["schema"] as? Int
+    if let storedSchema, storedSchema != IntegrationInstallerConstants.schemaVersion, !force {
+        throw IntegrationInstallerError(
+            code: "marker_hand_edit_detected",
+            message: "x-cmux.schema differs from current (\(storedSchema) vs \(IntegrationInstallerConstants.schemaVersion)); re-run uninstall with --force to proceed.",
+            exitCode: InstallExitCode.markerHandEditDetected,
+            path: configPath,
+            jsonOutput: jsonOutput
+        )
+    }
+
+    // Build post: remove matching cmux entries from hooks; remove x-cmux key.
+    var hooks = (existing["hooks"] as? [String: Any]) ?? [:]
+    var anyLiveMissing = false
+    for (event, storedHash) in storedHashes {
+        let arr = (hooks[event] as? [Any]) ?? []
+        var filtered: [Any] = []
+        var removed = false
+        for item in arr {
+            if let dict = item as? [String: Any] {
+                let h = integrationInstallerSHA256(integrationInstallerCanonicalJSON(dict))
+                if h == storedHash {
+                    removed = true
+                    continue
+                }
+            }
+            filtered.append(item)
+        }
+        if !removed { anyLiveMissing = true }
+        if filtered.isEmpty {
+            hooks.removeValue(forKey: event)
+        } else {
+            hooks[event] = filtered
+        }
+    }
+    if anyLiveMissing && !force {
+        throw IntegrationInstallerError(
+            code: "marker_hand_edit_detected",
+            message: "cmux-owned entries were hand-edited; re-run uninstall with --force to proceed. Unmatched entries left in place.",
+            exitCode: InstallExitCode.markerHandEditDetected,
+            path: configPath,
+            jsonOutput: jsonOutput
+        )
+    }
+
+    var result = existing
+    if hooks.isEmpty {
+        result.removeValue(forKey: "hooks")
+    } else {
+        result["hooks"] = hooks
+    }
+    result.removeValue(forKey: "x-cmux")
+
+    let postText: String?
+    if result.isEmpty {
+        // Delete the file entirely.
+        postText = nil
+    } else {
+        postText = IntegrationInstallerHelpers.claudeCodeJSONDump(result)
+    }
+    let diff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: preText, after: postText, label: configPath)
+
+    return IntegrationInstallerPlan(
+        tui: .claudeCode,
+        configPath: configPath,
+        homePath: home,
+        preConfigText: preText,
+        postConfigText: postText,
+        shimPath: nil,
+        preShimText: nil,
+        postShimText: nil,
+        priorState: .installedCurrent,
+        newInstalledAt: "",
+        noop: false,
+        summary: postText == nil
+            ? ["remove cmux install and delete empty config at \(configPath)"]
+            : ["remove cmux install from \(configPath)"],
+        unifiedDiff: diff,
+        tuiBinaryFound: false,
+        tuiBinaryPath: nil,
+        createdConfig: false
+    )
+}
+
+fileprivate func claudeCodeStatusSnapshot(
+    configPath: String,
+    tuiBinaryFound: Bool,
+    tuiBinaryPath: String?
+) -> IntegrationInstallerStatus {
+    guard let text = (try? IntegrationInstallerHelpers.readUTF8IfExists(configPath)) ?? nil else {
+        return IntegrationInstallerStatus(
+            tui: .claudeCode,
+            configPath: configPath,
+            shimPath: nil,
+            state: .notInstalled,
+            schemaVersion: nil,
+            markerId: nil,
+            installedAt: nil,
+            tuiBinaryFound: tuiBinaryFound,
+            tuiBinaryPath: tuiBinaryPath,
+            expectedHashes: [:],
+            actualHashes: [:],
+            parserError: nil,
+            note: nil
+        )
+    }
+    if text.isEmpty {
+        return IntegrationInstallerStatus(
+            tui: .claudeCode,
+            configPath: configPath,
+            shimPath: nil,
+            state: .notInstalled,
+            schemaVersion: nil,
+            markerId: nil,
+            installedAt: nil,
+            tuiBinaryFound: tuiBinaryFound,
+            tuiBinaryPath: tuiBinaryPath,
+            expectedHashes: [:],
+            actualHashes: [:],
+            parserError: nil,
+            note: "empty config"
+        )
+    }
+
+    guard let data = text.data(using: .utf8),
+          let existing = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
+        return IntegrationInstallerStatus(
+            tui: .claudeCode,
+            configPath: configPath,
+            shimPath: nil,
+            state: .configMalformed,
+            schemaVersion: nil,
+            markerId: nil,
+            installedAt: nil,
+            tuiBinaryFound: tuiBinaryFound,
+            tuiBinaryPath: tuiBinaryPath,
+            expectedHashes: [:],
+            actualHashes: [:],
+            parserError: "invalid JSON",
+            note: nil
+        )
+    }
+
+    let (state, markerId, schema) = claudeCodeExistingState(existing: existing)
+    var expected: [String: String] = [:]
+    for (event, entry) in claudeCanonicalEntries() {
+        expected[event] = integrationInstallerSHA256(integrationInstallerCanonicalJSON(entry))
+    }
+    var actual: [String: String] = [:]
+    if let xCmux = existing["x-cmux"] as? [String: Any],
+       let entries = xCmux["entries"] as? [[String: Any]] {
+        for e in entries {
+            if let event = e["event"] as? String, let sha = e["sha256"] as? String {
+                actual[event] = sha
+            }
+        }
+    }
+    let installedAt = (existing["x-cmux"] as? [String: Any])?["installed_at"] as? String
+
+    return IntegrationInstallerStatus(
+        tui: .claudeCode,
+        configPath: configPath,
+        shimPath: nil,
+        state: state,
+        schemaVersion: schema,
+        markerId: markerId,
+        installedAt: installedAt,
+        tuiBinaryFound: tuiBinaryFound,
+        tuiBinaryPath: tuiBinaryPath,
+        expectedHashes: expected,
+        actualHashes: actual,
+        parserError: nil,
+        note: nil
+    )
+}
+
+// MARK: - TOML shim installer (codex, kimi)
+
+fileprivate func tomlShimBlock(tui: IntegrationInstallerTUI, installedAt: String, shimPath: String, shimSHA: String) -> String {
+    return """
+    \(IntegrationInstallerConstants.tomlFenceBegin)
+    [x-cmux]
+    schema = \(IntegrationInstallerConstants.schemaVersion)
+    id = "\(IntegrationInstallerConstants.markerId)"
+    installed_at = "\(installedAt)"
+    shim_path = "\(shimPath)"
+    shim_sha256 = "\(shimSHA)"
+    # Managed by `cmux install \(tui.rawValue)`.
+    \(IntegrationInstallerConstants.tomlFenceEnd)
+    """
+}
+
+fileprivate func tomlStripExistingCmuxBlock(_ text: String) -> (stripped: String, removedRange: Range<String.Index>?) {
+    guard let beginRange = text.range(of: IntegrationInstallerConstants.tomlFenceBegin) else {
+        return (text, nil)
+    }
+    // Expand begin to include the leading newline if present.
+    var start = beginRange.lowerBound
+    if start > text.startIndex {
+        let before = text.index(before: start)
+        if text[before] == "\n" {
+            start = before
+        }
+    }
+    let endRange = text.range(
+        of: IntegrationInstallerConstants.tomlFenceEnd,
+        options: [],
+        range: beginRange.upperBound..<text.endIndex
+    )
+    guard let endRange else {
+        return (text, nil)
+    }
+    var end = endRange.upperBound
+    // Include a trailing newline after the fence if present.
+    if end < text.endIndex, text[end] == "\n" {
+        end = text.index(after: end)
+    }
+    var stripped = text
+    let cutRange = start..<end
+    stripped.removeSubrange(cutRange)
+    return (stripped, cutRange)
+}
+
+fileprivate func tomlShimInstallerPlan(
+    tui: IntegrationInstallerTUI,
+    configPath: String,
+    home: String,
+    force: Bool,
+    jsonOutput: Bool
+) throws -> IntegrationInstallerPlan {
+    precondition(tui == .codex || tui == .kimi, "tomlShimInstallerPlan supports codex/kimi only")
+
+    let preText = try IntegrationInstallerHelpers.readUTF8IfExists(configPath)
+    let createdConfig = preText == nil
+
+    let shimPath = tui.shimPath(home: home)
+    let shimText = integrationInstallerShimScript(for: tui)
+    let shimSHA = integrationInstallerSHA256(of: shimText)
+    let installedAt = IntegrationInstallerHelpers.nowISO8601()
+    let block = tomlShimBlock(tui: tui, installedAt: installedAt, shimPath: shimPath, shimSHA: shimSHA)
+
+    // Strip any existing cmux block first.
+    let (stripped, _) = tomlStripExistingCmuxBlock(preText ?? "")
+
+    // Determine prior state.
+    let priorState: IntegrationInstallerState
+    var priorShimSHA: String? = nil
+    var priorSchema: Int? = nil
+    if let preText, let beginRange = preText.range(of: IntegrationInstallerConstants.tomlFenceBegin),
+       let endRange = preText.range(of: IntegrationInstallerConstants.tomlFenceEnd, options: [], range: beginRange.upperBound..<preText.endIndex) {
+        let blockText = String(preText[beginRange.lowerBound..<endRange.upperBound])
+        priorShimSHA = tomlExtractValue(from: blockText, key: "shim_sha256")
+        if let schemaStr = tomlExtractValue(from: blockText, key: "schema"), let parsed = Int(schemaStr) {
+            priorSchema = parsed
+        }
+        if let priorSchema, priorSchema != IntegrationInstallerConstants.schemaVersion {
+            priorState = .schemaMismatch
+        } else {
+            // Check shim on disk.
+            let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
+            let liveShimSHA = liveShim.map { integrationInstallerSHA256(of: $0) }
+            if priorShimSHA == shimSHA && liveShimSHA == shimSHA {
+                priorState = .installedCurrent
+            } else {
+                priorState = .installedOutdated
+            }
+        }
+    } else {
+        priorState = .notInstalled
+    }
+
+    if priorState == .schemaMismatch && !force {
+        return IntegrationInstallerPlan(
+            tui: tui,
+            configPath: configPath,
+            homePath: home,
+            preConfigText: preText,
+            postConfigText: nil,
+            shimPath: shimPath,
+            preShimText: try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath),
+            postShimText: nil,
+            priorState: .schemaMismatch,
+            newInstalledAt: installedAt,
+            noop: true,
+            summary: ["cmux install uses schema \(priorSchema ?? 0); expected \(IntegrationInstallerConstants.schemaVersion). Re-run with --force."],
+            unifiedDiff: "",
+            tuiBinaryFound: IntegrationInstallerHelpers.findBinary(named: tui.binaryName(), home: home) != nil,
+            tuiBinaryPath: IntegrationInstallerHelpers.findBinary(named: tui.binaryName(), home: home),
+            createdConfig: false
+        )
+    }
+
+    // Build new text.
+    let strippedEndsWithNewline = stripped.hasSuffix("\n") || stripped.isEmpty
+    var newText: String = stripped
+    if !stripped.isEmpty && !strippedEndsWithNewline {
+        newText += "\n"
+    }
+    if !stripped.isEmpty {
+        // separate existing content from our block with a blank line.
+        newText += "\n"
+    }
+    newText += block + "\n"
+
+    let noop: Bool
+    if priorState == .installedCurrent {
+        // Compare our new block to what's there; shims match; config content unchanged => noop.
+        let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
+        noop = (preText == newText) && (liveShim == shimText)
+    } else {
+        noop = false
+    }
+
+    let diff: String
+    if noop {
+        diff = "(no changes)"
+    } else {
+        let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
+        let configDiff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: preText, after: newText, label: configPath)
+        let shimDiff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: liveShim ?? nil, after: shimText, label: shimPath)
+        diff = configDiff + "\n" + shimDiff
+    }
+
+    var summary: [String] = []
+    switch priorState {
+    case .notInstalled:
+        summary.append(createdConfig ? "create \(configPath)" : "append [x-cmux] block to \(configPath)")
+        summary.append("install shim at \(shimPath)")
+    case .installedCurrent:
+        summary.append("cmux install is current (no changes)")
+    case .installedOutdated:
+        summary.append("refresh [x-cmux] block in \(configPath)")
+        summary.append("refresh shim at \(shimPath)")
+    case .schemaMismatch:
+        summary.append("schema mismatch: rewriting [x-cmux] at schema \(IntegrationInstallerConstants.schemaVersion)")
+        summary.append("refresh shim at \(shimPath)")
+    case .configMalformed, .markerHandEdit:
+        summary.append("rewriting cmux block (prior state: \(priorState.rawValue))")
+    }
+
+    let tuiBinaryPath = IntegrationInstallerHelpers.findBinary(named: tui.binaryName(), home: home)
+    return IntegrationInstallerPlan(
+        tui: tui,
+        configPath: configPath,
+        homePath: home,
+        preConfigText: preText,
+        postConfigText: noop ? preText : newText,
+        shimPath: shimPath,
+        preShimText: try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath),
+        postShimText: noop ? (try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)) ?? shimText : shimText,
+        priorState: priorState,
+        newInstalledAt: installedAt,
+        noop: noop,
+        summary: summary,
+        unifiedDiff: diff,
+        tuiBinaryFound: tuiBinaryPath != nil,
+        tuiBinaryPath: tuiBinaryPath,
+        createdConfig: createdConfig
+    )
+}
+
+fileprivate func tomlExtractValue(from block: String, key: String) -> String? {
+    for rawLine in block.split(separator: "\n") {
+        let line = rawLine.trimmingCharacters(in: .whitespaces)
+        if line.hasPrefix("\(key) =") {
+            let parts = line.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            guard parts.count == 2 else { continue }
+            var value = parts[1]
+            if value.hasPrefix("\"") && value.hasSuffix("\"") && value.count >= 2 {
+                value = String(value.dropFirst().dropLast())
+            }
+            return value
+        }
+    }
+    return nil
+}
+
+fileprivate func tomlShimUninstallerPlan(
+    tui: IntegrationInstallerTUI,
+    configPath: String,
+    home: String,
+    force: Bool,
+    jsonOutput: Bool
+) throws -> IntegrationInstallerPlan {
+    let preText = try IntegrationInstallerHelpers.readUTF8IfExists(configPath)
+    let shimPath = tui.shimPath(home: home)
+    let preShim = try IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
+
+    guard let preText else {
+        return IntegrationInstallerPlan(
+            tui: tui,
+            configPath: configPath,
+            homePath: home,
+            preConfigText: nil,
+            postConfigText: nil,
+            shimPath: shimPath,
+            preShimText: preShim,
+            postShimText: nil,
+            priorState: .notInstalled,
+            newInstalledAt: "",
+            noop: preShim == nil,
+            summary: preShim == nil ? ["nothing to uninstall"] : ["remove shim at \(shimPath)"],
+            unifiedDiff: "",
+            tuiBinaryFound: false,
+            tuiBinaryPath: nil,
+            createdConfig: false
+        )
+    }
+
+    guard preText.range(of: IntegrationInstallerConstants.tomlFenceBegin) != nil else {
+        return IntegrationInstallerPlan(
+            tui: tui,
+            configPath: configPath,
+            homePath: home,
+            preConfigText: preText,
+            postConfigText: preText,
+            shimPath: shimPath,
+            preShimText: preShim,
+            postShimText: preShim == nil ? nil : nil,
+            priorState: .notInstalled,
+            newInstalledAt: "",
+            noop: preShim == nil,
+            summary: preShim == nil ? ["nothing to uninstall"] : ["remove shim at \(shimPath)"],
+            unifiedDiff: "",
+            tuiBinaryFound: false,
+            tuiBinaryPath: nil,
+            createdConfig: false
+        )
+    }
+
+    // Hand-edit detection (force bypass).
+    if let beginRange = preText.range(of: IntegrationInstallerConstants.tomlFenceBegin),
+       let endRange = preText.range(of: IntegrationInstallerConstants.tomlFenceEnd, options: [], range: beginRange.upperBound..<preText.endIndex) {
+        let blockText = String(preText[beginRange.lowerBound..<endRange.upperBound])
+        let storedSchema = tomlExtractValue(from: blockText, key: "schema").flatMap(Int.init)
+        if let storedSchema, storedSchema != IntegrationInstallerConstants.schemaVersion, !force {
+            throw IntegrationInstallerError(
+                code: "marker_hand_edit_detected",
+                message: "x-cmux.schema differs from current; re-run uninstall with --force.",
+                exitCode: InstallExitCode.markerHandEditDetected,
+                path: configPath,
+                jsonOutput: jsonOutput
+            )
+        }
+    }
+
+    let (stripped, _) = tomlStripExistingCmuxBlock(preText)
+
+    // If resulting content is empty, delete the file entirely.
+    let postText: String?
+    if stripped.isEmpty {
+        postText = nil
+    } else {
+        postText = stripped
+    }
+
+    let diff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: preText, after: postText, label: configPath)
+    var summary: [String] = ["remove [x-cmux] block from \(configPath)"]
+    if preShim != nil { summary.append("remove shim at \(shimPath)") }
+    if postText == nil { summary.append("delete empty config file") }
+
+    return IntegrationInstallerPlan(
+        tui: tui,
+        configPath: configPath,
+        homePath: home,
+        preConfigText: preText,
+        postConfigText: postText,
+        shimPath: shimPath,
+        preShimText: preShim,
+        postShimText: nil,
+        priorState: .installedCurrent,
+        newInstalledAt: "",
+        noop: false,
+        summary: summary,
+        unifiedDiff: diff,
+        tuiBinaryFound: false,
+        tuiBinaryPath: nil,
+        createdConfig: false
+    )
+}
+
+fileprivate func tomlShimStatusSnapshot(
+    tui: IntegrationInstallerTUI,
+    configPath: String,
+    home: String,
+    tuiBinaryFound: Bool,
+    tuiBinaryPath: String?
+) -> IntegrationInstallerStatus {
+    let shimPath = tui.shimPath(home: home)
+    guard let text = (try? IntegrationInstallerHelpers.readUTF8IfExists(configPath)) ?? nil else {
+        return IntegrationInstallerStatus(
+            tui: tui,
+            configPath: configPath,
+            shimPath: shimPath,
+            state: .notInstalled,
+            schemaVersion: nil,
+            markerId: nil,
+            installedAt: nil,
+            tuiBinaryFound: tuiBinaryFound,
+            tuiBinaryPath: tuiBinaryPath,
+            expectedHashes: [:],
+            actualHashes: [:],
+            parserError: nil,
+            note: nil
+        )
+    }
+    guard let beginRange = text.range(of: IntegrationInstallerConstants.tomlFenceBegin),
+          let endRange = text.range(of: IntegrationInstallerConstants.tomlFenceEnd, options: [], range: beginRange.upperBound..<text.endIndex) else {
+        return IntegrationInstallerStatus(
+            tui: tui,
+            configPath: configPath,
+            shimPath: shimPath,
+            state: .notInstalled,
+            schemaVersion: nil,
+            markerId: nil,
+            installedAt: nil,
+            tuiBinaryFound: tuiBinaryFound,
+            tuiBinaryPath: tuiBinaryPath,
+            expectedHashes: [:],
+            actualHashes: [:],
+            parserError: nil,
+            note: nil
+        )
+    }
+    let blockText = String(text[beginRange.lowerBound..<endRange.upperBound])
+    let schema = tomlExtractValue(from: blockText, key: "schema").flatMap(Int.init)
+    let markerId = tomlExtractValue(from: blockText, key: "id")
+    let installedAt = tomlExtractValue(from: blockText, key: "installed_at")
+    let storedShimSHA = tomlExtractValue(from: blockText, key: "shim_sha256")
+    let expectedShimSHA = integrationInstallerSHA256(of: integrationInstallerShimScript(for: tui))
+    let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
+    let liveShimSHA = liveShim.map { integrationInstallerSHA256(of: $0) }
+
+    let state: IntegrationInstallerState
+    if let schema, schema != IntegrationInstallerConstants.schemaVersion {
+        state = .schemaMismatch
+    } else if storedShimSHA == expectedShimSHA && liveShimSHA == expectedShimSHA {
+        state = .installedCurrent
+    } else {
+        state = .installedOutdated
+    }
+
+    return IntegrationInstallerStatus(
+        tui: tui,
+        configPath: configPath,
+        shimPath: shimPath,
+        state: state,
+        schemaVersion: schema,
+        markerId: markerId,
+        installedAt: installedAt,
+        tuiBinaryFound: tuiBinaryFound,
+        tuiBinaryPath: tuiBinaryPath,
+        expectedHashes: ["shim": expectedShimSHA],
+        actualHashes: ["shim": storedShimSHA ?? "", "shim_live": liveShimSHA ?? ""],
+        parserError: nil,
+        note: nil
+    )
+}
+
+// MARK: - OpenCode shim installer (JSON + shim)
+
+fileprivate func opencodeShimInstallerPlan(
+    configPath: String,
+    home: String,
+    force: Bool,
+    jsonOutput: Bool
+) throws -> IntegrationInstallerPlan {
+    let preText = try IntegrationInstallerHelpers.readUTF8IfExists(configPath)
+    let createdConfig = preText == nil
+
+    let shimPath = IntegrationInstallerTUI.opencode.shimPath(home: home)
+    let shimText = integrationInstallerShimScript(for: .opencode)
+    let shimSHA = integrationInstallerSHA256(of: shimText)
+    let installedAt = IntegrationInstallerHelpers.nowISO8601()
+
+    var existing: [String: Any] = [:]
+    if let text = preText, !text.isEmpty {
+        guard let data = text.data(using: .utf8),
+              let dict = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
+            throw IntegrationInstallerError(
+                code: "config_malformed",
+                message: "Config at \(configPath) is not a valid JSON object",
+                exitCode: InstallExitCode.configMalformed,
+                path: configPath,
+                jsonOutput: jsonOutput
+            )
+        }
+        existing = dict
+    }
+
+    let priorState: IntegrationInstallerState
+    var priorSchema: Int? = nil
+    if let xCmux = existing["x-cmux"] as? [String: Any] {
+        priorSchema = xCmux["schema"] as? Int
+        if let priorSchema, priorSchema != IntegrationInstallerConstants.schemaVersion {
+            priorState = .schemaMismatch
+        } else {
+            let storedShim = xCmux["shim_sha256"] as? String
+            let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
+            let liveSHA = liveShim.map { integrationInstallerSHA256(of: $0) }
+            if storedShim == shimSHA && liveSHA == shimSHA {
+                priorState = .installedCurrent
+            } else {
+                priorState = .installedOutdated
+            }
+        }
+    } else {
+        priorState = .notInstalled
+    }
+
+    if priorState == .schemaMismatch && !force {
+        return IntegrationInstallerPlan(
+            tui: .opencode,
+            configPath: configPath,
+            homePath: home,
+            preConfigText: preText,
+            postConfigText: nil,
+            shimPath: shimPath,
+            preShimText: try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath),
+            postShimText: nil,
+            priorState: .schemaMismatch,
+            newInstalledAt: installedAt,
+            noop: true,
+            summary: ["cmux install uses schema \(priorSchema ?? 0); expected \(IntegrationInstallerConstants.schemaVersion). Re-run with --force."],
+            unifiedDiff: "",
+            tuiBinaryFound: IntegrationInstallerHelpers.findBinary(named: "opencode", home: home) != nil,
+            tuiBinaryPath: IntegrationInstallerHelpers.findBinary(named: "opencode", home: home),
+            createdConfig: false
+        )
+    }
+
+    var result = existing
+    result["x-cmux"] = [
+        "schema": IntegrationInstallerConstants.schemaVersion,
+        "id": IntegrationInstallerConstants.markerId,
+        "installed_at": installedAt,
+        "shim_path": shimPath,
+        "shim_sha256": shimSHA
+    ] as [String: Any]
+    let newText = IntegrationInstallerHelpers.claudeCodeJSONDump(result)
+
+    let noop: Bool
+    if priorState == .installedCurrent {
+        let canonicalPre = IntegrationInstallerHelpers.claudeCodeJSONDump(existing)
+        let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
+        noop = canonicalPre == newText && liveShim == shimText
+    } else {
+        noop = false
+    }
+
+    let diff: String
+    if noop {
+        diff = "(no changes)"
+    } else {
+        let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
+        let configDiff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: preText, after: newText, label: configPath)
+        let shimDiff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: liveShim ?? nil, after: shimText, label: shimPath)
+        diff = configDiff + "\n" + shimDiff
+    }
+
+    var summary: [String] = []
+    switch priorState {
+    case .notInstalled:
+        summary.append(createdConfig ? "create \(configPath)" : "add x-cmux key to \(configPath)")
+        summary.append("install shim at \(shimPath)")
+    case .installedCurrent:
+        summary.append("cmux install is current (no changes)")
+    case .installedOutdated:
+        summary.append("refresh x-cmux in \(configPath)")
+        summary.append("refresh shim at \(shimPath)")
+    case .schemaMismatch:
+        summary.append("schema mismatch: rewriting x-cmux at schema \(IntegrationInstallerConstants.schemaVersion)")
+        summary.append("refresh shim at \(shimPath)")
+    case .configMalformed, .markerHandEdit:
+        summary.append("rewriting x-cmux (prior state: \(priorState.rawValue))")
+    }
+
+    let tuiBinaryPath = IntegrationInstallerHelpers.findBinary(named: "opencode", home: home)
+    return IntegrationInstallerPlan(
+        tui: .opencode,
+        configPath: configPath,
+        homePath: home,
+        preConfigText: preText,
+        postConfigText: noop ? preText : newText,
+        shimPath: shimPath,
+        preShimText: try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath),
+        postShimText: noop ? (try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)) ?? shimText : shimText,
+        priorState: priorState,
+        newInstalledAt: installedAt,
+        noop: noop,
+        summary: summary,
+        unifiedDiff: diff,
+        tuiBinaryFound: tuiBinaryPath != nil,
+        tuiBinaryPath: tuiBinaryPath,
+        createdConfig: createdConfig
+    )
+}
+
+fileprivate func opencodeShimUninstallerPlan(
+    configPath: String,
+    home: String,
+    force: Bool,
+    jsonOutput: Bool
+) throws -> IntegrationInstallerPlan {
+    let preText = try IntegrationInstallerHelpers.readUTF8IfExists(configPath)
+    let shimPath = IntegrationInstallerTUI.opencode.shimPath(home: home)
+    let preShim = try IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
+
+    guard let preText else {
+        return IntegrationInstallerPlan(
+            tui: .opencode,
+            configPath: configPath,
+            homePath: home,
+            preConfigText: nil,
+            postConfigText: nil,
+            shimPath: shimPath,
+            preShimText: preShim,
+            postShimText: nil,
+            priorState: .notInstalled,
+            newInstalledAt: "",
+            noop: preShim == nil,
+            summary: preShim == nil ? ["nothing to uninstall"] : ["remove shim at \(shimPath)"],
+            unifiedDiff: "",
+            tuiBinaryFound: false,
+            tuiBinaryPath: nil,
+            createdConfig: false
+        )
+    }
+
+    guard !preText.isEmpty,
+          let data = preText.data(using: .utf8),
+          let existing = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
+        throw IntegrationInstallerError(
+            code: "config_malformed",
+            message: "Config at \(configPath) is not valid JSON",
+            exitCode: InstallExitCode.configMalformed,
+            path: configPath,
+            jsonOutput: jsonOutput
+        )
+    }
+
+    guard let xCmux = existing["x-cmux"] as? [String: Any] else {
+        return IntegrationInstallerPlan(
+            tui: .opencode,
+            configPath: configPath,
+            homePath: home,
+            preConfigText: preText,
+            postConfigText: preText,
+            shimPath: shimPath,
+            preShimText: preShim,
+            postShimText: preShim == nil ? nil : nil,
+            priorState: .notInstalled,
+            newInstalledAt: "",
+            noop: preShim == nil,
+            summary: preShim == nil ? ["nothing to uninstall"] : ["remove shim at \(shimPath)"],
+            unifiedDiff: "",
+            tuiBinaryFound: false,
+            tuiBinaryPath: nil,
+            createdConfig: false
+        )
+    }
+
+    let storedSchema = xCmux["schema"] as? Int
+    if let storedSchema, storedSchema != IntegrationInstallerConstants.schemaVersion, !force {
+        throw IntegrationInstallerError(
+            code: "marker_hand_edit_detected",
+            message: "x-cmux.schema differs from current; re-run uninstall with --force.",
+            exitCode: InstallExitCode.markerHandEditDetected,
+            path: configPath,
+            jsonOutput: jsonOutput
+        )
+    }
+
+    var result = existing
+    result.removeValue(forKey: "x-cmux")
+
+    let postText: String?
+    if result.isEmpty {
+        postText = nil
+    } else {
+        postText = IntegrationInstallerHelpers.claudeCodeJSONDump(result)
+    }
+
+    let diff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: preText, after: postText, label: configPath)
+    var summary: [String] = ["remove x-cmux from \(configPath)"]
+    if preShim != nil { summary.append("remove shim at \(shimPath)") }
+    if postText == nil { summary.append("delete empty config file") }
+
+    return IntegrationInstallerPlan(
+        tui: .opencode,
+        configPath: configPath,
+        homePath: home,
+        preConfigText: preText,
+        postConfigText: postText,
+        shimPath: shimPath,
+        preShimText: preShim,
+        postShimText: nil,
+        priorState: .installedCurrent,
+        newInstalledAt: "",
+        noop: false,
+        summary: summary,
+        unifiedDiff: diff,
+        tuiBinaryFound: false,
+        tuiBinaryPath: nil,
+        createdConfig: false
+    )
+}
+
+fileprivate func opencodeShimStatusSnapshot(
+    configPath: String,
+    home: String,
+    tuiBinaryFound: Bool,
+    tuiBinaryPath: String?
+) -> IntegrationInstallerStatus {
+    let shimPath = IntegrationInstallerTUI.opencode.shimPath(home: home)
+    guard let text = (try? IntegrationInstallerHelpers.readUTF8IfExists(configPath)) ?? nil, !text.isEmpty else {
+        return IntegrationInstallerStatus(
+            tui: .opencode,
+            configPath: configPath,
+            shimPath: shimPath,
+            state: .notInstalled,
+            schemaVersion: nil,
+            markerId: nil,
+            installedAt: nil,
+            tuiBinaryFound: tuiBinaryFound,
+            tuiBinaryPath: tuiBinaryPath,
+            expectedHashes: [:],
+            actualHashes: [:],
+            parserError: nil,
+            note: nil
+        )
+    }
+    guard let data = text.data(using: .utf8),
+          let existing = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
+        return IntegrationInstallerStatus(
+            tui: .opencode,
+            configPath: configPath,
+            shimPath: shimPath,
+            state: .configMalformed,
+            schemaVersion: nil,
+            markerId: nil,
+            installedAt: nil,
+            tuiBinaryFound: tuiBinaryFound,
+            tuiBinaryPath: tuiBinaryPath,
+            expectedHashes: [:],
+            actualHashes: [:],
+            parserError: "invalid JSON",
+            note: nil
+        )
+    }
+    guard let xCmux = existing["x-cmux"] as? [String: Any] else {
+        return IntegrationInstallerStatus(
+            tui: .opencode,
+            configPath: configPath,
+            shimPath: shimPath,
+            state: .notInstalled,
+            schemaVersion: nil,
+            markerId: nil,
+            installedAt: nil,
+            tuiBinaryFound: tuiBinaryFound,
+            tuiBinaryPath: tuiBinaryPath,
+            expectedHashes: [:],
+            actualHashes: [:],
+            parserError: nil,
+            note: nil
+        )
+    }
+    let schema = xCmux["schema"] as? Int
+    let markerId = xCmux["id"] as? String
+    let installedAt = xCmux["installed_at"] as? String
+    let storedShim = xCmux["shim_sha256"] as? String ?? ""
+    let expectedShim = integrationInstallerSHA256(of: integrationInstallerShimScript(for: .opencode))
+    let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
+    let liveShimSHA = liveShim.map { integrationInstallerSHA256(of: $0) } ?? ""
+
+    let state: IntegrationInstallerState
+    if let schema, schema != IntegrationInstallerConstants.schemaVersion {
+        state = .schemaMismatch
+    } else if storedShim == expectedShim && liveShimSHA == expectedShim {
+        state = .installedCurrent
+    } else {
+        state = .installedOutdated
+    }
+
+    return IntegrationInstallerStatus(
+        tui: .opencode,
+        configPath: configPath,
+        shimPath: shimPath,
+        state: state,
+        schemaVersion: schema,
+        markerId: markerId,
+        installedAt: installedAt,
+        tuiBinaryFound: tuiBinaryFound,
+        tuiBinaryPath: tuiBinaryPath,
+        expectedHashes: ["shim": expectedShim],
+        actualHashes: ["shim": storedShim, "shim_live": liveShimSHA],
+        parserError: nil,
+        note: nil
+    )
 }

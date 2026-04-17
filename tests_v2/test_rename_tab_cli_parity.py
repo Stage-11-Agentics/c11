@@ -109,6 +109,20 @@ def main() -> int:
             f"rename-tab via CMUX_TAB_ID should route to tab.action rename summary, got: {env_out!r}",
         )
 
+        # M7: legacy rename-tab must land in the M2 metadata blob with source=explicit.
+        titlebar_state = c._call(
+            "surface.get_titlebar_state",
+            {"surface_id": surface_id},
+        ) or {}
+        _must(
+            titlebar_state.get("title") == env_title,
+            f"rename-tab should write title canonical key, got: {titlebar_state}",
+        )
+        _must(
+            titlebar_state.get("title_source") == "explicit",
+            f"rename-tab should set title_source=explicit, got: {titlebar_state}",
+        )
+
         invalid = subprocess.run(
             [cli, "--socket", SOCKET_PATH, "rename-tab", "--workspace", ws_id],
             capture_output=True,

@@ -19,8 +19,6 @@ concurrency:
 
 permissions:
   contents: write
-  attestations: write
-  id-token: write
 
 env:
   CREATE_DMG_VERSION: 8.0.0
@@ -474,18 +472,6 @@ jobs:
           # Keep the legacy universal feed alive long enough for older nightly
           # installs to migrate onto the unified nightly appcast.
           cp appcast.xml appcast-universal.xml
-
-      - name: Attest remote daemon nightly assets
-        if: needs.decide.outputs.should_publish != 'true' || (steps.current_head_prebuild.outputs.still_current == 'true' && steps.current_head_postbuild.outputs.still_current == 'true')
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
-        with:
-          subject-path: |
-            remote-daemon-assets/cmuxd-remote-darwin-arm64
-            remote-daemon-assets/cmuxd-remote-darwin-amd64
-            remote-daemon-assets/cmuxd-remote-linux-arm64
-            remote-daemon-assets/cmuxd-remote-linux-amd64
-            remote-daemon-assets/cmuxd-remote-checksums.txt
-            remote-daemon-assets/cmuxd-remote-manifest.json
 
       - name: Upload branch nightly artifacts
         if: needs.decide.outputs.should_publish != 'true'

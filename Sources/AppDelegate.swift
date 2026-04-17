@@ -4668,6 +4668,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return nil
     }
 
+    /// Resolve the workspace that owns the pane with the given ID. Used by
+    /// commands like `markdown.open --pane P` to route independent of
+    /// workspace_id so stale env-injected IDs don't misroute the request.
+    func locatePane(paneId: UUID) -> (workspace: Workspace, tabManager: TabManager)? {
+        for ctx in mainWindowContexts.values {
+            for ws in ctx.tabManager.tabs
+            where ws.bonsplitController.allPaneIds.contains(where: { $0.id == paneId }) {
+                return (ws, ctx.tabManager)
+            }
+        }
+        return nil
+    }
+
     /// Resolve the workspace that currently owns a panel/surface ID.
     /// Prefer the provided workspace when available, then fall back to global lookup.
     func workspaceContainingPanel(

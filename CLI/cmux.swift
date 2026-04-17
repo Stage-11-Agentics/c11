@@ -2184,13 +2184,29 @@ struct CMUXCLI {
             print(response)
 
         case "sidebar-state":
-            let response = try forwardSidebarMetadataCommand(
-                "sidebar_state",
-                commandArgs: commandArgs,
-                client: client,
-                windowOverride: windowId
-            )
-            print(response)
+            // --json emits the v2 sidebar.state response (includes agent_chip).
+            if commandArgs.contains("--json") || jsonOutput {
+                let (workspaceRaw, _) = parseOption(commandArgs, name: "--workspace")
+                var params: [String: Any] = [:]
+                if let workspaceRaw {
+                    if let ws = try normalizeWorkspaceHandle(workspaceRaw, client: client) {
+                        params["workspace_id"] = ws
+                    }
+                } else if let envWs = ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"],
+                          let ws = try normalizeWorkspaceHandle(envWs, client: client) {
+                    params["workspace_id"] = ws
+                }
+                let payload = try client.sendV2(method: "sidebar.state", params: params)
+                print(jsonString(formatIDs(payload, mode: idFormat)))
+            } else {
+                let response = try forwardSidebarMetadataCommand(
+                    "sidebar_state",
+                    commandArgs: commandArgs,
+                    client: client,
+                    windowOverride: windowId
+                )
+                print(response)
+            }
 
         case "set-agent":
             try runSetAgentCommand(
@@ -2332,6 +2348,9 @@ struct CMUXCLI {
         case "markdown":
             try runMarkdownCommand(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
 
+        case "markdown-content":
+            try runMarkdownGetContentCommand(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
+
         default:
             print(usage())
             throw CLIError(message: "Unknown command: \(command)")
@@ -2398,7 +2417,8 @@ struct CMUXCLI {
         let (workspaceOpt, argsAfterWorkspace) = parseOption(args, name: "--workspace")
         let (windowOpt, argsAfterWindow) = parseOption(argsAfterWorkspace, name: "--window")
         let (surfaceOpt, argsAfterSurface) = parseOption(argsAfterWindow, name: "--surface")
-        args = argsAfterSurface
+        let (paneOpt, argsAfterPane) = parseOption(argsAfterSurface, name: "--pane")
+        args = argsAfterPane
 
         // Determine subcommand. Explicit "open" is supported, otherwise treat
         // a single positional argument as shorthand path.
@@ -2461,6 +2481,12 @@ struct CMUXCLI {
                 params["window_id"] = window
             }
         }
+        if let paneRaw = paneOpt {
+            let workspaceHandle = params["workspace_id"] as? String
+            if let pane = try normalizePaneHandle(paneRaw, client: client, workspaceHandle: workspaceHandle) {
+                params["pane_id"] = pane
+            }
+        }
 
         let payload = try client.sendV2(method: "markdown.open", params: params)
 
@@ -2471,6 +2497,38 @@ struct CMUXCLI {
             let paneText = formatHandle(payload, kind: "pane", idFormat: idFormat) ?? "unknown"
             let filePath = (payload["path"] as? String) ?? absolutePath
             print("OK surface=\(surfaceText) pane=\(paneText) path=\(filePath)")
+        }
+    }
+
+    // MARK: - M6 markdown.get_content
+
+    private func runMarkdownGetContentCommand(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) throws {
+        let (surfaceOpt, _) = parseOption(commandArgs, name: "--surface")
+        let surfaceArg = surfaceOpt ?? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
+        guard let surfaceArg else {
+            throw CLIError(message: "markdown-content requires --surface <handle> (or CMUX_SURFACE_ID env)")
+        }
+        guard let surface = try normalizeSurfaceHandle(surfaceArg, client: client) else {
+            throw CLIError(message: "markdown-content: invalid surface handle")
+        }
+        let params: [String: Any] = ["surface_id": surface]
+        let payload = try client.sendV2(method: "markdown.get_content", params: params)
+        if jsonOutput {
+            print(jsonString(formatIDs(payload, mode: idFormat)))
+            return
+        }
+        if (payload["truncated"] as? Bool) == true {
+            let reason = (payload["reason"] as? String) ?? "truncated"
+            print("TRUNCATED \(reason)")
+            return
+        }
+        if let content = payload["content"] as? String {
+            print(content)
         }
     }
 

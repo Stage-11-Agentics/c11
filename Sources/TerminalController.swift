@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import CryptoKit
 import Foundation
 import Bonsplit
 import WebKit
@@ -2353,6 +2354,12 @@ class TerminalController {
         // Markdown
         case "markdown.open":
             return v2Result(id: id, self.v2MarkdownOpen(params: params))
+        case "markdown.get_content":
+            return v2Result(id: id, self.v2MarkdownGetContent(params: params))
+
+        // M3 — structured sidebar state (extends v1 `sidebar_state` with agent_chip)
+        case "sidebar.state":
+            return v2Result(id: id, self.v2SidebarState(params: params))
 
         case "surface.read_text":
             return v2Result(id: id, self.v2SurfaceReadText(params: params))
@@ -2501,6 +2508,8 @@ class TerminalController {
             "app.focus_override.set",
             "app.simulate_active",
             "markdown.open",
+            "markdown.get_content",
+            "sidebar.state",
             "browser.open_split",
             "browser.navigate",
             "browser.back",
@@ -2868,6 +2877,9 @@ class TerminalController {
                 item["url"] = browserPanel.currentURL?.absoluteString ?? ""
             } else {
                 item["url"] = NSNull()
+            }
+            if let markdownPanel = panel as? MarkdownPanel {
+                item["file_path"] = markdownPanel.filePath
             }
             if let paneUUID {
                 surfacesByPane[paneUUID, default: []].append(item)
@@ -4430,6 +4442,9 @@ class TerminalController {
                 ]
                 if let browserPanel = panel as? BrowserPanel {
                     item["developer_tools_visible"] = browserPanel.isDeveloperToolsVisible()
+                }
+                if let markdownPanel = panel as? MarkdownPanel {
+                    item["file_path"] = markdownPanel.filePath
                 }
                 return item
             }
@@ -7344,12 +7359,67 @@ class TerminalController {
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to create markdown panel", data: nil)
         v2MainSync {
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+            // M6 — if pane_id is supplied, locate the owning workspace across all
+            // windows so `markdown.open --pane P` works standalone (spec: --pane
+            // uniquely identifies). This takes precedence over workspace_id/window_id
+            // (which may be injected from env vars by the CLI).
+            var resolvedTabManager: TabManager = tabManager
+            var resolvedWorkspace: Workspace?
+            if v2HasNonNullParam(params, "pane_id") {
+                guard let paneUUID = v2UUID(params, "pane_id") else {
+                    result = .err(code: "invalid_params", message: "Invalid pane_id", data: nil)
+                    return
+                }
+                if let located = AppDelegate.shared?.locatePane(paneId: paneUUID) {
+                    resolvedWorkspace = located.workspace
+                    resolvedTabManager = located.tabManager
+                }
+            }
+            guard let ws = resolvedWorkspace ?? v2ResolveWorkspace(params: params, tabManager: resolvedTabManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
-            v2MaybeFocusWindow(for: tabManager)
-            v2MaybeSelectWorkspace(tabManager, workspace: ws)
+            v2MaybeFocusWindow(for: resolvedTabManager)
+            v2MaybeSelectWorkspace(resolvedTabManager, workspace: ws)
+
+            // M6 — if pane_id is supplied, open as a tab inside that pane (no split).
+            if v2HasNonNullParam(params, "pane_id") {
+                guard let paneUUID = v2UUID(params, "pane_id") else {
+                    result = .err(code: "invalid_params", message: "Invalid pane_id", data: nil)
+                    return
+                }
+                guard let targetPaneId = ws.bonsplitController.allPaneIds.first(where: { $0.id == paneUUID }) else {
+                    result = .err(code: "not_found", message: "Pane not found in workspace", data: ["pane_id": paneUUID.uuidString])
+                    return
+                }
+
+                let createdPanel = ws.newMarkdownSurface(
+                    inPane: targetPaneId,
+                    filePath: filePath,
+                    focus: v2FocusAllowed()
+                )
+
+                guard let markdownPanelId = createdPanel?.id else {
+                    result = .err(code: "internal_error", message: "Failed to create markdown panel", data: nil)
+                    return
+                }
+
+                let windowId = v2ResolveWindowId(tabManager: resolvedTabManager)
+                result = .ok([
+                    "window_id": v2OrNull(windowId?.uuidString),
+                    "window_ref": v2Ref(kind: .window, uuid: windowId),
+                    "workspace_id": ws.id.uuidString,
+                    "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
+                    "pane_id": targetPaneId.id.uuidString,
+                    "pane_ref": v2Ref(kind: .pane, uuid: targetPaneId.id),
+                    "surface_id": markdownPanelId.uuidString,
+                    "surface_ref": v2Ref(kind: .surface, uuid: markdownPanelId),
+                    "target_pane_id": targetPaneId.id.uuidString,
+                    "target_pane_ref": v2Ref(kind: .pane, uuid: targetPaneId.id),
+                    "path": filePath
+                ])
+                return
+            }
 
             let sourceSurfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
             guard let sourceSurfaceId else {
@@ -7396,6 +7466,165 @@ class TerminalController {
             ])
         }
         return result
+    }
+
+    // MARK: - M3 — structured sidebar.state
+
+    /// Structured `sidebar_state` — JSON variant that includes the M3 `agent_chip` block.
+    private func v2SidebarState(params: [String: Any]) -> V2CallResult {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+        var payload: [String: Any]?
+        v2MainSync {
+            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else { return }
+            let statusEntries = ws.sidebarStatusEntriesInDisplayOrder()
+            let metadataBlocks = ws.sidebarMetadataBlocksInDisplayOrder()
+
+            var out: [String: Any] = [
+                "workspace_id": ws.id.uuidString,
+                "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
+                "status_count": statusEntries.count,
+                "meta_block_count": metadataBlocks.count,
+                "log_count": ws.logEntries.count
+            ]
+            if let focused = ws.focusedPanelId {
+                out["focused_surface_id"] = focused.uuidString
+                out["focused_surface_ref"] = v2Ref(kind: .surface, uuid: focused)
+            }
+
+            // Agent chip resolution.
+            let chipDict: [String: Any] = self.resolveAgentChipDict(workspace: ws)
+            out["agent_chip"] = chipDict
+
+            payload = out
+        }
+        guard let out = payload else {
+            return .err(code: "not_found", message: "Workspace not found", data: nil)
+        }
+        return .ok(out)
+    }
+
+    /// Build the agent_chip payload for inclusion in `sidebar.state` (v2) and `sidebar_state` (v1 text).
+    private func resolveAgentChipDict(workspace ws: Workspace) -> [String: Any] {
+        guard let focusedId = ws.focusedPanelId else {
+            return ["present": false]
+        }
+        let (values, sources) = Self.canonicalMetadataSnapshot(workspaceId: ws.id, surfaceId: focusedId)
+        guard let chip = AgentChipResolver.resolve(
+            focusedSurfaceId: focusedId,
+            metadata: values,
+            sources: sources
+        ) else {
+            return ["present": false]
+        }
+
+        var out: [String: Any] = [
+            "present": true,
+            "terminal_type": chip.terminalType,
+            "icon_asset": chip.iconAsset,
+            "source_surface_id": chip.sourceSurfaceId.uuidString,
+            "source_surface_ref": v2Ref(kind: .surface, uuid: chip.sourceSurfaceId)
+        ]
+        if let model = chip.model { out["model"] = model }
+        if let modelLabel = chip.modelLabel { out["model_label"] = modelLabel }
+        if let displayLabel = chip.displayLabel { out["display_label"] = displayLabel }
+        if let source = chip.source { out["source"] = source }
+        var perKey: [String: Any] = [:]
+        if let tts = chip.terminalTypeSource { perKey["terminal_type"] = tts }
+        if let ms = chip.modelSource { perKey["model"] = ms }
+        out["per_key_sources"] = perKey
+        return out
+    }
+
+    // MARK: - M3/M6 helpers
+
+    /// Pair (metadata, per-key source enum) for consumers that only read the
+    /// canonical subset. Parses the JSON-shaped sidecar returned by
+    /// SurfaceMetadataStore into typed `MetadataSource` values.
+    static func canonicalMetadataSnapshot(
+        workspaceId: UUID,
+        surfaceId: UUID
+    ) -> (values: [String: Any], sources: [String: MetadataSource]) {
+        let (values, rawSources) = SurfaceMetadataStore.shared.getMetadata(
+            workspaceId: workspaceId, surfaceId: surfaceId
+        )
+        var sources: [String: MetadataSource] = [:]
+        for (key, entry) in rawSources {
+            if let name = entry["source"] as? String,
+               let src = MetadataSource(rawValue: name) {
+                sources[key] = src
+            }
+        }
+        return (values, sources)
+    }
+
+    /// Resolve `(Workspace, surfaceId)` for markdown/sidebar code paths.
+    private func v2ResolveWorkspaceSurface(params: [String: Any]) -> (Workspace, UUID)? {
+        guard let tabManager = v2ResolveTabManager(params: params) else { return nil }
+        var out: (Workspace, UUID)?
+        v2MainSync {
+            if let surfaceId = v2UUID(params, "surface_id") {
+                for ws in tabManager.tabs where ws.panels[surfaceId] != nil {
+                    out = (ws, surfaceId)
+                    return
+                }
+                return
+            }
+            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager),
+                  let surfaceId = ws.focusedPanelId else { return }
+            out = (ws, surfaceId)
+        }
+        return out
+    }
+
+    // MARK: - M6 — markdown.get_content
+
+    private func v2MarkdownGetContent(params: [String: Any]) -> V2CallResult {
+        guard let resolved = v2ResolveWorkspaceSurface(params: params) else {
+            return .err(code: "not_found", message: "Surface not found", data: nil)
+        }
+        let (ws, surfaceId) = resolved
+
+        var payload: [String: Any]?
+        var errResult: V2CallResult?
+        v2MainSync {
+            guard let panel = ws.panels[surfaceId] else {
+                errResult = .err(code: "not_found", message: "Surface not found", data: ["surface_id": surfaceId.uuidString])
+                return
+            }
+            guard let markdown = panel as? MarkdownPanel else {
+                errResult = .err(code: "invalid_params", message: "Surface is not a markdown panel", data: ["surface_id": surfaceId.uuidString])
+                return
+            }
+
+            let content = markdown.content
+            let contentBytes = content.data(using: .utf8) ?? Data()
+            let sha = SHA256.hash(data: contentBytes).map { String(format: "%02x", $0) }.joined()
+            let softCap = 256 * 1024
+
+            var out: [String: Any] = [
+                "surface_id": surfaceId.uuidString,
+                "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
+                "type": PanelType.markdown.rawValue,
+                "file_path": markdown.filePath,
+                "content_length": contentBytes.count,
+                "content_sha256": sha,
+                "is_file_unavailable": markdown.isFileUnavailable
+            ]
+            if contentBytes.count > softCap {
+                out["truncated"] = true
+                out["reason"] = "content_too_large"
+            } else {
+                out["content"] = content
+            }
+            payload = out
+        }
+        if let errResult { return errResult }
+        guard let out = payload else {
+            return .err(code: "not_found", message: "Surface not found", data: nil)
+        }
+        return .ok(out)
     }
 
     // MARK: - Browser
@@ -15336,6 +15565,30 @@ class TerminalController {
             lines.append("meta_block_count=\(metadataBlocks.count)")
             for block in metadataBlocks {
                 lines.append("  \(sidebarMetadataBlockLine(block))")
+            }
+
+            // M3 — agent_chip block (derived from focused surface's canonical metadata).
+            if let focusedId = tab.focusedPanelId,
+               case let (values, sources) = Self.canonicalMetadataSnapshot(
+                   workspaceId: tab.id, surfaceId: focusedId),
+               let chip = AgentChipResolver.resolve(
+                   focusedSurfaceId: focusedId,
+                   metadata: values,
+                   sources: sources
+               ) {
+                lines.append("agent_chip=present")
+                lines.append("  terminal_type=\(chip.terminalType)")
+                lines.append("  model=\(chip.model ?? "none")")
+                lines.append("  model_label=\(chip.modelLabel ?? "none")")
+                lines.append("  display_label=\(chip.displayLabel ?? "none")")
+                lines.append("  icon_asset=\(chip.iconAsset)")
+                lines.append("  source_surface_id=\(chip.sourceSurfaceId.uuidString)")
+                lines.append("  source_surface_ref=\(v2Ref(kind: .surface, uuid: chip.sourceSurfaceId))")
+                lines.append("  source=\(chip.source ?? "none")")
+                lines.append("  terminal_type_source=\(chip.terminalTypeSource ?? "none")")
+                lines.append("  model_source=\(chip.modelSource ?? "none")")
+            } else {
+                lines.append("agent_chip=none")
             }
 
             lines.append("log_count=\(tab.logEntries.count)")

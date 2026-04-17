@@ -8172,12 +8172,26 @@ struct VerticalTabsSidebar: View {
                                 let remoteContextMenuTargets = tabManager.tabs.filter { workspace in
                                     contextTargetIds.contains(workspace.id) && workspace.isRemoteWorkspace
                                 }
+                                let agentChip: AgentChip? = {
+                                    guard let focusedId = tab.focusedPanelId else {
+                                        return nil
+                                    }
+                                    let (values, sources) = TerminalController.canonicalMetadataSnapshot(
+                                        workspaceId: tab.id, surfaceId: focusedId
+                                    )
+                                    return AgentChipResolver.resolve(
+                                        focusedSurfaceId: focusedId,
+                                        metadata: values,
+                                        sources: sources
+                                    )
+                                }()
                                 TabItemView(
                                     tabManager: tabManager,
                                     notificationStore: notificationStore,
                                     tab: tab,
                                     index: index,
                                     isActive: tabManager.selectedTabId == tab.id,
+                                    agentChip: agentChip,
                                     workspaceShortcutDigit: WorkspaceShortcutMapper.commandDigitForWorkspace(
                                         at: index,
                                         workspaceCount: workspaceCount
@@ -10563,6 +10577,7 @@ private struct TabItemView: View, Equatable {
         lhs.tab === rhs.tab &&
         lhs.index == rhs.index &&
         lhs.isActive == rhs.isActive &&
+        lhs.agentChip == rhs.agentChip &&
         lhs.workspaceShortcutDigit == rhs.workspaceShortcutDigit &&
         lhs.canCloseWorkspace == rhs.canCloseWorkspace &&
         lhs.accessibilityWorkspaceCount == rhs.accessibilityWorkspaceCount &&
@@ -10584,6 +10599,7 @@ private struct TabItemView: View, Equatable {
     @ObservedObject var tab: Tab
     let index: Int
     let isActive: Bool
+    let agentChip: AgentChip?
     let workspaceShortcutDigit: Int?
     let canCloseWorkspace: Bool
     let accessibilityWorkspaceCount: Int
@@ -10621,6 +10637,12 @@ private struct TabItemView: View, Equatable {
     private var sidebarHideAllDetails = SidebarWorkspaceDetailSettings.defaultHideAllDetails
     @AppStorage(SidebarActiveTabIndicatorSettings.styleKey)
     private var activeTabIndicatorStyleRaw = SidebarActiveTabIndicatorSettings.defaultStyle.rawValue
+    @AppStorage(WorkspacePresentationModeSettings.modeKey)
+    private var workspacePresentationMode = WorkspacePresentationModeSettings.defaultMode.rawValue
+
+    private var isMinimalMode: Bool {
+        WorkspacePresentationModeSettings.mode(for: workspacePresentationMode) == .minimal
+    }
 
     var isMultiSelected: Bool {
         selectedTabIds.contains(tab.id)
@@ -10868,6 +10890,13 @@ private struct TabItemView: View, Equatable {
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundColor(activeSecondaryColor(0.8))
                 }
+
+                AgentChipBadge(
+                    chip: agentChip,
+                    showsLabel: !isMinimalMode,
+                    foreground: activePrimaryTextColor,
+                    secondary: activeSecondaryColor(0.75)
+                )
 
                 Text(tab.title)
                     .font(.system(size: 12.5, weight: titleFontWeight))

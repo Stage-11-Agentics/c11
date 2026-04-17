@@ -5,6 +5,32 @@ import Foundation
 /// Writers declare a `source` per call. The precedence chain is
 /// `explicit > declare > osc > heuristic`. A lower-precedence write is
 /// rejected per-key (soft reject: `applied: false`, `reason: lower_precedence`).
+/// Canonical-key namespace (c11mux Module 2).
+/// String constants for the canonical metadata keys rendered in the sidebar
+/// and title bar. Non-canonical keys accept any JSON value and are opaque to
+/// c11mux. See `docs/c11mux-module-2-metadata-spec.md`.
+public enum MetadataKey {
+    public static let role = "role"
+    public static let status = "status"
+    public static let task = "task"
+    public static let model = "model"
+    public static let progress = "progress"
+    public static let terminalType = "terminal_type"
+    public static let title = "title"
+    public static let description = "description"
+
+    /// Non-canonical display hint used by M3's sidebar chip.
+    public static let modelLabel = "model_label"
+
+    public static let canonical: Set<String> = [
+        role, status, task, model, progress, terminalType, title, description
+    ]
+
+    public static let canonicalTerminalTypes: Set<String> = [
+        "claude-code", "codex", "kimi", "opencode", "shell", "unknown"
+    ]
+}
+
 public enum MetadataSource: String, CaseIterable, Codable, Sendable {
     case explicit
     case declare

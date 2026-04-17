@@ -2364,6 +2364,14 @@ class TerminalController {
         case "surface.read_text":
             return v2Result(id: id, self.v2SurfaceReadText(params: params))
 
+        // M7 — title bar projection (read-only sugar)
+        case "surface.get_titlebar_state":
+            return v2Result(id: id, self.v2SurfaceGetTitleBarState(params: params))
+        case "surface.set_titlebar_visibility":
+            return v2Result(id: id, self.v2SurfaceSetTitleBarVisibility(params: params))
+        case "surface.set_titlebar_collapsed":
+            return v2Result(id: id, self.v2SurfaceSetTitleBarCollapsed(params: params))
+
 
 #if DEBUG
         // Debug / test-only
@@ -5466,6 +5474,71 @@ class TerminalController {
         return result
     }
 
+    // MARK: - M7 title bar
+
+    /// Resolve `(Workspace, surfaceId)` for M7 title bar handlers from the generic
+    /// `surface_id` / `workspace_id` / focused-surface fallback.
+    private func v2ResolveWorkspaceForTitleBar(params: [String: Any]) -> (Workspace, UUID)? {
+        guard let tabManager = v2ResolveTabManager(params: params) else { return nil }
+        var located: (Workspace, UUID)?
+        v2MainSync {
+            if let surfaceId = v2UUID(params, "surface_id") {
+                if let ws = tabManager.tabs.first(where: { $0.panels[surfaceId] != nil }) {
+                    located = (ws, surfaceId)
+                    return
+                }
+                return
+            }
+            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager),
+                  let focused = ws.focusedPanelId else { return }
+            located = (ws, focused)
+        }
+        return located
+    }
+
+    private func v2SurfaceGetTitleBarState(params: [String: Any]) -> V2CallResult {
+        guard let (ws, surfaceId) = v2ResolveWorkspaceForTitleBar(params: params) else {
+            return .err(code: "surface_not_found", message: "Surface not found", data: nil)
+        }
+        var payload: [String: Any] = [:]
+        v2MainSync { payload = ws.titleBarStatePayload(panelId: surfaceId) }
+        payload["surface_ref"] = v2Ref(kind: .surface, uuid: surfaceId)
+        payload["workspace_id"] = ws.id.uuidString
+        payload["workspace_ref"] = v2Ref(kind: .workspace, uuid: ws.id)
+        return .ok(payload)
+    }
+
+    private func v2SurfaceSetTitleBarVisibility(params: [String: Any]) -> V2CallResult {
+        guard let (ws, _) = v2ResolveWorkspaceForTitleBar(params: params) else {
+            return .err(code: "surface_not_found", message: "Surface not found", data: nil)
+        }
+        guard let visible = params["visible"] as? Bool else {
+            return .err(code: "invalid_params", message: "visible (bool) required", data: nil)
+        }
+        v2MainSync { ws.titleBarVisible = visible }
+        return .ok(["visible": visible, "workspace_id": ws.id.uuidString])
+    }
+
+    private func v2SurfaceSetTitleBarCollapsed(params: [String: Any]) -> V2CallResult {
+        guard let (ws, surfaceId) = v2ResolveWorkspaceForTitleBar(params: params) else {
+            return .err(code: "surface_not_found", message: "Surface not found", data: nil)
+        }
+        guard let collapsed = params["collapsed"] as? Bool else {
+            return .err(code: "invalid_params", message: "collapsed (bool) required", data: nil)
+        }
+        let userInitiated = (params["user"] as? Bool) ?? false
+        v2MainSync {
+            ws.titleBarCollapsed[surfaceId] = collapsed
+            if userInitiated && collapsed {
+                ws.titleBarUserCollapsed.insert(surfaceId)
+            }
+            if !collapsed {
+                ws.titleBarUserCollapsed.remove(surfaceId)
+            }
+        }
+        return .ok(["collapsed": collapsed, "surface_id": surfaceId.uuidString])
+    }
+
     private func readTerminalTextBase64(terminalPanel: TerminalPanel, includeScrollback: Bool = false, lineLimit: Int? = nil) -> String {
         guard let surface = terminalPanel.surface.surface else { return "ERROR: Terminal surface not found" }
 
@@ -5773,6 +5846,13 @@ class TerminalController {
                 mode: mode,
                 source: source
             )
+            applyTitleDescriptionSideEffects(
+                workspaceId: resolved.workspaceId,
+                surfaceId: resolved.surfaceId,
+                tabManager: resolved.tabManager,
+                applied: result.applied,
+                autoExpand: (params["auto_expand"] as? Bool) ?? true
+            )
             return .ok(buildMetadataOkPayload(
                 workspaceId: resolved.workspaceId,
                 surfaceId: resolved.surfaceId,
@@ -5783,6 +5863,29 @@ class TerminalController {
             return .err(code: err.code, message: err.message, data: err.detailData)
         } catch {
             return .err(code: "internal_error", message: "\(error)", data: nil)
+        }
+    }
+
+    /// M7 side effect: sync render cache + auto-expand title bar when
+    /// `title` / `description` is written through M2's metadata API.
+    private func applyTitleDescriptionSideEffects(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        tabManager: TabManager,
+        applied: [String: Bool],
+        autoExpand: Bool
+    ) {
+        let titleApplied = applied[MetadataKey.title] == true
+        let descriptionApplied = applied[MetadataKey.description] == true
+        guard titleApplied || descriptionApplied else { return }
+        v2MainSync {
+            guard let ws = tabManager.tabs.first(where: { $0.id == workspaceId }) else { return }
+            if titleApplied {
+                ws.syncPanelTitleFromMetadata(panelId: surfaceId)
+            }
+            if descriptionApplied && autoExpand {
+                ws.maybeAutoExpandTitleBar(panelId: surfaceId)
+            }
         }
     }
 
@@ -5856,6 +5959,13 @@ class TerminalController {
                 surfaceId: resolved.surfaceId,
                 keys: keys,
                 source: source
+            )
+            applyTitleDescriptionSideEffects(
+                workspaceId: resolved.workspaceId,
+                surfaceId: resolved.surfaceId,
+                tabManager: resolved.tabManager,
+                applied: result.applied,
+                autoExpand: false
             )
             return .ok(buildMetadataOkPayload(
                 workspaceId: resolved.workspaceId,

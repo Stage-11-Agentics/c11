@@ -1626,6 +1626,15 @@ struct CMUXCLI {
         case "rename-tab":
             try runRenameTab(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat, windowOverride: windowId)
 
+        case "set-title":
+            try runSetTitle(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
+
+        case "set-description":
+            try runSetDescription(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
+
+        case "get-titlebar-state":
+            try runGetTitleBarState(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
+
         case "list-workspaces":
             let payload = try client.sendV2(method: "workspace.list")
             if jsonOutput {
@@ -3561,6 +3570,180 @@ struct CMUXCLI {
             windowOverride: windowOverride
         )
     }
+
+    // MARK: - M7: Surface title bar CLI
+
+    private func runSetTitle(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) throws {
+        try runSetTitleBarText(
+            key: "title",
+            commandArgs: commandArgs,
+            client: client,
+            jsonOutput: jsonOutput,
+            idFormat: idFormat
+        )
+    }
+
+    private func runSetDescription(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) throws {
+        try runSetTitleBarText(
+            key: "description",
+            commandArgs: commandArgs,
+            client: client,
+            jsonOutput: jsonOutput,
+            idFormat: idFormat
+        )
+    }
+
+    private func runSetTitleBarText(
+        key: String,
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) throws {
+        let commandName = key == "title" ? "set-title" : "set-description"
+
+        let (workspaceOpt, rem0) = parseOption(commandArgs, name: "--workspace")
+        let (surfaceOpt, rem1) = parseOption(rem0, name: "--surface")
+        let (fromFileOpt, rem2) = parseOption(rem1, name: "--from-file")
+        let (sourceOpt, rem3) = parseOption(rem2, name: "--source")
+
+        var autoExpand = true
+        var remaining: [String] = []
+        for arg in rem3 {
+            if arg == "--auto-expand=false" {
+                autoExpand = false
+            } else if arg == "--auto-expand=true" {
+                autoExpand = true
+            } else {
+                remaining.append(arg)
+            }
+        }
+
+        if let unknown = remaining.first(where: { $0.hasPrefix("--") && $0 != "--" }) {
+            throw CLIError(message: "\(commandName): unknown flag '\(unknown)'")
+        }
+
+        let value: String
+        if let fromFileOpt {
+            value = try readFromFileArgument(fromFileOpt, commandName: commandName)
+        } else {
+            let positional = remaining
+                .dropFirst(remaining.first == "--" ? 1 : 0)
+                .joined(separator: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            value = positional
+        }
+
+        if key == "title" && value.isEmpty {
+            throw CLIError(message: "missing_title: \(commandName) requires a non-empty title (or --from-file <path>). To clear: cmux clear-metadata --key title")
+        }
+
+        let surfaceRaw = surfaceOpt ?? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
+        let workspaceRaw = workspaceOpt ?? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
+        let workspaceId = try resolveWorkspaceId(workspaceRaw, client: client)
+        let surfaceId = try resolveSurfaceId(surfaceRaw, workspaceId: workspaceId, client: client)
+
+        let source = sourceOpt?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "explicit"
+
+        var params: [String: Any] = [
+            "surface_id": surfaceId,
+            "workspace_id": workspaceId,
+            "mode": "merge",
+            "source": source,
+            "metadata": [key: value]
+        ]
+        if key == "description" && !autoExpand {
+            params["auto_expand"] = false
+        }
+
+        let payload = try client.sendV2(method: "surface.set_metadata", params: params)
+
+        if jsonOutput {
+            print(jsonString(formatIDs(payload, mode: idFormat)))
+        } else {
+            let applied = (payload["applied"] as? [String: Any])?[key] as? Bool ?? false
+            let reason = (payload["reasons"] as? [String: Any])?[key] as? String
+            if applied {
+                print("OK \(key) applied=true source=\(source)")
+            } else {
+                let reasonText = reason ?? "unknown"
+                FileHandle.standardError.write(Data("Error: \(key) applied=false reason=\(reasonText)\n".utf8))
+                exit(1)
+            }
+        }
+    }
+
+    private func runGetTitleBarState(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) throws {
+        let (workspaceOpt, rem0) = parseOption(commandArgs, name: "--workspace")
+        let (surfaceOpt, remaining) = parseOption(rem0, name: "--surface")
+
+        if let unknown = remaining.first(where: { $0.hasPrefix("--") && $0 != "--" }) {
+            throw CLIError(message: "get-titlebar-state: unknown flag '\(unknown)'")
+        }
+
+        let surfaceRaw = surfaceOpt ?? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
+        let workspaceRaw = workspaceOpt ?? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
+        let workspaceId = try resolveWorkspaceId(workspaceRaw, client: client)
+        let surfaceId = try resolveSurfaceId(surfaceRaw, workspaceId: workspaceId, client: client)
+
+        let params: [String: Any] = [
+            "surface_id": surfaceId,
+            "workspace_id": workspaceId
+        ]
+        let payload = try client.sendV2(method: "surface.get_titlebar_state", params: params)
+
+        if jsonOutput {
+            print(jsonString(formatIDs(payload, mode: idFormat)))
+        } else {
+            let surfaceStr = (payload["surface_id"] as? String) ?? surfaceId
+            var lines: [String] = ["surface=\(surfaceStr)"]
+            if let title = payload["title"] as? String {
+                let src = (payload["title_source"] as? String) ?? "?"
+                lines.append("title=\(title)   [\(src)]")
+            }
+            if let desc = payload["description"] as? String {
+                let src = (payload["description_source"] as? String) ?? "?"
+                lines.append("description=\(desc)   [\(src)]")
+            }
+            let collapsed = (payload["collapsed"] as? Bool) ?? true
+            let visible = (payload["visible"] as? Bool) ?? true
+            lines.append("collapsed=\(collapsed)  visible=\(visible)")
+            if let sidebar = payload["sidebar_label"] as? String {
+                lines.append("sidebar_label=\(sidebar)")
+            }
+            print(lines.joined(separator: "\n"))
+        }
+    }
+
+    private func readFromFileArgument(_ path: String, commandName: String) throws -> String {
+        if path == "-" {
+            let data = FileHandle.standardInput.readDataToEndOfFile()
+            return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let url = URL(fileURLWithPath: resolvePath(path))
+        do {
+            let data = try Data(contentsOf: url)
+            return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            throw CLIError(message: "\(commandName): unable to read --from-file '\(path)': \(error)")
+        }
+    }
+
     struct SSHCommandOptions {
         let destination: String
         let port: Int?
@@ -6247,6 +6430,65 @@ struct CMUXCLI {
               cmux rename-tab "build logs"
               cmux rename-tab --tab tab:3 "staging server"
               cmux rename-tab --workspace workspace:2 --surface surface:5 --title "agent run"
+            """
+        case "set-title":
+            return """
+            Usage: cmux set-title [--surface <ref>] [--workspace <ref>] [--source <src>] <title-text>
+                   cmux set-title [--surface <ref>] [--workspace <ref>] [--source <src>] --from-file <path>
+                   cmux set-title [--surface <ref>] --json
+
+            Set the surface's canonical `title` metadata key (M7 + M2).
+
+            Flags:
+              --surface <ref>     Target surface (default: $CMUX_SURFACE_ID, then focused)
+              --workspace <ref>   Workspace context (default: current/$CMUX_WORKSPACE_ID)
+              --source <src>      Write source: explicit | declare | osc | heuristic (default: explicit)
+              --from-file <path>  Read title text from file (use '-' for stdin)
+              --json              Emit raw v2 socket result as JSON
+
+            Exit non-zero when precedence gate blocks the write (applied=false).
+
+            Examples:
+              cmux set-title "Running smoke tests"
+              cmux set-title --surface surface:3 "build logs"
+              echo "Agent: gemini" | cmux set-title --source declare --from-file -
+            """
+        case "set-description":
+            return """
+            Usage: cmux set-description [--surface <ref>] [--workspace <ref>] [--source <src>] [--auto-expand=false] <description-text>
+                   cmux set-description [--surface <ref>] [--workspace <ref>] [--source <src>] --from-file <path>
+
+            Set the surface's canonical `description` metadata key (M7 + M2).
+
+            Description supports inline Markdown: **bold**, *italic*, `inline code`.
+            Block-level Markdown and links render as literal text.
+
+            Flags:
+              --surface <ref>       Target surface (default: $CMUX_SURFACE_ID, then focused)
+              --workspace <ref>     Workspace context (default: current/$CMUX_WORKSPACE_ID)
+              --source <src>        Write source: explicit | declare | osc | heuristic (default: explicit)
+              --from-file <path>    Read description text from file (use '-' for stdin)
+              --auto-expand=false   Suppress first-set auto-expand behavior for this write
+              --json                Emit raw v2 socket result as JSON
+
+            Examples:
+              cmux set-description "Running **10 shards** in parallel"
+              cmux set-description --auto-expand=false --from-file ./notes.md
+            """
+        case "get-titlebar-state":
+            return """
+            Usage: cmux get-titlebar-state [--surface <ref>] [--workspace <ref>] [--json]
+
+            Read the title bar's current state for a surface: title, description, sources,
+            collapsed flag, visibility flag, and the truncated `sidebar_label` projection.
+
+            Flags:
+              --surface <ref>     Target surface (default: $CMUX_SURFACE_ID, then focused)
+              --workspace <ref>   Workspace context (default: current/$CMUX_WORKSPACE_ID)
+              --json              Emit raw v2 socket result as JSON
+
+            Example:
+              cmux get-titlebar-state --json
             """
         case "new-workspace":
             return """
@@ -11531,6 +11773,9 @@ struct CMUXCLI {
           reorder-surface --surface <id|ref|index> (--index <n> | --before <id|ref|index> | --after <id|ref|index>)
           tab-action --action <name> [--tab <id|ref|index>] [--surface <id|ref|index>] [--workspace <id|ref|index>] [--title <text>] [--url <url>]
           rename-tab [--workspace <id|ref>] [--tab <id|ref>] [--surface <id|ref>] <title>
+          set-title [--workspace <id|ref>] [--surface <id|ref>] [--source <src>] <title>
+          set-description [--workspace <id|ref>] [--surface <id|ref>] [--source <src>] [--auto-expand=false] <text>
+          get-titlebar-state [--workspace <id|ref>] [--surface <id|ref>] [--json]
           drag-surface-to-split --surface <id|ref> <left|right|up|down>
           refresh-surfaces
           surface-health [--workspace <id|ref>]

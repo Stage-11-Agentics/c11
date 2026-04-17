@@ -4889,6 +4889,12 @@ final class Workspace: Identifiable, ObservableObject {
     @Published var panelDirectories: [UUID: String] = [:]
     @Published var panelTitles: [UUID: String] = [:]
     @Published private(set) var panelCustomTitles: [UUID: String] = [:]
+    /// M7 per-surface title-bar collapse state (in-memory, session-scoped).
+    @Published var titleBarCollapsed: [UUID: Bool] = [:]
+    /// M7 per-surface flag: user explicitly collapsed this surface (suppresses auto-expand).
+    @Published var titleBarUserCollapsed: Set<UUID> = []
+    /// M7 workspace-scoped visibility for surface title bars (default: visible).
+    @Published var titleBarVisible: Bool = true
     @Published private(set) var pinnedPanelIds: Set<UUID> = []
     @Published private(set) var manualUnreadPanelIds: Set<UUID> = []
     private var manualUnreadMarkedAt: [UUID: Date] = [:]
@@ -5134,7 +5140,7 @@ final class Workspace: Identifiable, ObservableObject {
         // Create initial tab in bonsplit and store the mapping
         var initialTabId: TabID?
         if let tabId = bonsplitController.createTab(
-            title: title,
+            title: TitleFormatting.sidebarLabel(from: title),
             icon: "terminal.fill",
             kind: SurfaceKind.terminal,
             isDirty: false,
@@ -5314,7 +5320,8 @@ final class Workspace: Identifiable, ObservableObject {
                 self.panelTitles[browserPanel.id] = nextTitle
             }
             let resolvedTitle = self.resolvedPanelTitle(panelId: browserPanel.id, fallback: nextTitle)
-            let titleUpdate: String? = existing.title == resolvedTitle ? nil : resolvedTitle
+            let sidebarLabel = TitleFormatting.sidebarLabel(from: resolvedTitle)
+            let titleUpdate: String? = existing.title == sidebarLabel ? nil : sidebarLabel
             let faviconUpdate: Data?? = existing.iconImageData == favicon ? nil : .some(favicon)
             let loadingUpdate: Bool? = existing.isLoading == isLoading ? nil : isLoading
 
@@ -5374,10 +5381,11 @@ final class Workspace: Identifiable, ObservableObject {
                     self.panelTitles[markdownPanel.id] = newTitle
                 }
                 let resolvedTitle = self.resolvedPanelTitle(panelId: markdownPanel.id, fallback: newTitle)
-                guard existing.title != resolvedTitle else { return }
+                let sidebarLabel = TitleFormatting.sidebarLabel(from: resolvedTitle)
+                guard existing.title != sidebarLabel else { return }
                 self.bonsplitController.updateTab(
                     tabId,
-                    title: resolvedTitle,
+                    title: sidebarLabel,
                     hasCustomTitle: self.panelCustomTitles[markdownPanel.id] != nil
                 )
             }
@@ -5513,20 +5521,29 @@ final class Workspace: Identifiable, ObservableObject {
         let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let previous = panelCustomTitles[panelId]
         if trimmed.isEmpty {
-            guard previous != nil else { return }
-            panelCustomTitles.removeValue(forKey: panelId)
+            if previous != nil {
+                panelCustomTitles.removeValue(forKey: panelId)
+            }
+            _ = try? SurfaceMetadataStore.shared.clearMetadata(
+                workspaceId: id,
+                surfaceId: panelId,
+                keys: ["title"],
+                source: .explicit
+            )
         } else {
-            guard previous != trimmed else { return }
-            panelCustomTitles[panelId] = trimmed
+            if previous != trimmed {
+                panelCustomTitles[panelId] = trimmed
+            }
+            _ = try? SurfaceMetadataStore.shared.setMetadata(
+                workspaceId: id,
+                surfaceId: panelId,
+                partial: ["title": trimmed],
+                mode: .merge,
+                source: .explicit
+            )
         }
 
-        guard let panel = panels[panelId], let tabId = surfaceIdFromPanelId(panelId) else { return }
-        let baseTitle = panelTitles[panelId] ?? panel.displayTitle
-        bonsplitController.updateTab(
-            tabId,
-            title: resolvedPanelTitle(panelId: panelId, fallback: baseTitle),
-            hasCustomTitle: panelCustomTitles[panelId] != nil
-        )
+        syncPanelTitleFromMetadata(panelId: panelId)
     }
 
     func isPanelPinned(_ panelId: UUID) -> Bool {
@@ -5872,7 +5889,7 @@ final class Workspace: Identifiable, ObservableObject {
             let resolvedTitle = resolvedPanelTitle(panelId: panelId, fallback: baseTitle)
             bonsplitController.updateTab(
                 tabId,
-                title: resolvedTitle,
+                title: TitleFormatting.sidebarLabel(from: resolvedTitle),
                 hasCustomTitle: panelCustomTitles[panelId] != nil
             )
         }
@@ -5891,6 +5908,112 @@ final class Workspace: Identifiable, ObservableObject {
         return didMutate
     }
 
+    // MARK: - M7 title bar integration
+
+    /// Apply `title` from the M2 metadata blob into `panelTitles` render cache
+    /// and propagate it into bonsplit + workspace title mirrors.
+    /// Safe to call on main thread; expected call path: after a `set_metadata`
+    /// that touched `title`.
+    func syncPanelTitleFromMetadata(panelId: UUID) {
+        let resolvedTitle: String
+        let metadataTitle = SurfaceMetadataStore.shared
+            .getMetadata(workspaceId: id, surfaceId: panelId)
+            .metadata[MetadataKey.title] as? String
+        if let meta = metadataTitle,
+           !meta.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            resolvedTitle = meta
+        } else if let fallback = panels[panelId]?.displayTitle {
+            resolvedTitle = fallback
+        } else {
+            return
+        }
+
+        let trimmed = resolvedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty, panelTitles[panelId] != trimmed {
+            panelTitles[panelId] = trimmed
+        }
+
+        if let tabId = surfaceIdFromPanelId(panelId),
+           let panel = panels[panelId] {
+            let baseTitle = panelTitles[panelId] ?? panel.displayTitle
+            let sidebarLabel = TitleFormatting.sidebarLabel(from: resolvedPanelTitle(panelId: panelId, fallback: baseTitle))
+            bonsplitController.updateTab(
+                tabId,
+                title: sidebarLabel,
+                hasCustomTitle: panelCustomTitles[panelId] != nil
+            )
+        }
+
+        if panels.count == 1, customTitle == nil {
+            if self.title != trimmed {
+                self.title = trimmed
+            }
+        }
+    }
+
+    /// Auto-expand the title bar when a description transitions from empty → non-empty,
+    /// unless the user has explicitly collapsed this surface in the current session.
+    func maybeAutoExpandTitleBar(panelId: UUID) {
+        guard !titleBarUserCollapsed.contains(panelId) else { return }
+        if titleBarCollapsed[panelId] != false {
+            titleBarCollapsed[panelId] = false
+        }
+    }
+
+    /// Read the current M7 title-bar state for a surface as a SwiftUI view state.
+    func surfaceTitleBarState(panelId: UUID) -> SurfaceTitleBarState {
+        let snapshot = SurfaceMetadataStore.shared.getMetadata(workspaceId: id, surfaceId: panelId)
+        let title = snapshot.metadata[MetadataKey.title] as? String
+        let description = snapshot.metadata[MetadataKey.description] as? String
+        return SurfaceTitleBarState(
+            title: title,
+            description: description,
+            titleSource: Self.extractSource(snapshot.sources[MetadataKey.title]),
+            descriptionSource: Self.extractSource(snapshot.sources[MetadataKey.description]),
+            visible: titleBarVisible,
+            collapsed: titleBarCollapsed[panelId] ?? true
+        )
+    }
+
+    private static func extractSource(_ entry: [String: Any]?) -> MetadataSource? {
+        guard let name = entry?["source"] as? String else { return nil }
+        return MetadataSource(rawValue: name)
+    }
+
+    /// Toggle per-surface collapse. User-initiated toggles mark the surface so
+    /// auto-expand no longer applies for the remainder of the session.
+    func toggleSurfaceTitleBarCollapsed(panelId: UUID) {
+        let current = titleBarCollapsed[panelId] ?? true
+        titleBarCollapsed[panelId] = !current
+        titleBarUserCollapsed.insert(panelId)
+    }
+
+    /// Read the current M7 title-bar state for a surface as a socket-ready dict.
+    func titleBarStatePayload(panelId: UUID) -> [String: Any] {
+        let snapshot = SurfaceMetadataStore.shared.getMetadata(workspaceId: id, surfaceId: panelId)
+        var payload: [String: Any] = [:]
+        payload["surface_id"] = panelId.uuidString
+        if let title = snapshot.metadata[MetadataKey.title] as? String {
+            payload["title"] = title
+            if let info = snapshot.sources[MetadataKey.title] {
+                if let src = info["source"] { payload["title_source"] = src }
+                if let ts = info["ts"] { payload["title_ts"] = ts }
+            }
+            payload["sidebar_label"] = TitleFormatting.sidebarLabel(from: title)
+        }
+        if let description = snapshot.metadata[MetadataKey.description] as? String {
+            payload["description"] = description
+            if let info = snapshot.sources[MetadataKey.description] {
+                if let src = info["source"] { payload["description_source"] = src }
+                if let ts = info["ts"] { payload["description_ts"] = ts }
+            }
+        }
+        let collapsed = titleBarCollapsed[panelId] ?? true
+        payload["collapsed"] = collapsed
+        payload["visible"] = titleBarVisible
+        return payload
+    }
+
     func pruneSurfaceMetadata(validSurfaceIds: Set<UUID>) {
         panelDirectories = panelDirectories.filter { validSurfaceIds.contains($0.key) }
         panelTitles = panelTitles.filter { validSurfaceIds.contains($0.key) }
@@ -5904,6 +6027,8 @@ final class Workspace: Identifiable, ObservableObject {
         panelShellActivityStates = panelShellActivityStates.filter { validSurfaceIds.contains($0.key) }
         panelPullRequests = panelPullRequests.filter { validSurfaceIds.contains($0.key) }
         SurfaceMetadataStore.shared.pruneWorkspace(workspaceId: id, validSurfaceIds: validSurfaceIds)
+        titleBarCollapsed = titleBarCollapsed.filter { validSurfaceIds.contains($0.key) }
+        titleBarUserCollapsed = titleBarUserCollapsed.filter { validSurfaceIds.contains($0) }
         recomputeListeningPorts()
     }
 
@@ -6665,7 +6790,7 @@ final class Workspace: Identifiable, ObservableObject {
 
         // Create tab in bonsplit
         guard let newTabId = bonsplitController.createTab(
-            title: newPanel.displayTitle,
+            title: TitleFormatting.sidebarLabel(from: newPanel.displayTitle),
             icon: newPanel.displayIcon,
             kind: SurfaceKind.terminal,
             isDirty: newPanel.isDirty,
@@ -6828,7 +6953,7 @@ final class Workspace: Identifiable, ObservableObject {
         panelTitles[browserPanel.id] = browserPanel.displayTitle
 
         guard let newTabId = bonsplitController.createTab(
-            title: browserPanel.displayTitle,
+            title: TitleFormatting.sidebarLabel(from: browserPanel.displayTitle),
             icon: browserPanel.displayIcon,
             kind: SurfaceKind.browser,
             isDirty: browserPanel.isDirty,
@@ -6947,7 +7072,7 @@ final class Workspace: Identifiable, ObservableObject {
         panelTitles[markdownPanel.id] = markdownPanel.displayTitle
 
         guard let newTabId = bonsplitController.createTab(
-            title: markdownPanel.displayTitle,
+            title: TitleFormatting.sidebarLabel(from: markdownPanel.displayTitle),
             icon: markdownPanel.displayIcon,
             kind: SurfaceKind.markdown,
             isDirty: markdownPanel.isDirty,
@@ -7483,7 +7608,7 @@ final class Workspace: Identifiable, ObservableObject {
         }
 
         guard let newTabId = bonsplitController.createTab(
-            title: detached.title,
+            title: TitleFormatting.sidebarLabel(from: detached.title),
             hasCustomTitle: detached.customTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
             icon: detached.icon,
             iconImageData: detached.iconImageData,
@@ -7945,7 +8070,7 @@ final class Workspace: Identifiable, ObservableObject {
 
         // Create tab in bonsplit
         if let newTabId = bonsplitController.createTab(
-            title: newPanel.displayTitle,
+            title: TitleFormatting.sidebarLabel(from: newPanel.displayTitle),
             icon: newPanel.displayIcon,
             kind: SurfaceKind.terminal,
             isDirty: newPanel.isDirty,
@@ -9340,6 +9465,9 @@ extension Workspace: BonsplitDelegate {
         panelShellActivityStates.removeValue(forKey: panelId)
         surfaceTTYNames.removeValue(forKey: panelId)
         restoredTerminalScrollbackByPanelId.removeValue(forKey: panelId)
+        titleBarCollapsed.removeValue(forKey: panelId)
+        titleBarUserCollapsed.remove(panelId)
+        SurfaceMetadataStore.shared.removeSurface(workspaceId: id, surfaceId: panelId)
         PortScanner.shared.unregisterPanel(workspaceId: id, panelId: panelId)
         AgentDetector.shared.unregister(workspaceId: id, panelId: panelId)
         terminalInheritanceFontPointsByPanelId.removeValue(forKey: panelId)
@@ -9625,7 +9753,7 @@ extension Workspace: BonsplitDelegate {
 
                     bonsplitController.updateTab(
                         replacementTab.id,
-                        title: replacementPanel.displayTitle,
+                        title: TitleFormatting.sidebarLabel(from: replacementPanel.displayTitle),
                         icon: .some(replacementPanel.displayIcon),
                         iconImageData: .some(nil),
                         kind: .some(SurfaceKind.terminal),
@@ -9689,7 +9817,7 @@ extension Workspace: BonsplitDelegate {
         seedTerminalInheritanceFontPoints(panelId: newPanel.id, configTemplate: inheritedConfig)
 
         guard let newTabId = bonsplitController.createTab(
-            title: newPanel.displayTitle,
+            title: TitleFormatting.sidebarLabel(from: newPanel.displayTitle),
             icon: newPanel.displayIcon,
             kind: SurfaceKind.terminal,
             isDirty: newPanel.isDirty,

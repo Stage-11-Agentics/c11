@@ -2778,8 +2778,8 @@ class TabManager: ObservableObject {
     }
 
     private func enqueuePanelTitleUpdate(tabId: UUID, panelId: UUID, title: String) {
+        // OSC titles: pass through (including empty — empty OSC clears title when current source is osc).
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
         let key = PanelTitleUpdateKey(tabId: tabId, panelId: panelId)
         pendingPanelTitleUpdates[key] = trimmed
         panelTitleUpdateCoalescer.signal { [weak self] in
@@ -2798,10 +2798,40 @@ class TabManager: ObservableObject {
 
     private func updatePanelTitle(tabId: UUID, panelId: UUID, title: String) {
         guard let tab = tabs.first(where: { $0.id == tabId }) else { return }
-        let didChange = tab.updatePanelTitle(panelId: panelId, title: title)
-        guard didChange else { return }
 
-        // Update window title if this is the selected tab and focused panel
+        // M7: route OSC title through M2 metadata store with source: .osc.
+        // The store's precedence gate drops the write if title is held by declare/explicit.
+        var applied = false
+        if title.isEmpty {
+            do {
+                let outcome = try SurfaceMetadataStore.shared.clearMetadata(
+                    workspaceId: tab.id,
+                    surfaceId: panelId,
+                    keys: ["title"],
+                    source: .osc
+                )
+                applied = outcome.applied["title"] ?? false
+            } catch {
+                applied = false
+            }
+        } else {
+            do {
+                let outcome = try SurfaceMetadataStore.shared.setMetadata(
+                    workspaceId: tab.id,
+                    surfaceId: panelId,
+                    partial: ["title": title],
+                    mode: .merge,
+                    source: .osc
+                )
+                applied = outcome.applied["title"] ?? false
+            } catch {
+                applied = false
+            }
+        }
+        guard applied else { return }
+
+        tab.syncPanelTitleFromMetadata(panelId: panelId)
+
         if selectedTabId == tabId && tab.focusedPanelId == panelId {
             updateWindowTitle(for: tab)
         }

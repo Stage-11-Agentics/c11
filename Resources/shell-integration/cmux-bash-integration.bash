@@ -129,6 +129,17 @@ _cmux_ports_kick() {
     } >/dev/null 2>&1 & disown
 }
 
+_cmux_agent_kick() {
+    # c11mux Module 1: nudge the app to re-run the TUI heuristic for this panel.
+    # The app coalesces kicks and runs a single `ps -t` across all registered TTYs.
+    [[ -S "$CMUX_SOCKET_PATH" ]] || return 0
+    [[ -n "$CMUX_TAB_ID" ]] || return 0
+    [[ -n "$CMUX_PANEL_ID" ]] || return 0
+    {
+        _cmux_send "agent_kick --tab=$CMUX_TAB_ID --panel=$CMUX_PANEL_ID"
+    } >/dev/null 2>&1 & disown
+}
+
 _cmux_clear_pr_for_panel() {
     [[ -S "$CMUX_SOCKET_PATH" ]] || return 0
     [[ -n "$CMUX_TAB_ID" ]] || return 0
@@ -362,6 +373,7 @@ _cmux_preexec_command() {
     _cmux_report_shell_activity_state running
     _cmux_report_tty_once
     _cmux_ports_kick
+    _cmux_agent_kick
     _cmux_stop_pr_poll_loop
 }
 
@@ -496,6 +508,7 @@ _cmux_prompt_command() {
     if (( now - _CMUX_PORTS_LAST_RUN >= 10 )); then
         _cmux_ports_kick
     fi
+    _cmux_agent_kick
 }
 
 _cmux_install_prompt_command() {

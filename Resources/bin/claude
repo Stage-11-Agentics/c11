@@ -80,6 +80,30 @@ done
 # the actual claude process PID, which hooks use for stale-session detection.
 export CMUX_CLAUDE_PID=$$
 
+# c11mux Module 1: declare agent identity via `cmux set-agent` (source=declare).
+# Runs in the background so startup latency is unaffected. Precedence at the
+# store level ensures a prior explicit value is not overwritten.
+#
+# Default --type to "claude-code" since this is the claude wrapper; callers may
+# override by exporting CMUX_AGENT_TYPE. Optional --model / --task / --role
+# forward from matching CMUX_AGENT_* vars if present.
+cmux_set_agent_bg() {
+    local cmux_bin="$1"
+    local agent_type="${CMUX_AGENT_TYPE:-claude-code}"
+    [[ -n "$agent_type" ]] || return 0
+    local args=(--type "$agent_type")
+    [[ -n "${CMUX_AGENT_MODEL:-}" ]] && args+=(--model "$CMUX_AGENT_MODEL")
+    [[ -n "${CMUX_AGENT_TASK:-}" ]] && args+=(--task "$CMUX_AGENT_TASK")
+    [[ -n "${CMUX_AGENT_ROLE:-}" ]] && args+=(--role "$CMUX_AGENT_ROLE")
+    (CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+        "$cmux_bin" --socket "${CMUX_SOCKET_PATH}" set-agent "${args[@]}" \
+        >/dev/null 2>&1) &
+    disown 2>/dev/null || true
+}
+cmux_set_agent_bin="$(cd "$(dirname "$0")" && pwd)/cmux"
+[[ -x "$cmux_set_agent_bin" ]] || cmux_set_agent_bin="$(command -v cmux || true)"
+[[ -n "$cmux_set_agent_bin" ]] && cmux_set_agent_bg "$cmux_set_agent_bin"
+
 # Build hooks settings JSON.
 # Claude Code merges --settings additively with the user's own settings.json.
 # - SessionStart/Stop/Notification: existing lifecycle hooks

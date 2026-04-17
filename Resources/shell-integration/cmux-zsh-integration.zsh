@@ -229,6 +229,17 @@ _cmux_ports_kick() {
     } >/dev/null 2>&1 &!
 }
 
+_cmux_agent_kick() {
+    # c11mux Module 1: nudge the app to re-run the TUI heuristic for this panel.
+    # The app coalesces kicks and runs a single `ps -t` across all registered TTYs.
+    [[ -S "$CMUX_SOCKET_PATH" ]] || return 0
+    [[ -n "$CMUX_TAB_ID" ]] || return 0
+    [[ -n "$CMUX_PANEL_ID" ]] || return 0
+    {
+        _cmux_send "agent_kick --tab=$CMUX_TAB_ID --panel=$CMUX_PANEL_ID"
+    } >/dev/null 2>&1 &!
+}
+
 _cmux_report_git_branch_for_path() {
     local repo_path="$1"
     [[ -n "$repo_path" ]] || return 0
@@ -524,6 +535,7 @@ _cmux_preexec() {
     # Register TTY + kick batched port scan for foreground commands (servers).
     _cmux_report_tty_once
     _cmux_ports_kick
+    _cmux_agent_kick
     _cmux_stop_pr_poll_loop
     _cmux_start_git_head_watch
 }
@@ -689,6 +701,7 @@ _cmux_precmd() {
     if (( cmd_dur >= 2 || now - _CMUX_PORTS_LAST_RUN >= 10 )); then
         _cmux_ports_kick
     fi
+    _cmux_agent_kick
 }
 
 # Ensure Resources/bin is at the front of PATH, and remove the app's

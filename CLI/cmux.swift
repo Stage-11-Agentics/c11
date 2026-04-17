@@ -2192,6 +2192,42 @@ struct CMUXCLI {
             )
             print(response)
 
+        case "set-agent":
+            try runSetAgentCommand(
+                commandArgs: commandArgs,
+                client: client,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat,
+                windowOverride: windowId
+            )
+
+        case "set-metadata":
+            try runSetMetadataCommand(
+                commandArgs: commandArgs,
+                client: client,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat,
+                windowOverride: windowId
+            )
+
+        case "get-metadata":
+            try runGetMetadataCommand(
+                commandArgs: commandArgs,
+                client: client,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat,
+                windowOverride: windowId
+            )
+
+        case "clear-metadata":
+            try runClearMetadataCommand(
+                commandArgs: commandArgs,
+                client: client,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat,
+                windowOverride: windowId
+            )
+
         case "claude-hook":
             cliTelemetry.breadcrumb("claude-hook.dispatch")
             do {
@@ -6879,6 +6915,95 @@ struct CMUXCLI {
               cmux sidebar-state
               cmux sidebar-state --workspace workspace:2
             """
+        case "set-agent":
+            return """
+            Usage: cmux set-agent --type <terminal_type>
+                                  [--model <id>] [--task <id>] [--role <id>]
+                                  [--surface <id|ref>] [--workspace <id|ref>]
+                                  [--json]
+
+            Declare agent identity for a surface. Writes through
+            surface.set_metadata with source=declare, mode=merge.
+
+            Only flags present are written (omitting --model does not clear an
+            existing declared model). --type is kebab-case, ≤ 32 chars.
+
+            Flags:
+              --type <terminal_type>   Canonical or custom kebab-case type (required)
+              --model <id>             Agent model (e.g. claude-opus-4-7)
+              --task <id>              Opaque task identifier
+              --role <id>              Opaque role identifier
+              --surface <id|ref>       Target surface (default: $CMUX_SURFACE_ID / focused)
+              --workspace <id|ref>     Target workspace (default: $CMUX_WORKSPACE_ID)
+              --json                   Emit raw JSON-RPC result
+
+            Examples:
+              cmux set-agent --type claude-code --model claude-opus-4-7
+              cmux set-agent --type opencode --task task-42 --surface surface:1
+            """
+        case "set-metadata":
+            return """
+            Usage: cmux set-metadata [--surface <id|ref>] [--workspace <id|ref>]
+                                     (--json '{...}' | --key <K> --value <V> [--type string|number|bool|json])
+                                     [--mode merge|replace] [--source explicit|declare|osc|heuristic]
+                                     [--json]
+
+            Set one or more metadata keys on a surface via surface.set_metadata.
+            Defaults: mode=merge, source=explicit.
+
+            Flags:
+              --json '{...}'           Full JSON object of keys/values
+              --key <K> --value <V>    Single-key write; use --type to coerce
+              --type <string|number|bool|json>   Value coercion (default: string)
+              --mode <merge|replace>   Merge (default) or full replace (source=explicit only)
+              --source <src>           Write source (default: explicit)
+              --surface <id|ref>       Target surface (default: $CMUX_SURFACE_ID / focused)
+              --workspace <id|ref>     Target workspace (default: $CMUX_WORKSPACE_ID)
+
+            Examples:
+              cmux set-metadata --key title --value "My Surface"
+              cmux set-metadata --json '{"title":"x","role":"review"}'
+              cmux set-metadata --key progress --value 0.5 --type number
+            """
+        case "get-metadata":
+            return """
+            Usage: cmux get-metadata [--surface <id|ref>] [--workspace <id|ref>]
+                                     [--key <K> ...] [--sources] [--json]
+
+            Read metadata (and optional per-key sidecar) for a surface via
+            surface.get_metadata. Repeat --key to filter to specific keys.
+
+            Flags:
+              --key <K>                Restrict to one key (repeatable)
+              --sources                Include metadata_sources sidecar
+              --surface <id|ref>       Target surface (default: $CMUX_SURFACE_ID / focused)
+              --workspace <id|ref>     Target workspace (default: $CMUX_WORKSPACE_ID)
+              --json                   Emit raw JSON result
+
+            Examples:
+              cmux get-metadata
+              cmux get-metadata --key terminal_type --sources
+            """
+        case "clear-metadata":
+            return """
+            Usage: cmux clear-metadata [--surface <id|ref>] [--workspace <id|ref>]
+                                       [--key <K> ...] [--source explicit|declare|osc|heuristic]
+                                       [--json]
+
+            Clear keys from a surface's metadata via surface.clear_metadata. With no
+            --key flags, clears the entire blob (requires source=explicit).
+
+            Flags:
+              --key <K>                Key to clear (repeatable)
+              --source <src>           Precedence source (default: explicit)
+              --surface <id|ref>       Target surface (default: $CMUX_SURFACE_ID / focused)
+              --workspace <id|ref>     Target workspace (default: $CMUX_WORKSPACE_ID)
+              --json                   Emit raw JSON result
+
+            Examples:
+              cmux clear-metadata --key terminal_type
+              cmux clear-metadata --surface surface:2
+            """
         case "set-app-focus":
             return """
             Usage: cmux set-app-focus <active|inactive|clear>
@@ -7838,6 +7963,290 @@ struct CMUXCLI {
         // When --window is explicitly targeted, don't fall back to env workspace from a different window
         if windowOverride != nil { return nil }
         return ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
+    }
+
+    // MARK: - Module 1 / Module 2 metadata CLI
+
+    /// Collect all `--<name> <value>` and `--<name>=<value>` occurrences.
+    /// Used for repeated flags like `--key foo --key bar`.
+    private func collectRepeatedOption(_ args: [String], name: String) -> [String] {
+        var out: [String] = []
+        var i = 0
+        while i < args.count {
+            let arg = args[i]
+            if arg == name, i + 1 < args.count {
+                out.append(args[i + 1])
+                i += 2
+                continue
+            }
+            if arg.hasPrefix("\(name)=") {
+                out.append(String(arg.dropFirst(name.count + 1)))
+                i += 1
+                continue
+            }
+            i += 1
+        }
+        return out
+    }
+
+    /// Resolve `(workspace_id, surface_id)` for a metadata-style CLI call.
+    /// Honors --surface, --workspace, `CMUX_SURFACE_ID`, `CMUX_WORKSPACE_ID`, and falls back
+    /// to the focused surface when no explicit target is supplied.
+    private func resolveMetadataTarget(
+        commandArgs: [String],
+        client: SocketClient,
+        windowOverride: String?
+    ) throws -> (workspaceId: String?, surfaceId: String?) {
+        let workspaceRaw = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowOverride)
+        let workspaceId = try normalizeWorkspaceHandle(workspaceRaw, client: client)
+
+        let surfaceRaw = optionValue(commandArgs, name: "--surface")
+            ?? optionValue(commandArgs, name: "--panel")
+            ?? (workspaceRaw == nil && windowOverride == nil
+                ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
+                : nil)
+        let surfaceId = try normalizeSurfaceHandle(
+            surfaceRaw,
+            client: client,
+            workspaceHandle: workspaceId,
+            allowFocused: surfaceRaw == nil
+        )
+        return (workspaceId, surfaceId)
+    }
+
+    /// `cmux set-agent` — M1 sugar over `surface.set_metadata { source: declare, mode: merge }`.
+    private func runSetAgentCommand(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat,
+        windowOverride: String?
+    ) throws {
+        guard let type = optionValue(commandArgs, name: "--type") else {
+            throw CLIError(message: "set-agent requires --type <terminal_type>")
+        }
+        // Pre-validate per spec: kebab-case, ≤ 32 chars.
+        let kebab = try NSRegularExpression(pattern: "^[a-z][a-z0-9-]*$")
+        let range = NSRange(type.startIndex..<type.endIndex, in: type)
+        guard type.count <= 32,
+              kebab.firstMatch(in: type, options: [], range: range) != nil else {
+            throw CLIError(message: "invalid_value: --type must be kebab-case and ≤ 32 chars (got: \(type))")
+        }
+
+        var metadata: [String: Any] = ["terminal_type": type]
+        if let model = optionValue(commandArgs, name: "--model") { metadata["model"] = model }
+        if let task = optionValue(commandArgs, name: "--task") { metadata["task"] = task }
+        if let role = optionValue(commandArgs, name: "--role") { metadata["role"] = role }
+
+        let (workspaceId, surfaceId) = try resolveMetadataTarget(
+            commandArgs: commandArgs,
+            client: client,
+            windowOverride: windowOverride
+        )
+        var params: [String: Any] = [
+            "metadata": metadata,
+            "mode": "merge",
+            "source": "declare"
+        ]
+        if let workspaceId { params["workspace_id"] = workspaceId }
+        if let surfaceId { params["surface_id"] = surfaceId }
+
+        let payload = try client.sendV2(method: "surface.set_metadata", params: params)
+        printMetadataResult(payload, jsonOutput: jsonOutput, idFormat: idFormat)
+    }
+
+    /// `cmux set-metadata` — M2 sugar over `surface.set_metadata { source: explicit }`.
+    private func runSetMetadataCommand(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat,
+        windowOverride: String?
+    ) throws {
+        var metadata: [String: Any] = [:]
+        if let jsonStr = optionValue(commandArgs, name: "--json-input")
+            ?? optionValue(commandArgs, name: "--body") {
+            guard let data = jsonStr.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw CLIError(message: "invalid_json: --json must be a JSON object string")
+            }
+            metadata = obj
+        } else if let rawJSON = optionValue(commandArgs, name: "--json"),
+                  let data = rawJSON.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            // Accept --json '{...}' when it parses as an object. If it doesn't parse
+            // (e.g. user meant the output toggle), fall through to key/value handling.
+            metadata = obj
+        }
+
+        if metadata.isEmpty {
+            guard let key = optionValue(commandArgs, name: "--key"),
+                  let valueRaw = optionValue(commandArgs, name: "--value") else {
+                throw CLIError(message: "set-metadata requires --key/--value or --json '{...}'")
+            }
+            let typeHint = (optionValue(commandArgs, name: "--type") ?? "string").lowercased()
+            switch typeHint {
+            case "string": metadata[key] = valueRaw
+            case "number":
+                if let n = Int(valueRaw) {
+                    metadata[key] = n
+                } else if let d = Double(valueRaw) {
+                    metadata[key] = d
+                } else {
+                    throw CLIError(message: "invalid_value: --value is not a number (got: \(valueRaw))")
+                }
+            case "bool", "boolean":
+                let v = valueRaw.lowercased()
+                if v == "true" || v == "1" || v == "yes" { metadata[key] = true }
+                else if v == "false" || v == "0" || v == "no" { metadata[key] = false }
+                else { throw CLIError(message: "invalid_value: --value is not a bool (got: \(valueRaw))") }
+            case "json":
+                guard let data = valueRaw.data(using: .utf8),
+                      let parsed = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) else {
+                    throw CLIError(message: "invalid_json: --value is not JSON (got: \(valueRaw))")
+                }
+                metadata[key] = parsed
+            default:
+                throw CLIError(message: "invalid_value: --type must be string|number|bool|json")
+            }
+        }
+
+        let mode = (optionValue(commandArgs, name: "--mode") ?? "merge").lowercased()
+        let source = (optionValue(commandArgs, name: "--source") ?? "explicit").lowercased()
+        let (workspaceId, surfaceId) = try resolveMetadataTarget(
+            commandArgs: commandArgs,
+            client: client,
+            windowOverride: windowOverride
+        )
+        var params: [String: Any] = [
+            "metadata": metadata,
+            "mode": mode,
+            "source": source
+        ]
+        if let workspaceId { params["workspace_id"] = workspaceId }
+        if let surfaceId { params["surface_id"] = surfaceId }
+
+        let payload = try client.sendV2(method: "surface.set_metadata", params: params)
+        printMetadataResult(payload, jsonOutput: jsonOutput, idFormat: idFormat)
+    }
+
+    /// `cmux get-metadata` — M2 sugar over `surface.get_metadata`.
+    private func runGetMetadataCommand(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat,
+        windowOverride: String?
+    ) throws {
+        let includeSources = hasFlag(commandArgs, name: "--sources")
+            || hasFlag(commandArgs, name: "--include-sources")
+        let keys = collectRepeatedOption(commandArgs, name: "--key")
+        let (workspaceId, surfaceId) = try resolveMetadataTarget(
+            commandArgs: commandArgs,
+            client: client,
+            windowOverride: windowOverride
+        )
+        var params: [String: Any] = [:]
+        if !keys.isEmpty { params["keys"] = keys }
+        if includeSources { params["include_sources"] = true }
+        if let workspaceId { params["workspace_id"] = workspaceId }
+        if let surfaceId { params["surface_id"] = surfaceId }
+
+        let payload = try client.sendV2(method: "surface.get_metadata", params: params)
+        if jsonOutput {
+            print(jsonString(formatIDs(payload, mode: idFormat)))
+            return
+        }
+        let metadata = payload["metadata"] as? [String: Any] ?? [:]
+        let sources = payload["metadata_sources"] as? [String: [String: Any]] ?? [:]
+        if metadata.isEmpty {
+            print("(empty)")
+            return
+        }
+        let keyOrder = metadata.keys.sorted()
+        for k in keyOrder {
+            guard let v = metadata[k] else { continue }
+            let valueText = renderScalarOrJSON(v)
+            if includeSources, let sidecar = sources[k] {
+                let src = (sidecar["source"] as? String) ?? "?"
+                let ts = (sidecar["ts"] as? Double).map { String(format: "%.3f", $0) } ?? "?"
+                print("\(k) = \(valueText)  [\(src) @ \(ts)]")
+            } else {
+                print("\(k) = \(valueText)")
+            }
+        }
+    }
+
+    /// `cmux clear-metadata` — M2 sugar over `surface.clear_metadata`.
+    private func runClearMetadataCommand(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat,
+        windowOverride: String?
+    ) throws {
+        let keys = collectRepeatedOption(commandArgs, name: "--key")
+        let source = (optionValue(commandArgs, name: "--source") ?? "explicit").lowercased()
+        let (workspaceId, surfaceId) = try resolveMetadataTarget(
+            commandArgs: commandArgs,
+            client: client,
+            windowOverride: windowOverride
+        )
+        var params: [String: Any] = ["source": source]
+        if !keys.isEmpty { params["keys"] = keys }
+        if let workspaceId { params["workspace_id"] = workspaceId }
+        if let surfaceId { params["surface_id"] = surfaceId }
+
+        let payload = try client.sendV2(method: "surface.clear_metadata", params: params)
+        printMetadataResult(payload, jsonOutput: jsonOutput, idFormat: idFormat)
+    }
+
+    /// Print a `surface.set_metadata` / `surface.clear_metadata` result.
+    private func printMetadataResult(
+        _ payload: [String: Any],
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) {
+        if jsonOutput {
+            print(jsonString(formatIDs(payload, mode: idFormat)))
+            return
+        }
+        let applied = payload["applied"] as? [String: Any] ?? [:]
+        let reasons = payload["reasons"] as? [String: Any] ?? [:]
+        var parts = ["OK"]
+        if let handle = formatHandle(payload, kind: "surface", idFormat: idFormat) {
+            parts.append(handle)
+        }
+        print(parts.joined(separator: " "))
+        for key in applied.keys.sorted() {
+            let ok = (applied[key] as? Bool) == true
+            if ok {
+                print("  \(key): applied")
+            } else {
+                let reason = (reasons[key] as? String) ?? "not_applied"
+                print("  \(key): skipped (\(reason))")
+            }
+        }
+    }
+
+    /// Render an arbitrary JSON-ish metadata value for the human CLI output.
+    private func renderScalarOrJSON(_ value: Any) -> String {
+        if value is NSNull { return "null" }
+        if let s = value as? String { return s }
+        if let n = value as? NSNumber {
+            // NSNumber can wrap Bool — distinguish.
+            let cfType = CFNumberGetType(n)
+            if CFGetTypeID(n) == CFBooleanGetTypeID() || cfType == .charType {
+                return n.boolValue ? "true" : "false"
+            }
+            return n.stringValue
+        }
+        if JSONSerialization.isValidJSONObject(value),
+           let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]),
+           let str = String(data: data, encoding: .utf8) {
+            return str
+        }
+        return String(describing: value)
     }
 
     private func forwardSidebarMetadataCommand(
@@ -11084,6 +11493,10 @@ struct CMUXCLI {
           list-notifications
           clear-notifications
           claude-hook <session-start|stop|notification> [--workspace <id|ref>] [--surface <id|ref>]
+          set-agent --type <terminal_type> [--model <id>] [--task <id>] [--role <id>] [--surface <id|ref>] [--workspace <id|ref>]
+          set-metadata (--json '{...}' | --key <K> --value <V> [--type string|number|bool|json]) [--surface <id|ref>] [--workspace <id|ref>] [--mode merge|replace] [--source <src>]
+          get-metadata [--key <K> ...] [--sources] [--surface <id|ref>] [--workspace <id|ref>]
+          clear-metadata [--key <K> ...] [--source <src>] [--surface <id|ref>] [--workspace <id|ref>]
           set-app-focus <active|inactive|clear>
           simulate-app-active
 

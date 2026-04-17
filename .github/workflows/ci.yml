@@ -113,6 +113,29 @@ jobs:
         if: steps.cache-ghosttykit.outputs.cache-hit != 'true'
         run: ./scripts/download-prebuilt-ghosttykit.sh
 
+      - name: Install zig
+        # Required by the cmux scheme's Run Script build phase
+        # (build-ghostty-cli-helper.sh), which compiles a small zig helper at
+        # build time.
+        run: |
+          set -euo pipefail
+          ZIG_REQUIRED="0.15.2"
+          if command -v zig >/dev/null 2>&1 && zig version 2>/dev/null | grep -q "^${ZIG_REQUIRED}"; then
+            echo "zig ${ZIG_REQUIRED} already installed"
+            exit 0
+          fi
+          case "$(uname -m)" in
+            arm64|aarch64) ARCH="aarch64" ;;
+            x86_64) ARCH="x86_64" ;;
+            *) echo "Unsupported CPU arch: $(uname -m)" >&2; exit 1 ;;
+          esac
+          curl -fSL "https://ziglang.org/download/${ZIG_REQUIRED}/zig-${ARCH}-macos-${ZIG_REQUIRED}.tar.xz" -o /tmp/zig.tar.xz
+          tar xf /tmp/zig.tar.xz -C /tmp
+          sudo mkdir -p /usr/local/bin /usr/local/lib
+          sudo cp -f /tmp/zig-${ARCH}-macos-${ZIG_REQUIRED}/zig /usr/local/bin/zig
+          sudo cp -rf /tmp/zig-${ARCH}-macos-${ZIG_REQUIRED}/lib /usr/local/lib/zig
+          zig version
+
       - name: Cache DerivedData
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
         with:

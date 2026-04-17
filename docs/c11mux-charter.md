@@ -47,7 +47,7 @@ We ship the first few mutations by patching naturally where they belong. The *sh
 
 ---
 
-## MVP — seven modules
+## MVP — eight modules
 
 Listed in rough shipping order. None of these require new architectural concepts; each extends an existing cmux extensibility point.
 
@@ -55,7 +55,7 @@ Listed in rough shipping order. None of these require new architectural concepts
 
 c11mux identifies which agent TUI is running in each pane — Claude Code, Codex, Kimi, OpenCode as first-class supported agents.
 
-- **Mechanism:** Process-tree heuristic (walks the PTY subtree, matches known binaries) as the default. Explicit declaration via CLI/env (`cmux pane set-agent claude-code --model opus-4.7` or `CMUX_AGENT_TYPE=claude-code`) overrides the heuristic and can carry richer fields the heuristic can't know (model, task ID, Spike role).
+- **Mechanism:** Process-tree heuristic (walks the PTY subtree, matches known binaries) as the default. Explicit declaration via CLI/env (`cmux set-agent --type claude-code --model claude-opus-4-7` or `CMUX_AGENT_TYPE=claude-code`) overrides the heuristic and can carry richer fields the heuristic can't know (model, task ID, Spike role). Declaration writes are sugar over `surface.set_metadata` — M1 does not introduce a new socket method.
 - **Extends:** The existing `set_agent_pid` socket command and `Workspace.agentPIDs` storage. Today those only power stale-session detection; this module surfaces them everywhere.
 - **Wraps into:** Module 3 (sidebar chips), Module 2 (canonical metadata keys).
 
@@ -63,7 +63,7 @@ c11mux identifies which agent TUI is running in each pane — Claude Code, Codex
 
 Each pane can carry an open-ended JSON metadata object that agents can read and write over the socket.
 
-- **New socket commands:** `pane.get-metadata surface:N`, `pane.set-metadata surface:N --json '{...}'`.
+- **New socket commands:** `surface.get_metadata`, `surface.set_metadata`, `surface.clear_metadata`. Full wire format in `docs/c11mux-module-2-metadata-spec.md`.
 - **Delivery model:** Pull-on-demand only. No pub/sub. Consumers query when they want the current state. (Push/subscribe is in the parking lot — add only if consumer count grows to justify it.)
 - **Schema:** Fully open-ended body, with a small reserved namespace of canonical keys the sidebar can render when present: `role`, `status`, `task`, `model`, `progress`. Agents put anything else alongside these.
 - **Consumers:** Lattice and future Stage 11 tooling. c11mux stays a transport — it does not interpret the payload beyond rendering the canonical keys.
@@ -107,6 +107,15 @@ A full-width title bar across the top of every surface, always visible, holding 
 - **Writers:** both the agent (via CLI / socket) and the user (inline edit or context menu) can set title bar content.
 - **Storage:** lives in the per-surface JSON metadata blob (Module 2) under canonical keys `title` and `description`. No new storage primitive.
 - **Visual:** spans the full width of the surface content area, single-line title with multi-line description collapsible/expandable. Height tuned so it doesn't steal meaningful terminal rows.
+
+### 8. `cmux tree` overhaul (spatial layout)
+
+The current `cmux tree` prints a hierarchical listing but doesn't convey **where** panes sit on screen. Agents need spatial awareness — total content area in pixels, each pane's position as both percentage and pixel ranges on the H (horizontal) and V (vertical) axes, and the split path that produced it. Without this, agents planning layouts or picking a target pane are blind.
+
+- **Output layers:** (1) ASCII floor plan sized to the current workspace's content area, (2) hierarchical listing with H/V `[start,end]` percent AND pixel ranges per pane, (3) JSON coordinates when `--json` is set.
+- **Default scope change:** `cmux tree` defaults to the current workspace (not current window). `--window`, `--workspace`, `--all` remain available as explicit overrides. Behavior change is noted as intentional — scripts that relied on window-default are expected to add an explicit flag.
+- **Derivation:** pixel rects come from `vendor/bonsplit`; percentages are derived synchronously on main (`pane_H_pixel / workspace_content_width`, same for V). No new cache layer.
+- **Tab lines:** each pane box carries a count of its tab surfaces and a single selected-tab line (truncated). Full tab list appears in the hierarchical listing.
 
 ---
 

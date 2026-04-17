@@ -97,12 +97,17 @@ jobs:
           if command -v zig >/dev/null 2>&1 && zig version 2>/dev/null | grep -q "^${ZIG_REQUIRED}"; then
             echo "zig ${ZIG_REQUIRED} already installed"
           else
-            echo "Installing zig ${ZIG_REQUIRED} from tarball"
-            curl -fSL "https://ziglang.org/download/${ZIG_REQUIRED}/zig-aarch64-macos-${ZIG_REQUIRED}.tar.xz" -o /tmp/zig.tar.xz
+            case "$(uname -m)" in
+              arm64|aarch64) ZIG_HOST_ARCH="aarch64" ;;
+              x86_64) ZIG_HOST_ARCH="x86_64" ;;
+              *) echo "Unsupported CPU arch: $(uname -m)" >&2; exit 1 ;;
+            esac
+            echo "Installing zig ${ZIG_REQUIRED} (${ZIG_HOST_ARCH}) from tarball"
+            curl -fSL "https://ziglang.org/download/${ZIG_REQUIRED}/zig-${ZIG_HOST_ARCH}-macos-${ZIG_REQUIRED}.tar.xz" -o /tmp/zig.tar.xz
             tar xf /tmp/zig.tar.xz -C /tmp
             sudo mkdir -p /usr/local/bin /usr/local/lib
-            sudo cp -f /tmp/zig-aarch64-macos-${ZIG_REQUIRED}/zig /usr/local/bin/zig
-            sudo cp -rf /tmp/zig-aarch64-macos-${ZIG_REQUIRED}/lib /usr/local/lib/zig
+            sudo cp -f /tmp/zig-${ZIG_HOST_ARCH}-macos-${ZIG_REQUIRED}/zig /usr/local/bin/zig
+            sudo cp -rf /tmp/zig-${ZIG_HOST_ARCH}-macos-${ZIG_REQUIRED}/lib /usr/local/lib/zig
             export PATH="/usr/local/bin:$PATH"
             zig version
           fi

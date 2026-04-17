@@ -19,8 +19,6 @@ concurrency:
 
 permissions:
   contents: write
-  attestations: write
-  id-token: write
 
 env:
   CREATE_DMG_VERSION: 8.0.0
@@ -101,7 +99,7 @@ jobs:
   build-sign-notarize-nightly:
     needs: decide
     if: needs.decide.outputs.should_build == 'true'
-    runs-on: macos-15-large
+    runs-on: macos-15-xlarge
     timeout-minutes: 60
     steps:
       - name: Checkout build ref
@@ -158,12 +156,17 @@ jobs:
           if command -v zig >/dev/null 2>&1 && zig version 2>/dev/null | grep -q "^${ZIG_REQUIRED}"; then
             echo "zig ${ZIG_REQUIRED} already installed"
           else
-            echo "Installing zig ${ZIG_REQUIRED} from tarball"
-            curl -fSL "https://ziglang.org/download/${ZIG_REQUIRED}/zig-aarch64-macos-${ZIG_REQUIRED}.tar.xz" -o /tmp/zig.tar.xz
+            case "$(uname -m)" in
+              arm64|aarch64) ZIG_HOST_ARCH="aarch64" ;;
+              x86_64) ZIG_HOST_ARCH="x86_64" ;;
+              *) echo "Unsupported CPU arch: $(uname -m)" >&2; exit 1 ;;
+            esac
+            echo "Installing zig ${ZIG_REQUIRED} (${ZIG_HOST_ARCH}) from tarball"
+            curl -fSL "https://ziglang.org/download/${ZIG_REQUIRED}/zig-${ZIG_HOST_ARCH}-macos-${ZIG_REQUIRED}.tar.xz" -o /tmp/zig.tar.xz
             tar xf /tmp/zig.tar.xz -C /tmp
             sudo mkdir -p /usr/local/bin /usr/local/lib
-            sudo cp -f /tmp/zig-aarch64-macos-${ZIG_REQUIRED}/zig /usr/local/bin/zig
-            sudo cp -rf /tmp/zig-aarch64-macos-${ZIG_REQUIRED}/lib /usr/local/lib/zig
+            sudo cp -f /tmp/zig-${ZIG_HOST_ARCH}-macos-${ZIG_REQUIRED}/zig /usr/local/bin/zig
+            sudo cp -rf /tmp/zig-${ZIG_HOST_ARCH}-macos-${ZIG_REQUIRED}/lib /usr/local/lib/zig
             export PATH="/usr/local/bin:$PATH"
             zig version
           fi
@@ -474,18 +477,6 @@ jobs:
           # Keep the legacy universal feed alive long enough for older nightly
           # installs to migrate onto the unified nightly appcast.
           cp appcast.xml appcast-universal.xml
-
-      - name: Attest remote daemon nightly assets
-        if: needs.decide.outputs.should_publish != 'true' || (steps.current_head_prebuild.outputs.still_current == 'true' && steps.current_head_postbuild.outputs.still_current == 'true')
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
-        with:
-          subject-path: |
-            remote-daemon-assets/cmuxd-remote-darwin-arm64
-            remote-daemon-assets/cmuxd-remote-darwin-amd64
-            remote-daemon-assets/cmuxd-remote-linux-arm64
-            remote-daemon-assets/cmuxd-remote-linux-amd64
-            remote-daemon-assets/cmuxd-remote-checksums.txt
-            remote-daemon-assets/cmuxd-remote-manifest.json
 
       - name: Upload branch nightly artifacts
         if: needs.decide.outputs.should_publish != 'true'

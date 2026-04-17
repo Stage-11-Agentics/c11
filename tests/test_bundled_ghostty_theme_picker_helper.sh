@@ -7,10 +7,10 @@ CONFIGURATION="${CMUX_CONFIGURATION:-Debug}"
 
 case "$CONFIGURATION" in
   Debug)
-    APP_NAME="cmux DEV.app"
+    APP_NAME="c11mux DEV.app"
     ;;
   Release)
-    APP_NAME="cmux.app"
+    APP_NAME="c11mux.app"
     ;;
   *)
     echo "FAIL: unsupported configuration $CONFIGURATION" >&2

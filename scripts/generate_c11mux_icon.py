@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
 """Generate the c11mux Stage 11 app icon at every macOS-required size.
 
-Concept A from docs/c11mux-module-5-brand-identity-spec.md — one gold
-spike rising from the lower edge of a void squircle.
+Source art: design/c11mux-lattice-icon-source.png — Hyperfuturistic
+lattice (white on black), from Gregorovitch art.
 
 Produces:
   Assets.xcassets/AppIcon.appiconset/*.png            (stable)
   Assets.xcassets/AppIcon-Debug.appiconset/*.png      (gold DEV banner, 70% alpha)
   Assets.xcassets/AppIcon-Nightly.appiconset/*.png    (purple NIGHTLY banner)
   Assets.xcassets/AppIcon-Staging.appiconset/*.png    (dim STAGING banner)
+  Assets.xcassets/AppIconLight.imageset/AppIconLight.png
+  Assets.xcassets/AppIconDark.imageset/AppIconDark.png
 
 Also updates each appiconset's Contents.json.
-
-Passes the 16px readability gate defined in the spec: the tiny rendered
-icons have a compact vertical gold column over a dark tile.
 """
 
 from __future__ import annotations
@@ -22,14 +21,14 @@ import json
 import os
 import sys
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSETS = os.path.join(REPO, "Assets.xcassets")
+SOURCE_IMAGE = os.path.join(REPO, "design", "c11mux-lattice-icon-source.png")
 
 GOLD = (201, 168, 76, 255)
-GOLD_FAINT = (201, 168, 76, 0x33)
-SURFACE = (10, 10, 10, 255)
+SURFACE = (0, 0, 0, 255)
 DIM = (0x55, 0x55, 0x55, 255)
 NIGHTLY_PURPLE = (140, 60, 220, 255)
 WHITE = (255, 255, 255, 255)
@@ -48,6 +47,9 @@ SIZES = [
     ("512@2x.png", 1024),
 ]
 
+# Emit the imageset PNGs at 1024px for crisp in-app rendering.
+IMAGESET_SIZE = 1024
+
 
 def squircle_mask(size: int) -> Image.Image:
     """Return an L-mode mask for the squircle shape at the given size."""
@@ -59,102 +61,95 @@ def squircle_mask(size: int) -> Image.Image:
     return mask
 
 
-def _render_pixel_spike(size: int) -> Image.Image:
-    """Direct pixel render for 16-20px. Paints 3-5 gold pixels in a single
-    centered column on the squircle mask."""
-    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    mask = squircle_mask(size)
-    for y in range(size):
-        for x in range(size):
-            if mask.getpixel((x, y)):
-                canvas.putpixel((x, y), SURFACE)
-    # Spike column at the exact center. 16px: x in {7,8}, y span ~5.
-    cx = size // 2
-    if size == 16:
-        ys = [6, 7, 8, 9, 10]
-    elif size == 17:
-        ys = [6, 7, 8, 9, 10]
-    elif size == 18:
-        ys = [7, 8, 9, 10, 11]
-    elif size == 19:
-        ys = [7, 8, 9, 10, 11]
-    else:  # 20
-        ys = [8, 9, 10, 11, 12]
-    # Use 3 centered y-pixels to stay within the "2-5 gold pixels" gate.
-    # 16px gate wants 2-5; we paint 3.
-    paint_ys = ys[1:4] if size == 16 else ys[1:4]
-    for y in paint_ys:
-        # Single-column paint at cx (and one pixel offset so the column is
-        # not razor-thin — spec allows x ∈ [6, 9] at 16px).
-        canvas.putpixel((cx - 1, y), GOLD)
-    return canvas
+_source_cache: Image.Image | None = None
 
 
-def render_spike(size: int) -> Image.Image:
-    """Render the core spike-on-void icon at an arbitrary pixel size.
+def _load_source() -> Image.Image:
+    global _source_cache
+    if _source_cache is None:
+        img = Image.open(SOURCE_IMAGE).convert("RGBA")
+        # Square it (should already be square, but guard anyway).
+        w, h = img.size
+        if w != h:
+            side = min(w, h)
+            left = (w - side) // 2
+            top = (h - side) // 2
+            img = img.crop((left, top, left + side, top + side))
+        _source_cache = img
+    return _source_cache
 
-    For tiny sizes (<=20px) we pixel-render directly so the spike reduces
-    cleanly to the 16px readability gate's 2-5 gold pixels in a vertical
-    column.
+
+def render_simplified_glyph(size: int) -> Image.Image:
+    """Render a pared-down hub-and-spokes glyph for tiny sizes (≤32px physical).
+
+    Captures the lattice's cross-diamond topology: a solid central cube with
+    four cardinal arms ending in smaller caps. Survives the menu-bar size
+    where the full lattice blurs out.
     """
-    if size <= 20:
-        return _render_pixel_spike(size)
-
-    # Render at 4x supersample for smooth anti-aliasing.
-    supersample = 4
+    supersample = 8 if size <= 16 else 4
     ss = size * supersample
 
     canvas = Image.new("RGBA", (ss, ss), (0, 0, 0, 0))
     draw = ImageDraw.Draw(canvas)
-
-    # Squircle fill
     radius = max(1, int(round(ss * 228 / 1024)))
     draw.rounded_rectangle((0, 0, ss - 1, ss - 1), radius=radius, fill=SURFACE)
 
-    # Inner gold-faint stroke (skip at tiny sizes)
-    if size >= 64:
-        stroke_w = max(1, int(round(ss * 4 / 1024)))
-        inset = stroke_w * 2
-        inner_radius = max(1, radius - inset)
-        draw.rounded_rectangle(
-            (inset, inset, ss - 1 - inset, ss - 1 - inset),
-            radius=inner_radius,
-            outline=GOLD_FAINT,
-            width=stroke_w,
-        )
-
-    # Spike: tip at 20% height, base at 80% height, centered.
     cx = ss / 2.0
-    if size <= 20:
-        # At 16-20px the spike must reduce to 2-5 gold pixels in a single
-        # vertical column (spec "16px readability gate"). Narrow and
-        # shorten so LANCZOS downsample lands within the gate.
-        top_y = ss * 0.33
-        bot_y = ss * 0.72
-        base_half = max(1.0, ss * 0.018)
-        tip_half = max(0.8, ss * 0.018)
-    elif size <= 32:
-        top_y = ss * 0.22
-        bot_y = ss * 0.78
-        base_half = ss * 0.045
-        tip_half = ss * 0.025
-    else:
-        top_y = ss * 0.20
-        bot_y = ss * 0.80
-        base_half = ss * 0.04
-        tip_half = ss * 0.008
-    spike = [
-        (cx, top_y),
-        (cx + tip_half, top_y + 2),
-        (cx + base_half, bot_y),
-        (cx - base_half, bot_y),
-        (cx - tip_half, top_y + 2),
-    ]
-    draw.polygon(spike, fill=GOLD)
+    cy = ss / 2.0
+    body_half = ss * 0.18   # central cube: 36% of side
+    arm_half = ss * 0.055   # arm thickness
+    arm_reach = ss * 0.36   # distance from center to arm tip
+    cap_half = ss * 0.10    # end-cap cube: 20% of side
 
-    # Downsample to target size
-    img = canvas.resize((size, size), Image.LANCZOS)
-    return img
+    # Central cube.
+    draw.rectangle(
+        (cx - body_half, cy - body_half, cx + body_half, cy + body_half),
+        fill=WHITE,
+    )
+    # Arms + caps at N/S/E/W.
+    def rect(x0, y0, x1, y1):
+        draw.rectangle((min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)), fill=WHITE)
+
+    for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+        if dx == 0:
+            rect(cx - arm_half, cy + dy * body_half, cx + arm_half, cy + dy * arm_reach)
+            cap_cx, cap_cy = cx, cy + dy * arm_reach
+        else:
+            rect(cx + dx * body_half, cy - arm_half, cx + dx * arm_reach, cy + arm_half)
+            cap_cx, cap_cy = cx + dx * arm_reach, cy
+        rect(cap_cx - cap_half, cap_cy - cap_half, cap_cx + cap_half, cap_cy + cap_half)
+
+    return canvas.resize((size, size), Image.LANCZOS)
+
+
+def render_icon(size: int) -> Image.Image:
+    """Composite the lattice source onto a squircle-masked black tile at `size`.
+
+    For ≤32px physical pixels the full lattice blurs into noise, so fall back
+    to a simplified glyph that preserves the cross-diamond topology.
+    """
+    if size <= 32:
+        return render_simplified_glyph(size)
+
+    supersample = 4 if size <= 128 else 2
+    ss = size * supersample
+
+    # Squircle-shaped black surface.
+    canvas = Image.new("RGBA", (ss, ss), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(canvas)
+    radius = max(1, int(round(ss * 228 / 1024)))
+    draw.rounded_rectangle((0, 0, ss - 1, ss - 1), radius=radius, fill=SURFACE)
+
+    # Resize the lattice source to fit inside the squircle. The source
+    # already carries its own black background + padding, so we just
+    # paint it across the full squircle and let the squircle mask trim
+    # the corners.
+    lattice = _load_source().resize((ss, ss), Image.LANCZOS)
+    mask = squircle_mask(ss)
+    canvas.paste(lattice, (0, 0), mask)
+
+    # Downsample to the target size.
+    return canvas.resize((size, size), Image.LANCZOS)
 
 
 def add_banner(
@@ -167,24 +162,21 @@ def add_banner(
     w, h = icon.size
     banner_h = max(8, int(round(h * 0.18)))
     banner_y = h - banner_h
-    overlay = Image.new("RGBA", icon.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
-    # Match the squircle silhouette by intersecting with the squircle mask.
-    draw.rectangle((0, banner_y, w, h), fill=color)
-    mask = squircle_mask(w)
-    overlay.putalpha(Image.eval(mask, lambda v: v))
-    # But we want the banner only within the bottom portion. Build a band mask.
-    band = Image.new("L", (w, h), 0)
-    band_draw = ImageDraw.Draw(band)
-    band_draw.rectangle((0, banner_y, w, h), fill=255)
-    # Combine: banner = color, alpha = min(mask, band)
-    banner_rgba = Image.new("RGBA", icon.size, color)
-    banner_alpha = Image.new("L", icon.size, 0)
-    for y in range(h):
-        for x in range(w):
-            banner_alpha.putpixel((x, y), min(mask.getpixel((x, y)), band.getpixel((x, y))))
-    banner_rgba.putalpha(banner_alpha)
 
+    # Banner alpha: intersection of squircle silhouette and bottom band.
+    mask = squircle_mask(w)
+    band = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(band).rectangle((0, banner_y, w, h), fill=255)
+    banner_alpha = Image.eval(mask, lambda v: v).point(
+        lambda _: 0
+    )  # placeholder, replaced below
+    banner_alpha = Image.new("L", icon.size, 0)
+    for y in range(banner_y, h):
+        for x in range(w):
+            banner_alpha.putpixel((x, y), mask.getpixel((x, y)))
+
+    banner_rgba = Image.new("RGBA", icon.size, color)
+    banner_rgba.putalpha(banner_alpha)
     composed = Image.alpha_composite(icon, banner_rgba)
 
     # Text centered in the banner. Skip at tiny sizes.
@@ -224,16 +216,13 @@ def dark_variant(icon: Image.Image) -> Image.Image:
     return icon.copy()
 
 
-def write_appiconset(
-    set_name: str,
-    transform,
-) -> None:
+def write_appiconset(set_name: str, transform) -> None:
     """Render each size into Assets.xcassets/<set_name>.appiconset/."""
     out_dir = os.path.join(ASSETS, f"{set_name}.appiconset")
     os.makedirs(out_dir, exist_ok=True)
 
     for filename, pixel_size in SIZES:
-        base_icon = render_spike(pixel_size)
+        base_icon = render_icon(pixel_size)
         light = transform(base_icon) if transform else base_icon
         light.save(os.path.join(out_dir, filename), "PNG")
         dark_name = filename.replace(".png", "_dark.png")
@@ -247,7 +236,6 @@ def write_contents_json(out_dir: str) -> None:
     images: list[dict] = []
     for filename, _ in SIZES:
         base, ext = os.path.splitext(filename)
-        # Extract size + scale from name, e.g. "16.png" -> "16x16" @1x; "16@2x" -> @2x
         if "@2x" in base:
             size_str = base.split("@")[0]
             scale = "2x"
@@ -264,9 +252,7 @@ def write_contents_json(out_dir: str) -> None:
         )
         images.append(
             {
-                "appearances": [
-                    {"appearance": "luminosity", "value": "dark"}
-                ],
+                "appearances": [{"appearance": "luminosity", "value": "dark"}],
                 "filename": f"{base}_dark{ext}",
                 "idiom": "mac",
                 "scale": scale,
@@ -279,7 +265,125 @@ def write_contents_json(out_dir: str) -> None:
         f.write("\n")
 
 
+def write_imagesets() -> None:
+    """Render the runtime imagesets used by the in-app icon picker
+    (Sources/cmuxApp.swift references "AppIconLight" / "AppIconDark")."""
+    base = render_icon(IMAGESET_SIZE)
+    targets = [
+        ("AppIconLight.imageset", "AppIconLight.png"),
+        ("AppIconDark.imageset", "AppIconDark.png"),
+    ]
+    for dirname, filename in targets:
+        out_dir = os.path.join(ASSETS, dirname)
+        os.makedirs(out_dir, exist_ok=True)
+        base.save(os.path.join(out_dir, filename), "PNG")
+        contents = {
+            "images": [{"filename": filename, "idiom": "universal"}],
+            "info": {"author": "xcode", "version": 1},
+        }
+        with open(os.path.join(out_dir, "Contents.json"), "w", encoding="utf-8") as f:
+            json.dump(contents, f, indent=2)
+            f.write("\n")
+        print(f"  Wrote {dirname}/{filename}")
+
+
+def write_icon_format() -> None:
+    """Write the Xcode 16 .icon format source + config.
+
+    The .icon format composites a source image into the macOS icon
+    chrome (squircle, shadows, glass). We provide the pre-masked
+    lattice tile at 1024px and let Xcode handle the rest.
+    """
+    icon_dir = os.path.join(REPO, "AppIcon.icon")
+    assets_dir = os.path.join(icon_dir, "Assets")
+    os.makedirs(assets_dir, exist_ok=True)
+
+    # Purge old source assets.
+    for name in os.listdir(assets_dir):
+        if name.endswith(".png"):
+            os.remove(os.path.join(assets_dir, name))
+
+    base = render_icon(IMAGESET_SIZE)
+    source_name = "c11mux-lattice.png"
+    base.save(os.path.join(assets_dir, source_name), "PNG")
+
+    icon_config = {
+        "fill": "automatic",
+        "groups": [
+            {
+                "layers": [
+                    {
+                        "glass": False,
+                        "image-name": source_name,
+                        "name": "c11mux-lattice",
+                        "position": {
+                            "scale": 1,
+                            "translation-in-points": [0, 0],
+                        },
+                    }
+                ],
+                "shadow": {"kind": "neutral", "opacity": 0.5},
+                "translucency": {"enabled": True, "value": 0.5},
+            }
+        ],
+        "supported-platforms": {
+            "circles": ["watchOS"],
+            "squares": "shared",
+        },
+    }
+    with open(os.path.join(icon_dir, "icon.json"), "w", encoding="utf-8") as f:
+        json.dump(icon_config, f, indent=2)
+        f.write("\n")
+    print(f"  Wrote AppIcon.icon/Assets/{source_name} + icon.json")
+
+
+def write_icns() -> None:
+    """Generate design/c11mux.icns from the base AppIcon PNGs using iconutil."""
+    import shutil
+    import subprocess
+    import tempfile
+
+    src_set = os.path.join(ASSETS, "AppIcon.appiconset")
+    pairs = [
+        ("16.png", "icon_16x16.png"),
+        ("16@2x.png", "icon_16x16@2x.png"),
+        ("32.png", "icon_32x32.png"),
+        ("32@2x.png", "icon_32x32@2x.png"),
+        ("128.png", "icon_128x128.png"),
+        ("128@2x.png", "icon_128x128@2x.png"),
+        ("256.png", "icon_256x256.png"),
+        ("256@2x.png", "icon_256x256@2x.png"),
+        ("512.png", "icon_512x512.png"),
+        ("512@2x.png", "icon_512x512@2x.png"),
+    ]
+
+    out_icns = os.path.join(REPO, "design", "c11mux.icns")
+    with tempfile.TemporaryDirectory() as tmp:
+        iconset_dir = os.path.join(tmp, "c11mux.iconset")
+        os.makedirs(iconset_dir)
+        for src_name, dst_name in pairs:
+            shutil.copy2(
+                os.path.join(src_set, src_name),
+                os.path.join(iconset_dir, dst_name),
+            )
+        result = subprocess.run(
+            ["iconutil", "-c", "icns", iconset_dir, "-o", out_icns],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print(
+                f"  iconutil failed: {result.stderr.strip()}",
+                file=sys.stderr,
+            )
+            return
+    print(f"  Wrote design/c11mux.icns")
+
+
 def main() -> int:
+    if not os.path.exists(SOURCE_IMAGE):
+        print(f"error: source image not found at {SOURCE_IMAGE}", file=sys.stderr)
+        return 1
     write_appiconset("AppIcon", transform=None)
     write_appiconset(
         "AppIcon-Debug",
@@ -293,6 +397,9 @@ def main() -> int:
         "AppIcon-Staging",
         transform=lambda im: add_banner(im, "STAGING", (*DIM[:3], 255)),
     )
+    write_imagesets()
+    write_icon_format()
+    write_icns()
     return 0
 
 

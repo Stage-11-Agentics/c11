@@ -1,11 +1,13 @@
 ---
 name: cmux-browser
-description: End-user browser automation with cmux. Use when you need to open sites, interact with pages, wait for state changes, and extract data from cmux browser surfaces.
+description: Browser automation for c11mux browser surfaces (WKWebView-backed). Use to open sites, interact with pages, wait for state changes, extract data, save/load auth state, and validate UI changes without leaving c11mux. Prefer this over Chrome MCP whenever c11mux is running.
 ---
 
-# Browser Automation with cmux
+# c11mux Browser Automation
 
-Use this skill for browser tasks inside cmux webviews.
+Use this skill for browser tasks inside c11mux webviews. c11mux browser surfaces are a native surface type — scriptable alongside terminals and markdown viewers in the same workspace, from the same `cmux` CLI. The binary is `cmux`.
+
+Prefer this over Chrome MCP when running inside c11mux: lighter, integrated into the workspace, no stray Chrome windows.
 
 ## Core Workflow
 

@@ -1,15 +1,35 @@
 import Foundation
 
+/// Source precedence for metadata writes (c11mux Module 2).
+///
+/// Writers declare a `source` per call. The precedence chain is
+/// `explicit > declare > osc > heuristic`. A lower-precedence write is
+/// rejected per-key (soft reject: `applied: false`, `reason: lower_precedence`).
+public enum MetadataSource: String, CaseIterable, Codable, Sendable {
+    case explicit
+    case declare
+    case osc
+    case heuristic
+
+    public var precedence: Int {
+        switch self {
+        case .heuristic: return 0
+        case .osc:       return 1
+        case .declare:   return 2
+        case .explicit:  return 3
+        }
+    }
+
+    /// Alias for `precedence`. Kept so call sites that read `rank` keep working.
+    public var rank: Int { precedence }
+}
+
 /// Per-surface JSON metadata store (c11mux Module 2 storage primitive).
 ///
 /// Each surface owns two parallel dictionaries:
 ///   - `metadata`        — free-form JSON object, capped at 64 KiB serialized.
 ///   - `metadata_sources` — parallel dictionary whose values are
 ///     `{source, ts}` records identifying who wrote each key.
-///
-/// Writers declare a `source` per call. The precedence chain is
-/// `explicit > declare > osc > heuristic`. A lower-precedence write is
-/// rejected per-key (soft reject: `applied: false`, `reason: lower_precedence`).
 ///
 /// The store is *in-memory only*. Consumers that need durability persist
 /// externally. Entries are pruned when surfaces close (see
@@ -21,24 +41,8 @@ final class SurfaceMetadataStore: @unchecked Sendable {
 
     static let payloadCapBytes: Int = 64 * 1024
 
-    enum Source: String, CaseIterable {
-        case explicit
-        case declare
-        case osc
-        case heuristic
-
-        var precedence: Int {
-            switch self {
-            case .heuristic: return 0
-            case .osc:       return 1
-            case .declare:   return 2
-            case .explicit:  return 3
-            }
-        }
-    }
-
     struct SourceRecord {
-        let source: Source
+        let source: MetadataSource
         let ts: Double
 
         func toJSON() -> [String: Any] {
@@ -204,7 +208,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         surfaceId: UUID,
         partial: [String: Any],
         mode: WriteMode,
-        source: Source
+        source: MetadataSource
     ) throws -> WriteResult {
         return try queue.sync {
             try setMetadataLocked(
@@ -233,7 +237,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
     }
 
     /// Returns whether a specific key is currently set on a surface, and its source.
-    func getSource(workspaceId: UUID, surfaceId: UUID, key: String) -> Source? {
+    func getSource(workspaceId: UUID, surfaceId: UUID, key: String) -> MetadataSource? {
         return queue.sync {
             return sources[workspaceId]?[surfaceId]?[key]?.source
         }
@@ -245,7 +249,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         workspaceId: UUID,
         surfaceId: UUID,
         keys: [String]?,
-        source: Source
+        source: MetadataSource
     ) throws -> WriteResult {
         return try queue.sync {
             var result = WriteResult()
@@ -326,7 +330,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         surfaceId: UUID,
         key: String,
         value: Any,
-        source: Source
+        source: MetadataSource
     ) -> Bool {
         return queue.sync {
             var blob = metadata[workspaceId]?[surfaceId] ?? [:]
@@ -363,7 +367,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         surfaceId: UUID,
         partial: [String: Any],
         mode: WriteMode,
-        source: Source
+        source: MetadataSource
     ) throws -> WriteResult {
         if mode == .replace, source != .explicit {
             throw WriteError.replaceRequiresExplicit
@@ -433,9 +437,9 @@ final class SurfaceMetadataStore: @unchecked Sendable {
     }
 }
 
-extension SurfaceMetadataStore.Source {
+public extension MetadataSource {
     init?(string s: String?) {
-        guard let s, let v = SurfaceMetadataStore.Source(rawValue: s) else { return nil }
+        guard let s, let v = MetadataSource(rawValue: s) else { return nil }
         self = v
     }
 }

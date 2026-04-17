@@ -5742,7 +5742,7 @@ class TerminalController {
         }
 
         let sourceStr = (v2String(params, "source") ?? "explicit").lowercased()
-        guard let source = SurfaceMetadataStore.Source(rawValue: sourceStr) else {
+        guard let source = MetadataSource(rawValue: sourceStr) else {
             return .err(code: "invalid_source", message: "source must be one of: explicit, declare, osc, heuristic", data: nil)
         }
 
@@ -5827,7 +5827,7 @@ class TerminalController {
         }
 
         let sourceStr = (v2String(params, "source") ?? "explicit").lowercased()
-        guard let source = SurfaceMetadataStore.Source(rawValue: sourceStr) else {
+        guard let source = MetadataSource(rawValue: sourceStr) else {
             return .err(code: "invalid_source", message: "source must be one of: explicit, declare, osc, heuristic", data: nil)
         }
 

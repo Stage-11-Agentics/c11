@@ -1526,6 +1526,14 @@ struct CMUXCLI {
             let response = try client.sendV2(method: "system.capabilities")
             print(jsonString(formatIDs(response, mode: idFormat)))
 
+        case "brand":
+            let response = try client.sendV2(method: "system.brand")
+            if jsonOutput || hasFlag(commandArgs, name: "--json") {
+                print(jsonString(response))
+            } else {
+                printBrandHuman(response)
+            }
+
         case "identify":
             var params: [String: Any] = [:]
             let includeCaller = !hasFlag(commandArgs, name: "--no-caller")
@@ -9168,6 +9176,36 @@ struct CMUXCLI {
         return UUID(uuidString: value) != nil
     }
 
+    private func printBrandHuman(_ response: Any) {
+        guard let dict = response as? [String: Any] else {
+            print(jsonString(response))
+            return
+        }
+        let channel = dict["channel"] as? String ?? "unknown"
+        let bundle = dict["bundle"] as? [String: Any] ?? [:]
+        let palette = dict["palette"] as? [String: String] ?? [:]
+        let accent = dict["accent_hex"] as? String ?? ""
+        let font = dict["font_family"] as? String ?? ""
+        let displayName = bundle["display_name"] as? String ?? ""
+        let identifier = bundle["identifier"] as? String ?? ""
+        let iconName = bundle["icon_name"] as? String ?? ""
+        let shortVersion = bundle["short_version"] as? String ?? ""
+        let build = bundle["build"] as? String ?? ""
+        print("\(displayName) \(shortVersion) (build \(build))")
+        print("channel:    \(channel)")
+        print("identifier: \(identifier)")
+        print("icon:       \(iconName)")
+        print("accent:     \(accent)")
+        print("font:       \(font)")
+        print("palette:")
+        let order = ["black", "surface", "rule", "dim", "white", "gold", "gold_faint"]
+        for key in order {
+            if let hex = palette[key] {
+                print("  \(key.padding(toLength: 11, withPad: " ", startingAt: 0)) \(hex)")
+            }
+        }
+    }
+
     private func jsonString(_ object: Any) -> String {
         var options: JSONSerialization.WritingOptions = [.prettyPrinted]
         options.insert(.withoutEscapingSlashes)
@@ -11761,6 +11799,7 @@ struct CMUXCLI {
           ping
           version
           capabilities
+          brand [--json]
           identify [--workspace <id|ref|index>] [--surface <id|ref|index>] [--no-caller]
           list-windows
           current-window

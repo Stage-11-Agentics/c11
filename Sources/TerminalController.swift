@@ -2029,6 +2029,8 @@ class TerminalController {
 
         case "system.identify":
             return v2Ok(id: id, result: v2Identify(params: params))
+        case "system.brand":
+            return v2Ok(id: id, result: v2SystemBrand())
         case "system.tree":
             return v2Result(id: id, self.v2SystemTree(params: params))
         case "auth.login":
@@ -2450,6 +2452,7 @@ class TerminalController {
             "system.ping",
             "system.capabilities",
             "system.identify",
+            "system.brand",
             "system.tree",
             "auth.login",
             "window.list",
@@ -2731,6 +2734,52 @@ class TerminalController {
             "socket_path": socketPath,
             "focused": focused.isEmpty ? NSNull() : focused,
             "caller": v2OrNull(resolvedCaller)
+        ]
+    }
+
+    private func v2SystemBrand() -> [String: Any] {
+        // Bundle info is read from the running process — verifies the built
+        // plist, not the source tree. Matches socket threading policy: this
+        // is a fast snapshot with no UI mutation.
+        let infoDict: [String: Any] = Bundle.main.infoDictionary ?? [:]
+        let bundleIdentifier = (Bundle.main.bundleIdentifier ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayName = (infoDict["CFBundleDisplayName"] as? String) ?? (infoDict["CFBundleName"] as? String) ?? ""
+        let bundleName = (infoDict["CFBundleName"] as? String) ?? displayName
+        let iconName = (infoDict["CFBundleIconName"] as? String)
+            ?? (infoDict["CFBundleIconFile"] as? String)
+            ?? "AppIcon"
+        let shortVersion = (infoDict["CFBundleShortVersionString"] as? String) ?? ""
+        let build = (infoDict["CFBundleVersion"] as? String) ?? ""
+
+        let channel: String
+        if bundleIdentifier.contains(".debug") {
+            channel = "dev"
+        } else if bundleIdentifier.hasSuffix(".nightly") {
+            channel = "nightly"
+        } else if bundleIdentifier.hasSuffix(".staging") {
+            channel = "staging"
+        } else {
+            channel = "stable"
+        }
+
+        var palette: [String: String] = [:]
+        for (key, hex) in BrandColors.paletteHex {
+            palette[key] = hex
+        }
+
+        return [
+            "channel": channel,
+            "bundle": [
+                "identifier": bundleIdentifier,
+                "display_name": displayName,
+                "name": bundleName,
+                "icon_name": iconName,
+                "short_version": shortVersion,
+                "build": build
+            ],
+            "palette": palette,
+            "accent_hex": BrandColors.goldHex,
+            "font_family": BrandColors.fontFamily
         ]
     }
 

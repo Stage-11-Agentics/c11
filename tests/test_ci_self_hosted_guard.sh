@@ -2,8 +2,7 @@
 # Regression test originally for https://github.com/manaflow-ai/cmux/issues/385.
 # Ensures paid/gated CI jobs (macos-15-xlarge, billed) are never run for
 # cross-repo fork pull requests — the fork guard `if:` clause must remain.
-# For the Stage-11-Agentics/c11mux fork, the paid runner is macos-15-xlarge
-# (upstream used warp-macos-15-arm64-6x via WarpBuild).
+# For the Stage-11-Agentics/c11mux fork, the paid runner is macos-15-xlarge.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -18,42 +17,62 @@ if ! grep -Fq "$EXPECTED_IF" "$WORKFLOW_FILE"; then
   exit 1
 fi
 
-# tests: must use WarpBuild runner with fork guard (paid runner)
+# Every job that uses `runs-on: macos-15-xlarge` must carry the fork guard.
+# Parsing: track job name (two-space indent), its runs-on value, and whether
+# the fork guard appears within the same job block.
+awk '
+  /^  [a-zA-Z][a-zA-Z0-9_-]*:[[:space:]]*$/ {
+    if (job != "" && runner == "macos-15-xlarge" && !guard) {
+      print job
+      failed = 1
+    }
+    job = $0
+    sub(/^  /, "", job); sub(/:.*/, "", job)
+    runner = ""; guard = 0
+    next
+  }
+  /runs-on:/ {
+    if (job != "") {
+      r = $0
+      sub(/^.*runs-on:[[:space:]]*/, "", r)
+      runner = r
+    }
+  }
+  /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/ {
+    if (job != "") guard = 1
+  }
+  END {
+    if (job != "" && runner == "macos-15-xlarge" && !guard) {
+      print job
+      failed = 1
+    }
+    exit failed
+  }
+' "$WORKFLOW_FILE" | while read -r offender; do
+  echo "FAIL: job '$offender' uses macos-15-xlarge without fork guard"
+done
+
+# Re-run to set exit code
 if ! awk '
-  /^  tests:/ { in_tests=1; next }
-  in_tests && /^  [^[:space:]]/ { in_tests=0 }
-  in_tests && /runs-on: macos-15-xlarge/ { saw_runner=1 }
-  in_tests && /github.event.pull_request.head.repo.full_name == github.repository/ { saw_guard=1 }
-  END { exit !(saw_runner && saw_guard) }
+  /^  [a-zA-Z][a-zA-Z0-9_-]*:[[:space:]]*$/ {
+    if (job != "" && runner == "macos-15-xlarge" && !guard) { failed = 1 }
+    job = $0
+    sub(/^  /, "", job); sub(/:.*/, "", job)
+    runner = ""; guard = 0
+    next
+  }
+  /runs-on:/ {
+    if (job != "") { r = $0; sub(/^.*runs-on:[[:space:]]*/, "", r); runner = r }
+  }
+  /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/ {
+    if (job != "") guard = 1
+  }
+  END {
+    if (job != "" && runner == "macos-15-xlarge" && !guard) failed = 1
+    exit failed
+  }
 ' "$WORKFLOW_FILE"; then
-  echo "FAIL: tests block must keep both macos-15-xlarge runner and fork guard"
   exit 1
 fi
 
-# tests-build-and-lag: must use WarpBuild runner with fork guard (paid runner)
-if ! awk '
-  /^  tests-build-and-lag:/ { in_tests=1; next }
-  in_tests && /^  [^[:space:]]/ { in_tests=0 }
-  in_tests && /runs-on: macos-15-xlarge/ { saw_runner=1 }
-  in_tests && /github.event.pull_request.head.repo.full_name == github.repository/ { saw_guard=1 }
-  END { exit !(saw_runner && saw_guard) }
-' "$WORKFLOW_FILE"; then
-  echo "FAIL: tests-build-and-lag block must keep both macos-15-xlarge runner and fork guard"
-  exit 1
-fi
-
-# ui-display-resolution-regression: must use WarpBuild runner with fork guard (paid runner)
-if ! awk '
-  /^  ui-display-resolution-regression:/ { in_tests=1; next }
-  in_tests && /^  [^[:space:]]/ { in_tests=0 }
-  in_tests && /runs-on: macos-15-xlarge/ { saw_runner=1 }
-  in_tests && /github.event.pull_request.head.repo.full_name == github.repository/ { saw_guard=1 }
-  END { exit !(saw_runner && saw_guard) }
-' "$WORKFLOW_FILE"; then
-  echo "FAIL: ui-display-resolution-regression block must keep both macos-15-xlarge runner and fork guard"
-  exit 1
-fi
-
-echo "PASS: tests macos-15-xlarge runner fork guard is present"
-echo "PASS: tests-build-and-lag macos-15-xlarge runner fork guard is present"
-echo "PASS: ui-display-resolution-regression macos-15-xlarge runner fork guard is present"
+echo "PASS: all macos-15-xlarge jobs carry the fork guard"

@@ -182,9 +182,10 @@ struct MarkdownPanelView: View {
                 )
             ))
             .accessibilityLabel(Text(String(
-                localized: "markdown.action.cycleTheme",
-                defaultValue: "Theme: \(panel.themeChoice.label)"
+                localized: "markdown.action.cycleTheme.accessibilityLabel",
+                defaultValue: "Cycle Markdown Theme"
             )))
+            .accessibilityValue(Text(panel.themeChoice.label))
         }
     }
 

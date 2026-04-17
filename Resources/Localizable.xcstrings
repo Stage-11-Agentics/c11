@@ -76063,6 +76063,23 @@
         }
       }
     },
+    "markdown.action.cycleTheme.accessibilityLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cycle Markdown Theme"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マークダウンテーマを切り替える"
+          }
+        }
+      }
+    },
     "markdown.action.refresh": {
       "extractionState": "manual",
       "localizations": {

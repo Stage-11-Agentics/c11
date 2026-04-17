@@ -19,6 +19,11 @@ enum MarkdownSegment: Identifiable {
 /// When the file changes on disk, the content is automatically reloaded.
 @MainActor
 final class MarkdownPanel: Panel, ObservableObject {
+    /// UserDefaults key for the app-wide default markdown theme. Used as the
+    /// initial value for any newly-created panel that doesn't have a persisted
+    /// per-panel override.
+    static let defaultThemeDefaultsKey = "markdownThemeDefault"
+
     let id: UUID
     let panelType: PanelType = .markdown
 
@@ -46,8 +51,17 @@ final class MarkdownPanel: Panel, ObservableObject {
     /// Parsed segments of the content (markdown + mermaid blocks).
     @Published private(set) var segments: [MarkdownSegment] = []
 
+    /// User-selected theme for this panel. Defaults to the app-wide
+    /// `markdownThemeDefault` setting, or `.auto` if never set.
+    @Published private(set) var themeChoice: MarkdownThemeChoice
+
     /// Tracks the appearance used for the last mermaid render pass.
     private var lastRenderedDark: Bool?
+
+    /// Bumped every time the effective theme changes so that late completions
+    /// from a prior render pass cannot overwrite the current theme's images
+    /// during rapid ⌘⇧T cycling.
+    private var renderGeneration: Int = 0
 
     /// Observer for system appearance changes.
     private var appearanceObserver: NSObjectProtocol?
@@ -68,11 +82,12 @@ final class MarkdownPanel: Panel, ObservableObject {
 
     // MARK: - Init
 
-    init(workspaceId: UUID, filePath: String) {
+    init(workspaceId: UUID, filePath: String, themeChoice: MarkdownThemeChoice? = nil) {
         self.id = UUID()
         self.workspaceId = workspaceId
         self.filePath = filePath
         self.displayTitle = (filePath as NSString).lastPathComponent
+        self.themeChoice = themeChoice ?? Self.appWideDefaultThemeChoice()
 
         loadFileContent()
         startFileWatcher()
@@ -82,6 +97,55 @@ final class MarkdownPanel: Panel, ObservableObject {
             scheduleReattach(attempt: 1)
         }
         startAppearanceObserver()
+    }
+
+    // MARK: - Theme
+
+    /// Reads the app-wide default markdown theme from UserDefaults. Used when
+    /// constructing a new panel that has no persisted per-panel override.
+    static func appWideDefaultThemeChoice() -> MarkdownThemeChoice {
+        guard let raw = UserDefaults.standard.string(forKey: defaultThemeDefaultsKey),
+              let parsed = MarkdownThemeChoice(rawValue: raw) else {
+            return .auto
+        }
+        return parsed
+    }
+
+    /// Sets the theme choice for this panel. Triggers mermaid re-render if the
+    /// effective dark/light resolution changes.
+    func setTheme(_ choice: MarkdownThemeChoice) {
+        guard themeChoice != choice else { return }
+        themeChoice = choice
+        handleAppearanceChangeIfNeeded()
+    }
+
+    /// Advance to the next theme in the cycle order (Auto → Light → Dark → Gold → Auto).
+    func cycleTheme() {
+        setTheme(themeChoice.next)
+    }
+
+    /// True when the current theme (after resolving `.auto` against the system
+    /// appearance) wants a dark palette. Used to drive mermaid rendering.
+    var effectiveIsDark: Bool {
+        switch themeChoice {
+        case .auto:
+            return NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        case .light:
+            return false
+        case .dark, .gold:
+            return true
+        }
+    }
+
+    // MARK: - Public reload
+
+    /// Re-read the source file from disk. Safe to call from any UI affordance
+    /// (refresh button, keyboard shortcut, command palette). The existing
+    /// DispatchSource watcher covers most cases automatically; this method is
+    /// a manual fallback for network mounts, atomic rewrites the watcher may
+    /// miss, or cases where the user just wants certainty.
+    func reload() {
+        loadFileContent()
     }
 
     // MARK: - Panel protocol
@@ -218,8 +282,9 @@ final class MarkdownPanel: Panel, ObservableObject {
 
     /// Render fenced code segments asynchronously via their registered renderers.
     private func renderFencedCodeSegments() {
-        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let isDark = effectiveIsDark
         lastRenderedDark = isDark
+        let generation = renderGeneration
 
         let registry = FencedCodeRendererRegistry.shared
 
@@ -242,6 +307,10 @@ final class MarkdownPanel: Panel, ObservableObject {
             guard let renderer = registry.renderer(for: language) else { continue }
             renderer.render(code: code, isDark: isDark) { [weak self] image in
                 guard let self else { return }
+                // Theme changed since this render started — drop the result so
+                // a late completion from a prior theme cannot corrupt the
+                // current theme's rendered images.
+                guard generation == self.renderGeneration else { return }
                 guard index < self.segments.count,
                       case .fencedCode(let currentId, _, _, _) = self.segments[index],
                       currentId == id else { return }
@@ -285,8 +354,11 @@ final class MarkdownPanel: Panel, ObservableObject {
     }
 
     private func handleAppearanceChangeIfNeeded() {
-        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let isDark = effectiveIsDark
         guard isDark != lastRenderedDark else { return }
+        // Invalidate any in-flight renders kicked off for the prior theme so
+        // their completions become no-ops (see `renderFencedCodeSegments`).
+        renderGeneration &+= 1
         // Clear rendered images so they re-render with the new theme
         for (i, segment) in segments.enumerated() {
             if case .fencedCode(let id, let lang, let code, let image) = segment, image != nil {

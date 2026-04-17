@@ -9523,6 +9523,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if tabManager?.focusedBrowserPanel != nil {
                 return false
             }
+            // Let Cmd+R reach the markdown refresh handler below instead of the rename-tab palette.
+            if tabManager?.focusedMarkdownPanel != nil {
+                return false
+            }
             let targetWindow = commandPaletteTargetWindow ?? event.window ?? NSApp.keyWindow ?? NSApp.mainWindow
             requestCommandPaletteRenameTab(preferredWindow: targetWindow, source: "shortcut.renameTab")
             return true
@@ -9710,6 +9714,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #endif
             if !didHandle { NSSound.beep() }
             return true
+        }
+
+        // Markdown: refresh (⌘R) and cycle theme (⌘⇧T). Only fire when a
+        // markdown panel is focused so ⌘R etc. remain available to terminals
+        // and browsers in their own contexts.
+        if tabManager?.focusedMarkdownPanel != nil {
+            if matchShortcut(event: event, shortcut: KeyboardShortcutSettings.shortcut(for: .refreshMarkdown)) {
+                _ = tabManager?.reloadFocusedMarkdown()
+                return true
+            }
+            if matchShortcut(event: event, shortcut: KeyboardShortcutSettings.shortcut(for: .cycleMarkdownTheme)) {
+                _ = tabManager?.cycleFocusedMarkdownTheme()
+                return true
+            }
         }
 
         // Focus browser address bar: Cmd+L

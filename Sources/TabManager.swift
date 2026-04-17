@@ -2579,6 +2579,31 @@ class TabManager: ObservableObject {
         return tab.panels[panelId] as? BrowserPanel
     }
 
+    /// Returns the focused panel if it's a MarkdownPanel, nil otherwise.
+    var focusedMarkdownPanel: MarkdownPanel? {
+        guard let tab = selectedWorkspace,
+              let panelId = tab.focusedPanelId else { return nil }
+        return tab.panels[panelId] as? MarkdownPanel
+    }
+
+    /// Reload the focused markdown panel from disk. No-op (returns false) when
+    /// the focused panel is not a markdown panel.
+    @discardableResult
+    func reloadFocusedMarkdown() -> Bool {
+        guard let panel = focusedMarkdownPanel else { return false }
+        panel.reload()
+        return true
+    }
+
+    /// Cycle the theme for the focused markdown panel. No-op when the focused
+    /// panel is not a markdown panel.
+    @discardableResult
+    func cycleFocusedMarkdownTheme() -> Bool {
+        guard let panel = focusedMarkdownPanel else { return false }
+        panel.cycleTheme()
+        return true
+    }
+
     @discardableResult
     func zoomInFocusedBrowser() -> Bool {
         focusedBrowserPanel?.zoomIn() ?? false

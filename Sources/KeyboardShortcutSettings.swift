@@ -45,6 +45,10 @@ enum KeyboardShortcutSettings {
         case toggleBrowserDeveloperTools
         case showBrowserJavaScriptConsole
 
+        // Markdown
+        case refreshMarkdown
+        case cycleMarkdownTheme
+
         var id: String { rawValue }
 
         var label: String {
@@ -79,6 +83,8 @@ enum KeyboardShortcutSettings {
             case .openBrowser: return String(localized: "shortcut.openBrowser.label", defaultValue: "Open Browser")
             case .toggleBrowserDeveloperTools: return String(localized: "shortcut.toggleBrowserDevTools.label", defaultValue: "Toggle Browser Developer Tools")
             case .showBrowserJavaScriptConsole: return String(localized: "shortcut.showBrowserJSConsole.label", defaultValue: "Show Browser JavaScript Console")
+            case .refreshMarkdown: return String(localized: "shortcut.refreshMarkdown.label", defaultValue: "Refresh Markdown")
+            case .cycleMarkdownTheme: return String(localized: "shortcut.cycleMarkdownTheme.label", defaultValue: "Cycle Markdown Theme")
             }
         }
 
@@ -114,6 +120,8 @@ enum KeyboardShortcutSettings {
             case .openBrowser: return "shortcut.openBrowser"
             case .toggleBrowserDeveloperTools: return "shortcut.toggleBrowserDeveloperTools"
             case .showBrowserJavaScriptConsole: return "shortcut.showBrowserJavaScriptConsole"
+            case .refreshMarkdown: return "shortcut.refreshMarkdown"
+            case .cycleMarkdownTheme: return "shortcut.cycleMarkdownTheme"
             }
         }
 
@@ -181,6 +189,12 @@ enum KeyboardShortcutSettings {
             case .showBrowserJavaScriptConsole:
                 // Safari default: Show JavaScript Console.
                 return StoredShortcut(key: "c", command: true, shift: false, option: true, control: false)
+            case .refreshMarkdown:
+                // Standard "reload" — only fires when a markdown panel is focused.
+                return StoredShortcut(key: "r", command: true, shift: false, option: false, control: false)
+            case .cycleMarkdownTheme:
+                // ⌘⇧T cycles theme — fires only when a markdown panel is focused.
+                return StoredShortcut(key: "t", command: true, shift: true, option: false, control: false)
             }
         }
 

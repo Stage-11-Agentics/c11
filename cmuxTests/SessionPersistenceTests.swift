@@ -26,6 +26,7 @@ final class SessionPersistenceTests: XCTestCase {
                 focus: true
             )
         )
+        panel.setTheme(.gold)
         workspace.setCustomTitle("Docs")
         workspace.setPanelCustomTitle(panelId: panel.id, title: "Readme")
 
@@ -37,8 +38,45 @@ final class SessionPersistenceTests: XCTestCase {
         let restoredPanelId = try XCTUnwrap(restored.focusedPanelId)
         let restoredPanel = try XCTUnwrap(restored.markdownPanel(for: restoredPanelId))
         XCTAssertEqual(restoredPanel.filePath, markdownURL.path)
+        XCTAssertEqual(restoredPanel.themeChoice, .gold)
         XCTAssertEqual(restored.customTitle, "Docs")
         XCTAssertEqual(restored.panelTitle(panelId: restoredPanelId), "Readme")
+    }
+
+    @MainActor
+    func testWorkspaceSessionSnapshotRoundTripsEveryMarkdownThemeChoice() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmux-session-markdown-themes-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let markdownURL = root.appendingPathComponent("note.md")
+        try "# hi\n".write(to: markdownURL, atomically: true, encoding: .utf8)
+
+        for choice in MarkdownThemeChoice.allCases {
+            let workspace = Workspace()
+            let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
+            let panel = try XCTUnwrap(
+                workspace.newMarkdownSurface(
+                    inPane: paneId,
+                    filePath: markdownURL.path,
+                    focus: true
+                )
+            )
+            panel.setTheme(choice)
+
+            let snapshot = workspace.sessionSnapshot(includeScrollback: false)
+            let restored = Workspace()
+            restored.restoreSessionSnapshot(snapshot)
+
+            let restoredPanelId = try XCTUnwrap(restored.focusedPanelId)
+            let restoredPanel = try XCTUnwrap(restored.markdownPanel(for: restoredPanelId))
+            XCTAssertEqual(
+                restoredPanel.themeChoice,
+                choice,
+                "themeChoice round-trip failed for \(choice)"
+            )
+        }
     }
 
     func testSaveAndLoadRoundTripWithCustomSnapshotPath() throws {

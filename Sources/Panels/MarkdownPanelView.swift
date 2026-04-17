@@ -14,6 +14,11 @@ struct MarkdownPanelView: View {
     @State private var focusFlashAnimationGeneration: Int = 0
     @Environment(\.colorScheme) private var colorScheme
 
+    /// Resolved palette for the current theme choice + system appearance.
+    private var palette: MarkdownPalette {
+        panel.themeChoice.palette(systemColorScheme: colorScheme)
+    }
+
     var body: some View {
         Group {
             if panel.isFileUnavailable {
@@ -23,7 +28,7 @@ struct MarkdownPanelView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(backgroundColor)
+        .background(palette.background)
         .overlay {
             RoundedRectangle(cornerRadius: FocusFlashPattern.ringCornerRadius)
                 .stroke(cmuxAccentColor().opacity(focusFlashOpacity), lineWidth: 3)
@@ -54,7 +59,9 @@ struct MarkdownPanelView: View {
                     .padding(.top, 16)
                     .padding(.bottom, 8)
 
-                Divider()
+                Rectangle()
+                    .fill(palette.divider)
+                    .frame(height: 1)
                     .padding(.horizontal, 16)
 
                 // Rendered content segments
@@ -102,21 +109,17 @@ struct MarkdownPanelView: View {
             ScrollView(.horizontal, showsIndicators: true) {
                 Text(code)
                     .font(.system(size: 13, design: .monospaced))
-                    .foregroundColor(colorScheme == .dark
-                        ? Color(red: 0.9, green: 0.9, blue: 0.9)
-                        : Color(red: 0.2, green: 0.2, blue: 0.2))
+                    .foregroundColor(palette.codeBlockForeground)
                     .textSelection(.enabled)
                     .padding(12)
             }
-            .background(colorScheme == .dark
-                ? Color(nsColor: NSColor(white: 0.08, alpha: 1.0))
-                : Color(nsColor: NSColor(white: 0.93, alpha: 1.0)))
+            .background(palette.codeBlockBackground)
             .clipShape(RoundedRectangle(cornerRadius: 6))
 
             if let renderer, !renderer.isAvailable, let hint = renderer.installHint {
                 Text(hint)
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(palette.secondary)
             }
         }
         .padding(.horizontal, 24)
@@ -126,14 +129,63 @@ struct MarkdownPanelView: View {
     private var filePathHeader: some View {
         HStack(spacing: 6) {
             Image(systemName: "doc.richtext")
-                .foregroundColor(.secondary)
+                .foregroundColor(palette.secondary)
                 .font(.system(size: 12))
             Text(panel.filePath)
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(.secondary)
+                .foregroundColor(palette.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Spacer()
+            Spacer(minLength: 8)
+            headerActions
+        }
+    }
+
+    /// Refresh + theme-cycle buttons shown at the right of the header.
+    /// Discoverable alternatives to the keyboard shortcuts (⌘R, ⌘⇧T).
+    private var headerActions: some View {
+        HStack(spacing: 4) {
+            Button {
+                panel.reload()
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(palette.secondary)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(KeyboardShortcutSettings.Action.refreshMarkdown.tooltip(
+                String(localized: "markdown.action.refresh", defaultValue: "Reload from disk")
+            ))
+            .accessibilityLabel(Text(String(
+                localized: "markdown.action.refresh",
+                defaultValue: "Reload from disk"
+            )))
+
+            Button {
+                panel.cycleTheme()
+            } label: {
+                Image(systemName: panel.themeChoice.iconName)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(
+                        panel.themeChoice == .gold ? BrandColors.goldSwiftUI : palette.secondary
+                    )
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(KeyboardShortcutSettings.Action.cycleMarkdownTheme.tooltip(
+                String(
+                    localized: "markdown.action.cycleTheme",
+                    defaultValue: "Theme: \(panel.themeChoice.label)"
+                )
+            ))
+            .accessibilityLabel(Text(String(
+                localized: "markdown.action.cycleTheme.accessibilityLabel",
+                defaultValue: "Cycle Markdown Theme"
+            )))
+            .accessibilityValue(Text(panel.themeChoice.label))
         }
     }
 
@@ -141,39 +193,33 @@ struct MarkdownPanelView: View {
         VStack(spacing: 12) {
             Image(systemName: "doc.questionmark")
                 .font(.system(size: 40))
-                .foregroundColor(.secondary)
+                .foregroundColor(palette.secondary)
             Text(String(localized: "markdown.fileUnavailable.title", defaultValue: "File unavailable"))
                 .font(.headline)
-                .foregroundColor(.primary)
+                .foregroundColor(palette.body)
             Text(panel.filePath)
                 .font(.system(size: 12, design: .monospaced))
-                .foregroundColor(.secondary)
+                .foregroundColor(palette.secondary)
                 .multilineTextAlignment(.center)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 24)
             Text(String(localized: "markdown.fileUnavailable.message", defaultValue: "The file may have been moved or deleted."))
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(palette.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Theme
 
-    private var backgroundColor: Color {
-        colorScheme == .dark
-            ? Color(nsColor: NSColor(white: 0.12, alpha: 1.0))
-            : Color(nsColor: NSColor(white: 0.98, alpha: 1.0))
-    }
-
     private var cmuxMarkdownTheme: Theme {
-        let isDark = colorScheme == .dark
+        let p = palette
 
         return Theme()
             // Text
             .text {
-                ForegroundColor(isDark ? .white.opacity(0.9) : .primary)
+                ForegroundColor(p.body)
                 FontSize(14)
             }
             // Headings
@@ -183,9 +229,11 @@ struct MarkdownPanelView: View {
                         .markdownTextStyle {
                             FontWeight(.bold)
                             FontSize(28)
-                            ForegroundColor(isDark ? .white : .primary)
+                            ForegroundColor(p.heading)
                         }
-                    Divider()
+                    Rectangle()
+                        .fill(p.divider)
+                        .frame(height: 1)
                 }
                 .markdownMargin(top: 24, bottom: 16)
             }
@@ -195,9 +243,11 @@ struct MarkdownPanelView: View {
                         .markdownTextStyle {
                             FontWeight(.bold)
                             FontSize(22)
-                            ForegroundColor(isDark ? .white : .primary)
+                            ForegroundColor(p.heading)
                         }
-                    Divider()
+                    Rectangle()
+                        .fill(p.divider)
+                        .frame(height: 1)
                 }
                 .markdownMargin(top: 20, bottom: 12)
             }
@@ -206,7 +256,7 @@ struct MarkdownPanelView: View {
                     .markdownTextStyle {
                         FontWeight(.semibold)
                         FontSize(18)
-                        ForegroundColor(isDark ? .white : .primary)
+                        ForegroundColor(p.heading)
                     }
                     .markdownMargin(top: 16, bottom: 8)
             }
@@ -215,7 +265,7 @@ struct MarkdownPanelView: View {
                     .markdownTextStyle {
                         FontWeight(.semibold)
                         FontSize(16)
-                        ForegroundColor(isDark ? .white : .primary)
+                        ForegroundColor(p.heading)
                     }
                     .markdownMargin(top: 12, bottom: 6)
             }
@@ -224,7 +274,7 @@ struct MarkdownPanelView: View {
                     .markdownTextStyle {
                         FontWeight(.medium)
                         FontSize(14)
-                        ForegroundColor(isDark ? .white : .primary)
+                        ForegroundColor(p.heading)
                     }
                     .markdownMargin(top: 10, bottom: 4)
             }
@@ -233,7 +283,7 @@ struct MarkdownPanelView: View {
                     .markdownTextStyle {
                         FontWeight(.medium)
                         FontSize(13)
-                        ForegroundColor(isDark ? .white.opacity(0.7) : .secondary)
+                        ForegroundColor(p.secondary)
                     }
                     .markdownMargin(top: 8, bottom: 4)
             }
@@ -244,13 +294,11 @@ struct MarkdownPanelView: View {
                         .markdownTextStyle {
                             FontFamilyVariant(.monospaced)
                             FontSize(13)
-                            ForegroundColor(isDark ? Color(red: 0.9, green: 0.9, blue: 0.9) : Color(red: 0.2, green: 0.2, blue: 0.2))
+                            ForegroundColor(p.codeBlockForeground)
                         }
                         .padding(12)
                 }
-                .background(isDark
-                    ? Color(nsColor: NSColor(white: 0.08, alpha: 1.0))
-                    : Color(nsColor: NSColor(white: 0.93, alpha: 1.0)))
+                .background(p.codeBlockBackground)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
                 .markdownMargin(top: 8, bottom: 8)
             }
@@ -258,20 +306,18 @@ struct MarkdownPanelView: View {
             .code {
                 FontFamilyVariant(.monospaced)
                 FontSize(13)
-                ForegroundColor(isDark ? Color(red: 0.85, green: 0.6, blue: 0.95) : Color(red: 0.6, green: 0.2, blue: 0.7))
-                BackgroundColor(isDark
-                    ? Color(nsColor: NSColor(white: 0.18, alpha: 1.0))
-                    : Color(nsColor: NSColor(white: 0.92, alpha: 1.0)))
+                ForegroundColor(p.inlineCodeForeground)
+                BackgroundColor(p.inlineCodeBackground)
             }
             // Block quotes
             .blockquote { configuration in
                 HStack(spacing: 0) {
                     RoundedRectangle(cornerRadius: 1.5)
-                        .fill(isDark ? Color.white.opacity(0.2) : Color.gray.opacity(0.4))
+                        .fill(p.blockquoteBar)
                         .frame(width: 3)
                     configuration.label
                         .markdownTextStyle {
-                            ForegroundColor(isDark ? .white.opacity(0.6) : .secondary)
+                            ForegroundColor(p.blockquoteText)
                             FontSize(14)
                         }
                         .padding(.leading, 12)
@@ -280,7 +326,7 @@ struct MarkdownPanelView: View {
             }
             // Links
             .link {
-                ForegroundColor(Color.accentColor)
+                ForegroundColor(p.link)
             }
             // Strong
             .strong {
@@ -289,22 +335,17 @@ struct MarkdownPanelView: View {
             // Tables
             .table { configuration in
                 configuration.label
-                    .markdownTableBorderStyle(.init(color: isDark ? .white.opacity(0.15) : .gray.opacity(0.3)))
+                    .markdownTableBorderStyle(.init(color: p.tableBorder))
                     .markdownTableBackgroundStyle(
-                        .alternatingRows(
-                            isDark
-                                ? Color(nsColor: NSColor(white: 0.14, alpha: 1.0))
-                                : Color(nsColor: NSColor(white: 0.96, alpha: 1.0)),
-                            isDark
-                                ? Color(nsColor: NSColor(white: 0.10, alpha: 1.0))
-                                : Color(nsColor: NSColor(white: 1.0, alpha: 1.0))
-                        )
+                        .alternatingRows(p.tableRowA, p.tableRowB)
                     )
                     .markdownMargin(top: 8, bottom: 8)
             }
             // Thematic break (horizontal rule)
             .thematicBreak {
-                Divider()
+                Rectangle()
+                    .fill(p.divider)
+                    .frame(height: 1)
                     .markdownMargin(top: 16, bottom: 16)
             }
             // List items

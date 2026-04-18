@@ -9,6 +9,7 @@ struct MarkdownPanelView: View {
     let isVisibleInUI: Bool
     let portalPriority: Int
     let onRequestPanelFocus: () -> Void
+    @ObservedObject var paneInteractionRuntime: PaneInteractionRuntime
 
     @State private var focusFlashOpacity: Double = 0.0
     @State private var focusFlashAnimationGeneration: Int = 0
@@ -36,6 +37,15 @@ struct MarkdownPanelView: View {
                 // Observe left-clicks without intercepting them so markdown text
                 // selection and link activation continue to use the native path.
                 MarkdownPointerObserver(onPointerDown: onRequestPanelFocus)
+            }
+        }
+        .overlay {
+            if let interaction = paneInteractionRuntime.active[panel.id] {
+                PaneInteractionCardView(
+                    panelId: panel.id,
+                    interaction: interaction,
+                    runtime: paneInteractionRuntime
+                )
             }
         }
         .onChange(of: panel.focusFlashToken) { _ in

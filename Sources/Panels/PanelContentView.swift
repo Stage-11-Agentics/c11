@@ -52,6 +52,7 @@ struct PanelContentView: View {
             if let browserPanel = panel as? BrowserPanel {
                 BrowserPanelView(
                     panel: browserPanel,
+                    paneInteractionRuntime: workspace.paneInteractionRuntime,
                     paneId: paneId,
                     isFocused: isFocused,
                     isVisibleInUI: isVisibleInUI,
@@ -66,7 +67,8 @@ struct PanelContentView: View {
                     isFocused: isFocused,
                     isVisibleInUI: isVisibleInUI,
                     portalPriority: portalPriority,
-                    onRequestPanelFocus: onRequestPanelFocus
+                    onRequestPanelFocus: onRequestPanelFocus,
+                    paneInteractionRuntime: workspace.paneInteractionRuntime
                 )
             }
         }

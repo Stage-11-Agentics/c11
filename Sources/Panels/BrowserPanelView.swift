@@ -275,6 +275,7 @@ private struct BrowserChromeStyle {
 struct BrowserPanelView: View {
     @ObservedObject var panel: BrowserPanel
     @ObservedObject private var browserProfileStore = BrowserProfileStore.shared
+    @ObservedObject var paneInteractionRuntime: PaneInteractionRuntime
     let paneId: PaneID
     let isFocused: Bool
     let isVisibleInUI: Bool
@@ -466,6 +467,19 @@ struct BrowserPanelView: View {
                     onPrevious: { panel.findPrevious() },
                     onClose: { panel.hideFind() },
                     onFieldDidFocus: { panel.noteFindFieldFocused() }
+                )
+            }
+        }
+        .overlay {
+            // Pane-interaction overlay (empty-new-tab state only). WebView-backed
+            // cases mount the overlay from the AppKit portal host for the same
+            // layering reason that BrowserSearchOverlay above does.
+            if !panel.shouldRenderWebView,
+               let interaction = paneInteractionRuntime.active[panel.id] {
+                PaneInteractionCardView(
+                    panelId: panel.id,
+                    interaction: interaction,
+                    runtime: paneInteractionRuntime
                 )
             }
         }

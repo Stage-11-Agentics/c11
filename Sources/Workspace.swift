@@ -4873,6 +4873,11 @@ final class Workspace: Identifiable, ObservableObject {
     var onClosedBrowserPanel: ((ClosedBrowserPanelRestoreSnapshot) -> Void)?
     weak var owningTabManager: TabManager?
 
+    /// Workspace-scoped presenter for pane-anchored interactions (close-confirm,
+    /// rename, custom-color, socket-triggered agent consent). Per-panel FIFO
+    /// queue + soft cap lives inside the runtime. Views observe `.active`.
+    let paneInteractionRuntime = PaneInteractionRuntime()
+
 
     // Closing tabs mutates split layout immediately; terminal views handle their own AppKit
     // layout/size synchronization.
@@ -9480,6 +9485,12 @@ extension Workspace: BonsplitDelegate {
             }
             panel?.close()
         }
+
+        // Resolve any pending pane interactions on this panel with .dismissed so
+        // callers waiting on a continuation don't leak. Must precede the panel
+        // entry removal so anything observing `panels[panelId]` during the drain
+        // still resolves against a consistent view.
+        paneInteractionRuntime.clear(panelId: panelId)
 
         panels.removeValue(forKey: panelId)
         untrackRemoteTerminalSurface(panelId)

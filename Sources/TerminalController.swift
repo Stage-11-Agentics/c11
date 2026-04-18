@@ -6890,6 +6890,17 @@ class TerminalController {
     ///   - "invalid_params" — missing panel_id or title
     ///   - "unknown_panel" — panel_id doesn't resolve to a panel in any workspace
     private func v2PaneConfirm(params: [String: Any]) -> V2CallResult {
+        // Socket callers must be off-main. `v2MainSync` is re-entry-safe (runs
+        // the body inline when already on main); combined with the semaphore
+        // wait below this produces a deadlock where the completion scheduled
+        // on main can never fire. Surface the misuse instead of hanging.
+        if Thread.isMainThread {
+            return .err(
+                code: "invalid_context",
+                message: "pane.confirm must not be invoked from the main thread; it blocks until user responds.",
+                data: nil
+            )
+        }
         guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -6910,8 +6921,19 @@ class TerminalController {
             )
         }
         let message = (v2String(params, "message") ?? "")
-        let roleStr = v2String(params, "role") ?? "standard"
-        let role: ConfirmContent.ConfirmRole = (roleStr == "destructive") ? .destructive : .standard
+        let role: ConfirmContent.ConfirmRole
+        switch v2String(params, "role") ?? "standard" {
+        case "standard":
+            role = .standard
+        case "destructive":
+            role = .destructive
+        default:
+            return .err(
+                code: "invalid_params",
+                message: "Invalid role (expected 'standard' or 'destructive')",
+                data: ["role": v2String(params, "role") ?? ""]
+            )
+        }
         let timeoutSeconds = (params["timeout"] as? Double).map { max(0, $0) }
         let clientId = (v2String(params, "_clientId")) ?? "socket"
 

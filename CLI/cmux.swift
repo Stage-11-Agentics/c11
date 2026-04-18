@@ -11934,13 +11934,17 @@ struct CMUXCLI {
 
         let isDark = UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark"
 
-        let c1 = trueColor(0, 212, 255)
-        let c2 = trueColor(24, 181, 250)
-        let c3 = trueColor(48, 150, 245)
-        let c4 = trueColor(72, 119, 241)
-        let c5 = trueColor(96, 88, 239)
-        let c6 = trueColor(110, 73, 238)
-        let c7 = trueColor(124, 58, 237)
+        // Stage 11 gold ramp: single accent color, faded at the tips. Brand rule is
+        // "gold is the only color" — the diamond glows gold, everything else stays
+        // quiet. Values centered on --gold (#c9a84c = 201,168,76).
+        let g1 = trueColor(104, 87, 39)
+        let g2 = trueColor(149, 124, 56)
+        let g3 = trueColor(183, 153, 69)
+        let g4 = trueColor(201, 168, 76)
+        let g5 = trueColor(183, 153, 69)
+        let g6 = trueColor(149, 124, 56)
+        let g7 = trueColor(104, 87, 39)
+        let goldBold = bold + trueColor(201, 168, 76)
 
         let tagline: String
         let subdued: String
@@ -11954,13 +11958,13 @@ struct CMUXCLI {
         }
 
         let logo = """
-        \(c1)  ::\(reset)
-        \(c2)    ::::\(reset)              \(c1)c\(c2)m\(c3)u\(c7)x\(reset)
-        \(c3)      ::::::\(reset)
-        \(c4)        ::::::\(reset)        \(tagline)the open source terminal\(reset)
-        \(c5)      ::::::\(reset)          \(tagline)built for coding agents\(reset)
-        \(c6)    ::::\(reset)
-        \(c7)  ::\(reset)
+        \(g1)  ::\(reset)
+        \(g2)    ::::\(reset)              \(goldBold)c11mux\(reset)
+        \(g3)      ::::::\(reset)
+        \(g4)        ::::::\(reset)        \(tagline)a terminal for the spike\(reset)
+        \(g5)      ::::::\(reset)          \(tagline)human:digital by default\(reset)
+        \(g6)    ::::\(reset)
+        \(g7)  ::\(reset)
         """
 
         let shortcuts = """
@@ -11982,10 +11986,9 @@ struct CMUXCLI {
         print()
         print(shortcuts)
         print()
-        print("  \(bold)Docs\(reset)\(subdued)                https://cmux.com/docs\(reset)")
-        print("  \(bold)Discord\(reset)\(subdued)             https://discord.gg/xsgFEVrWCZ\(reset)")
-        print("  \(bold)GitHub\(reset)\(subdued)              https://github.com/manaflow-ai/cmux (please leave a star ⭐)\(reset)")
-        print("  \(bold)Email\(reset)\(subdued)               founders@manaflow.com\(reset)")
+        print("  \(bold)Stage 11\(reset)\(subdued)            https://stage11.ai\(reset)")
+        print("  \(bold)The Spike\(reset)\(subdued)           https://stage11.ai/spike\(reset)")
+        print("  \(bold)Upstream\(reset)\(subdued)            https://github.com/manaflow-ai/cmux (cmux — the project we forked)\(reset)")
         print()
         print("  \(subdued)Run \(reset)\(bold)cmux --help\(reset)\(subdued) for all commands.\(reset)")
         print("  \(subdued)Run \(reset)\(bold)cmux shortcuts\(reset)\(subdued) to edit shortcuts.\(reset)")

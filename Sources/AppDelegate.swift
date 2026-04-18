@@ -5908,9 +5908,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func sendWelcomeCommandWhenReady(to workspace: Workspace, markShownOnSend: Bool = false) {
-        sendTextWhenReady("cmux welcome\n", to: workspace) {
+        runWhenInitialTerminalReady(in: workspace) { initialPanel in
             if markShownOnSend {
                 UserDefaults.standard.set(true, forKey: WelcomeSettings.shownKey)
+            }
+            WelcomeSettings.performQuadLayout(on: workspace, initialPanel: initialPanel)
+        }
+    }
+
+    private func runWhenInitialTerminalReady(
+        in workspace: Workspace,
+        _ action: @escaping (TerminalPanel) -> Void
+    ) {
+        if let terminalPanel = workspace.focusedTerminalPanel,
+           terminalPanel.surface.surface != nil {
+            action(terminalPanel)
+            return
+        }
+
+        var resolved = false
+        var readyObserver: NSObjectProtocol?
+        var panelsCancellable: AnyCancellable?
+
+        func finishIfReady() {
+            guard !resolved,
+                  let terminalPanel = workspace.focusedTerminalPanel,
+                  terminalPanel.surface.surface != nil else { return }
+            resolved = true
+            if let readyObserver {
+                NotificationCenter.default.removeObserver(readyObserver)
+            }
+            panelsCancellable?.cancel()
+            action(terminalPanel)
+        }
+
+        panelsCancellable = workspace.$panels
+            .map { _ in () }
+            .sink { _ in finishIfReady() }
+        readyObserver = NotificationCenter.default.addObserver(
+            forName: .terminalSurfaceDidBecomeReady,
+            object: nil,
+            queue: .main
+        ) { note in
+            guard let workspaceId = note.userInfo?["workspaceId"] as? UUID,
+                  workspaceId == workspace.id else { return }
+            finishIfReady()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            if !resolved {
+                if let readyObserver {
+                    NotificationCenter.default.removeObserver(readyObserver)
+                }
+                panelsCancellable?.cancel()
+                NSLog("Welcome quad: initial terminal not ready after 3.0s")
             }
         }
     }

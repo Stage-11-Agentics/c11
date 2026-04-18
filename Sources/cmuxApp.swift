@@ -3756,6 +3756,61 @@ enum ClaudeCodeIntegrationSettings {
 
 enum WelcomeSettings {
     static let shownKey = "cmuxWelcomeShown"
+    static let spikeURL = "https://stage11.ai"
+
+    /// Turns the freshly-created welcome workspace into a 2x2 quad by performing
+    /// programmatic splits on the workspace model. Called once the initial
+    /// top-left terminal's Ghostty surface is ready.
+    ///
+    /// Layout:
+    ///   TL: initialPanel (terminal, renders `cmux welcome` ASCII)
+    ///   TR: browser → stage11.ai
+    ///   BL: markdown → bundled welcome.md
+    ///   BR: terminal → attempts `claude --dangerously-skip-permissions` if installed
+    ///
+    /// Newly-created terminal panels auto-queue `sendText` before their surfaces
+    /// finish initializing and flush on ready, so we can issue commands immediately.
+    @MainActor
+    static func performQuadLayout(on workspace: Workspace, initialPanel: TerminalPanel) {
+        let initialPanelId = initialPanel.id
+        let welcomeMdPath = Bundle.main.url(forResource: "welcome", withExtension: "md")?.path
+
+        let browserPanel = workspace.newBrowserSplit(
+            from: initialPanelId,
+            orientation: .horizontal,
+            insertFirst: false,
+            url: URL(string: spikeURL),
+            focus: false
+        )
+
+        var bottomRightPanel: TerminalPanel?
+        if let browserPanel {
+            bottomRightPanel = workspace.newTerminalSplit(
+                from: browserPanel.id,
+                orientation: .vertical,
+                insertFirst: false,
+                focus: false
+            )
+        }
+
+        if let welcomeMdPath {
+            workspace.newMarkdownSplit(
+                from: initialPanelId,
+                orientation: .vertical,
+                insertFirst: false,
+                filePath: welcomeMdPath,
+                focus: false
+            )
+        }
+
+        if let bottomRightPanel {
+            bottomRightPanel.sendText(
+                "command -v claude >/dev/null 2>&1 && claude --dangerously-skip-permissions\n"
+            )
+        }
+
+        initialPanel.sendText("cmux welcome\n")
+    }
 }
 
 enum TelemetrySettings {

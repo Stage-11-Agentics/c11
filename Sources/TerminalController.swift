@@ -6886,8 +6886,11 @@ class TerminalController {
     /// Result: { "result": "ok" | "cancel" | "dismissed" }
     ///
     /// Errors:
-    ///   - "unavailable" — no TabManager
-    ///   - "invalid_params" — missing panel_id or title
+    ///   - "invalid_context" — invoked from the main thread (would deadlock)
+    ///   - "unavailable" — no TabManager, or pane interactions disabled via
+    ///     `CMUX_PANE_DIALOG_DISABLED=1` / the `cmux.paneDialog.enabled`
+    ///     default
+    ///   - "invalid_params" — missing panel_id, empty title, or invalid role
     ///   - "unknown_panel" — panel_id doesn't resolve to a panel in any workspace
     private func v2PaneConfirm(params: [String: Any]) -> V2CallResult {
         // Socket callers must be off-main. `v2MainSync` is re-entry-safe (runs
@@ -6988,30 +6991,56 @@ class TerminalController {
         } else {
             waitDeadline = .distantFuture
         }
-        let waitResult = semaphore.wait(timeout: waitDeadline)
-        if waitResult == .timedOut {
-            // Cancel ONLY this call's interaction. If it was queued behind an
-            // earlier one, `cancelInteraction` removes it from the queue; the
-            // active interaction is untouched.
-            v2MainSync {
-                if let workspace = tabManager.tabs.first(where: { $0.panels[panelId] != nil }),
-                   let id = interactionId {
-                    workspace.paneInteractionRuntime.cancelInteraction(
-                        panelId: panelId,
-                        interactionId: id
-                    )
+        let resultCode = TerminalController.v2PaneConfirmResolveOutcomeForTesting(
+            wait: { semaphore.wait(timeout: waitDeadline) },
+            onTimeout: {
+                // Cancel ONLY this call's interaction. If it was queued behind an
+                // earlier one, `cancelInteraction` removes it from the queue; the
+                // active interaction is untouched.
+                self.v2MainSync {
+                    if let workspace = tabManager.tabs.first(where: { $0.panels[panelId] != nil }),
+                       let id = interactionId {
+                        workspace.paneInteractionRuntime.cancelInteraction(
+                            panelId: panelId,
+                            interactionId: id
+                        )
+                    }
                 }
-            }
-            return .ok(["result": "dismissed"])
-        }
+            },
+            readOutcome: { holder.value }
+        )
+        return .ok(["result": resultCode])
+    }
 
-        switch holder.value {
-        case .confirmed:
-            return .ok(["result": "ok"])
-        case .cancelled:
-            return .ok(["result": "cancel"])
-        case .dismissed:
-            return .ok(["result": "dismissed"])
+    /// Blocker #1 invariant: resolve the v2PaneConfirm response code from the
+    /// blocking wait, the timeout-cancel side-effect, and a holder accessor.
+    ///
+    /// The subtle bug the old code had: after `wait(timeout:)` returned
+    /// `.timedOut`, the timeout branch hard-coded `"dismissed"`. But a user
+    /// click in the race window between wait-return and the cancel running
+    /// on main fires the completion, which populates `holder.value` with the
+    /// real outcome (often `.confirmed`) BEFORE this function is asked to
+    /// produce a response. Reading `holder.value` after `onTimeout` closes
+    /// the race — if the completion raced in, we honor its outcome instead
+    /// of silently dropping the user's answer.
+    ///
+    /// Exposed as `internal static` for `PaneInteractionRuntimeTests` to
+    /// exercise the race with deterministic closures. The live socket path
+    /// MUST route through this function so the test coverage stays load-bearing.
+    internal static func v2PaneConfirmResolveOutcomeForTesting(
+        wait: () -> DispatchTimeoutResult,
+        onTimeout: () -> Void,
+        readOutcome: () -> ConfirmResult
+    ) -> String {
+        if wait() == .timedOut {
+            onTimeout()
+            // Fall through to the outcome read — if the completion fired in
+            // the race window, `readOutcome` reflects the real user answer.
+        }
+        switch readOutcome() {
+        case .confirmed: return "ok"
+        case .cancelled: return "cancel"
+        case .dismissed: return "dismissed"
         }
     }
 

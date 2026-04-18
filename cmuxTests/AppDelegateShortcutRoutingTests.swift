@@ -3146,6 +3146,132 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
             defaults.removeObject(forKey: key)
         }
     }
+
+    // MARK: - Important #1: multi-window Cmd+D dispatcher routing
+
+    func testShortcutActiveTabManagerWalksSheetParentToSecondaryWindow() throws {
+        // Trident Important #1: `contextForMainTerminalWindow(NSApp.keyWindow)`
+        // returns nil whenever keyWindow is not a main terminal window —
+        // command palette, an NSPanel float, or a sheet over a secondary
+        // window. The old fallback to `self.tabManager` silently routed Cmd+D
+        // to the primary window's TabManager while a pane dialog was open on
+        // secondary. Sheet-over-secondary is the canonical repro: attach a
+        // sheet (which takes keyWindow), stale the app-level pointer to
+        // primary, and assert resolution still lands on secondary via
+        // sheetParent walk.
+        guard let appDelegate = AppDelegate.shared else {
+            XCTFail("Expected AppDelegate.shared")
+            return
+        }
+
+        let firstWindowId = appDelegate.createMainWindow()
+        let secondWindowId = appDelegate.createMainWindow()
+        defer {
+            closeWindow(withId: firstWindowId)
+            closeWindow(withId: secondWindowId)
+        }
+
+        guard let firstManager = appDelegate.tabManagerFor(windowId: firstWindowId),
+              let secondManager = appDelegate.tabManagerFor(windowId: secondWindowId),
+              let secondWindow = window(withId: secondWindowId) else {
+            XCTFail("Expected both window contexts to exist")
+            return
+        }
+        XCTAssertFalse(firstManager === secondManager)
+
+        secondWindow.makeKeyAndOrderFront(nil)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+
+        // Stale the app-level pointer to the primary's TabManager — this is
+        // the exact condition that made the old fallback silently wrong.
+        appDelegate.tabManager = firstManager
+        XCTAssertTrue(appDelegate.tabManager === firstManager)
+
+        // Present a sheet over secondary. The sheet becomes keyWindow; its
+        // `sheetParent` is the secondary main terminal window.
+        let sheet = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 240, height: 120),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        sheet.isReleasedWhenClosed = false
+        secondWindow.beginSheet(sheet, completionHandler: nil)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+        defer {
+            secondWindow.endSheet(sheet)
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        }
+        XCTAssertTrue(secondWindow.attachedSheet === sheet,
+                      "Expected sheet to be attached to secondary window")
+
+        // Pass the sheet explicitly as keyWindow so the test doesn't rely on
+        // the runner making the sheet key (unit-test focus behavior can be
+        // platform-dependent). The resolver must walk sheetParent → second.
+#if DEBUG
+        let resolved = appDelegate.debugResolveActiveTabManagerForShortcut(
+            event: nil,
+            keyWindow: sheet
+        )
+#else
+        let resolved: TabManager? = nil
+        XCTFail("debugResolveActiveTabManagerForShortcut is only available in DEBUG")
+#endif
+
+        XCTAssertTrue(resolved === secondManager,
+                      "Sheet over secondary must resolve via sheetParent to secondary's TabManager")
+        XCTAssertFalse(resolved === firstManager,
+                       "Fallback to primary's TabManager is the exact Important #1 anti-pattern")
+    }
+
+    func testShortcutActiveTabManagerReturnsNilForNonTerminalKeyWindow() throws {
+        // Important #1 companion: when keyWindow is not a main terminal
+        // window and has no sheetParent, resolution must return nil — not
+        // silently fall back to `self.tabManager`. Returning nil lets the
+        // dispatcher short-circuit cleanly and the shortcut falls through
+        // to normal dispatch, rather than accepting a pane dialog on an
+        // arbitrary window the user wasn't looking at.
+        guard let appDelegate = AppDelegate.shared else {
+            XCTFail("Expected AppDelegate.shared")
+            return
+        }
+
+        let firstWindowId = appDelegate.createMainWindow()
+        defer { closeWindow(withId: firstWindowId) }
+
+        guard let firstManager = appDelegate.tabManagerFor(windowId: firstWindowId) else {
+            XCTFail("Expected first window context")
+            return
+        }
+
+        // Stale the app-level pointer — if the resolver falls back to
+        // self.tabManager we'd get firstManager, which is the buggy outcome.
+        appDelegate.tabManager = firstManager
+
+        let floatingPanel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
+            styleMask: [.titled, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        floatingPanel.isReleasedWhenClosed = false
+        defer { floatingPanel.close() }
+
+#if DEBUG
+        let resolved = appDelegate.debugResolveActiveTabManagerForShortcut(
+            event: nil,
+            keyWindow: floatingPanel
+        )
+#else
+        let resolved: TabManager? = firstManager
+        XCTFail("debugResolveActiveTabManagerForShortcut is only available in DEBUG")
+#endif
+
+        XCTAssertNil(resolved,
+                     "Non-terminal key window must return nil — no silent fallback to self.tabManager. "
+                     + "Returning primary would let Cmd+D accept a pane dialog on the primary "
+                     + "while the user is looking at a floating panel / command palette.")
+    }
 }
 
 private final class CommandPaletteMarkedTextFieldEditor: NSTextView {

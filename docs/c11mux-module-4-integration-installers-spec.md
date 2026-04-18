@@ -1,5 +1,13 @@
 # c11mux Module 4 — Integration Installers Spec
 
+> **REJECTED — 2026-04-18.** This specification was considered and explicitly rejected. c11mux does not write to tenants' persistent config files, not even with consent prompts, markers, or diff previews. Writing to `~/.claude/settings.json`, `~/.codex/*`, `~/.kimi/*`, or any other TUI config crosses the "unopinionated about the terminal" principle that c11mux is built around. See `CLAUDE.md § Principle: unopinionated about the terminal` for the durable writeup.
+>
+> The wrapper-bypass gap this spec wanted to close is accepted as a tradeoff: agents launched outside c11mux's PATH don't get integration, and that's the correct outcome. Agents can self-report status via the cmux skill's CLI if they want to; the skill file is the only outgoing touch.
+>
+> This doc is retained as a historical artifact — do not revive. If you're tempted, re-read the principle first.
+
+---
+
 Canonical specification for Module 4 of the [c11mux charter](./c11mux-charter.md). Defines `cmux install <tui>` / `cmux uninstall <tui>` — one-command wiring of cmux's notification shims and agent-declaration calls into each first-class TUI's configuration, plus the menubar item that launches the flow.
 
 Status: specification, not yet implemented. The scaffolding this module extends (the PATH-shim wrapper `Resources/bin/claude`, the `cmux claude-hook` CLI, the menubar controller, the v2 socket `surface.create` method) all exist today; `cmux install` does not.

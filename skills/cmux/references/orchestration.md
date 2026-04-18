@@ -105,19 +105,29 @@ cmux send-key --workspace $WS --surface $SURF enter
 
 ## Ready-state polling
 
-`cc` takes a few seconds to start. Instead of `sleep 5` (brittle), poll the screen until the prompt appears:
+`cc` takes a few seconds to start. Do not `sleep 5` and do not screen-scrape for the prompt glyph — the `Resources/bin/claude` wrapper (which fires when you launch `cc` or `claude` from a c11mux surface) already installs a cc hook set that writes **workspace-level status** to a canonical `claude_code` sidebar entry. Read that entry instead.
+
+Supported values: `Idle` (prompt waiting), `Running` (processing a turn), `Needs input` (permission/dialog), plus opt-in verbose tool descriptions. Values are `TitleCase`.
 
 ```bash
-for _ in {1..15}; do
-  SCREEN=$(cmux read-screen --workspace $WS --surface $SURF --lines 20)
-  if echo "$SCREEN" | grep -q '❯\|> '; then
-    break
-  fi
-  sleep 1
-done
+# Wait for cc to reach Idle before sending the prompt
+until cmux list-status --workspace $WS 2>/dev/null | grep -q '^claude_code=Idle '; do sleep 1; done
+cmux send --workspace $WS --surface $SURF "Read /tmp/prompt.md and follow the instructions."
+cmux send-key --workspace $WS --surface $SURF enter
 ```
 
-Tune the pattern to whatever Claude Code's prompt looks like in your version. Polling fails fast if `cc` crashes instead of silently waiting.
+(The trailing space in the grep anchors the match to just `Idle` and not `Idle something-else` in the unlikely case of value drift.)
+
+- `cmux list-status --workspace $WS` shows every sidebar entry on that workspace; the `claude_code` row is what cc's hooks populate.
+- This is a **workspace-level** signal — if you have multiple cc surfaces in the same workspace, it will reflect whichever most recently emitted. For strict per-surface ordering, dispatch one sub-agent per workspace or sequence launches.
+- The signal only exists when cc was launched through c11mux's bundled PATH. A cc / claude invocation that bypasses the PATH wrapper will not emit status. For sub-agents you orchestrate from inside a c11mux surface this is almost always fine — the wrapper is the default for `cc` / `claude` in that context.
+- Other TUIs (codex, kimi, opencode, etc.) do **not** get an equivalent wrapper, by design. For those, agents self-report by calling `cmux set-metadata --key status --value idle` / `running` themselves, following instructions in the cmux skill file they load at session start. If an agent hasn't been taught to self-report, you won't see status for them — that's expected.
+
+**Do not** regex for `❯`, `> `, or `Welcome to Claude Code`. Those patterns drift across cc releases and produce silent stalls when they miss (v2.1.114 dropped the box prompt and changed the banner, breaking every previous recipe). Read the status instead.
+
+### Why this works only for cc, and why that's okay
+
+The cc PATH wrapper at `Resources/bin/claude` is a **grandfathered, cc-specific concession** — c11mux does not write to any TUI's persistent config, and will not install analogous wrappers for codex, kimi, or opencode. The host is deliberately unopinionated about the terminal: c11mux provides the surface, the socket, and the skill file; what an agent does with them is the agent's business. For every TUI except cc, the skill-driven self-reporting path above is how status gets populated — there is no installer, no config-writing, no hook injection performed by c11mux.
 
 ## Agent-to-agent communication
 

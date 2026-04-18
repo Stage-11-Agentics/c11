@@ -5,6 +5,36 @@
 # intercepts `claude` invocations to inject --session-id and --settings flags
 # so that Claude Code hooks fire back into cmux for notifications/status.
 # Outside cmux, it passes through to the real claude binary unchanged.
+#
+# === GRANDFATHERED cc-SPECIFIC EXCEPTION — DO NOT GENERALIZE ==================
+# This wrapper is the ONE runtime shim c11mux ships for a third-party TUI.
+# It exists because cc was the first agent we integrated with and the wrapper
+# predates the unopinionated-host principle below.
+#
+# Principle: c11mux is host and primitive, not configurator. It provides
+# surfaces, panes, a socket, a CLI, and a metadata seam — all scoped to
+# c11mux's own runtime. It does NOT reach outside that boundary to install
+# hooks, write to tenant config files (~/.claude/settings.json, ~/.codex/*,
+# ~/.kimi/*, shell rc files, etc.), or inject behavior into any other TUI's
+# launch path. The one outgoing touch is the cmux skill file, which agents
+# opt into by reading it.
+#
+# Consequence for cc: this wrapper is allowed to stay. It only shapes cc's
+# runtime behavior (PATH-scoped, no persistent writes anywhere), and cc
+# agents that ignore the skill still emit useful sidebar status via the
+# hooks this wrapper installs.
+#
+# Consequence for other TUIs (codex, kimi, opencode, etc.): do NOT build
+# equivalent wrappers. They get the skill file and the socket API, period.
+# Agents self-report status via `cmux set-metadata --key status --value ...`
+# from their own lifecycle, following instructions in the skill. If an
+# agent isn't taught to self-report, it won't — that's expected and
+# correct under the principle.
+#
+# Consequence for `cmux install <tui>`: rejected. c11mux does not write to
+# tenants' config files, not even with consent. See CLAUDE.md for the full
+# principle writeup.
+# ============================================================================
 
 # Find the real claude binary, skipping our own directory.
 find_real_claude() {

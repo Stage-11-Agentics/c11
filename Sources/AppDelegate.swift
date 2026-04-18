@@ -9032,6 +9032,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     findStaticText(in: root, equals: title)
                 }
             }
+        // Pane-anchored interaction overlays are NOT NSPanels — they live inside the
+        // key window's portal/SwiftUI hierarchy. Gate the same shortcuts here so the
+        // overlay sees the Cmd+D accept and other app shortcuts stay suppressed while
+        // a dialog is visible (plan §4.8).
+        let paneInteractionActive = tabManager?.hasActivePaneInteraction ?? false
+
         if let closeConfirmationPanel {
             // Special-case: Cmd+D should confirm destructive close on alerts.
             // XCUITest key events often hit the app-level local monitor first, so forward the key
@@ -9046,6 +9052,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                    titled: String(localized: "common.close", defaultValue: "Close")
                ) {
                 closeButton.performClick(nil)
+                return true
+            }
+            return false
+        }
+
+        if paneInteractionActive {
+            // Route Cmd+D through to the pane-interaction runtime — same contract as
+            // the NSPanel close-confirmation path: accept the topmost dialog in the
+            // focused workspace. All other shortcuts are swallowed while the dialog
+            // is visible so keybindings don't fire through the overlay.
+            if matchShortcut(
+                event: event,
+                shortcut: StoredShortcut(key: "d", command: true, shift: false, option: false, control: false)
+            ), tabManager?.acceptActivePaneInteractionInKeyWorkspace() == true {
                 return true
             }
             return false

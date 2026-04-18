@@ -693,6 +693,39 @@ class TabManager: ObservableObject {
     @Published private(set) var pendingBackgroundWorkspaceLoadIds: Set<UUID> = []
     @Published private(set) var debugPinnedWorkspaceLoadIds: Set<UUID> = []
 
+    /// Any workspace in this TabManager currently has a pane interaction presented.
+    /// Used by AppDelegate's shortcut dispatcher / modal-window gate (plan §4.8) to
+    /// suppress key-equivalent handling while a pane-anchored dialog is on screen.
+    var hasActivePaneInteraction: Bool {
+        tabs.contains { $0.paneInteractionRuntime.hasAnyActive }
+    }
+
+    /// Accept the topmost pane interaction in the currently selected workspace,
+    /// preferring the focused panel when it has an active interaction. Used by the
+    /// Cmd+D dispatcher (plan §4.8). Returns true when an interaction resolved —
+    /// caller should also return true from its key-equivalent handler.
+    @MainActor
+    @discardableResult
+    func acceptActivePaneInteractionInKeyWorkspace() -> Bool {
+        guard let selectedTabId,
+              let workspace = tabs.first(where: { $0.id == selectedTabId }) else {
+            return false
+        }
+        let runtime = workspace.paneInteractionRuntime
+        // Prefer the focused panel — Cmd+D naturally targets "the dialog the user is
+        // looking at," which is the one anchored on the currently focused panel.
+        if let focusedPanelId = workspace.focusedPanelId,
+           runtime.hasActive(panelId: focusedPanelId) {
+            return runtime.acceptActive(panelId: focusedPanelId)
+        }
+        // Otherwise accept any active interaction — there's only ever one per panel,
+        // and multiple-panel-with-active-interaction is rare.
+        if let anyPanelId = runtime.activePanelIds.first {
+            return runtime.acceptActive(panelId: anyPanelId)
+        }
+        return false
+    }
+
     /// Global monotonically increasing counter for CMUX_PORT ordinal assignment.
     /// Static so port ranges don't overlap across multiple windows (each window has its own TabManager).
     private static var nextPortOrdinal: Int = 0

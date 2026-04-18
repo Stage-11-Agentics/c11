@@ -11,6 +11,7 @@ c11mux is a terminal command center for advanced hyperengineers
   </a>
 </p>
 
+<!--
 <p align="center">
   <img src="./docs/assets/main-first-image.png" alt="c11mux screenshot" width="900" />
 </p>
@@ -23,7 +24,7 @@ c11mux is a terminal command center for advanced hyperengineers
   English · <a href="README.ja.md">日本語</a>
   <br/>
   <sub><i>Japanese translation is from the upstream era and will be refreshed as c11mux's fork-specific copy stabilizes.</i></sub>
-</p>
+</p> -->
 
 ## What this is
 

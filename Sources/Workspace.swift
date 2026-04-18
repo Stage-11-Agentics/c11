@@ -5993,6 +5993,7 @@ final class Workspace: Identifiable, ObservableObject {
         let snapshot = SurfaceMetadataStore.shared.getMetadata(workspaceId: id, surfaceId: panelId)
         var payload: [String: Any] = [:]
         payload["surface_id"] = panelId.uuidString
+        let descriptionString = snapshot.metadata[MetadataKey.description] as? String
         if let title = snapshot.metadata[MetadataKey.title] as? String {
             payload["title"] = title
             if let info = snapshot.sources[MetadataKey.title] {
@@ -6001,7 +6002,7 @@ final class Workspace: Identifiable, ObservableObject {
             }
             payload["sidebar_label"] = TitleFormatting.sidebarLabel(from: title)
         }
-        if let description = snapshot.metadata[MetadataKey.description] as? String {
+        if let description = descriptionString {
             payload["description"] = description
             if let info = snapshot.sources[MetadataKey.description] {
                 if let src = info["source"] { payload["description_source"] = src }
@@ -6010,6 +6011,7 @@ final class Workspace: Identifiable, ObservableObject {
         }
         let collapsed = titleBarCollapsed[panelId] ?? true
         payload["collapsed"] = collapsed
+        payload["effective_collapsed"] = collapsed || (descriptionString?.isEmpty ?? true)
         payload["visible"] = titleBarVisible
         return payload
     }

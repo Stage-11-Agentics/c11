@@ -34,7 +34,7 @@ These keys have a defined shape and render in the sidebar or title bar. Any writ
 | `progress` | number | 0.0 – 1.0 | sidebar: progress bar |
 | `terminal_type` | string | kebab-case, ≤ 32 chars | sidebar chip. Canonical values: `claude-code`, `codex`, `kimi`, `opencode`, `shell`, `unknown`. Open-ended. |
 | `title` | string | plain text, ≤ 256 chars | title bar + sidebar tab label (truncated) |
-| `description` | string | Markdown subset (`**bold**`, `*italic*`, inline `code`), ≤ 2048 chars | title bar expanded region |
+| `description` | string | Markdown subset (bold/italic, inline `code`, lists, headings, blockquotes, links, rules — no images, fenced code, or tables), ≤ 2048 chars | title bar expanded region |
 
 **Sidebar rendering order** when present: `model` → `terminal_type` → `role` → `status` → `task` → `progress`. `title` and `description` render in the title bar, not the sidebar — the sidebar tab label is a truncated projection of `title`.
 
@@ -83,9 +83,18 @@ cmux set-title "My Surface Title"
 cmux set-title --from-file /tmp/title.txt
 cmux set-description "Long-form description of what this surface is doing and why."
 cmux set-description --from-file /tmp/desc.md
+
+# Read the rendered title-bar state (title, description, sources, collapsed,
+# effective_collapsed, visible, sidebar_label). Defaults to caller's surface.
+cmux get-titlebar-state
+cmux get-titlebar-state --surface surface:3
 ```
 
 Writes canonical `title` or `description` with `source: explicit`. `cmux rename-tab` is an alias for `cmux set-title`.
+
+The description renders with MarkdownUI at 11pt with a compact heading hierarchy (13/12/11). Links render styled but are **not navigable** in v1 (`OpenURLAction { .discarded }`). Images, fenced code blocks, and table rows are stripped at render time; the raw string still round-trips through the store unchanged. Content over ~5 lines scrolls internally inside a 90pt-capped region.
+
+When `description` is empty the title bar renders as collapsed regardless of the flag (`effective_collapsed = collapsed || description.isEmpty`) — this is what the socket payload's `effective_collapsed` field reports.
 
 ## Socket methods
 

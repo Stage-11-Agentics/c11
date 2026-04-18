@@ -114,6 +114,47 @@ def main() -> int:
                 s.get("collapsed") is True,
                 f"after user-collapse, further descriptions must NOT auto-expand: {s}",
             )
+
+            # effective_collapsed mirrors collapsed when description is non-empty;
+            # flips true when description is empty regardless of the flag.
+            _must(
+                s.get("effective_collapsed") is True,
+                f"effective_collapsed should be True while collapsed=True: {s}",
+            )
+
+            # Clear description → flag unchanged, but effective_collapsed should
+            # follow description emptiness so render does not show a multi-line
+            # title with a disabled chevron.
+            c._call(
+                "surface.set_metadata",
+                {
+                    "surface_id": surface_id,
+                    "mode": "merge",
+                    "source": "explicit",
+                    "metadata": {"description": ""},
+                },
+            )
+            s = _state(c, surface_id)
+            _must(
+                s.get("effective_collapsed") is True,
+                f"effective_collapsed must be True when description is empty: {s}",
+            )
+
+            # Expand via user intent; with empty description, render still
+            # effectively collapses even though the flag is False.
+            c._call(
+                "surface.set_titlebar_collapsed",
+                {"surface_id": surface_id, "collapsed": False, "user": True},
+            )
+            s = _state(c, surface_id)
+            _must(
+                s.get("collapsed") is False,
+                f"collapsed flag should flip to False: {s}",
+            )
+            _must(
+                s.get("effective_collapsed") is True,
+                f"effective_collapsed must remain True for empty description: {s}",
+            )
         finally:
             c.close_workspace(ws_id)
 

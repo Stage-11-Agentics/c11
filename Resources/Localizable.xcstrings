@@ -67260,6 +67260,57 @@
         }
       }
     },
+    "titlebar.chevron.collapse": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collapse title bar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイトルバーを折りたたむ"
+          }
+        }
+      }
+    },
+    "titlebar.chevron.expand": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expand title bar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイトルバーを展開"
+          }
+        }
+      }
+    },
+    "titlebar.empty_title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Untitled"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイトルなし"
+          }
+        }
+      }
+    },
     "titlebar.newWorkspace.accessibilityLabel": {
       "extractionState": "manual",
       "localizations": {

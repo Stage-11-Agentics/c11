@@ -1,6 +1,6 @@
 ---
 name: cmux
-description: c11mux — Stage 11's native macOS terminal multiplexer built as infrastructure for the Spike. Use when (1) session starts inside c11mux (env var CMUX_SHELL_INTEGRATION=1), (2) creating pane splits, surfaces, or workspaces, (3) sending text or commands to another surface, (4) launching or orchestrating sub-agents in sibling panes, (5) declaring agent identity or writing per-surface metadata, (6) reading surface contents or spatial layout via `cmux tree`, (7) setting surface title or description, (8) reporting progress via sidebar status/log/progress, (9) using the embedded browser for web validation (preferred over Chrome MCP when inside c11mux), (10) any cmux-specific command or troubleshooting question. Auto-load whenever c11mux is detected in the environment.
+description: c11mux — Stage 11's native macOS terminal multiplexer built as infrastructure for the Spike. Use when (1) session starts inside c11mux (env var CMUX_SHELL_INTEGRATION=1), (2) creating pane splits, surfaces, or workspaces, (3) sending text or commands to another surface, (4) launching or orchestrating sub-agents in sibling panes, (5) declaring agent identity or writing the surface manifest, (6) reading surface contents or spatial layout via `cmux tree`, (7) setting surface title or description, (8) reporting progress via sidebar status/log/progress, (9) using the embedded browser for web validation (preferred over Chrome MCP when inside c11mux), (10) any cmux-specific command or troubleshooting question. Auto-load whenever c11mux is detected in the environment.
 ---
 
 # c11mux
@@ -21,7 +21,7 @@ Check `CMUX_SHELL_INTEGRATION`. If set to `1`, you are inside c11mux; use native
 [ "$CMUX_SHELL_INTEGRATION" = "1" ] && echo "in c11mux" || echo "not in c11mux"
 ```
 
-Other env vars available to child processes: `CMUX_WORKSPACE_ID`, `CMUX_SURFACE_ID`, `CMUX_TAB_ID`, `CMUX_SOCKET_PATH`, `CMUX_SOCKET_PASSWORD`.
+Other env vars available to child processes: `CMUX_WORKSPACE_ID`, `CMUX_SURFACE_ID`, `CMUX_TAB_ID`, `CMUX_SOCKET_PATH`, `CMUX_SOCKET_PASSWORD`. The spawning shell may also set `CMUX_AGENT_TYPE`, `CMUX_AGENT_MODEL`, and `CMUX_AGENT_TASK` to pre-seed agent declaration — read once at surface start.
 
 ## Concepts
 
@@ -34,19 +34,24 @@ Refs accept UUIDs, short refs, or indexes: `window:1`, `workspace:1`, `pane:2`, 
 
 ## Orient first
 
-At session start — always:
+At session start — always, in this order:
 
 ```bash
-cmux identify                           # Your workspace/surface/pane refs (JSON)
-cmux tree                               # Spatial layout of the current workspace + hierarchical listing
-cmux rename-tab "<your role>"           # Name your own tab before anything else
+cmux identify                                              # Your workspace/surface/pane refs (JSON)
+cmux tree                                                  # Spatial layout of the current workspace + hierarchical listing
+cmux set-agent --type claude-code --model claude-opus-4-7  # Declare terminal_type + model (mandatory)
+cmux rename-tab "<your role>"                              # Name your own tab before anything else
 ```
+
+Also populate `role`, `task`, and `status` via `cmux set-metadata` **if known** from the opening message or environment (e.g. the user references a ticket ID, or `CMUX_AGENT_TASK` is set). Skip when unknown — don't guess.
 
 **An unnamed tab is an unidentifiable agent.** Name your tab immediately, even when working solo. Key word first, 2–4 words, under 25 characters (the sidebar truncates from the right): `cmux rename-tab "TICKET-42 Plan"` survives; `"Planning TICKET-42"` truncates to `"Planning TICK…"`.
 
-## Declare your agent
+**If the user's opening message is absent or ambiguous, ask before orienting.** This aligns with the global "dialogue" norm — don't silently rename a tab `"Explore"` just to have something in the sidebar. A direct request ("fix this bug", "what is X called") is not ambiguous; proceed with the request and run orientation in the same turn.
 
-c11mux carries a `terminal_type` and `model` on every surface so the sidebar, title bar, and `cmux tree` output all know what kind of agent you are. Declare yourself at startup:
+### Declaring your agent (details)
+
+`cmux set-agent` writes the canonical `terminal_type` and `model` keys so the sidebar, title bar, and `cmux tree` output all know what kind of agent you are.
 
 ```bash
 cmux set-agent --type claude-code --model claude-opus-4-7
@@ -55,13 +60,15 @@ cmux set-agent --type codex --task lat-412
 
 Supported `--type` values include `claude-code`, `codex`, `kimi`, `opencode`. Any kebab-case string is accepted for unrecognized agents — the sidebar will render a generic chip.
 
-If c11mux's integration was installed for your TUI via `cmux install <tui>`, the declaration fires automatically at every session start — you don't need to call `cmux set-agent` yourself. When in doubt, call it; `set-agent` is idempotent.
+If c11mux's integration was installed for your TUI via `cmux install <tui>`, the declaration fires automatically at every session start. Call it anyway — `set-agent` is idempotent and guards against the integration not being installed.
 
 You can also declare via env vars set in the spawning shell: `CMUX_AGENT_TYPE`, `CMUX_AGENT_MODEL`, `CMUX_AGENT_TASK`. Read once at surface start.
 
-## Per-surface metadata
+## The surface manifest
 
-Every surface carries an open-ended JSON metadata blob — agents read and write it over the socket. c11mux stores it, renders a small set of canonical keys in the sidebar and title bar, and leaves everything else opaque for Lattice and other consumers.
+Every surface carries a **surface manifest** — an open-ended JSON document that declares what the surface is, what it's doing, and anything else agents or tools want to advertise about it. Agents read and write it over the socket via `cmux get-metadata` / `cmux set-metadata`. c11mux renders a small set of canonical keys in the sidebar and title bar, and leaves every other field opaque for Lattice, Mycelium, and third-party tools to define their own keyspace on top.
+
+Think of the manifest as the extension point for c11mux: the host provides the surface and the transport; anyone can stake out their own keys.
 
 ```bash
 # Write
@@ -160,15 +167,16 @@ Read `cmux tree` before planning layouts — splitting blind leads to cramped pa
 
 ## Title and description
 
-The title bar on every surface shows a short title plus an optional longer description of what the surface is doing and why. Both are writable by agent or user and live on the per-surface metadata blob (canonical `title` / `description` keys).
+The title bar on every surface shows a short title plus an optional longer description of what the surface is doing and why. Both are writable by agent or user and live on the surface manifest (canonical `title` / `description` keys).
 
 ```bash
 cmux set-title "SIG Delegator — reviewing PR #42"
 cmux set-description "Running smoke suite across 10 shards; reports to Lattice task lat-412."
 cmux set-title --from-file /tmp/title.txt    # for long or special-character titles
+cmux get-titlebar-state                      # read caller's own title/description/collapsed state
 ```
 
-`cmux rename-tab` is a thin alias for `set-title`. The sidebar tab label is a truncated projection of the title; the title bar shows the full string and expands for the description.
+`cmux rename-tab` is a thin alias for `set-title`. The sidebar tab label is a truncated projection of the title; the title bar shows the full string and, when expanded, renders the description as markdown (bold, italic, inline code, lists, headings, blockquotes, links, rules; images/fenced-code/tables are stripped at render; links are styled but not navigable). Content over ~5 lines scrolls internally in a 90pt-capped region. See [references/metadata.md](references/metadata.md#title--description-sugar-m7) for the full subset and payload fields.
 
 ## Sidebar reporting
 

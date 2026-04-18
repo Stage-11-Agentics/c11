@@ -718,10 +718,17 @@ class TabManager: ObservableObject {
            runtime.hasActive(panelId: focusedPanelId) {
             return runtime.acceptActive(panelId: focusedPanelId)
         }
-        // Otherwise accept any active interaction — there's only ever one per panel,
-        // and multiple-panel-with-active-interaction is rare.
-        if let anyPanelId = runtime.activePanelIds.first {
-            return runtime.acceptActive(panelId: anyPanelId)
+        // Otherwise iterate panels in bonsplit pane/tab order and accept the
+        // first active one found. `Set.first` is nondeterministic; iterating
+        // the spatial layout makes the tiebreaker deterministic when two
+        // panels in the same workspace have active interactions.
+        for paneId in workspace.bonsplitController.allPaneIds {
+            for tab in workspace.bonsplitController.tabs(inPane: paneId) {
+                if let candidate = workspace.panelIdFromSurfaceId(tab.id),
+                   runtime.hasActive(panelId: candidate) {
+                    return runtime.acceptActive(panelId: candidate)
+                }
+            }
         }
         return false
     }

@@ -7,4 +7,4 @@
 	url = https://github.com/Stage-11-Agentics/homebrew-c11mux.git
 [submodule "vendor/bonsplit"]
 	path = vendor/bonsplit
-	url = https://github.com/manaflow-ai/bonsplit.git
+	url = https://github.com/Stage-11-Agentics/bonsplit.git

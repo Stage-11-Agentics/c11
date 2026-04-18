@@ -22,8 +22,9 @@ final class MarkdownPanel: Panel, ObservableObject {
     let id: UUID
     let panelType: PanelType = .markdown
 
-    /// Absolute path to the markdown file being displayed.
-    let filePath: String
+    /// Absolute path to the markdown file being displayed, or nil when the
+    /// panel is unbound (empty state — user hasn't picked a file yet).
+    @Published private(set) var filePath: String?
 
     /// The workspace this panel belongs to.
     private(set) var workspaceId: UUID
@@ -37,7 +38,8 @@ final class MarkdownPanel: Panel, ObservableObject {
     /// SF Symbol icon for the tab bar.
     var displayIcon: String? { "doc.richtext" }
 
-    /// Whether the file has been deleted or is unreadable.
+    /// Whether the file has been deleted or is unreadable. Always false for
+    /// an unbound panel (nil filePath) — the empty state is a distinct mode.
     @Published private(set) var isFileUnavailable: Bool = false
 
     /// Token incremented to trigger focus flash animation.
@@ -71,20 +73,46 @@ final class MarkdownPanel: Panel, ObservableObject {
     /// - Parameter id: Stable panel UUID. Pass `nil` for fresh creation; pass a
     ///   snapshot's panel id during session restore to keep IDs stable across
     ///   app restarts (Tier 1 persistence, Phase 1).
-    init(id: UUID? = nil, workspaceId: UUID, filePath: String) {
+    /// - Parameter filePath: Absolute path to a markdown file, or `nil` to
+    ///   create an unbound panel (empty state — user binds via drag-drop or
+    ///   the in-panel "Open Markdown File" button).
+    init(id: UUID? = nil, workspaceId: UUID, filePath: String? = nil) {
         self.id = id ?? UUID()
         self.workspaceId = workspaceId
         self.filePath = filePath
-        self.displayTitle = (filePath as NSString).lastPathComponent
+        self.displayTitle = Self.titleForFilePath(filePath)
 
+        if filePath != nil {
+            loadFileContent()
+            startFileWatcher()
+            if isFileUnavailable && fileWatchSource == nil {
+                // Session restore can create a panel before the file is recreated.
+                // Retry briefly so atomic-rename recreations can reconnect.
+                scheduleReattach(attempt: 1)
+            }
+        }
+        startAppearanceObserver()
+    }
+
+    private static func titleForFilePath(_ filePath: String?) -> String {
+        guard let filePath else {
+            return String(localized: "markdown.untitled", defaultValue: "Untitled")
+        }
+        return (filePath as NSString).lastPathComponent
+    }
+
+    /// Bind this panel to a markdown file post-construction. Called from the
+    /// empty-state UI after the user drops a file or picks one via NSOpenPanel.
+    /// No-op if the panel is already bound — rebinding requires a fresh panel.
+    func bindFilePath(_ path: String) {
+        guard filePath == nil, !isClosed else { return }
+        filePath = path
+        displayTitle = Self.titleForFilePath(path)
         loadFileContent()
         startFileWatcher()
         if isFileUnavailable && fileWatchSource == nil {
-            // Session restore can create a panel before the file is recreated.
-            // Retry briefly so atomic-rename recreations can reconnect.
             scheduleReattach(attempt: 1)
         }
-        startAppearanceObserver()
     }
 
     // MARK: - Panel protocol
@@ -111,6 +139,12 @@ final class MarkdownPanel: Panel, ObservableObject {
     // MARK: - File I/O
 
     private func loadFileContent() {
+        guard let filePath else {
+            content = ""
+            isFileUnavailable = false
+            parseSegments()
+            return
+        }
         do {
             let newContent = try String(contentsOfFile: filePath, encoding: .utf8)
             content = newContent
@@ -302,6 +336,7 @@ final class MarkdownPanel: Panel, ObservableObject {
     // MARK: - File watcher via DispatchSource
 
     private func startFileWatcher() {
+        guard let filePath else { return }
         let fd = open(filePath, O_EVTONLY)
         guard fd >= 0 else { return }
         fileDescriptor = fd
@@ -354,8 +389,8 @@ final class MarkdownPanel: Panel, ObservableObject {
         watchQueue.asyncAfter(deadline: .now() + Self.reattachDelay) { [weak self] in
             guard let self else { return }
             DispatchQueue.main.async {
-                guard !self.isClosed else { return }
-                if FileManager.default.fileExists(atPath: self.filePath) {
+                guard !self.isClosed, let filePath = self.filePath else { return }
+                if FileManager.default.fileExists(atPath: filePath) {
                     self.isFileUnavailable = false
                     self.loadFileContent()
                     self.startFileWatcher()

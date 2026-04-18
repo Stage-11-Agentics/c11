@@ -276,7 +276,10 @@ struct SessionBrowserPanelSnapshot: Codable, Sendable {
 }
 
 struct SessionMarkdownPanelSnapshot: Codable, Sendable {
-    var filePath: String
+    /// Absolute path to the markdown file, or nil for an unbound panel
+    /// (empty state — not yet bound to a file). Unbound panels are not
+    /// recreated on restore; see Workspace.createPanel(from:inPane:).
+    var filePath: String?
 }
 
 struct SessionPanelSnapshot: Codable, Sendable {

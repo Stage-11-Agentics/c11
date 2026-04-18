@@ -197,29 +197,29 @@ public final class PaneInteractionRuntime: ObservableObject {
 
     public func resolveConfirm(panelId: UUID, result: ConfirmResult) {
         guard case .confirm(let c)? = active[panelId] else { return }
-        // Null active BEFORE firing completion so a reentrant resolve call
-        // on the same panel can't find the same interaction and double-resume.
-        active[panelId] = nil
+        // Advance state BEFORE firing completion. A completion that calls
+        // `present()` synchronously must see a correctly-advanced runtime —
+        // otherwise `drain`/`advance` would fire after the reentrant present
+        // and overwrite its active slot (losing that interaction's
+        // continuation) and wipe any dedupe token it just registered.
+        _ = drain(panelId: panelId)
         c.completion(result)
-        advance(panelId: panelId)
     }
 
     public func resolveTextInput(panelId: UUID, result: TextInputResult) {
         guard case .textInput(let t)? = active[panelId] else { return }
-        active[panelId] = nil
+        _ = drain(panelId: panelId)
         t.completion(result)
-        advance(panelId: panelId)
     }
 
     /// Generic cancel path (Esc/Cancel) that works across variants.
     public func cancelActive(panelId: UUID) {
         guard let interaction = active[panelId] else { return }
-        active[panelId] = nil
+        _ = drain(panelId: panelId)
         switch interaction {
         case .confirm(let c): c.completion(.cancelled)
         case .textInput(let t): t.completion(.cancelled)
         }
-        advance(panelId: panelId)
     }
 
     /// Cancel a specific interaction by id. Searches active and queued slots;
@@ -229,9 +229,8 @@ public final class PaneInteractionRuntime: ObservableObject {
     @discardableResult
     public func cancelInteraction(panelId: UUID, interactionId: UUID) -> Bool {
         if let current = active[panelId], current.id == interactionId {
-            active[panelId] = nil
+            _ = drain(panelId: panelId)
             dismissEvicted(current)
-            advance(panelId: panelId)
             return true
         }
         if var queue = queues[panelId],
@@ -253,34 +252,46 @@ public final class PaneInteractionRuntime: ObservableObject {
         guard let interaction = active[panelId] else { return false }
         switch interaction {
         case .confirm(let c):
-            active[panelId] = nil
+            _ = drain(panelId: panelId)
             c.completion(.confirmed)
         case .textInput(let t):
             let value = textInputValue ?? t.defaultValue
             if t.validate(value) != nil { return false }
-            active[panelId] = nil
+            _ = drain(panelId: panelId)
             t.completion(.submitted(value))
         }
-        advance(panelId: panelId)
         return true
     }
 
-    /// Expects `active[panelId]` to have already been set to nil by the caller
-    /// (see `resolveConfirm`/`resolveTextInput`/`cancelActive`/`acceptActive`).
-    /// Promotes the next queued interaction, or resets per-panel bookkeeping
-    /// (including `seenTokens`) if the panel is fully idle.
-    private func advance(panelId: UUID) {
+    /// Advance runtime state past the currently-active interaction:
+    /// null the active slot, promote the queue head if any, and clear
+    /// `seenTokens[panelId]` when the panel is fully idle. The previous
+    /// active interaction is returned so callers can inspect it; they are
+    /// expected to fire its completion AFTER this returns, not before.
+    ///
+    /// Running advance before firing completions is the invariant that keeps
+    /// reentrant `present()` calls from being silently overwritten (and their
+    /// dedupe-token registrations from being wiped). Pre-M10 rev this ran
+    /// after the completion and dropped reentrant presents on the floor.
+    @discardableResult
+    private func drain(panelId: UUID) -> PaneInteraction? {
+        let previous = active[panelId]
+        active[panelId] = nil
         if var queue = queues[panelId], !queue.isEmpty {
             active[panelId] = queue.removeFirst()
             queues[panelId] = queue.isEmpty ? nil : queue
         } else {
             queues[panelId] = nil
-            // Fully idle: let the next independent `present` with a previously
-            // seen dedupe token proceed (otherwise a stable per-panel token
-            // like `close_surface_cb.<id>` would silently suppress every
-            // subsequent close attempt for the life of the panel).
+        }
+        if active[panelId] == nil && queues[panelId] == nil {
+            // Fully idle: let the next independent `present` with a
+            // previously-seen dedupe token proceed (otherwise a stable
+            // per-panel token like `close_surface_cb.<id>` would silently
+            // suppress every subsequent close attempt for the life of the
+            // panel).
             seenTokens[panelId] = nil
         }
+        return previous
     }
 
     public func hasActive(panelId: UUID) -> Bool { active[panelId] != nil }

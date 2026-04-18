@@ -5327,14 +5327,15 @@ struct SettingsView: View {
                         }
                     }
 
-                    // [TextBox] TextBox Input settings (plan §4.7)
+                    // [TextBox] TextBox Input settings (plan §4.7). Keys match
+                    // the upstream fork so Japanese translations carry over.
                     SettingsSectionHeader(title: String(localized: "settings.section.textBoxInput", defaultValue: "TextBox Input"))
                         .id(SettingsNavigationTarget.textBoxInput)
                         .accessibilityIdentifier("SettingsTextBoxInputSection")
                     SettingsCard {
                         SettingsCardRow(
-                            String(localized: "settings.textBoxInput.enable", defaultValue: "Enable Mode"),
-                            subtitle: String(localized: "settings.textBoxInput.enable.subtitle", defaultValue: "Show a native text box below each terminal for composing multi-line input and AI prompts.")
+                            String(localized: "settings.textBoxInput.enableMode", defaultValue: "Enable Mode"),
+                            subtitle: String(localized: "settings.textBoxInput.enableMode.subtitle", defaultValue: "Add a text box for terminal input. Supports standard editing, IME, and clipboard shortcuts.")
                         ) {
                             Toggle("", isOn: $textBoxEnabled)
                                 .labelsHidden()
@@ -5345,21 +5346,21 @@ struct SettingsView: View {
                         SettingsCardDivider()
 
                         SettingsPickerRow(
-                            String(localized: "settings.textBoxInput.enterToSend", defaultValue: "Send on Return"),
-                            subtitle: String(localized: "settings.textBoxInput.enterToSend.subtitle", defaultValue: "When on, Return submits and Shift+Return inserts a newline. When off, the keys are reversed."),
+                            String(localized: "settings.textBoxInput.sendOnReturn", defaultValue: "Send on Return"),
+                            subtitle: String(localized: "settings.textBoxInput.sendOnReturn.subtitle", defaultValue: "Insert new line with Shift+Return"),
                             controlWidth: pickerColumnWidth,
                             selection: $textBoxEnterToSend
                         ) {
-                            Text(String(localized: "settings.textBoxInput.enterToSend.on", defaultValue: "Return = Send")).tag(true)
-                            Text(String(localized: "settings.textBoxInput.enterToSend.off", defaultValue: "Return = Newline")).tag(false)
+                            Text(String(localized: "settings.textBoxInput.sendOnReturn.on", defaultValue: "Return = Send")).tag(true)
+                            Text(String(localized: "settings.textBoxInput.sendOnReturn.off", defaultValue: "Return = Newline")).tag(false)
                         }
                         .textBoxSettingsDisabled(!textBoxEnabled)
 
                         SettingsCardDivider()
 
                         SettingsPickerRow(
-                            String(localized: "settings.textBoxInput.escape", defaultValue: "Escape Key"),
-                            subtitle: String(localized: "settings.textBoxInput.escape.subtitle", defaultValue: "What the Escape key does while focus is in the TextBox."),
+                            String(localized: "settings.textBoxInput.escapeBehavior", defaultValue: "Escape Key"),
+                            subtitle: String(localized: "settings.textBoxInput.escapeBehavior.subtitle", defaultValue: "Action when pressing Escape in the TextBox."),
                             controlWidth: pickerColumnWidth,
                             selection: $textBoxEscapeBehavior
                         ) {
@@ -5372,8 +5373,11 @@ struct SettingsView: View {
                         SettingsCardDivider()
 
                         SettingsPickerRow(
-                            String(localized: "settings.textBoxInput.shortcutBehavior", defaultValue: "Shortcut Behavior"),
-                            subtitle: String(localized: "settings.textBoxInput.shortcutBehavior.subtitle", defaultValue: "What the Toggle TextBox Input shortcut does. Display toggles visibility; Focus keeps the box visible and swaps focus."),
+                            String(
+                                format: String(localized: "settings.textBoxInput.shortcutBehavior", defaultValue: "Keyboard Shortcut (%@)"),
+                                KeyboardShortcutSettings.shortcut(for: .toggleTextBoxInput).displayString
+                            ),
+                            subtitle: String(localized: "settings.textBoxInput.shortcutBehavior.subtitle", defaultValue: "Shortcut key can be changed in Keyboard Shortcuts settings."),
                             controlWidth: pickerColumnWidth,
                             selection: $textBoxShortcutBehavior
                         ) {

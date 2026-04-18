@@ -32,6 +32,24 @@ enum SessionPersistencePolicy {
         !envFlagEnabled("CMUX_DISABLE_STABLE_PANEL_IDS")
     }
 
+    /// Tier 1 persistence, Phase 1.5: stable workspace UUIDs across app restarts.
+    ///
+    /// When `true` (default), `TabManager.restoreSessionSnapshot` injects each
+    /// `SessionWorkspaceSnapshot.id` into the restored workspace's constructor so
+    /// external consumers (Lattice, CLI, scripted tests) can cache the
+    /// `(workspaceId, surfaceId)` tuple across restarts. This is a hard
+    /// prerequisite for Phase 2 (persistent `SurfaceMetadataStore`), which keys
+    /// on that tuple.
+    ///
+    /// Setting `CMUX_DISABLE_STABLE_WORKSPACE_IDS=1` reverts to the old behavior
+    /// (fresh UUID per restored workspace). App launch scope only — set via
+    /// `launchctl setenv` or the parent shell before launching the app; setting
+    /// it on the `cmux` CLI invocation has no effect. Kept as a one-release
+    /// rollback safety net; delete in a followup PR.
+    static var stableWorkspaceIdsEnabled: Bool {
+        !envFlagEnabled("CMUX_DISABLE_STABLE_WORKSPACE_IDS")
+    }
+
     private static func envFlagEnabled(_ name: String) -> Bool {
         guard let raw = ProcessInfo.processInfo.environment[name] else { return false }
         switch raw.trimmingCharacters(in: .whitespaces).lowercased() {
@@ -349,6 +367,7 @@ indirect enum SessionWorkspaceLayoutSnapshot: Codable, Sendable {
 }
 
 struct SessionWorkspaceSnapshot: Codable, Sendable {
+    var id: UUID
     var processTitle: String
     var customTitle: String?
     var customColor: String?

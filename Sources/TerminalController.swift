@@ -2441,6 +2441,8 @@ class TerminalController {
             return v2Result(id: id, self.v2DebugScreenshot(params: params))
         case "debug.session.round_trip":
             return v2Result(id: id, self.v2DebugSessionRoundTrip(params: params))
+        case "debug.session.round_trip_workspaces":
+            return v2Result(id: id, self.v2DebugSessionRoundTripWorkspaces(params: params))
 #endif
 
             default:
@@ -2642,6 +2644,7 @@ class TerminalController {
             "debug.panel_snapshot.reset",
             "debug.window.screenshot",
             "debug.session.round_trip",
+            "debug.session.round_trip_workspaces",
         ])
 #endif
 
@@ -11527,6 +11530,28 @@ class TerminalController {
         }
         if let failureMessage {
             return .err(code: "workspace_not_found", message: failureMessage, data: nil)
+        }
+        return .ok([
+            "before": before,
+            "after": after
+        ])
+    }
+
+    /// Phase 1.5 workspace-id round-trip: snapshot the entire `TabManager`
+    /// (all workspaces in the target window), then restore it in place.
+    /// Returns the ordered workspace UUIDs before and after so callers can
+    /// assert that workspace IDs survive a save/load cycle.
+    private func v2DebugSessionRoundTripWorkspaces(params: [String: Any]) -> V2CallResult {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+        var before: [String] = []
+        var after: [String] = []
+        v2MainSync {
+            before = tabManager.tabs.map { $0.id.uuidString }
+            let snapshot = tabManager.sessionSnapshot(includeScrollback: false)
+            tabManager.restoreSessionSnapshot(snapshot)
+            after = tabManager.tabs.map { $0.id.uuidString }
         }
         return .ok([
             "before": before,

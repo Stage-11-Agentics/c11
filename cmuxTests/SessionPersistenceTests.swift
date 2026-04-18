@@ -766,6 +766,7 @@ final class SessionPersistenceTests: XCTestCase {
 
     private func makeSnapshot(version: Int) -> AppSessionSnapshot {
         let workspace = SessionWorkspaceSnapshot(
+            id: UUID(),
             processTitle: "Terminal",
             customTitle: "Restored",
             customColor: nil,

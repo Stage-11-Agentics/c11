@@ -4964,7 +4964,16 @@ extension TabManager {
         for workspaceSnapshot in workspaceSnapshots {
             let ordinal = Self.nextPortOrdinal
             Self.nextPortOrdinal += 1
+            // Tier 1 persistence, Phase 1.5: thread the snapshot's workspace
+            // UUID into the restored workspace so `(workspaceId, surfaceId)`
+            // tuples cached by external consumers (Lattice, CLI, scripted
+            // tests) stay valid across restart. `CMUX_DISABLE_STABLE_WORKSPACE_IDS=1`
+            // reverts to fresh-UUID minting for one-release rollback.
+            let restoredWorkspaceId: UUID? = SessionPersistencePolicy.stableWorkspaceIdsEnabled
+                ? workspaceSnapshot.id
+                : nil
             let workspace = Workspace(
+                id: restoredWorkspaceId,
                 title: workspaceSnapshot.processTitle,
                 workingDirectory: workspaceSnapshot.currentDirectory,
                 portOrdinal: ordinal

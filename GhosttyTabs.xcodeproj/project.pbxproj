@@ -131,6 +131,7 @@
 					D7001BF0A1B2C3D4E5F60718 /* SurfaceTitleBarRenderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7001BF1A1B2C3D4E5F60718 /* SurfaceTitleBarRenderTests.swift */; };
 					D7002BF0A1B2C3D4E5F60718 /* DescriptionSanitizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7002BF1A1B2C3D4E5F60718 /* DescriptionSanitizerTests.swift */; };
 					D7003BF0A1B2C3D4E5F60718 /* PanelIdentityRestoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7003BF1A1B2C3D4E5F60718 /* PanelIdentityRestoreTests.swift */; };
+					D7004BF0A1B2C3D4E5F60718 /* WorkspaceIdentityRestoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7004BF1A1B2C3D4E5F60718 /* WorkspaceIdentityRestoreTests.swift */; };
 		/* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -309,6 +310,7 @@
 				D7001BF1A1B2C3D4E5F60718 /* SurfaceTitleBarRenderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceTitleBarRenderTests.swift; sourceTree = "<group>"; };
 				D7002BF1A1B2C3D4E5F60718 /* DescriptionSanitizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DescriptionSanitizerTests.swift; sourceTree = "<group>"; };
 			D7003BF1A1B2C3D4E5F60718 /* PanelIdentityRestoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelIdentityRestoreTests.swift; sourceTree = "<group>"; };
+			D7004BF1A1B2C3D4E5F60718 /* WorkspaceIdentityRestoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceIdentityRestoreTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -574,6 +576,7 @@
 					D7001BF1A1B2C3D4E5F60718 /* SurfaceTitleBarRenderTests.swift */,
 					D7002BF1A1B2C3D4E5F60718 /* DescriptionSanitizerTests.swift */,
 					D7003BF1A1B2C3D4E5F60718 /* PanelIdentityRestoreTests.swift */,
+					D7004BF1A1B2C3D4E5F60718 /* WorkspaceIdentityRestoreTests.swift */,
 				);
 				path = cmuxTests;
 				sourceTree = "<group>";
@@ -845,6 +848,7 @@
 					D7001BF0A1B2C3D4E5F60718 /* SurfaceTitleBarRenderTests.swift in Sources */,
 					D7002BF0A1B2C3D4E5F60718 /* DescriptionSanitizerTests.swift in Sources */,
 					D7003BF0A1B2C3D4E5F60718 /* PanelIdentityRestoreTests.swift in Sources */,
+					D7004BF0A1B2C3D4E5F60718 /* WorkspaceIdentityRestoreTests.swift in Sources */,
 				);
 				runOnlyForDeploymentPostprocessing = 0;
 			};

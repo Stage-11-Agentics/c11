@@ -94,6 +94,14 @@ same machine. External consumers may cache them across sessions. Set
 per-restart UUID regeneration (one-release rollback safety net; will be removed
 in a followup release).
 
+Workspace IDs are also stable across app restarts within the same machine.
+External consumers may cache `(workspace_id, surface_id)` tuples across
+sessions. Set `CMUX_DISABLE_STABLE_WORKSPACE_IDS=1` in the app's launch
+environment (via `launchctl setenv` or the parent shell before launching the
+app — setting it on the `cmux` CLI invocation has no effect) to revert to
+per-restart UUID regeneration. One-release rollback safety net; will be removed
+in a followup release.
+
 ### Input
 
 | Method | CLI | Description |

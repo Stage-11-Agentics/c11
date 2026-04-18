@@ -92,6 +92,12 @@ Stage 11 Agentics builds infrastructure for the advanced hyper engineer: we buil
 
 More at [stage11.ai](https://stage11.ai).
 
+## Hiring
+
+A really good way to impress us at a job interview — before we even open your resume — is a really good PR into this repo.
+
+Feel free to get in touch at [build with us](https://stage11.ai/build-with-us).
+
 ## License
 
 AGPL-3.0-or-later, inherited from upstream. See [LICENSE](./LICENSE) and [NOTICE](./NOTICE) for the full text and a summary of fork modifications.

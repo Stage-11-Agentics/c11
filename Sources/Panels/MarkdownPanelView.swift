@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import MarkdownUI
+import UniformTypeIdentifiers
 
 /// SwiftUI view that renders a MarkdownPanel's content using MarkdownUI.
 struct MarkdownPanelView: View {
@@ -12,11 +13,14 @@ struct MarkdownPanelView: View {
 
     @State private var focusFlashOpacity: Double = 0.0
     @State private var focusFlashAnimationGeneration: Int = 0
+    @State private var isDropTargeted: Bool = false
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Group {
-            if panel.isFileUnavailable {
+            if panel.filePath == nil {
+                emptyStateView
+            } else if panel.isFileUnavailable {
                 fileUnavailableView
             } else {
                 markdownContentView
@@ -128,7 +132,7 @@ struct MarkdownPanelView: View {
             Image(systemName: "doc.richtext")
                 .foregroundColor(.secondary)
                 .font(.system(size: 12))
-            Text(panel.filePath)
+            Text(panel.filePath ?? "")
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundColor(.secondary)
                 .lineLimit(1)
@@ -145,7 +149,7 @@ struct MarkdownPanelView: View {
             Text(String(localized: "markdown.fileUnavailable.title", defaultValue: "File unavailable"))
                 .font(.headline)
                 .foregroundColor(.primary)
-            Text(panel.filePath)
+            Text(panel.filePath ?? "")
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -158,6 +162,108 @@ struct MarkdownPanelView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+
+    // MARK: - Empty state (unbound panel)
+
+    private var emptyStateView: some View {
+        let borderColor = isDropTargeted
+            ? cmuxAccentColor().opacity(0.9)
+            : (colorScheme == .dark
+                ? Color.white.opacity(0.16)
+                : Color.black.opacity(0.14))
+        let fillColor = isDropTargeted
+            ? cmuxAccentColor().opacity(0.08)
+            : Color.clear
+
+        return VStack(spacing: 20) {
+            Spacer(minLength: 0)
+
+            Image(systemName: "doc.richtext")
+                .font(.system(size: 44, weight: .light))
+                .foregroundColor(.secondary)
+
+            VStack(spacing: 6) {
+                Text(String(localized: "markdown.empty.title", defaultValue: "Open a markdown file"))
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.primary)
+                Text(String(localized: "markdown.empty.subtitle", defaultValue: "Drop a .md file here, or click Open."))
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            Button {
+                presentOpenMarkdownPanel()
+            } label: {
+                Text(String(localized: "markdown.empty.openButton", defaultValue: "Open Markdown File…"))
+                    .font(.system(size: 13, weight: .medium))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(cmuxAccentColor())
+
+            Text(String(localized: "markdown.empty.spikePropaganda", defaultValue: "Plans, docs, receipts — the Spike runs on markdown. Drop in, one workspace."))
+                .font(.system(size: 11))
+                .italic()
+                .foregroundColor(.secondary.opacity(0.85))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 48)
+                .padding(.top, 8)
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(40)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(borderColor, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                .background(
+                    RoundedRectangle(cornerRadius: 12).fill(fillColor)
+                )
+                .padding(24)
+        )
+        .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+            handleDrop(providers: providers)
+        }
+    }
+
+    private func presentOpenMarkdownPanel() {
+        let panelOpen = NSOpenPanel()
+        panelOpen.canChooseFiles = true
+        panelOpen.canChooseDirectories = false
+        panelOpen.allowsMultipleSelection = false
+        panelOpen.allowedContentTypes = Self.markdownContentTypes
+        panelOpen.prompt = String(localized: "markdown.empty.openPrompt", defaultValue: "Open")
+        panelOpen.message = String(localized: "markdown.empty.openMessage", defaultValue: "Choose a markdown file to open.")
+        if panelOpen.runModal() == .OK, let url = panelOpen.url {
+            panel.bindFilePath(url.path)
+        }
+    }
+
+    private func handleDrop(providers: [NSItemProvider]) -> Bool {
+        guard let provider = providers.first else { return false }
+        let identifier = UTType.fileURL.identifier
+        guard provider.hasItemConformingToTypeIdentifier(identifier) else { return false }
+        provider.loadItem(forTypeIdentifier: identifier, options: nil) { item, _ in
+            guard let data = item as? Data,
+                  let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
+            DispatchQueue.main.async {
+                panel.bindFilePath(url.path)
+            }
+        }
+        return true
+    }
+
+    private static let markdownContentTypes: [UTType] = {
+        var types: [UTType] = []
+        if let md = UTType(filenameExtension: "md") { types.append(md) }
+        if let markdown = UTType(filenameExtension: "markdown") { types.append(markdown) }
+        if let mdown = UTType(filenameExtension: "mdown") { types.append(mdown) }
+        types.append(.plainText)
+        types.append(.text)
+        return types
+    }()
 
     // MARK: - Theme
 

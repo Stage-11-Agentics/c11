@@ -1,0 +1,3 @@
+# CMUX-13: Trident plan review: CMUX-9 theming plan
+
+Execute a Trident (nine-agent) plan review of docs/c11mux-theming-plan.md (Lattice ticket CMUX-9) and fold the findings back into the plan, bumping it to v2. Another agent has already written the prompt that drives this review — it is below (see first comment on this ticket). Pick up the ticket, run the prompt verbatim (or as a starting point), and leave the plan at v2 with a review-pack checked in. CMUX-9's §12 locked decisions (7 of them, confirmed with Atin on 2026-04-18) must be treated as constraints by every reviewer — do not reopen them.

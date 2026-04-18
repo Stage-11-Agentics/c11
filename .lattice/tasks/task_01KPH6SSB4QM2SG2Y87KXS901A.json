@@ -1,0 +1,30 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": "high",
+  "created_at": "2026-04-18T21:08:58Z",
+  "created_by": "agent:claude",
+  "custom_fields": {},
+  "description": "Follow-up phases of the c11mux Tier 1 persistence plan (`docs/c11mux-tier1-persistence-plan.md`). Phase 1 (PR #10), Phase 1.5 (PR #12), and Phase 2 (PR #13) have all shipped. This parent tracks what remains: Phase 3 completes Tier 1a durability, Phases 4-5 add Tier 1b recovery UX (re-justify at the 1a/1b boundary), and the cleanup removes the one-release rollback safety nets. See subtasks for scope per phase.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KPH6SSB4QM2SG2Y87KXS901A",
+  "last_event_id": "ev_01KPH8W2XWC4VM5VSEYJVSJWSS",
+  "last_status_changed_at": "2026-04-18T21:45:11Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "CMUX-2",
+  "status": "planned",
+  "tags": [
+    "tier1-persistence",
+    "plan"
+  ],
+  "title": "Tier 1 persistence: remaining work (Phases 3-5 + cleanup)",
+  "type": "task",
+  "updated_at": "2026-04-18T21:45:11Z",
+  "urgency": null
+}

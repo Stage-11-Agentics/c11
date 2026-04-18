@@ -1,0 +1,32 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": null,
+  "created_at": "2026-04-18T22:33:00Z",
+  "created_by": "human:atin",
+  "custom_fields": {},
+  "description": "Record YouTube videos of Atin using c11mux in realistic, operator-grade conditions \u2014 speech-to-text and typing both \u2014 setting up complex multi-pane workspaces with multiple parallel agents (claude-code, codex, kimi, the works). Not demos of splitting a terminal. Recordings of a hyperengineer running a spike. Link them from the README alongside screenshots and (optionally) example workspace configs/manifests for people to copy. Intent: the README's current shape shows what c11mux is; this shows what it's for. An operator landing on the repo should see, within 30 seconds, the texture of running a real spike \u2014 parallel agents, branch-per-agent, the sidebar loaded, the browser pane live. Include a short write-up for each video (what's happening, why, which cmux primitives are in play). Voice in the README section must match docs/c11mux-voice.md. Corporate-like surface, but internal register voltage \u2014 no onboarding warmth, no 'get started today!'. Deliverables: 3\u20135 YouTube recordings, README section with thumbnails/links, matching copy.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KPHBKN3D544HVX37MECFQKX3",
+  "last_event_id": "ev_01KPHBKN3EG0YM75FHJT8JHQ0B",
+  "last_status_changed_at": "2026-04-18T22:33:00Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "CMUX-8",
+  "status": "backlog",
+  "tags": [
+    "marketing",
+    "readme",
+    "showcase",
+    "inspiration"
+  ],
+  "title": "c11mux setup examples \u2014 YouTube recordings + README showcase of real hyperengineer workflows",
+  "type": "task",
+  "updated_at": "2026-04-18T22:33:00Z",
+  "urgency": null
+}

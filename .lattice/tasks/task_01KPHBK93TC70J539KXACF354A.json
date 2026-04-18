@@ -1,0 +1,32 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": null,
+  "created_at": "2026-04-18T22:32:48Z",
+  "created_by": "human:atin",
+  "custom_fields": {},
+  "description": "Build a c11mux-aware agent an operator (or their agent) can summon from any pane to get walked through the full path from 'I want to change this behavior' to 'my fork is rebuilt and running.' The operator-facing problem: c11mux is meant to be forkable infrastructure for hyperengineers, but the on-ramp from using it to modifying it is undocumented terrain \u2014 clone, fork, find the right file, make the change, run ./scripts/reload.sh --tag, verify. Every one of those steps is learnable but not legible. Scope to explore: summoning surface (slash command, cmux guide subcommand, or a skill that is auto-loaded by detection), grounding material (the CLAUDE.md + skill + repo structure + reload flow), and whether the guide is a one-shot walkthrough or a persistent pair-programmer. Voice must match docs/c11mux-voice.md \u2014 punchy, lowercase-first, no onboarding warmth. Outcome: forking c11mux feels like a normal operator move, not an advanced one. Connects directly to the spike thesis: the organism builds its own organs.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KPHBK93TC70J539KXACF354A",
+  "last_event_id": "ev_01KPHBK93V9ABNTT2GRKHQ6KW8",
+  "last_status_changed_at": "2026-04-18T22:32:48Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "CMUX-7",
+  "status": "backlog",
+  "tags": [
+    "voice",
+    "agent",
+    "onboarding",
+    "fork-ergonomics"
+  ],
+  "title": "c11mux summonable guide agent \u2014 walks operators through forking and modifying c11mux",
+  "type": "spike",
+  "updated_at": "2026-04-18T22:32:48Z",
+  "urgency": null
+}

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-04-18T23:27:16Z",
+  "created_by": "agent:claude-opus-4-7",
+  "custom_fields": {},
+  "id": "art_01KPHEQ0TTZVXJFBT3798P69D3",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KPHEQ0TTZVXJFBT3798P69D3.md",
+    "size_bytes": 17452
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Full plan doc: UX decisions (centered, optional, right-click rename/hide, dual-title stacking), 3-phase rollout (view \u2192 context menu \u2192 theming tokens).",
+  "tags": [],
+  "title": "Pane title bar chrome & theming plan",
+  "token_usage": null,
+  "type": "file"
+}

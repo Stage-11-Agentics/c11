@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-04-18T23:27:15Z",
+  "created_by": "agent:claude-opus-4-7",
+  "custom_fields": {},
+  "id": "art_01KPHEPZR3M20ASBQYTTRDMT0M",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KPHEPZR3M20ASBQYTTRDMT0M.md",
+    "size_bytes": 18291
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Full plan doc: motivation, locked decisions, 4-phase rollout (store \u2192 RPC/CLI \u2192 persistence \u2192 skill guidance).",
+  "tags": [],
+  "title": "Pane metadata & naming plan",
+  "token_usage": null,
+  "type": "file"
+}

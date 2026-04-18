@@ -1,0 +1,46 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": null,
+  "created_at": "2026-04-18T23:26:46Z",
+  "created_by": "agent:claude-opus-4-7",
+  "custom_fields": {},
+  "description": "Render pane titles (from the pane metadata layer in CMUX-11) as first-class UI chrome \u2014 a centered strip above the pane that communicates identity at a glance, parallel in contract to the existing surface title bar, and themed consistently with it.\n\nDEPENDS ON: CMUX-11 (pane metadata & naming) Phases 1 and 2 must merge first so the view has data to read.\n\nDESIGN DECISIONS (from scoping conversation):\n\n1. Centered title text, mirroring the surface title bar contract.\n\n2. Optional \u2014 only renders when pane.metadata.title is set. Unnamed panes look unchanged for operators who don't adopt the habit. (Distinct from surfaces, which render chrome even for unnamed surfaces.)\n\n3. Expand chevron toggles between title-only and title+description, matching the existing surface title bar affordance.\n\n4. Dismissible via right-click \u2192 Hide. Dismissal is ephemeral session state (paneTitleBarUserCollapsed, reset per restart, matching Tier 1's ephemeral-state decision for surfaces). The underlying pane.metadata.title is untouched. Clearing the title permanently is a separate action (cmux clear-metadata or inline rename to empty).\n\n5. Right-click context menu:\n   - Rename\u2026 \u2014 flips the strip into an inline TextField, populated with the current title, that writes back via pane.set_metadata on Return. Cancel on Escape or click-away. Gives operators a first-class in-app renaming path without the CLI.\n   - Hide title bar \u2014 per (4).\n   - Expand / Collapse \u2014 toggles chevron state.\n\n6. Theming unification: consumes the same theme tokens as surface title bars via the in-flight c11mux theming plan. Both layers feel like one system.\n\n7. Dual-title rendering: when both pane and active surface are named, render both \u2014 pane title on top, surface title directly below. The stack reads as a path from 'why this pane exists' to 'what is showing in it right now.' Each strip retains its own collapse/dismiss behavior.\n\n8. Bonsplit stays unopinionated; c11mux SwiftUI layers render the chrome above the pane, not bonsplit itself.\n\nPHASES (each a PR):\n\nPhase 1 \u2014 PaneTitleBarView (visible strip, chevron, collapse/expand wired up, no menu yet). This is the first user-visible milestone.\nPhase 2 \u2014 Context menu (Rename, Hide, Expand/Collapse) + inline rename with first-class operator UX.\nPhase 3 \u2014 Theming token unification with the theming plan's output.\n\nPLAN DOC: docs/c11mux-pane-title-bar-plan.md\n\nRISKS:\n- Typing latency: any SwiftUI view added to the pane host is hot-path risk. Mitigation: strict hot-path review in Phase 1; view is equatable and only re-evaluates when title metadata changes.\n- Chrome proliferation: multi-surface panes stack pane title + surface titles + tabs. Mitigation: decisions 2 (optional) and 4 (dismissible) let operators trim to taste.\n- Theming plan churn: Phase 3 depends on theming plan's final token shape. Mitigation: Phase 1 ships with ad-hoc parity to surface title bars; Phase 3 migrates to formal tokens when they land.",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "art_01KPHEQ0TTZVXJFBT3798P69D3",
+      "role": null,
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KPHEP3C31TW8SP5N245X8XHW",
+  "last_event_id": "ev_01KPHEQ0TVXBX9SD9NH5DSSM7Q",
+  "last_status_changed_at": "2026-04-18T23:26:46Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-04-18T23:26:51Z",
+      "created_by": "agent:claude-opus-4-7",
+      "note": "CMUX-12 (pane title bar chrome) depends on CMUX-11 (pane metadata mechanism) Phases 1 and 2 \u2014 store and RPCs must exist before the view has data to read.",
+      "target_task_id": "task_01KPHENJCMVS1FFH0HDJ6V3PN8",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "CMUX-12",
+  "status": "backlog",
+  "tags": [
+    "ui",
+    "chrome",
+    "panes",
+    "theming"
+  ],
+  "title": "Pane title bar chrome & theming",
+  "type": "task",
+  "updated_at": "2026-04-18T23:27:16Z",
+  "urgency": null
+}

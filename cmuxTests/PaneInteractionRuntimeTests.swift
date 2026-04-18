@@ -399,6 +399,124 @@ final class PaneInteractionRuntimeTests: XCTestCase {
         XCTAssertFalse(runtime.acceptActive(panelId: UUID()))
     }
 
+    // MARK: - Reentrant present (Blocker #2 — advance-before-fire invariant)
+
+    func testResolveConfirmReentrantPresentPreservesQueueHead() {
+        // Blocker #2 regression: resolveConfirm must advance queue state BEFORE
+        // firing the completion. Otherwise a completion that synchronously
+        // calls `present()` installs its own active slot, then `advance()`
+        // fires afterwards and silently overwrites it with the queue head.
+        // The re-entrant interaction's continuation would never fire.
+        let runtime = PaneInteractionRuntime()
+        let panelId = UUID()
+
+        var aResult: ConfirmResult?
+        var bResult: ConfirmResult?
+        var cResult: ConfirmResult?
+
+        // C is presented synchronously from inside A's completion.
+        let c = ConfirmContent(
+            title: "C", message: nil, confirmLabel: "OK", cancelLabel: "Cancel",
+            role: .standard, source: .local,
+            completion: { cResult = $0 }
+        )
+        let b = ConfirmContent(
+            title: "B", message: nil, confirmLabel: "OK", cancelLabel: "Cancel",
+            role: .standard, source: .local,
+            completion: { bResult = $0 }
+        )
+        let a = ConfirmContent(
+            title: "A", message: nil, confirmLabel: "OK", cancelLabel: "Cancel",
+            role: .standard, source: .local,
+            completion: { [weak runtime] result in
+                aResult = result
+                // Re-enter while active[panelId] is supposedly nil — the bug
+                // would allow C to become active here, only to be wiped by
+                // a post-completion `advance` promoting B.
+                runtime?.present(panelId: panelId, interaction: .confirm(c))
+            }
+        )
+
+        runtime.present(panelId: panelId, interaction: .confirm(a))
+        runtime.present(panelId: panelId, interaction: .confirm(b))
+
+        runtime.resolveConfirm(panelId: panelId, result: .confirmed)
+
+        // A's completion fired.
+        XCTAssertEqual(aResult, .confirmed)
+        // Neither B nor C's completion has fired yet.
+        XCTAssertNil(bResult, "B must still be pending (either active or queued)")
+        XCTAssertNil(cResult, "C must still be pending — not overwritten, not lost")
+        XCTAssertTrue(runtime.hasActive(panelId: panelId))
+
+        // Drain: B is queue head, should promote before C. Without the fix,
+        // C would have been overwritten by B when advance fired after A's
+        // completion, so bResult would resolve here but cResult would never.
+        runtime.resolveConfirm(panelId: panelId, result: .cancelled)
+        XCTAssertEqual(bResult, .cancelled, "Queue head B must have been promoted, not lost")
+        XCTAssertNil(cResult)
+
+        runtime.resolveConfirm(panelId: panelId, result: .confirmed)
+        XCTAssertEqual(cResult, .confirmed,
+                       "C's continuation must fire — the reentrant present cannot be dropped")
+    }
+
+    func testResolveConfirmReentrantPresentPreservesDedupeToken() {
+        // Blocker #2 (Gemini variant): when the queue is empty at resolve
+        // time, advance also wipes `seenTokens[panelId]`. If the completion
+        // synchronously presents a new interaction with a dedupe token, the
+        // token registration happens BEFORE advance fires — and advance then
+        // nukes it. Subsequent duplicate presents would no longer be deduped.
+        let runtime = PaneInteractionRuntime()
+        let panelId = UUID()
+
+        var aResult: ConfirmResult?
+        var bResult: ConfirmResult?
+        var cResult: ConfirmResult?
+
+        let b = ConfirmContent(
+            title: "B", message: nil, confirmLabel: "OK", cancelLabel: "Cancel",
+            role: .standard, source: .local,
+            completion: { bResult = $0 }
+        )
+        let a = ConfirmContent(
+            title: "A", message: nil, confirmLabel: "OK", cancelLabel: "Cancel",
+            role: .standard, source: .local,
+            completion: { [weak runtime] result in
+                aResult = result
+                runtime?.present(
+                    panelId: panelId,
+                    interaction: .confirm(b),
+                    dedupeToken: "token-x"
+                )
+            }
+        )
+
+        runtime.present(panelId: panelId, interaction: .confirm(a))
+        // No queued entries behind A — advance's "fully idle" branch will run.
+        runtime.resolveConfirm(panelId: panelId, result: .confirmed)
+
+        XCTAssertEqual(aResult, .confirmed)
+        XCTAssertNil(bResult, "B must be active now, not resolved")
+        XCTAssertTrue(runtime.hasActive(panelId: panelId))
+
+        // Fresh present with the same token-x must be deduped — the token
+        // registered during the reentrant present inside A's completion must
+        // have survived the state transition.
+        let c = ConfirmContent(
+            title: "C", message: nil, confirmLabel: "OK", cancelLabel: "Cancel",
+            role: .standard, source: .local,
+            completion: { cResult = $0 }
+        )
+        runtime.present(panelId: panelId, interaction: .confirm(c), dedupeToken: "token-x")
+
+        XCTAssertEqual(cResult, .dismissed,
+                       "token-x must still be registered — advance must not wipe tokens "
+                       + "registered during a reentrant present in the completion")
+        XCTAssertNil(bResult, "B remains active; it was never disturbed")
+        XCTAssertTrue(runtime.hasActive(panelId: panelId))
+    }
+
     // MARK: - Fixtures
 
     private func makeConfirm(completion: @escaping (ConfirmResult) -> Void) -> ConfirmContent {

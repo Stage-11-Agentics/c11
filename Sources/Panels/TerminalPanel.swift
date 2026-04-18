@@ -82,8 +82,13 @@ final class TerminalPanel: Panel, ObservableObject {
             .store(in: &cancellables)
     }
 
-    /// Create a new terminal panel with a fresh surface
+    /// Create a new terminal panel with a fresh surface.
+    ///
+    /// `id` is the stable panel UUID. Pass `nil` for fresh creation; pass a
+    /// snapshot's panel id during session restore to keep IDs stable across
+    /// app restarts (Tier 1 persistence, Phase 1).
     convenience init(
+        id: UUID? = nil,
         workspaceId: UUID,
         context: ghostty_surface_context_e = GHOSTTY_SURFACE_CONTEXT_SPLIT,
         configTemplate: ghostty_surface_config_s? = nil,
@@ -94,6 +99,7 @@ final class TerminalPanel: Panel, ObservableObject {
         additionalEnvironment: [String: String] = [:]
     ) {
         let surface = TerminalSurface(
+            id: id,
             tabId: workspaceId,
             context: context,
             configTemplate: configTemplate,

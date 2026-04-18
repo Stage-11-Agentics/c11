@@ -88,6 +88,12 @@ Legacy values `"full"` and `"notifications"` still accepted.
 {"id":"split","method":"surface.split","params":{"direction":"right"}}
 ```
 
+Panel IDs (also called surface IDs) are stable across app restarts within the
+same machine. External consumers may cache them across sessions. Set
+`CMUX_DISABLE_STABLE_PANEL_IDS=1` in the app's environment to revert to
+per-restart UUID regeneration (one-release rollback safety net; will be removed
+in a followup release).
+
 ### Input
 
 | Method | CLI | Description |

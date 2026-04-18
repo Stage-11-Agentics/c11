@@ -68,8 +68,11 @@ final class MarkdownPanel: Panel, ObservableObject {
 
     // MARK: - Init
 
-    init(workspaceId: UUID, filePath: String) {
-        self.id = UUID()
+    /// - Parameter id: Stable panel UUID. Pass `nil` for fresh creation; pass a
+    ///   snapshot's panel id during session restore to keep IDs stable across
+    ///   app restarts (Tier 1 persistence, Phase 1).
+    init(id: UUID? = nil, workspaceId: UUID, filePath: String) {
+        self.id = id ?? UUID()
         self.workspaceId = workspaceId
         self.filePath = filePath
         self.displayTitle = (filePath as NSString).lastPathComponent

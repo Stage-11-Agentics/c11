@@ -2630,6 +2630,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
     var currentKeyStateIndicatorText: String? { surfaceView.currentKeyStateIndicatorText }
 
     init(
+        id: UUID? = nil,
         tabId: UUID,
         context: ghostty_surface_context_e,
         configTemplate: ghostty_surface_config_s?,
@@ -2638,7 +2639,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         initialEnvironmentOverrides: [String: String] = [:],
         additionalEnvironment: [String: String] = [:]
     ) {
-        self.id = UUID()
+        self.id = id ?? UUID()
         self.tabId = tabId
         self.surfaceContext = context
         self.configTemplate = configTemplate

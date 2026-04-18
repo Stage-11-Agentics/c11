@@ -19,6 +19,27 @@ enum SessionPersistencePolicy {
     static let maxScrollbackLinesPerTerminal: Int = 4000
     static let maxScrollbackCharactersPerTerminal: Int = 400_000
 
+    /// Tier 1 persistence, Phase 1: stable panel UUIDs across app restarts.
+    ///
+    /// When `true` (default), session-restore injects each `SessionPanelSnapshot.id`
+    /// into the restored panel's constructor so external consumers (Lattice, CLI,
+    /// scripted tests) can cache panel IDs across restarts.
+    ///
+    /// Setting `CMUX_DISABLE_STABLE_PANEL_IDS=1` reverts to the old behavior (fresh
+    /// UUID per restored panel + `oldToNewPanelIds` remap inside the workspace).
+    /// Kept as a one-release rollback safety net; delete in a followup PR.
+    static var stablePanelIdsEnabled: Bool {
+        !envFlagEnabled("CMUX_DISABLE_STABLE_PANEL_IDS")
+    }
+
+    private static func envFlagEnabled(_ name: String) -> Bool {
+        guard let raw = ProcessInfo.processInfo.environment[name] else { return false }
+        switch raw.trimmingCharacters(in: .whitespaces).lowercased() {
+        case "1", "true", "yes", "on": return true
+        default: return false
+        }
+    }
+
     static func sanitizedSidebarWidth(_ candidate: Double?) -> Double {
         let fallback = defaultSidebarWidth
         guard let candidate, candidate.isFinite else { return fallback }

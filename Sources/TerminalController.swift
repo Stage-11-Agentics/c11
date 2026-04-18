@@ -2439,6 +2439,8 @@ class TerminalController {
             return v2Result(id: id, self.v2DebugPanelSnapshotReset(params: params))
         case "debug.window.screenshot":
             return v2Result(id: id, self.v2DebugScreenshot(params: params))
+        case "debug.session.round_trip":
+            return v2Result(id: id, self.v2DebugSessionRoundTrip(params: params))
 #endif
 
             default:
@@ -2639,6 +2641,7 @@ class TerminalController {
             "debug.panel_snapshot",
             "debug.panel_snapshot.reset",
             "debug.window.screenshot",
+            "debug.session.round_trip",
         ])
 #endif
 
@@ -11496,6 +11499,38 @@ class TerminalController {
         return .ok([
             "screenshot_id": parts[0],
             "path": parts[1]
+        ])
+    }
+
+    /// Test-only: snapshot the resolved workspace and immediately restore the
+    /// snapshot onto the same workspace. Phase 1 uses this to assert that panel
+    /// UUIDs survive the round-trip without a full app restart.
+    ///
+    /// Returns `{ "before": [uuid,...], "after": [uuid,...] }` — callers
+    /// compare the sets to verify stability.
+    private func v2DebugSessionRoundTrip(params: [String: Any]) -> V2CallResult {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+        var before: [String] = []
+        var after: [String] = []
+        var failureMessage: String?
+        v2MainSync {
+            guard let workspace = self.v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+                failureMessage = "workspace_not_found"
+                return
+            }
+            before = workspace.panels.keys.map { $0.uuidString }.sorted()
+            let snapshot = workspace.sessionSnapshot(includeScrollback: false)
+            workspace.restoreSessionSnapshot(snapshot)
+            after = workspace.panels.keys.map { $0.uuidString }.sorted()
+        }
+        if let failureMessage {
+            return .err(code: "workspace_not_found", message: failureMessage, data: nil)
+        }
+        return .ok([
+            "before": before,
+            "after": after
         ])
     }
 #endif

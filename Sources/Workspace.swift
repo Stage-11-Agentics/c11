@@ -221,6 +221,13 @@ extension Workspace {
 
         let panelSnapshotsById = Dictionary(uniqueKeysWithValues: snapshot.panels.map { ($0.id, $0) })
         let leafEntries = restoreSessionLayout(snapshot.layout)
+        // When `SessionPersistencePolicy.stablePanelIdsEnabled` is true (default),
+        // this map is an identity: snapshot id == restored panel id, because
+        // `createPanel` threads `snapshot.id` into the panel constructor. When
+        // `CMUX_DISABLE_STABLE_PANEL_IDS=1` is set, restored panels mint fresh
+        // UUIDs and this map genuinely remaps old→new. Both focus restore (below)
+        // and pane selection (inside `restorePane`) route through this map so the
+        // two paths share one lookup.
         var oldToNewPanelIds: [UUID: UUID] = [:]
 
         for entry in leafEntries {
@@ -532,6 +539,14 @@ extension Workspace {
     }
 
     private func createPanel(from snapshot: SessionPanelSnapshot, inPane paneId: PaneID) -> UUID? {
+        // Phase 1 of the Tier 1 persistence plan: restore-time ID injection.
+        // When stable panel IDs are enabled, pass the snapshot's id through to
+        // the panel constructor so external consumers (surface.list callers,
+        // cached-id scripts) see the same UUID across restarts.
+        let restoredPanelId: UUID? = SessionPersistencePolicy.stablePanelIdsEnabled
+            ? snapshot.id
+            : nil
+
         switch snapshot.type {
         case .terminal:
             let workingDirectory = snapshot.terminal?.workingDirectory ?? snapshot.directory ?? currentDirectory
@@ -542,7 +557,8 @@ extension Workspace {
                 inPane: paneId,
                 focus: false,
                 workingDirectory: workingDirectory,
-                startupEnvironment: replayEnvironment
+                startupEnvironment: replayEnvironment,
+                panelId: restoredPanelId
             ) else {
                 return nil
             }
@@ -560,7 +576,8 @@ extension Workspace {
                 inPane: paneId,
                 url: initialURL,
                 focus: false,
-                preferredProfileID: snapshot.browser?.profileID
+                preferredProfileID: snapshot.browser?.profileID,
+                panelId: restoredPanelId
             ) else {
                 return nil
             }
@@ -571,7 +588,8 @@ extension Workspace {
                   let markdownPanel = newMarkdownSurface(
                     inPane: paneId,
                     filePath: filePath,
-                    focus: false
+                    focus: false,
+                    panelId: restoredPanelId
                   ) else {
                 return nil
             }
@@ -6764,7 +6782,8 @@ final class Workspace: Identifiable, ObservableObject {
         inPane paneId: PaneID,
         focus: Bool? = nil,
         workingDirectory: String? = nil,
-        startupEnvironment: [String: String] = [:]
+        startupEnvironment: [String: String] = [:],
+        panelId: UUID? = nil
     ) -> TerminalPanel? {
         let shouldFocusNewTab = focus ?? (bonsplitController.focusedPaneId == paneId)
         let previousFocusedPanelId = focusedPanelId
@@ -6775,6 +6794,7 @@ final class Workspace: Identifiable, ObservableObject {
 
         // Create new terminal panel
         let newPanel = TerminalPanel(
+            id: panelId,
             workspaceId: id,
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: inheritedConfig,
@@ -6932,7 +6952,8 @@ final class Workspace: Identifiable, ObservableObject {
         focus: Bool? = nil,
         insertAtEnd: Bool = false,
         preferredProfileID: UUID? = nil,
-        bypassInsecureHTTPHostOnce: String? = nil
+        bypassInsecureHTTPHostOnce: String? = nil,
+        panelId: UUID? = nil
     ) -> BrowserPanel? {
         let shouldFocusNewTab = focus ?? (bonsplitController.focusedPaneId == paneId)
         let sourcePanelId = effectiveSelectedPanelId(inPane: paneId)
@@ -6940,6 +6961,7 @@ final class Workspace: Identifiable, ObservableObject {
         let previousHostedView = focusedTerminalPanel?.hostedView
 
         let browserPanel = BrowserPanel(
+            id: panelId,
             workspaceId: id,
             profileID: resolvedNewBrowserProfileID(
                 preferredProfileID: preferredProfileID,
@@ -7063,13 +7085,14 @@ final class Workspace: Identifiable, ObservableObject {
     func newMarkdownSurface(
         inPane paneId: PaneID,
         filePath: String,
-        focus: Bool? = nil
+        focus: Bool? = nil,
+        panelId: UUID? = nil
     ) -> MarkdownPanel? {
         let shouldFocusNewTab = focus ?? (bonsplitController.focusedPaneId == paneId)
         let previousFocusedPanelId = focusedPanelId
         let previousHostedView = focusedTerminalPanel?.hostedView
 
-        let markdownPanel = MarkdownPanel(workspaceId: id, filePath: filePath)
+        let markdownPanel = MarkdownPanel(id: panelId, workspaceId: id, filePath: filePath)
         panels[markdownPanel.id] = markdownPanel
         panelTitles[markdownPanel.id] = markdownPanel.displayTitle
 

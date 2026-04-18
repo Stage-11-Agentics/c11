@@ -9511,6 +9511,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return true
         }
 
+        // [TextBox] Cmd+Option+B — toggle TextBox Input (plan §4.6).
+        // The default chord was chosen to avoid the Cmd+Option+T
+        // collision with close-other-tabs above. Behavior is gated by
+        // `TextBoxInputSettings.shortcutBehavior` (toggleDisplay vs.
+        // toggleFocus), resolved inside `Workspace.toggleTextBoxMode`.
+        if matchShortcut(event: event, shortcut: KeyboardShortcutSettings.shortcut(for: .toggleTextBoxInput)) {
+            let targetWindow = event.window ?? NSApp.keyWindow ?? NSApp.mainWindow
+            if let terminalContext = focusedTerminalShortcutContext(preferredWindow: targetWindow),
+               let workspace = terminalContext.tabManager.tabs.first(where: { $0.id == terminalContext.workspaceId }) {
+                workspace.toggleTextBoxMode(.default)
+            }
+            return true
+        }
+
         // Cmd+W must close the focused panel even if first-responder momentarily lags on a
         // browser NSTextView during split focus transitions.
         if matchShortcut(

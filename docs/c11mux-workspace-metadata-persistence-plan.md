@@ -1,8 +1,12 @@
 # c11mux — Workspace Metadata Persistence + Rich Sidebar Rows
 
-**Status:** plan (not scheduled). **Author:** conversation 2026-04-18.
-**Related:** [M7 title bar amendment](./c11mux-module-7-expandable-title-bar-amendment.md) (in-flight — do not block).
-**Does not amend M7.** Consumes M7's markdown helpers where they already sit; does not move them.
+**Status:**
+- **Phase 1 (persistence layer + socket + CLI) — SHIPPED 2026-04-18** via parallel tier-1 persistence work. Convergent implementation: `Workspace.metadata`, `SessionWorkspaceSnapshot.metadata`, `workspace.{set,get,clear}_metadata` socket methods, CLI (`set-workspace-metadata` + `set-workspace-description` / `set-workspace-icon` aliases), and autosave fingerprint update all landed. `Sources/WorkspaceMetadataKeys.swift` is byte-identical to this plan's spec.
+- **Phases 3 (sidebar description render) and 4 (workspace icon) — still open.** This doc is the reference for those.
+- **Phase 2 (shared markdown helpers) — likely no-op;** verify at Phase 3 start.
+- **Phase 5 (docs) — follows.**
+
+**Related:** [M7 title bar amendment](./c11mux-module-7-expandable-title-bar-amendment.md). Phase 3 reuses M7's module-scope `sanitizeDescriptionMarkdown` and `titleBarMarkdownTheme` helpers from `Sources/SurfaceTitleBarView.swift`.
 
 ---
 

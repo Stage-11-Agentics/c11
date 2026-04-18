@@ -3458,7 +3458,8 @@ class TerminalController {
 
     private func v2ResolveTabManager(params: [String: Any]) -> TabManager? {
         // Prefer explicit window_id routing. Fall back to global lookup by workspace_id/surface_id/tab_id,
-        // and finally to the active window's TabManager.
+        // then panel_id (pane.confirm and other panel-scoped methods), and
+        // finally to the active window's TabManager.
         if let windowId = v2UUID(params, "window_id") {
             return v2MainSync { AppDelegate.shared?.tabManagerFor(windowId: windowId) }
         }
@@ -3469,6 +3470,14 @@ class TerminalController {
         }
         if let surfaceId = v2UUID(params, "surface_id") ?? v2UUID(params, "tab_id") {
             if let tm = v2MainSync({ AppDelegate.shared?.locateSurface(surfaceId: surfaceId)?.tabManager }) {
+                return tm
+            }
+        }
+        // panel_id: for panel-scoped methods (pane.confirm) callers may pass
+        // only the panel identity. Panel IDs are surface IDs today, so the
+        // surface locator finds the owning TabManager even across windows.
+        if let panelId = v2UUID(params, "panel_id") {
+            if let tm = v2MainSync({ AppDelegate.shared?.locateSurface(surfaceId: panelId)?.tabManager }) {
                 return tm
             }
         }
@@ -6890,6 +6899,13 @@ class TerminalController {
     ///   - "invalid_params" — missing panel_id or title
     ///   - "unknown_panel" — panel_id doesn't resolve to a panel in any workspace
     private func v2PaneConfirm(params: [String: Any]) -> V2CallResult {
+        // Document and enforce the off-main contract: v2PaneConfirm blocks the
+        // calling thread on a DispatchSemaphore, so running this on main would
+        // hang the UI (v2MainSync falls through to direct execution when
+        // already on main, which would then dead-wait). Socket dispatch runs
+        // off-main via Thread.detachNewThread; this guard catches regressions.
+        assert(!Thread.isMainThread, "v2PaneConfirm must not be called on the main thread")
+
         guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -6902,8 +6918,20 @@ class TerminalController {
         let message = (v2String(params, "message") ?? "")
         let roleStr = v2String(params, "role") ?? "standard"
         let role: ConfirmContent.ConfirmRole = (roleStr == "destructive") ? .destructive : .standard
-        let timeoutSeconds = (params["timeout"] as? Double).map { max(0, $0) }
+        // Cap user-supplied timeout at 300s so a malformed or malicious caller
+        // can't starve the socket worker pool with a .distantFuture wait.
+        let maxTimeoutSeconds: Double = 300
+        let timeoutSeconds = (params["timeout"] as? Double).map { min(maxTimeoutSeconds, max(0, $0)) }
         let clientId = (v2String(params, "_clientId")) ?? "socket"
+
+        // Optional confirm/cancel label overrides. Falls back to a neutral
+        // "OK" key (dialog.pane.confirm.ok) — NOT the close-specific key that
+        // localizes to "Close"/"閉じる" and is semantically wrong for generic
+        // socket-initiated prompts (synthesis-standard §1.3).
+        let confirmLabel = v2String(params, "confirm_label").flatMap { $0.isEmpty ? nil : $0 }
+            ?? String(localized: "dialog.pane.confirm.ok", defaultValue: "OK")
+        let cancelLabel = v2String(params, "cancel_label").flatMap { $0.isEmpty ? nil : $0 }
+            ?? String(localized: "dialog.pane.confirm.cancel", defaultValue: "Cancel")
 
         let semaphore = DispatchSemaphore(value: 0)
         // `outcome` is written from the main-actor completion callback and read
@@ -6911,9 +6939,11 @@ class TerminalController {
         // happens-before ordering provided by the semaphore.
         final class OutcomeHolder {
             var value: ConfirmResult = .dismissed
+            var fired: Bool = false
         }
         let holder = OutcomeHolder()
         var presented = false
+        var presentedInteractionId: UUID?
 
         v2MainSync {
             // Find the workspace that owns this panel. Iterate tabs across the
@@ -6924,12 +6954,13 @@ class TerminalController {
             let content = ConfirmContent(
                 title: title,
                 message: message.isEmpty ? nil : message,
-                confirmLabel: String(localized: "dialog.pane.confirm.close", defaultValue: "OK"),
-                cancelLabel: String(localized: "dialog.pane.confirm.cancel", defaultValue: "Cancel"),
+                confirmLabel: confirmLabel,
+                cancelLabel: cancelLabel,
                 role: role,
                 source: .socket(clientId: clientId),
                 completion: { result in
                     holder.value = result
+                    holder.fired = true
                     semaphore.signal()
                 }
             )
@@ -6937,6 +6968,7 @@ class TerminalController {
                 panelId: panelId,
                 interaction: .confirm(content)
             )
+            presentedInteractionId = content.id
             presented = true
         }
 
@@ -6949,21 +6981,39 @@ class TerminalController {
         if let timeoutSeconds {
             waitDeadline = .now() + timeoutSeconds
         } else {
-            waitDeadline = .distantFuture
+            waitDeadline = .now() + maxTimeoutSeconds
         }
         let waitResult = semaphore.wait(timeout: waitDeadline)
         if waitResult == .timedOut {
-            // Cancel the active interaction for this panel so the card clears
-            // and any queued interactions advance.
-            v2MainSync {
-                if let workspace = tabManager.tabs.first(where: { $0.panels[panelId] != nil }) {
-                    workspace.paneInteractionRuntime.cancelActive(panelId: panelId)
+            // Accept/timeout race: the user may have clicked Confirm just as the
+            // timeout fired. Re-read holder on the main thread before cancelling,
+            // and if the completion fired (holder.fired == true) return the user's
+            // actual outcome instead of overwriting with dismissed.
+            let raced: ConfirmResult? = v2MainSync {
+                if holder.fired {
+                    return holder.value
                 }
+                if let workspace = tabManager.tabs.first(where: { $0.panels[panelId] != nil }) {
+                    // Interaction-ID-guarded cancel: never cancel a successor
+                    // that advanced after our present (synthesis-critical §1.5).
+                    workspace.paneInteractionRuntime.cancelActive(
+                        panelId: panelId,
+                        ifInteractionId: presentedInteractionId
+                    )
+                }
+                return nil
+            }
+            if let raced {
+                return v2EncodePaneConfirmResult(raced)
             }
             return .ok(["result": "dismissed"])
         }
 
-        switch holder.value {
+        return v2EncodePaneConfirmResult(holder.value)
+    }
+
+    private func v2EncodePaneConfirmResult(_ result: ConfirmResult) -> V2CallResult {
+        switch result {
         case .confirmed:
             return .ok(["result": "ok"])
         case .cancelled:

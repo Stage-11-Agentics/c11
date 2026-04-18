@@ -1859,12 +1859,25 @@ struct CMUXCLI {
             if commandArgs.contains("--destructive") {
                 params["role"] = "destructive"
             }
-            if let timeoutStr = optionValue(commandArgs, name: "--timeout"),
-               let timeout = Double(timeoutStr) {
+            if let timeoutStr = optionValue(commandArgs, name: "--timeout") {
+                // Fail loudly on unparseable input instead of silently dropping
+                // the flag — "cmux pane-confirm ... --timeout abc" used to wait
+                // forever.
+                guard let timeout = Double(timeoutStr) else {
+                    throw CLIError(message: "pane-confirm: invalid --timeout '\(timeoutStr)' (expected a number in seconds)")
+                }
                 params["timeout"] = timeout
+            }
+            if let confirmLabel = optionValue(commandArgs, name: "--confirm-label") {
+                params["confirm_label"] = confirmLabel
+            }
+            if let cancelLabel = optionValue(commandArgs, name: "--cancel-label") {
+                params["cancel_label"] = cancelLabel
             }
             let payload = try client.sendV2(method: "pane.confirm", params: params)
             // Exit code maps to outcome: 0=ok, 2=cancel, 3=dismissed, 1=error.
+            // Note: socket reports timeout as "dismissed" (exit 3); the user
+            // cannot distinguish a timeout from a panel-teardown from the CLI.
             let outcome = (payload["result"] as? [String: Any])?["result"] as? String
             if jsonOutput {
                 print(jsonString(formatIDs(payload, mode: idFormat)))
@@ -7157,6 +7170,34 @@ struct CMUXCLI {
               cmux notify --title "Build done" --body "All tests passed"
               cmux notify --title "Error" --subtitle "test.swift" --body "Line 42: syntax error"
             """
+        case "pane-confirm":
+            return """
+            Usage: cmux pane-confirm --panel <id|ref> --title <text> [flags]
+
+            Present a modal confirmation dialog anchored on a specific panel and
+            wait for the user's decision. Card is scrim-bounded to the panel,
+            so other panes stay interactive.
+
+            Flags:
+              --panel <id|ref>        Target panel (required)
+              --title <text>          Card title (required)
+              --message <text>        Informative text below the title
+              --destructive           Render the confirm button with destructive styling
+              --timeout <seconds>     Cancel after N seconds (capped at 300; default: 300)
+              --confirm-label <text>  Override the confirm-button label (default: "OK")
+              --cancel-label <text>   Override the cancel-button label (default: "Cancel")
+              --workspace <id|ref>    Workspace context (optional; resolved from --panel)
+
+            Exit codes:
+              0  user confirmed
+              2  user cancelled
+              3  dialog dismissed (panel closed, workspace closed, or timeout)
+              1  error
+
+            Example:
+              cmux pane-confirm --panel surface:1 --title "Deploy to prod?" --destructive
+              cmux pane-confirm --panel $CMUX_SURFACE_ID --title "Continue?" --timeout 60
+            """
         case "list-notifications":
             return """
             Usage: cmux list-notifications
@@ -12384,6 +12425,7 @@ struct CMUXCLI {
           send-panel --panel <id|ref> [--workspace <id|ref>] <text>
           send-key-panel --panel <id|ref> [--workspace <id|ref>] <key>
           notify --title <text> [--subtitle <text>] [--body <text>] [--workspace <id|ref>] [--surface <id|ref>]
+          pane-confirm --panel <id|ref> --title <text> [--message <text>] [--destructive] [--timeout <seconds>] [--confirm-label <text>] [--cancel-label <text>]
           list-notifications
           clear-notifications
           claude-hook <session-start|stop|notification> [--workspace <id|ref>] [--surface <id|ref>]

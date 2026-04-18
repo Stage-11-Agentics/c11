@@ -30074,6 +30074,23 @@
         }
       }
     },
+    "dialog.pane.confirm.ok": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
+          }
+        }
+      }
+    },
     "dialog.pane.textInput.submit": {
       "extractionState": "manual",
       "localizations": {

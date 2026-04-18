@@ -76,11 +76,17 @@ private struct ConfirmCard: View {
 
                 Button(role: content.role == .destructive ? .destructive : nil,
                        action: confirm) {
-                    Text(content.confirmLabel)
-                        .frame(minWidth: 64)
+                    DefaultActionLabel(text: content.confirmLabel)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(content.role == .destructive ? .red : BrandColors.goldSwiftUI)
+                // Destructive red softened to 85% — the brand aesthetic is
+                // monochrome + gold (no second accent), so the red is already
+                // a compromise. Full-saturation red on a dark card was reading
+                // too aggressive; at 0.85 the destructive signal survives
+                // without shouting.
+                .tint(content.role == .destructive
+                      ? Color.red.opacity(0.85)
+                      : BrandColors.goldSwiftUI)
                 .keyboardShortcut(.defaultAction)
                 .focused($focused, equals: .confirm)
                 .focusRing(isActive: focused == .confirm)
@@ -170,8 +176,7 @@ private struct TextInputCard: View {
                 .keyboardShortcut(.cancelAction)
 
                 Button(action: submit) {
-                    Text(content.confirmLabel)
-                        .frame(minWidth: 64)
+                    DefaultActionLabel(text: content.confirmLabel)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandColors.goldSwiftUI)
@@ -321,6 +326,27 @@ private struct IMESafeTextField: NSViewRepresentable {
 }
 
 // MARK: - Helpers
+
+/// Label for the default button on a pane-dialog card: the text the caller
+/// supplied, plus a small trailing Return glyph to telegraph "Enter fires
+/// this." The glyph is the persistent default-action affordance; it stays
+/// put regardless of which button currently holds keyboard focus. The focus
+/// ring and this glyph are deliberately independent signals — focus can
+/// move (Tab), but the default action does not.
+private struct DefaultActionLabel: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(text)
+            Image(systemName: "return")
+                .font(.system(size: 10, weight: .medium))
+                .opacity(0.75)
+                .accessibilityHidden(true)
+        }
+        .frame(minWidth: 64)
+    }
+}
 
 private extension View {
     @ViewBuilder

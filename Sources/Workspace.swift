@@ -585,13 +585,12 @@ extension Workspace {
             applySessionPanelMetadata(snapshot, toPanelId: browserPanel.id)
             return browserPanel.id
         case .markdown:
-            guard let filePath = snapshot.markdown?.filePath,
-                  let markdownPanel = newMarkdownSurface(
-                    inPane: paneId,
-                    filePath: filePath,
-                    focus: false,
-                    panelId: restoredPanelId
-                  ) else {
+            guard let markdownPanel = newMarkdownSurface(
+                inPane: paneId,
+                filePath: snapshot.markdown?.filePath,
+                focus: false,
+                panelId: restoredPanelId
+            ) else {
                 return nil
             }
             applySessionPanelMetadata(snapshot, toPanelId: markdownPanel.id)
@@ -5018,10 +5017,20 @@ final class Workspace: Identifiable, ObservableObject {
 
     private static func currentSplitButtonTooltips() -> BonsplitConfiguration.SplitButtonTooltips {
         BonsplitConfiguration.SplitButtonTooltips(
-            newTerminal: KeyboardShortcutSettings.Action.newSurface.tooltip("New Terminal"),
-            newBrowser: KeyboardShortcutSettings.Action.openBrowser.tooltip("New Browser"),
-            splitRight: KeyboardShortcutSettings.Action.splitRight.tooltip("Split Right"),
-            splitDown: KeyboardShortcutSettings.Action.splitDown.tooltip("Split Down")
+            newTerminal: KeyboardShortcutSettings.Action.newSurface.tooltip(
+                String(localized: "workspace.tooltip.newTerminal", defaultValue: "New Terminal")
+            ),
+            newBrowser: KeyboardShortcutSettings.Action.openBrowser.tooltip(
+                String(localized: "workspace.tooltip.newBrowser", defaultValue: "New Browser")
+            ),
+            newMarkdown: String(localized: "workspace.tooltip.newMarkdown", defaultValue: "New Markdown"),
+            splitRight: KeyboardShortcutSettings.Action.splitRight.tooltip(
+                String(localized: "workspace.tooltip.splitRight", defaultValue: "Split Right")
+            ),
+            splitDown: KeyboardShortcutSettings.Action.splitDown.tooltip(
+                String(localized: "workspace.tooltip.splitDown", defaultValue: "Split Down")
+            ),
+            newTab: String(localized: "workspace.tooltip.newTab", defaultValue: "New Tab")
         )
     }
 
@@ -7029,7 +7038,7 @@ final class Workspace: Identifiable, ObservableObject {
         from panelId: UUID,
         orientation: SplitOrientation,
         insertFirst: Bool = false,
-        filePath: String,
+        filePath: String? = nil,
         focus: Bool = true
     ) -> MarkdownPanel? {
         guard let sourceTabId = surfaceIdFromPanelId(panelId) else { return nil }
@@ -7090,7 +7099,7 @@ final class Workspace: Identifiable, ObservableObject {
     @discardableResult
     func newMarkdownSurface(
         inPane paneId: PaneID,
-        filePath: String,
+        filePath: String? = nil,
         focus: Bool? = nil,
         panelId: UUID? = nil
     ) -> MarkdownPanel? {
@@ -9888,7 +9897,28 @@ extension Workspace: BonsplitDelegate {
             _ = newTerminalSurface(inPane: pane)
         case "browser":
             _ = newBrowserSurface(inPane: pane)
+        case "markdown":
+            _ = newMarkdownSurface(inPane: pane)
+        case "newTab":
+            createNewTabOfFocusedKind(inPane: pane)
         default:
+            _ = newTerminalSurface(inPane: pane)
+        }
+    }
+
+    /// Handle the "+" toolbar button: create a new tab in the given pane of
+    /// the same kind as whatever surface is currently selected in that pane.
+    /// Falls back to terminal when the pane has no selection or no matching
+    /// panel type.
+    private func createNewTabOfFocusedKind(inPane pane: PaneID) {
+        let selectedPanelId = effectiveSelectedPanelId(inPane: pane)
+        let panel = selectedPanelId.flatMap { panels[$0] }
+        switch panel?.panelType {
+        case .browser:
+            _ = newBrowserSurface(inPane: pane)
+        case .markdown:
+            _ = newMarkdownSurface(inPane: pane)
+        case .terminal, .none:
             _ = newTerminalSurface(inPane: pane)
         }
     }

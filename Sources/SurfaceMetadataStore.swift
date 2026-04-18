@@ -314,6 +314,28 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         }
     }
 
+    /// Restore metadata + sources for a surface from a session snapshot
+    /// (Tier 1 Phase 2). Bypasses the precedence chain — the snapshot IS
+    /// the prior session's source of truth. A `.heuristic` value in the
+    /// snapshot restores as `.heuristic` with its original `ts`, even if
+    /// the newly-initialized surface has already written a `.declare`
+    /// value to the same key: the snapshot wins.
+    ///
+    /// Silent by design. The store has no observer infrastructure today;
+    /// any consumer wanting post-restore data queries it on demand.
+    /// Adding a notification pipeline is Phase 3 scope.
+    func restoreFromSnapshot(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        values: [String: Any],
+        sources: [String: SourceRecord]
+    ) {
+        queue.sync {
+            metadata[workspaceId, default: [:]][surfaceId] = values
+            self.sources[workspaceId, default: [:]][surfaceId] = sources
+        }
+    }
+
     /// Remove all metadata for a surface. Called from `pruneSurfaceMetadata`
     /// when a surface closes. Bypasses precedence (the surface is gone).
     func removeSurface(workspaceId: UUID, surfaceId: UUID) {

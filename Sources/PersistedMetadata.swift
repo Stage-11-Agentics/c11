@@ -74,6 +74,46 @@ struct PersistedMetadataSource: Codable, Sendable, Equatable {
 // MARK: - Persist-direction bridge ([String: Any] → persisted)
 
 enum PersistedMetadataBridge {
+    /// Rollback safety net. When `CMUX_DISABLE_METADATA_PERSIST=1` is in
+    /// the app's launch environment, metadata is omitted from snapshots
+    /// on write and ignored on restore. App-launch-scope only — the CLI
+    /// is a separate process, so setting the var on a `cmux` invocation
+    /// has no effect. Deletable in a followup PR once Phase 2 is stable.
+    static var isPersistDisabled: Bool {
+        ProcessInfo.processInfo.environment["CMUX_DISABLE_METADATA_PERSIST"] == "1"
+    }
+
+    /// Enforce the 64 KiB per-surface cap at the persistence boundary.
+    /// Bug-guard only — the live store already caps writes. If exceeded,
+    /// drop keys (largest encoded first) until under cap, logging each
+    /// drop. Never throws.
+    static func enforceSizeCap(
+        _ values: [String: PersistedJSONValue],
+        surfaceId: UUID
+    ) -> [String: PersistedJSONValue] {
+        var current = values
+        while let data = try? JSONEncoder().encode(current),
+              data.count > SurfaceMetadataStore.payloadCapBytes {
+            // Drop the largest single-key encoding. Deterministic tie-break
+            // by sorted key name so the behavior is test-stable.
+            let sizedKeys: [(key: String, size: Int)] = current.keys.sorted().map { key in
+                let wrapper: [String: PersistedJSONValue] = [key: current[key]!]
+                let size = (try? JSONEncoder().encode(wrapper).count) ?? 0
+                return (key, size)
+            }
+            guard let victim = sizedKeys.max(by: { $0.size < $1.size }) else { break }
+            #if DEBUG
+            dlog(
+                "metadata.persist.overcap.drop surface=\(surfaceId.uuidString.prefix(8)) " +
+                "key=\(victim.key) droppedSize=\(victim.size)"
+            )
+            #endif
+            current.removeValue(forKey: victim.key)
+            if current.isEmpty { break }
+        }
+        return current
+    }
+
     /// Coerce a live metadata blob into its persisted representation.
     /// Values that cannot be represented as JSON are dropped with a debug
     /// log; the rest of the blob survives. Never throws — snapshot writes

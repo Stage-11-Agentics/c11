@@ -243,6 +243,11 @@ extension Workspace {
             )
         }
 
+        restoreSurfaceMetadataFromSnapshot(
+            panels: snapshot.panels,
+            oldToNewPanelIds: oldToNewPanelIds
+        )
+
         pruneSurfaceMetadata(validSurfaceIds: Set(panels.keys))
         applySessionDividerPositions(snapshotNode: snapshot.layout, liveNode: bonsplitController.treeSnapshot())
 
@@ -400,6 +405,36 @@ extension Workspace {
             markdownSnapshot = SessionMarkdownPanelSnapshot(filePath: markdownPanel.filePath)
         }
 
+        let persistedMetadata: [String: PersistedJSONValue]?
+        let persistedMetadataSources: [String: PersistedMetadataSource]?
+        if PersistedMetadataBridge.isPersistDisabled {
+            persistedMetadata = nil
+            persistedMetadataSources = nil
+        } else {
+            let snapshot = SurfaceMetadataStore.shared.getMetadata(
+                workspaceId: id,
+                surfaceId: panelId
+            )
+            if snapshot.metadata.isEmpty && snapshot.sources.isEmpty {
+                persistedMetadata = nil
+                persistedMetadataSources = nil
+            } else {
+                let bridgedValues = PersistedMetadataBridge.encodeValues(
+                    snapshot.metadata,
+                    surfaceIdForLog: panelId
+                )
+                let cappedValues = PersistedMetadataBridge.enforceSizeCap(
+                    bridgedValues,
+                    surfaceId: panelId
+                )
+                let bridgedSources = PersistedMetadataBridge.encodeSources(snapshot.sources)
+                // If enforceSizeCap dropped keys, drop their sidecars too.
+                let alignedSources = bridgedSources.filter { cappedValues.keys.contains($0.key) }
+                persistedMetadata = cappedValues.isEmpty ? nil : cappedValues
+                persistedMetadataSources = alignedSources.isEmpty ? nil : alignedSources
+            }
+        }
+
         return SessionPanelSnapshot(
             id: panelId,
             type: panel.panelType,
@@ -413,7 +448,9 @@ extension Workspace {
             ttyName: ttyName,
             terminal: terminalSnapshot,
             browser: browserSnapshot,
-            markdown: markdownSnapshot
+            markdown: markdownSnapshot,
+            metadata: persistedMetadata,
+            metadataSources: persistedMetadataSources
         )
     }
 
@@ -6048,6 +6085,36 @@ final class Workspace: Identifiable, ObservableObject {
         payload["effective_collapsed"] = collapsed || (descriptionString?.isEmpty ?? true)
         payload["visible"] = titleBarVisible
         return payload
+    }
+
+    /// Tier 1 Phase 2: re-install persisted metadata from a session snapshot
+    /// after `restorePane` rebuilds the panel set. Silent — restore bypasses
+    /// the precedence chain (the snapshot IS the prior session's source of
+    /// truth). Runs before `pruneSurfaceMetadata` so anything not in the
+    /// current panel set gets cleaned up on the same tick.
+    ///
+    /// Respects `CMUX_DISABLE_METADATA_PERSIST=1` as a rollback safety net —
+    /// when set, the snapshot's metadata is ignored and surfaces start with
+    /// an empty store.
+    private func restoreSurfaceMetadataFromSnapshot(
+        panels snapshotPanels: [SessionPanelSnapshot],
+        oldToNewPanelIds: [UUID: UUID]
+    ) {
+        if PersistedMetadataBridge.isPersistDisabled { return }
+        for panelSnapshot in snapshotPanels {
+            guard let persistedValues = panelSnapshot.metadata else { continue }
+            let persistedSources = panelSnapshot.metadataSources ?? [:]
+            let newPanelId = oldToNewPanelIds[panelSnapshot.id] ?? panelSnapshot.id
+            guard panels[newPanelId] != nil else { continue }
+            let values = PersistedMetadataBridge.decodeValues(persistedValues)
+            let sources = PersistedMetadataBridge.decodeSources(persistedSources)
+            SurfaceMetadataStore.shared.restoreFromSnapshot(
+                workspaceId: id,
+                surfaceId: newPanelId,
+                values: values,
+                sources: sources
+            )
+        }
     }
 
     func pruneSurfaceMetadata(validSurfaceIds: Set<UUID>) {

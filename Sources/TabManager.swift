@@ -729,10 +729,22 @@ class TabManager: ObservableObject {
            runtime.hasActive(panelId: focusedPanelId) {
             return runtime.acceptActive(panelId: focusedPanelId)
         }
-        // Otherwise accept any active interaction — there's only ever one per panel,
-        // and multiple-panel-with-active-interaction is rare.
-        if let anyPanelId = runtime.activePanelIds.first {
-            return runtime.acceptActive(panelId: anyPanelId)
+        // Otherwise iterate panes in bonsplit spatial order. Restrict the
+        // fallback to each pane's SELECTED tab (Trident Important #2): the
+        // previous iteration used `runtime.activePanelIds.first` (and earlier
+        // `tabs(inPane:)`), both of which happily accept a dialog anchored on
+        // a non-selected (hidden) tab. If the hidden dialog is destructive,
+        // Cmd+D silently causes data loss. `selectedTab(inPane:)` only
+        // surfaces the tab the user is currently looking at in each pane —
+        // safe by construction.
+        for paneId in workspace.bonsplitController.allPaneIds {
+            guard let selected = workspace.bonsplitController.selectedTab(inPane: paneId),
+                  let candidate = workspace.panelIdFromSurfaceId(selected.id) else {
+                continue
+            }
+            if runtime.hasActive(panelId: candidate) {
+                return runtime.acceptActive(panelId: candidate)
+            }
         }
         return false
     }

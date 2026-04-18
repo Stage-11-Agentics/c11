@@ -35,7 +35,7 @@ We are building at the forefront of tooling for the operators working ahead of t
 
 c11mux is a Stage 11 Agentics fork of [**cmux**](https://github.com/manaflow-ai/cmux) by [manaflow-ai](https://github.com/manaflow-ai). They built something badass and they deserve credit for it! Specifically the ghostty terminal, browser, and CLI substrate belongs with them upstream — their [original motivation](https://cmux.com/blog/zen-of-cmux) is the shape of the thing, and it's worth reading. We also happily pull their updates and are honored to be building alongside them! 
 
-*If you're primarily running a single Claude Code or other TUI session, c11mux is probably more advanced than what you need. If you're already orchestrating many agents in parallel, welcome — you've found your tooling.*
+*This is not trying to be first-timer-friendly software, if you're primarily running a single Claude Code or are reasonably new to the practice of running many paralelle coding agents, c11mux is probably more complicated than what you is ideal for the usecase*
 
 ## Why this exists
 

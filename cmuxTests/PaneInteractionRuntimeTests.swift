@@ -246,6 +246,76 @@ final class PaneInteractionRuntimeTests: XCTestCase {
         }
     }
 
+    // MARK: - cancelInteraction (targeted cancel by id)
+
+    func testCancelInteractionQueuedRemovesQueuedOnly() {
+        // Socket `pane.confirm` timeout must cancel ONLY the caller's own
+        // interaction. If the caller's interaction is queued behind an
+        // active one, the active must not be disturbed.
+        let runtime = PaneInteractionRuntime()
+        let panelId = UUID()
+        var activeResult: ConfirmResult?
+        var queuedResult: ConfirmResult?
+
+        let activeContent = ConfirmContent(
+            title: "A", message: nil,
+            confirmLabel: "OK", cancelLabel: "Cancel",
+            role: .standard, source: .local,
+            completion: { activeResult = $0 }
+        )
+        let queuedContent = ConfirmContent(
+            title: "B", message: nil,
+            confirmLabel: "OK", cancelLabel: "Cancel",
+            role: .standard, source: .local,
+            completion: { queuedResult = $0 }
+        )
+        runtime.present(panelId: panelId, interaction: .confirm(activeContent))
+        runtime.present(panelId: panelId, interaction: .confirm(queuedContent))
+
+        let hit = runtime.cancelInteraction(panelId: panelId, interactionId: queuedContent.id)
+
+        XCTAssertTrue(hit)
+        XCTAssertEqual(queuedResult, .dismissed, "Queued interaction must resolve with .dismissed")
+        XCTAssertNil(activeResult, "Active interaction must not be disturbed")
+        XCTAssertTrue(runtime.hasActive(panelId: panelId), "Active must stay active")
+    }
+
+    func testCancelInteractionActivePromotesNextQueued() {
+        let runtime = PaneInteractionRuntime()
+        let panelId = UUID()
+        var activeResult: ConfirmResult?
+        var queuedResult: ConfirmResult?
+
+        let activeContent = ConfirmContent(
+            title: "A", message: nil,
+            confirmLabel: "OK", cancelLabel: "Cancel",
+            role: .standard, source: .local,
+            completion: { activeResult = $0 }
+        )
+        let queuedContent = ConfirmContent(
+            title: "B", message: nil,
+            confirmLabel: "OK", cancelLabel: "Cancel",
+            role: .standard, source: .local,
+            completion: { queuedResult = $0 }
+        )
+        runtime.present(panelId: panelId, interaction: .confirm(activeContent))
+        runtime.present(panelId: panelId, interaction: .confirm(queuedContent))
+
+        let hit = runtime.cancelInteraction(panelId: panelId, interactionId: activeContent.id)
+
+        XCTAssertTrue(hit)
+        XCTAssertEqual(activeResult, .dismissed)
+        XCTAssertNil(queuedResult, "Queued must not yet resolve — it's promoted, not cancelled")
+        XCTAssertTrue(runtime.hasActive(panelId: panelId), "Queued was promoted to active")
+    }
+
+    func testCancelInteractionMissReturnsFalse() {
+        let runtime = PaneInteractionRuntime()
+        let panelId = UUID()
+        let hit = runtime.cancelInteraction(panelId: panelId, interactionId: UUID())
+        XCTAssertFalse(hit)
+    }
+
     // MARK: - Variant mismatch
 
     func testResolveConfirmOnTextInputDoesNotFire() {

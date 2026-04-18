@@ -6914,6 +6914,10 @@ class TerminalController {
         }
         let holder = OutcomeHolder()
         var presented = false
+        // Track this call's interaction identity so a timeout cancels THIS
+        // interaction specifically — not whichever one happens to be active
+        // (which may be an earlier queued-in-front sibling).
+        var interactionId: UUID?
 
         v2MainSync {
             // Find the workspace that owns this panel. Iterate tabs across the
@@ -6933,6 +6937,7 @@ class TerminalController {
                     semaphore.signal()
                 }
             )
+            interactionId = content.id
             workspace.paneInteractionRuntime.present(
                 panelId: panelId,
                 interaction: .confirm(content)
@@ -6953,11 +6958,16 @@ class TerminalController {
         }
         let waitResult = semaphore.wait(timeout: waitDeadline)
         if waitResult == .timedOut {
-            // Cancel the active interaction for this panel so the card clears
-            // and any queued interactions advance.
+            // Cancel ONLY this call's interaction. If it was queued behind an
+            // earlier one, `cancelInteraction` removes it from the queue; the
+            // active interaction is untouched.
             v2MainSync {
-                if let workspace = tabManager.tabs.first(where: { $0.panels[panelId] != nil }) {
-                    workspace.paneInteractionRuntime.cancelActive(panelId: panelId)
+                if let workspace = tabManager.tabs.first(where: { $0.panels[panelId] != nil }),
+                   let id = interactionId {
+                    workspace.paneInteractionRuntime.cancelInteraction(
+                        panelId: panelId,
+                        interactionId: id
+                    )
                 }
             }
             return .ok(["result": "dismissed"])

@@ -45,9 +45,9 @@ final class TerminalPanel: Panel, ObservableObject {
     // flags let SwiftUI react to toggle changes; the input view is a
     // non-published `weak` so view lifecycle does not churn observers.
 
-    /// Whether the TextBox is mounted for this panel. On by default;
-    /// Cmd+Option+B toggles visibility per panel.
-    @Published var isTextBoxActive: Bool = true
+    /// Whether the TextBox is mounted for this panel. Hidden by default;
+    /// Cmd+Option+B summons and dismisses it per panel.
+    @Published var isTextBoxActive: Bool = false
 
     /// Draft text currently held in the TextBox. Preserved across tab
     /// switches so users do not lose in-flight prompts.

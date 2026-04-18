@@ -5956,35 +5956,53 @@ final class Workspace: Identifiable, ObservableObject {
                 panel.isTextBoxActive = shouldShow
             }
             if shouldShow {
+                focusInputTextView(in: targets, retriesRemaining: 4)
+            }
+        case .toggleFocus:
+            // Keep the box visible; swap focus between TextBox and terminal.
+            let wasAllVisible = targets.allSatisfy { $0.isTextBoxActive }
+            for panel in targets where !panel.isTextBoxActive {
+                panel.isTextBoxActive = true
+            }
+            if !wasAllVisible {
+                // First press summoned the TextBox from hidden — focus it, don't
+                // swap back to the terminal (the InputTextView may not be mounted
+                // yet, so retry briefly until SwiftUI wires it up).
+                focusInputTextView(in: targets, retriesRemaining: 4)
+            } else {
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     if let active = self.firstResponderTextBox() {
-                        _ = active
-                        return
-                    }
-                    if let firstTarget = targets.first,
-                       let view = firstTarget.inputTextView {
+                        // Focus is in a TextBox — move it back to that panel's terminal.
+                        let panel = targets.first { $0.inputTextView === active }
+                            ?? terminalPanels.first { $0.inputTextView === active }
+                        panel?.surface.focusTerminalView()
+                    } else {
+                        // Focus is in the terminal (or elsewhere) — move it into the TextBox.
+                        guard let firstTarget = targets.first,
+                              let view = firstTarget.inputTextView else { return }
                         view.window?.makeFirstResponder(view)
                     }
                 }
             }
-        case .toggleFocus:
-            // Keep the box visible; swap focus between TextBox and terminal.
-            for panel in targets where !panel.isTextBoxActive {
-                panel.isTextBoxActive = true
+        }
+    }
+
+    /// Move first responder into the first target panel's InputTextView, retrying
+    /// briefly if SwiftUI has not yet mounted the container. Used after showing
+    /// the TextBox from hidden, where `inputTextView` is nil until the next
+    /// render pass wires it up via `onInputTextViewCreated`.
+    private func focusInputTextView(in targets: [TerminalPanel], retriesRemaining: Int) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if self.firstResponderTextBox() != nil { return }
+            if let firstTarget = targets.first, let view = firstTarget.inputTextView {
+                view.window?.makeFirstResponder(view)
+                return
             }
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                if let active = self.firstResponderTextBox() {
-                    // Focus is in a TextBox — move it back to that panel's terminal.
-                    let panel = targets.first { $0.inputTextView === active }
-                        ?? terminalPanels.first { $0.inputTextView === active }
-                    panel?.surface.focusTerminalView()
-                } else {
-                    // Focus is in the terminal (or elsewhere) — move it into the TextBox.
-                    guard let firstTarget = targets.first,
-                          let view = firstTarget.inputTextView else { return }
-                    view.window?.makeFirstResponder(view)
+            if retriesRemaining > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.025) { [weak self] in
+                    self?.focusInputTextView(in: targets, retriesRemaining: retriesRemaining - 1)
                 }
             }
         }

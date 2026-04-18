@@ -88,8 +88,8 @@ inputTextView reference. Switching tabs preserves TextBox state.
 
 ## Settings (Settings > TextBox Input)
 
-TextBox is on by default for every terminal pane; Cmd+Option+B toggles
-visibility per panel.
+TextBox is hidden by default; Cmd+Option+B summons and dismisses it per
+panel (the only toggle — there is no global "Enable Mode" setting).
 
 - **Send on Return**: On = Return sends / Shift+Enter inserts newline,
   Off = Enter inserts newline / Shift+Enter sends (default: on)
@@ -178,7 +178,7 @@ visibility per panel.
 - [ ] T9.4  Cmd+Opt+B moves focus to terminal when TextBox focused (toggleFocus mode)
 - [ ] T9.5  Toggle applies to all tabs simultaneously
 - [ ] T9.6  Custom shortcut key works after changing in Settings
-- [ ] T9.7  New terminal panes have TextBox visible by default
+- [ ] T9.7  New terminal panes start with the TextBox hidden; Cmd+Opt+B summons it
 
 ### T10. Drag & Drop (F8)
 - [ ] T10.1  Drop single file → shell-escaped path inserted
@@ -213,7 +213,7 @@ visibility per panel.
 ### T14. Per-panel State (F14)
 - [ ] T14.1  Switching tabs preserves TextBox content
 - [ ] T14.2  Toggle applies to all tabs simultaneously (global, not per-tab)
-- [ ] T14.3  New tab starts with TextBox visible (isTextBoxActive=true)
+- [ ] T14.3  New tab starts with TextBox hidden (isTextBoxActive=false)
 - [ ] T14.4  Split panes each have their own TextBox
 
 ### T15. Placeholder & Send Button (F9, F10)

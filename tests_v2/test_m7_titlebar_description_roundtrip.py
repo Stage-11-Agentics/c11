@@ -93,7 +93,68 @@ def main() -> int:
             finally:
                 c.close_workspace(ws_id)
 
-    print("PASS: M7 description round-trip (inline, list, image, fenced code)")
+        # Tier 1 Phase 2 extension: user-set title + description must survive
+        # an on-disk session round-trip with full source attribution. Uses
+        # the DEBUG-only debug.session.save_and_load harness; the call is
+        # wrapped in try/except so release builds (without the method)
+        # skip the assertion cleanly.
+        ws_id, surface_id = _fresh_surface(c)
+        try:
+            title_value = f"Shipping dashboard #{stamp}"
+            description_value = "Backend refactor: Tier 1 Phase 2 persistence"
+            res = c._call(
+                "surface.set_metadata",
+                {
+                    "surface_id": surface_id,
+                    "mode": "merge",
+                    "source": "explicit",
+                    "metadata": {
+                        "title": title_value,
+                        "description": description_value,
+                    },
+                },
+            ) or {}
+            applied = res.get("applied") or {}
+            _must(
+                applied.get("title") is True and applied.get("description") is True,
+                f"[persist] set_metadata should apply title+description: {res}",
+            )
+
+            try:
+                c._call("debug.session.save_and_load", {})
+            except cmuxError as e:
+                # DEBUG-only method; release builds do not have it. Skip.
+                print(f"SKIP persist case: debug.session.save_and_load unavailable ({e})")
+                return 0
+
+            got_full = c._call(
+                "surface.get_metadata",
+                {"surface_id": surface_id, "include_sources": True},
+            ) or {}
+            md = got_full.get("metadata") or {}
+            sources = got_full.get("metadata_sources") or {}
+            _must(
+                md.get("title") == title_value,
+                f"[persist] title did not survive round-trip: {md}",
+            )
+            _must(
+                md.get("description") == description_value,
+                f"[persist] description did not survive round-trip: {md}",
+            )
+            title_src = sources.get("title") or {}
+            desc_src = sources.get("description") or {}
+            _must(
+                title_src.get("source") == "explicit",
+                f"[persist] title source should be 'explicit': {title_src}",
+            )
+            _must(
+                desc_src.get("source") == "explicit",
+                f"[persist] description source should be 'explicit': {desc_src}",
+            )
+        finally:
+            c.close_workspace(ws_id)
+
+    print("PASS: M7 description round-trip (inline, list, image, fenced code, persist)")
     return 0
 
 

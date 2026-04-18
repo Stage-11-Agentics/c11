@@ -130,6 +130,13 @@ final class SurfaceMetadataStore: @unchecked Sendable {
     /// Per-workspace per-surface parallel source sidecar.
     private var sources: [UUID: [UUID: [String: SourceRecord]]] = [:]
 
+    /// Monotonic revision counter (Tier 1 Phase 2). Bumped on every mutation
+    /// that actually changes state — no-op writes of the same (key, value,
+    /// source) do not bump. Included in the autosave fingerprint so
+    /// metadata-only changes between 8s ticks trigger a write instead of
+    /// being silently skipped.
+    private var metadataStoreRevision: UInt64 = 0
+
     // MARK: - Canonical key validation
 
     /// Reserved canonical keys. Keys not in this set accept any JSON value.
@@ -262,6 +269,12 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         }
     }
 
+    /// Read the monotonic revision counter. Used by the autosave fingerprint
+    /// so metadata-only mutations trigger a write at the next tick.
+    func currentRevision() -> UInt64 {
+        return queue.sync { metadataStoreRevision }
+    }
+
     /// Returns whether a specific key is currently set on a surface, and its source.
     func getSource(workspaceId: UUID, surfaceId: UUID, key: String) -> MetadataSource? {
         return queue.sync {
@@ -283,15 +296,23 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                 guard source == .explicit else {
                     throw WriteError.replaceRequiresExplicit
                 }
+                let existing = metadata[workspaceId]?[surfaceId] ?? [:]
+                let existingSrc = sources[workspaceId]?[surfaceId] ?? [:]
                 metadata[workspaceId]?[surfaceId] = [:]
                 sources[workspaceId]?[surfaceId] = [:]
                 result.metadata = [:]
                 result.sources = [:]
+                // No-op skip: clear-all against an already-empty store
+                // must not bump the revision.
+                if !existing.isEmpty || !existingSrc.isEmpty {
+                    metadataStoreRevision &+= 1
+                }
                 return result
             }
 
             var blob = metadata[workspaceId]?[surfaceId] ?? [:]
             var sblob = sources[workspaceId]?[surfaceId] ?? [:]
+            var removedAny = false
 
             for key in keys! {
                 if let cur = sblob[key] {
@@ -301,8 +322,9 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                         continue
                     }
                 }
-                blob.removeValue(forKey: key)
-                sblob.removeValue(forKey: key)
+                let hadValue = blob.removeValue(forKey: key) != nil
+                let hadSource = sblob.removeValue(forKey: key) != nil
+                if hadValue || hadSource { removedAny = true }
                 result.applied[key] = true
             }
 
@@ -310,6 +332,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             sources[workspaceId, default: [:]][surfaceId] = sblob
             result.metadata = blob
             result.sources = sblob.mapValues { $0.toJSON() }
+            if removedAny { metadataStoreRevision &+= 1 }
             return result
         }
     }
@@ -333,6 +356,10 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         queue.sync {
             metadata[workspaceId, default: [:]][surfaceId] = values
             self.sources[workspaceId, default: [:]][surfaceId] = sources
+            // Bump the revision so a post-restore autosave tick sees the
+            // fingerprint differ from the pre-restore state, writing the
+            // restored contents back to disk with a fresh createdAt.
+            metadataStoreRevision &+= 1
         }
     }
 
@@ -404,6 +431,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
 
             metadata[workspaceId, default: [:]][surfaceId] = blob
             sources[workspaceId, default: [:]][surfaceId] = sblob
+            metadataStoreRevision &+= 1
             return true
         }
     }
@@ -444,6 +472,16 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         }
 
         let ts = Date().timeIntervalSince1970
+        var mutated = false
+
+        if mode == .replace {
+            // `mode == .replace` discarded the prior blob above. If that prior
+            // blob was non-empty, the replace is itself a mutation even when
+            // the new partial is a subset; flag accordingly.
+            let priorBlob = metadata[workspaceId]?[surfaceId] ?? [:]
+            let priorSrc = sources[workspaceId]?[surfaceId] ?? [:]
+            if !priorBlob.isEmpty || !priorSrc.isEmpty { mutated = true }
+        }
 
         for (k, v) in partial {
             if mode == .merge, let cur = sblob[k], source.precedence < cur.source.precedence {
@@ -451,9 +489,22 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                 result.reasons[k] = "lower_precedence"
                 continue
             }
+            // No-op skip for revision counter: same value and same source
+            // preserves the prior SourceRecord (original ts) and does not
+            // bump the revision. The key is still reported as applied so
+            // callers see idempotent semantics.
+            let existing = blob[k]
+            let existingSource = sblob[k]?.source
+            let isSameWrite = existing.map { sameJSONValue($0, v) } ?? false
+                && existingSource == source
+            if isSameWrite {
+                result.applied[k] = true
+                continue
+            }
             blob[k] = v
             sblob[k] = SourceRecord(source: source, ts: ts)
             result.applied[k] = true
+            mutated = true
         }
 
         // Size check after merge.
@@ -469,6 +520,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
 
         result.metadata = blob
         result.sources = sblob.mapValues { $0.toJSON() }
+        if mutated { metadataStoreRevision &+= 1 }
         return result
     }
 

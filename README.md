@@ -1,6 +1,6 @@
 <h1 align="center">c11mux</h1>
 <p align="center">
-c11mux is tooling for advanced hyperengineers.
+c11mux is a terminal command center for advanced hyperengineers
 </p>
 
 

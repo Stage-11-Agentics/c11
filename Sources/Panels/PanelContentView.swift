@@ -38,6 +38,7 @@ struct PanelContentView: View {
             if let terminalPanel = panel as? TerminalPanel {
                 TerminalPanelView(
                     panel: terminalPanel,
+                    paneInteractionRuntime: workspace.paneInteractionRuntime,
                     isFocused: isFocused,
                     isVisibleInUI: isVisibleInUI,
                     portalPriority: portalPriority,

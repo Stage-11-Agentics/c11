@@ -6141,6 +6141,7 @@ final class GhosttySurfaceScrollView: NSView {
     private var deferredSearchOverlayMutationWorkItem: DispatchWorkItem?
     private var lastSearchOverlayStateID: ObjectIdentifier?
     private var searchOverlayMutationGeneration: UInt64 = 0
+    private var paneInteractionOverlay: PaneInteractionOverlayHost?
     private var observers: [NSObjectProtocol] = []
     private var windowObservers: [NSObjectProtocol] = []
     private var isLiveScrolling = false
@@ -6982,6 +6983,22 @@ final class GhosttySurfaceScrollView: NSView {
                 attemptsRemaining: attemptsRemaining - 1
             )
         }
+    }
+
+    /// Attach (idempotently) the pane-interaction overlay for a given panel. The host lives
+    /// inside this portal-hosted AppKit view so it sits ABOVE the Ghostty surface (per
+    /// CLAUDE.md:143 — SwiftUI panel-level overlays fall behind the portal-hosted terminal).
+    /// The overlay observes runtime.$active itself and shows/hides automatically; we only
+    /// ever create it, never tear it down — a panel's runtime and id are stable for the
+    /// lifetime of its scroll view.
+    func attachPaneInteraction(runtime: PaneInteractionRuntime, panelId: UUID) {
+        if paneInteractionOverlay != nil { return }
+        let overlay = PaneInteractionOverlayHost(panelId: panelId, runtime: runtime)
+        overlay.frame = bounds
+        overlay.autoresizingMask = [.width, .height]
+        // Always position above everything else (search overlay included) — it's modal.
+        addSubview(overlay)
+        paneInteractionOverlay = overlay
     }
 
     func setSearchOverlay(searchState: TerminalSurface.SearchState?) {
@@ -8767,6 +8784,11 @@ struct GhosttyTerminalView: NSViewRepresentable {
     var reattachToken: UInt64 = 0
     var onFocus: ((UUID) -> Void)? = nil
     var onTriggerFlash: (() -> Void)? = nil
+    /// Workspace-scoped runtime for the pane-interaction overlay (close-confirm,
+    /// rename, socket-triggered consent). `nil` is permitted — when nil, no overlay is
+    /// attached, which is the expected state for preview/test-only contexts.
+    var paneInteractionRuntime: PaneInteractionRuntime? = nil
+    var paneInteractionPanelId: UUID? = nil
 
     private final class HostContainerView: NSView {
         var onDidMoveToWindow: (() -> Void)?
@@ -8953,6 +8975,10 @@ struct GhosttyTerminalView: NSViewRepresentable {
             )
             hostedView.setNotificationRing(visible: showsUnreadNotificationRing)
             hostedView.setSearchOverlay(searchState: searchState)
+            if let runtime = paneInteractionRuntime,
+               let panelId = paneInteractionPanelId {
+                hostedView.attachPaneInteraction(runtime: runtime, panelId: panelId)
+            }
             hostedView.syncKeyStateIndicator(text: terminalSurface.currentKeyStateIndicatorText)
         }
         let portalExpectedSurfaceId = terminalSurface.id

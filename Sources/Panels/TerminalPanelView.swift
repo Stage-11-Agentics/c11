@@ -5,6 +5,7 @@ import AppKit
 /// View for rendering a terminal panel
 struct TerminalPanelView: View {
     @ObservedObject var panel: TerminalPanel
+    @ObservedObject var paneInteractionRuntime: PaneInteractionRuntime
     @AppStorage(NotificationPaneRingSettings.enabledKey)
     private var notificationPaneRingEnabled = NotificationPaneRingSettings.defaultEnabled
     let isFocused: Bool
@@ -19,6 +20,8 @@ struct TerminalPanelView: View {
     var body: some View {
         // Layering contract: terminal find UI is mounted in GhosttySurfaceScrollView (AppKit portal layer)
         // via `searchState`. Rendering `SurfaceSearchOverlay` in this SwiftUI container can hide it.
+        // The pane-interaction overlay follows the same contract — mounted from the AppKit host
+        // inside GhosttySurfaceScrollView (see `attachPaneInteraction(runtime:panelId:)`).
         GhosttyTerminalView(
             terminalSurface: panel.surface,
             isActive: isFocused,
@@ -31,7 +34,9 @@ struct TerminalPanelView: View {
             searchState: panel.searchState,
             reattachToken: panel.viewReattachToken,
             onFocus: { _ in onFocus() },
-            onTriggerFlash: onTriggerFlash
+            onTriggerFlash: onTriggerFlash,
+            paneInteractionRuntime: paneInteractionRuntime,
+            paneInteractionPanelId: panel.id
         )
         // Keep the NSViewRepresentable identity stable across bonsplit structural updates.
         // This prevents transient teardown/recreate that can momentarily detach the hosted terminal view.

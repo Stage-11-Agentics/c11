@@ -5149,7 +5149,7 @@ final class Workspace: Identifiable, ObservableObject {
 
         // Create initial terminal panel
         let terminalPanel = TerminalPanel(
-            workspaceId: id,
+            workspaceId: self.id,
             context: GHOSTTY_SURFACE_CONTEXT_TAB,
             configTemplate: configTemplate,
             workingDirectory: hasWorkingDirectory ? trimmedWorkingDirectory : nil,

@@ -9,7 +9,7 @@ description: c11mux — Stage 11's native macOS terminal multiplexer built as in
 
 **c11mux is infrastructure for the [Spike](https://stage11.ai/spike).** The spike is the compound actor — human:digital, operator:model — a human navigating a shifting capability surface as a single entity. c11mux is the room that actor works in.
 
-The goal is narrow and deliberate: be best-in-class for the hyper-engineer — the operator running extensive terminal-based LLM coding agents in parallel — and for the agents themselves. Wherever the work happens. Terrestrial, orbital, or elsewhere — the interface is the same. That is who this tool is for. Everything else is scaffolding.
+The goal is narrow and deliberate: be best-in-class for the hyperengineer — the operator running extensive terminal-based LLM coding agents in parallel — and for the agents themselves. Wherever the work happens. Terrestrial, orbital, or elsewhere — the interface is the same. That is who this tool is for. Everything else is scaffolding.
 
 c11mux is not an intelligence layer. The opinion about what agents *do* lives upstairs — Lattice, Mycelium, the rest of the Stage 11 stack. c11mux is host and primitive: terminal, browser, and markdown surfaces; workspaces, panes, tabs; notifications; one CLI and socket API for every seam. The binary is `cmux`. The app is `c11mux`. Commands below use the binary name.
 
@@ -46,6 +46,8 @@ cmux rename-tab "<your role>"                              # Name your own tab b
 Also populate `role`, `task`, and `status` via `cmux set-metadata` **if known** from the opening message or environment (e.g. the user references a ticket ID, or `CMUX_AGENT_TASK` is set). Skip when unknown — don't guess.
 
 **An unnamed tab is an unidentifiable agent.** Name your tab immediately, even when working solo. Key word first, 2–4 words, under 25 characters (the sidebar truncates from the right): `cmux rename-tab "TICKET-42 Plan"` survives; `"Planning TICKET-42"` truncates to `"Planning TICK…"`.
+
+**Show lineage for downstream tabs.** When a pane is spawned from another — sub-agents under an orchestrator, review agents over a feature's work, follow-ups rooted in earlier output — chain parent to child with `::`, parent first: `Login Button :: MA Review :: Claude`. Multiple rungs chain in order. The sidebar truncates to the parent (grouping siblings visibly); the full chain shows in the title bar. Users may override; lineage is the default whenever a parent exists. Before renaming, check `cmux get-titlebar-state` — if a chain is already present, preserve the prefix and only refine the trailing segment. See [references/orchestration.md#tab-naming-mandatory](references/orchestration.md#tab-naming-mandatory) for the full convention.
 
 **If the user's opening message is absent or ambiguous, ask before orienting.** This aligns with the global "dialogue" norm — don't silently rename a tab `"Explore"` just to have something in the sidebar. A direct request ("fix this bug", "what is X called") is not ambiguous; proceed with the request and run orientation in the same turn.
 
@@ -134,6 +136,14 @@ cmux send-key --workspace $WS --surface $SURF enter
 
 For complex prompts (backticks, code blocks, multi-line), deliver via temp file and tell the receiving agent to `Read /tmp/prompt.md` — shell escaping through `cmux send` is brittle.
 
+**PTY-only reach.** `cmux send` / `cmux send-key` write bytes into the target terminal surface's PTY. They do NOT dispatch NSEvents to the AppKit responder chain, so they cannot drive non-terminal UI — the TextBox input, settings panels, sidebar controls, find overlays, and any SwiftUI / AppKit control are all unreachable this way. If a task requires typing into or clicking an AppKit element, the cmux socket CLI is the wrong tool. Working alternatives:
+
+- Ask the human operator to exercise the UI and paste back the result.
+- Accessibility automation (`AXUIElement`, `System Events` AppleScript).
+- A purpose-built debug socket command in the c11mux app itself (e.g. add a `textbox.focus` or `textbox.send-key` handler to the socket).
+
+Surface this constraint up front when planning — don't sink time into PTY-based automation for a target that isn't a terminal.
+
 ## Read another surface
 
 ```bash
@@ -178,6 +188,37 @@ cmux get-titlebar-state                      # read caller's own title/descripti
 
 `cmux rename-tab` is a thin alias for `set-title`. The sidebar tab label is a truncated projection of the title; the title bar shows the full string and, when expanded, renders the description as markdown (bold, italic, inline code, lists, headings, blockquotes, links, rules; images/fenced-code/tables are stripped at render; links are styled but not navigable). Content over ~5 lines scrolls internally in a 90pt-capped region. See [references/metadata.md](references/metadata.md#title--description-sugar-m7) for the full subset and payload fields.
 
+### The title + description split
+
+Given the naming rule above (and its sub-agent echo in [orchestration.md](references/orchestration.md#writing-c11mux-aware-agent-prompts)), the useful further distinction is *what* title and *what* description. They carry different weight:
+
+- **Title = what the surface *is*.** Generic and reusable across sessions. For file-backed surfaces (markdown, browser-on-local-file) the filename alone is usually right: `PHILOSOPHY.md`, `RFC-42.md`, `staging.yaml`. For role-holding terminals, the role in 2–4 words: `Phase 2 agent`, `Log tail`, `gh pr watch`.
+- **Description = why this surface is open *right now*.** Context-specific, one to two sentences. The operator glancing at the sidebar and expanding the title bar should understand what prompted this surface and what to pay attention to, without reading the content.
+
+```bash
+cmux set-title       --workspace $WS --surface $SURF "PHILOSOPHY.md"
+cmux set-description --workspace $WS --surface $SURF "Reviewing after migrating the observe-from-outside principle out of memory into this doc. About to revise the Primitives-before-policy section."
+```
+
+The operator is running parallel work and context-switching between surfaces; title + description together make the sidebar a navigable index of in-flight work instead of a list of opaque tabs. A hyperengineer who can see "why is this open" at a glance is strictly more effective than one who has to re-read the content to remember.
+
+**Batch with the open command.** When you `cmux new-pane --type markdown --file …` or `--type browser --url …` for the operator, set title + description as the immediate next calls — don't defer. A surface that lives even briefly without a description is one the operator will have to re-derive context for when they tab over.
+
+### Lineage in titles and descriptions
+
+For panes spawned downstream of another — sub-agents, reviews, fixes rooted in earlier output — lineage goes in **both** fields:
+
+- **Title** chains with `::`, parent first (see Orient first above). Each segment stays short so the full chain fits: `Login Button :: MA Review :: Claude`.
+- **Description** carries the story up the chain. Lead with a breadcrumb line, then the current context.
+
+```bash
+cmux set-title       --workspace $WS --surface $SURF "Login Button :: MA Review :: Claude"
+cmux set-description --workspace $WS --surface $SURF "Lineage: Login Button → Multi-Agent Review → Claude reviewer.
+Reviewing PR #42 for correctness, style, and edge cases. One of three parallel reviewers; findings merge upstream."
+```
+
+When updating the description on task change, preserve the lineage line — don't strip it. It's the operator's map for reconstructing why this pane exists; losing it forces a re-derivation from content.
+
 ## Sidebar reporting
 
 Sidebar metadata commands give fast feedback without touching the JSON blob:
@@ -200,7 +241,17 @@ Use **`cc`** (the `--dangerously-skip-permissions` alias) — never bare `claude
 - Plain `claude` stalls on permission approvals.
 - `cc` in an interactive pane inherits c11mux env vars, preserves the auth chain, and skips approvals. Sub-agents can `cmux set-status`, `cmux log`, `cmux set-progress` freely.
 
-Standard launch: create the pane, launch `cc`, poll for the prompt, name the tab, send the task as two calls (`send` then `send-key enter`). See [references/orchestration.md](references/orchestration.md) for the full pattern with ready-state polling, tab-naming conventions, and agent-to-agent handoffs.
+Standard launch: create the pane, launch `cc`, **wait for the sidebar `claude_code` status to hit `Idle`** (the cc wrapper emits it for you), name the tab, send the task as two calls (`send` then `send-key enter`):
+
+```bash
+cmux send --workspace $WS --surface $SURF "cd /path && cc"
+cmux send-key --workspace $WS --surface $SURF enter
+until cmux list-status --workspace $WS 2>/dev/null | grep -q '^claude_code=Idle '; do sleep 1; done
+cmux send --workspace $WS --surface $SURF "Read /tmp/prompt.md and follow the instructions."
+cmux send-key --workspace $WS --surface $SURF enter
+```
+
+**Never screen-scrape `cmux read-screen` for `❯`, `> `, `Welcome to Claude Code`, `Claude Code v`, or any other banner string** — those drift across cc releases and fail silently. See [references/orchestration.md](references/orchestration.md) for the full pattern including tab-naming conventions and agent-to-agent handoffs.
 
 ## Web validation
 

@@ -40,21 +40,51 @@ Read `cmux tree` before reshaping — splits reshape the screen and disorient ev
 
 ## Tab naming (mandatory)
 
-**Name every tab, including your own.** An unnamed "Claude Code" tab is an unidentifiable agent — useless when multiple agents are running. The sidebar truncates from the right, so the most distinctive word must appear first.
+**Name every tab, including your own.** An unnamed "Claude Code" tab is an unidentifiable agent — useless when multiple agents are running. The sidebar truncates from the right; the full title shows in the title bar.
 
-Conventions:
+### Lineage is the default
+
+When a pane is downstream of another — a sub-agent an orchestrator spawned, a code review spawned over a feature's work, a fix agent rooted in a review finding — the title must show the chain. Use `::` (double colon) as the separator, **parent first**. Multiple rungs chain in order:
+
+| Pane | Title |
+|------|-------|
+| Feature agent | `Login Button` |
+| Its multi-agent review | `Login Button :: MA Review` |
+| One reviewer inside that review | `Login Button :: MA Review :: Claude` |
+| A fix agent spawned from a review finding | `Login Button :: Fix Null Check` |
+
+Parent-first groups siblings in the sidebar — they all truncate to the parent's leading word (`Login Bu…`), which is usually what the operator wants at a glance: "these panes are all Login Button family." The full chain survives in the title bar. Keep each segment short so the whole chain stays readable: `Login Button :: MA Review :: Claude` wraps cleanly; `Adding Login Button Feature :: Multi-Agent Code Review :: Claude Reviewer` will overflow.
+
+The user may override any tab name; lineage is the default, not a lock.
+
+### Who writes the lineage
+
+- **Orchestrator spawning a sub-agent.** Name the child's tab immediately after `cmux new-surface` / `cmux new-split`, **before** launching the sub-agent or sending the prompt. The orchestrator knows the full lineage (its own title plus the child's role) so it's the right actor to compose. It also writes the description with a lineage breadcrumb — see below.
+- **Sub-agent orienting itself.** Before calling `cmux rename-tab`, read the existing title with `cmux get-titlebar-state`. If a chain is already there (orchestrator pre-named it), **preserve the prefix** and refine only the trailing segment if your role needs sharpening. If no title exists, extract lineage from your initial prompt (orchestrators should pass it explicitly) and compose `<parent> :: <your role>`. Only fall back to a lineage-free name when no parent exists.
+- **Solo agent (no parent).** Name with your mission, no `::` prefix.
+
+### Description tells the story up the chain
+
+The **description** on a downstream pane should explain *where the work came from and why* — not just what this pane is doing right now. Lead with a breadcrumb line, then the current context:
+
+```bash
+cmux set-description --workspace $WS --surface $SURF "Lineage: Login Button → Multi-Agent Review → Claude reviewer.
+Reviewing PR #42 for correctness, style, and edge cases. One of three parallel reviewers; findings merge upstream."
+```
+
+The orchestrator writes the first lineage line when it spawns the child so the child inherits a correct chain. Sub-agents updating the description mid-session preserve the lineage line — don't strip it on task change. Without it, the operator has to walk the pane tree to reconstruct why a surface exists.
+
+### Conventions by role (examples)
 
 - **Orchestrators / delegators:** name on startup. Role + project in 2–4 words.
   `cmux rename-tab "SIG Delegator"`, `cmux rename-tab "Review Orchestrator"`
-- **Sub-agents:** the orchestrator names the tab **immediately after creating the surface**, before sending the prompt.
-  `cmux rename-tab --workspace $WS --surface $SURF "TICKET-ID Plan"`
-  `cmux rename-tab --workspace $WS --surface $SURF "Lint Fixes"`
-- **Solo agents (not part of orchestration):** still name the tab with your mission.
+- **Sub-agents:** orchestrator composes lineage right after creating the surface:
+  `cmux rename-tab --workspace $WS --surface $SURF "Login Button :: Plan"`
+  `cmux rename-tab --workspace $WS --surface $SURF "Login Button :: Lint Fixes"`
+- **Solo agents (no parent):** mission only, no lineage prefix.
   `cmux rename-tab "Fix Auth Tests"`, `cmux rename-tab "CSS Cleanup"`
 
-Aim for under 25 characters. "Lint Fixes" survives truncation; "Fixing Lint Errors" becomes "Fixing Lin…". When multiple agents work the same material, use a `Role: Subject` prefix to disambiguate (e.g., `OnePager: Spike`, `PR: Brand`, `Podcast: Interview`).
-
-`cmux rename-tab` is an alias for `cmux set-title` — either command writes the canonical `title` metadata key on the target surface (M7). A full description (e.g., "Running smoke suite across 10 shards; reports to Lattice task lat-412") goes via `cmux set-description`.
+`cmux rename-tab` is an alias for `cmux set-title` — either command writes the canonical `title` metadata key on the target surface. The description (including the lineage breadcrumb) goes via `cmux set-description`.
 
 ## Launching sub-agents in panes
 
@@ -75,14 +105,18 @@ cmux new-split right
 cmux send --workspace $WS --surface $SURF "cc"
 cmux send-key --workspace $WS --surface $SURF enter
 
-# 3. Wait for cc to be ready (see polling section), then name the tab
-cmux rename-tab --workspace $WS --surface $SURF "TICKET-ID Phase"
+# 3. Wait for cc to be ready (see polling section), then name the tab with lineage
+#    (parent first, `::` separator — see Tab naming above)
+cmux rename-tab       --workspace $WS --surface $SURF "Login Button :: Lint Fixes"
+cmux set-description  --workspace $WS --surface $SURF "Lineage: Login Button → Lint Fixes sub-agent.
+Clearing lint errors in src/ before the feature branch merges."
 
 # 4. Declare what this agent is (so the sidebar chip, title bar, and tree all reflect identity)
 cmux set-agent --workspace $WS --surface $SURF --type claude-code --model claude-opus-4-7
 
-# 5. Send the prompt — always as two calls (send, then send-key enter)
-cmux send --workspace $WS --surface $SURF "fix all lint errors in src/"
+# 5. Send the prompt — always as two calls (send, then send-key enter).
+#    Tell the sub-agent its parent so it can preserve the chain on self-updates.
+cmux send --workspace $WS --surface $SURF "Your tab title is already set to 'Login Button :: Lint Fixes' — preserve that prefix. Now: fix all lint errors in src/"
 cmux send-key --workspace $WS --surface $SURF enter
 ```
 
@@ -151,10 +185,13 @@ cmux set-status task "3/5 complete" --icon "play.fill" --color "#00FF00"
 cmux set-progress 0.6 --label "3/5 subtasks"
 cmux log --source "agent-name" "Finished the data model step"
 
-# Richer — canonical metadata keys light up sidebar chip and title bar
+# Richer — canonical metadata keys light up sidebar chip and title bar.
+# When refining title/description, check `cmux get-titlebar-state` first and
+# preserve any lineage prefix (`Parent :: …`) and lineage line in the description.
 cmux set-metadata --json '{"role":"reviewer","status":"running","progress":0.6}'
-cmux set-title "TICKET-42 — stage 2/3"
-cmux set-description "Reviewing PR #42 in 3 stages. Stage 2 running smoke tests."
+cmux set-title "Login Button :: Review"
+cmux set-description "Lineage: Login Button → Review sub-agent.
+Reviewing PR #42 in 3 stages. Stage 2 running smoke tests."
 ```
 
 The orchestrator does not need to poll on their behalf. When writing agent prompts, explicitly instruct the sub-agent to call these commands at milestones.
@@ -178,9 +215,9 @@ cmux log --source "orchestrator" "Agent A finished; Agent B starting"
 
 When spawning sub-agents in c11mux, include these as first-class instructions in the prompt:
 
-1. **Self-identify immediately.** First action: `cmux identify` + `cmux rename-tab "<descriptive name>"` + `cmux set-agent --type <tui> --model <model-id>`. An unnamed, undeclared tab is an unidentifiable agent.
-2. **Name every tab you create** (e.g., `TICKET-ID brief-description`).
-3. **Report at milestones** via `cmux set-metadata`, `cmux set-status`, `cmux set-progress`, `cmux log`. Interactive `cc` inherits the auth chain, so sub-agents can self-report.
+1. **Self-identify immediately.** First action: `cmux identify` + `cmux get-titlebar-state` (to read any lineage the orchestrator pre-wrote) + `cmux rename-tab "<descriptive name>"` + `cmux set-agent --type <tui> --model <model-id>`. An unnamed, undeclared tab is an unidentifiable agent. If a lineage prefix (`Parent :: …`) is already present, preserve it and refine only the trailing segment.
+2. **Name every tab you create with lineage.** Format: `<parent title> :: <child role>` (e.g., `Login Button :: Plan`). Chain additional rungs as needed. Also write `cmux set-description` with a `Lineage: A → B → C` breadcrumb so the sub-agent inherits the chain and preserves it when self-updating. Pass the parent title in the spawn prompt so the sub-agent can recompose if it ever has to rename from scratch.
+3. **Report at milestones** via `cmux set-metadata`, `cmux set-status`, `cmux set-progress`, `cmux log`. Interactive `cc` inherits the auth chain, so sub-agents can self-report. Preserve any lineage prefix/breadcrumb when updating title/description on task change.
 4. **Deliver complex prompts via temp files** — write to a file, tell the agent to read it. Avoids shell-escaping issues with `cmux send`.
 5. **Do not make silent splits.** For multiple related outputs, prefer tabs over splits. Propose layouts when they would help; do not impose them.
 6. **Read the room before reshaping it.** `cmux tree --json` gives pixel and percent coordinates for every pane — check whether a new split will fit before asking for one.

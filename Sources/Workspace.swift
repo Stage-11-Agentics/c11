@@ -7142,6 +7142,12 @@ final class Workspace: Identifiable, ObservableObject {
     /// Called before the workspace is removed from TabManager to ensure child
     /// processes receive SIGHUP even if ARC deallocation is delayed.
     func teardownAllPanels() {
+        // Resolve every in-flight pane interaction with `.dismissed` BEFORE
+        // we drop the panels. Without this, continuations awaiting the
+        // runtime (close-confirm, socket `pane.confirm`, text-input) hang
+        // indefinitely when a workspace is torn down wholesale.
+        paneInteractionRuntime.clearAll()
+
         let panelEntries = Array(panels)
         for (panelId, panel) in panelEntries {
             panelSubscriptions.removeValue(forKey: panelId)
@@ -9792,6 +9798,10 @@ extension Workspace: BonsplitDelegate {
 
         if !closedPanelIds.isEmpty {
             for panelId in closedPanelIds {
+                // Resolve any active/queued pane interactions for this panel
+                // with `.dismissed` before the panel is dropped. Mirrors the
+                // per-panel close path at :9592.
+                paneInteractionRuntime.clear(panelId: panelId)
                 panels[panelId]?.close()
                 panels.removeValue(forKey: panelId)
                 untrackRemoteTerminalSurface(panelId)

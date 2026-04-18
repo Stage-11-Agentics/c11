@@ -102,6 +102,29 @@ final class PaneInteractionRuntimeTests: XCTestCase {
         XCTAssertFalse(runtime.hasActive(panelId: panelId))
     }
 
+    func testClearAllResolvesEveryPanelWithDismissed() {
+        // Workspace teardown path: `clearAll()` must resolve every pending
+        // interaction across every panel with `.dismissed`, matching what
+        // `Workspace.teardownAllPanels()` relies on.
+        let runtime = PaneInteractionRuntime()
+        let panelA = UUID()
+        let panelB = UUID()
+        var resultA: ConfirmResult?
+        var queuedA: ConfirmResult?
+        var resultB: TextInputResult?
+
+        runtime.present(panelId: panelA, interaction: .confirm(makeConfirm { resultA = $0 }))
+        runtime.present(panelId: panelA, interaction: .confirm(makeConfirm { queuedA = $0 }))
+        runtime.present(panelId: panelB, interaction: .textInput(makeTextInput { resultB = $0 }))
+
+        runtime.clearAll()
+
+        XCTAssertEqual(resultA, .dismissed)
+        XCTAssertEqual(queuedA, .dismissed)
+        XCTAssertEqual(resultB, .dismissed)
+        XCTAssertFalse(runtime.hasAnyActive)
+    }
+
     func testDismissedIsDistinctFromCancelled() {
         // Result type distinction — a panel torn down mid-dialog reports .dismissed,
         // not .cancelled. Callers rely on this to distinguish "user said no" from

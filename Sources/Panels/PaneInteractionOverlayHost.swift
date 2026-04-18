@@ -19,8 +19,8 @@ import SwiftUI
 @MainActor
 final class PaneInteractionOverlayHost: NSView {
 
-    private let panelId: UUID
-    private let runtime: PaneInteractionRuntime
+    let panelId: UUID
+    let runtime: PaneInteractionRuntime
     private var hostingView: NSHostingView<PaneInteractionCardView>?
     private var cancellable: AnyCancellable?
 

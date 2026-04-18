@@ -1209,6 +1209,14 @@ struct BrowserPortalSearchOverlayConfiguration {
     let onFieldDidFocus: () -> Void
 }
 
+/// Pane-interaction overlay hook for WebView-backed browser panels. The overlay
+/// host observes `runtime.$active[panelId]` itself, so this configuration just
+/// identifies the (panel, runtime) pair the slot view should attach to.
+struct BrowserPortalPaneInteractionConfiguration {
+    let panelId: UUID
+    let runtime: PaneInteractionRuntime
+}
+
 struct BrowserPaneDropContext: Equatable {
     let workspaceId: UUID
     let panelId: UUID
@@ -1582,6 +1590,7 @@ final class WindowBrowserSlotView: NSView {
     private let paneDropTargetView = BrowserPaneDropTargetView(frame: .zero)
     private let dropZoneOverlayView = BrowserDropZoneOverlayView(frame: .zero)
     private var searchOverlayHostingView: NSHostingView<BrowserSearchOverlay>?
+    private var paneInteractionOverlay: PaneInteractionOverlayHost?
     private weak var hostedWebView: WKWebView?
     private var hostedWebViewConstraints: [NSLayoutConstraint] = []
     private var forwardedDropZone: DropZone?
@@ -1784,6 +1793,43 @@ final class WindowBrowserSlotView: NSView {
             return nil
         }
         return objc_getAssociatedObject(overlay, &cmuxBrowserSearchOverlayPanelIdAssociationKey) as? UUID
+    }
+
+    /// Attach or re-raise the pane-interaction overlay for a WebView-backed browser
+    /// panel. The overlay subscribes to `runtime.$active[panelId]` internally and
+    /// shows/hides itself. Each call ensures the overlay sits ABOVE the WKWebView
+    /// subview, which the portal re-adds on bind; otherwise a fresh bind would push
+    /// the webView above the modal card.
+    func setPaneInteraction(_ configuration: BrowserPortalPaneInteractionConfiguration?) {
+        guard let configuration else {
+            paneInteractionOverlay?.removeFromSuperview()
+            paneInteractionOverlay = nil
+            return
+        }
+
+        if let existing = paneInteractionOverlay {
+            let matches =
+                existing.panelId == configuration.panelId &&
+                existing.runtime === configuration.runtime
+            if matches {
+                // Re-raise to top — the WKWebView gets re-added on every bind, which
+                // would otherwise cover the modal card.
+                addSubview(existing, positioned: .above, relativeTo: nil)
+                existing.frame = bounds
+                return
+            }
+            existing.removeFromSuperview()
+            paneInteractionOverlay = nil
+        }
+
+        let overlay = PaneInteractionOverlayHost(
+            panelId: configuration.panelId,
+            runtime: configuration.runtime
+        )
+        overlay.frame = bounds
+        overlay.autoresizingMask = [.width, .height]
+        addSubview(overlay, positioned: .above, relativeTo: nil)
+        paneInteractionOverlay = overlay
     }
 
     @discardableResult
@@ -2045,6 +2091,7 @@ final class WindowBrowserPortal: NSObject {
         var dropZone: DropZone?
         var paneDropContext: BrowserPaneDropContext?
         var searchOverlay: BrowserPortalSearchOverlayConfiguration?
+        var paneInteraction: BrowserPortalPaneInteractionConfiguration?
         var paneTopChromeHeight: CGFloat
         var transientRecoveryReason: String?
         var transientRecoveryRetriesRemaining: Int
@@ -2404,12 +2451,14 @@ final class WindowBrowserPortal: NSObject {
         if let existing = entry.containerView {
             existing.setPaneDropContext(entry.paneDropContext)
             existing.setSearchOverlay(entry.searchOverlay)
+            existing.setPaneInteraction(entry.paneInteraction)
             existing.setPaneTopChromeHeight(entry.paneTopChromeHeight)
             return existing
         }
         let created = WindowBrowserSlotView(frame: .zero)
         created.setPaneDropContext(entry.paneDropContext)
         created.setSearchOverlay(entry.searchOverlay)
+        created.setPaneInteraction(entry.paneInteraction)
         created.setPaneTopChromeHeight(entry.paneTopChromeHeight)
 #if DEBUG
         dlog(
@@ -2679,6 +2728,18 @@ final class WindowBrowserPortal: NSObject {
         entry.containerView?.setSearchOverlay(configuration)
     }
 
+    func updatePaneInteraction(
+        forWebViewId webViewId: ObjectIdentifier,
+        configuration: BrowserPortalPaneInteractionConfiguration?
+    ) {
+        guard var entry = entriesByWebViewId[webViewId] else { return }
+        entry.paneInteraction = configuration
+        entriesByWebViewId[webViewId] = entry
+        // Always forward — each call re-raises the overlay above the WKWebView that
+        // portal.bind() puts on top on every bind pass.
+        entry.containerView?.setPaneInteraction(configuration)
+    }
+
     func searchOverlayPanelId(for responder: NSResponder) -> UUID? {
         for entry in entriesByWebViewId.values {
             if let panelId = entry.containerView?.searchOverlayPanelId(for: responder) {
@@ -2744,6 +2805,7 @@ final class WindowBrowserPortal: NSObject {
                 dropZone: nil,
                 paneDropContext: nil,
                 searchOverlay: nil,
+                paneInteraction: nil,
                 paneTopChromeHeight: 0,
                 transientRecoveryReason: nil,
                 transientRecoveryRetriesRemaining: 0
@@ -2780,6 +2842,7 @@ final class WindowBrowserPortal: NSObject {
             dropZone: previousEntry?.dropZone,
             paneDropContext: previousEntry?.paneDropContext,
             searchOverlay: previousEntry?.searchOverlay,
+            paneInteraction: previousEntry?.paneInteraction,
             paneTopChromeHeight: previousEntry?.paneTopChromeHeight ?? 0,
             transientRecoveryReason: previousEntry?.transientRecoveryReason,
             transientRecoveryRetriesRemaining: previousEntry?.transientRecoveryRetriesRemaining ?? 0
@@ -3363,6 +3426,10 @@ final class WindowBrowserPortal: NSObject {
         }
         containerView.setPaneTopChromeHeight(shouldHide ? 0 : entry.paneTopChromeHeight)
         containerView.setSearchOverlay(shouldHide ? nil : entry.searchOverlay)
+        // Re-raise the pane-interaction overlay above the WKWebView the portal just
+        // re-added during this sync pass. The overlay host observes the runtime
+        // itself — we only need to ensure it stays on top of the z-order.
+        containerView.setPaneInteraction(shouldHide ? nil : entry.paneInteraction)
         containerView.setPaneDropContext(containerView.isHidden ? nil : entry.paneDropContext)
         containerView.setDropZoneOverlay(zone: containerView.isHidden ? nil : entry.dropZone)
         if revealedForDisplay {
@@ -3685,6 +3752,16 @@ enum BrowserWindowPortalRegistry {
         guard let windowId = webViewToWindowId[webViewId],
               let portal = portalsByWindowId[windowId] else { return }
         portal.updateSearchOverlay(forWebViewId: webViewId, configuration: configuration)
+    }
+
+    static func updatePaneInteraction(
+        for webView: WKWebView,
+        configuration: BrowserPortalPaneInteractionConfiguration?
+    ) {
+        let webViewId = ObjectIdentifier(webView)
+        guard let windowId = webViewToWindowId[webViewId],
+              let portal = portalsByWindowId[windowId] else { return }
+        portal.updatePaneInteraction(forWebViewId: webViewId, configuration: configuration)
     }
 
     static func searchOverlayPanelId(for responder: NSResponder, in window: NSWindow) -> UUID? {

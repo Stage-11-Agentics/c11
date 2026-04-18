@@ -1155,6 +1155,7 @@ struct BrowserPanelView: View {
                             onFieldDidFocus: { panel.noteFindFieldFocused() }
                         )
                     },
+                    paneInteractionRuntime: paneInteractionRuntime,
                     paneTopChromeHeight: addressBarHeight
                 )
                 .accessibilityIdentifier("BrowserWebViewSurface")
@@ -4281,6 +4282,7 @@ struct WebViewRepresentable: NSViewRepresentable {
     let portalZPriority: Int
     let paneDropZone: DropZone?
     let searchOverlay: BrowserPortalSearchOverlayConfiguration?
+    let paneInteractionRuntime: PaneInteractionRuntime
     let paneTopChromeHeight: CGFloat
 
     final class Coordinator {
@@ -6015,6 +6017,13 @@ struct WebViewRepresentable: NSViewRepresentable {
         let generation = coordinator.attachGeneration
         let activePaneDropContext = coordinator.desiredPortalVisibleInUI ? paneDropContext : nil
         let activeSearchOverlay = coordinator.desiredPortalVisibleInUI ? searchOverlay : nil
+        let activePaneInteraction: BrowserPortalPaneInteractionConfiguration? =
+            coordinator.desiredPortalVisibleInUI
+                ? BrowserPortalPaneInteractionConfiguration(
+                    panelId: panel.id,
+                    runtime: paneInteractionRuntime
+                )
+                : nil
         let portalAnchorView = panel.portalAnchorView
         let portalHideReason = !isCurrentPaneOwner ? "lostPaneOwnership" : "hidden"
         let didReleasePortalHost: Bool
@@ -6084,6 +6093,7 @@ struct WebViewRepresentable: NSViewRepresentable {
             )
             BrowserWindowPortalRegistry.updatePaneDropContext(for: webView, context: activePaneDropContext)
             BrowserWindowPortalRegistry.updateSearchOverlay(for: webView, configuration: activeSearchOverlay)
+            BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activePaneInteraction)
             coordinator.lastPortalHostId = ObjectIdentifier(host)
             coordinator.lastSynchronizedHostGeometryRevision = host.geometryRevision
         }
@@ -6115,6 +6125,7 @@ struct WebViewRepresentable: NSViewRepresentable {
                 )
                 BrowserWindowPortalRegistry.updatePaneDropContext(for: webView, context: activePaneDropContext)
                 BrowserWindowPortalRegistry.updateSearchOverlay(for: webView, configuration: activeSearchOverlay)
+                BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activePaneInteraction)
                 coordinator.lastPortalHostId = hostId
             }
             BrowserWindowPortalRegistry.synchronizeForAnchor(portalAnchorView)
@@ -6154,6 +6165,7 @@ struct WebViewRepresentable: NSViewRepresentable {
                 height: coordinator.desiredPortalVisibleInUI ? paneTopChromeHeight : 0
             )
             BrowserWindowPortalRegistry.updateSearchOverlay(for: webView, configuration: activeSearchOverlay)
+            BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activePaneInteraction)
             if !shouldBindNow,
                coordinator.lastSynchronizedHostGeometryRevision != geometryRevision {
                 BrowserWindowPortalRegistry.synchronizeForAnchor(portalAnchorView)
@@ -6184,6 +6196,7 @@ struct WebViewRepresentable: NSViewRepresentable {
                 context: activePaneDropContext
             )
             BrowserWindowPortalRegistry.updateSearchOverlay(for: webView, configuration: activeSearchOverlay)
+            BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activePaneInteraction)
         }
 
         panel.restoreDeveloperToolsAfterAttachIfNeeded()

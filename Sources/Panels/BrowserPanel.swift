@@ -2541,7 +2541,11 @@ final class BrowserPanel: Panel, ObservableObject {
         return instanceID == webViewInstanceID
     }
 
+    /// - Parameter id: Stable panel UUID. Pass `nil` for fresh creation; pass a
+    ///   snapshot's panel id during session restore to keep IDs stable across
+    ///   app restarts (Tier 1 persistence, Phase 1).
     init(
+        id: UUID? = nil,
         workspaceId: UUID,
         profileID: UUID? = nil,
         initialURL: URL? = nil,
@@ -2550,7 +2554,7 @@ final class BrowserPanel: Panel, ObservableObject {
         isRemoteWorkspace: Bool = false,
         remoteWebsiteDataStoreIdentifier: UUID? = nil
     ) {
-        self.id = UUID()
+        self.id = id ?? UUID()
         self.workspaceId = workspaceId
         let requestedProfileID = profileID ?? BrowserProfileStore.shared.effectiveLastUsedProfileID
         let resolvedProfileID = BrowserProfileStore.shared.profileDefinition(id: requestedProfileID) != nil

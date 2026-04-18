@@ -1,16 +1,22 @@
 {
   "assigned_to": null,
   "branch_links": [],
-  "comment_count": 0,
+  "comment_count": 1,
   "complexity": null,
   "created_at": "2026-04-18T23:31:17Z",
   "created_by": "agent:claude",
   "custom_fields": {},
-  "description": "Execute a Trident (nine-agent) plan review of docs/c11mux-theming-plan.md (Lattice ticket CMUX-9) and fold the findings back into the plan, bumping it to v2. Another agent has already written the prompt that drives this review \u2014 it is below (see first comment on this ticket). Pick up the ticket, run the prompt verbatim (or as a starting point), and leave the plan at v2 with a review-pack checked in. CMUX-9's \u00a712 locked decisions (7 of them, confirmed with Atin on 2026-04-18) must be treated as constraints by every reviewer \u2014 do not reopen them.",
+  "description": "Another agent already wrote the prompt to do the Trident code review \u2014 it's below (see the first comment on this ticket). Execute the Trident (nine-agent) plan review against docs/c11mux-theming-plan.md and fold the findings back into the plan (bumping it to v2). Respect the seven locked \u00a712 decisions on CMUX-9 \u2014 do not reopen them. Full instructions, hard constraints, and a drop-in prompt are in the comment below. When done, close this ticket and post a summary on CMUX-9.",
   "done_at": null,
-  "evidence_refs": [],
+  "evidence_refs": [
+    {
+      "id": "ev_01KPHEZYCK4ZF09XR6XMWZHV2V",
+      "role": "review",
+      "source_type": "comment"
+    }
+  ],
   "id": "task_01KPHEYBSKMCYTEGYRXZ0NP9G5",
-  "last_event_id": "ev_01KPHEYBSQX30HAYAE9STG3QMQ",
+  "last_event_id": "ev_01KPHF05H19C1SJ7285N114KEQ",
   "last_status_changed_at": "2026-04-18T23:31:17Z",
   "linked_files": [],
   "priority": "medium",
@@ -22,6 +28,6 @@
   "tags": null,
   "title": "Trident plan review: CMUX-9 theming plan",
   "type": "task",
-  "updated_at": "2026-04-18T23:31:17Z",
+  "updated_at": "2026-04-18T23:32:16Z",
   "urgency": null
 }

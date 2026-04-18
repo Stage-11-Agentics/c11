@@ -7765,6 +7765,20 @@ final class GhosttySurfaceScrollView: NSView {
             }
             window.makeKeyAndOrderFront(nil)
         }
+        // [TextBox] Do not steal focus from an active TextBox. ensureFocus
+        // runs on tab switches, socket focus commands, and session restore.
+        // If the user has moved focus into a panel's TextBox we must respect
+        // that intent — the explicit Cmd+Option+B shortcut is the supported
+        // way to move focus back to the terminal. See plan §4.8 F11.
+        if window.firstResponder is InputTextView {
+#if DEBUG
+            dlog(
+                "focus.ensure.skip surface=\(surfaceView.terminalSurface?.id.uuidString.prefix(5) ?? "nil") " +
+                "reason=textBoxFocused"
+            )
+#endif
+            return
+        }
         let result = window.makeFirstResponder(surfaceView)
 #if DEBUG
         dlog(
@@ -7898,6 +7912,16 @@ final class GhosttySurfaceScrollView: NSView {
         if let fr = window.firstResponder, isSearchOverlayOrDescendant(fr) {
 #if DEBUG
             dlog("find.applyFirstResponder SKIP surface=\(surfaceShort) reason=searchOverlayFocused")
+#endif
+            return
+        }
+        // [TextBox] Same rule as ensureFocus: the automatic apply path
+        // (didBecomeKey, viewDidMoveToWindow, setActive, setVisibleInUI,
+        // etc.) must not reclaim focus while the user is composing in a
+        // TextBox. See plan §4.8 F11.
+        if window.firstResponder is InputTextView {
+#if DEBUG
+            dlog("find.applyFirstResponder SKIP surface=\(surfaceShort) reason=textBoxFocused")
 #endif
             return
         }

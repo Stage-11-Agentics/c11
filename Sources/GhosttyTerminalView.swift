@@ -7001,6 +7001,33 @@ final class GhosttySurfaceScrollView: NSView {
         paneInteractionOverlay = overlay
     }
 
+    /// True while a pane interaction is currently presented on this panel. Callers
+    /// that steer terminal first responder / Ghostty focus must honor this gate.
+    /// The PaneInteractionOverlayHost flips `isHidden` from its runtime.$active
+    /// subscription, so this reflects the authoritative presentation state.
+    var isPaneInteractionSuppressingFocus: Bool {
+        guard let overlay = paneInteractionOverlay else { return false }
+        return !overlay.isHidden
+    }
+
+    /// Single choke point for routing AppKit first responder to the terminal surface.
+    /// When a pane interaction is active on this panel, focus is suppressed — the
+    /// overlay owns keyboard input. All call sites that previously called
+    /// `window.makeFirstResponder(surfaceView)` directly must route through this
+    /// helper so the invariant is enforced at one gate (plan §4.7).
+    @discardableResult
+    func safeMakeTerminalFirstResponder(reason: String) -> Bool {
+        if isPaneInteractionSuppressingFocus {
+#if DEBUG
+            let surfaceShort = surfaceView.terminalSurface?.id.uuidString.prefix(5) ?? "nil"
+            dlog("focus.suppressed surface=\(surfaceShort) reason=\(reason)")
+#endif
+            return false
+        }
+        guard let window else { return false }
+        return window.makeFirstResponder(surfaceView)
+    }
+
     func setSearchOverlay(searchState: TerminalSurface.SearchState?) {
         if !Thread.isMainThread {
             DispatchQueue.main.async { [weak self] in
@@ -7453,7 +7480,7 @@ final class GhosttySurfaceScrollView: NSView {
             if let previous, previous !== self {
                 _ = previous.surfaceView.resignFirstResponder()
             }
-            let result = window.makeFirstResponder(self.surfaceView)
+            let result = self.safeMakeTerminalFirstResponder(reason: "moveFocus")
 #if DEBUG
             dlog(
                 "find.moveFocus.apply to=\(self.surfaceView.terminalSurface?.id.uuidString.prefix(5) ?? "nil") " +
@@ -7690,7 +7717,7 @@ final class GhosttySurfaceScrollView: NSView {
             }
             window.makeKeyAndOrderFront(nil)
         }
-        let result = window.makeFirstResponder(surfaceView)
+        let result = safeMakeTerminalFirstResponder(reason: "ensureFocus")
 #if DEBUG
         dlog(
             "focus.ensure.apply surface=\(surfaceView.terminalSurface?.id.uuidString.prefix(5) ?? "nil") " +
@@ -7756,6 +7783,12 @@ final class GhosttySurfaceScrollView: NSView {
 
     private func reassertTerminalSurfaceFocus(reason: String) {
         guard let terminalSurface = surfaceView.terminalSurface else { return }
+        if isPaneInteractionSuppressingFocus {
+#if DEBUG
+            dlog("focus.surface.reassert.suppressed surface=\(terminalSurface.id.uuidString.prefix(5)) reason=\(reason)")
+#endif
+            return
+        }
 #if DEBUG
         dlog("focus.surface.reassert surface=\(terminalSurface.id.uuidString.prefix(5)) reason=\(reason)")
 #endif
@@ -7829,7 +7862,7 @@ final class GhosttySurfaceScrollView: NSView {
 #if DEBUG
         dlog("find.applyFirstResponder APPLY surface=\(surfaceShort) prevFirstResponder=\(String(describing: window.firstResponder))")
 #endif
-        window.makeFirstResponder(surfaceView)
+        _ = safeMakeTerminalFirstResponder(reason: "applyFirstResponder")
         if isSurfaceViewFirstResponder() {
             reassertTerminalSurfaceFocus(reason: "applyFirstResponder.afterMakeFirstResponder")
         }
@@ -7879,7 +7912,7 @@ final class GhosttySurfaceScrollView: NSView {
             )
 #endif
         case .terminal:
-            let result = window.makeFirstResponder(surfaceView)
+            let result = safeMakeTerminalFirstResponder(reason: "restoreSearchFocus.terminal")
 #if DEBUG
             dlog(
                 "find.restoreSearchFocus surface=\(surfaceShort) target=terminal " +

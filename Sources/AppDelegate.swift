@@ -9036,7 +9036,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // key window's portal/SwiftUI hierarchy. Gate the same shortcuts here so the
         // overlay sees the Cmd+D accept and other app shortcuts stay suppressed while
         // a dialog is visible (plan §4.8).
-        let paneInteractionActive = tabManager?.hasActivePaneInteraction ?? false
+        //
+        // Resolve the active TabManager via `NSApp.keyWindow` so secondary windows
+        // (Cmd+N / "New Window") route through their OWN interaction runtime.
+        // `self.tabManager` IS updated on `didBecomeKeyNotification`
+        // (`setActiveMainWindow`), but a race can put the local monitor's event
+        // slightly ahead of that update. Looking up the context by key window
+        // inside the dispatcher itself removes that race.
+        let activeTabManager: TabManager? = {
+            if let keyWindow = NSApp.keyWindow,
+               let ctx = contextForMainTerminalWindow(keyWindow, reindex: false) {
+                return ctx.tabManager
+            }
+            return self.tabManager
+        }()
+        let paneInteractionActive = activeTabManager?.hasActivePaneInteraction ?? false
 
         if let closeConfirmationPanel {
             // Special-case: Cmd+D should confirm destructive close on alerts.
@@ -9065,7 +9079,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if matchShortcut(
                 event: event,
                 shortcut: StoredShortcut(key: "d", command: true, shift: false, option: false, control: false)
-            ), tabManager?.acceptActivePaneInteractionInKeyWorkspace() == true {
+            ), activeTabManager?.acceptActivePaneInteractionInKeyWorkspace() == true {
                 return true
             }
             return false

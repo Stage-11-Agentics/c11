@@ -36,6 +36,13 @@
 - [x] Switch CLI `--json` default ID output to refs-first (UUIDs only via `--id-format uuids|both`) and add regression coverage.
 - [x] Expand end-user skill docs with deep-linkable cmux-browser references/templates plus a new core `skills/cmux/` topology skill.
 
+## Tier 1 Persistence (plan: `docs/c11mux-tier1-persistence-plan.md`)
+- [x] Phase 1 — Stable panel UUIDs (constructor refactor) — PR #10
+- [ ] Phase 2 — Persist `SurfaceMetadataStore` (lossless)
+- [ ] Phase 3 — Persist `statusEntries` (with fidelity fix)
+- [ ] Phase 4 — Claude session index (flagged, observe-from-outside) — re-justify after Tier 1a ships
+- [ ] Phase 5 — Recovery UI (copy-first resume chip) — blocks on Phase 4
+
 ## Command Palette
 - [ ] Add cmd+shift+p palette with all commands
 

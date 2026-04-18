@@ -6904,6 +6904,22 @@ class TerminalController {
                 data: nil
             )
         }
+        // Feature-flag rollback must cover the socket entry-point too. Without
+        // this, `CMUX_PANE_DIALOG_DISABLED=1` still lets pane interactions
+        // fire via `pane.confirm` — defeating the rollback path.
+        //
+        // Order matters (Trident nit §B7): the flag check must run before
+        // TabManager resolve / param parsing so a rollback-validator probe
+        // gets `unavailable` regardless of whether the rest of the call
+        // would have been well-formed. Otherwise an invalid panel_id on a
+        // disabled build returns `invalid_params`, hiding the flag state.
+        guard PaneInteractionFeatureFlag.isEnabled else {
+            return .err(
+                code: "unavailable",
+                message: "Pane interactions are disabled (CMUX_PANE_DIALOG_DISABLED=1).",
+                data: nil
+            )
+        }
         guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -6913,16 +6929,6 @@ class TerminalController {
         guard let title = v2String(params, "title"), !title.isEmpty else {
             return .err(code: "invalid_params", message: "Missing or empty title", data: nil)
         }
-        // Feature-flag rollback must cover the socket entry-point too. Without
-        // this, `CMUX_PANE_DIALOG_DISABLED=1` still lets pane interactions
-        // fire via `pane.confirm` — defeating the rollback path.
-        guard PaneInteractionFeatureFlag.isEnabled else {
-            return .err(
-                code: "unavailable",
-                message: "Pane interactions are disabled (CMUX_PANE_DIALOG_DISABLED=1).",
-                data: nil
-            )
-        }
         let message = (v2String(params, "message") ?? "")
         let role: ConfirmContent.ConfirmRole
         switch v2String(params, "role") ?? "standard" {
@@ -6931,10 +6937,14 @@ class TerminalController {
         case "destructive":
             role = .destructive
         default:
+            // Echo the RAW role string (not the trimmed `v2String` output) so a
+            // caller sending whitespace-only input sees the exact payload they
+            // sent in the error data — keeps the debug signal intact (Trident
+            // nit §5).
             return .err(
                 code: "invalid_params",
                 message: "Invalid role (expected 'standard' or 'destructive')",
-                data: ["role": v2String(params, "role") ?? ""]
+                data: ["role": (params["role"] as? String) ?? ""]
             )
         }
         let timeoutSeconds = (params["timeout"] as? Double).map { max(0, $0) }

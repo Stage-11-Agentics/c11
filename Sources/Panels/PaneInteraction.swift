@@ -108,7 +108,10 @@ public enum ConfirmResult: Equatable {
     case confirmed
     /// Explicit user cancel (Cancel button, Esc, etc.).
     case cancelled
-    /// Panel closed, workspace closed, or runtime cleared. Distinguished from user cancel.
+    /// Panel closed, workspace closed, or runtime cleared. Also used when
+    /// `present` is called with a dedupe token that's already registered —
+    /// the duplicate caller resolves immediately with `.dismissed` so its
+    /// continuation doesn't hang. Distinguished from user cancel.
     case dismissed
 }
 
@@ -317,7 +320,10 @@ public final class PaneInteractionRuntime: ObservableObject {
 
     /// Clear every panel. Called from workspace teardown.
     public func clearAll() {
-        for panelId in Array(active.keys) + Array(queues.keys) {
+        // Union active + queues keys so a panel present in both isn't
+        // double-processed. `clear` is idempotent (second call is a no-op
+        // on cleared state) so the prior `+` concat was safe, just wasteful.
+        for panelId in Set(active.keys).union(queues.keys) {
             clear(panelId: panelId)
         }
     }

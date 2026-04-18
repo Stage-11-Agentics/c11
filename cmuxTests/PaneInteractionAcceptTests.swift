@@ -95,6 +95,74 @@ final class PaneInteractionAcceptTests: XCTestCase {
         )
     }
 
+    // MARK: - T3: Workspace teardown integration
+
+    func testWorkspaceTeardownAllPanelsDismissesActiveInteraction() {
+        // T3 (Trident consensus): `Workspace.teardownAllPanels()` is the
+        // workspace-close path and must deliver `.dismissed` to every
+        // in-flight pane interaction's completion before freeing the
+        // panels. Without this, continuations awaiting the runtime hang
+        // indefinitely. Locks down R3 behavior at the Workspace boundary,
+        // not just the runtime boundary.
+        let manager = TabManager()
+        guard let workspace = manager.selectedWorkspace,
+              let firstPanelId = workspace.focusedPanelId else {
+            XCTFail("Expected initial workspace with a focused panel")
+            return
+        }
+
+        // Present one confirm + one textInput + one queued confirm across
+        // two panels to exercise both the active and queued dismissal paths.
+        let secondPanel = workspace.createReplacementTerminalPanel()
+
+        var firstActive: ConfirmResult?
+        var firstQueued: ConfirmResult?
+        var secondActive: TextInputResult?
+
+        workspace.paneInteractionRuntime.present(
+            panelId: firstPanelId,
+            interaction: .confirm(ConfirmContent(
+                title: "A", message: nil, confirmLabel: "OK", cancelLabel: "Cancel",
+                role: .standard, source: .local,
+                completion: { firstActive = $0 }
+            ))
+        )
+        workspace.paneInteractionRuntime.present(
+            panelId: firstPanelId,
+            interaction: .confirm(ConfirmContent(
+                title: "Q", message: nil, confirmLabel: "OK", cancelLabel: "Cancel",
+                role: .standard, source: .local,
+                completion: { firstQueued = $0 }
+            ))
+        )
+        workspace.paneInteractionRuntime.present(
+            panelId: secondPanel.id,
+            interaction: .textInput(TextInputContent(
+                title: "Rename", message: nil, placeholder: nil,
+                defaultValue: "",
+                confirmLabel: "OK", cancelLabel: "Cancel",
+                validate: { _ in nil },
+                source: .local,
+                completion: { secondActive = $0 }
+            ))
+        )
+
+        XCTAssertTrue(workspace.paneInteractionRuntime.hasAnyActive)
+
+        workspace.teardownAllPanels()
+
+        XCTAssertEqual(firstActive, .dismissed,
+                       "Active interaction on panel 1 must be dismissed by teardown")
+        XCTAssertEqual(firstQueued, .dismissed,
+                       "Queued interaction on panel 1 must be dismissed by teardown")
+        XCTAssertEqual(secondActive, .dismissed,
+                       "Active interaction on panel 2 must be dismissed by teardown")
+        XCTAssertFalse(
+            workspace.paneInteractionRuntime.hasAnyActive,
+            "Runtime must be empty post-teardown"
+        )
+    }
+
     func testAcceptActiveOnVisibleTabStillWorks() {
         // Sanity: the happy path — dialog on the currently selected tab —
         // still accepts. Locks in that the selected-tab preference fix

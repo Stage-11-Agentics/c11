@@ -125,6 +125,109 @@ final class PaneInteractionRuntimeTests: XCTestCase {
         XCTAssertFalse(runtime.hasAnyActive)
     }
 
+    // MARK: - T1: clearAll() + dedupe-token reset (consensus gap)
+
+    func testClearAllResetsSeenTokensAcrossPanels() {
+        // T1 (Trident consensus): `clearAll()` is the workspace-teardown
+        // path — it resolves active + queued interactions with `.dismissed`
+        // AND must reset each panel's `seenTokens` so a re-used stable
+        // token (e.g. `close_surface_cb.<id>`) on the NEXT present after
+        // teardown proceeds instead of being silently suppressed.
+        //
+        // `clear(panelId:)` already nulls seenTokens for one panel. This
+        // test locks in that `clearAll()` does it across every panel.
+        let runtime = PaneInteractionRuntime()
+        let panelA = UUID()
+        let panelB = UUID()
+        var aFirst: ConfirmResult?
+        var aDeduped: ConfirmResult?
+        var bFirst: ConfirmResult?
+        var bDeduped: ConfirmResult?
+        var aPostTeardown: ConfirmResult?
+        var bPostTeardown: ConfirmResult?
+
+        // Present with per-panel stable tokens; duplicates must be deduped.
+        runtime.present(panelId: panelA,
+                        interaction: .confirm(makeConfirm { aFirst = $0 }),
+                        dedupeToken: "close.A")
+        runtime.present(panelId: panelA,
+                        interaction: .confirm(makeConfirm { aDeduped = $0 }),
+                        dedupeToken: "close.A")
+        runtime.present(panelId: panelB,
+                        interaction: .confirm(makeConfirm { bFirst = $0 }),
+                        dedupeToken: "close.B")
+        runtime.present(panelId: panelB,
+                        interaction: .confirm(makeConfirm { bDeduped = $0 }),
+                        dedupeToken: "close.B")
+
+        XCTAssertEqual(aDeduped, .dismissed, "Duplicate on A must dedupe")
+        XCTAssertEqual(bDeduped, .dismissed, "Duplicate on B must dedupe")
+        XCTAssertNil(aFirst)
+        XCTAssertNil(bFirst)
+
+        runtime.clearAll()
+
+        XCTAssertEqual(aFirst, .dismissed, "clearAll must dismiss A's active")
+        XCTAssertEqual(bFirst, .dismissed, "clearAll must dismiss B's active")
+        XCTAssertFalse(runtime.hasAnyActive)
+
+        // Re-present with the SAME tokens on each panel. After teardown,
+        // seenTokens must be reset — these presents should become active,
+        // not fire immediately with `.dismissed`.
+        runtime.present(panelId: panelA,
+                        interaction: .confirm(makeConfirm { aPostTeardown = $0 }),
+                        dedupeToken: "close.A")
+        runtime.present(panelId: panelB,
+                        interaction: .confirm(makeConfirm { bPostTeardown = $0 }),
+                        dedupeToken: "close.B")
+
+        XCTAssertTrue(runtime.hasActive(panelId: panelA),
+                      "A's post-teardown present must become active — token reset")
+        XCTAssertTrue(runtime.hasActive(panelId: panelB),
+                      "B's post-teardown present must become active — token reset")
+        XCTAssertNil(aPostTeardown,
+                     "A's post-teardown interaction must NOT be dismissed as duplicate")
+        XCTAssertNil(bPostTeardown,
+                     "B's post-teardown interaction must NOT be dismissed as duplicate")
+    }
+
+    // MARK: - T2: Cross-panel cancelInteraction isolation (consensus gap)
+
+    func testCancelInteractionIsScopedToItsPanelId() {
+        // T2 (Trident consensus): cancelInteraction(panelId:interactionId:)
+        // scopes the id lookup to the supplied panelId. A caller holding
+        // an interaction id from panel B cannot pass it with `panelId: A`
+        // and have it resolve B's interaction — that would undermine the
+        // per-panel isolation contract the socket layer relies on.
+        let runtime = PaneInteractionRuntime()
+        let panelA = UUID()
+        let panelB = UUID()
+        var aResult: ConfirmResult?
+        var bResult: ConfirmResult?
+
+        let a = ConfirmContent(
+            title: "A", message: nil, confirmLabel: "OK", cancelLabel: "Cancel",
+            role: .standard, source: .local,
+            completion: { aResult = $0 }
+        )
+        let b = ConfirmContent(
+            title: "B", message: nil, confirmLabel: "OK", cancelLabel: "Cancel",
+            role: .standard, source: .local,
+            completion: { bResult = $0 }
+        )
+        runtime.present(panelId: panelA, interaction: .confirm(a))
+        runtime.present(panelId: panelB, interaction: .confirm(b))
+
+        // Ask panel A to cancel panel B's interaction id — must not hit.
+        let hit = runtime.cancelInteraction(panelId: panelA, interactionId: b.id)
+
+        XCTAssertFalse(hit, "Panel A must not resolve an interaction id that belongs to panel B")
+        XCTAssertNil(aResult, "Panel A's active must not fire")
+        XCTAssertNil(bResult, "Panel B's active must not fire")
+        XCTAssertTrue(runtime.hasActive(panelId: panelA))
+        XCTAssertTrue(runtime.hasActive(panelId: panelB))
+    }
+
     func testDismissedIsDistinctFromCancelled() {
         // Result type distinction — a panel torn down mid-dialog reports .dismissed,
         // not .cancelled. Callers rely on this to distinguish "user said no" from

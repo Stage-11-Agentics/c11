@@ -99,12 +99,12 @@ enum SidebarRemoteErrorCopySupport {
 
 func sidebarSelectedWorkspaceBackgroundNSColor(for colorScheme: ColorScheme) -> NSColor {
     _ = colorScheme
-    return BrandColors.gold
+    return BrandColors.black
 }
 
 func sidebarSelectedWorkspaceForegroundNSColor(opacity: CGFloat) -> NSColor {
     let clampedOpacity = max(0, min(opacity, 1))
-    return NSColor.white.withAlphaComponent(clampedOpacity)
+    return BrandColors.white.withAlphaComponent(clampedOpacity)
 }
 
 #if compiler(>=6.2)
@@ -10655,7 +10655,7 @@ private struct TabItemView: View, Equatable {
         case .leftRail:
             return 0
         case .solidFill:
-            return isActive ? 1.5 : 0
+            return isActive ? 1.0 : 0
         }
     }
 
@@ -10665,17 +10665,17 @@ private struct TabItemView: View, Equatable {
         case .leftRail:
             return .clear
         case .solidFill:
-            return Color.primary.opacity(0.5)
+            return BrandColors.goldSwiftUI
         }
     }
 
     private var usesInvertedActiveForeground: Bool {
-        isActive
+        isActive && activeTabIndicatorStyle == .solidFill
     }
 
     private var activePrimaryTextColor: Color {
         usesInvertedActiveForeground
-            ? Color(nsColor: sidebarSelectedWorkspaceForegroundNSColor(opacity: 1.0))
+            ? BrandColors.goldSwiftUI
             : .primary
     }
 
@@ -10686,7 +10686,7 @@ private struct TabItemView: View, Equatable {
     }
 
     private var activeUnreadBadgeFillColor: Color {
-        usesInvertedActiveForeground ? Color.white.opacity(0.25) : cmuxAccentColor()
+        cmuxAccentColor()
     }
 
     private var activeProgressTrackColor: Color {
@@ -10866,7 +10866,7 @@ private struct TabItemView: View, Equatable {
                             .fill(activeUnreadBadgeFillColor)
                         Text("\(unreadCount)")
                             .font(.system(size: 9, weight: .semibold))
-                            .foregroundColor(.white)
+                            .foregroundColor(usesInvertedActiveForeground ? BrandColors.blackSwiftUI : .white)
                     }
                     .frame(width: 16, height: 16)
                 }
@@ -11408,7 +11408,6 @@ private struct TabItemView: View, Equatable {
     private var backgroundColor: Color {
         switch activeTabIndicatorStyle {
         case .leftRail:
-            if isActive        { return Color(nsColor: sidebarSelectedWorkspaceBackgroundNSColor(for: colorScheme)) }
             if isMultiSelected { return cmuxAccentColor().opacity(0.25) }
             return Color.clear
         case .solidFill:
@@ -11427,11 +11426,14 @@ private struct TabItemView: View, Equatable {
     }
 
     private var explicitRailColor: Color? {
-        guard activeTabIndicatorStyle == .leftRail,
-              let custom = resolvedCustomTabColor else {
-            return nil
+        guard activeTabIndicatorStyle == .leftRail else { return nil }
+        if let custom = resolvedCustomTabColor {
+            return custom.opacity(0.95)
         }
-        return custom.opacity(0.95)
+        if isActive {
+            return BrandColors.goldSwiftUI
+        }
+        return nil
     }
 
     private var resolvedCustomTabColor: Color? {
@@ -11784,7 +11786,7 @@ private struct TabItemView: View, Equatable {
     }
 
     private var pullRequestForegroundColor: Color {
-        isActive ? .white.opacity(0.75) : .secondary
+        usesInvertedActiveForeground ? BrandColors.whiteSwiftUI.opacity(0.85) : .secondary
     }
 
     private func openPullRequestLink(_ url: URL) {

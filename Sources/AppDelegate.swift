@@ -5801,6 +5801,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return nil
     }
 
+    /// Resolve the `TabManager` whose workspace owns the event's intended
+    /// target main terminal window. Used by `handleCustomShortcut` to
+    /// dispatch Cmd+D (and other shortcuts gated on an active pane
+    /// interaction) to the correct window across multi-window setups.
+    ///
+    /// Resolution order:
+    ///   1. Event-window routing via `mainWindowContext(forShortcutEvent:)`
+    ///      (`event.window`, then `event.windowNumber`). Handles command
+    ///      palette, inspectors, and any surface that forwards key events
+    ///      to a main terminal window.
+    ///   2. SheetParent walk on `keyWindow`. Covers the "sheet over
+    ///      secondary" case: the sheet is keyWindow, its `sheetParent` is
+    ///      the main terminal window whose pane dialog is visible.
+    ///   3. Bare `keyWindow` lookup via `contextForMainTerminalWindow`
+    ///      (covered by the same call thanks to `sheetParent ?? keyWindow`).
+    ///   4. Return `nil` — do NOT fall back to `self.tabManager`. That
+    ///      fallback silently routed shortcuts to the primary window's
+    ///      TabManager whenever keyWindow was non-terminal (palette, sheet
+    ///      on secondary, inspector), which is the exact Trident
+    ///      Important #1 anti-pattern. Returning nil lets the dispatcher
+    ///      treat "no active interaction" correctly and fall through to
+    ///      the normal shortcut path.
+    @MainActor
+    func resolveActiveTabManagerForShortcut(
+        event: NSEvent?,
+        keyWindow: NSWindow?
+    ) -> TabManager? {
+        if let event,
+           let ctx = mainWindowContext(forShortcutEvent: event, debugSource: "custom_shortcut") {
+            return ctx.tabManager
+        }
+        let targetWindow = keyWindow?.sheetParent ?? keyWindow
+        if let targetWindow,
+           let ctx = contextForMainTerminalWindow(targetWindow, reindex: false) {
+            return ctx.tabManager
+        }
+        return nil
+    }
+
     private func preferredMainWindowContextForShortcutRouting(event: NSEvent) -> MainWindowContext? {
         if let context = mainWindowContext(forShortcutEvent: event, debugSource: "shortcut.routing") {
             return context
@@ -9108,7 +9147,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // key window's portal/SwiftUI hierarchy. Gate the same shortcuts here so the
         // overlay sees the Cmd+D accept and other app shortcuts stay suppressed while
         // a dialog is visible (plan §4.8).
-        let paneInteractionActive = tabManager?.hasActivePaneInteraction ?? false
+        //
+        // Routing rules live in `resolveActiveTabManagerForShortcut`: event-window
+        // first, then sheetParent-walk on keyWindow, then nil. Important #1: no
+        // silent fallback to `self.tabManager` — that routed Cmd+D to the primary
+        // window whenever keyWindow was non-terminal (sheet, palette, inspector).
+        let activeTabManager = resolveActiveTabManagerForShortcut(
+            event: event,
+            keyWindow: NSApp.keyWindow
+        )
+        let paneInteractionActive = activeTabManager?.hasActivePaneInteraction ?? false
 
         if let closeConfirmationPanel {
             // Special-case: Cmd+D should confirm destructive close on alerts.
@@ -9147,7 +9195,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if matchShortcut(
                 event: event,
                 shortcut: StoredShortcut(key: "d", command: true, shift: false, option: false, control: false)
-            ), tabManager?.acceptActivePaneInteractionInKeyWorkspace() == true {
+            ), activeTabManager?.acceptActivePaneInteractionInKeyWorkspace() == true {
                 return true
             }
             let hasAppShortcutModifier = hasCommand || hasControl || hasOption
@@ -10598,6 +10646,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // synthetic NSEvents.
     func debugHandleCustomShortcut(event: NSEvent) -> Bool {
         handleCustomShortcut(event: event)
+    }
+
+    // Debug/test hook: direct access to the shortcut dispatcher's TabManager
+    // resolver. Tests can pass their own `keyWindow` because unit-test focus
+    // behavior (NSApp.keyWindow / makeKey) is platform- and runner-dependent.
+    func debugResolveActiveTabManagerForShortcut(
+        event: NSEvent?,
+        keyWindow: NSWindow?
+    ) -> TabManager? {
+        resolveActiveTabManagerForShortcut(event: event, keyWindow: keyWindow)
     }
 
     // Debug/test hook: mirrors local monitor routing (keyDown + keyUp lifecycle).

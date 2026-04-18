@@ -3744,6 +3744,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func debugSessionNumber(_ value: Double) -> String {
         String(format: "%.1f", value)
     }
+
+    /// DEBUG-only helper for Tier 1 Phase 2 socket tests: force a
+    /// synchronous session snapshot write to disk, clear in-memory
+    /// `SurfaceMetadataStore` entries for every currently-open surface,
+    /// then reload the snapshot from disk and replay metadata back into
+    /// the store. Proves actual on-disk round-trip (not just in-memory
+    /// encode/decode) for tests_v2/test_metadata_persistence.py.
+    ///
+    /// Returns true on success. Safe to call on a live window — only
+    /// touches `SurfaceMetadataStore`; panels, layouts, and all other
+    /// workspace state remain untouched.
+    func debugForceMetadataSaveAndLoad() -> Bool {
+        // 1. Force a synchronous disk write of the live state.
+        let saved = saveSessionSnapshot(includeScrollback: false, removeWhenEmpty: false)
+        guard saved else {
+            dlog("debug.session.save_and_load step=save result=failed")
+            return false
+        }
+
+        // 2. Load the snapshot back from disk. If the file is missing
+        // (rollback env var set → we still wrote, but workspace.metadata
+        // persistence is separate from surface metadata — this method
+        // remains usable) we treat it as a recoverable no-op.
+        guard let loaded = SessionPersistenceStore.load() else {
+            dlog("debug.session.save_and_load step=load result=not_found")
+            return false
+        }
+
+        // 3. Walk live (window, workspace) pairs and match each
+        // corresponding snapshot workspace by index; workspace IDs are
+        // not re-serialized in the snapshot so index-matching is the
+        // most robust way to pair them. For each panel in the snapshot,
+        // clear the live store entry and replay persisted metadata.
+        for (windowIdx, windowSnapshot) in loaded.windows.enumerated() {
+            let contexts = mainWindowContexts.values.sorted(by: {
+                $0.windowId.uuidString < $1.windowId.uuidString
+            })
+            guard windowIdx < contexts.count else { continue }
+            let context = contexts[windowIdx]
+            for (wsIdx, wsSnapshot) in windowSnapshot.tabManager.workspaces.enumerated() {
+                guard wsIdx < context.tabManager.tabs.count else { continue }
+                let workspace = context.tabManager.tabs[wsIdx]
+                // Clear every live panel's metadata on this workspace so the
+                // only surviving data path is "loaded from disk".
+                for panelId in workspace.panels.keys {
+                    SurfaceMetadataStore.shared.removeSurface(
+                        workspaceId: workspace.id,
+                        surfaceId: panelId
+                    )
+                }
+                // Replay persisted metadata from the snapshot. Skipped when
+                // CMUX_DISABLE_METADATA_PERSIST=1 is set — matches the
+                // production restore path's rollback semantics.
+                if PersistedMetadataBridge.isPersistDisabled { continue }
+                for panelSnapshot in wsSnapshot.panels {
+                    guard let persistedValues = panelSnapshot.metadata else { continue }
+                    let values = PersistedMetadataBridge.decodeValues(persistedValues)
+                    let sources = PersistedMetadataBridge.decodeSources(
+                        panelSnapshot.metadataSources ?? [:]
+                    )
+                    SurfaceMetadataStore.shared.restoreFromSnapshot(
+                        workspaceId: workspace.id,
+                        surfaceId: panelSnapshot.id,
+                        values: values,
+                        sources: sources
+                    )
+                }
+            }
+        }
+        dlog("debug.session.save_and_load step=done windows=\(loaded.windows.count)")
+        return true
+    }
 #endif
 
     private func notifyMainWindowContextsDidChange() {

@@ -2136,6 +2136,10 @@ class TerminalController {
             return v2Result(id: id, self.v2SurfaceHealth(params: params))
         case "debug.terminals":
             return v2Result(id: id, self.v2DebugTerminals(params: params))
+#if DEBUG
+        case "debug.session.save_and_load":
+            return v2Result(id: id, self.v2DebugSessionSaveAndLoad(params: params))
+#endif
         case "surface.send_text":
             return v2Result(id: id, self.v2SurfaceSendText(params: params))
         case "surface.send_key":
@@ -5471,6 +5475,29 @@ class TerminalController {
         }
         return .ok(payload)
     }
+
+#if DEBUG
+    /// DEBUG-only: force an on-disk session snapshot round-trip through
+    /// `SurfaceMetadataStore` so `tests_v2/test_metadata_persistence.py`
+    /// can prove real disk persistence (not just in-memory encode/decode).
+    ///
+    /// Phase 1 conceptually had `debug.session.round_trip` but it was not
+    /// merged to main; Phase 2's persistence work is the first on-disk
+    /// round-trip to need this harness. Gated `#if DEBUG` — not part of
+    /// the supported socket API surface.
+    private func v2DebugSessionSaveAndLoad(params _: [String: Any]) -> V2CallResult {
+        var success = false
+        v2MainSync {
+            guard let app = AppDelegate.shared else { return }
+            success = app.debugForceMetadataSaveAndLoad()
+        }
+        if success {
+            return .ok(["ok": true])
+        }
+        return .err(code: "debug_save_and_load_failed",
+                    message: "debugForceMetadataSaveAndLoad returned false", data: nil)
+    }
+#endif
 
     private func v2DebugTerminals(params _: [String: Any]) -> V2CallResult {
         var payload: [String: Any]?

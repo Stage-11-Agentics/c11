@@ -48,6 +48,7 @@
 		A5C101A1 /* PaneInteractionCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B1 /* PaneInteractionCardView.swift */; };
 		A5C101A2 /* PaneInteractionOverlayHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B2 /* PaneInteractionOverlayHost.swift */; };
 		A5C102A0 /* PaneInteractionRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C102B0 /* PaneInteractionRuntimeTests.swift */; };
+		A5C103A1 /* PaneInteractionAcceptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C103B1 /* PaneInteractionAcceptTests.swift */; };
 		A58689DE /* MermaidRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A537C229 /* MermaidRenderer.swift */; };
 		A58689DF /* FencedCodeRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A537C22A /* FencedCodeRenderer.swift */; };
 		A5001421 /* MarkdownPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001419 /* MarkdownPanelView.swift */; };
@@ -246,6 +247,7 @@
 		A5C101B1 /* PaneInteractionCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/PaneInteractionCardView.swift; sourceTree = "<group>"; };
 		A5C101B2 /* PaneInteractionOverlayHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/PaneInteractionOverlayHost.swift; sourceTree = "<group>"; };
 		A5C102B0 /* PaneInteractionRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneInteractionRuntimeTests.swift; sourceTree = "<group>"; };
+		A5C103B1 /* PaneInteractionAcceptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneInteractionAcceptTests.swift; sourceTree = "<group>"; };
 		A537C229 /* MermaidRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/MermaidRenderer.swift; sourceTree = "<group>"; };
 		A537C22A /* FencedCodeRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/FencedCodeRenderer.swift; sourceTree = "<group>"; };
 		A5001419 /* MarkdownPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/MarkdownPanelView.swift; sourceTree = "<group>"; };
@@ -602,6 +604,7 @@
 					D2C075029771815DD5DA1332 /* NotificationAndMenuBarTests.swift */,
 					42092CDB2109E250F7F2A76E /* TabManagerUnitTests.swift */,
 					A5C102B0 /* PaneInteractionRuntimeTests.swift */,
+					A5C103B1 /* PaneInteractionAcceptTests.swift */,
 					14A7DC53B9CA33BE2A421711 /* WorkspacePullRequestSidebarTests.swift */,
 					1D301919B10F22B8708E8883 /* WorkspaceManualUnreadTests.swift */,
 					EE0171AF1F49F7547191CEE5 /* SidebarWidthPolicyTests.swift */,
@@ -887,6 +890,7 @@
 					734F49D37E543DD01C2F4FEF /* NotificationAndMenuBarTests.swift in Sources */,
 					B6BF3DC98DB1495E57900199 /* TabManagerUnitTests.swift in Sources */,
 					A5C102A0 /* PaneInteractionRuntimeTests.swift in Sources */,
+					A5C103A1 /* PaneInteractionAcceptTests.swift in Sources */,
 					DCC935C5F55C1DCB33E25521 /* WorkspacePullRequestSidebarTests.swift in Sources */,
 					0F2C25F9170130F8DC09DD1B /* WorkspaceManualUnreadTests.swift in Sources */,
 					CA39C0304FE351A21C372429 /* SidebarWidthPolicyTests.swift in Sources */,

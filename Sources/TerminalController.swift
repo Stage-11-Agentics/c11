@@ -2164,6 +2164,8 @@ class TerminalController {
             return v2Result(id: id, self.v2PaneJoin(params: params))
         case "pane.last":
             return v2Result(id: id, self.v2PaneLast(params: params))
+        case "pane.confirm":
+            return v2Result(id: id, self.v2PaneConfirm(params: params))
 
         // Notifications
         case "notification.create":
@@ -6866,6 +6868,109 @@ class TerminalController {
             ])
         }
         return result
+    }
+
+    /// Socket-triggered pane confirmation. Presents a .confirm interaction on the
+    /// panel identified by panel_id (surface UUID) and blocks the socket call
+    /// until the user accepts, cancels, or the dialog is dismissed (panel torn
+    /// down mid-prompt). Per CLAUDE.md's socket threading policy, pane.confirm is
+    /// an explicit focus-intent command — main-thread UI mutation is allowed.
+    ///
+    /// Params:
+    ///   - panel_id (string, required): surface UUID of the target panel
+    ///   - title (string, required): card title
+    ///   - message (string, optional): card informative text
+    ///   - role (string, optional): "destructive" | "standard" (default: standard)
+    ///   - timeout (number, optional): max seconds to wait; omit for no timeout
+    ///
+    /// Result: { "result": "ok" | "cancel" | "dismissed" }
+    ///
+    /// Errors:
+    ///   - "unavailable" — no TabManager
+    ///   - "invalid_params" — missing panel_id or title
+    ///   - "unknown_panel" — panel_id doesn't resolve to a panel in any workspace
+    private func v2PaneConfirm(params: [String: Any]) -> V2CallResult {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+        guard let panelId = v2UUID(params, "panel_id") else {
+            return .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
+        }
+        guard let title = v2String(params, "title"), !title.isEmpty else {
+            return .err(code: "invalid_params", message: "Missing or empty title", data: nil)
+        }
+        let message = (v2String(params, "message") ?? "")
+        let roleStr = v2String(params, "role") ?? "standard"
+        let role: ConfirmContent.ConfirmRole = (roleStr == "destructive") ? .destructive : .standard
+        let timeoutSeconds = (params["timeout"] as? Double).map { max(0, $0) }
+        let clientId = (v2String(params, "_clientId")) ?? "socket"
+
+        let semaphore = DispatchSemaphore(value: 0)
+        // `outcome` is written from the main-actor completion callback and read
+        // after the semaphore is signaled — single-writer, single-reader with
+        // happens-before ordering provided by the semaphore.
+        final class OutcomeHolder {
+            var value: ConfirmResult = .dismissed
+        }
+        let holder = OutcomeHolder()
+        var presented = false
+
+        v2MainSync {
+            // Find the workspace that owns this panel. Iterate tabs across the
+            // resolved TabManager — pane.confirm accepts any workspace's panel.
+            guard let workspace = tabManager.tabs.first(where: { $0.panels[panelId] != nil }) else {
+                return
+            }
+            let content = ConfirmContent(
+                title: title,
+                message: message.isEmpty ? nil : message,
+                confirmLabel: String(localized: "dialog.pane.confirm.close", defaultValue: "OK"),
+                cancelLabel: String(localized: "dialog.pane.confirm.cancel", defaultValue: "Cancel"),
+                role: role,
+                source: .socket(clientId: clientId),
+                completion: { result in
+                    holder.value = result
+                    semaphore.signal()
+                }
+            )
+            workspace.paneInteractionRuntime.present(
+                panelId: panelId,
+                interaction: .confirm(content)
+            )
+            presented = true
+        }
+
+        guard presented else {
+            return .err(code: "unknown_panel", message: "Panel not found", data: ["panel_id": panelId.uuidString])
+        }
+
+        // Block the socket thread until the user responds or the timeout fires.
+        let waitDeadline: DispatchTime
+        if let timeoutSeconds {
+            waitDeadline = .now() + timeoutSeconds
+        } else {
+            waitDeadline = .distantFuture
+        }
+        let waitResult = semaphore.wait(timeout: waitDeadline)
+        if waitResult == .timedOut {
+            // Cancel the active interaction for this panel so the card clears
+            // and any queued interactions advance.
+            v2MainSync {
+                if let workspace = tabManager.tabs.first(where: { $0.panels[panelId] != nil }) {
+                    workspace.paneInteractionRuntime.cancelActive(panelId: panelId)
+                }
+            }
+            return .ok(["result": "dismissed"])
+        }
+
+        switch holder.value {
+        case .confirmed:
+            return .ok(["result": "ok"])
+        case .cancelled:
+            return .ok(["result": "cancel"])
+        case .dismissed:
+            return .ok(["result": "dismissed"])
+        }
     }
 
     // MARK: - V2 Notification Methods

@@ -1838,6 +1838,48 @@ struct CMUXCLI {
             let payload = try client.sendV2(method: "surface.close", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
+        case "pane-confirm":
+            // Present a confirmation dialog anchored on a specific panel and wait for
+            // the user's decision. Maps to the pane.confirm socket method (plan §3.6).
+            guard let panelRaw = optionValue(commandArgs, name: "--panel") else {
+                throw CLIError(message: "pane-confirm requires --panel <id|ref>")
+            }
+            guard let title = optionValue(commandArgs, name: "--title") else {
+                throw CLIError(message: "pane-confirm requires --title <text>")
+            }
+            let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
+            let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
+            let panelId = try normalizeSurfaceHandle(panelRaw, client: client, workspaceHandle: wsId)
+            var params: [String: Any] = ["title": title]
+            if let panelId { params["panel_id"] = panelId }
+            if let wsId { params["workspace_id"] = wsId }
+            if let message = optionValue(commandArgs, name: "--message") {
+                params["message"] = message
+            }
+            if commandArgs.contains("--destructive") {
+                params["role"] = "destructive"
+            }
+            if let timeoutStr = optionValue(commandArgs, name: "--timeout"),
+               let timeout = Double(timeoutStr) {
+                params["timeout"] = timeout
+            }
+            let payload = try client.sendV2(method: "pane.confirm", params: params)
+            // Exit code maps to outcome: 0=ok, 2=cancel, 3=dismissed, 1=error.
+            let outcome = (payload["result"] as? [String: Any])?["result"] as? String
+            if jsonOutput {
+                print(jsonString(formatIDs(payload, mode: idFormat)))
+            } else if let outcome {
+                print(outcome)
+            } else {
+                print(jsonString(payload))
+            }
+            switch outcome {
+            case "ok": exit(0)
+            case "cancel": exit(2)
+            case "dismissed": exit(3)
+            default: exit(1)
+            }
+
         case "drag-surface-to-split":
             let (surfaceArg, rem0) = parseOption(commandArgs, name: "--surface")
             let (panelArg, rem1) = parseOption(rem0, name: "--panel")

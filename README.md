@@ -94,11 +94,7 @@ Stage 11 Agentics builds infrastructure for the advanced hyperengineer: we build
 
 More at [stage11.ai](https://stage11.ai).
 
-## Hiring
-
-A really good way to impress us at a job interview — before we even open your resume — is a really good PR into this repo.
-
-Feel free to get in touch at [build with us](https://stage11.ai/build-with-us).
+A good way to impress us at a job intervie is a interesting PR into this repo. If thats you, [build with us](https://stage11.ai/build-with-us).
 
 ## License
 

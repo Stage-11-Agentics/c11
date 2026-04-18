@@ -196,6 +196,7 @@ extension Workspace {
         }
 
         return SessionWorkspaceSnapshot(
+            id: id,
             processTitle: processTitle,
             customTitle: customTitle,
             customColor: customColor,
@@ -5097,6 +5098,7 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     init(
+        id: UUID? = nil,
         title: String = "Terminal",
         workingDirectory: String? = nil,
         portOrdinal: Int = 0,
@@ -5104,7 +5106,11 @@ final class Workspace: Identifiable, ObservableObject {
         initialTerminalCommand: String? = nil,
         initialTerminalEnvironment: [String: String] = [:]
     ) {
-        self.id = UUID()
+        // Tier 1 persistence, Phase 1.5: accept an optional restore-time id so
+        // workspace UUIDs can survive across app restarts. Nil mints a fresh
+        // UUID (the normal creation path); a supplied id is used as-is (the
+        // restore path in `TabManager.restoreSessionSnapshot`).
+        self.id = id ?? UUID()
         self.portOrdinal = portOrdinal
         self.processTitle = title
         self.title = title

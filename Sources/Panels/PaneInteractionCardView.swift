@@ -105,8 +105,20 @@ private struct ConfirmCard: View {
         }
     }
 
-    private func confirm() { runtime.resolveConfirm(panelId: panelId, result: .confirmed) }
-    private func cancel() { runtime.resolveConfirm(panelId: panelId, result: .cancelled) }
+    private func confirm() {
+        runtime.resolveConfirm(
+            panelId: panelId,
+            result: .confirmed,
+            ifInteractionId: content.id
+        )
+    }
+    private func cancel() {
+        runtime.resolveConfirm(
+            panelId: panelId,
+            result: .cancelled,
+            ifInteractionId: content.id
+        )
+    }
 }
 
 // MARK: - TextInput variant
@@ -180,6 +192,19 @@ private struct TextInputCard: View {
         .accessibilityIdentifier("PaneInteraction.textInput.card")
         .onAppear {
             value = content.defaultValue
+            // Seed the bridge so Cmd+D immediately after present() submits the
+            // default value instead of nil — matches the original contract
+            // when the user hasn't started typing yet.
+            runtime.updatePendingTextInputValue(interactionId: content.id, value: content.defaultValue)
+        }
+        .onChange(of: value) { _, newValue in
+            // Bridge live text back to the runtime so Cmd+D accept submits
+            // what the user typed, not the default value.
+            runtime.updatePendingTextInputValue(interactionId: content.id, value: newValue)
+        }
+        .onKeyPress(.escape) {
+            cancel()
+            return .handled
         }
     }
 
@@ -188,11 +213,19 @@ private struct TextInputCard: View {
             errorText = error
             return
         }
-        runtime.resolveTextInput(panelId: panelId, result: .submitted(value))
+        runtime.resolveTextInput(
+            panelId: panelId,
+            result: .submitted(value),
+            ifInteractionId: content.id
+        )
     }
 
     private func cancel() {
-        runtime.resolveTextInput(panelId: panelId, result: .cancelled)
+        runtime.resolveTextInput(
+            panelId: panelId,
+            result: .cancelled,
+            ifInteractionId: content.id
+        )
     }
 }
 

@@ -135,8 +135,75 @@ final class PaneInteractionRuntimeTests: XCTestCase {
         runtime.resolveConfirm(panelId: panelId, result: .confirmed)
 
         XCTAssertEqual(first, .confirmed)
-        XCTAssertNil(second, "Duplicate token must drop the second present entirely")
+        // The dedupe collision must still fire the caller's completion so
+        // withCheckedContinuation callers unblock. `.dismissed` (not `.cancelled`)
+        // signals "you were absorbed into an in-flight request."
+        XCTAssertEqual(second, .dismissed,
+                       "Dedupe collision must resolve the new caller with .dismissed, not leave it hanging")
         XCTAssertFalse(runtime.hasActive(panelId: panelId))
+    }
+
+    func testDedupeTokenCollisionDoesNotLeakContinuation() {
+        // Regression test for the continuation-leak bug (synthesis-critical §1.2):
+        // the old behavior returned early without firing the dropped caller's
+        // completion, suspending any withCheckedContinuation wrapper forever.
+        let runtime = PaneInteractionRuntime()
+        let panelId = UUID()
+        var firedCount = 0
+
+        let firstExpectation = expectation(description: "first completes")
+        let secondExpectation = expectation(description: "second completes (dropped)")
+
+        runtime.present(
+            panelId: panelId,
+            interaction: .confirm(ConfirmContent(
+                title: "T", message: nil,
+                confirmLabel: "OK", cancelLabel: "Cancel",
+                role: .standard, source: .local,
+                completion: { _ in firedCount += 1; firstExpectation.fulfill() }
+            )),
+            dedupeToken: "once"
+        )
+        runtime.present(
+            panelId: panelId,
+            interaction: .confirm(ConfirmContent(
+                title: "T", message: nil,
+                confirmLabel: "OK", cancelLabel: "Cancel",
+                role: .standard, source: .local,
+                completion: { _ in firedCount += 1; secondExpectation.fulfill() }
+            )),
+            dedupeToken: "once"
+        )
+
+        runtime.resolveConfirm(panelId: panelId, result: .confirmed)
+        wait(for: [firstExpectation, secondExpectation], timeout: 1.0)
+        XCTAssertEqual(firedCount, 2, "Both callers must have their completions fire")
+    }
+
+    func testDedupeTokenClearedOnResolveAllowsFuturePresent() {
+        // Regression test for the permanent-lockout bug: cancelling a
+        // close-confirm should NOT block future presents with the same token.
+        let runtime = PaneInteractionRuntime()
+        let panelId = UUID()
+        var first: ConfirmResult?
+        var second: ConfirmResult?
+
+        runtime.present(panelId: panelId,
+                        interaction: .confirm(makeConfirm { first = $0 }),
+                        dedupeToken: "close_surface_cb.x")
+        runtime.cancelActive(panelId: panelId)
+        XCTAssertEqual(first, .cancelled)
+        XCTAssertFalse(runtime.hasActive(panelId: panelId))
+
+        // A fresh present with the same token after resolution must be
+        // admitted — otherwise the user can never re-trigger that action.
+        runtime.present(panelId: panelId,
+                        interaction: .confirm(makeConfirm { second = $0 }),
+                        dedupeToken: "close_surface_cb.x")
+        XCTAssertTrue(runtime.hasActive(panelId: panelId),
+                      "Second present with same token after resolve must be accepted")
+        runtime.resolveConfirm(panelId: panelId, result: .confirmed)
+        XCTAssertEqual(second, .confirmed)
     }
 
     func testDedupeTokenAllowsDifferentTokens() {
@@ -230,16 +297,50 @@ final class PaneInteractionRuntimeTests: XCTestCase {
     }
 
     func testAcceptActiveTextInputSubmitsValue() {
+        // Real-world Cmd+D path: TextInputCard writes the live text to the
+        // runtime via `updatePendingTextInputValue`, and `acceptActive` picks
+        // it up. This is what the AppDelegate shortcut gate actually drives —
+        // the old test passed an explicit `textInputValue` argument that
+        // bypassed the real bridge and hid the data-loss bug.
         let runtime = PaneInteractionRuntime()
         let panelId = UUID()
         var result: TextInputResult?
 
-        runtime.present(panelId: panelId,
-                        interaction: .textInput(makeTextInput(defaultValue: "hello") { result = $0 }))
-        let accepted = runtime.acceptActive(panelId: panelId, textInputValue: "world")
+        let content = TextInputContent(
+            title: "Rename", message: nil, placeholder: nil,
+            defaultValue: "hello", confirmLabel: "OK", cancelLabel: "Cancel",
+            validate: { _ in nil }, source: .local,
+            completion: { result = $0 }
+        )
+        runtime.present(panelId: panelId, interaction: .textInput(content))
+        // User types — TextInputCard would call this on every edit.
+        runtime.updatePendingTextInputValue(interactionId: content.id, value: "world")
+        let accepted = runtime.acceptActive(panelId: panelId)
 
         XCTAssertTrue(accepted)
         XCTAssertEqual(result, .submitted("world"))
+    }
+
+    func testAcceptActiveTextInputFallsBackToDefaultValueWhenBridgeEmpty() {
+        // Backstop: if Cmd+D fires before the TextInputCard has bridged any
+        // value (race between present → Cmd+D with no text edit), submit the
+        // defaultValue per the original contract.
+        let runtime = PaneInteractionRuntime()
+        let panelId = UUID()
+        var result: TextInputResult?
+
+        let content = TextInputContent(
+            title: "Rename", message: nil, placeholder: nil,
+            defaultValue: "default-name", confirmLabel: "OK", cancelLabel: "Cancel",
+            validate: { _ in nil }, source: .local,
+            completion: { result = $0 }
+        )
+        runtime.present(panelId: panelId, interaction: .textInput(content))
+        // No bridge write — simulates the pre-onAppear race.
+        let accepted = runtime.acceptActive(panelId: panelId)
+
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(result, .submitted("default-name"))
     }
 
     func testAcceptActiveTextInputFailsValidationDoesNotResolve() {
@@ -270,6 +371,86 @@ final class PaneInteractionRuntimeTests: XCTestCase {
     func testAcceptActiveOnEmptyPanelReturnsFalse() {
         let runtime = PaneInteractionRuntime()
         XCTAssertFalse(runtime.acceptActive(panelId: UUID()))
+    }
+
+    // MARK: - Interaction-ID guard
+
+    func testResolveConfirmWithWrongInteractionIdIsNoOp() {
+        // Prevents the "socket timeout cancels newly-advanced successor" race:
+        // cancel/resolve with the originally-presented id must no-op if the
+        // queue has advanced.
+        let runtime = PaneInteractionRuntime()
+        let panelId = UUID()
+        var firstResult: ConfirmResult?
+        var secondResult: ConfirmResult?
+
+        let firstContent = ConfirmContent(
+            title: "A", message: nil, confirmLabel: "OK", cancelLabel: "Cancel",
+            role: .standard, source: .local,
+            completion: { firstResult = $0 }
+        )
+        let secondContent = ConfirmContent(
+            title: "B", message: nil, confirmLabel: "OK", cancelLabel: "Cancel",
+            role: .standard, source: .local,
+            completion: { secondResult = $0 }
+        )
+        runtime.present(panelId: panelId, interaction: .confirm(firstContent))
+        runtime.present(panelId: panelId, interaction: .confirm(secondContent))
+
+        // Resolve the first — second advances to active.
+        runtime.resolveConfirm(panelId: panelId, result: .confirmed, ifInteractionId: firstContent.id)
+        XCTAssertEqual(firstResult, .confirmed)
+        XCTAssertNil(secondResult)
+        XCTAssertTrue(runtime.hasActive(panelId: panelId))
+
+        // Late timeout for first — must NOT touch the advanced second.
+        runtime.cancelActive(panelId: panelId, ifInteractionId: firstContent.id)
+        XCTAssertNil(secondResult, "Late cancel with stale id must not resolve successor")
+        XCTAssertTrue(runtime.hasActive(panelId: panelId))
+
+        // Correct id resolves the second.
+        runtime.cancelActive(panelId: panelId, ifInteractionId: secondContent.id)
+        XCTAssertEqual(secondResult, .cancelled)
+    }
+
+    func testAcceptActiveWithWrongInteractionIdIsNoOp() {
+        let runtime = PaneInteractionRuntime()
+        let panelId = UUID()
+        var result: ConfirmResult?
+
+        let content = ConfirmContent(
+            title: "A", message: nil, confirmLabel: "OK", cancelLabel: "Cancel",
+            role: .standard, source: .local,
+            completion: { result = $0 }
+        )
+        runtime.present(panelId: panelId, interaction: .confirm(content))
+
+        let accepted = runtime.acceptActive(panelId: panelId, ifInteractionId: UUID())
+        XCTAssertFalse(accepted)
+        XCTAssertNil(result)
+        XCTAssertTrue(runtime.hasActive(panelId: panelId))
+    }
+
+    // MARK: - Teardown drain
+
+    func testClearAllDrainsAllPanelsWithDismissed() {
+        // Workspace-teardown path: every pending interaction (active + queued)
+        // must fire with .dismissed so no withCheckedContinuation is left
+        // suspended when the workspace is removed.
+        let runtime = PaneInteractionRuntime()
+        let panelA = UUID()
+        let panelB = UUID()
+        var results: [ConfirmResult] = []
+
+        runtime.present(panelId: panelA, interaction: .confirm(makeConfirm { results.append($0) }))
+        runtime.present(panelId: panelA, interaction: .confirm(makeConfirm { results.append($0) }))
+        runtime.present(panelId: panelB, interaction: .confirm(makeConfirm { results.append($0) }))
+
+        runtime.clearAll()
+
+        XCTAssertEqual(results.count, 3)
+        XCTAssertTrue(results.allSatisfy { $0 == .dismissed })
+        XCTAssertFalse(runtime.hasAnyActive)
     }
 
     // MARK: - Fixtures

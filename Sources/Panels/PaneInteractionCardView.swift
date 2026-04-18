@@ -10,7 +10,7 @@ import SwiftUI
 struct PaneInteractionCardView: View {
     let panelId: UUID
     let interaction: PaneInteraction
-    @ObservedObject var runtime: PaneInteractionRuntime
+    let runtime: PaneInteractionRuntime
 
     var body: some View {
         ZStack {
@@ -44,7 +44,7 @@ struct PaneInteractionCardView: View {
 private struct ConfirmCard: View {
     let panelId: UUID
     let content: ConfirmContent
-    @ObservedObject var runtime: PaneInteractionRuntime
+    let runtime: PaneInteractionRuntime
 
     private enum Field: Hashable { case cancel, confirm }
     @FocusState private var focused: Field?
@@ -114,7 +114,7 @@ private struct ConfirmCard: View {
 private struct TextInputCard: View {
     let panelId: UUID
     let content: TextInputContent
-    @ObservedObject var runtime: PaneInteractionRuntime
+    let runtime: PaneInteractionRuntime
 
     @State private var value: String = ""
     @State private var errorText: String?

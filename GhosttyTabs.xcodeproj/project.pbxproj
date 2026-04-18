@@ -594,6 +594,10 @@
 					D7003BF1A1B2C3D4E5F60718 /* PanelIdentityRestoreTests.swift */,
 					D7004BF1A1B2C3D4E5F60718 /* WorkspaceIdentityRestoreTests.swift */,
 					D70A4BF1A1B2C3D4E5F60718 /* WorkspaceMetadataValidatorTests.swift */,
+					D7006BF1A1B2C3D4E5F60718 /* MetadataPersistenceRoundTripTests.swift */,
+					D7007BF1A1B2C3D4E5F60718 /* MetadataPersistencePrecedenceTests.swift */,
+					D7008BF1A1B2C3D4E5F60718 /* MetadataPersistenceUncoercibleTests.swift */,
+					D7009BF1A1B2C3D4E5F60718 /* MetadataStoreRevisionCounterTests.swift */,
 				);
 				path = cmuxTests;
 				sourceTree = "<group>";
@@ -869,6 +873,10 @@
 					D7003BF0A1B2C3D4E5F60718 /* PanelIdentityRestoreTests.swift in Sources */,
 					D7004BF0A1B2C3D4E5F60718 /* WorkspaceIdentityRestoreTests.swift in Sources */,
 					D70A4BF0A1B2C3D4E5F60718 /* WorkspaceMetadataValidatorTests.swift in Sources */,
+					D7006BF0A1B2C3D4E5F60718 /* MetadataPersistenceRoundTripTests.swift in Sources */,
+					D7007BF0A1B2C3D4E5F60718 /* MetadataPersistencePrecedenceTests.swift in Sources */,
+					D7008BF0A1B2C3D4E5F60718 /* MetadataPersistenceUncoercibleTests.swift in Sources */,
+					D7009BF0A1B2C3D4E5F60718 /* MetadataStoreRevisionCounterTests.swift in Sources */,
 				);
 				runOnlyForDeploymentPostprocessing = 0;
 			};

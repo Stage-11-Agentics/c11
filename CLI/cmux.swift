@@ -2274,6 +2274,53 @@ struct CMUXCLI {
                 windowOverride: windowId
             )
 
+        case "set-workspace-metadata":
+            try runSetWorkspaceMetadataCommand(
+                commandArgs: commandArgs,
+                client: client,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat,
+                windowOverride: windowId
+            )
+
+        case "get-workspace-metadata":
+            try runGetWorkspaceMetadataCommand(
+                commandArgs: commandArgs,
+                client: client,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat,
+                windowOverride: windowId
+            )
+
+        case "clear-workspace-metadata":
+            try runClearWorkspaceMetadataCommand(
+                commandArgs: commandArgs,
+                client: client,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat,
+                windowOverride: windowId
+            )
+
+        case "set-workspace-description":
+            try runSetWorkspaceCanonicalKeyCommand(
+                key: "description",
+                commandArgs: commandArgs,
+                client: client,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat,
+                windowOverride: windowId
+            )
+
+        case "set-workspace-icon":
+            try runSetWorkspaceCanonicalKeyCommand(
+                key: "icon",
+                commandArgs: commandArgs,
+                client: client,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat,
+                windowOverride: windowId
+            )
+
         case "claude-hook":
             cliTelemetry.breadcrumb("claude-hook.dispatch")
             do {
@@ -7340,6 +7387,61 @@ struct CMUXCLI {
               cmux clear-metadata --key terminal_type
               cmux clear-metadata --surface surface:2
             """
+        case "set-workspace-metadata":
+            return """
+            Usage: cmux set-workspace-metadata <key> <value> [flags]
+                   cmux set-workspace-metadata --key <K> --value <V> [flags]
+                   cmux set-workspace-metadata --json '{"description":"..."}' [flags]
+
+            Write one or more operator-authored metadata keys on a workspace via
+            workspace.set_metadata. Values are strings; canonical keys are
+            "description" (≤2048 chars) and "icon" (≤32 chars). Custom keys
+            must match [A-Za-z0-9_.-]+ and cap at 1024 chars each.
+
+            Flags:
+              --workspace <id|ref>     Target workspace (default: current)
+              --json '{...}'           Full JSON object of keys/values
+              --json                   Emit raw JSON result
+
+            Examples:
+              cmux set-workspace-metadata description "Backend API refactor"
+              cmux set-workspace-metadata icon 🦊
+            """
+        case "get-workspace-metadata":
+            return """
+            Usage: cmux get-workspace-metadata [<key>] [--workspace <id|ref>] [--json]
+
+            Read workspace metadata via workspace.get_metadata. With a key, prints
+            just that value. Without a key, prints all keys/values.
+
+            Examples:
+              cmux get-workspace-metadata
+              cmux get-workspace-metadata description
+            """
+        case "clear-workspace-metadata":
+            return """
+            Usage: cmux clear-workspace-metadata [<key>] [--key <K> ...] [--workspace <id|ref>] [--json]
+
+            Clear workspace metadata keys via workspace.clear_metadata. With no
+            key, clears the entire workspace metadata dictionary.
+
+            Examples:
+              cmux clear-workspace-metadata description
+              cmux clear-workspace-metadata
+            """
+        case "set-workspace-description":
+            return """
+            Usage: cmux set-workspace-description <text> [--workspace <id|ref>]
+
+            Sugar for `cmux set-workspace-metadata description <text>`.
+            """
+        case "set-workspace-icon":
+            return """
+            Usage: cmux set-workspace-icon <glyph> [--workspace <id|ref>]
+
+            Sugar for `cmux set-workspace-metadata icon <glyph>`. Supports emoji
+            or the prefix "sf:" + SF Symbol name (e.g. "sf:star.fill").
+            """
         case "set-app-focus":
             return """
             Usage: cmux set-app-focus <active|inactive|clear>
@@ -8535,6 +8637,193 @@ struct CMUXCLI {
 
         let payload = try client.sendV2(method: "surface.clear_metadata", params: params)
         printMetadataResult(payload, jsonOutput: jsonOutput, idFormat: idFormat)
+    }
+
+    /// Resolve the `workspace_id` param for a workspace metadata CLI call.
+    /// Honors `--workspace`, `CMUX_WORKSPACE_ID`, then falls back to the
+    /// currently selected workspace (server-side default).
+    private func resolveWorkspaceMetadataTarget(
+        commandArgs: [String],
+        client: SocketClient,
+        windowOverride: String?
+    ) throws -> String? {
+        let raw = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowOverride)
+        return try normalizeWorkspaceHandle(raw, client: client)
+    }
+
+    /// `cmux set-workspace-metadata <key> <value>` — wraps workspace.set_metadata.
+    private func runSetWorkspaceMetadataCommand(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat,
+        windowOverride: String?
+    ) throws {
+        let positional = commandArgs.filter { !$0.hasPrefix("--") }
+        var metadata: [String: String] = [:]
+        var singleKey: String?
+        var singleValue: String?
+
+        if let jsonStr = optionValue(commandArgs, name: "--json") {
+            guard let data = jsonStr.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw CLIError(message: "invalid_json: --json must be a JSON object string")
+            }
+            for (k, v) in obj {
+                guard let s = v as? String else {
+                    throw CLIError(message: "invalid_value: workspace metadata values must be strings (key '\(k)')")
+                }
+                metadata[k] = s
+            }
+        } else if let keyOpt = optionValue(commandArgs, name: "--key"),
+                  let valueOpt = optionValue(commandArgs, name: "--value") {
+            singleKey = keyOpt
+            singleValue = valueOpt
+        } else if positional.count >= 2 {
+            singleKey = positional[0]
+            singleValue = positional.dropFirst().joined(separator: " ")
+        } else {
+            throw CLIError(message: "set-workspace-metadata requires <key> <value>, --key/--value, or --json '{...}'")
+        }
+
+        let workspaceId = try resolveWorkspaceMetadataTarget(
+            commandArgs: commandArgs,
+            client: client,
+            windowOverride: windowOverride
+        )
+
+        var params: [String: Any] = [:]
+        if let workspaceId { params["workspace_id"] = workspaceId }
+        if !metadata.isEmpty {
+            params["metadata"] = metadata
+        } else if let singleKey, let singleValue {
+            params["key"] = singleKey
+            params["value"] = singleValue
+        }
+
+        let payload = try client.sendV2(method: "workspace.set_metadata", params: params)
+        printWorkspaceMetadataResult(payload, jsonOutput: jsonOutput, idFormat: idFormat)
+    }
+
+    /// `cmux get-workspace-metadata [<key>]` — wraps workspace.get_metadata.
+    private func runGetWorkspaceMetadataCommand(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat,
+        windowOverride: String?
+    ) throws {
+        let positional = commandArgs.filter { !$0.hasPrefix("--") }
+        let keyFilter = optionValue(commandArgs, name: "--key") ?? positional.first
+
+        let workspaceId = try resolveWorkspaceMetadataTarget(
+            commandArgs: commandArgs,
+            client: client,
+            windowOverride: windowOverride
+        )
+        var params: [String: Any] = [:]
+        if let workspaceId { params["workspace_id"] = workspaceId }
+        if let keyFilter { params["key"] = keyFilter }
+
+        let payload = try client.sendV2(method: "workspace.get_metadata", params: params)
+        if jsonOutput {
+            print(jsonString(formatIDs(payload, mode: idFormat)))
+            return
+        }
+        let metadata = payload["metadata"] as? [String: String] ?? [:]
+        if let keyFilter {
+            if let v = metadata[keyFilter] {
+                print(v)
+            } else {
+                print("(unset)")
+            }
+            return
+        }
+        if metadata.isEmpty {
+            print("(empty)")
+            return
+        }
+        for key in metadata.keys.sorted() {
+            print("\(key) = \(metadata[key] ?? "")")
+        }
+    }
+
+    /// `cmux clear-workspace-metadata [<key>]` — wraps workspace.clear_metadata.
+    private func runClearWorkspaceMetadataCommand(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat,
+        windowOverride: String?
+    ) throws {
+        let positional = commandArgs.filter { !$0.hasPrefix("--") }
+        var keys: [String] = collectRepeatedOption(commandArgs, name: "--key")
+        if keys.isEmpty, let first = positional.first {
+            keys = [first]
+        }
+
+        let workspaceId = try resolveWorkspaceMetadataTarget(
+            commandArgs: commandArgs,
+            client: client,
+            windowOverride: windowOverride
+        )
+        var params: [String: Any] = [:]
+        if let workspaceId { params["workspace_id"] = workspaceId }
+        if !keys.isEmpty { params["keys"] = keys }
+
+        let payload = try client.sendV2(method: "workspace.clear_metadata", params: params)
+        printWorkspaceMetadataResult(payload, jsonOutput: jsonOutput, idFormat: idFormat)
+    }
+
+    /// `cmux set-workspace-description <text>` / `cmux set-workspace-icon <glyph>`
+    /// — thin sugar over `set-workspace-metadata <canonical-key> <value>`.
+    private func runSetWorkspaceCanonicalKeyCommand(
+        key: String,
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat,
+        windowOverride: String?
+    ) throws {
+        let positional = commandArgs.filter { !$0.hasPrefix("--") }
+        guard let value = optionValue(commandArgs, name: "--value") ?? positional.first else {
+            throw CLIError(message: "set-workspace-\(key) requires a value")
+        }
+
+        let workspaceId = try resolveWorkspaceMetadataTarget(
+            commandArgs: commandArgs,
+            client: client,
+            windowOverride: windowOverride
+        )
+        var params: [String: Any] = ["key": key, "value": value]
+        if let workspaceId { params["workspace_id"] = workspaceId }
+        let payload = try client.sendV2(method: "workspace.set_metadata", params: params)
+        printWorkspaceMetadataResult(payload, jsonOutput: jsonOutput, idFormat: idFormat)
+    }
+
+    /// Print a workspace.set_metadata / workspace.clear_metadata result.
+    private func printWorkspaceMetadataResult(
+        _ payload: [String: Any],
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) {
+        if jsonOutput {
+            print(jsonString(formatIDs(payload, mode: idFormat)))
+            return
+        }
+        var parts = ["OK"]
+        if let handle = formatHandle(payload, kind: "workspace", idFormat: idFormat) {
+            parts.append(handle)
+        }
+        print(parts.joined(separator: " "))
+        let metadata = payload["metadata"] as? [String: String] ?? [:]
+        if metadata.isEmpty {
+            print("  (empty)")
+            return
+        }
+        for key in metadata.keys.sorted() {
+            print("  \(key) = \(metadata[key] ?? "")")
+        }
     }
 
     /// Print a `surface.set_metadata` / `surface.clear_metadata` result.
@@ -12349,6 +12638,11 @@ struct CMUXCLI {
           set-metadata (--json '{...}' | --key <K> --value <V> [--type string|number|bool|json]) [--surface <id|ref>] [--workspace <id|ref>] [--mode merge|replace] [--source <src>]
           get-metadata [--key <K> ...] [--sources] [--surface <id|ref>] [--workspace <id|ref>]
           clear-metadata [--key <K> ...] [--source <src>] [--surface <id|ref>] [--workspace <id|ref>]
+          set-workspace-metadata <key> <value> | --key <K> --value <V> | --json '{...}'  [--workspace <id|ref>]
+          get-workspace-metadata [<key>] [--workspace <id|ref>]
+          clear-workspace-metadata [<key>] [--key <K> ...] [--workspace <id|ref>]
+          set-workspace-description <text> [--workspace <id|ref>]
+          set-workspace-icon <glyph> [--workspace <id|ref>]
           set-app-focus <active|inactive|clear>
           simulate-app-active
 

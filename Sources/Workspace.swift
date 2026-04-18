@@ -8781,17 +8781,65 @@ final class Workspace: Identifiable, ObservableObject {
     private func promptRenamePanel(tabId: TabID) {
         guard let panelId = panelIdFromSurfaceId(tabId),
               let panel = panels[panelId] else { return }
+        let currentTitle = panelCustomTitles[panelId] ?? panelTitles[panelId] ?? panel.displayTitle
+
+        if PaneInteractionFeatureFlag.isEnabled {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let value = await self.presentTextInput(
+                    panelId: panelId,
+                    title: String(
+                        localized: "dialog.renameTab.title",
+                        defaultValue: "Rename Tab"
+                    ),
+                    message: String(
+                        localized: "dialog.renameTab.message",
+                        defaultValue: "Enter a custom name for this tab."
+                    ),
+                    defaultValue: currentTitle,
+                    placeholder: String(
+                        localized: "dialog.renameTab.placeholder",
+                        defaultValue: "Tab name"
+                    ),
+                    confirmLabel: String(
+                        localized: "alert.renameWorkspace.rename",
+                        defaultValue: "Rename"
+                    ),
+                    validate: { _ in nil }
+                )
+                guard let value else { return }
+                // Acceptance-time revalidation: the panel may have closed while the
+                // card was visible between present and submit.
+                guard self.panels[panelId] != nil else { return }
+                self.setPanelCustomTitle(panelId: panelId, title: value)
+            }
+            return
+        }
 
         let alert = NSAlert()
-        alert.messageText = "Rename Tab"
-        alert.informativeText = "Enter a custom name for this tab."
-        let currentTitle = panelCustomTitles[panelId] ?? panelTitles[panelId] ?? panel.displayTitle
+        alert.messageText = String(
+            localized: "dialog.renameTab.title",
+            defaultValue: "Rename Tab"
+        )
+        alert.informativeText = String(
+            localized: "dialog.renameTab.message",
+            defaultValue: "Enter a custom name for this tab."
+        )
         let input = NSTextField(string: currentTitle)
-        input.placeholderString = "Tab name"
+        input.placeholderString = String(
+            localized: "dialog.renameTab.placeholder",
+            defaultValue: "Tab name"
+        )
         input.frame = NSRect(x: 0, y: 0, width: 240, height: 22)
         alert.accessoryView = input
-        alert.addButton(withTitle: "Rename")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: String(
+            localized: "alert.renameWorkspace.rename",
+            defaultValue: "Rename"
+        ))
+        alert.addButton(withTitle: String(
+            localized: "dialog.pane.confirm.cancel",
+            defaultValue: "Cancel"
+        ))
         let alertWindow = alert.window
         alertWindow.initialFirstResponder = input
         DispatchQueue.main.async {

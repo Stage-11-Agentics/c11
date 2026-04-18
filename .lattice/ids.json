@@ -1,5 +1,9 @@
 {
-  "map": {},
-  "next_seqs": {},
+  "map": {
+    "CMUX-1": "task_01KPH4C22FWF63BPQ4SET7E5JG"
+  },
+  "next_seqs": {
+    "CMUX": 2
+  },
   "schema_version": 2
 }

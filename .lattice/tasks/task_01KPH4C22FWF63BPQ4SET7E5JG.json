@@ -1,0 +1,30 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": null,
+  "created_at": "2026-04-18T20:26:31Z",
+  "created_by": "human:atin",
+  "custom_fields": {},
+  "description": "Smoke-test round of manual exercising of cmux by a human. Walks through core workflows (surfaces, splits, tabs, workspaces, sockets) to catch regressions not covered by the automated suite. Also the first ticket created in this Lattice instance \u2014 doubles as a test that ticket creation, listing, and dashboard rendering work end-to-end.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KPH4C22FWF63BPQ4SET7E5JG",
+  "last_event_id": "ev_01KPH4C22JNABBN4W02JP1GNNS",
+  "last_status_changed_at": "2026-04-18T20:26:31Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "CMUX-1",
+  "status": "backlog",
+  "tags": [
+    "testing",
+    "smoke"
+  ],
+  "title": "Another round of human testing",
+  "type": "task",
+  "updated_at": "2026-04-18T20:26:31Z",
+  "urgency": null
+}

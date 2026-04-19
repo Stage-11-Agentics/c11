@@ -12305,7 +12305,10 @@ private struct SidebarMetadataEntryRow: View {
                 .truncationMode(.tail)
             Spacer(minLength: 0)
         }
-        .font(.system(size: 10))
+        .font(entry.staleFromRestart
+            ? .system(size: 10, weight: .regular).italic()
+            : .system(size: 10, weight: .regular))
+        .opacity(entry.staleFromRestart ? 0.55 : 1.0)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 

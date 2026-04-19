@@ -28,6 +28,7 @@
 		D7007BF0A1B2C3D4E5F60718 /* MetadataPersistencePrecedenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7007BF1A1B2C3D4E5F60718 /* MetadataPersistencePrecedenceTests.swift */; };
 		D7008BF0A1B2C3D4E5F60718 /* MetadataPersistenceUncoercibleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7008BF1A1B2C3D4E5F60718 /* MetadataPersistenceUncoercibleTests.swift */; };
 		D7009BF0A1B2C3D4E5F60718 /* MetadataStoreRevisionCounterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7009BF1A1B2C3D4E5F60718 /* MetadataStoreRevisionCounterTests.swift */; };
+		D700ABF0A1B2C3D4E5F60718 /* StatusEntryPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D700ABF1A1B2C3D4E5F60718 /* StatusEntryPersistenceTests.swift */; };
 		A5001544 /* AgentDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001545 /* AgentDetector.swift */; };
 		A5001700 /* TextBoxInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001701 /* TextBoxInput.swift */; };
 		A5001702 /* TextBoxInputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001703 /* TextBoxInputTests.swift */; };
@@ -225,6 +226,7 @@
 		D7007BF1A1B2C3D4E5F60718 /* MetadataPersistencePrecedenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataPersistencePrecedenceTests.swift; sourceTree = "<group>"; };
 		D7008BF1A1B2C3D4E5F60718 /* MetadataPersistenceUncoercibleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataPersistenceUncoercibleTests.swift; sourceTree = "<group>"; };
 		D7009BF1A1B2C3D4E5F60718 /* MetadataStoreRevisionCounterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataStoreRevisionCounterTests.swift; sourceTree = "<group>"; };
+		D700ABF1A1B2C3D4E5F60718 /* StatusEntryPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusEntryPersistenceTests.swift; sourceTree = "<group>"; };
 		A5001545 /* AgentDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDetector.swift; sourceTree = "<group>"; };
 		A5001701 /* TextBoxInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextBoxInput.swift; sourceTree = "<group>"; };
 		A5001703 /* TextBoxInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextBoxInputTests.swift; sourceTree = "<group>"; };
@@ -623,6 +625,7 @@
 					D7007BF1A1B2C3D4E5F60718 /* MetadataPersistencePrecedenceTests.swift */,
 					D7008BF1A1B2C3D4E5F60718 /* MetadataPersistenceUncoercibleTests.swift */,
 					D7009BF1A1B2C3D4E5F60718 /* MetadataStoreRevisionCounterTests.swift */,
+					D700ABF1A1B2C3D4E5F60718 /* StatusEntryPersistenceTests.swift */,
 					D7011BF1A1B2C3D4E5F60718 /* PaneMetadataStoreTests.swift */,
 					D7015BF1A1B2C3D4E5F60718 /* DefaultGridSettingsTests.swift */,
 				);
@@ -911,6 +914,7 @@
 					D7007BF0A1B2C3D4E5F60718 /* MetadataPersistencePrecedenceTests.swift in Sources */,
 					D7008BF0A1B2C3D4E5F60718 /* MetadataPersistenceUncoercibleTests.swift in Sources */,
 					D7009BF0A1B2C3D4E5F60718 /* MetadataStoreRevisionCounterTests.swift in Sources */,
+					D700ABF0A1B2C3D4E5F60718 /* StatusEntryPersistenceTests.swift in Sources */,
 					D7011BF0A1B2C3D4E5F60718 /* PaneMetadataStoreTests.swift in Sources */,
 					D7015BF0A1B2C3D4E5F60718 /* DefaultGridSettingsTests.swift in Sources */,
 				);

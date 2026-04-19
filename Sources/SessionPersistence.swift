@@ -50,6 +50,22 @@ enum SessionPersistencePolicy {
         !envFlagEnabled("CMUX_DISABLE_STABLE_WORKSPACE_IDS")
     }
 
+    /// Tier 1 persistence, Phase 3: persist `statusEntries` across app restart.
+    ///
+    /// When `true` (default), restored workspaces rebuild their `statusEntries`
+    /// from the session snapshot with each entry stamped `staleFromRestart: true`.
+    /// The sidebar renders stale entries with reduced emphasis until the agent
+    /// re-announces the status; the first fresh write clears the flag.
+    ///
+    /// Setting `CMUX_DISABLE_STATUS_ENTRY_PERSIST=1` reverts to the pre-Phase-3
+    /// behavior (discard `statusEntries` on restore). App-launch-scope only —
+    /// set via `launchctl setenv` or the parent shell before launching the app;
+    /// setting it on the `cmux` CLI invocation has no effect. Kept as a
+    /// one-release rollback safety net.
+    static var statusEntryPersistEnabled: Bool {
+        !envFlagEnabled("CMUX_DISABLE_STATUS_ENTRY_PERSIST")
+    }
+
     private static func envFlagEnabled(_ name: String) -> Bool {
         guard let raw = ProcessInfo.processInfo.environment[name] else { return false }
         switch raw.trimmingCharacters(in: .whitespaces).lowercased() {
@@ -241,6 +257,15 @@ struct SessionStatusEntrySnapshot: Codable, Sendable {
     var icon: String?
     var color: String?
     var timestamp: TimeInterval
+    /// Tier 1 Phase 3: persisted fields previously dropped at serialization.
+    /// All optional for backcompat with pre-Phase-3 snapshots.
+    var url: String?
+    var priority: Int?
+    var format: String?
+    /// Marker for entries restored from a prior session. The original agent's
+    /// process is gone; the entry is still shown (with reduced emphasis) until
+    /// the next real write clears the flag. Optional for backcompat.
+    var staleFromRestart: Bool?
 }
 
 struct SessionLogEntrySnapshot: Codable, Sendable {

@@ -346,6 +346,11 @@ class TerminalController {
         format: SidebarMetadataFormat
     ) -> Bool {
         guard let current else { return true }
+        // Tier 1 Phase 3: a stale-from-restart entry must always yield to the
+        // first real write, even if the payload is identical. Without this,
+        // an agent that re-announces the same status (common idempotent
+        // pattern) would never clear the stale marker.
+        if current.staleFromRestart { return true }
         return current.key != key ||
             current.value != value ||
             current.icon != icon ||

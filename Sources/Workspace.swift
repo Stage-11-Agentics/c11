@@ -68,6 +68,11 @@ struct SidebarStatusEntry {
     let priority: Int
     let format: SidebarMetadataFormat
     let timestamp: Date
+    /// True when this entry was rebuilt from a session snapshot on restart.
+    /// The process that last wrote it is gone, so the value is shown with
+    /// reduced emphasis until the next real write clears the flag. See the
+    /// stale→live override in `TerminalController.shouldReplaceStatusEntry`.
+    let staleFromRestart: Bool
 
     init(
         key: String,
@@ -77,7 +82,8 @@ struct SidebarStatusEntry {
         url: URL? = nil,
         priority: Int = 0,
         format: SidebarMetadataFormat = .plain,
-        timestamp: Date = Date()
+        timestamp: Date = Date(),
+        staleFromRestart: Bool = false
     ) {
         self.key = key
         self.value = value
@@ -87,6 +93,7 @@ struct SidebarStatusEntry {
         self.priority = priority
         self.format = format
         self.timestamp = timestamp
+        self.staleFromRestart = staleFromRestart
     }
 }
 
@@ -176,7 +183,11 @@ extension Workspace {
                     value: entry.value,
                     icon: entry.icon,
                     color: entry.color,
-                    timestamp: entry.timestamp.timeIntervalSince1970
+                    timestamp: entry.timestamp.timeIntervalSince1970,
+                    url: entry.url?.absoluteString,
+                    priority: entry.priority == 0 ? nil : entry.priority,
+                    format: entry.format == .plain ? nil : entry.format.rawValue,
+                    staleFromRestart: entry.staleFromRestart ? true : nil
                 )
             }
         let logSnapshots = logEntries.map { entry in
@@ -257,10 +268,31 @@ extension Workspace {
         isPinned = snapshot.isPinned
         metadata = snapshot.metadata ?? [:]
 
-        // Status entries and agent PIDs are ephemeral runtime state tied to running
-        // processes (e.g. claude_code "Running"). Don't restore them across app
-        // restarts because the processes that set them are gone.
-        statusEntries.removeAll()
+        // Tier 1 Phase 3: restore `statusEntries` from the snapshot, stamping
+        // each entry with `staleFromRestart: true` so the sidebar can render
+        // them with reduced emphasis until the agent re-announces the value.
+        // `agentPIDs` stays cleared — a PID from a prior boot is meaningless.
+        // `CMUX_DISABLE_STATUS_ENTRY_PERSIST=1` reverts to the pre-Phase-3
+        // discard-on-restore behavior.
+        if SessionPersistencePolicy.statusEntryPersistEnabled {
+            statusEntries = snapshot.statusEntries.reduce(into: [:]) { acc, snap in
+                let url = snap.url.flatMap { URL(string: $0) }
+                let format = snap.format.flatMap { SidebarMetadataFormat(rawValue: $0) } ?? .plain
+                acc[snap.key] = SidebarStatusEntry(
+                    key: snap.key,
+                    value: snap.value,
+                    icon: snap.icon,
+                    color: snap.color,
+                    url: url,
+                    priority: snap.priority ?? 0,
+                    format: format,
+                    timestamp: Date(timeIntervalSince1970: snap.timestamp),
+                    staleFromRestart: true
+                )
+            }
+        } else {
+            statusEntries.removeAll()
+        }
         agentPIDs.removeAll()
         logEntries = snapshot.logEntries.map { entry in
             SidebarLogEntry(
@@ -5452,15 +5484,51 @@ final class Workspace: Identifiable, ObservableObject {
         return BrowserProfileStore.shared.effectiveLastUsedProfileID
     }
 
+    private func declareMarkdownTitleFromPanel(_ markdownPanel: MarkdownPanel) {
+        guard let path = markdownPanel.filePath, !path.isEmpty else { return }
+        let title = markdownPanel.displayTitle
+        guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        _ = try? SurfaceMetadataStore.shared.setMetadata(
+            workspaceId: id,
+            surfaceId: markdownPanel.id,
+            partial: ["title": title],
+            mode: .merge,
+            source: .declare
+        )
+        syncPanelTitleFromMetadata(panelId: markdownPanel.id)
+    }
+
     private func installMarkdownPanelSubscription(_ markdownPanel: MarkdownPanel) {
+        // Declare the filename as the surface manifest title synchronously so
+        // `cmux get-metadata --key title` reflects it right after open,
+        // without waiting on Combine's main-queue delivery.
+        declareMarkdownTitleFromPanel(markdownPanel)
+
         let subscription = markdownPanel.$displayTitle
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self, weak markdownPanel] newTitle in
                 guard let self,
-                      let markdownPanel,
-                      let tabId = self.surfaceIdFromPanelId(markdownPanel.id) else { return }
-                guard let existing = self.bonsplitController.tab(tabId) else { return }
+                      let markdownPanel else { return }
+
+                // Keep the declared title in sync when the panel's filename
+                // changes (e.g. via the empty-state bind flow). Source
+                // `.declare` yields to an explicit `cmux set-title`.
+                if markdownPanel.filePath != nil,
+                   !newTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    _ = try? SurfaceMetadataStore.shared.setMetadata(
+                        workspaceId: self.id,
+                        surfaceId: markdownPanel.id,
+                        partial: ["title": newTitle],
+                        mode: .merge,
+                        source: .declare
+                    )
+                    self.syncPanelTitleFromMetadata(panelId: markdownPanel.id)
+                    return
+                }
+
+                guard let tabId = self.surfaceIdFromPanelId(markdownPanel.id),
+                      let existing = self.bonsplitController.tab(tabId) else { return }
 
                 if self.panelTitles[markdownPanel.id] != newTitle {
                     self.panelTitles[markdownPanel.id] = newTitle

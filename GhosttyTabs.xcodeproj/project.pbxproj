@@ -21,6 +21,8 @@
 		D70A3BF0A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70A3BF1A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift */; };
 		D70A4BF0A1B2C3D4E5F60718 /* WorkspaceMetadataValidatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70A4BF1A1B2C3D4E5F60718 /* WorkspaceMetadataValidatorTests.swift */; };
 		D7005BF0A1B2C3D4E5F60718 /* PersistedMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7005BF1A1B2C3D4E5F60718 /* PersistedMetadata.swift */; };
+		D7010BF0A1B2C3D4E5F60718 /* PaneMetadataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7010BF1A1B2C3D4E5F60718 /* PaneMetadataStore.swift */; };
+		D7011BF0A1B2C3D4E5F60718 /* PaneMetadataStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7011BF1A1B2C3D4E5F60718 /* PaneMetadataStoreTests.swift */; };
 		D7006BF0A1B2C3D4E5F60718 /* MetadataPersistenceRoundTripTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7006BF1A1B2C3D4E5F60718 /* MetadataPersistenceRoundTripTests.swift */; };
 		D7007BF0A1B2C3D4E5F60718 /* MetadataPersistencePrecedenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7007BF1A1B2C3D4E5F60718 /* MetadataPersistencePrecedenceTests.swift */; };
 		D7008BF0A1B2C3D4E5F60718 /* MetadataPersistenceUncoercibleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7008BF1A1B2C3D4E5F60718 /* MetadataPersistenceUncoercibleTests.swift */; };
@@ -215,6 +217,8 @@
 		D70A3BF1A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceMetadataKeys.swift; sourceTree = "<group>"; };
 		D70A4BF1A1B2C3D4E5F60718 /* WorkspaceMetadataValidatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceMetadataValidatorTests.swift; sourceTree = "<group>"; };
 		D7005BF1A1B2C3D4E5F60718 /* PersistedMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistedMetadata.swift; sourceTree = "<group>"; };
+		D7010BF1A1B2C3D4E5F60718 /* PaneMetadataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneMetadataStore.swift; sourceTree = "<group>"; };
+		D7011BF1A1B2C3D4E5F60718 /* PaneMetadataStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneMetadataStoreTests.swift; sourceTree = "<group>"; };
 		D7006BF1A1B2C3D4E5F60718 /* MetadataPersistenceRoundTripTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataPersistenceRoundTripTests.swift; sourceTree = "<group>"; };
 		D7007BF1A1B2C3D4E5F60718 /* MetadataPersistencePrecedenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataPersistencePrecedenceTests.swift; sourceTree = "<group>"; };
 		D7008BF1A1B2C3D4E5F60718 /* MetadataPersistenceUncoercibleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataPersistenceUncoercibleTests.swift; sourceTree = "<group>"; };
@@ -471,6 +475,7 @@
 				A5001543 /* SurfaceMetadataStore.swift */,
 				D70A3BF1A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift */,
 				D7005BF1A1B2C3D4E5F60718 /* PersistedMetadata.swift */,
+				D7010BF1A1B2C3D4E5F60718 /* PaneMetadataStore.swift */,
 				A5001545 /* AgentDetector.swift */,
 				A5001701 /* TextBoxInput.swift */,
 				A5008F12 /* SurfaceTitleBarView.swift */,
@@ -616,6 +621,7 @@
 					D7007BF1A1B2C3D4E5F60718 /* MetadataPersistencePrecedenceTests.swift */,
 					D7008BF1A1B2C3D4E5F60718 /* MetadataPersistenceUncoercibleTests.swift */,
 					D7009BF1A1B2C3D4E5F60718 /* MetadataStoreRevisionCounterTests.swift */,
+					D7011BF1A1B2C3D4E5F60718 /* PaneMetadataStoreTests.swift */,
 				);
 				path = cmuxTests;
 				sourceTree = "<group>";
@@ -789,6 +795,7 @@
 				A5001542 /* SurfaceMetadataStore.swift in Sources */,
 				D70A3BF0A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift in Sources */,
 				D7005BF0A1B2C3D4E5F60718 /* PersistedMetadata.swift in Sources */,
+				D7010BF0A1B2C3D4E5F60718 /* PaneMetadataStore.swift in Sources */,
 				A5001544 /* AgentDetector.swift in Sources */,
 			A5001700 /* TextBoxInput.swift in Sources */,
 				A5008F11 /* SurfaceTitleBarView.swift in Sources */,
@@ -901,6 +908,7 @@
 					D7007BF0A1B2C3D4E5F60718 /* MetadataPersistencePrecedenceTests.swift in Sources */,
 					D7008BF0A1B2C3D4E5F60718 /* MetadataPersistenceUncoercibleTests.swift in Sources */,
 					D7009BF0A1B2C3D4E5F60718 /* MetadataStoreRevisionCounterTests.swift in Sources */,
+					D7011BF0A1B2C3D4E5F60718 /* PaneMetadataStoreTests.swift in Sources */,
 				);
 				runOnlyForDeploymentPostprocessing = 0;
 			};

@@ -1417,11 +1417,13 @@ func installFileDropOverlay(on window: NSWindow, tabManager: TabManager) {
 
 struct ContentView: View {
     @ObservedObject var updateViewModel: UpdateViewModel
+    @ObservedObject private var themeManager = ThemeManager.shared
     let windowId: UUID
     @EnvironmentObject var tabManager: TabManager
     @EnvironmentObject var notificationStore: TerminalNotificationStore
     @EnvironmentObject var sidebarState: SidebarState
     @EnvironmentObject var sidebarSelectionState: SidebarSelectionState
+    @Environment(\.colorScheme) private var colorScheme
     @State private var sidebarWidth: CGFloat = 200
     @State private var hoveredResizerHandles: Set<SidebarResizerHandle> = []
     @State private var isResizerDragging = false
@@ -2161,15 +2163,59 @@ struct ContentView: View {
     @AppStorage("bgGlassTintOpacity") private var bgGlassTintOpacity = 0.03
     @AppStorage("bgGlassEnabled") private var bgGlassEnabled = false
     @AppStorage("debugTitlebarLeadingExtra") private var debugTitlebarLeadingExtra: Double = 0
+    @AppStorage(ThemeAppStorage.Keys.m1bCustomTitlebarMigrated, store: ThemeAppStorage.defaults)
+    private var m1bCustomTitlebarMigrated = false
 
     @State private var titlebarLeadingInset: CGFloat = 12
     private var windowIdentifier: String { "cmux.main.\(windowId.uuidString)" }
     private var fakeTitlebarTextColor: Color {
         _ = titlebarThemeGeneration
-        let ghosttyBackground = GhosttyApp.shared.defaultBackgroundColor
-        return ghosttyBackground.isLightColor
+        let referenceBackground = useThemeM1bCustomTitlebarPath
+            ? resolvedCustomTitlebarBackgroundColor
+            : GhosttyApp.shared.defaultBackgroundColor
+        return referenceBackground.isLightColor
             ? Color.black.opacity(0.78)
             : Color.white.opacity(0.82)
+    }
+
+    private var useThemeM1bCustomTitlebarPath: Bool {
+        m1bCustomTitlebarMigrated && themeManager.isEnabled
+    }
+
+    private var titlebarThemeContext: ThemeContext {
+        themeManager.makeContext(
+            workspaceColor: tabManager.selectedWorkspace?.customColor,
+            colorScheme: colorScheme
+        )
+    }
+
+    private var legacyCustomTitlebarOpacity: CGFloat {
+        let alpha = CGFloat(GhosttyApp.shared.defaultBackgroundOpacity)
+        return alpha >= 0.999 ? alpha : 1.0 - pow(1.0 - alpha, 2)
+    }
+
+    private var resolvedCustomTitlebarBackgroundColor: NSColor {
+        guard useThemeM1bCustomTitlebarPath,
+              let color: NSColor = themeManager.resolve(.titleBar_background, context: titlebarThemeContext) else {
+            return GhosttyApp.shared.defaultBackgroundColor
+        }
+        return color
+    }
+
+    private var resolvedCustomTitlebarBackgroundOpacity: CGFloat {
+        guard useThemeM1bCustomTitlebarPath,
+              let opacity: Double = themeManager.resolve(.titleBar_backgroundOpacity, context: titlebarThemeContext) else {
+            return legacyCustomTitlebarOpacity
+        }
+        return CGFloat(opacity)
+    }
+
+    private var resolvedCustomTitlebarBottomBorder: Color {
+        guard useThemeM1bCustomTitlebarPath,
+              let color: NSColor = themeManager.resolve(.titleBar_borderBottom, context: titlebarThemeContext) else {
+            return Color(nsColor: .separatorColor)
+        }
+        return Color(nsColor: color)
     }
     private var fullscreenControls: some View {
         TitlebarControlsView(
@@ -2224,19 +2270,14 @@ struct ContentView: View {
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
         .background({
-            // The terminal area has two stacked semi-transparent layers: the Bonsplit
-            // container chrome background plus Ghostty's own Metal-rendered background.
-            // Compute the effective composited opacity so the titlebar matches visually.
-            let alpha = CGFloat(GhosttyApp.shared.defaultBackgroundOpacity)
-            let effective = alpha >= 0.999 ? alpha : 1.0 - pow(1.0 - alpha, 2)
             return TitlebarLayerBackground(
-                backgroundColor: GhosttyApp.shared.defaultBackgroundColor,
-                opacity: effective
+                backgroundColor: resolvedCustomTitlebarBackgroundColor,
+                opacity: resolvedCustomTitlebarBackgroundOpacity
             )
         }())
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Color(nsColor: .separatorColor))
+                .fill(resolvedCustomTitlebarBottomBorder)
                 .frame(height: 1)
         }
     }

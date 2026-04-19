@@ -86,13 +86,20 @@ enum PersistedMetadataBridge {
         ProcessInfo.processInfo.environment["CMUX_DISABLE_METADATA_PERSIST"] == "1"
     }
 
-    /// Enforce the 64 KiB per-surface cap at the persistence boundary.
+    /// Enforce the 64 KiB per-entity cap at the persistence boundary.
     /// Bug-guard only — the live store already caps writes. If exceeded,
     /// drop keys (largest encoded first) until under cap, logging each
     /// drop. Never throws.
+    ///
+    /// `entityKind` and `entityId` are diagnostic only — they appear in the
+    /// debug log so reviewers can tell a surface drop apart from a pane drop.
+    /// The cap value is identical for both stores
+    /// (`SurfaceMetadataStore.payloadCapBytes == PaneMetadataStore.payloadCapBytes`),
+    /// so the same enforcement path is reused.
     static func enforceSizeCap(
         _ values: [String: PersistedJSONValue],
-        surfaceId: UUID
+        entityKind: String,
+        entityId: UUID
     ) -> [String: PersistedJSONValue] {
         var current = values
         while let data = try? JSONEncoder().encode(current),
@@ -107,7 +114,7 @@ enum PersistedMetadataBridge {
             guard let victim = sizedKeys.max(by: { $0.size < $1.size }) else { break }
             #if DEBUG
             dlog(
-                "metadata.persist.overcap.drop surface=\(surfaceId.uuidString.prefix(8)) " +
+                "metadata.persist.overcap.drop \(entityKind)=\(entityId.uuidString.prefix(8)) " +
                 "key=\(victim.key) droppedSize=\(victim.size)"
             )
             #endif
@@ -115,6 +122,16 @@ enum PersistedMetadataBridge {
             if current.isEmpty { break }
         }
         return current
+    }
+
+    /// Back-compat shim for the original surface-only signature. Existing
+    /// callers keep working unchanged; new pane-side callers go through the
+    /// `entityKind:entityId:` form directly.
+    static func enforceSizeCap(
+        _ values: [String: PersistedJSONValue],
+        surfaceId: UUID
+    ) -> [String: PersistedJSONValue] {
+        return enforceSizeCap(values, entityKind: "surface", entityId: surfaceId)
     }
 
     /// Coerce a live metadata blob into its persisted representation.

@@ -23,6 +23,7 @@
 		D7005BF0A1B2C3D4E5F60718 /* PersistedMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7005BF1A1B2C3D4E5F60718 /* PersistedMetadata.swift */; };
 		D7010BF0A1B2C3D4E5F60718 /* PaneMetadataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7010BF1A1B2C3D4E5F60718 /* PaneMetadataStore.swift */; };
 		D7011BF0A1B2C3D4E5F60718 /* PaneMetadataStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7011BF1A1B2C3D4E5F60718 /* PaneMetadataStoreTests.swift */; };
+		D7012BF0A1B2C3D4E5F60718 /* PaneMetadataPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7012BF1A1B2C3D4E5F60718 /* PaneMetadataPersistenceTests.swift */; };
 		D7015BF0A1B2C3D4E5F60718 /* DefaultGridSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7015BF1A1B2C3D4E5F60718 /* DefaultGridSettingsTests.swift */; };
 		D7006BF0A1B2C3D4E5F60718 /* MetadataPersistenceRoundTripTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7006BF1A1B2C3D4E5F60718 /* MetadataPersistenceRoundTripTests.swift */; };
 		D7007BF0A1B2C3D4E5F60718 /* MetadataPersistencePrecedenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7007BF1A1B2C3D4E5F60718 /* MetadataPersistencePrecedenceTests.swift */; };
@@ -221,6 +222,7 @@
 		D7005BF1A1B2C3D4E5F60718 /* PersistedMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistedMetadata.swift; sourceTree = "<group>"; };
 		D7010BF1A1B2C3D4E5F60718 /* PaneMetadataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneMetadataStore.swift; sourceTree = "<group>"; };
 		D7011BF1A1B2C3D4E5F60718 /* PaneMetadataStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneMetadataStoreTests.swift; sourceTree = "<group>"; };
+		D7012BF1A1B2C3D4E5F60718 /* PaneMetadataPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneMetadataPersistenceTests.swift; sourceTree = "<group>"; };
 		D7015BF1A1B2C3D4E5F60718 /* DefaultGridSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultGridSettingsTests.swift; sourceTree = "<group>"; };
 		D7006BF1A1B2C3D4E5F60718 /* MetadataPersistenceRoundTripTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataPersistenceRoundTripTests.swift; sourceTree = "<group>"; };
 		D7007BF1A1B2C3D4E5F60718 /* MetadataPersistencePrecedenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataPersistencePrecedenceTests.swift; sourceTree = "<group>"; };
@@ -627,6 +629,7 @@
 					D7009BF1A1B2C3D4E5F60718 /* MetadataStoreRevisionCounterTests.swift */,
 					D700ABF1A1B2C3D4E5F60718 /* StatusEntryPersistenceTests.swift */,
 					D7011BF1A1B2C3D4E5F60718 /* PaneMetadataStoreTests.swift */,
+					D7012BF1A1B2C3D4E5F60718 /* PaneMetadataPersistenceTests.swift */,
 					D7015BF1A1B2C3D4E5F60718 /* DefaultGridSettingsTests.swift */,
 				);
 				path = cmuxTests;
@@ -916,6 +919,7 @@
 					D7009BF0A1B2C3D4E5F60718 /* MetadataStoreRevisionCounterTests.swift in Sources */,
 					D700ABF0A1B2C3D4E5F60718 /* StatusEntryPersistenceTests.swift in Sources */,
 					D7011BF0A1B2C3D4E5F60718 /* PaneMetadataStoreTests.swift in Sources */,
+					D7012BF0A1B2C3D4E5F60718 /* PaneMetadataPersistenceTests.swift in Sources */,
 					D7015BF0A1B2C3D4E5F60718 /* DefaultGridSettingsTests.swift in Sources */,
 				);
 				runOnlyForDeploymentPostprocessing = 0;
@@ -1018,7 +1022,7 @@
 				CODE_SIGN_ENTITLEMENTS = "";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 85;
+				CURRENT_PROJECT_VERSION = 86;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1027,7 +1031,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.11.0;
 				OTHER_LDFLAGS = (
 					"-lc++",
 					"-framework",
@@ -1059,7 +1063,7 @@
 				CODE_SIGN_ENTITLEMENTS = "";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 85;
+				CURRENT_PROJECT_VERSION = 86;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1068,7 +1072,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.11.0;
 				OTHER_LDFLAGS = (
 					"-lc++",
 					"-framework",
@@ -1137,10 +1141,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 85;
+				CURRENT_PROJECT_VERSION = 86;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.11.0;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11mux.appuitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1154,10 +1158,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 85;
+				CURRENT_PROJECT_VERSION = 86;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.11.0;
 				ONLY_ACTIVE_ARCH = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11mux.appuitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1171,10 +1175,10 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 85;
+				CURRENT_PROJECT_VERSION = 86;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.11.0;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11mux.apptests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1190,10 +1194,10 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 85;
+				CURRENT_PROJECT_VERSION = 86;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.11.0;
 				ONLY_ACTIVE_ARCH = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11mux.apptests;
 				PRODUCT_NAME = "$(TARGET_NAME)";

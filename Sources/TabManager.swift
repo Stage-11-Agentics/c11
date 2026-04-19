@@ -5066,6 +5066,11 @@ extension TabManager {
         // touch workspace/panel counts or titles) still flip the fingerprint
         // and trigger an autosave at the next 8s tick.
         hasher.combine(SurfaceMetadataStore.shared.currentRevision())
+        // CMUX-11 Phase 3: same trick for the pane store. Pane-only metadata
+        // mutations (`pane.set_metadata`, --title seed on new-split) bump the
+        // pane revision; including it here ensures those writes hit disk on
+        // the same 8s cadence as surface metadata.
+        hasher.combine(PaneMetadataStore.shared.currentRevision())
 
         for workspace in tabs.prefix(SessionPersistencePolicy.maxWorkspacesPerWindow) {
             hasher.combine(workspace.id)

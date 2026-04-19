@@ -5988,6 +5988,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    func spawnDefaultGridWhenReady(to workspace: Workspace) {
+        let workspaceId = workspace.id
+        runWhenInitialTerminalReady(in: workspace) { [weak self] initialPanel in
+            // Resolve at dispatch time; the hosting window is typically not
+            // attached when addWorkspace returns.
+            let window = self?.mainWindowContainingWorkspace(workspaceId)
+            let screenFrame = DefaultGridSettings.resolvedScreenFrame(for: window)
+            DefaultGridSettings.performDefaultGrid(
+                on: workspace,
+                initialPanel: initialPanel,
+                screenFrame: screenFrame
+            )
+        }
+    }
+
     private func runWhenInitialTerminalReady(
         in workspace: Workspace,
         _ action: @escaping (TerminalPanel) -> Void

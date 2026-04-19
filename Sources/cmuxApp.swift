@@ -3814,6 +3814,142 @@ enum WelcomeSettings {
     }
 }
 
+enum DefaultGridSettings {
+    static let enabledKey = "cmuxDefaultGridEnabled"
+    static let defaultEnabled = true
+
+    // Pixel-dimension thresholds (width × height) that classify the host screen
+    // into a default grid shape. Chosen on width primarily, matching typical
+    // desktop marketing resolutions (4K, QHD, and sub-QHD).
+    static let fourKMinWidth: CGFloat = 3840
+    static let fourKMinHeight: CGFloat = 2160
+    static let qhdMinWidth: CGFloat = 2560
+    static let qhdMinHeight: CGFloat = 1440
+
+    static func isEnabled(defaults: UserDefaults = .standard) -> Bool {
+        if defaults.object(forKey: enabledKey) == nil {
+            return defaultEnabled
+        }
+        return defaults.bool(forKey: enabledKey)
+    }
+
+    /// Pure function mapping a screen's pixel frame to a grid shape.
+    /// Degenerate or missing screens fall back to 1×1 (no splits).
+    static func classify(screenFrame: NSRect) -> (cols: Int, rows: Int) {
+        let width = screenFrame.width
+        let height = screenFrame.height
+        guard width > 0, height > 0 else { return (cols: 1, rows: 1) }
+        if width >= fourKMinWidth && height >= fourKMinHeight {
+            return (cols: 3, rows: 3)
+        }
+        if width >= qhdMinWidth && height >= qhdMinHeight {
+            return (cols: 2, rows: 3)
+        }
+        return (cols: 2, rows: 2)
+    }
+
+    /// Describes a single split operation inside a grid build: which column's
+    /// current bottom-most panel to split, and in what direction.
+    struct SplitOp: Equatable {
+        enum Direction: Equatable {
+            /// Split horizontally (side-by-side) to create a new column.
+            case horizontalToNewColumn
+            /// Split vertically (top-bottom) below the current column tail.
+            case verticalDownInColumn
+        }
+
+        let column: Int
+        let direction: Direction
+    }
+
+    /// Pure grid construction schedule. Phase 1 fans out `cols - 1` columns
+    /// to the right of the initial panel. Phase 2 walks each column and
+    /// stacks `rows - 1` additional panes vertically beneath the column head.
+    static func gridSplitOperations(cols: Int, rows: Int) -> [SplitOp] {
+        guard cols >= 1, rows >= 1 else { return [] }
+        var ops: [SplitOp] = []
+        for col in 1..<cols {
+            ops.append(SplitOp(column: col, direction: .horizontalToNewColumn))
+        }
+        for col in 0..<cols {
+            for _ in 1..<rows {
+                ops.append(SplitOp(column: col, direction: .verticalDownInColumn))
+            }
+        }
+        return ops
+    }
+
+    /// Resolves the pixel frame of the screen that best contains the given
+    /// window. Returns `.zero` if no screen can be resolved, which the
+    /// classifier treats as the 1×1 fallback (no grid).
+    static func resolvedScreenFrame(for window: NSWindow?) -> NSRect {
+        if let screen = window?.screen {
+            return screen.frame
+        }
+        if let window, let best = bestScreen(for: window) {
+            return best.frame
+        }
+        return NSScreen.main?.frame ?? .zero
+    }
+
+    private static func bestScreen(for window: NSWindow) -> NSScreen? {
+        let windowFrame = window.frame
+        return NSScreen.screens.max { lhs, rhs in
+            lhs.frame.intersection(windowFrame).area < rhs.frame.intersection(windowFrame).area
+        }
+    }
+
+    /// Auto-spawns a cols × rows terminal grid rooted at `initialPanel`. Silently
+    /// truncates the build if any split fails (partial grid is acceptable).
+    /// Callers decide when the initial panel's Ghostty surface is ready.
+    @MainActor
+    static func performDefaultGrid(
+        on workspace: Workspace,
+        initialPanel: TerminalPanel,
+        screenFrame: NSRect
+    ) {
+        let (cols, rows) = classify(screenFrame: screenFrame)
+        guard cols > 1 || rows > 1 else { return }
+
+        let ops = gridSplitOperations(cols: cols, rows: rows)
+
+        // columnTails[col] = the panel currently occupying the bottom of column col.
+        // Seeded with the initial panel in column 0; other columns are populated
+        // by the phase-1 horizontal splits before any vertical splits run.
+        var columnTails: [Int: TerminalPanel] = [0: initialPanel]
+
+        for op in ops {
+            switch op.direction {
+            case .horizontalToNewColumn:
+                // Chain off the previous column's head so columns march rightward.
+                let sourceColumn = op.column - 1
+                guard let source = columnTails[sourceColumn] else { return }
+                guard let newPanel = workspace.newTerminalSplit(
+                    from: source.id,
+                    orientation: .horizontal,
+                    insertFirst: false,
+                    focus: false
+                ) else { return }
+                columnTails[op.column] = newPanel
+
+            case .verticalDownInColumn:
+                guard let source = columnTails[op.column] else { return }
+                guard let newPanel = workspace.newTerminalSplit(
+                    from: source.id,
+                    orientation: .vertical,
+                    insertFirst: false,
+                    focus: false
+                ) else { return }
+                columnTails[op.column] = newPanel
+            }
+        }
+    }
+}
+
+private extension NSRect {
+    var area: CGFloat { width * height }
+}
+
 enum TelemetrySettings {
     static let sendAnonymousTelemetryKey = "sendAnonymousTelemetry"
     static let defaultSendAnonymousTelemetry = true

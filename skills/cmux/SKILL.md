@@ -37,17 +37,21 @@ Refs accept UUIDs, short refs, or indexes: `window:1`, `workspace:1`, `pane:2`, 
 At session start — always, in this order:
 
 ```bash
-cmux identify                                              # Your workspace/surface/pane refs (JSON)
-cmux tree                                                  # Spatial layout of the current workspace + hierarchical listing
-cmux set-agent --type claude-code --model claude-opus-4-7  # Declare terminal_type + model (mandatory)
-cmux rename-tab "<your role>"                              # Name your own tab before anything else
+cmux identify                                                   # Your workspace/surface/pane refs (JSON)
+cmux tree                                                       # Spatial layout of the current workspace + hierarchical listing
+cmux set-agent --type claude-code --model claude-opus-4-7       # Declare terminal_type + model (mandatory)
+cmux rename-tab --surface "$CMUX_SURFACE_ID" "<your role>"      # Name your own tab before anything else
 ```
+
+> **Binary bug (as of 2026-04-18):** `CMUX_TAB_ID` is exported equal to the workspace UUID, not the tab UUID. Bare `cmux rename-tab "<role>"` (and any other tab-scoped command that defaults to `CMUX_TAB_ID`) errors with `not_found: Tab not found`. Always pass `--surface "$CMUX_SURFACE_ID"` for tab-scoped commands (`rename-tab`, `set-title`, `set-description`) until this is fixed — `CMUX_SURFACE_ID` itself is correct.
 
 Also populate `role`, `task`, and `status` via `cmux set-metadata` **if known** from the opening message or environment (e.g. the user references a ticket ID, or `CMUX_AGENT_TASK` is set). Skip when unknown — don't guess.
 
 **An unnamed tab is an unidentifiable agent.** Name your tab immediately, even when working solo. Key word first, 2–4 words, under 25 characters (the sidebar truncates from the right): `cmux rename-tab "TICKET-42 Plan"` survives; `"Planning TICKET-42"` truncates to `"Planning TICK…"`.
 
 **Show lineage for downstream tabs.** When a pane is spawned from another — sub-agents under an orchestrator, review agents over a feature's work, follow-ups rooted in earlier output — chain parent to child with `::`, parent first: `Login Button :: MA Review :: Claude`. Multiple rungs chain in order. The sidebar truncates to the parent (grouping siblings visibly); the full chain shows in the title bar. Users may override; lineage is the default whenever a parent exists. Before renaming, check `cmux get-titlebar-state` — if a chain is already present, preserve the prefix and only refine the trailing segment. See [references/orchestration.md#tab-naming-mandatory](references/orchestration.md#tab-naming-mandatory) for the full convention.
+
+**Sibling workers are not downstream.** When the operator sets up peer panes they'll drive directly — e.g., two `cc` panes for parallel feature work, a standing "Lattice Manager" next to them — skip the `::` chain and use a short positional or role anchor: `Feature Left`, `Feature Right`, `Lattice Manager`. Reserve `::` lineage for true hierarchical orchestration where a parent agent routes work down to sub-agents it will read back from.
 
 **If the user's opening message is absent or ambiguous, ask before orienting.** This aligns with the global "dialogue" norm — don't silently rename a tab `"Explore"` just to have something in the sidebar. A direct request ("fix this bug", "what is X called") is not ambiguous; proceed with the request and run orientation in the same turn.
 
@@ -154,12 +158,38 @@ cmux read-screen --scrollback --lines 200       # include scrollback buffer
 ## Create splits, panes, surfaces
 
 ```bash
-cmux new-split <left|right|up|down>            # Split current pane (terminal only)
-cmux new-pane --type browser --url <url>       # New browser pane
+cmux new-split <left|right|up|down>            # Split any pane; the NEW pane is always a terminal
+cmux new-pane --type browser --url <url>       # New pane of any surface type; --direction is relative to focus
 cmux new-surface --pane <pane-ref>             # Add a tab to an existing pane
 ```
 
-`new-split` defaults to the **caller's** pane; `new-surface` defaults to the **focused** pane (often different). To add a tab to your own pane, read `caller.pane_ref` from `cmux identify` and pass it via `--pane`.
+- **`new-split` clarified.** Source can be a pane of any surface type — terminal, browser, or markdown. Only the *new* pane is constrained to terminal. Use `new-pane` when the new pane should be a browser or markdown viewer.
+- **Direction is relative to the focused pane.** `new-pane` has no `--pane` flag; it operates on the currently focused pane. Call `cmux focus-pane --pane <ref> --workspace <ref>` first if you need to target a different one.
+- **`new-split` does NOT return the new pane ref** — output is `OK surface:<N> workspace:<M>` only. Follow with `cmux tree --no-layout` (or `--json`) to discover the newly created pane. `new-pane` *does* return the pane ref (`OK surface:<N> pane:<P> workspace:<M>`).
+- **Default targets differ.** `new-split` defaults to the **caller's** pane; `new-surface` defaults to the **focused** pane (often different). To add a tab to your own pane, read `caller.pane_ref` from `cmux identify` and pass it via `--pane`.
+
+## Resize panes
+
+Binary splits aren't balanced automatically. Two `new-split right` calls give you `[A 50% | B 25% | C 25%]`, not equal thirds. Use `resize-pane` to rebalance.
+
+```bash
+cmux resize-pane --pane <ref> --workspace <ref> (-L|-R|-U|-D) --amount <px>
+```
+
+- `-R <px>` grows the pane by pushing its **right** border rightward (shrinks the right neighbor).
+- `-L <px>` grows the pane by pushing its **left** border leftward (shrinks the left neighbor).
+- `-U` / `-D` are the vertical equivalents.
+- A direction toward the workspace edge fails with `Pane has no adjacent border in direction <dir>`: the leftmost pane cannot `-L`, the topmost cannot `-U`, etc. Resize from the neighbor instead.
+
+**Compound-split cascade.** When you resize a pane whose nearest matching border belongs to an *outer* split (not the split that directly separates it from its closest sibling), the resize moves the outer boundary; both children of the inner split grow **proportionally**, preserving their existing ratio. Example: given `[A 50%] | [B 25% | C 25%]` (outer horizontal split, right half split again), `resize-pane --pane B -L 500` pulls 500px across the outer boundary — B and C each gain 250px because their inner ratio is 1:1. Resize again across the inner boundary (`-R` on B) to equalize B and C without touching A.
+
+**Recipe: equal thirds from two right-splits.** After `new-split right` twice on a workspace of width `W`, you have `[A W/2 | B W/4 | C W/4]`. One resize lands thirds, because the cascade does the inner redistribution for free:
+
+```bash
+# W = workspace content width (read from `cmux tree --json` or the ASCII floor plan header)
+cmux resize-pane --workspace $WS --pane $B -L $((W / 6))
+# → A shrinks by W/6 to W/3; B and C each grow by W/12 (inner ratio preserved) to W/3 each.
+```
 
 ## Spatial layout (cmux tree)
 
@@ -261,6 +291,21 @@ When in c11mux, prefer the embedded browser over Chrome MCP (`mcp__claude-in-chr
 - Interact: `cmux browser click`, `cmux browser snapshot`, `cmux browser fill`, etc.
 
 Reach for Chrome MCP only when **not** in c11mux or when a Chrome-specific feature is required. See the `cmux-browser` sibling skill for the full automation API.
+
+### Opening a browser pane on a local service
+
+If the browser pane targets a local daemon (e.g. `lattice dashboard`, a dev server), start the daemon **before** creating the browser pane — otherwise the browser loads an error page and won't auto-refresh when the service comes up later. If you do have to open the pane first, reload it once the listener is live:
+
+```bash
+cmux browser --surface <surface> reload
+```
+
+**Don't pipe daemon launches to `head`, `tail`, or any finite reader.** When the reader exits, the daemon gets SIGPIPE and dies mid-start. Detach cleanly instead:
+
+```bash
+nohup lattice dashboard --port 8799 > /tmp/lattice-dashboard.log 2>&1 &
+disown
+```
 
 ## References
 

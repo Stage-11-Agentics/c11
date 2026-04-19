@@ -80,7 +80,7 @@ The `caller` block in `cmux identify` always reflects the pane invoking the comm
 # Create
 cmux <path>                          # Open directory in new workspace (launches c11mux if needed)
 cmux new-workspace [--cwd <path>] [--command <text>]
-cmux new-split <left|right|up|down>  # Split current pane (terminal only)
+cmux new-split <left|right|up|down>  # Split any pane; the new pane is always a terminal
 cmux new-pane [--type <terminal|browser|markdown>] [--direction <dir>] [--url <url>]
 cmux new-surface [--type <terminal|browser|markdown>] [--pane <id|ref>] [--workspace <id|ref>]
 

@@ -3140,8 +3140,11 @@ final class TerminalSurface: Identifiable, ObservableObject {
         setManagedEnvironmentValue("CMUX_SURFACE_ID", id.uuidString)
         setManagedEnvironmentValue("CMUX_WORKSPACE_ID", tabId.uuidString)
         // Backward-compatible shell integration keys used by existing scripts/tests.
+        // Both CMUX_PANEL_ID and CMUX_TAB_ID are legacy aliases for the surface UUID —
+        // the rename-tab CLI and tests_v2/test_rename_tab_cli_parity.py both expect
+        // CMUX_TAB_ID to resolve to a surface (accepts `tab:<n>` or `surface:<n>`).
         setManagedEnvironmentValue("CMUX_PANEL_ID", id.uuidString)
-        setManagedEnvironmentValue("CMUX_TAB_ID", tabId.uuidString)
+        setManagedEnvironmentValue("CMUX_TAB_ID", id.uuidString)
         setManagedEnvironmentValue("CMUX_SOCKET_PATH", SocketControlSettings.socketPath())
         if let bundledCLIURL = Bundle.main.resourceURL?.appendingPathComponent("bin/cmux"),
            FileManager.default.isExecutableFile(atPath: bundledCLIURL.path) {

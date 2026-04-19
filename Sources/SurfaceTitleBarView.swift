@@ -30,7 +30,10 @@ struct SurfaceTitleBarView: View {
     let state: SurfaceTitleBarState
     var onToggleCollapsed: () -> Void = {}
 
+    @ObservedObject private var themeManager = ThemeManager.shared
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(ThemeAppStorage.Keys.m1bSurfaceTitleBarMigrated, store: ThemeAppStorage.defaults)
+    private var m1bSurfaceTitleBarMigrated = false
 
     private var descriptionIsEmpty: Bool {
         state.description?.isEmpty ?? true
@@ -41,6 +44,54 @@ struct SurfaceTitleBarView: View {
     /// title + empty description + disabled chevron visual trap.
     private var effectiveCollapsed: Bool {
         state.collapsed || descriptionIsEmpty
+    }
+
+    private var themeContext: ThemeContext {
+        themeManager.makeContext(colorScheme: colorScheme)
+    }
+
+    private var useThemeMigrationPath: Bool {
+        m1bSurfaceTitleBarMigrated && themeManager.isEnabled
+    }
+
+    private var resolvedBackgroundColor: NSColor {
+        guard useThemeMigrationPath,
+              let color: NSColor = themeManager.resolve(.titleBar_background, context: themeContext) else {
+            return NSColor.windowBackgroundColor
+        }
+        return color
+    }
+
+    private var resolvedBackgroundOpacity: Double {
+        guard useThemeMigrationPath,
+              let opacity: Double = themeManager.resolve(.titleBar_backgroundOpacity, context: themeContext) else {
+            return 0.85
+        }
+        return opacity
+    }
+
+    private var resolvedForegroundColor: Color {
+        guard useThemeMigrationPath,
+              let color: NSColor = themeManager.resolve(.titleBar_foreground, context: themeContext) else {
+            return .primary
+        }
+        return Color(nsColor: color)
+    }
+
+    private var resolvedSecondaryForegroundColor: Color {
+        guard useThemeMigrationPath,
+              let color: NSColor = themeManager.resolve(.titleBar_foregroundSecondary, context: themeContext) else {
+            return .secondary
+        }
+        return Color(nsColor: color)
+    }
+
+    private var resolvedBottomBorderColor: Color {
+        guard useThemeMigrationPath,
+              let color: NSColor = themeManager.resolve(.titleBar_borderBottom, context: themeContext) else {
+            return Color(nsColor: NSColor.separatorColor)
+        }
+        return Color(nsColor: color)
     }
 
     var body: some View {
@@ -57,12 +108,12 @@ struct SurfaceTitleBarView: View {
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                Color(nsColor: NSColor.windowBackgroundColor)
-                    .opacity(0.85)
+                Color(nsColor: resolvedBackgroundColor)
+                    .opacity(resolvedBackgroundOpacity)
             )
             .overlay(
                 Rectangle()
-                    .fill(Color(nsColor: NSColor.separatorColor))
+                    .fill(resolvedBottomBorderColor)
                     .frame(height: 1),
                 alignment: .bottom
             )
@@ -86,7 +137,7 @@ struct SurfaceTitleBarView: View {
             Text(state.title ?? String(localized: "titlebar.empty_title",
                                        defaultValue: "Untitled"))
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.primary)
+                .foregroundColor(resolvedForegroundColor)
                 .lineLimit(effectiveCollapsed ? 1 : nil)
                 .truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: true)
@@ -94,7 +145,7 @@ struct SurfaceTitleBarView: View {
             Button(action: onToggleCollapsed) {
                 Image(systemName: effectiveCollapsed ? "chevron.right" : "chevron.down")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(resolvedSecondaryForegroundColor)
                     .frame(width: 14, height: 14)
                     .contentShape(Rectangle())
                     .padding(.horizontal, 6)

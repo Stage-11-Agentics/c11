@@ -249,6 +249,15 @@ Reviewing PR #42 for correctness, style, and edge cases. One of three parallel r
 
 When updating the description on task change, preserve the lineage line — don't strip it. It's the operator's map for reconstructing why this pane exists; losing it forces a re-derivation from content.
 
+### Pane-layer lineage
+
+Panes (the split-tree leaves a surface lives in) carry their own free-form JSON manifest alongside the surface manifest. It surfaces the same title/description pair, and the same `::` lineage convention applies — the rules documented above cover panes verbatim, so this section only notes what's pane-specific.
+
+- **Write with `--pane`.** `cmux set-metadata --pane <pane-ref> --key title --value "Parent :: Child"` (or `--json '{...}'`) writes to the pane layer. `--surface` and `--pane` are mutually exclusive on the same call.
+- **Read-then-write is the default.** `pane.set_metadata` returns `prior_values` for every key in the incoming partial. Compose from the prior value rather than replacing — chain a new rung onto the existing lineage instead of blowing it away, unless the new task is genuinely unrelated.
+- **Same `::` rules as surface titles.** Parent first, short segments, sibling workers skip the chain (see the *Orient first* and *Lineage in titles and descriptions* sections above — don't duplicate conventions across layers). When you `--title "Parent :: Child"` on `cmux new-split` / `new-pane`, the seeded value flows through the same persistence path as an explicit write.
+- **On `/clear` (context reset), ask before renaming.** An agent that drops context inherits the pane title it had before the reset. If the next task is unrelated, ask the operator whether to rename the pane rather than silently replacing the breadcrumb — the prior lineage was load-bearing for someone. c11mux installs no `/clear` hook; this is guidance, not automation.
+
 ## Sidebar reporting
 
 Sidebar metadata commands give fast feedback without touching the JSON blob:

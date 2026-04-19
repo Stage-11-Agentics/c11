@@ -1,0 +1,3 @@
+# leading comment should be ignored
+[identity]
+name = "stage11"

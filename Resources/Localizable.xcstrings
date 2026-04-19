@@ -28213,6 +28213,210 @@
         }
       }
     },
+    "debug.theme.dumpActive": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debug: Dump Active Theme"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバッグ: アクティブテーマをダンプ"
+          }
+        }
+      }
+    },
+    "debug.theme.m1b.menuTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debug: Theme M1b"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバッグ: テーマ M1b"
+          }
+        }
+      }
+    },
+    "debug.theme.m1b.toggle.bonsplitAppearance": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debug: Theme M1b / Toggle Workspace.bonsplitAppearance"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバッグ: テーマ M1b / Workspace.bonsplitAppearance を切り替え"
+          }
+        }
+      }
+    },
+    "debug.theme.m1b.toggle.browserChrome": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debug: Theme M1b / Toggle BrowserPanelView"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバッグ: テーマ M1b / BrowserPanelView を切り替え"
+          }
+        }
+      }
+    },
+    "debug.theme.m1b.toggle.customTitlebar": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debug: Theme M1b / Toggle ContentView.customTitlebar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバッグ: テーマ M1b / ContentView.customTitlebar を切り替え"
+          }
+        }
+      }
+    },
+    "debug.theme.m1b.toggle.markdownChrome": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debug: Theme M1b / Toggle MarkdownPanelView"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバッグ: テーマ M1b / MarkdownPanelView を切り替え"
+          }
+        }
+      }
+    },
+    "debug.theme.m1b.toggle.sidebarTabItem": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debug: Theme M1b / Toggle ContentView.TabItemView"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバッグ: テーマ M1b / ContentView.TabItemView を切り替え"
+          }
+        }
+      }
+    },
+    "debug.theme.m1b.toggle.surfaceTitleBar": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debug: Theme M1b / Toggle SurfaceTitleBarView"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバッグ: テーマ M1b / SurfaceTitleBarView を切り替え"
+          }
+        }
+      }
+    },
+    "debug.theme.m1b.toggle.workspaceContentContext": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debug: Theme M1b / Toggle WorkspaceContentView Context"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバッグ: テーマ M1b / WorkspaceContentView Context を切り替え"
+          }
+        }
+      }
+    },
+    "debug.theme.showResolutionTrace": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debug: Show Resolution Trace"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバッグ: 解決トレースを表示"
+          }
+        }
+      }
+    },
+    "debug.theme.showThemeFolder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debug: Show Theme Folder"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバッグ: テーマフォルダーを表示"
+          }
+        }
+      }
+    },
+    "debug.theme.toggleEngine": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debug: Toggle Theme Engine"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバッグ: テーマエンジンを切り替え"
+          }
+        }
+      }
+    },
     "debug.windows.browserProfilePopover.title": {
       "extractionState": "manual",
       "localizations": {

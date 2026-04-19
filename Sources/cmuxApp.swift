@@ -149,6 +149,22 @@ struct cmuxApp: App {
     @AppStorage(KeyboardShortcutSettings.Action.splitRight.defaultsKey) private var splitRightShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.splitDown.defaultsKey) private var splitDownShortcutData = Data()
     @AppStorage(BrowserToolbarAccessorySpacingDebugSettings.key) private var browserToolbarAccessorySpacingRaw = BrowserToolbarAccessorySpacingDebugSettings.defaultSpacing
+    @AppStorage(ThemeAppStorage.Keys.engineDisabledRuntime, store: ThemeAppStorage.defaults)
+    private var themeEngineDisabledRuntime = false
+    @AppStorage(ThemeAppStorage.Keys.m1bSurfaceTitleBarMigrated, store: ThemeAppStorage.defaults)
+    private var m1bSurfaceTitleBarMigrated = false
+    @AppStorage(ThemeAppStorage.Keys.m1bBrowserChromeMigrated, store: ThemeAppStorage.defaults)
+    private var m1bBrowserChromeMigrated = false
+    @AppStorage(ThemeAppStorage.Keys.m1bMarkdownChromeMigrated, store: ThemeAppStorage.defaults)
+    private var m1bMarkdownChromeMigrated = false
+    @AppStorage(ThemeAppStorage.Keys.m1bBonsplitAppearanceMigrated, store: ThemeAppStorage.defaults)
+    private var m1bBonsplitAppearanceMigrated = false
+    @AppStorage(ThemeAppStorage.Keys.m1bSidebarTabItemMigrated, store: ThemeAppStorage.defaults)
+    private var m1bSidebarTabItemMigrated = false
+    @AppStorage(ThemeAppStorage.Keys.m1bCustomTitlebarMigrated, store: ThemeAppStorage.defaults)
+    private var m1bCustomTitlebarMigrated = false
+    @AppStorage(ThemeAppStorage.Keys.m1bWorkspaceContentViewContextMigrated, store: ThemeAppStorage.defaults)
+    private var m1bWorkspaceContentViewContextMigrated = false
     @AppStorage(KeyboardShortcutSettings.Action.toggleBrowserDeveloperTools.defaultsKey)
     private var toggleBrowserDeveloperToolsShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.showBrowserJavaScriptConsole.defaultsKey)
@@ -456,6 +472,147 @@ struct cmuxApp: App {
                     )
                 ) {
                     appDelegate.openDebugStressWorkspacesWithLoadedSurfaces(nil)
+                }
+
+                Divider()
+                Button(
+                    String(
+                        localized: "debug.theme.dumpActive",
+                        defaultValue: "Debug: Dump Active Theme"
+                    )
+                ) {
+                    dumpActiveThemeToMarkdownSurface()
+                }
+
+                Button {
+                    ThemeManager.shared.toggleRuntimeDisabled()
+                    themeEngineDisabledRuntime = ThemeAppStorage.bool(
+                        forKey: ThemeAppStorage.Keys.engineDisabledRuntime,
+                        default: false
+                    )
+                    refreshThemeDrivenChrome(reason: "debug.theme.toggleEngine")
+                } label: {
+                    debugCheckedMenuLabel(
+                        String(
+                            localized: "debug.theme.toggleEngine",
+                            defaultValue: "Debug: Toggle Theme Engine"
+                        ),
+                        checked: themeEngineDisabledRuntime
+                    )
+                }
+
+                Button(
+                    String(
+                        localized: "debug.theme.showThemeFolder",
+                        defaultValue: "Debug: Show Theme Folder"
+                    )
+                ) {
+                    revealBundledThemeFileInFinder()
+                }
+
+                Menu(
+                    String(
+                        localized: "debug.theme.showResolutionTrace",
+                        defaultValue: "Debug: Show Resolution Trace"
+                    )
+                ) {
+                    ForEach(ThemeRole.allCases, id: \.self) { role in
+                        Button(role.definition.path) {
+                            logThemeResolutionTrace(for: role)
+                        }
+                    }
+                }
+
+                Menu(
+                    String(
+                        localized: "debug.theme.m1b.menuTitle",
+                        defaultValue: "Debug: Theme M1b"
+                    )
+                ) {
+                    Button {
+                        m1bSurfaceTitleBarMigrated.toggle()
+                    } label: {
+                        debugCheckedMenuLabel(
+                            String(
+                                localized: "debug.theme.m1b.toggle.surfaceTitleBar",
+                                defaultValue: "Debug: Theme M1b / Toggle SurfaceTitleBarView"
+                            ),
+                            checked: m1bSurfaceTitleBarMigrated
+                        )
+                    }
+
+                    Button {
+                        m1bBrowserChromeMigrated.toggle()
+                    } label: {
+                        debugCheckedMenuLabel(
+                            String(
+                                localized: "debug.theme.m1b.toggle.browserChrome",
+                                defaultValue: "Debug: Theme M1b / Toggle BrowserPanelView"
+                            ),
+                            checked: m1bBrowserChromeMigrated
+                        )
+                    }
+
+                    Button {
+                        m1bMarkdownChromeMigrated.toggle()
+                    } label: {
+                        debugCheckedMenuLabel(
+                            String(
+                                localized: "debug.theme.m1b.toggle.markdownChrome",
+                                defaultValue: "Debug: Theme M1b / Toggle MarkdownPanelView"
+                            ),
+                            checked: m1bMarkdownChromeMigrated
+                        )
+                    }
+
+                    Button {
+                        m1bBonsplitAppearanceMigrated.toggle()
+                        refreshThemeDrivenChrome(reason: "debug.theme.toggleM1bBonsplitAppearance")
+                    } label: {
+                        debugCheckedMenuLabel(
+                            String(
+                                localized: "debug.theme.m1b.toggle.bonsplitAppearance",
+                                defaultValue: "Debug: Theme M1b / Toggle Workspace.bonsplitAppearance"
+                            ),
+                            checked: m1bBonsplitAppearanceMigrated
+                        )
+                    }
+
+                    Button {
+                        m1bSidebarTabItemMigrated.toggle()
+                    } label: {
+                        debugCheckedMenuLabel(
+                            String(
+                                localized: "debug.theme.m1b.toggle.sidebarTabItem",
+                                defaultValue: "Debug: Theme M1b / Toggle ContentView.TabItemView"
+                            ),
+                            checked: m1bSidebarTabItemMigrated
+                        )
+                    }
+
+                    Button {
+                        m1bCustomTitlebarMigrated.toggle()
+                    } label: {
+                        debugCheckedMenuLabel(
+                            String(
+                                localized: "debug.theme.m1b.toggle.customTitlebar",
+                                defaultValue: "Debug: Theme M1b / Toggle ContentView.customTitlebar"
+                            ),
+                            checked: m1bCustomTitlebarMigrated
+                        )
+                    }
+
+                    Button {
+                        m1bWorkspaceContentViewContextMigrated.toggle()
+                    } label: {
+                        debugCheckedMenuLabel(
+                            String(
+                                localized: "debug.theme.m1b.toggle.workspaceContentContext",
+                                defaultValue: "Debug: Theme M1b / Toggle WorkspaceContentView Context"
+                            ),
+                            checked: m1bWorkspaceContentViewContextMigrated
+                        )
+                    }
                 }
 
                 Divider()
@@ -1221,6 +1378,92 @@ struct cmuxApp: App {
 
     private func showNotificationsPopover() {
         AppDelegate.shared?.toggleNotificationsPopover(animated: false)
+    }
+
+    @ViewBuilder
+    private func debugCheckedMenuLabel(_ title: String, checked: Bool) -> some View {
+        if checked {
+            Label {
+                Text(title)
+            } icon: {
+                Image(systemName: "checkmark")
+            }
+        } else {
+            Text(title)
+        }
+    }
+
+    @MainActor
+    private func activeThemeDebugContext() -> ThemeContext {
+        ThemeManager.shared.makeContext(
+            workspaceColor: activeTabManager.selectedWorkspace?.customColor,
+            colorScheme: ThemeManager.currentColorScheme(),
+            isWindowFocused: NSApp.keyWindow?.isKeyWindow ?? true
+        )
+    }
+
+    @MainActor
+    private func dumpActiveThemeToMarkdownSurface() {
+        guard let workspace = activeTabManager.selectedWorkspace else {
+            ThemeDiagnostics.engine("debug dump active theme skipped: no selected workspace")
+            return
+        }
+        guard let paneId = workspace.bonsplitController.focusedPaneId ?? workspace.bonsplitController.allPaneIds.first else {
+            ThemeDiagnostics.engine("debug dump active theme skipped: no target pane")
+            return
+        }
+
+        let context = activeThemeDebugContext()
+        let json = ThemeManager.shared.dumpActiveThemeJSON(context: context)
+        let markdown = "```json\n\(json)\n```\n"
+
+        let filename = "cmux-theme-dump-\(Int(Date().timeIntervalSince1970)).md"
+        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+
+        do {
+            try markdown.write(to: fileURL, atomically: true, encoding: .utf8)
+            if workspace.newMarkdownSurface(inPane: paneId, filePath: fileURL.path, focus: true) == nil {
+                ThemeDiagnostics.engine("debug dump active theme failed: unable to open markdown surface")
+            }
+        } catch {
+            ThemeDiagnostics.engine("debug dump active theme failed to write markdown: \(error.localizedDescription)")
+        }
+    }
+
+    private func revealBundledThemeFileInFinder() {
+        guard let fileURL = Bundle.main.resourceURL?
+            .appendingPathComponent("c11mux-themes", isDirectory: true)
+            .appendingPathComponent("stage11.toml") else {
+            ThemeDiagnostics.engine("debug show theme folder skipped: bundle resources unavailable")
+            return
+        }
+
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            ThemeDiagnostics.engine("debug show theme folder skipped: stage11.toml not found at \(fileURL.path)")
+            return
+        }
+
+        NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+    }
+
+    @MainActor
+    private func logThemeResolutionTrace(for role: ThemeRole) {
+        let trace = ThemeManager.shared.resolutionTrace(for: role, context: activeThemeDebugContext())
+        ThemeDiagnostics.engine("resolution trace \(trace)")
+        NSLog("Theme resolution trace: %@", trace)
+    }
+
+    @MainActor
+    private func refreshThemeDrivenChrome(reason: String) {
+        let backgroundColor = GhosttyApp.shared.defaultBackgroundColor
+        let backgroundOpacity = GhosttyApp.shared.defaultBackgroundOpacity
+        for workspace in activeTabManager.tabs {
+            workspace.applyGhosttyChrome(
+                backgroundColor: backgroundColor,
+                backgroundOpacity: backgroundOpacity,
+                reason: reason
+            )
+        }
     }
 
     private func openAllDebugWindows() {

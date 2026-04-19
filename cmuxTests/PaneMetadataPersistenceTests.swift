@@ -101,6 +101,58 @@ final class PaneMetadataPersistenceTests: XCTestCase {
         XCTAssertLessThanOrEqual(encoded?.count ?? Int.max, cap)
     }
 
+    // MARK: - Restore path cap enforcement (CMUX-11 acceptance #4)
+
+    /// Restore must reject snapshot entries whose persisted blob exceeds the
+    /// 64 KiB per-pane cap, silently and largest-first, so a hand-edited or
+    /// version-skewed snapshot cannot rehydrate over-cap state into the live
+    /// store. Tests the bridge call shape that `Workspace.restorePaneMeta-
+    /// dataFromSnapshot` exercises, plus that the surviving metadata installs
+    /// while the dropped key's sidecar is filtered out alongside it.
+    func testRestoreCapDropsOversizedKeyAndAlignsSources() throws {
+        let cap = SurfaceMetadataStore.payloadCapBytes
+        let huge = String(repeating: "a", count: cap)
+        let persistedValues: [String: PersistedJSONValue] = [
+            "title": .string("Parent :: Restored"),
+            "blob": .string(huge)
+        ]
+        let persistedSources: [String: PersistedMetadataSource] = [
+            "title": PersistedMetadataSource(source: "explicit", ts: 100),
+            "blob": PersistedMetadataSource(source: "declare", ts: 101)
+        ]
+
+        let cappedValues = PersistedMetadataBridge.enforceSizeCap(
+            persistedValues,
+            entityKind: "pane",
+            entityId: UUID()
+        )
+        XCTAssertNil(cappedValues["blob"], "Over-cap key must be dropped on restore")
+        XCTAssertNotNil(cappedValues["title"], "Under-cap key must survive")
+
+        let alignedSources = persistedSources.filter { cappedValues.keys.contains($0.key) }
+        XCTAssertNil(alignedSources["blob"], "Sidecar for dropped key must be filtered")
+        XCTAssertEqual(alignedSources["title"]?.source, "explicit")
+
+        // Install through the live store using the same call shape the
+        // restore path uses, then read back to confirm only the survivor
+        // landed and its source attribution is preserved.
+        let store = PaneMetadataStore.shared
+        let wsId = UUID()
+        let paneId = UUID()
+        let values = PersistedMetadataBridge.decodeValues(cappedValues)
+        let sources = PersistedMetadataBridge.decodeSources(alignedSources)
+        store.restoreFromSnapshot(
+            workspaceId: wsId,
+            paneId: paneId,
+            values: values,
+            sources: sources
+        )
+        let snap = store.getMetadata(workspaceId: wsId, paneId: paneId)
+        XCTAssertEqual(snap.metadata["title"] as? String, "Parent :: Restored")
+        XCTAssertNil(snap.metadata["blob"])
+        XCTAssertEqual(store.getSource(workspaceId: wsId, paneId: paneId, key: "title"), .explicit)
+    }
+
     // MARK: - Restore precedence on PaneMetadataStore
 
     func testRestoreFromSnapshotPreservesNonExplicitSourceAttribution() throws {

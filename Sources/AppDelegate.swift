@@ -3786,14 +3786,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             for (wsIdx, wsSnapshot) in windowSnapshot.tabManager.workspaces.enumerated() {
                 guard wsIdx < context.tabManager.tabs.count else { continue }
                 let workspace = context.tabManager.tabs[wsIdx]
-                // Clear every live panel's metadata on this workspace so the
-                // only surviving data path is "loaded from disk".
+                // Clear every live surface- and pane-layer entry on this
+                // workspace so the only surviving data path is "loaded from
+                // disk". Both clears run before the rollback-env gate so the
+                // CMUX_DISABLE_METADATA_PERSIST=1 path also fully drops live
+                // state — otherwise live writes would bleed through an
+                // intended no-op round-trip.
                 for panelId in workspace.panels.keys {
                     SurfaceMetadataStore.shared.removeSurface(
                         workspaceId: workspace.id,
                         surfaceId: panelId
                     )
                 }
+                // CMUX-11 Phase 3: pane arm. Walk live pane IDs (not just the
+                // snapshot's, for symmetry with the surface-arm loop above).
+                let livePaneIds = workspace.bonsplitController.allPaneIds.map { $0.id }
+                for paneId in livePaneIds {
+                    PaneMetadataStore.shared.removePane(
+                        workspaceId: workspace.id,
+                        paneId: paneId
+                    )
+                }
+
                 // Replay persisted metadata from the snapshot. Skipped when
                 // CMUX_DISABLE_METADATA_PERSIST=1 is set — matches the
                 // production restore path's rollback semantics.
@@ -3812,19 +3826,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     )
                 }
 
-                // CMUX-11 Phase 3: same round-trip for `PaneMetadataStore`.
-                // The debug rail does not rebuild the bonsplit layout, so live
+                // CMUX-11 Phase 3: same replay for `PaneMetadataStore`. The
+                // debug rail does not rebuild the bonsplit layout, so live
                 // pane UUIDs are unchanged from the snapshot — no old→new
-                // remap needed. Walk the layout tree, clear each pane's live
-                // store, then replay the persisted blob.
+                // remap needed. Walk the layout tree and restore under each
+                // pane's original UUID.
                 let paneSnapshots = collectPaneLayoutSnapshots(wsSnapshot.layout)
                 for paneSnapshot in paneSnapshots {
-                    guard let paneUUID = paneSnapshot.id else { continue }
-                    PaneMetadataStore.shared.removePane(
-                        workspaceId: workspace.id,
-                        paneId: paneUUID
-                    )
-                    guard let persistedValues = paneSnapshot.metadata else { continue }
+                    guard let paneUUID = paneSnapshot.id,
+                          let persistedValues = paneSnapshot.metadata else { continue }
                     let values = PersistedMetadataBridge.decodeValues(persistedValues)
                     let sources = PersistedMetadataBridge.decodeSources(
                         paneSnapshot.metadataSources ?? [:]

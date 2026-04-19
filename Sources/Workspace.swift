@@ -331,8 +331,15 @@ extension Workspace {
             // CMUX-11 Phase 3: capture the bonsplit pane UUID and any
             // PaneMetadataStore values so they survive a restart. Both fields
             // are optional; we only emit them when we can resolve a UUID and
-            // a non-empty store.
+            // a non-empty store. bonsplit's `PaneID.description` is
+            // `UUID.uuidString`, so a parse failure here means the external
+            // contract has drifted — log so the regression is visible.
             let paneUUID = UUID(uuidString: pane.id)
+            #if DEBUG
+            if paneUUID == nil {
+                dlog("pane.metadata.persist.drop workspace=\(id.uuidString.prefix(8)) reason=unparseable_pane_id raw=\(pane.id)")
+            }
+            #endif
             let (persistedPaneMetadata, persistedPaneSources) = persistedPaneMetadata(forPaneUUID: paneUUID)
             return .pane(
                 SessionPaneLayoutSnapshot(
@@ -6398,8 +6405,20 @@ final class Workspace: Identifiable, ObservableObject {
             guard let persistedValues = entry.snapshot.metadata,
                   !persistedValues.isEmpty else { continue }
             let persistedSources = entry.snapshot.metadataSources ?? [:]
-            let values = PersistedMetadataBridge.decodeValues(persistedValues)
-            let sources = PersistedMetadataBridge.decodeSources(persistedSources)
+            // CMUX-11 Phase 3 acceptance: enforce the 64 KiB per-pane cap on
+            // restore so a hand-edited or version-skewed snapshot cannot
+            // rehydrate an over-cap blob and leave the live store violating
+            // its own invariant. Drops largest-encoded keys first; survivors
+            // dictate which sidecar entries we install.
+            let cappedValues = PersistedMetadataBridge.enforceSizeCap(
+                persistedValues,
+                entityKind: "pane",
+                entityId: entry.paneId.id
+            )
+            guard !cappedValues.isEmpty else { continue }
+            let alignedSources = persistedSources.filter { cappedValues.keys.contains($0.key) }
+            let values = PersistedMetadataBridge.decodeValues(cappedValues)
+            let sources = PersistedMetadataBridge.decodeSources(alignedSources)
             PaneMetadataStore.shared.restoreFromSnapshot(
                 workspaceId: id,
                 paneId: entry.paneId.id,
@@ -6410,9 +6429,11 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     /// CMUX-11 Phase 3: drop pane metadata entries for panes no longer in the
-    /// live set. Called from session restore so the singleton store doesn't
-    /// accumulate stale rows across repeated `debug.session.save_and_load`
-    /// cycles or partial restores.
+    /// live set. Called from production session restore so a snapshot that
+    /// loads with fewer panes than the live state (or a partially-failed
+    /// restore) doesn't leave orphan rows in the singleton store. The
+    /// DEBUG `debugForceMetadataSaveAndLoad` rail bypasses this path; it
+    /// drains stale state by clearing per-pane before replay instead.
     func prunePaneMetadata(validPaneIds: Set<UUID>) {
         PaneMetadataStore.shared.pruneWorkspace(
             workspaceId: id,

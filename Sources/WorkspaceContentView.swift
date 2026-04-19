@@ -6,6 +6,7 @@ import Bonsplit
 /// View that renders a Workspace's content using BonsplitView
 struct WorkspaceContentView: View {
     @ObservedObject var workspace: Workspace
+    @ObservedObject private var themeManager = ThemeManager.shared
     let isWorkspaceVisible: Bool
     let isWorkspaceInputActive: Bool
     let workspacePortalPriority: Int
@@ -18,11 +19,25 @@ struct WorkspaceContentView: View {
     @State private var config = WorkspaceContentView.resolveGhosttyAppearanceConfig(reason: "stateInit")
     @AppStorage(WorkspacePresentationModeSettings.modeKey)
     private var workspacePresentationMode = WorkspacePresentationModeSettings.defaultMode.rawValue
+    @AppStorage(ThemeAppStorage.Keys.m1bWorkspaceContentViewContextMigrated, store: ThemeAppStorage.defaults)
+    private var m1bWorkspaceContentViewContextMigrated = false
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject var notificationStore: TerminalNotificationStore
 
     private var isMinimalMode: Bool {
         WorkspacePresentationModeSettings.mode(for: workspacePresentationMode) == .minimal
+    }
+
+    private var useThemeM1bWorkspaceContentViewContextPath: Bool {
+        m1bWorkspaceContentViewContextMigrated && themeManager.isEnabled
+    }
+
+    private var environmentThemeContext: ThemeContext {
+        themeManager.makeContext(
+            workspaceColor: workspace.customColor,
+            colorScheme: colorScheme,
+            isWindowFocused: NSApp.keyWindow?.isKeyWindow ?? true
+        )
     }
 
     static func panelVisibleInUI(
@@ -155,13 +170,21 @@ struct WorkspaceContentView: View {
             )
         }
 
-        Group {
+        let content = Group {
             if isMinimalMode {
                 bonsplitView
                     .ignoresSafeArea(.container, edges: .top)
             } else {
                 bonsplitView
             }
+        }
+
+        if useThemeM1bWorkspaceContentViewContextPath {
+            content
+                .environment(\.c11muxThemeManager, themeManager)
+                .environment(\.c11muxThemeContext, environmentThemeContext)
+        } else {
+            content
         }
     }
 

@@ -5165,17 +5165,30 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     func applyGhosttyChrome(backgroundColor: NSColor, backgroundOpacity: Double, reason: String = "unspecified") {
-        let nextHex = Self.bonsplitChromeHex(
+        var nextHex = Self.bonsplitChromeHex(
             backgroundColor: backgroundColor,
             backgroundOpacity: backgroundOpacity
         )
+        let useThemeM1bPath = ThemeAppStorage.bool(
+            forKey: ThemeAppStorage.Keys.m1bBonsplitAppearanceMigrated,
+            default: false
+        )
+        if useThemeM1bPath {
+            let context = ThemeManager.shared.makeContext(
+                workspaceColor: customColor,
+                colorScheme: ThemeManager.currentColorScheme()
+            )
+            if let themed: NSColor = ThemeManager.shared.resolve(.tabBar_background, context: context) {
+                nextHex = themed.hexString(includeAlpha: themed.alphaComponent < 0.999)
+            }
+        }
         let currentChromeColors = bonsplitController.configuration.appearance.chromeColors
         let isNoOp = currentChromeColors.backgroundHex == nextHex
 
         if GhosttyApp.shared.backgroundLogEnabled {
             let currentBackgroundHex = currentChromeColors.backgroundHex ?? "nil"
             GhosttyApp.shared.logBackground(
-                "theme apply workspace=\(id.uuidString) reason=\(reason) currentBg=\(currentBackgroundHex) nextBg=\(nextHex) noop=\(isNoOp)"
+                "theme apply workspace=\(id.uuidString) reason=\(reason) m1b=\(useThemeM1bPath) currentBg=\(currentBackgroundHex) nextBg=\(nextHex) noop=\(isNoOp)"
             )
         }
 

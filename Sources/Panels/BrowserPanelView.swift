@@ -275,6 +275,7 @@ private struct BrowserChromeStyle {
 struct BrowserPanelView: View {
     @ObservedObject var panel: BrowserPanel
     @ObservedObject private var browserProfileStore = BrowserProfileStore.shared
+    @ObservedObject private var themeManager = ThemeManager.shared
     @ObservedObject var paneInteractionRuntime: PaneInteractionRuntime
     let paneId: PaneID
     let isFocused: Bool
@@ -283,6 +284,8 @@ struct BrowserPanelView: View {
     let onRequestPanelFocus: () -> Void
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.paneDropZone) private var paneDropZone
+    @AppStorage(ThemeAppStorage.Keys.m1bBrowserChromeMigrated, store: ThemeAppStorage.defaults)
+    private var m1bBrowserChromeMigrated = false
     @State private var omnibarState = OmnibarState()
     @State private var addressBarFocused: Bool = false
     @AppStorage(BrowserSearchSettings.searchEngineKey) private var searchEngineRaw = BrowserSearchSettings.defaultSearchEngine.rawValue
@@ -433,6 +436,17 @@ struct BrowserPanelView: View {
             return nil
         }
         return manager.tabs.first(where: { $0.id == panel.workspaceId })
+    }
+
+    private var useThemeM1bBrowserChrome: Bool {
+        m1bBrowserChromeMigrated && themeManager.isEnabled
+    }
+
+    private var themeContext: ThemeContext {
+        themeManager.makeContext(
+            workspaceColor: owningWorkspace?.customColor,
+            colorScheme: colorScheme
+        )
     }
 
     private var isCurrentPaneOwner: Bool {
@@ -1229,9 +1243,33 @@ struct BrowserPanelView: View {
     }
 
     private func refreshBrowserChromeStyle() {
+        if useThemeM1bBrowserChrome,
+           let themed = resolvedBrowserChromeStyleFromTheme() {
+            browserChromeStyle = themed
+            return
+        }
+
         browserChromeStyle = BrowserChromeStyle.resolve(
             for: colorScheme,
             themeBackgroundColor: GhosttyBackgroundTheme.currentColor()
+        )
+    }
+
+    private func resolvedBrowserChromeStyleFromTheme() -> BrowserChromeStyle? {
+        guard let background: NSColor = themeManager.resolve(.browserChrome_background, context: themeContext) else {
+            return nil
+        }
+
+        let omnibar = (themeManager.resolve(.browserChrome_omnibarFill, context: themeContext) as NSColor?)
+            ?? resolvedBrowserOmnibarPillBackgroundColor(
+                for: background.isLightColor ? .light : .dark,
+                themeBackgroundColor: background
+            )
+
+        return BrowserChromeStyle(
+            backgroundColor: background,
+            colorScheme: background.isLightColor ? .light : .dark,
+            omnibarPillBackgroundColor: omnibar
         )
     }
 

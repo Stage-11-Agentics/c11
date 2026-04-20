@@ -2353,6 +2353,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         NSWindow.allowsAutomaticWindowTabbing = false
         disableNativeTabbingShortcut()
+        installGhosttySettingsMenuItem()
         ensureApplicationIcon()
         if !isRunningUnderXCTest {
             configureUserNotifications()
@@ -11078,6 +11079,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 disableMenuItemShortcut(in: submenu, action: action)
             }
         }
+    }
+
+    private func installGhosttySettingsMenuItem() {
+        guard let appMenu = NSApp.mainMenu?.items.first?.submenu else { return }
+        let action = #selector(openGhosttySettingsFromMenu(_:))
+        if appMenu.items.contains(where: { $0.action == action }) { return }
+
+        let servicesIndex: Int
+        if let servicesMenu = NSApp.servicesMenu,
+           let found = appMenu.items.firstIndex(where: { $0.submenu === servicesMenu }) {
+            servicesIndex = found
+        } else if let found = appMenu.items.firstIndex(where: { $0.submenu?.title == "Services" || $0.title == "Services" }) {
+            servicesIndex = found
+        } else {
+            return
+        }
+
+        let item = NSMenuItem(
+            title: String(localized: "menu.app.ghosttySettings", defaultValue: "Ghostty Settings…"),
+            action: action,
+            keyEquivalent: ""
+        )
+        item.target = self
+        appMenu.insertItem(item, at: servicesIndex + 1)
+    }
+
+    @objc private func openGhosttySettingsFromMenu(_ sender: Any?) {
+        GhosttyApp.shared.openConfigurationInTextEdit()
     }
 
     private func ensureApplicationIcon() {

@@ -368,29 +368,24 @@ struct cmuxApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
-            CommandGroup(replacing: .appSettings) {
-                Button(String(localized: "menu.app.settings", defaultValue: "Settings…")) {
-                    appDelegate.openPreferencesWindow(debugSource: "menu.cmdComma")
-                }
-                .keyboardShortcut(",", modifiers: .command)
-            }
+            CommandGroup(replacing: .appSettings) { }
 
             CommandGroup(replacing: .appInfo) {
                 Button(String(localized: "menu.app.about", defaultValue: "About c11mux")) {
                     showAboutPanel()
                 }
-                Button(String(localized: "menu.app.ghosttySettings", defaultValue: "Ghostty Settings…")) {
-                    GhosttyApp.shared.openConfigurationInTextEdit()
+                Button(String(localized: "menu.app.settings", defaultValue: "c11mux Settings…")) {
+                    appDelegate.openPreferencesWindow(debugSource: "menu.cmdComma")
                 }
-                Button(String(localized: "menu.app.reloadConfiguration", defaultValue: "Reload Configuration")) {
-                    GhosttyApp.shared.reloadConfiguration(source: "menu.reload_configuration")
-                }
-                .keyboardShortcut(",", modifiers: [.command, .shift])
-                Divider()
+                .keyboardShortcut(",", modifiers: .command)
                 Button(String(localized: "menu.app.checkForUpdates", defaultValue: "Check for Updates…")) {
                     appDelegate.checkForUpdates(nil)
                 }
                 InstallUpdateMenuItem(model: appDelegate.updateViewModel)
+                Button(String(localized: "menu.app.reloadConfiguration", defaultValue: "Reload Configuration")) {
+                    GhosttyApp.shared.reloadConfiguration(source: "menu.reload_configuration")
+                }
+                .keyboardShortcut(",", modifiers: [.command, .shift])
             }
 
 #if DEBUG

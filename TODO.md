@@ -45,7 +45,7 @@
 
 ## Feature Requests
 - [ ] Warm pool of Claude Code instances mapped to a keyboard shortcut
-- [ ] Nameable panes (in addition to surfaces) — let users assign a name/label to a pane itself so multi-surface panes can carry identity independent of their contained surfaces. Planned as two tickets: **CMUX-11** (metadata mechanism — `docs/c11mux-pane-naming-plan.md`) and **CMUX-12** (title bar chrome & theming — `docs/c11mux-pane-title-bar-plan.md`, depends on CMUX-11)
+- [ ] Nameable panes (in addition to surfaces) — let users assign a name/label to a pane itself so multi-surface panes can carry identity independent of their contained surfaces. Planned as two tickets: **CMUX-11** (metadata mechanism — `docs/c11-pane-naming-plan.md`) and **CMUX-12** (title bar chrome & theming — `docs/c11-pane-title-bar-plan.md`, depends on CMUX-11)
 
 ## Claude Code Integration
 - [ ] Add "Install Claude Code integration" menu item in menubar

@@ -1,4 +1,4 @@
-# c11mux — Pane Interaction Primitive Plan
+# c11 — Pane Interaction Primitive Plan
 
 **Date**: 2026-04-18
 **Status**: Draft v2 — revised post-Trident plan review (see `docs/c11mux-pane-dialog-primitive-plan-review-pack-2026-04-18T1408/`)
@@ -15,7 +15,7 @@
   4. **Presenter ownership moved off the `Panel` protocol** into a workspace-scoped `PaneInteractionRuntime` keyed by `panelId`. This removes the need for every conformer (including `MarkdownPanel`, which v1 missed — see `Sources/Panels/MarkdownPanel.swift:21`) to hold new state, and naturally handles lifecycle + multi-window cases.
   5. **Cmd+D and `NSApp.modalWindow` preserved.** v1 silently broke both. v2 adds a `TabManager.hasActivePaneInteraction` signal, updates `AppDelegate.swift:9054` and the Cmd+D dispatcher at `9018-9051` to detect pane-hosted dialogs, and routes Cmd+D accept through the runtime.
   6. **`notificationStore.clearNotifications` preserved.** v1's §4.6 rewrite dropped this side effect at `TabManager.swift:2490`. v2 keeps it.
-  7. **Socket addressability included day one** per user decision. Agents can trigger `pane.confirm` on a specific panel UUID — turns c11mux into the pane-scoped agent-consent substrate no other multiplexer offers.
+  7. **Socket addressability included day one** per user decision. Agents can trigger `pane.confirm` on a specific panel UUID — turns c11 into the pane-scoped agent-consent substrate no other multiplexer offers.
   8. **Styling contradiction resolved.** v1 simultaneously said gold-accent (§3.3) and destructive red (§8 Q4). v2 uses the system destructive red with a gold focus ring.
   9. **9-callsite audit list corrected.** v1 listed 9 callsites; 5 were calls to functions that stay on NSAlert. v2 enumerates the actual in-scope surface.
   10. **Feature flag + rollback path added.** `cmux.paneDialogEnabled` UserDefaults key (DEBUG/CI toggle); fallback to NSAlert when disabled.
@@ -24,7 +24,7 @@
 
 ## 1. Summary
 
-Replace c11mux's two app-level `NSAlert`-based close confirmations with a **pane-scoped interaction primitive** — a card hosted *inside* the specific panel the prompt belongs to, with a scrim bounded to that panel's bounds. Build it as a general-purpose pane-interaction substrate, not a one-off dialog: day-one callers are close-confirmation and socket-triggered agent consent; rename-tab / rename-workspace land in a short follow-up PR; banners, progress, and undo are API-accommodated.
+Replace c11's two app-level `NSAlert`-based close confirmations with a **pane-scoped interaction primitive** — a card hosted *inside* the specific panel the prompt belongs to, with a scrim bounded to that panel's bounds. Build it as a general-purpose pane-interaction substrate, not a one-off dialog: day-one callers are close-confirmation and socket-triggered agent consent; rename-tab / rename-workspace land in a short follow-up PR; banners, progress, and undo are API-accommodated.
 
 **Why the rewrite from v1.** v1 was not code-walked — factual-error count across the adversarial reviews was ten. Most consequentially, v1 refactored the wrong seam: the primary dialog the user sees comes from `Workspace.confirmClosePanel` (the bonsplit ✕ path), not `TabManager.confirmClose`. v2 rebuilds against the actual code layout.
 
@@ -477,7 +477,7 @@ pane.confirm panel=<uuid> title=<urlencoded> [message=<urlencoded>] [role=destru
 - Keep the `pendingCloseConfirmTabIds` / `forceCloseTabIds` state machine at `:9376-9394` — it orchestrates bonsplit's "close the tab after async confirmation" dance and is orthogonal to how the confirmation is rendered.
 - In `closePanel(_:force:)`, call `paneInteractionRuntime.clear(panelId:)` before the tear-down.
 
-**c11mux risk**: medium. The `pendingCloseConfirmTabIds` mechanism depends on `confirmClosePanel` resolving (either via the sheet callback or now the runtime callback). The `defer { pendingCloseConfirmTabIds.remove(tabId) }` at `:9385` keeps working because `confirmClosePanel` still returns before the next runloop iteration — just via continuation instead of sheet.
+**c11 risk**: medium. The `pendingCloseConfirmTabIds` mechanism depends on `confirmClosePanel` resolving (either via the sheet callback or now the runtime callback). The `defer { pendingCloseConfirmTabIds.remove(tabId) }` at `:9385` keeps working because `confirmClosePanel` still returns before the next runloop iteration — just via continuation instead of sheet.
 
 ### 4.4 `Sources/TabManager.swift`
 
@@ -486,7 +486,7 @@ pane.confirm panel=<uuid> title=<urlencoded> [message=<urlencoded>] [role=destru
 - `closeWorkspaceIfRunningProcess` at `:2394` rewritten analogously; NSAlert fallback when `focusedPanelId` is nil.
 - Add `var hasActivePaneInteraction: Bool` and `func acceptActivePaneInteractionInKeyWorkspace() -> Bool`.
 
-**c11mux risk**: medium. The sync→async flip for two callers (`closeRuntimeSurfaceWithConfirmation`, `closeWorkspaceIfRunningProcess`) is a real behavioral change. See §4.9 for the corrected callsite audit.
+**c11 risk**: medium. The sync→async flip for two callers (`closeRuntimeSurfaceWithConfirmation`, `closeWorkspaceIfRunningProcess`) is a real behavioral change. See §4.9 for the corrected callsite audit.
 
 ### 4.5 `Sources/GhosttyTerminalView.swift` — AppKit overlay mount
 
@@ -498,7 +498,7 @@ This is the v2 architectural pivot. Per `CLAUDE.md:143`, the overlay is hosted i
 - `forceRefresh()` is NOT touched — per `CLAUDE.md:142` this is a typing-latency hot path.
 - The `TerminalSurface.close_surface_cb` handler at `:1104-1129` passes a stable `dedupeToken` (`"ghostty.close_surface_cb.\(surfaceId)"`) so duplicate fires collapse.
 
-**c11mux risk**: medium-high. This file has the typing-latency contract and the focus-restore constellation. Need strict discipline about what runs on key paths.
+**c11 risk**: medium-high. This file has the typing-latency contract and the focus-restore constellation. Need strict discipline about what runs on key paths.
 
 ### 4.6 `Sources/Panels/TerminalPanelView.swift`
 
@@ -514,7 +514,7 @@ v1 said "grep every `makeFirstResponder` callsite and add a guard." v2 rejects t
 
 Grep + refactor pass lists the call sites; the pass is mechanical but the discipline is enforced at one gate.
 
-**c11mux risk**: medium. Same constellation as v1 but with a single correct pattern.
+**c11 risk**: medium. Same constellation as v1 but with a single correct pattern.
 
 ### 4.8 `Sources/AppDelegate.swift` — Cmd+D + modalWindow gate
 
@@ -555,7 +555,7 @@ if NSApp.modalWindow != nil
 
 This preserves the existing `CloseWorkspaceCmdDUITests` assertion and the dozens of shortcuts that depend on the modal gate.
 
-**c11mux risk**: medium. AppDelegate shortcut routing is guarded by `AppDelegateShortcutRoutingTests`. The new branches need assertions in that suite.
+**c11 risk**: medium. AppDelegate shortcut routing is guarded by `AppDelegateShortcutRoutingTests`. The new branches need assertions in that suite.
 
 ### 4.9 Callsite audit (corrected)
 
@@ -579,7 +579,7 @@ Net real behavioral change: **3 functions** internally (`Workspace.confirmCloseP
 
 For WebView-backed browsers, mount the overlay from the AppKit side (`WindowBrowserPortal` or the equivalent portal host), not from SwiftUI. For the empty-new-tab state (`!shouldRenderWebView`), mount a SwiftUI ZStack overlay in `BrowserPanelView` — analogous to how `BrowserSearchOverlay` is gated in that file (`:457-`).
 
-**c11mux risk**: medium. Needs the browser portal host to get the overlay mount; need to verify layering against the search overlay that lives in the same portal.
+**c11 risk**: medium. Needs the browser portal host to get the overlay mount; need to verify layering against the search overlay that lives in the same portal.
 
 ### 4.11 `Sources/Panels/MarkdownPanelView.swift`
 
@@ -639,7 +639,7 @@ private func presentTextInput(
 - Validator: match `^#[0-9A-Fa-f]{6}$`; return localized `alert.invalidColor.message` text on fail.
 - The inline validation error replaces the existing second-alert flow at `showInvalidColorAlert(_:)` at `ContentView.swift:11996` — cleaner UX.
 
-**c11mux risk**: low. All three are fire-and-forget menu/palette actions. Acceptance-time revalidation: before applying, re-confirm the workspace(s)/panel still exist.
+**c11 risk**: low. All three are fire-and-forget menu/palette actions. Acceptance-time revalidation: before applying, re-confirm the workspace(s)/panel still exist.
 
 ### 4.13 Localization additions (v3)
 

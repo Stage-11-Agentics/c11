@@ -1,4 +1,4 @@
-# c11mux — Tier 1 Persistence Plan
+# c11 — Tier 1 Persistence Plan
 
 **Status:** plan (not scheduled). **Author:** conversation 2026-04-18.
 **Revised:** 2026-04-18 after Trident plan review — fixed metadata-type fidelity,
@@ -7,7 +7,7 @@ namespace/safety gates to Phases 4–5, and split rollout into Tier 1a
 (durability) and Tier 1b (recovery UX).
 **Scope:** surface-level metadata, panel identity, status-entry continuity, and a
 Claude session-resume affordance.
-**Companion plan:** [workspace-level metadata](./c11mux-workspace-metadata-persistence-plan.md) —
+**Companion plan:** [workspace-level metadata](./c11-workspace-metadata-persistence-plan.md) —
 that plan explicitly parked "Restoring `SurfaceMetadataStore` across restart"; this plan claims it.
 **Non-goal (Tier 2):** resuming live PTYs. Moves PTY ownership into `cmuxd` so shells survive app restart. Separate effort.
 
@@ -29,7 +29,7 @@ Two linked problems:
    we could offer a one-tap recreate/resume — turning catastrophic loss into a
    minor speed bump. That requires the metadata *and* something that can map a
    restored surface back to an external agent session without hooking into the
-   agent itself (c11mux observes from the outside — see memory
+   agent itself (c11 observes from the outside — see memory
    `feedback_c11mux_no_agent_hooks.md`).
 
 The plumbing substrate is already ~80% built: `Sources/SessionPersistence.swift`
@@ -438,7 +438,7 @@ meaningless.
 
 ## Phase 4 — Claude session index (observe-from-outside)
 
-**Deliverable:** c11mux can associate a terminal surface with a recent Claude
+**Deliverable:** c11 can associate a terminal surface with a recent Claude
 Code session by scanning `~/.claude/projects/` — without any cooperation from
 Claude itself. Gated behind a feature flag + opt-out.
 
@@ -681,7 +681,7 @@ No change to sidebar in Phase 5 v1.
 ### Failure handling
 
 If `claude --resume <id>` fails (session corrupted, Claude upgraded its
-schema), the user sees the error in their terminal — c11mux does not
+schema), the user sees the error in their terminal — c11 does not
 intercept. A small toast ("Resume failed. Try 'Start fresh Claude
 session.'") appears when the CLI exits non-zero within 5s, but only when
 the command was executed via the chip's "Send to pane" path (we know we
@@ -743,7 +743,7 @@ Tier 1b prerequisites (must be true before starting Phase 4):
   autosave-fingerprint design: whoever picks up Phase 2 of this plan.
 - **M7 work.** Already merged; no coordination needed.
 - **`lattice-stage-11-plugin`.** Out of scope — plugin is known to be out
-  of date relative to c11mux and not a blocker for Phase 1.
+  of date relative to c11 and not a blocker for Phase 1.
 
 ---
 
@@ -759,7 +759,7 @@ Tier 1b prerequisites (must be true before starting Phase 4):
    bloat. Revisit after the size metric gives us real numbers.
 3. **Codex / Gemini parity in Phase 4.** Ship Claude-only first
    (generalization deferred until Codex session storage shape is
-   confirmed). Document the asymmetry in `docs/c11mux-charter.md` so
+   confirmed). Document the asymmetry in `docs/c11-charter.md` so
    operators aren't surprised.
 4. **`agent.claude.session_started_at` canonical format.** ISO 8601 string
    or epoch seconds? Go with ISO 8601 for human-readable debug dumps

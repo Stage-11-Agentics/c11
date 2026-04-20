@@ -1,10 +1,10 @@
-# c11mux — Custom Theming System Plan
+# c11 — Custom Theming System Plan
 
 **Date**: 2026-04-18
 **Status**: Draft v2 — revised post-Trident plan review 2026-04-18T2026, see [`c11mux-theming-plan-review-pack-2026-04-18T2026/`](./c11mux-theming-plan-review-pack-2026-04-18T2026)
 **Lattice ticket**: [CMUX-9](../.lattice/tasks/task_01KPHCQNQH2BKT128552QP46RE.json)
 **Target branch**: feature branch off `main` (e.g. `theme-engine-foundation`), one PR per milestone
-**Scope**: c11mux chrome surfaces (sidebar, top bar, tab bar, dividers, outer workspace frame, pane title bars). Ghostty-owned surfaces (terminal cells, prompts, scrollback, cursor) are out of scope and never touched.
+**Scope**: c11 chrome surfaces (sidebar, top bar, tab bar, dividers, outer workspace frame, pane title bars). Ghostty-owned surfaces (terminal cells, prompts, scrollback, cursor) are out of scope and never touched.
 
 **Revision history**:
 
@@ -16,7 +16,7 @@
 
 ## 1. Motivation
 
-c11mux today has **no unified theme engine**. Chrome colors are scattered across at least eight independent systems, each with its own persistence key, resolution logic, and rendering path:
+c11 today has **no unified theme engine**. Chrome colors are scattered across at least eight independent systems, each with its own persistence key, resolution logic, and rendering path:
 
 | System | Lives at | Scope |
 |---|---|---|
@@ -27,15 +27,15 @@ c11mux today has **no unified theme engine**. Chrome colors are scattered across
 | `BrowserThemeSettings` | `Sources/Panels/BrowserPanel.swift:166-196` | browser-surface only |
 | `WorkspaceTabColorSettings` | `Sources/TabManager.swift:245-443` | workspace color palette + custom colors |
 | `SidebarActiveTabIndicatorSettings` | `Sources/TabManager.swift:155-186` | `.solidFill` vs `.leftRail` sidebar render mode |
-| `Resources/ghostty/themes/` + `cmux themes` CLI | Ghostty terminal themes | **not c11mux chrome** — terminal cells only |
+| `Resources/ghostty/themes/` + `cmux themes` CLI | Ghostty terminal themes | **not c11 chrome** — terminal cells only |
 
 Three symptoms follow from the scatter:
 
-1. **Dividers are invisible.** `BonsplitConfiguration.Appearance.ChromeColors` already has a `borderHex` field (`vendor/bonsplit/Sources/Bonsplit/Public/BonsplitConfiguration.swift:138-140`) and bonsplit's `TabBarColors.nsColorSeparator(...)` already consumes it (`vendor/bonsplit/Sources/Bonsplit/Internal/Styling/TabBarColors.swift:20-25`). c11mux never sets it — so every divider silently derives from Ghostty's background color. The color seam exists; the wiring doesn't.
+1. **Dividers are invisible.** `BonsplitConfiguration.Appearance.ChromeColors` already has a `borderHex` field (`vendor/bonsplit/Sources/Bonsplit/Public/BonsplitConfiguration.swift:138-140`) and bonsplit's `TabBarColors.nsColorSeparator(...)` already consumes it (`vendor/bonsplit/Sources/Bonsplit/Internal/Styling/TabBarColors.swift:20-25`). c11 never sets it — so every divider silently derives from Ghostty's background color. The color seam exists; the wiring doesn't.
 2. **Workspace identity is sidebar-only.** `Workspace.customColor` (`Sources/Workspace.swift:4883`) — a fully developed 16-color palette plus user hex strings, persisted per workspace — renders in exactly one place: the sidebar tab for that workspace. The operator's peripheral vision gets no grounding for which workspace they're in once they're looking at the content area.
 3. **Every future chrome decision is bespoke.** When an engineer adds a new chrome surface today, they have to decide from scratch: where does its color come from? Hardcode? `@AppStorage` key? System color? Ghostty-derived? There is no shared answer. A theme engine gives every future chrome decision a single well-known seam.
 
-The goal is a **unified theme engine for c11mux chrome** that:
+The goal is a **unified theme engine for c11 chrome** that:
 
 - Leaves Ghostty strictly alone (terminal cells, prompts, scrollback, cursor remain Ghostty-owned).
 - Makes the workspace color a first-class theme variable (`$workspaceColor`) that theme authors reference freely — so one theme definition works across every workspace and the color automatically gains prevalence wherever the author placed it.
@@ -49,7 +49,7 @@ The goal is a **unified theme engine for c11mux chrome** that:
 
 Locked from the exploration dialogue:
 
-1. **Theme c11mux chrome only. Never touch Ghostty.** Terminal cells, prompts, scrollback, cursor stay Ghostty-owned. Sidebar, top bar, tab bar, dividers, outer workspace frame, titlebars, sidebar status pills — c11mux-owned, theme-addressable.
+1. **Theme c11 chrome only. Never touch Ghostty.** Terminal cells, prompts, scrollback, cursor stay Ghostty-owned. Sidebar, top bar, tab bar, dividers, outer workspace frame, titlebars, sidebar status pills — c11-owned, theme-addressable.
 2. **Workspace color gains subtle prevalence.** Peripheral-vision grounding, not loud. The operator should feel which workspace they're in without reading anything. Default values favour `$workspaceColor` mixed heavily with the chrome background (e.g. 65% toward neutral), not saturated.
 3. **Theme engine becomes an overall UI convention.** Future chrome work references theme variables (`$workspaceColor`, `$background`, `$foreground`, `$surface`) rather than minting fresh `@AppStorage` keys. No new scattered theme systems.
 4. **Outer workspace frame is a new first-class primitive.** A thin (1-2pt) border that wraps the **right-hand content area only** (sidebar excluded and stays neutral). Colored by the workspace color. It is the logical representation of the active workspace in the content area.
@@ -139,7 +139,7 @@ Populated from per-workspace metadata: `cmux set-workspace-metadata state.enviro
 
 ## 4. Current-state map (audit)
 
-Every chrome surface in c11mux, where its color comes from today, and what M1–M3 turn it into. File:line references are verified against the tree at this repo's current HEAD (`ws-selected-keep-custom-color`, 2026-04-18).
+Every chrome surface in c11, where its color comes from today, and what M1–M3 turn it into. File:line references are verified against the tree at this repo's current HEAD (`ws-selected-keep-custom-color`, 2026-04-18).
 
 ### 4.1 Sidebar
 
@@ -495,11 +495,11 @@ Locked in v2 per Trident review. All three reviewers independently flagged under
 
 The schema is **additive-only** within a `schema = 1` major version:
 
-- Missing chrome sections / keys fall back to the built-in default theme's values. A theme authored today continues to load when c11mux ships a new chrome surface next year — the new surface just uses the default theme's value until the theme author opts in.
+- Missing chrome sections / keys fall back to the built-in default theme's values. A theme authored today continues to load when c11 ships a new chrome surface next year — the new surface just uses the default theme's value until the theme author opts in.
 - The loader emits a single OSLog warning per missing key per theme load (deduped), never a fatal error.
 - `schema = 2` is reserved for breaking changes (e.g. removing a key, changing a modifier's semantics). When we bump, we ship a one-time converter.
 
-A *separate* extensibility axis: when a surface needs a brand-new variable name (not a new chrome key), add it to the reference loader's `[variables]` synthesizer — not to user themes. Themes can reference anything in `[variables]`, but the canonical set is owned by c11mux.
+A *separate* extensibility axis: when a surface needs a brand-new variable name (not a new chrome key), add it to the reference loader's `[variables]` synthesizer — not to user themes. Themes can reference anything in `[variables]`, but the canonical set is owned by c11.
 
 **Unknown-key / unknown-modifier policy** (locked v2):
 
@@ -587,9 +587,9 @@ Change (M2; bonsplit submodule). **v2 note**: landing `dividerThicknessPt` on `C
 
 **Submodule policy** (`CLAUDE.md` "Submodule safety"): the bonsplit change ships first on `Stage-11-Agentics/bonsplit`'s `main`, then the parent-repo submodule pointer bump lands in a separate commit.
 
-### 7.2 Bonsplit — wire `borderHex` from c11mux
+### 7.2 Bonsplit — wire `borderHex` from c11
 
-Already supported end-to-end in bonsplit; the c11mux side just hasn't been connected. In `Sources/Workspace.swift:5113-5118`, extend `bonsplitAppearance(...)` to accept theme-resolved divider color and thickness:
+Already supported end-to-end in bonsplit; the c11 side just hasn't been connected. In `Sources/Workspace.swift:5113-5118`, extend `bonsplitAppearance(...)` to accept theme-resolved divider color and thickness:
 
 ```swift
 private static func bonsplitAppearance(
@@ -726,7 +726,7 @@ The theme engine replaces no live setting in v1. Every existing `@AppStorage` ke
 | `AppearanceMode` (light/dark/system — `Sources/cmuxApp.swift:3534-3583`) | Orthogonal. Themes read `colorScheme` when resolving `$workspaceColor` (brightening) and should otherwise not assume a scheme. | **No deprecation planned.** Light/dark is OS-level; themes are additive to it. |
 | `BrowserThemeSettings` (`Sources/Panels/BrowserPanel.swift:166-196`) | Orthogonal — governs web-content `prefers-color-scheme`, not chrome. | **No deprecation planned.** Content rendering ≠ chrome. |
 | `WorkspaceTabColorSettings` (`Sources/TabManager.swift:245-443`) | Stays entirely — the palette, custom colors, and `Workspace.customColor` all feed `$workspaceColor`. | **No deprecation planned.** The theme engine consumes this; it does not replace it. |
-| `cmux themes` CLI / `Resources/ghostty/themes/` | Untouched — these govern Ghostty terminal colors, not c11mux chrome. | **No deprecation planned.** Separate ownership (Ghostty) from new engine. |
+| `cmux themes` CLI / `Resources/ghostty/themes/` | Untouched — these govern Ghostty terminal colors, not c11 chrome. | **No deprecation planned.** Separate ownership (Ghostty) from new engine. |
 
 ### 8.1 Default theme selection for existing installs
 
@@ -774,7 +774,7 @@ New "Appearance" section above "Workspace Colors" in `Sources/cmuxApp.swift` set
 
 - **Two theme pickers** (per §12 #12): "Theme (Light appearance)" and "Theme (Dark appearance)". Each is a segmented control or menu listing built-ins + user themes alphabetically; built-ins tagged with a small "Built-in" badge. Selections write to `@AppStorage("theme.active.light")` and `@AppStorage("theme.active.dark")` respectively.
 - **"Apply to both" convenience action**: a small link/button next to the Light picker that copies the Light selection to the Dark slot (and vice versa). Saves a click for the common case of one theme across both modes. Default install: both slots set to `stage11`.
-- Live preview pane: a small c11mux-shaped diagram (sidebar stub, workspace frame, divider, title bar) rendered with the selected theme's resolved values against a representative workspace color. Updates in ≤100ms on selection change (resolution is cheap; re-render is SwiftUI cheap).
+- Live preview pane: a small c11-shaped diagram (sidebar stub, workspace frame, divider, title bar) rendered with the selected theme's resolved values against a representative workspace color. Updates in ≤100ms on selection change (resolution is cheap; re-render is SwiftUI cheap).
 - "Open Themes Folder" button → `NSWorkspace.shared.open(themesDirURL)` to reveal user themes dir in Finder, creating it on first click if absent.
 - "Reload themes" button → manual retrigger of the M3 file watcher.
 
@@ -803,10 +803,10 @@ cmux workspace-color get --workspace <ref>                                      
 
 **Socket access policy** (per §12 #13): the `set` and `clear` verbs on `cmux ui themes` are operator-only — the CLI exposes them on the local operator's path, but the socket surface does NOT expose them to agent connections. Agents that need to signal workspace mode use `cmux set-workspace-metadata state.<key> <value>` (§12 #10); the active theme renders that state via `[when.workspaceState.*]` blocks. Read verbs (`list`, `get`, `dump`, `path`, `reload`) are safe for agent use.
 
-**CLI namespace** (locked 2026-04-18): `cmux themes` stays Ghostty — Ghostty is the king theme of the main user interface and keeps the short verb. c11mux chrome themes live under `cmux ui themes …`. The top-level `cmux help` should educate:
+**CLI namespace** (locked 2026-04-18): `cmux themes` stays Ghostty — Ghostty is the king theme of the main user interface and keeps the short verb. c11 chrome themes live under `cmux ui themes …`. The top-level `cmux help` should educate:
 
 > `cmux themes` — Ghostty terminal themes (terminal cells, cursor, prompt colors).
-> `cmux ui themes` — c11mux chrome themes (sidebar, title bars, dividers, workspace frame around the terminal).
+> `cmux ui themes` — c11 chrome themes (sidebar, title bars, dividers, workspace frame around the terminal).
 
 Alternatives considered and rejected: (a) renaming Ghostty to `cmux themes-ghostty` — inverts the principle that Ghostty is the king theme; (b) nesting chrome under `cmux appearance themes` — "appearance" implies a broader namespace we'd need to fill; (c) flag-based routing (`cmux themes --chrome`) — same verb, different semantics via flag is confusing.
 
@@ -923,7 +923,7 @@ Each milestone is independently mergeable, independently useful, and ships as on
 2. Verify: `cd vendor/bonsplit && git merge-base --is-ancestor HEAD origin/main` — must succeed.
 3. CI gate: bonsplit's own tests must pass before M2b opens.
 
-**Rollback**: none needed — additive to bonsplit, no c11mux callers yet.
+**Rollback**: none needed — additive to bonsplit, no c11 callers yet.
 
 #### M2b — Parent repo: wire divider color + thickness through bonsplit
 
@@ -973,7 +973,7 @@ Each milestone is independently mergeable, independently useful, and ships as on
 
 **Rollback (M2c)**: `@AppStorage("theme.workspaceFrame.enabled", default: true)` kill switch per §8.1. Sidebar overlay defers to pre-M2c via `theme.engine.disabledRuntime = true`.
 
-**Partial-ship protocol**: if M2b ships but M2c lags (e.g. frame geometry bug), dividers are live and frame is off — no rollback needed. If M2a ships but M2b lags, bonsplit exposes the new API but c11mux doesn't consume it — also safe.
+**Partial-ship protocol**: if M2b ships but M2c lags (e.g. frame geometry bug), dividers are live and frame is off — no rollback needed. If M2a ships but M2b lags, bonsplit exposes the new API but c11 doesn't consume it — also safe.
 
 ### M3 — User themes + hot reload
 
@@ -1028,7 +1028,7 @@ Each milestone is independently mergeable, independently useful, and ships as on
 **New files** (minimal — most additions are inline):
 
 - `Sources/Theme/AppearanceThemeSection.swift` — Settings picker + preview canvas (inline SwiftUI view; called from existing Settings layout in `cmuxApp.swift`).
-- `Sources/Theme/ThemePreviewCanvas.swift` — miniature c11mux diagram for Settings.
+- `Sources/Theme/ThemePreviewCanvas.swift` — miniature c11 diagram for Settings.
 - `Sources/Theme/ThemeSocketMethods.swift` — socket method handlers for `theme.*` and `workspace.set_custom_color`.
 
 **Modified files**:
@@ -1110,7 +1110,7 @@ Each lands as its own PR, each re-justifies before work starts. None block M1-M4
 - **Icon theming** — no app icon, menu item icon, or SF Symbol swapping in v1.
 - **Settings window theming** — the window that *shows* theme controls is itself not themed.
 - **Menu bar extra theming** — system-owned.
-- **Cross-platform themes** — c11mux is macOS-only; themes assume NSColor semantics.
+- **Cross-platform themes** — c11 is macOS-only; themes assume NSColor semantics.
 - **Dynamic theming from external sources** (e.g. macOS accent color, desktop wallpaper sampling) — nice-to-have, not v1.
 - **Theme marketplace / remote fetch** — users copy files by hand in v1.
 
@@ -1128,7 +1128,7 @@ All seven open questions were locked with Atin on 2026-04-18 before the Trident 
 
 4. **Workspace-colored tab-bar active indicator in default theme — LOCKED: `$workspaceColor`.** The default Stage 11 theme uses workspace color on the 2pt bottom indicator. See Appendix A.1 (`[chrome.tabBar].activeIndicator`). *Rationale*: reinforces workspace identity on a second chrome surface; subtle because the indicator is only 2pt.
 
-5. **`cmux themes` CLI namespace — LOCKED: `cmux ui themes`.** `cmux themes` stays Ghostty (Ghostty is the king theme). c11mux chrome themes live at `cmux ui themes …`. See §9.3. *Rationale*: respects Ghostty's primacy in the terminal experience; `ui` is shorter than `appearance` and doesn't imply a broader namespace we'd need to fill. Help text at top-level educates the distinction.
+5. **`cmux themes` CLI namespace — LOCKED: `cmux ui themes`.** `cmux themes` stays Ghostty (Ghostty is the king theme). c11 chrome themes live at `cmux ui themes …`. See §9.3. *Rationale*: respects Ghostty's primacy in the terminal experience; `ui` is shorter than `appearance` and doesn't imply a broader namespace we'd need to fill. Help text at top-level educates the distinction.
 
 6. **Per-workspace theme override — LOCKED: deferred past v1.** v1 ships a single global theme. Per-workspace `customColor` already exists and gives per-workspace identity; a per-workspace theme *file* override (workspace A loads `stage11.toml`, workspace B loads `minimal.toml`) is deferred to M5 if operators ask. Schema stays forward-compatible. See §9.2.
 
@@ -1146,7 +1146,7 @@ All seven open questions were locked with Atin on 2026-04-18 before the Trident 
 
 13. **Agent socket access — LOCKED: agents signal workspace state, not themes.** Theme selection is **operator-only**. The socket API exposes *read-only* theme methods (`cmux ui themes list` / `current` / `dump`) but no `set` / `clear` / `cycle` write methods — theme writes are available only to operators invoking the CLI themselves (which already runs as the operator, not through an agent's socket connection). Agents express "this workspace is in mode X" via the **existing metadata API**: `cmux set-workspace-metadata state.<key> <value>` (§12 #10 already locks the `state.` prefix as the canonical channel). The active theme decides how to render that state via `[when.workspaceState.*]` conditional blocks. v1 keeps the metadata write path **open** — any socket consumer may set `state.*` keys; no per-client permission enforcement. The state namespace is small, the operator can clear at will, and there's no real auth infrastructure to build. Revisit only if a misuse pattern appears. *Rationale*: clean authorization boundary — agents signal, operator decides visual response. Socket focus policy from CLAUDE.md needs no new treatment because metadata writes are already non-focus-stealing. Chrome-as-notification-channel without chrome-control: agents inform the UI, but the theme author owns the visual vocabulary. Also: an agent on a shared DEV/STAGING build (Q8) can't accidentally clobber the operator's theme preference — the worst it can do is leave a stale state tag. *(Resolves §14 #7, raised by Adversarial Claude Q36 + Evolutionary Q16.)*
 
-14. **Concurrent-instance state — LOCKED: per-bundle-ID `@AppStorage`, shared themes directory.** Theme *selection* is isolated per build; theme *library* is shared. Concretely: all `@AppStorage` keys in the theming system (`theme.active.light`, `theme.active.dark`, `theme.engine.disabledRuntime`) route through `UserDefaults(suiteName: Bundle.main.bundleIdentifier)` (or equivalent prefix scheme). Production `cmux`, `cmux DEV`, `cmux DEV <tag>`, and `cmux STAGING` each hold their own selection — an operator iterating on theme code in a tagged build cannot accidentally flip their daily-driver's theme. The user themes dir stays at the shared location `~/Library/Application Support/c11mux/themes/` — themes authored once are visible to every build, and the file watcher runs independently per instance. *Rationale*: matches the existing c11mux isolation model for tagged builds (sockets, bundle IDs, derived data already isolate; `@AppStorage` was the missing piece). Shared library matches operator expectations and how Ghostty / Terminal.app / iTerm2 handle user assets. Cost: ~5 lines of plumbing at `@AppStorage` call sites. §6.2 (directory + selection) and §13 (instance-isolation note) carry the body updates. *(Resolves §14 #8, raised by Adversarial Claude Q35.)*
+14. **Concurrent-instance state — LOCKED: per-bundle-ID `@AppStorage`, shared themes directory.** Theme *selection* is isolated per build; theme *library* is shared. Concretely: all `@AppStorage` keys in the theming system (`theme.active.light`, `theme.active.dark`, `theme.engine.disabledRuntime`) route through `UserDefaults(suiteName: Bundle.main.bundleIdentifier)` (or equivalent prefix scheme). Production `cmux`, `cmux DEV`, `cmux DEV <tag>`, and `cmux STAGING` each hold their own selection — an operator iterating on theme code in a tagged build cannot accidentally flip their daily-driver's theme. The user themes dir stays at the shared location `~/Library/Application Support/c11mux/themes/` — themes authored once are visible to every build, and the file watcher runs independently per instance. *Rationale*: matches the existing c11 isolation model for tagged builds (sockets, bundle IDs, derived data already isolate; `@AppStorage` was the missing piece). Shared library matches operator expectations and how Ghostty / Terminal.app / iTerm2 handle user assets. Cost: ~5 lines of plumbing at `@AppStorage` call sites. §6.2 (directory + selection) and §13 (instance-isolation note) carry the body updates. *(Resolves §14 #8, raised by Adversarial Claude Q35.)*
 
 15. **Built-in theme set — LOCKED: two built-ins ship; `stage11` + `phosphor`.** v1 ships an intentionally small built-in set: `stage11.toml` (brand default) and `phosphor.toml` (subtle matrix/CRT-phosphor aesthetic). `high-contrast-workspace.toml` and `minimal.toml` are dropped from v1 scope; their Appendix A entries are removed. The second built-in exists to **validate theme-switching end-to-end** AND to **demonstrate the engine's aesthetic range** — proving the schema and loader handle themes that are deliberately divergent from the Stage 11 palette, not just Stage 11 brand expressions. Variety beyond the two built-ins lives in **user-authored themes** in the shared themes dir, not in additional built-ins. `phosphor.toml` is **self-contained** — declares its own `[palette]` and `[variables]`; does NOT inherit from `stage11.toml` via loader fallback. The name nods to the Stage 11 Phosphor voice (`stage11/phosphor/PHOSPHOR_SOUL.md`) and to CRT-phosphor terminal nostalgia; lineage is voice-level even as the visual identity diverges. *Rationale*: small built-in set keeps brand curation tight while proving the engine supports broader aesthetic expression; operator/agent-authored themes are where variety happens, which is what the whole engine is for. Shipping three nearly-similar Stage-11-palette-inheriting themes would understate what the engine does; shipping one showcase-divergent second theme is stronger signal. Hex palette in Appendix A.2 is indicative and subject to iteration before M3 ships; the locked part is the schema shape, role assignments, and the name. §6.6 (built-ins), §A.2 (palette), and Appendix B (file list) carry the body updates. *(Resolves §14 #9, raised by Evolutionary Codex §2.8 Q9.)*
 
@@ -1213,7 +1213,7 @@ Once users start authoring themes, breaking changes to the schema become expensi
 
 ### 13.9 CI red-build baseline
 
-Per memory `project_c11mux_ci_build_runner_red.md`, the c11mux CI build job is red on every main commit (macos-15-xlarge Larger Runner unavailable — billing). Ignore the red build check and use `gh pr merge --admin` to bypass, per established practice.
+Per memory `project_c11mux_ci_build_runner_red.md`, the c11 CI build job is red on every main commit (macos-15-xlarge Larger Runner unavailable — billing). Ignore the red build check and use `gh pr merge --admin` to bypass, per established practice.
 
 **Local-verify practice** (per §12 #11 — softened from the Trident review's "v2 milestone gate" framing): because CI is red, each theming milestone is verified via a local tagged build before merge. This is standard operator workflow, not a formal gate or merge-blocker:
 

@@ -1,4 +1,4 @@
-# c11mux spec integration review
+# c11 spec integration review
 
 **Date:** 2026-04-16
 **Reviewer:** cross-cutting integration agent (read all 6 specs + charter + M2 + CLAUDE.md + socket-api-reference)
@@ -22,9 +22,9 @@ All six specs are well-researched and coherent with charter/M2. No fundamental b
 1. **M1 `cmux set-agent` prose** — two paragraphs could be one sentence on `CMUX_SURFACE_ID` resolution. (M1 lines 147–154)
 2. **M6 `markdown.get_content` soft-result convention.** Listed under Error codes but should follow M2's `applied: false, reason:` pattern or explicitly name a new pattern. (M6 lines 410–417)
 3. **M4 depends on M1's CLI.** Note that if M4 lands before M1, hooks must use raw `surface.set_metadata`.
-4. **M5 `BrandColors` API surface.** Clarify: internal to c11mux, not public Swift module interface; tests access via `system.brand` socket method.
+4. **M5 `BrandColors` API surface.** Clarify: internal to c11, not public Swift module interface; tests access via `system.brand` socket method.
 5. **M7 "25 UTF-8 characters (count grapheme clusters)"** — terms conflated. Should read: "25 grapheme clusters (Swift `String.Character` units)". (M7 lines 204–215)
-6. **M3 `model_label` status.** Not a canonical key but readable via `surface.get_metadata`. State validation (≤16 chars string) and that it's consumer-opted, not emitted by c11mux. (M3 line 92)
+6. **M3 `model_label` status.** Not a canonical key but readable via `surface.get_metadata`. State validation (≤16 chars string) and that it's consumer-opted, not emitted by c11. (M3 line 92)
 
 ## Nice-to-have
 

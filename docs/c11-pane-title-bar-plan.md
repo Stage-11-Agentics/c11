@@ -1,11 +1,11 @@
-# c11mux — Pane Title Bar Chrome & Theming Plan
+# c11 — Pane Title Bar Chrome & Theming Plan
 
 **Status:** plan (not scheduled). **Author:** conversation 2026-04-18.
 **Scope:** visual chrome that renders a pane's title (from the metadata layer shipped in the companion plan) as a first-class UI primitive, parallel in contract to the existing surface title bar, and themed consistently with it.
-**Depends on:** [Pane metadata & naming plan](./c11mux-pane-naming-plan.md) — pane titles must exist in the metadata store and persist before this plan adds a view for them.
+**Depends on:** [Pane metadata & naming plan](./c11-pane-naming-plan.md) — pane titles must exist in the metadata store and persist before this plan adds a view for them.
 **Adjacent to:**
-- In-flight c11mux theming plan (sibling workstream) — pane title bars must inherit the same theme tokens as surface title bars so both layers feel like one system.
-- [Pane dialog primitive plan](./c11mux-pane-dialog-primitive-plan.md) — pane title bars and pane-anchored dialogs share pane-scoped geometry. This plan coordinates the vertical stacking so dialog scrims do not occlude the title bar.
+- In-flight c11 theming plan (sibling workstream) — pane title bars must inherit the same theme tokens as surface title bars so both layers feel like one system.
+- [Pane dialog primitive plan](./c11-pane-dialog-primitive-plan.md) — pane title bars and pane-anchored dialogs share pane-scoped geometry. This plan coordinates the vertical stacking so dialog scrims do not occlude the title bar.
 **Non-goals:** the metadata mechanism itself (companion plan), window-level chrome, sidebar changes beyond what is needed to reflect a pane title when relevant.
 
 ---
@@ -34,7 +34,7 @@ The contract mirrors surfaces deliberately. Operators already know how the surfa
 6. **Theming unification.** Pane title bars use the same theme tokens (background, text color, divider, hover states) as surface title bars. The theming source of truth is whatever the in-flight theming plan establishes; this plan consumes it rather than forking tokens.
 7. **Dual titles when both pane and active surface are named.** Render both: pane title on top, surface title directly below. Visually the stack reads as a path from "why this pane exists" to "what's showing in it right now." Each strip retains its own collapse/dismiss behavior. When only one is set, only that one renders.
 8. **Dismiss state is per-pane, ephemeral.** `titleBarCollapsed` / `titleBarUserCollapsed` for panes behaves the same as for surfaces in the Tier 1 persistence plan: reset to default on restart. Persisting dismissal is deferred until operators ask for it.
-9. **Bonsplit stays unopinionated about c11mux chrome.** The title bar is rendered by c11mux SwiftUI views layered above the bonsplit pane, not by bonsplit itself. This preserves the principle that bonsplit is a split-tree primitive.
+9. **Bonsplit stays unopinionated about c11 chrome.** The title bar is rendered by c11 SwiftUI views layered above the bonsplit pane, not by bonsplit itself. This preserves the principle that bonsplit is a split-tree primitive.
 
 ---
 
@@ -50,7 +50,7 @@ The contract mirrors surfaces deliberately. Operators already know how the surfa
 ├──────────────────────────────────────────────────────────┤
 │ PaneMetadataStore + Pane RPCs (companion plan)           │  ← already built when this ticket starts
 ├──────────────────────────────────────────────────────────┤
-│ Bonsplit pane (unopinionated — c11mux layers above)      │  ← unchanged
+│ Bonsplit pane (unopinionated — c11 layers above)         │  ← unchanged
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -65,7 +65,7 @@ Each phase is its own PR. Phase 1 ships a minimal visible strip tied to `pane.me
 ### Current state
 
 - `SurfaceTitleBarView` (existing surface title bar view) defines the visual contract: centered text, chevron, expand-to-show-description. Layout and styling are the reference this phase parallels.
-- Panes in c11mux host content via the pane portal + SwiftUI layering in `Sources/Panels/` and the terminal window portal (`Sources/TerminalWindowPortal.swift`). There is no pane-level SwiftUI wrapper that sits *above* the content view; the pane's content currently extends to the pane bounds.
+- Panes in c11 host content via the pane portal + SwiftUI layering in `Sources/Panels/` and the terminal window portal (`Sources/TerminalWindowPortal.swift`). There is no pane-level SwiftUI wrapper that sits *above* the content view; the pane's content currently extends to the pane bounds.
 - The Tier 1 persistence plan notes `titleBarCollapsed` / `titleBarUserCollapsed` are ephemeral state on surfaces today, reset per restart (decision 4 in that plan).
 
 ### Target state
@@ -130,7 +130,7 @@ Surfaces have right-click menus for tab operations in the bonsplit tab bar, but 
 ### Not in this phase
 
 - Sidebar or tab-bar-level indication of pane title changes (downstream polish).
-- Undo of rename (a general c11mux capability to add later, not specific to panes).
+- Undo of rename (a general c11 capability to add later, not specific to panes).
 
 ---
 
@@ -140,7 +140,7 @@ Surfaces have right-click menus for tab operations in the bonsplit tab bar, but 
 
 ### Current state
 
-The c11mux theming plan (in-flight, sibling workstream) is establishing a token system for colors, typography, and spacing. Surface title bars are a consumer. This phase aligns pane title bars with the same source.
+The c11 theming plan (in-flight, sibling workstream) is establishing a token system for colors, typography, and spacing. Surface title bars are a consumer. This phase aligns pane title bars with the same source.
 
 ### Target state
 

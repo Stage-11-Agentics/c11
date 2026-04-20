@@ -1,35 +1,35 @@
-# c11mux Charter
+# c11 Charter
 
-Captured from the c11mux feature-brainstorm dialogue, 2026-04-16. This document is the canonical record of what c11mux is, what it becomes beyond the rename, and the initial feature scope. The rename-surface agent may decompose this into `docs/c11mux-identity.md` and updates to `ROADMAP.md` at its discretion.
+Captured from the c11 feature-brainstorm dialogue, 2026-04-16. This document is the canonical record of what c11 is, what it becomes beyond the rename, and the initial feature scope. The rename-surface agent may decompose this into `docs/c11mux-identity.md` and updates to `ROADMAP.md` at its discretion.
 
 ---
 
-## What c11mux is
+## What c11 is
 
-c11mux is Stage 11's fork of [manaflow-ai/cmux](https://github.com/manaflow-ai/cmux) — a native macOS terminal multiplexer for AI coding agents, built on Ghostty.
+c11 is Stage 11's fork of [manaflow-ai/cmux](https://github.com/manaflow-ai/cmux) — a native macOS terminal multiplexer for AI coding agents, built on Ghostty.
 
-c11mux is a **host and primitive**, not an intelligence layer. It gives agents and operators a great place to work: terminal, browser, markdown surfaces, workspaces, splits, tabs, notifications, and a scriptable CLI/socket API. The opinion about *what agents do* lives elsewhere — in Lattice, in Spike, in whatever tooling Stage 11 builds around c11mux.
+c11 is a **host and primitive**, not an intelligence layer. It gives agents and operators a great place to work: terminal, browser, markdown surfaces, workspaces, splits, tabs, notifications, and a scriptable CLI/socket API. The opinion about *what agents do* lives elsewhere — in Lattice, in Spike, in whatever tooling Stage 11 builds around c11.
 
 ### Three surface types
 
-c11mux ships three first-class surface types alongside each other:
+c11 ships three first-class surface types alongside each other:
 
 1. **Terminal** — inherited from cmux/Ghostty, GPU-accelerated, agent-focused.
 2. **Browser** — WKWebView-backed, scriptable automation API (agent-browser port), proxy-aware.
-3. **Markdown** — renders markdown with Mermaid diagram support. Turns c11mux into a natural host for agent-rendered docs, reports, and diagrams.
+3. **Markdown** — renders markdown with Mermaid diagram support. Turns c11 into a natural host for agent-rendered docs, reports, and diagrams.
 
 The three-surface story — *terminal + browser + markdown, all scriptable from a single CLI* — is the one-line pitch for the fork. Nothing else on the market offers this combination as a native macOS primitive.
 
-## Division of labor: c11mux ↔ Lattice
+## Division of labor: c11 ↔ Lattice
 
 This is the critical architectural stance:
 
-- **c11mux does not integrate *into* Lattice, Spike, Cell Zero, or Mycelium.**
-- **Lattice (and other Stage 11 tooling) integrates *into* c11mux** via the socket API and metadata primitives c11mux exposes.
+- **c11 does not integrate *into* Lattice, Spike, Cell Zero, or Mycelium.**
+- **Lattice (and other Stage 11 tooling) integrates *into* c11** via the socket API and metadata primitives c11 exposes.
 
-Every feature proposal passes this test: **"Does this *have* to live in c11mux, or could it live in Lattice and consume c11mux's API?"** If it could live upstairs, it should. The things that must live in c11mux are the ones that inherently need AppKit, Ghostty, PTY, WKWebView, OS-level notifications, or sub-millisecond keystroke latency. Everything else belongs in the consumer.
+Every feature proposal passes this test: **"Does this *have* to live in c11, or could it live in Lattice and consume c11's API?"** If it could live upstairs, it should. The things that must live in c11 are the ones that inherently need AppKit, Ghostty, PTY, WKWebView, OS-level notifications, or sub-millisecond keystroke latency. Everything else belongs in the consumer.
 
-This keeps c11mux's surface area small, its mutation cost low, and its identity clean.
+This keeps c11's surface area small, its mutation cost low, and its identity clean.
 
 ## Distribution posture
 
@@ -53,7 +53,7 @@ Listed in rough shipping order. None of these require new architectural concepts
 
 ### 1. TUI auto-detection
 
-c11mux identifies which agent TUI is running in each pane — Claude Code, Codex, Kimi, OpenCode as first-class supported agents.
+c11 identifies which agent TUI is running in each pane — Claude Code, Codex, Kimi, OpenCode as first-class supported agents.
 
 - **Mechanism:** Process-tree heuristic (walks the PTY subtree, matches known binaries) as the default. Explicit declaration via CLI/env (`cmux set-agent --type claude-code --model claude-opus-4-7` or `CMUX_AGENT_TYPE=claude-code`) overrides the heuristic and can carry richer fields the heuristic can't know (model, task ID, Spike role). Declaration writes are sugar over `surface.set_metadata` — M1 does not introduce a new socket method.
 - **Extends:** The existing `set_agent_pid` socket command and `Workspace.agentPIDs` storage. Today those only power stale-session detection; this module surfaces them everywhere.
@@ -66,7 +66,7 @@ Each pane can carry an open-ended JSON metadata object that agents can read and 
 - **New socket commands:** `surface.get_metadata`, `surface.set_metadata`, `surface.clear_metadata`. Full wire format in `docs/c11mux-module-2-metadata-spec.md`.
 - **Delivery model:** Pull-on-demand only. No pub/sub. Consumers query when they want the current state. (Push/subscribe is in the parking lot — add only if consumer count grows to justify it.)
 - **Schema:** Fully open-ended body, with a small reserved namespace of canonical keys the sidebar can render when present: `role`, `status`, `task`, `model`, `progress`. Agents put anything else alongside these.
-- **Consumers:** Lattice and future Stage 11 tooling. c11mux stays a transport — it does not interpret the payload beyond rendering the canonical keys.
+- **Consumers:** Lattice and future Stage 11 tooling. c11 stays a transport — it does not interpret the payload beyond rendering the canonical keys.
 - **Extends:** Existing sidebar metadata (status pills, progress bars, logs) — additive, not replacing.
 
 ### 3. Sidebar TUI identity chip
@@ -89,7 +89,7 @@ Each pane's sidebar entry shows the detected-or-declared agent with a small icon
 
 - Custom app icon aligned with the void/gold aesthetic from `company/brand/visual-aesthetic.md`.
 - Custom bundle name (`c11mux`, bundle ID `com.stage11.c11mux` — sibling agent is handling the rename mechanics).
-- Default color palette tuned for Stage 11 look. Users can still apply their own Ghostty themes; the c11mux default gives Stage 11 operators the intended look for free.
+- Default color palette tuned for Stage 11 look. Users can still apply their own Ghostty themes; the c11 default gives Stage 11 operators the intended look for free.
 
 ### 6. Markdown surface polish
 
@@ -126,8 +126,8 @@ Named so they're recoverable without having to re-derive them. None of these are
 ### Layout intelligence
 - Best-guess default placement for `cmux new-pane` when the agent provides no hints.
 - Topology query API (pane tree, sizes, density, sibling counts) so agents can make informed layout decisions.
-- Intent-level layout API: `cmux new-pane --intent parallel-agents --count 10` → c11mux picks the shape (grid, tabs-of-grids, etc.).
-- Auto-rebalancing — c11mux reshapes bad layouts after the fact.
+- Intent-level layout API: `cmux new-pane --intent parallel-agents --count 10` → c11 picks the shape (grid, tabs-of-grids, etc.).
+- Auto-rebalancing — c11 reshapes bad layouts after the fact.
 
 ### Metadata delivery
 - Push/subscribe delivery for pane metadata changes (`pane.broadcast.changed` events). Ship only if consumer count grows beyond what pull-on-demand serves well.
@@ -154,16 +154,16 @@ Named so they're recoverable without having to re-derive them. None of these are
 - **Upstream pull cadence.** Weekly? Biweekly? On-signal? Not decided.
 - **Homebrew tap name.** Probably `stage11/c11mux`; not confirmed.
 - **Integration installer UX.** Menubar item + CLI command is decided; the exact confirmation-diff UX is not.
-- **Branding specifics.** The Stage 11 visual aesthetic is canonical; the specific icon design and palette mapping for c11mux are still open.
+- **Branding specifics.** The Stage 11 visual aesthetic is canonical; the specific icon design and palette mapping for c11 are still open.
 
 ---
 
-## What c11mux is *not*
+## What c11 is *not*
 
 Explicitly, to keep scope honest:
 
-- Not a Lattice task tracker. Lattice does that; c11mux exposes primitives Lattice consumes.
-- Not a Spike orchestrator. Spike lives upstream of c11mux.
-- Not a Mycelium client. Mycelium is a separate layer; c11mux is one of the surfaces it observes.
-- Not a replacement for Ghostty. c11mux uses libghostty and reads Ghostty config; it adds workspace/sidebar/browser/markdown on top.
+- Not a Lattice task tracker. Lattice does that; c11 exposes primitives Lattice consumes.
+- Not a Spike orchestrator. Spike lives upstream of c11.
+- Not a Mycelium client. Mycelium is a separate layer; c11 is one of the surfaces it observes.
+- Not a replacement for Ghostty. c11 uses libghostty and reads Ghostty config; it adds workspace/sidebar/browser/markdown on top.
 - Not a general-purpose AI-agent platform. It's a terminal multiplexer with three surface types, tuned for Stage 11's agent work.

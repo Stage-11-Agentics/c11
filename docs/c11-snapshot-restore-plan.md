@@ -1,4 +1,4 @@
-# c11mux snapshot & restore
+# c11 snapshot & restore
 
 **Status:** plan
 **Ticket:** CMUX-37
@@ -7,7 +7,7 @@
 
 ## Goal
 
-Capture a c11mux workspace's full spatial layout and per-surface state to a JSON file, and rebuild it later — including **bit-exact resume of Claude Code sessions** via `cc --resume <session-id>`.
+Capture a c11 workspace's full spatial layout and per-surface state to a JSON file, and rebuild it later — including **bit-exact resume of Claude Code sessions** via `cc --resume <session-id>`.
 
 The killer capability is the Claude piece: `claude --resume <id>` rehydrates an entire session with full context and history. Nobody uses it because nobody keeps track of the IDs. Pairing it with a layout snapshot turns "I'll come back to this tomorrow" into `cmux restore morning-work`.
 
@@ -15,7 +15,7 @@ The killer capability is the Claude piece: `claude --resume <id>` rehydrates an 
 
 Third-party `sanghun0724/cmux-claude-skills` ships `cmux-snapshot` / `cmux-restore` Python scripts (~450 LOC). We're not adopting them directly. Three fragilities to avoid:
 
-1. Reads c11mux's private session file (`~/Library/Application Support/cmux/...json`) — undocumented, drift-prone. We use `cmux tree --all --json`.
+1. Reads c11's private session file (`~/Library/Application Support/cmux/...json`) — undocumented, drift-prone. We use `cmux tree --all --json`.
 2. Detects Claude surfaces by spinner chars (`✳⠂⠐`) in the title. We use the manifest (`terminal_type == claude-code`).
 3. Matches session IDs via fuzzy title scoring over `~/.claude/projects/*/sessions-index.json`. We use a SessionStart hook that writes the ID directly to the surface manifest.
 
@@ -25,15 +25,15 @@ Their idea is right; the implementation is heuristic-heavy. Ours is manifest-dri
 
 Fits **"unopinionated about the terminal"** as sharpened on 2026-04-20:
 
-- Reads only c11mux's own data (`cmux tree`, manifests) and writes only to its own data dir (`~/.cmux-snapshots/`).
+- Reads only c11's own data (`cmux tree`, manifests) and writes only to its own data dir (`~/.cmux-snapshots/`).
 - The only outbound action is `cmux send "cc --resume <id>\n"` — indistinguishable from sending any other string into a terminal. No touching `~/.claude/settings.json`, no hook installation.
-- The SessionStart hook that writes `claude.session_id` is **operator-installed, skill-documented**. c11mux does not install the hook. Matches the "skill-driven self-reporting is the standard pattern" rule.
+- The SessionStart hook that writes `claude.session_id` is **operator-installed, skill-documented**. c11 does not install the hook. Matches the "skill-driven self-reporting is the standard pattern" rule.
 
 ## Verified preconditions
 
 - **`cc --resume <id>` works.** `cc` is a shell alias expanding to `claude --model opus --dangerously-skip-permissions`; extra flags pass straight through. `claude -r, --resume [value]` takes an optional session ID.
 - **SessionStart hook receives `session_id` on stdin JSON** (along with `source`, `cwd`, `model`). Mechanism confirmed via Claude Code hooks docs.
-- **`terminal_type` is already being written to the surface manifest** for live Claude sessions inside c11mux. Half the plumbing exists today.
+- **`terminal_type` is already being written to the surface manifest** for live Claude sessions inside c11. Half the plumbing exists today.
 
 ## Architecture
 
@@ -105,7 +105,7 @@ A small table inside the `cmux restore` implementation decides what command to s
 | `kimi`        | (TBD)                            | `kimi`            |
 | *unknown*     | —                                | leave empty       |
 
-Extensible: new agent types add a row. No c11mux-side code change needed to **capture** a new agent's session ID — the manifest is free-form. Code change needed only to **restore** it.
+Extensible: new agent types add a row. No c11-side code change needed to **capture** a new agent's session ID — the manifest is free-form. Code change needed only to **restore** it.
 
 ### The SessionStart hook (skill-side, opt-in)
 
@@ -126,9 +126,9 @@ Operator installs this in `~/.claude/settings.json`:
 
 - Fires on every session boot (`source` = `startup | resume | clear | compact`).
 - Reads `session_id` from Claude Code's stdin JSON payload.
-- `CMUX_SURFACE_ID` is inherited from the parent c11mux shell, so `cmux set-metadata` without flags targets the right surface.
+- `CMUX_SURFACE_ID` is inherited from the parent c11 shell, so `cmux set-metadata` without flags targets the right surface.
 - `|| true` — hook failures never break sessions.
-- The `$CMUX_SHELL_INTEGRATION` guard makes it a no-op outside c11mux.
+- The `$CMUX_SHELL_INTEGRATION` guard makes it a no-op outside c11.
 
 Documented in the `cmux` skill under a new "Session resume" section.
 
@@ -198,13 +198,13 @@ After full rebuild, walk the pane list once more and `resize-pane` any pane whos
    - (b) Have the SessionStart hook write `$PWD` as `cwd` in the manifest (two `set-metadata` calls, trivial).
    - (c) Add a small socket command `cmux get-cwd --surface <ref>`.
    
-   Lean: **(b)**. Keeps c11mux's surface of concern narrow; operator-controlled via the same hook that's already opt-in.
+   Lean: **(b)**. Keeps c11's surface of concern narrow; operator-controlled via the same hook that's already opt-in.
 
 2. **Pane-layer manifests.** The pane layer carries its own metadata (CMUX-11). Snapshot schema should include `pane.manifest` per pane entry for symmetry. Add in Phase 1.
 
 3. **Snapshot versioning.** Start with `version: 1`. First schema change gets a migration function in `cmux restore`.
 
-4. **Auto-snapshot cadence.** Periodic snapshots via c11mux itself? Probably not — that's operator policy, best done via a cron or a `Stop` hook the operator installs.
+4. **Auto-snapshot cadence.** Periodic snapshots via c11 itself? Probably not — that's operator policy, best done via a cron or a `Stop` hook the operator installs.
 
 ## Implementation phases
 

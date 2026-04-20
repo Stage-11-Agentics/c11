@@ -1,4 +1,4 @@
-# c11mux — Workspace Metadata Persistence + Rich Sidebar Rows
+# c11 — Workspace Metadata Persistence + Rich Sidebar Rows
 
 **Status:**
 - **Phase 1 (persistence layer + socket + CLI) — SHIPPED 2026-04-18** via parallel tier-1 persistence work. Convergent implementation: `Workspace.metadata`, `SessionWorkspaceSnapshot.metadata`, `workspace.{set,get,clear}_metadata` socket methods, CLI (`set-workspace-metadata` + `set-workspace-description` / `set-workspace-icon` aliases), and autosave fingerprint update all landed. `Sources/WorkspaceMetadataKeys.swift` is byte-identical to this plan's spec.
@@ -361,8 +361,8 @@ Same test-seam discipline as Phase 3 — `WorkspaceIconView` is the testable sur
 ## Phase 5 — Documentation and polish
 
 - Add `workspace.metadata` canonical keys to whichever reference doc lists M-module canonical keys (check `docs/c11mux-module-2-*` or equivalent; if none exists, note that in the plan).
-- Update the top-level c11mux skill (`skills/cmux/SKILL.md`) with the new CLI commands.
-- Add a short "workspace metadata" section to the c11mux reference docs.
+- Update the top-level c11 skill (`skills/cmux/SKILL.md`) with the new CLI commands.
+- Add a short "workspace metadata" section to the c11 reference docs.
 
 ---
 

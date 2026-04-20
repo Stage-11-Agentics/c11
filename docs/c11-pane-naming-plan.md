@@ -1,18 +1,18 @@
-# c11mux — Pane Metadata & Naming Plan
+# c11 — Pane Metadata & Naming Plan
 
 **Status:** plan (not scheduled). **Author:** conversation 2026-04-18.
 **Scope:** pane-level metadata layer with first consumer being a user/agent-assigned pane title that carries lineage as an operator moves through a task graph.
 **Companion plans:**
-- [Pane title bar chrome & theming](./c11mux-pane-title-bar-plan.md) — the visual consumer of this metadata (separate ticket, depends on this plan landing first).
+- [Pane title bar chrome & theming](./c11-pane-title-bar-plan.md) — the visual consumer of this metadata (separate ticket, depends on this plan landing first).
 - [Title Bar Fidelity improvements](../skills/cmux/SKILL.md) — the in-flight skill-side work that establishes the `::` lineage convention for surface titles. This plan reuses that convention rather than duplicating it.
-- [Tier 1 persistence](./c11mux-tier1-persistence-plan.md) — Phase 2 persisted `SurfaceMetadataStore` losslessly. Pane metadata rides the same rails.
+- [Tier 1 persistence](./c11-tier1-persistence-plan.md) — Phase 2 persisted `SurfaceMetadataStore` losslessly. Pane metadata rides the same rails.
 **Non-goals:** pane title bar rendering (Ticket 2, separate plan), window/workspace metadata parity (deferred — windows don't split; the case is simpler and can follow after panes prove the pattern).
 
 ---
 
 ## Motivation
 
-Panes are first-class topology nodes in c11mux — they hold surfaces, split, merge, move across workspaces — but they carry no identity of their own. A multi-surface pane's "name" today is implicitly whichever surface is active, which means the pane loses identity every time the operator switches tabs inside it. Newly spawned panes have no identity until a surface boots and a title is set.
+Panes are first-class topology nodes in c11 — they hold surfaces, split, merge, move across workspaces — but they carry no identity of their own. A multi-surface pane's "name" today is implicitly whichever surface is active, which means the pane loses identity every time the operator switches tabs inside it. Newly spawned panes have no identity until a surface boots and a title is set.
 
 Operators moving through a task graph (e.g., "login button" work spawns a "code review" sub-task in a new pane) want the pane itself to carry the lineage: `Login Button :: Code Review`. That string is a narrative, not a data structure — the operator glances at the pane and remembers why it exists. This plan gives panes a place to store that string (and anything else we might want later) and makes it durable across restart.
 
@@ -23,12 +23,12 @@ This plan is also the first consumer of the open `TODO.md:38` parity goal: *"Ext
 ## Decisions (locked from scoping conversation)
 
 1. **It's text. Trust the LLM.** Pane title is a free-form string managed by agents at the prose layer. No structured breadcrumb type, no merge rules, no close-time snapshotting — a single string field that agents compose, mutate, and occasionally reset. The `::` separator is a *convention*, not a system delimiter.
-2. **Create-time seeding passes lineage for free.** `pane.create` and split commands take an optional `title` argument. The spawning agent (the one that calls create) is responsible for composing a good title, typically by reading its own current title and appending `:: <child role>`. c11mux does not auto-copy — the intelligence lives at the LLM layer, per the "unopinionated host" principle.
+2. **Create-time seeding passes lineage for free.** `pane.create` and split commands take an optional `title` argument. The spawning agent (the one that calls create) is responsible for composing a good title, typically by reading its own current title and appending `:: <child role>`. c11 does not auto-copy — the intelligence lives at the LLM layer, per the "unopinionated host" principle.
 3. **Rename is read-then-write by convention.** The `pane.set_metadata` RPC response includes the previous value so agents have it in-hand after a write; the skill documents the read-before-write norm so agents default to mutation over replacement. Agents can always replace wholesale when the new task is unrelated — trust the model.
 4. **Breadcrumb survives ancestor closure.** Because the value is stored as plain text, closing an ancestor pane has no effect on descendants' titles. The string is frozen narrative.
 5. **Full `PaneMetadataStore` parity with `SurfaceMetadataStore`.** Even though the first consumer (title) is just text, the plumbing matches surfaces so future pane-level metadata (status, role, progress) can land without a second migration.
 6. **Windows out of scope.** Windows don't split and their naming is a separate mechanism (workspace titles). Defer until panes prove the pattern.
-7. **`/clear` cue lives in the skill.** When an agent runs `/clear` (or equivalent context-reset), the skill instructs it to ask the operator whether to rename the pane. c11mux installs no hooks into the agent — guidance only, per the principle file.
+7. **`/clear` cue lives in the skill.** When an agent runs `/clear` (or equivalent context-reset), the skill instructs it to ask the operator whether to rename the pane. c11 installs no hooks into the agent — guidance only, per the principle file.
 8. **Skill `::` convention is single-source-of-truth.** The Title Bar Fidelity work is landing the `::` lineage convention in `skills/cmux/SKILL.md` for surface titles. This plan does not re-document the convention; it adds a short "also applies to panes" cross-reference so there is one place to read the rules.
 
 ---
@@ -158,7 +158,7 @@ Still no UI rendering of the title. Skill guidance lands in Phase 4.
 
 ### Current state
 
-The Title Bar Fidelity work (in-flight in a sibling c11mux pane) is adding a **Tab naming (mandatory)** section to `skills/cmux/references/orchestration.md` and related sections in `SKILL.md` that establish:
+The Title Bar Fidelity work (in-flight in a sibling c11 pane) is adding a **Tab naming (mandatory)** section to `skills/cmux/references/orchestration.md` and related sections in `SKILL.md` that establish:
 - `::` separator, parent-first lineage.
 - Orchestrator names the child's tab before launching the sub-agent.
 - Sub-agents orient via `cmux get-titlebar-state` and preserve the prefix when renaming.

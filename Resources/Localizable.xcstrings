@@ -67877,6 +67877,23 @@
         }
       }
     },
+    "statusBar.jumpToUnread.accessibility": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jump to latest unread notification"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最新の未読通知へジャンプ"
+          }
+        }
+      }
+    },
     "statusMenu.clearAll": {
       "extractionState": "manual",
       "localizations": {

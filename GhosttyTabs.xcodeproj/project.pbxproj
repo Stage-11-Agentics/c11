@@ -82,6 +82,10 @@
 			A5001093 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001090 /* AppDelegate.swift */; };
 			A5001094 /* NotificationsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001091 /* NotificationsPage.swift */; };
 			A5001095 /* TerminalNotificationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001092 /* TerminalNotificationStore.swift */; };
+			A5C36001 /* BottomStatusBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C36011 /* BottomStatusBarView.swift */; };
+			A5C36002 /* JumpToUnreadStatusBarButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C36012 /* JumpToUnreadStatusBarButton.swift */; };
+			A5C36003 /* StatusBarButtonDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C36013 /* StatusBarButtonDisplay.swift */; };
+			A5C36021 /* StatusBarButtonDisplayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C36031 /* StatusBarButtonDisplayTests.swift */; };
 			A5001250 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = A5001251 /* Sentry */; };
 			B9000024A1B2C3D4E5F60719 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = A5001251 /* Sentry */; };
 			A5001270 /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = A5001271 /* PostHog */; };
@@ -334,6 +338,10 @@
 		A5001090 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A5001091 /* NotificationsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsPage.swift; sourceTree = "<group>"; };
 		A5001092 /* TerminalNotificationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalNotificationStore.swift; sourceTree = "<group>"; };
+		A5C36011 /* BottomStatusBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBar/BottomStatusBarView.swift; sourceTree = "<group>"; };
+		A5C36012 /* JumpToUnreadStatusBarButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBar/JumpToUnreadStatusBarButton.swift; sourceTree = "<group>"; };
+		A5C36013 /* StatusBarButtonDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBar/StatusBarButtonDisplay.swift; sourceTree = "<group>"; };
+		A5C36031 /* StatusBarButtonDisplayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarButtonDisplayTests.swift; sourceTree = "<group>"; };
 		A5001301 /* SurfaceSearchOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Find/SurfaceSearchOverlay.swift; sourceTree = "<group>"; };
 		A5008370 /* BrowserSearchOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Find/BrowserSearchOverlay.swift; sourceTree = "<group>"; };
 		A5008372 /* BrowserFindJavaScript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Find/BrowserFindJavaScript.swift; sourceTree = "<group>"; };
@@ -580,6 +588,9 @@
 				A5001090 /* AppDelegate.swift */,
 				A5001091 /* NotificationsPage.swift */,
 				A5001092 /* TerminalNotificationStore.swift */,
+				A5C36011 /* BottomStatusBarView.swift */,
+				A5C36012 /* JumpToUnreadStatusBarButton.swift */,
+				A5C36013 /* StatusBarButtonDisplay.swift */,
 				A5001301 /* SurfaceSearchOverlay.swift */,
 				A5008370 /* BrowserSearchOverlay.swift */,
 				A5008372 /* BrowserFindJavaScript.swift */,
@@ -736,6 +747,7 @@
 					D7011BF1A1B2C3D4E5F60718 /* PaneMetadataStoreTests.swift */,
 					D7012BF1A1B2C3D4E5F60718 /* PaneMetadataPersistenceTests.swift */,
 					D7015BF1A1B2C3D4E5F60718 /* DefaultGridSettingsTests.swift */,
+					A5C36031 /* StatusBarButtonDisplayTests.swift */,
 				);
 				path = cmuxTests;
 				sourceTree = "<group>";
@@ -937,6 +949,9 @@
 				A5001093 /* AppDelegate.swift in Sources */,
 				A5001094 /* NotificationsPage.swift in Sources */,
 				A5001095 /* TerminalNotificationStore.swift in Sources */,
+				A5C36001 /* BottomStatusBarView.swift in Sources */,
+				A5C36002 /* JumpToUnreadStatusBarButton.swift in Sources */,
+				A5C36003 /* StatusBarButtonDisplay.swift in Sources */,
 				A5001303 /* SurfaceSearchOverlay.swift in Sources */,
 				A5008371 /* BrowserSearchOverlay.swift in Sources */,
 				A5008373 /* BrowserFindJavaScript.swift in Sources */,
@@ -1015,6 +1030,7 @@
 					A5F1001001A1B2C3D4E5F013 /* ThemeManagerLifecycleTests.swift in Sources */,
 					A5F1001001A1B2C3D4E5F014 /* ResolverCacheKeyTests.swift in Sources */,
 					A5F1001001A1B2C3D4E5F015 /* C11muxThemeLoaderTests.swift in Sources */,
+					A5C36021 /* StatusBarButtonDisplayTests.swift in Sources */,
 						A5F1001001A1B2C3D4E5F016 /* ThemeResolverBenchmarks.swift in Sources */,
 						A5F1001001A1B2C3D4E5F017 /* ThemeResolvedSnapshotArtifactTests.swift in Sources */,
 						A5F1001001A1B2C3D4E5F018 /* ThemeCycleAndInvalidValueTests.swift in Sources */,

@@ -97,17 +97,28 @@ struct SkillInstallerRemoveResult: Equatable {
     let destDir: URL
 }
 
-struct SkillInstallerError: Error {
+struct SkillInstallerError: Error, CustomStringConvertible {
     enum Code: String {
         case noSourceFound
         case sourceNotReadable
         case targetNotDetected
         case destUnwritable
+        case destNotManaged
         case copyFailed
         case manifestMalformed
+        case emptyPackageSet
     }
     let code: Code
     let message: String
+    let path: String?
+
+    init(code: Code, message: String, path: String? = nil) {
+        self.code = code
+        self.message = message
+        self.path = path
+    }
+
+    var description: String { message }
 }
 
 // MARK: - SkillInstaller namespace
@@ -189,7 +200,7 @@ enum SkillInstaller {
             )
         }
 
-        let allowlist: Set<String>? = readInstallableAllowlist(sourceDir: sourceDir, fileManager: fileManager)
+        let allowlist: Set<String>? = try readInstallableAllowlist(sourceDir: sourceDir, fileManager: fileManager)
 
         let packages: [SkillInstallerPackage] = children.compactMap { url in
             var childIsDir: ObjCBool = false
@@ -205,27 +216,77 @@ enum SkillInstaller {
         return packages.sorted { $0.name < $1.name }
     }
 
+    /// Returns the `installable` allowlist from `MANIFEST.json`, or nil if the
+    /// manifest file is absent (in which case every direct-child package is
+    /// installable). A present-but-malformed manifest throws — failing closed
+    /// so a packaging mistake can never silently broaden what c11mux ships.
     private static func readInstallableAllowlist(
         sourceDir: URL,
         fileManager: FileManager
-    ) -> Set<String>? {
+    ) throws -> Set<String>? {
         let manifest = sourceDir.appendingPathComponent("MANIFEST.json", isDirectory: false)
-        guard fileManager.fileExists(atPath: manifest.path),
-              let data = try? Data(contentsOf: manifest),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let list = obj["installable"] as? [String] else {
+        guard fileManager.fileExists(atPath: manifest.path) else { return nil }
+        let data: Data
+        do {
+            data = try Data(contentsOf: manifest)
+        } catch {
+            throw SkillInstallerError(
+                code: .manifestMalformed,
+                message: "Cannot read \(manifest.path): \(error.localizedDescription)",
+                path: manifest.path
+            )
+        }
+        let obj: Any
+        do {
+            obj = try JSONSerialization.jsonObject(with: data)
+        } catch {
+            throw SkillInstallerError(
+                code: .manifestMalformed,
+                message: "\(manifest.path) is not valid JSON: \(error.localizedDescription)",
+                path: manifest.path
+            )
+        }
+        guard let dict = obj as? [String: Any] else {
+            throw SkillInstallerError(
+                code: .manifestMalformed,
+                message: "\(manifest.path) must be a JSON object.",
+                path: manifest.path
+            )
+        }
+        guard let raw = dict["installable"] else {
+            // `installable` key missing — treat as "no filtering" to stay
+            // forward-compatible with manifests that only carry metadata.
             return nil
+        }
+        guard let list = raw as? [String] else {
+            throw SkillInstallerError(
+                code: .manifestMalformed,
+                message: "\(manifest.path) 'installable' must be an array of strings.",
+                path: manifest.path
+            )
         }
         return Set(list)
     }
 
     // MARK: Hashing
 
-    /// Deterministic SHA-256 over a directory: hashes the sorted list of
-    /// (relative path + `\0` + file bytes + `\0`) for every file under `dir`.
-    /// Skips dotfiles so the installer's own manifest file doesn't perturb the hash.
+    /// Deterministic SHA-256 over a directory. Each file contributes
+    ///   UInt64BE(path_len) || path_bytes || UInt64BE(content_len) || content_bytes
+    /// to a running SHA-256. Length-prefixing ensures the hash is unambiguous
+    /// for arbitrary file bytes — two different directory shapes cannot
+    /// produce colliding byte streams the way NUL-delimited framing could.
+    ///
+    /// - Parameters:
+    ///   - dir: directory to hash.
+    ///   - skipInstallerManifest: when true, the on-disk manifest file
+    ///     (`.c11mux-skill.json`) at the top level is excluded from the hash.
+    ///     Used on destination dirs so the manifest's presence doesn't
+    ///     invalidate a comparison against the source hash. Defaults to false
+    ///     so source hashes include every file (including dotfiles) and
+    ///     changes to hidden source files perturb the hash as expected.
     static func contentHash(
         of dir: URL,
+        skipInstallerManifest: Bool = false,
         fileManager: FileManager = .default
     ) throws -> String {
         let base = dir.standardizedFileURL
@@ -244,7 +305,8 @@ enum SkillInstaller {
         for case let fileURL as URL in enumerator {
             let resolved = fileURL.standardizedFileURL
             let rel = String(resolved.path.dropFirst(basePath.count).drop(while: { $0 == "/" }))
-            if rel.hasPrefix(".") || rel.contains("/.") { continue }
+            if rel.isEmpty { continue }
+            if skipInstallerManifest && rel == manifestFilename { continue }
             let values = try resolved.resourceValues(forKeys: [.isRegularFileKey])
             guard values.isRegularFile == true else { continue }
             entries.append((rel, resolved))
@@ -253,16 +315,20 @@ enum SkillInstaller {
 
         var hasher = SHA256()
         for entry in entries {
-            if let relData = entry.rel.data(using: .utf8) {
-                hasher.update(data: relData)
-            }
-            hasher.update(data: Data([0]))
-            let data = try Data(contentsOf: entry.absolute)
-            hasher.update(data: data)
-            hasher.update(data: Data([0]))
+            let relBytes = Data(entry.rel.utf8)
+            hasher.update(data: uint64BigEndian(UInt64(relBytes.count)))
+            hasher.update(data: relBytes)
+            let fileData = try Data(contentsOf: entry.absolute)
+            hasher.update(data: uint64BigEndian(UInt64(fileData.count)))
+            hasher.update(data: fileData)
         }
         let digest = hasher.finalize()
         return "sha256:" + digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func uint64BigEndian(_ value: UInt64) -> Data {
+        var be = value.bigEndian
+        return withUnsafeBytes(of: &be) { Data($0) }
     }
 
     // MARK: Status
@@ -327,8 +393,42 @@ enum SkillInstaller {
                     sourceContentHash: sourceHash
                 )
             }
-            let state: SkillInstallerState = (record.sourceContentHash == sourceHash)
-                ? .installedCurrent : .installedOutdated
+            if record.packageName != package.name {
+                // Manifest's package doesn't match the directory it lives in —
+                // treat as tampered/unmanaged.
+                return SkillInstallerPackageStatus(
+                    package: package,
+                    target: target,
+                    destinationDir: destDir,
+                    state: .installedNoManifest,
+                    record: record,
+                    sourceContentHash: sourceHash
+                )
+            }
+            // Idempotency: `.installedCurrent` iff the manifest says our source
+            // hash AND the on-disk destination content (excluding the
+            // manifest itself) also hashes to our source hash. If either
+            // diverges — manifest lies, or user edited a file — treat as
+            // outdated so the next install refreshes.
+            let destHash: String
+            do {
+                destHash = try contentHash(
+                    of: destDir,
+                    skipInstallerManifest: true,
+                    fileManager: fileManager
+                )
+            } catch {
+                return SkillInstallerPackageStatus(
+                    package: package,
+                    target: target,
+                    destinationDir: destDir,
+                    state: .installedOutdated,
+                    record: record,
+                    sourceContentHash: sourceHash
+                )
+            }
+            let matches = (record.sourceContentHash == sourceHash) && (destHash == sourceHash)
+            let state: SkillInstallerState = matches ? .installedCurrent : .installedOutdated
             return SkillInstallerPackageStatus(
                 package: package,
                 target: target,
@@ -369,13 +469,21 @@ enum SkillInstaller {
         fileManager: FileManager = .default
     ) throws -> SkillInstallerApplyResult {
         let statuses = try status(for: target, home: home, sourceDir: sourceDir, fileManager: fileManager)
+        if statuses.isEmpty {
+            throw SkillInstallerError(
+                code: .emptyPackageSet,
+                message: "No installable skill packages found in \(sourceDir.path). Check the bundled skills/MANIFEST.json.",
+                path: sourceDir.path
+            )
+        }
         let destRoot = target.skillsDir(home: home)
         do {
             try fileManager.createDirectory(at: destRoot, withIntermediateDirectories: true)
         } catch {
             throw SkillInstallerError(
                 code: .destUnwritable,
-                message: "Cannot create \(destRoot.path): \(error.localizedDescription)"
+                message: "Cannot create \(destRoot.path): \(error.localizedDescription)",
+                path: destRoot.path
             )
         }
 
@@ -395,6 +503,20 @@ enum SkillInstaller {
                 continue
             }
 
+            // Safety: a destination directory without a valid c11mux manifest
+            // is presumed user-owned — refuse to clobber it unless the
+            // operator explicitly passes --force. `.schemaMismatch` means an
+            // older manifest version that we can't safely migrate; treat the
+            // same way. This is the symmetry referenced by `remove()`: if a
+            // directory is unsafe to uninstall, it is unsafe to replace.
+            if (st.state == .installedNoManifest || st.state == .schemaMismatch) && !force {
+                throw SkillInstallerError(
+                    code: .destNotManaged,
+                    message: "\(dest.path) already exists but is not a c11mux-managed skill. Re-run with --force to replace it.",
+                    path: dest.path
+                )
+            }
+
             // Remove any prior copy to avoid leaving orphaned files behind.
             if fileManager.fileExists(atPath: dest.path) {
                 do {
@@ -402,7 +524,8 @@ enum SkillInstaller {
                 } catch {
                     throw SkillInstallerError(
                         code: .copyFailed,
-                        message: "Cannot remove existing \(dest.path): \(error.localizedDescription)"
+                        message: "Cannot remove existing \(dest.path): \(error.localizedDescription)",
+                        path: dest.path
                     )
                 }
             }
@@ -411,7 +534,8 @@ enum SkillInstaller {
             } catch {
                 throw SkillInstallerError(
                     code: .copyFailed,
-                    message: "Cannot copy \(st.package.name) to \(dest.path): \(error.localizedDescription)"
+                    message: "Cannot copy \(st.package.name) to \(dest.path): \(error.localizedDescription)",
+                    path: dest.path
                 )
             }
 
@@ -474,12 +598,29 @@ enum SkillInstaller {
                 skipped.append(pkg.name)
                 continue
             }
+            // Decode and verify the manifest before deleting: a file named
+            // `.c11mux-skill.json` alone is not proof of c11mux ownership.
+            // Require current schema and a matching package name, or skip.
+            let record: SkillInstallerRecord
+            do {
+                let data = try Data(contentsOf: manifest)
+                record = try JSONDecoder().decode(SkillInstallerRecord.self, from: data)
+            } catch {
+                skipped.append(pkg.name)
+                continue
+            }
+            guard record.schema == SkillInstallerRecord.schemaVersion,
+                  record.packageName == pkg.name else {
+                skipped.append(pkg.name)
+                continue
+            }
             do {
                 try fileManager.removeItem(at: dest)
             } catch {
                 throw SkillInstallerError(
                     code: .copyFailed,
-                    message: "Cannot remove \(dest.path): \(error.localizedDescription)"
+                    message: "Cannot remove \(dest.path): \(error.localizedDescription)",
+                    path: dest.path
                 )
             }
             removed.append(pkg.name)

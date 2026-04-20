@@ -5,14 +5,14 @@ xcodebuild -project GhosttyTabs.xcodeproj -scheme cmux -configuration Release -d
 pkill -x cmux || true
 sleep 0.2
 APP_PATH="$(
-  find "$HOME/Library/Developer/Xcode/DerivedData" -path "*/Build/Products/Release/c11mux.app" -print0 \
+  find "$HOME/Library/Developer/Xcode/DerivedData" -path "*/Build/Products/Release/c11.app" -print0 \
   | xargs -0 /usr/bin/stat -f "%m %N" 2>/dev/null \
   | sort -nr \
   | head -n 1 \
   | cut -d' ' -f2-
 )"
 if [[ -z "${APP_PATH}" ]]; then
-  echo "c11mux.app not found in DerivedData" >&2
+  echo "c11.app not found in DerivedData" >&2
   exit 1
 fi
 # Dev shells (including CI/Codex) often force-disable paging by exporting these.

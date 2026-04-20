@@ -4,7 +4,7 @@ import Bonsplit
 #endif
 
 /// Codable JSON value used to persist `SurfaceMetadataStore` contents across
-/// c11mux restarts. Numbers are stored as `Double`; consumers needing integer
+/// c11 restarts. Numbers are stored as `Double`; consumers needing integer
 /// fidelity must convert explicitly. `Bool` is distinct from number on the
 /// wire and on the Swift side, matching JSON semantics.
 enum PersistedJSONValue: Codable, Sendable, Equatable {

@@ -1,12 +1,12 @@
 # Upstream Sync Playbook
 
-c11mux is a surface-only rename fork of [manaflow-ai/cmux](https://github.com/manaflow-ai/cmux).
+c11 is a surface-only rename fork of [manaflow-ai/cmux](https://github.com/manaflow-ai/cmux).
 Almost every upstream change merges cleanly — we only diverged on app-identity files
 (bundle ID, display name, Sparkle feed, about-box copy, cask, etc.). See the full
 divergence contract in `notes/c11mux-backcompat-contract.md` (if present) or the
 original contract document.
 
-This playbook is for the person or agent keeping c11mux in sync with upstream.
+This playbook is for the person or agent keeping c11 in sync with upstream.
 
 ## Remotes
 
@@ -40,15 +40,15 @@ Then run the sanity checks below before declaring the sync done.
 
 ## Conflict hotspots
 
-These files are where c11mux intentionally diverges from cmux. Expect conflicts here
-on any upstream merge that touches them — and prefer to keep c11mux's identity choices
+These files are where c11 intentionally diverges from cmux. Expect conflicts here
+on any upstream merge that touches them — and prefer to keep c11's identity choices
 while accepting upstream's functional changes.
 
 | File | Why it conflicts | Resolution rule |
 |------|------------------|-----------------|
 | `Resources/Info.plist` | `CFBundleName`, `CFBundleDisplayName`, `SUFeedURL`, bundle-ID-adjacent keys | Keep `c11mux` / `com.stage11.c11mux` / stage11 Sparkle feed. Merge any new plist keys from upstream. |
-| `README.md` (and translations) | Branding, install instructions, fork notice | Keep c11mux branding + fork-attribution block. Pull in upstream feature copy, feature-list changes, screenshots. |
-| `CHANGELOG.md` | Release notes | Merge entries; prefix our c11mux-only changes clearly. |
+| `README.md` (and translations) | Branding, install instructions, fork notice | Keep c11 branding + fork-attribution block. Pull in upstream feature copy, feature-list changes, screenshots. |
+| `CHANGELOG.md` | Release notes | Merge entries; prefix our c11-only changes clearly. |
 | `Sources/SocketControlSettings.swift` | Socket path constants, `baseDebugBundleIdentifier` | Keep `com.stage11.c11mux` debug base. Socket filenames stay upstream-compatible per the contract. |
 | `Package.swift` | Product executable name | Keep executable product name as per contract (`cmux` internal, display `c11mux` only in bundle). |
 | `Resources/shell-integration/*` | `CMUX_*` env contract (gate: `CMUX_SHELL_INTEGRATION`, plus `CMUX_WORKSPACE_ID`, `CMUX_SURFACE_ID`, etc.) | Keep the `CMUX_*` namespace as-is — it is the canonical, upstream-compatible public contract. Do not rename to `C11MUX_*`. |
@@ -90,7 +90,7 @@ Files upstream rarely touches but which are entirely ours:
 ## Release coordination
 
 - Upstream cmux cuts releases on its own cadence. We do **not** auto-pull upstream into a
-  c11mux release.
+  c11 release.
 - Our release flow (`/release` command, `./scripts/bump-version.sh`, tag `vX.Y.Z`, CI
   produces `c11mux-macos.dmg`) is independent.
 - When we do merge upstream before a release, call it out in `CHANGELOG.md` with a line
@@ -103,7 +103,7 @@ Do all of these before pushing:
 
 1. **Build:** `xcodebuild -project GhosttyTabs.xcodeproj -scheme cmux -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/cmux-sync build`
 2. **Launch app:** `./scripts/reload.sh --tag sync-YYYYMMDD` and confirm the window opens,
-   display name reads "c11mux", About box attribution still says "a fork of cmux".
+   display name reads "c11", About box attribution still says "a fork of cmux".
 3. **Smoke test socket:** from another terminal, `cmux new-split right --surface <id>` and
    confirm it works (socket path/filename unchanged for upstream compat).
 4. **Shell integration:** open a new pane, confirm `CMUX_SURFACE_ID` and `C11MUX_SHELL_INTEGRATION`

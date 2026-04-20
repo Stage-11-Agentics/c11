@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="c11mux STAGING"
+APP_NAME="c11 STAGING"
 BUNDLE_ID="com.stage11.c11mux.staging"
-BASE_APP_NAME="c11mux"
+BASE_APP_NAME="c11"
 BASE_EXECUTABLE_NAME="cmux"
 DERIVED_DATA=""
 NAME_SET=0
@@ -24,8 +24,8 @@ usage() {
   cat <<'EOF'
 Usage: ./scripts/reloads.sh [options]
 
-Release build with isolated "c11mux STAGING" identity. Runs side-by-side with
-the production c11mux app.
+Release build with isolated "c11 STAGING" identity. Runs side-by-side with
+the production c11 app.
 
 Options:
   --tag <name>           Short tag for parallel builds (e.g., feature-xyz-lol).

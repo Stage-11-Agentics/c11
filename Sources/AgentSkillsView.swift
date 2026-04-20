@@ -161,7 +161,7 @@ final class AgentSkillsModel: ObservableObject {
 
     func copyManualCommandToPasteboard(target: SkillInstallerTarget) {
         // Route through the managed installer so the operator copies the
-        // same allowlisted + manifested install path c11mux itself uses —
+        // same allowlisted + manifested install path c11 itself uses —
         // no unmanaged rsync over the whole bundled `skills/` tree (which
         // would also copy maintainer-only packages).
         let snippet = "cmux skill install --tool \(target.rawValue)"
@@ -297,7 +297,7 @@ enum AgentSkillsLocalized {
             return String(
                 format: String(
                     localized: "agentSkills.error.destNotManaged",
-                    defaultValue: "%@ already exists but is not a c11mux-managed skill. Use Update/Refresh to replace it."
+                    defaultValue: "%@ already exists but is not a c11-managed skill. Use Update/Refresh to replace it."
                 ),
                 path
             )
@@ -320,7 +320,7 @@ enum AgentSkillsLocalized {
         case .emptyPackageSet:
             return String(
                 localized: "agentSkills.error.emptyPackageSet",
-                defaultValue: "No installable skill packages were found. Reinstall c11mux."
+                defaultValue: "No installable skill packages were found. Reinstall c11."
             )
         }
     }
@@ -502,7 +502,7 @@ private struct AgentSkillsRow: View {
     private var operatorDirectedButtons: some View {
         // For non-Claude tools, prefer operator-driven installation (clipboard
         // snippet + Finder reveal). The user can still use the Install/Refresh
-        // buttons if they explicitly want c11mux to copy into that tool's dir.
+        // buttons if they explicitly want c11 to copy into that tool's dir.
         Button(String(localized: "agentSkills.button.copyCommand", defaultValue: "Copy Command")) {
             model.copyManualCommandToPasteboard(target: row.target)
         }
@@ -531,7 +531,7 @@ private struct AgentSkillsRow: View {
 
 // MARK: - First-run onboarding sheet
 
-/// Sheet shown once, after the welcome flow, when c11mux detects Claude Code
+/// Sheet shown once, after the welcome flow, when c11 detects Claude Code
 /// but has never offered a skill install. User can consent, skip (this run),
 /// or defer forever (don't ask again). Settings exposes the same controls, so
 /// "don't ask again" is not a dead-end.
@@ -550,9 +550,9 @@ struct AgentSkillsOnboardingSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(String(localized: "agentSkills.onboarding.title", defaultValue: "Teach your agents about c11mux"))
+            Text(String(localized: "agentSkills.onboarding.title", defaultValue: "Teach your agents about c11"))
                 .font(.system(size: 18, weight: .semibold))
-            Text(String(localized: "agentSkills.onboarding.body", defaultValue: "Agents only know about c11mux's CLI and sidebar metadata when they've read the c11mux skill file. Pick which agents should get it — you can change this any time in Settings → Agent Skills."))
+            Text(String(localized: "agentSkills.onboarding.body", defaultValue: "Agents only know about c11's CLI and sidebar metadata when they've read the c11 skill file. Pick which agents should get it — you can change this any time in Settings → Agent Skills."))
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

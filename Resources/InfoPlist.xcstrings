@@ -8,13 +8,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A program running within c11mux would like to use your camera."
+            "value": "A program running within c11 would like to use your camera."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11mux 内で実行中のプログラムがカメラの使用を求めています。"
+            "value": "c11 内で実行中のプログラムがカメラの使用を求めています。"
           }
         }
       }
@@ -25,109 +25,109 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A program running within c11mux would like to use your microphone."
+            "value": "A program running within c11 would like to use your microphone."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11mux 内で実行中のプログラムがマイクの使用を求めています。"
+            "value": "c11 内で実行中のプログラムがマイクの使用を求めています。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在 c11mux 中运行的程序想要使用您的麦克风。"
+            "value": "在 c11 中运行的程序想要使用您的麦克风。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在 c11mux 中執行的程式想要使用您的麥克風。"
+            "value": "在 c11 中執行的程式想要使用您的麥克風。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11mux 내에서 실행 중인 프로그램이 마이크를 사용하려고 합니다."
+            "value": "c11 내에서 실행 중인 프로그램이 마이크를 사용하려고 합니다."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ein in c11mux ausgeführtes Programm möchte Ihr Mikrofon verwenden."
+            "value": "Ein in c11 ausgeführtes Programm möchte Ihr Mikrofon verwenden."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Un programa en ejecución dentro de c11mux desea usar tu micrófono."
+            "value": "Un programa en ejecución dentro de c11 desea usar tu micrófono."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Un programme s'exécutant dans c11mux souhaite utiliser votre microphone."
+            "value": "Un programme s'exécutant dans c11 souhaite utiliser votre microphone."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Un programma in esecuzione in c11mux desidera utilizzare il microfono."
+            "value": "Un programma in esecuzione in c11 desidera utilizzare il microfono."
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Et program, der kører i c11mux, vil gerne bruge din mikrofon."
+            "value": "Et program, der kører i c11, vil gerne bruge din mikrofon."
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Program działający w c11mux chciałby użyć Twojego mikrofonu."
+            "value": "Program działający w c11 chciałby użyć Twojego mikrofonu."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Программа, запущенная в c11mux, хотела бы использовать ваш микрофон."
+            "value": "Программа, запущенная в c11, хотела бы использовать ваш микрофон."
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Program koji se izvršava unutar c11mux želi koristiti vaš mikrofon."
+            "value": "Program koji se izvršava unutar c11 želi koristiti vaš mikrofon."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "يرغب برنامج يعمل داخل c11mux في استخدام الميكروفون."
+            "value": "يرغب برنامج يعمل داخل c11 في استخدام الميكروفون."
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Et program som kjører i c11mux ønsker å bruke mikrofonen din."
+            "value": "Et program som kjører i c11 ønsker å bruke mikrofonen din."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Um programa em execução no c11mux gostaria de usar seu microfone."
+            "value": "Um programa em execução no c11 gostaria de usar seu microfone."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "โปรแกรมที่ทำงานภายใน c11mux ต้องการใช้ไมโครโฟนของคุณ"
+            "value": "โปรแกรมที่ทำงานภายใน c11 ต้องการใช้ไมโครโฟนของคุณ"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11mux içinde çalışan bir program mikrofonunuzu kullanmak istiyor."
+            "value": "c11 içinde çalışan bir program mikrofonunuzu kullanmak istiyor."
           }
         }
       }
@@ -138,109 +138,109 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "New c11mux Workspace Here"
+            "value": "New c11 Workspace Here"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ここに新規 c11mux ワークスペースを作成"
+            "value": "ここに新規 c11 ワークスペースを作成"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在此新建 c11mux 工作区"
+            "value": "在此新建 c11 工作区"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在此新增 c11mux 工作區"
+            "value": "在此新增 c11 工作區"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "여기에 새 c11mux 작업 공간"
+            "value": "여기에 새 c11 작업 공간"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Neuer c11mux-Arbeitsbereich hier"
+            "value": "Neuer c11-Arbeitsbereich hier"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nuevo espacio de trabajo de c11mux aquí"
+            "value": "Nuevo espacio de trabajo de c11 aquí"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nouvel espace de travail c11mux ici"
+            "value": "Nouvel espace de travail c11 ici"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nuova area di lavoro c11mux qui"
+            "value": "Nuova area di lavoro c11 qui"
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nyt c11mux-arbejdsområde her"
+            "value": "Nyt c11-arbejdsområde her"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nowa przestrzeń robocza c11mux tutaj"
+            "value": "Nowa przestrzeń robocza c11 tutaj"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Новое рабочее пространство c11mux здесь"
+            "value": "Новое рабочее пространство c11 здесь"
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Novi c11mux radni prostor ovdje"
+            "value": "Novi c11 radni prostor ovdje"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "مساحة عمل c11mux جديدة هنا"
+            "value": "مساحة عمل c11 جديدة هنا"
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nytt c11mux-arbeidsområde her"
+            "value": "Nytt c11-arbeidsområde her"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nova Área de Trabalho do c11mux Aqui"
+            "value": "Nova Área de Trabalho do c11 Aqui"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "เวิร์กสเปซ c11mux ใหม่ที่นี่"
+            "value": "เวิร์กสเปซ c11 ใหม่ที่นี่"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Buraya Yeni c11mux Çalışma Alanı"
+            "value": "Buraya Yeni c11 Çalışma Alanı"
           }
         }
       }
@@ -251,109 +251,109 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "New c11mux Window Here"
+            "value": "New c11 Window Here"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ここに新規 c11mux ウインドウを作成"
+            "value": "ここに新規 c11 ウインドウを作成"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在此新建 c11mux 窗口"
+            "value": "在此新建 c11 窗口"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在此新增 c11mux 視窗"
+            "value": "在此新增 c11 視窗"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "여기에 새 c11mux 윈도우"
+            "value": "여기에 새 c11 윈도우"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Neues c11mux-Fenster hier"
+            "value": "Neues c11-Fenster hier"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nueva ventana de c11mux aquí"
+            "value": "Nueva ventana de c11 aquí"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nouvelle fenêtre c11mux ici"
+            "value": "Nouvelle fenêtre c11 ici"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nuova finestra c11mux qui"
+            "value": "Nuova finestra c11 qui"
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nyt c11mux-vindue her"
+            "value": "Nyt c11-vindue her"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nowe okno c11mux tutaj"
+            "value": "Nowe okno c11 tutaj"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Новое окно c11mux здесь"
+            "value": "Новое окно c11 здесь"
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Novi c11mux prozor ovdje"
+            "value": "Novi c11 prozor ovdje"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "نافذة c11mux جديدة هنا"
+            "value": "نافذة c11 جديدة هنا"
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nytt c11mux-vindu her"
+            "value": "Nytt c11-vindu her"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nova Janela do c11mux Aqui"
+            "value": "Nova Janela do c11 Aqui"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "หน้าต่าง c11mux ใหม่ที่นี่"
+            "value": "หน้าต่าง c11 ใหม่ที่นี่"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Buraya Yeni c11mux Penceresi"
+            "value": "Buraya Yeni c11 Penceresi"
           }
         }
       }

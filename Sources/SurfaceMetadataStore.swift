@@ -1,14 +1,14 @@
 import Foundation
 
-/// Source precedence for metadata writes (c11mux Module 2).
+/// Source precedence for metadata writes (c11 Module 2).
 ///
 /// Writers declare a `source` per call. The precedence chain is
 /// `explicit > declare > osc > heuristic`. A lower-precedence write is
 /// rejected per-key (soft reject: `applied: false`, `reason: lower_precedence`).
-/// Canonical-key namespace (c11mux Module 2).
+/// Canonical-key namespace (c11 Module 2).
 /// String constants for the canonical metadata keys rendered in the sidebar
 /// and title bar. Non-canonical keys accept any JSON value and are opaque to
-/// c11mux. See `docs/c11mux-module-2-metadata-spec.md`.
+/// c11. See `docs/c11mux-module-2-metadata-spec.md`.
 public enum MetadataKey {
     public static let role = "role"
     public static let status = "status"
@@ -50,7 +50,7 @@ public enum MetadataSource: String, CaseIterable, Codable, Sendable {
     public var rank: Int { precedence }
 }
 
-/// Per-surface JSON metadata store (c11mux Module 2 storage primitive).
+/// Per-surface JSON metadata store (c11 Module 2 storage primitive).
 ///
 /// Each surface owns two parallel dictionaries:
 ///   - `metadata`        — free-form JSON object, capped at 64 KiB serialized.

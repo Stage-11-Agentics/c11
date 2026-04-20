@@ -44,8 +44,8 @@ DERIVED_ROOT="$HOME/Library/Developer/Xcode/DerivedData"
 CMUXD_SOCK_DIR="$HOME/Library/Application Support/c11mux"
 
 running_tags() {
-  # Each app lives at .../cmux-<tag>/Build/Products/Debug/c11mux DEV <tag>.app/.../cmux
-  pgrep -afl "c11mux DEV " 2>/dev/null \
+  # Each app lives at .../cmux-<tag>/Build/Products/Debug/c11 DEV <tag>.app/.../cmux
+  pgrep -afl "c11 DEV " 2>/dev/null \
     | sed -E 's|.*DerivedData/cmux-([^/]+)/Build/Products/Debug/.*|\1|' \
     | grep -vE '^$' \
     | sort -u

@@ -2231,7 +2231,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func migrateLegacyPreferencesIfNeeded() {
-        let migratedFlagKey = "c11mux.preferencesMigrated.v1"
+        let migratedFlagKey = "c11.preferencesMigrated.v1"
         let defaults = UserDefaults.standard
         guard !defaults.bool(forKey: migratedFlagKey) else { return }
 
@@ -6096,7 +6096,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             backing: .buffered,
             defer: false
         )
-        window.title = String(localized: "agentSkills.onboarding.windowTitle", defaultValue: "c11mux Agent Skills")
+        window.title = String(localized: "agentSkills.onboarding.windowTitle", defaultValue: "c11 Agent Skills")
         window.isReleasedWhenClosed = false
         window.level = .modalPanel
         let rootView = AgentSkillsOnboardingSheet(onDismiss: { [weak window] in
@@ -9167,7 +9167,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = String(localized: "dialog.quitCmux.title", defaultValue: "Quit c11mux?")
+        alert.messageText = String(localized: "dialog.quitCmux.title", defaultValue: "Quit c11?")
         alert.informativeText = String(localized: "dialog.quitCmux.message", defaultValue: "This will close all windows and workspaces.")
         alert.addButton(withTitle: String(localized: "dialog.quitCmux.quit", defaultValue: "Quit"))
         alert.addButton(withTitle: String(localized: "common.cancel", defaultValue: "Cancel"))
@@ -11747,7 +11747,7 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
     private let preferencesItem = NSMenuItem(title: String(localized: "menu.preferences", defaultValue: "Preferences…"), action: nil, keyEquivalent: "")
     private let integrationsItem = NSMenuItem(title: String(localized: "menu.integrations", defaultValue: "Integrations"), action: nil, keyEquivalent: "")
     private let integrationsSubmenu = NSMenu(title: String(localized: "menu.integrations", defaultValue: "Integrations"))
-    private let quitItem = NSMenuItem(title: String(localized: "menu.quitCmux", defaultValue: "Quit c11mux"), action: nil, keyEquivalent: "")
+    private let quitItem = NSMenuItem(title: String(localized: "menu.quitCmux", defaultValue: "Quit c11"), action: nil, keyEquivalent: "")
 
     private var notificationItems: [NSMenuItem] = []
     private let maxInlineNotificationItems = 6

@@ -10,7 +10,7 @@
   "instance_id": "inst_01KPH28QX7HQY25DPM40E9NFP2",
   "plan_approval": "auto",
   "plan_review_mode": "triple",
-  "project_code": "CMUX",
+  "project_code": "C11",
   "project_name": "cmux",
   "review_mode": "inline",
   "review_timeout_seconds": 600,

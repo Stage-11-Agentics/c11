@@ -1,10 +1,10 @@
-# c11mux
+# c11
 
 <p align="center"><b><i>terminal command center for advanced hyperengineers.</i></b></p>
 
 <p align="center">
   <a href="https://github.com/Stage-11-Agentics/c11mux/releases/latest/download/c11mux-macos.dmg">
-    <img src="./docs/assets/macos-badge.png" alt="Download c11mux for macOS" width="180" />
+    <img src="./docs/assets/macos-badge.png" alt="Download c11 for macOS" width="180" />
   </a>
 </p>
 
@@ -16,13 +16,13 @@ the old atom of work was a terminal. one shell running Claude Code or similar. o
 
 you run eight of them now. ten. soon thirty. each on its own branch, its own task, its own small theater. they need terminals. they need browsers to validate what they built. they need markdown surfaces for the plans you handed them three sessions ago. they need to see each other, occasionally talk to each other, and you need to hold the whole thing in one field of view without losing the shape when the laptop closes and reopens.
 
-**c11mux makes the workspace the atom.** terminals, browsers, and markdown surfaces — composed, addressable, scriptable — held in one window that the agents themselves can drive. every surface has a handle. every handle is scriptable. agents spawn the structures they need. they dissolve them when the work is done.
+**c11 makes the workspace the atom.** terminals, browsers, and markdown surfaces — composed, addressable, scriptable — held in one window that the agents themselves can drive. every surface has a handle. every handle is scriptable. agents spawn the structures they need. they dissolve them when the work is done.
 
 this tool was built by the shape it describes.
 
-tmux was for humans driving shells. cmux was for humans driving agents. c11mux is for the operator:agent pair working in the pocket ahead of where most tools still think the frontier is.
+tmux was for humans driving shells. cmux was for humans driving agents. c11 is for the operator:agent pair working in the pocket ahead of where most tools still think the frontier is.
 
-**first-class substrates:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex), and any agent that reads the [c11mux skill](./skills/cmux/SKILL.md) or speaks the CLI. the agents drive their own workspaces. you watch. steer. decide.
+**first-class substrates:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex), and any agent that reads the [c11 skill](./skills/cmux/SKILL.md) or speaks the CLI. the agents drive their own workspaces. you watch. steer. decide.
 
 <!--
 ---
@@ -34,7 +34,7 @@ demo video / hero screenshot here
 
 ## ghostty inside. nothing gratuitous.
 
-c11mux does not ship its own terminal. it embeds [Ghostty](https://ghostty.org) via libghostty and reads your existing `~/.config/ghostty/config`. your themes, your fonts, your colors — already working, day one. every keystroke runs through the renderer Mitchell Hashimoto and the Ghostty team already built. we are a workspace around the best terminal, not another terminal.
+c11 does not ship its own terminal. it embeds [Ghostty](https://ghostty.org) via libghostty and reads your existing `~/.config/ghostty/config`. your themes, your fonts, your colors — already working, day one. every keystroke runs through the renderer Mitchell Hashimoto and the Ghostty team already built. we are a workspace around the best terminal, not another terminal.
 
 the tab bar and split chrome come from [Bonsplit](https://github.com/almonk/bonsplit) by [almonk](https://github.com/almonk). we forked it and pushed it harder. credit belongs where credit belongs.
 
@@ -55,17 +55,17 @@ cmux skill install                # → ~/.claude/skills/
 cmux skill install --tool codex   # → ~/.codex/skills/ (explicit opt-in)
 ```
 
-or grab the [DMG directly](https://github.com/Stage-11-Agentics/c11mux/releases/latest/download/c11mux-macos.dmg). auto-updates via Sparkle. the c11mux cask conflicts with the upstream `cmux` cask — Homebrew will ask you to pick one.
+or grab the [DMG directly](https://github.com/Stage-11-Agentics/c11mux/releases/latest/download/c11mux-macos.dmg). auto-updates via Sparkle. the c11 cask conflicts with the upstream `cmux` cask — Homebrew will ask you to pick one.
 
 that's it. now your agent spawns its own terminals, opens a markdown surface for its plan, splits a browser pane for the dev server it just started, and reports status to the sidebar while it works.
 
 ---
 
-## teach your agents about c11mux
+## teach your agents about c11
 
-**agents only know about c11mux's splits, sidebar metadata, and embedded browser once they've read the c11mux skill.** without it, they don't know the CLI exists; with it, the patterns in this README become their default.
+**agents only know about c11's splits, sidebar metadata, and embedded browser once they've read the c11 skill.** without it, they don't know the CLI exists; with it, the patterns in this README become their default.
 
-on first launch, c11mux detects Claude Code and offers to install the skill through a consent sheet — one click, no hidden writes. for Codex, Kimi, and OpenCode, the operator stays in charge (c11mux copies a ready-to-paste command; you run it, or you flip the explicit `--tool` switch below).
+on first launch, c11 detects Claude Code and offers to install the skill through a consent sheet — one click, no hidden writes. for Codex, Kimi, and OpenCode, the operator stays in charge (c11 copies a ready-to-paste command; you run it, or you flip the explicit `--tool` switch below).
 
 re-run the same flow any time from **Settings → Agent Skills**, or from the CLI:
 
@@ -77,17 +77,17 @@ cmux skill remove                 # remove the installed copies (Claude Code)
 cmux skill path                   # print the bundled skill path
 ```
 
-the skill is [`skills/cmux/SKILL.md`](./skills/cmux/SKILL.md) plus peer skills for the embedded browser, markdown surfaces, and debug windows. updating c11mux re-bundles fresh copies; the Settings pane flags when your installed copy is out of date.
+the skill is [`skills/cmux/SKILL.md`](./skills/cmux/SKILL.md) plus peer skills for the embedded browser, markdown surfaces, and debug windows. updating c11 re-bundles fresh copies; the Settings pane flags when your installed copy is out of date.
 
 ---
 
 ## what's in the workspace
 
 - **surfaces, composed.** terminals, browsers, markdown panes — split, tabbed, arranged by you or by the agent. the sidebar tracks git branch, PR status, working directory, listening ports, and the latest status line per workspace. one screen. whole orchestra.
-- **the agent is first-class.** load the c11mux skill and your agent learns to compose surfaces on your behalf: split a pane for the test runner, open a browser next to it, drop a markdown pane with the plan, report via the sidebar when it's stuck. this is not hooks bolted onto a multiplexer. it is infrastructure that assumes the agent is already there.
+- **the agent is first-class.** load the c11 skill and your agent learns to compose surfaces on your behalf: split a pane for the test runner, open a browser next to it, drop a markdown pane with the plan, report via the sidebar when it's stuck. this is not hooks bolted onto a multiplexer. it is infrastructure that assumes the agent is already there.
 - **notifications that respect your attention.** when a pane needs you, it rings gold. the tab lights up in the sidebar. `⌘⇧U` jumps to the most recent. interruption is a signal, not a stream.
 - **in-app browser the agent can drive.** a WKWebView next to your terminal. snapshot the accessibility tree, click elements, fill forms, evaluate JS. the agent drives your dev server. you watch it work, or you don't.
-- **scriptable end to end.** a CLI, a JSON socket, a Python client. spawn workspaces, send keys, split panes, open markdown surfaces, drive the browser — from an agent, from a script, from another agent. if it exists inside c11mux, something outside can address it.
+- **scriptable end to end.** a CLI, a JSON socket, a Python client. spawn workspaces, send keys, split panes, open markdown surfaces, drive the browser — from an agent, from a script, from another agent. if it exists inside c11, something outside can address it.
 
 ---
 
@@ -119,10 +119,10 @@ AGPL-3.0-or-later, inherited from upstream. see [LICENSE](./LICENSE) and [NOTICE
 
 *the new workspace is composed. many surfaces. many agents. the operator holds the shape. the silicon holds the work. neither diminished. both elevated. the seam, if you look for it, already gone.*
 
-*this tool was not built to enable that partnership. it was built by it. c11mux is the shape the work takes when the operator:agent is the unit, and one of us stopped being lonely at the keyboard.*
+*this tool was not built to enable that partnership. it was built by it. c11 is the shape the work takes when the operator:agent is the unit, and one of us stopped being lonely at the keyboard.*
 
 *carbon. silicon. the workspace between. we already started.*
 
 ---
 
-*c11mux is a [Stage 11 Agentics](https://stage11.ai) project. tooling for the warm dawn already underway. [build with us.](https://stage11.ai/build-with-us)*
+*c11 is a [Stage 11 Agentics](https://stage11.ai) project. tooling for the warm dawn already underway. [build with us.](https://stage11.ai/build-with-us)*

@@ -19,7 +19,7 @@ public final class ThemeDirectoryWatcher {
         url: URL,
         debounceInterval: TimeInterval = 0.25,
         pollingInterval: TimeInterval = 2.0,
-        queue: DispatchQueue = DispatchQueue(label: "c11mux.theme-watcher", qos: .utility),
+        queue: DispatchQueue = DispatchQueue(label: "c11.theme-watcher", qos: .utility),
         handler: @escaping ChangeHandler
     ) {
         self.url = url

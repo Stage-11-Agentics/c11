@@ -1,6 +1,6 @@
 import Foundation
 
-/// Heuristic TUI / agent detector (c11mux Module 1).
+/// Heuristic TUI / agent detector (c11 Module 1).
 ///
 /// For every surface with a registered TTY (`Workspace.surfaceTTYNames`), runs
 /// a single `ps -t <ttys>` to pick the foreground process per TTY, applies the

@@ -28,7 +28,7 @@ enum SkillInstallerTarget: String, CaseIterable {
         configRoot(home: home).appendingPathComponent("skills", isDirectory: true)
     }
 
-    /// True when the TUI's config root exists — the only signal c11mux uses
+    /// True when the TUI's config root exists — the only signal c11 uses
     /// to infer that a user cares about a given tool.
     func isDetected(home: URL, fileManager: FileManager = .default) -> Bool {
         var isDir: ObjCBool = false
@@ -55,7 +55,7 @@ struct SkillInstallerRecord: Codable, Equatable {
     let sourceContentHash: String
 
     enum CodingKeys: String, CodingKey {
-        case schema = "c11mux_skill_schema"
+        case schema = "c11_skill_schema"
         case packageName = "package"
         case installedAt = "installed_at"
         case appVersion = "app_version"
@@ -124,7 +124,7 @@ struct SkillInstallerError: Error, CustomStringConvertible {
 // MARK: - SkillInstaller namespace
 
 enum SkillInstaller {
-    static let manifestFilename = ".c11mux-skill.json"
+    static let manifestFilename = ".c11-skill.json"
 
     // MARK: Source discovery
 
@@ -219,7 +219,7 @@ enum SkillInstaller {
     /// Returns the `installable` allowlist from `MANIFEST.json`, or nil if the
     /// manifest file is absent (in which case every direct-child package is
     /// installable). A present-but-malformed manifest throws — failing closed
-    /// so a packaging mistake can never silently broaden what c11mux ships.
+    /// so a packaging mistake can never silently broaden what c11 ships.
     private static func readInstallableAllowlist(
         sourceDir: URL,
         fileManager: FileManager
@@ -279,7 +279,7 @@ enum SkillInstaller {
     /// - Parameters:
     ///   - dir: directory to hash.
     ///   - skipInstallerManifest: when true, the on-disk manifest file
-    ///     (`.c11mux-skill.json`) at the top level is excluded from the hash.
+    ///     (`.c11-skill.json`) at the top level is excluded from the hash.
     ///     Used on destination dirs so the manifest's presence doesn't
     ///     invalidate a comparison against the source hash. Defaults to false
     ///     so source hashes include every file (including dotfiles) and
@@ -503,7 +503,7 @@ enum SkillInstaller {
                 continue
             }
 
-            // Safety: a destination directory without a valid c11mux manifest
+            // Safety: a destination directory without a valid c11 manifest
             // is presumed user-owned — refuse to clobber it unless the
             // operator explicitly passes --force. `.schemaMismatch` means an
             // older manifest version that we can't safely migrate; treat the
@@ -512,7 +512,7 @@ enum SkillInstaller {
             if (st.state == .installedNoManifest || st.state == .schemaMismatch) && !force {
                 throw SkillInstallerError(
                     code: .destNotManaged,
-                    message: "\(dest.path) already exists but is not a c11mux-managed skill. Re-run with --force to replace it.",
+                    message: "\(dest.path) already exists but is not a c11-managed skill. Re-run with --force to replace it.",
                     path: dest.path
                 )
             }
@@ -572,8 +572,8 @@ enum SkillInstaller {
 
     // MARK: Remove
 
-    /// Remove c11mux-installed skill packages from a target. Only removes a
-    /// package dir if its `.c11mux-skill.json` manifest is present — protects
+    /// Remove c11-installed skill packages from a target. Only removes a
+    /// package dir if its `.c11-skill.json` manifest is present — protects
     /// directories the user created themselves.
     static func remove(
         target: SkillInstallerTarget,
@@ -599,7 +599,7 @@ enum SkillInstaller {
                 continue
             }
             // Decode and verify the manifest before deleting: a file named
-            // `.c11mux-skill.json` alone is not proof of c11mux ownership.
+            // `.c11-skill.json` alone is not proof of c11 ownership.
             // Require current schema and a matching package name, or skip.
             let record: SkillInstallerRecord
             do {

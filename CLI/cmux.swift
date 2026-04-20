@@ -12772,7 +12772,7 @@ struct CMUXCLI {
 
         let logo = """
         \(g1)  ::\(reset)
-        \(g2)    ::::\(reset)              \(goldBold)c11mux\(reset)
+        \(g2)    ::::\(reset)              \(goldBold)c11\(reset)
         \(g3)      ::::::\(reset)
         \(g4)        ::::::\(reset)        \(tagline)a terminal for the spike\(reset)
         \(g5)      ::::::\(reset)          \(tagline)human:digital by default\(reset)
@@ -13284,7 +13284,7 @@ struct CMUXTermMain {
 
 // MARK: - Module 4: Integration installers
 //
-// c11mux Module 4 — `cmux install <tui>` / `cmux uninstall <tui>`.
+// c11 Module 4 — `cmux install <tui>` / `cmux uninstall <tui>`.
 // One-command wiring of cmux's notification shims and agent-declaration
 // calls into each first-class TUI's configuration.
 //
@@ -13479,7 +13479,7 @@ func integrationInstallerShimScript(for tui: IntegrationInstallerTUI) -> String 
     let binary = tui.binaryName()
     return """
     #!/usr/bin/env bash
-    # c11mux integration shim (do not edit — regenerate via `cmux install \(type)`)
+    # c11 integration shim (do not edit — regenerate via `cmux install \(type)`)
     set -u
     CMUX_MARKER_ID=\"\(IntegrationInstallerConstants.markerId)\"
     if [[ -n \"${CMUX_SURFACE_ID:-}\" ]]; then
@@ -15613,7 +15613,7 @@ fileprivate func opencodeShimStatusSnapshot(
 //
 // Active install is scoped to Claude Code — matching the grandfathered
 // `Resources/bin/claude` precedent. For every other TUI the CLI reports
-// detection and prints a copy-paste snippet; c11mux does not write into
+// detection and prints a copy-paste snippet; c11 does not write into
 // `~/.codex/`, `~/.kimi/`, or `~/.opencode/` unless the operator explicitly
 // passes `--tool <name>` (a deliberate operator-directed act).
 
@@ -15729,7 +15729,7 @@ extension CMUXCLI {
 
     private func skillCommandUsage() -> String {
         return """
-        cmux skill — manage the c11mux skill file for detected agent tools.
+        cmux skill — manage the c11 skill file for detected agent tools.
 
         Subcommands:
           path                           Print the bundled skill source directory.
@@ -15737,14 +15737,14 @@ extension CMUXCLI {
           install [--tool NAME]          Install (default: claude only).
                   [--dry-run] [--force]  Dry-run, or force re-copy even if hash matches.
                   [--home PATH]          Override $HOME (useful for tests).
-          remove  [--tool NAME]          Remove c11mux-installed skills from the tool.
+          remove  [--tool NAME]          Remove c11-installed skills from the tool.
                   [--home PATH]
 
         Tools: claude, codex, kimi, opencode.
 
         Principle:
           Claude Code is the default active install (grandfathered exception).
-          For every other tool, c11mux prints the manual command and only writes
+          For every other tool, c11 prints the manual command and only writes
           to disk when --tool is passed explicitly — the operator stays in charge.
         """
     }

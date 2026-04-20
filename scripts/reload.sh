@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="c11mux DEV"
+APP_NAME="c11 DEV"
 BUNDLE_ID="com.stage11.c11mux.debug"
-BASE_APP_NAME="c11mux DEV"
+BASE_APP_NAME="c11 DEV"
 BASE_EXECUTABLE_NAME="cmux"
 DERIVED_DATA=""
 NAME_SET=0
@@ -187,7 +187,7 @@ print_tag_cleanup_reminder() {
     echo "  ./scripts/prune-tags.sh --yes    # actually delete"
   fi
   echo "After you verify current tag, cleanup command:"
-  echo "  pkill -f \"c11mux DEV ${current_slug}.app/Contents/MacOS/cmux\""
+  echo "  pkill -f \"c11 DEV ${current_slug}.app/Contents/MacOS/cmux\""
   echo "  rm -rf \"$(tagged_derived_data_path "$current_slug")\" \"/tmp/c11mux-${current_slug}\" \"/tmp/c11mux-debug-${current_slug}.sock\""
   echo "  rm -f \"/tmp/c11mux-debug-${current_slug}.log\""
   echo "  rm -f \"$HOME/Library/Application Support/c11mux/cmuxd-dev-${current_slug}.sock\""
@@ -252,7 +252,7 @@ if [[ -n "$TAG" ]]; then
   TAG_ID="$(sanitize_bundle "$TAG")"
   TAG_SLUG="$(sanitize_path "$TAG")"
   if [[ "$NAME_SET" -eq 0 ]]; then
-    APP_NAME="c11mux DEV ${TAG}"
+    APP_NAME="c11 DEV ${TAG}"
   fi
   if [[ "$BUNDLE_SET" -eq 0 ]]; then
     BUNDLE_ID="com.stage11.c11mux.debug.${TAG_ID}"
@@ -394,11 +394,11 @@ if [[ -x "$CLI_PATH" ]]; then
 
   # Stable shim that always follows the last reload-selected dev CLI.
   DEV_CLI_SHIM="$HOME/.local/bin/cmux-dev"
-  write_dev_cli_shim "$DEV_CLI_SHIM" "/Applications/c11mux.app/Contents/Resources/bin/cmux"
+  write_dev_cli_shim "$DEV_CLI_SHIM" "/Applications/c11.app/Contents/Resources/bin/cmux"
 
   CMUX_SHIM_TARGET="$(select_cmux_shim_target || true)"
   if [[ -n "${CMUX_SHIM_TARGET:-}" ]]; then
-    write_dev_cli_shim "$CMUX_SHIM_TARGET" "/Applications/c11mux.app/Contents/Resources/bin/cmux"
+    write_dev_cli_shim "$CMUX_SHIM_TARGET" "/Applications/c11.app/Contents/Resources/bin/cmux"
   fi
 fi
 

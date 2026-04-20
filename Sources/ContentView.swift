@@ -40,7 +40,7 @@ func sidebarActiveForegroundNSColor(
     return baseColor.withAlphaComponent(clampedOpacity)
 }
 
-// c11mux brand accent. Stage 11 is void-dominant; accent is a single gold
+// c11 brand accent. Stage 11 is void-dominant; accent is a single gold
 // regardless of appearance. See `BrandColors` and docs/c11mux-module-5-brand-identity-spec.md.
 func cmuxAccentNSColor(for colorScheme: ColorScheme) -> NSColor {
     _ = colorScheme
@@ -10127,7 +10127,7 @@ private struct SidebarHelpMenuButton: View {
     private var helpPopover: some View {
         VStack(alignment: .leading, spacing: 2) {
             helpOptionButton(
-                title: String(localized: "sidebar.help.welcome", defaultValue: "Welcome to c11mux!"),
+                title: String(localized: "sidebar.help.welcome", defaultValue: "Welcome to c11!"),
                 action: .welcome,
                 accessibilityIdentifier: "SidebarHelpMenuOptionWelcome",
                 isExternalLink: false

@@ -320,7 +320,7 @@ enum TextBoxToggleTarget {
 /// Terminal apps detected for TextBox key-routing decisions.
 ///
 /// Detection is metadata-first: if the caller supplies a canonical
-/// `terminalType` string from `SurfaceMetadataStore` (set by c11mux's
+/// `terminalType` string from `SurfaceMetadataStore` (set by c11's
 /// `AgentDetector` from M1/M2), that is authoritative. When metadata is
 /// absent or unknown we fall back to the title regex that the upstream
 /// fork uses. This keeps the feature working before `AgentDetector` has

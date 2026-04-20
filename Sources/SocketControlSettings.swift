@@ -21,7 +21,7 @@ enum SocketControlMode: String, CaseIterable, Identifiable {
         case .off:
             return String(localized: "socketControl.off.name", defaultValue: "Off")
         case .cmuxOnly:
-            return String(localized: "socketControl.cmuxOnly.name", defaultValue: "c11mux processes only")
+            return String(localized: "socketControl.cmuxOnly.name", defaultValue: "c11 processes only")
         case .automation:
             return String(localized: "socketControl.automation.name", defaultValue: "Automation mode")
         case .password:
@@ -36,7 +36,7 @@ enum SocketControlMode: String, CaseIterable, Identifiable {
         case .off:
             return String(localized: "socketControl.off.description", defaultValue: "Disable the local control socket.")
         case .cmuxOnly:
-            return String(localized: "socketControl.cmuxOnly.description", defaultValue: "Only processes started inside c11mux terminals can send commands.")
+            return String(localized: "socketControl.cmuxOnly.description", defaultValue: "Only processes started inside c11 terminals can send commands.")
         case .automation:
             return String(localized: "socketControl.automation.description", defaultValue: "Allow external local automation clients from this macOS user (no ancestry check).")
         case .password:
@@ -294,10 +294,10 @@ struct SocketControlSettings {
     static let launchTagEnvKey = "CMUX_TAG"
     static let baseDebugBundleIdentifier = "com.stage11.c11mux.debug"
     private static let socketDirectoryName = "c11mux"
-    private static let stableSocketFileName = "c11mux.sock"
+    private static let stableSocketFileName = "c11.sock"
     private static let lastSocketPathFileName = "last-socket-path"
-    static let legacyStableDefaultSocketPath = "/tmp/c11mux.sock"
-    static let legacyLastSocketPathFile = "/tmp/c11mux-last-socket-path"
+    static let legacyStableDefaultSocketPath = "/tmp/c11.sock"
+    static let legacyLastSocketPathFile = "/tmp/c11-last-socket-path"
 
     static var stableDefaultSocketPath: String {
         stableSocketFileURL()?.path ?? legacyStableDefaultSocketPath
@@ -471,13 +471,13 @@ struct SocketControlSettings {
             return taggedDebugPath
         }
         if bundleIdentifier == "com.stage11.c11mux.nightly" {
-            return "/tmp/c11mux-nightly.sock"
+            return "/tmp/c11-nightly.sock"
         }
         if isDebugLikeBundleIdentifier(bundleIdentifier) || isDebugBuild {
-            return "/tmp/c11mux-debug.sock"
+            return "/tmp/c11-debug.sock"
         }
         if isStagingBundleIdentifier(bundleIdentifier) {
-            return "/tmp/c11mux-staging.sock"
+            return "/tmp/c11-staging.sock"
         }
         return resolvedStableDefaultSocketPath(
             currentUserID: currentUserID,
@@ -487,8 +487,8 @@ struct SocketControlSettings {
 
     static func userScopedStableSocketPath(currentUserID: uid_t = getuid()) -> String {
         stableSocketDirectoryURL()?
-            .appendingPathComponent("c11mux-\(currentUserID).sock", isDirectory: false)
-            .path ?? "/tmp/c11mux-\(currentUserID).sock"
+            .appendingPathComponent("c11-\(currentUserID).sock", isDirectory: false)
+            .path ?? "/tmp/c11-\(currentUserID).sock"
     }
 
     static func resolvedStableDefaultSocketPath(
@@ -544,7 +544,7 @@ struct SocketControlSettings {
                 .replacingOccurrences(of: ".", with: "-")
                 .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
             if !slug.isEmpty {
-                return "/tmp/c11mux-debug-\(slug).sock"
+                return "/tmp/c11-debug-\(slug).sock"
             }
         }
 
@@ -561,7 +561,7 @@ struct SocketControlSettings {
               !tag.isEmpty else {
             return nil
         }
-        return "/tmp/c11mux-debug-\(tag).sock"
+        return "/tmp/c11-debug-\(tag).sock"
     }
 
     static func isStagingBundleIdentifier(_ bundleIdentifier: String?) -> Bool {

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to c11mux (and, before the fork, cmux) are documented here.
+All notable changes to c11 (and, before the fork, cmux) are documented here.
 
 ## [Unreleased]
 
@@ -10,7 +10,7 @@ All notable changes to c11mux (and, before the fork, cmux) are documented here.
 - **M8: `cmux tree` overhaul.** New flags `--window`, `--workspace <id>`, `--all`, `--layout`, `--no-layout`, `--canvas-cols <N>`. Pane lines now carry `size=W%×H%`, `px=W×H`, and `split=…` badges. JSON output gains a `layout` sub-object on each pane (`percent`, `pixels`, `split_path`) and a `content_area` field on each workspace. Single-workspace text output renders an ASCII floor plan above the hierarchical tree by default.
 
 ### Changed
-- Forked from [manaflow-ai/cmux](https://github.com/manaflow-ai/cmux) as **c11mux**. Bundle ID (`com.stage11.c11mux`), app display name, Homebrew tap (`stage-11-agentics/c11mux`), release artifacts (`c11mux-macos.dmg`), and Sparkle auto-update feed are now under Stage 11 Agentics. The `cmux` CLI binary, all `CMUX_*` environment variables, socket paths and protocol, and shell integration files are preserved unchanged for backward compatibility. See [NOTICE](./NOTICE) for attribution and modification details.
+- Forked from [manaflow-ai/cmux](https://github.com/manaflow-ai/cmux) as **c11**. Bundle ID (`com.stage11.c11mux`), app display name, Homebrew tap (`stage-11-agentics/c11mux`), release artifacts (`c11mux-macos.dmg`), and Sparkle auto-update feed are now under Stage 11 Agentics. The `cmux` CLI binary, all `CMUX_*` environment variables, socket paths and protocol, and shell integration files are preserved unchanged for backward compatibility. See [NOTICE](./NOTICE) for attribution and modification details.
 - **`cmux tree` now defaults to the current workspace.** Use `--window` for the pre-M8 behavior (current window, all workspaces) and `--all` for every window.
 
 ## [0.62.2] - 2026-03-14

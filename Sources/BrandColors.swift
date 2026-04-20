@@ -4,9 +4,9 @@ import SwiftUI
 /// Stage 11 brand palette resolved at runtime.
 ///
 /// Values are canonical (from `company/brand/visual-aesthetic.md`) and are
-/// the single source of truth for accent / chrome colors across c11mux.
+/// the single source of truth for accent / chrome colors across c11.
 ///
-/// API scope: internal to the c11mux app target. Out-of-process verification
+/// API scope: internal to the c11 app target. Out-of-process verification
 /// goes through the `system.brand` socket method (see module 5 spec).
 enum BrandColors {
     static let blackHex      = "#000000"
@@ -55,7 +55,7 @@ extension BrandColors {
         ("gold_faint", goldFaintHex),
     ]
 
-    /// Font family c11mux ships with. Terminal content is owned by the
+    /// Font family c11 ships with. Terminal content is owned by the
     /// user's Ghostty config; this is for chrome only.
     static let fontFamily = "JetBrains Mono"
 }

@@ -167,7 +167,7 @@ Log levels: `info`, `progress`, `success`, `warning`, `error`
 ### Surface Metadata Persistence (Tier 1 Phase 2)
 
 Surface metadata written via `surface.set_metadata` and its heuristic/
-OSC/declare counterparts persists across c11mux restarts. On restore,
+OSC/declare counterparts persists across c11 restarts. On restore,
 values are reinstalled into `SurfaceMetadataStore` with their original
 source and timestamp, preserving the `explicit > declare > osc >
 heuristic` precedence chain. A `.heuristic` value from the snapshot

@@ -1896,3 +1896,37 @@ final class SidebarWorkspaceShortcutHintMetricsTests: XCTestCase {
         XCTAssertGreaterThan(widened, base)
     }
 }
+
+// MARK: - CMUX-32 M2b
+
+import Combine
+
+@MainActor
+final class WorkspaceCustomColorDidChangeTests: XCTestCase {
+    func testSetCustomColorPublishesNormalizedHex() {
+        let workspace = Workspace()
+        var received: [String?] = []
+        let cancellable = workspace.customColorDidChange.sink { received.append($0) }
+        defer { cancellable.cancel() }
+
+        workspace.setCustomColor("#FF0000")
+        workspace.setCustomColor("FF0000") // same normalized value; should be a no-op
+        workspace.setCustomColor(nil)
+        workspace.setCustomColor(nil) // no-op
+
+        XCTAssertEqual(received.count, 2, "Expected exactly two events — set + clear; identical values are deduped")
+        XCTAssertEqual(received.first, workspace.customColor) // last-received hex matches
+    }
+
+    func testSetCustomColorNoopDoesNotPublish() {
+        let workspace = Workspace()
+        var fired = 0
+        let cancellable = workspace.customColorDidChange.sink { _ in fired += 1 }
+        defer { cancellable.cancel() }
+
+        workspace.setCustomColor("#00FF00")
+        let fired1 = fired
+        workspace.setCustomColor("#00FF00")
+        XCTAssertEqual(fired, fired1, "Setting the same normalized hex must not re-publish")
+    }
+}

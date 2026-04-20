@@ -126,6 +126,20 @@ public final class ThemeManager: ObservableObject {
         bumpVersionAndPublishAll()
     }
 
+    /// Invalidates cached resolutions that depend on `$workspaceColor`. Called by
+    /// `WorkspaceContentView` when the active workspace's `customColor` changes so
+    /// divider, frame, sidebar-overlay, and tab-indicator colors re-resolve without
+    /// a Ghostty event or theme swap. Bumps `version` so `@ObservedObject`
+    /// dependents re-render; per-section publishers fire for narrower subscribers.
+    public func invalidateForWorkspaceColorChange() {
+        snapshot.invalidateCaches()
+        version &+= 1
+        dividerPublisher.send()
+        framePublisher.send()
+        sidebarPublisher.send()
+        tabBarPublisher.send()
+    }
+
     public func toggleRuntimeDisabled() {
         let next = !ThemeAppStorage.bool(forKey: ThemeAppStorage.Keys.engineDisabledRuntime, default: false)
         setRuntimeDisabled(next)

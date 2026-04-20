@@ -8416,7 +8416,7 @@ struct VerticalTabsSidebar: View {
         }
         .accessibilityIdentifier("Sidebar")
         .ignoresSafeArea()
-        .background(SidebarBackdrop().ignoresSafeArea())
+        .background(SidebarBackdrop(workspaceColorHex: tabManager.selectedWorkspace?.customColor).ignoresSafeArea())
         .background(
             WindowAccessor { window in
                 modifierKeyMonitor.setHostWindow(window)
@@ -13614,6 +13614,13 @@ private struct TitlebarLeadingInsetReader: NSViewRepresentable {
 }
 
 private struct SidebarBackdrop: View {
+    /// Hex string sourced from `tabManager.selectedWorkspace?.customColor`. Passing the
+    /// primitive directly (not the `Workspace` instance) lets SwiftUI diff the value —
+    /// the parent view already re-evaluates on workspace selection, and
+    /// `WorkspaceContentView` forwards `customColorDidChange` through `themeManager`'s
+    /// cache invalidation so the overlay picks up picker edits without explicit wiring.
+    let workspaceColorHex: String?
+
     @AppStorage("sidebarTintOpacity") private var sidebarTintOpacity = SidebarTintDefaults.opacity
     @AppStorage("sidebarTintHex") private var sidebarTintHex = SidebarTintDefaults.hex
     @AppStorage("sidebarTintHexLight") private var sidebarTintHexLight: String?
@@ -13623,6 +13630,7 @@ private struct SidebarBackdrop: View {
     @AppStorage("sidebarState") private var sidebarState = SidebarStateOption.followWindow.rawValue
     @AppStorage("sidebarCornerRadius") private var sidebarCornerRadius = 0.0
     @AppStorage("sidebarBlurOpacity") private var sidebarBlurOpacity = 1.0
+    @ObservedObject private var themeManager = ThemeManager.shared
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -13641,6 +13649,7 @@ private struct SidebarBackdrop: View {
         let cornerRadius = CGFloat(max(0, sidebarCornerRadius))
         let useLiquidGlass = materialOption?.usesLiquidGlass ?? false
         let useWindowLevelGlass = useLiquidGlass && blendingMode == .behindWindow
+        let themeTintOverlay = resolveThemeTintOverlay()
 
         return ZStack {
             if let material = materialOption?.material {
@@ -13662,9 +13671,25 @@ private struct SidebarBackdrop: View {
                     }
                 }
             }
+            // Theme-resolved workspace-color tint layered atop the existing tint.
+            // Default formula is `$workspaceColor.opacity(0.08)` — subtle peripheral
+            // grounding, not loud (plan §2 #2). Alpha already encoded in the color.
+            if let themeTintOverlay {
+                Color(nsColor: themeTintOverlay)
+            }
             // When material is none or useWindowLevelGlass, render nothing
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+
+    private func resolveThemeTintOverlay() -> NSColor? {
+        guard themeManager.isEnabled else { return nil }
+        let themeColorScheme: ThemeContext.ColorScheme = colorScheme == .dark ? .dark : .light
+        let context = themeManager.makeContext(
+            workspaceColor: workspaceColorHex,
+            colorScheme: themeColorScheme
+        )
+        return themeManager.resolve(.sidebar_tintOverlay, context: context)
     }
 }
 

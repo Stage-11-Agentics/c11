@@ -2263,6 +2263,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Register fenced code renderers for the markdown panel content pipeline.
         FencedCodeRendererRegistry.shared.register(MermaidRenderer.shared)
 
+        // Start watching the user themes directory for hot-reload.
+        ThemeManager.shared.startWatchingUserThemes()
+
         let env = ProcessInfo.processInfo.environment
         let isRunningUnderXCTest = isRunningUnderXCTest(env)
         let telemetryEnabled = TelemetrySettings.enabledForCurrentLaunch

@@ -190,6 +190,39 @@ variable is **app-launch-scope only** — setting it on a `cmux` CLI
 invocation has no effect, because the CLI is a separate process from
 the running app.
 
+### Themes (CMUX-35)
+
+Chrome-theme lifecycle lives under the `theme.*` method family. Read-only
+methods are safe to call unauthenticated; mutating methods are gated by
+the normal socket auth chain.
+
+| CLI | Method | Description |
+| --- | ------ | ----------- |
+| `cmux ui themes list` | `theme.list` | Enumerate built-in + user themes with active-slot flags and load warnings. |
+| `cmux ui themes get [--slot light\|dark]` | `theme.get` | Read the active theme for one or both slots. |
+| `cmux ui themes set <name> [--slot ...]` | `theme.set_active` | Set active theme. `slot` defaults to `both`; `light`/`dark` narrow it. |
+| `cmux ui themes clear` | `theme.clear_active` | Clear `theme.active.light` and `theme.active.dark` back to defaults. |
+| `cmux ui themes reload` | `theme.reload` | Manually re-scan the user themes directory. |
+| `cmux ui themes path` | `theme.paths` | Print the user and bundled themes directories. |
+| `cmux ui themes dump --json` | `theme.dump` | Resolved snapshot for the active theme, JSON schema per plan §10. |
+| `cmux ui themes validate <path>` | `theme.validate` | Parse-only validation of a theme file; non-zero exit on failure. |
+| `cmux ui themes diff <a> <b>` | `theme.diff` | Role-level diff between two themes (by name or path). |
+| `cmux ui themes inherit <parent> --as <name>` | `theme.inherit` | Canonicalize a parent theme into a new user file. |
+
+Per-workspace custom color:
+
+| CLI | Method | Description |
+| --- | ------ | ----------- |
+| `cmux workspace-color set <hex> [--workspace <ref>]` | `workspace.set_custom_color` | Set workspace color. `<ref>` accepts UUID, `workspace:N`, 1-based index, `@current`/`@focused`. |
+| `cmux workspace-color clear [--workspace <ref>]` | `workspace.set_custom_color` (with `clear=true`) | Reset to palette default. |
+| `cmux workspace-color get [--workspace <ref>]` | `workspace.list` | Read current custom color via workspace list. |
+| `cmux workspace-color list-palette` | — | Print built-in palette entries (client-side list). |
+
+Focus policy: all `theme.*` handlers run off-main (parsing / validation /
+diffing) and touch the main actor only for the minimal state update that
+publishes a new `ResolvedThemeSnapshot`. None of these methods steal
+macOS focus or raise the app.
+
 ## Environment Variables
 
 | Variable | Description |

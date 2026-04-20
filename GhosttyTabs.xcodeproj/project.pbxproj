@@ -46,6 +46,10 @@
 		A5F1001001A1B2C3D4E5F00F /* ThemeAppStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F00F /* ThemeAppStorage.swift */; };
 		A5F1001001A1B2C3D4E5F010 /* ThemeEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F010 /* ThemeEnvironment.swift */; };
 		A5F1001001A1B2C3D4E5F011 /* WorkspaceFrame.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F011 /* WorkspaceFrame.swift */; };
+		A5F1001001A1B2C3D4E5F122 /* ThemeDirectoryWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F122 /* ThemeDirectoryWatcher.swift */; };
+		A5F1001001A1B2C3D4E5F123 /* ThemeCanonicalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F123 /* ThemeCanonicalizer.swift */; };
+		A5F1001001A1B2C3D4E5F124 /* ThemeSocketMethods.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F124 /* ThemeSocketMethods.swift */; };
+		A5F1001001A1B2C3D4E5F125 /* ThemeBindingControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F125 /* ThemeBindingControls.swift */; };
 		A5008F11 /* SurfaceTitleBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5008F12 /* SurfaceTitleBarView.swift */; };
 		A5008F21 /* TitleFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5008F22 /* TitleFormatting.swift */; };
 			A5001006 /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A5001016 /* GhosttyKit.xcframework */; };
@@ -155,6 +159,8 @@
 						A5008381 /* BrowserFindJavaScriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5008380 /* BrowserFindJavaScriptTests.swift */; };
 						A5008383 /* CommandPaletteSearchEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5008382 /* CommandPaletteSearchEngineTests.swift */; };
 		A5F1001001A1B2C3D4E5F019 /* stage11.toml in Resources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F019 /* stage11.toml */; };
+		A5F1001001A1B2C3D4E5F120 /* phosphor.toml in Resources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F120 /* phosphor.toml */; };
+		A5F1001001A1B2C3D4E5F121 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F121 /* README.md */; };
 		DA7A10CA710E000000000003 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = DA7A10CA710E000000000001 /* Localizable.xcstrings */; };
 		DA7A10CA710E000000000004 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = DA7A10CA710E000000000002 /* InfoPlist.xcstrings */; };
 		DA7A10CA710E000000000006 /* welcome.md in Resources */ = {isa = PBXBuildFile; fileRef = DA7A10CA710E000000000005 /* welcome.md */; };
@@ -277,6 +283,10 @@
 		A5F1002001A1B2C3D4E5F00F /* ThemeAppStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme/ThemeAppStorage.swift; sourceTree = "<group>"; };
 		A5F1002001A1B2C3D4E5F010 /* ThemeEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme/ThemeEnvironment.swift; sourceTree = "<group>"; };
 		A5F1002001A1B2C3D4E5F011 /* WorkspaceFrame.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme/WorkspaceFrame.swift; sourceTree = "<group>"; };
+		A5F1002001A1B2C3D4E5F122 /* ThemeDirectoryWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme/ThemeDirectoryWatcher.swift; sourceTree = "<group>"; };
+		A5F1002001A1B2C3D4E5F123 /* ThemeCanonicalizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme/ThemeCanonicalizer.swift; sourceTree = "<group>"; };
+		A5F1002001A1B2C3D4E5F124 /* ThemeSocketMethods.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme/ThemeSocketMethods.swift; sourceTree = "<group>"; };
+		A5F1002001A1B2C3D4E5F125 /* ThemeBindingControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme/ThemeBindingControls.swift; sourceTree = "<group>"; };
 		A5F1002001A1B2C3D4E5F012 /* ThemeRegistryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeRegistryTests.swift; sourceTree = "<group>"; };
 		A5F1002001A1B2C3D4E5F013 /* ThemeManagerLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeManagerLifecycleTests.swift; sourceTree = "<group>"; };
 		A5F1002001A1B2C3D4E5F014 /* ResolverCacheKeyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResolverCacheKeyTests.swift; sourceTree = "<group>"; };
@@ -288,6 +298,8 @@
 			A5F1002001A1B2C3D4E5F01B /* TitlebarSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitlebarSnapshotTests.swift; sourceTree = "<group>"; };
 			A5F1002001A1B2C3D4E5F01C /* BrowserChromeSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserChromeSnapshotTests.swift; sourceTree = "<group>"; };
 			A5F1002001A1B2C3D4E5F019 /* stage11.toml */ = {isa = PBXFileReference; lastKnownFileType = text; path = c11mux-themes/stage11.toml; sourceTree = "<group>"; };
+		A5F1002001A1B2C3D4E5F120 /* phosphor.toml */ = {isa = PBXFileReference; lastKnownFileType = text; path = c11mux-themes/phosphor.toml; sourceTree = "<group>"; };
+		A5F1002001A1B2C3D4E5F121 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = c11mux-themes/README.md; sourceTree = "<group>"; };
 		A5008F12 /* SurfaceTitleBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceTitleBarView.swift; sourceTree = "<group>"; };
 		A5008F22 /* TitleFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleFormatting.swift; sourceTree = "<group>"; };
 			A5001016 /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = GhosttyKit.xcframework; sourceTree = "<group>"; };
@@ -455,6 +467,8 @@
 				DA7A10CA710E000000000006 /* welcome.md in Resources */,
 				A5001623 /* cmux.sdef in Resources */,
 				A5F1001001A1B2C3D4E5F019 /* stage11.toml in Resources */,
+				A5F1001001A1B2C3D4E5F120 /* phosphor.toml in Resources */,
+				A5F1001001A1B2C3D4E5F121 /* README.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -554,6 +568,10 @@
 				A5F1002001A1B2C3D4E5F00F /* ThemeAppStorage.swift */,
 				A5F1002001A1B2C3D4E5F010 /* ThemeEnvironment.swift */,
 				A5F1002001A1B2C3D4E5F011 /* WorkspaceFrame.swift */,
+				A5F1002001A1B2C3D4E5F122 /* ThemeDirectoryWatcher.swift */,
+				A5F1002001A1B2C3D4E5F123 /* ThemeCanonicalizer.swift */,
+				A5F1002001A1B2C3D4E5F124 /* ThemeSocketMethods.swift */,
+				A5F1002001A1B2C3D4E5F125 /* ThemeBindingControls.swift */,
 				A5008F12 /* SurfaceTitleBarView.swift */,
 				A5008F22 /* TitleFormatting.swift */,
 				A5001225 /* SocketControlSettings.swift */,
@@ -620,6 +638,8 @@
 				DA7A10CA710E000000000005 /* welcome.md */,
 				A5001622 /* cmux.sdef */,
 				A5F1002001A1B2C3D4E5F019 /* stage11.toml */,
+				A5F1002001A1B2C3D4E5F120 /* phosphor.toml */,
+				A5F1002001A1B2C3D4E5F121 /* README.md */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -905,6 +925,10 @@
 			A5F1001001A1B2C3D4E5F00F /* ThemeAppStorage.swift in Sources */,
 			A5F1001001A1B2C3D4E5F010 /* ThemeEnvironment.swift in Sources */,
 			A5F1001001A1B2C3D4E5F011 /* WorkspaceFrame.swift in Sources */,
+			A5F1001001A1B2C3D4E5F122 /* ThemeDirectoryWatcher.swift in Sources */,
+			A5F1001001A1B2C3D4E5F123 /* ThemeCanonicalizer.swift in Sources */,
+			A5F1001001A1B2C3D4E5F124 /* ThemeSocketMethods.swift in Sources */,
+			A5F1001001A1B2C3D4E5F125 /* ThemeBindingControls.swift in Sources */,
 				A5008F11 /* SurfaceTitleBarView.swift in Sources */,
 				A5008F21 /* TitleFormatting.swift in Sources */,
 				A5001226 /* SocketControlSettings.swift in Sources */,

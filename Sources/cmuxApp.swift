@@ -6355,6 +6355,7 @@ private struct SettingsCardNote: View {
 
 private struct ThemeWindowThumbnail: View {
     let isDark: Bool
+    var tokens: ChromeThemeTokens? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -6362,8 +6363,18 @@ private struct ThemeWindowThumbnail: View {
             let height = geo.size.height
 
             ZStack {
-                // Wallpaper background
-                if isDark {
+                // Wallpaper background — if chrome tokens are supplied, paint those instead
+                // of the generic gradient so the thumbnail previews the bound theme.
+                if let tokens {
+                    LinearGradient(
+                        colors: [
+                            Color(nsColor: tokens.background),
+                            Color(nsColor: tokens.surface)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                } else if isDark {
                     LinearGradient(
                         colors: [Color(red: 0.1, green: 0.1, blue: 0.3), Color(red: 0.05, green: 0.05, blue: 0.1)],
                         startPoint: .topLeading,
@@ -6409,13 +6420,15 @@ private struct ThemeWindowThumbnail: View {
                 // Back window
                 VStack(spacing: 0) {
                     Rectangle()
-                        .fill(isDark ? Color(white: 0.2) : Color(white: 0.9))
+                        .fill(tokens.map { Color(nsColor: $0.surface) }
+                              ?? (isDark ? Color(white: 0.2) : Color(white: 0.9)))
                         .frame(height: max(height * 0.15, 8))
                     ZStack(alignment: .top) {
                         Rectangle()
-                            .fill(isDark ? Color(white: 0.15) : Color(white: 0.98))
+                            .fill(tokens.map { Color(nsColor: $0.background) }
+                                  ?? (isDark ? Color(white: 0.15) : Color(white: 0.98)))
                         RoundedRectangle(cornerRadius: max(width * 0.02, 2), style: .continuous)
-                            .fill(Color.accentColor)
+                            .fill(tokens.map { Color(nsColor: $0.accent) } ?? Color.accentColor)
                             .frame(height: max(height * 0.12, 6))
                             .padding(max(width * 0.04, 4))
                     }
@@ -6429,7 +6442,8 @@ private struct ThemeWindowThumbnail: View {
                 VStack(spacing: 0) {
                     ZStack {
                         Rectangle()
-                            .fill(isDark ? Color(white: 0.18) : Color(white: 0.92))
+                            .fill(tokens.map { Color(nsColor: $0.surface) }
+                                  ?? (isDark ? Color(white: 0.18) : Color(white: 0.92)))
                         HStack(spacing: max(width * 0.025, 2)) {
                             Circle().fill(Color(red: 1.0, green: 0.37, blue: 0.34)).frame(width: max(width * 0.04, 3))
                             Circle().fill(Color(red: 1.0, green: 0.74, blue: 0.18)).frame(width: max(width * 0.04, 3))
@@ -6440,7 +6454,8 @@ private struct ThemeWindowThumbnail: View {
                     }
                     .frame(height: max(height * 0.18, 10))
                     Rectangle()
-                        .fill(isDark ? Color(white: 0.1) : .white)
+                        .fill(tokens.map { Color(nsColor: $0.background) }
+                              ?? (isDark ? Color(white: 0.1) : .white))
                 }
                 .clipShape(RoundedRectangle(cornerRadius: max(width * 0.05, 5), style: .continuous))
                 .shadow(color: .black.opacity(isDark ? 0.5 : 0.2), radius: 6, x: 0, y: 3)
@@ -6460,79 +6475,107 @@ private struct ThemePickerRow: View {
     let selectedMode: String
     let onSelect: (AppearanceMode) -> Void
 
+    @ObservedObject private var themeManager = ThemeManager.shared
+    @AppStorage(ThemeManager.defaultLightSlotKey) private var activeLight: String = "stage11"
+    @AppStorage(ThemeManager.defaultDarkSlotKey) private var activeDark: String = "stage11"
+
     private let thumbWidth: CGFloat = 76
     private let thumbHeight: CGFloat = 50
 
+    private var lightTokens: ChromeThemeTokens {
+        ChromeThemeTokens.resolve(
+            for: themeManager.theme(named: activeLight) ?? themeManager.activeLight,
+            scheme: .light
+        )
+    }
+
+    private var darkTokens: ChromeThemeTokens {
+        ChromeThemeTokens.resolve(
+            for: themeManager.theme(named: activeDark) ?? themeManager.activeDark,
+            scheme: .dark
+        )
+    }
+
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Text(String(localized: "settings.app.theme", defaultValue: "Theme"))
-                .font(.system(size: 13, weight: .medium))
-                .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                Text(String(localized: "settings.app.theme", defaultValue: "Theme"))
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack(spacing: 8) {
-                ForEach(AppearanceMode.visibleCases) { mode in
-                    let isSelected = selectedMode == mode.rawValue
-                    Button {
-                        onSelect(mode)
-                    } label: {
-                        VStack(spacing: 4) {
-                            Group {
-                                if mode == .system {
-                                    ZStack {
-                                        ThemeWindowThumbnail(isDark: false)
-                                            .mask(
-                                                GeometryReader { geo in
-                                                    Rectangle()
-                                                        .frame(width: geo.size.width / 2, height: geo.size.height)
-                                                        .position(x: geo.size.width / 4, y: geo.size.height / 2)
-                                                }
-                                            )
-                                        ThemeWindowThumbnail(isDark: true)
-                                            .mask(
-                                                GeometryReader { geo in
-                                                    Rectangle()
-                                                        .frame(width: geo.size.width / 2, height: geo.size.height)
-                                                        .position(x: geo.size.width * 0.75, y: geo.size.height / 2)
-                                                }
-                                            )
-                                        GeometryReader { geo in
-                                            Rectangle()
-                                                .fill(Color.primary.opacity(0.15))
-                                                .frame(width: 1, height: geo.size.height)
-                                                .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                HStack(spacing: 8) {
+                    ForEach(AppearanceMode.visibleCases) { mode in
+                        let isSelected = selectedMode == mode.rawValue
+                        Button {
+                            onSelect(mode)
+                        } label: {
+                            VStack(spacing: 4) {
+                                Group {
+                                    if mode == .system {
+                                        ZStack {
+                                            ThemeWindowThumbnail(isDark: false, tokens: lightTokens)
+                                                .mask(
+                                                    GeometryReader { geo in
+                                                        Rectangle()
+                                                            .frame(width: geo.size.width / 2, height: geo.size.height)
+                                                            .position(x: geo.size.width / 4, y: geo.size.height / 2)
+                                                    }
+                                                )
+                                            ThemeWindowThumbnail(isDark: true, tokens: darkTokens)
+                                                .mask(
+                                                    GeometryReader { geo in
+                                                        Rectangle()
+                                                            .frame(width: geo.size.width / 2, height: geo.size.height)
+                                                            .position(x: geo.size.width * 0.75, y: geo.size.height / 2)
+                                                    }
+                                                )
+                                            GeometryReader { geo in
+                                                Rectangle()
+                                                    .fill(Color.primary.opacity(0.15))
+                                                    .frame(width: 1, height: geo.size.height)
+                                                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                                            }
                                         }
+                                    } else {
+                                        ThemeWindowThumbnail(
+                                            isDark: mode == .dark,
+                                            tokens: mode == .dark ? darkTokens : lightTokens
+                                        )
                                     }
-                                } else {
-                                    ThemeWindowThumbnail(isDark: mode == .dark)
                                 }
-                            }
-                            .frame(width: thumbWidth, height: thumbHeight)
+                                .frame(width: thumbWidth, height: thumbHeight)
 
-                            Text(mode.displayName)
-                                .font(.system(size: 10))
-                                .fontWeight(isSelected ? .semibold : .regular)
-                                .foregroundColor(isSelected ? .primary : .secondary)
+                                Text(mode.displayName)
+                                    .font(.system(size: 10))
+                                    .fontWeight(isSelected ? .semibold : .regular)
+                                    .foregroundColor(isSelected ? .primary : .secondary)
+                            }
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 10)
+                            .contentShape(Rectangle())
+                            .background(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(isSelected
+                                        ? Color.accentColor.opacity(0.12)
+                                        : Color.clear)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+                            )
                         }
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 10)
-                        .contentShape(Rectangle())
-                        .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(isSelected
-                                    ? Color.accentColor.opacity(0.12)
-                                    : Color.clear)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
-                        )
+                        .buttonStyle(.plain)
+                        .focusable(false)
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
                     }
-                    .buttonStyle(.plain)
-                    .focusable(false)
-                    .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
+                .layoutPriority(1)
             }
-            .layoutPriority(1)
+
+            // Chrome theme bindings — two dropdowns + Apply-to-both + open-folder + reload.
+            // Overloaded into this row (no separate Appearance section); see CMUX-35.
+            ThemeBindingControls(themeManager: themeManager)
+                .padding(.top, 2)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)

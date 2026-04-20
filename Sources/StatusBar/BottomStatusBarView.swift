@@ -6,6 +6,8 @@ import SwiftUI
 /// app state, so mounting it does not subscribe the parent view to any
 /// observable.
 struct BottomStatusBarView<Leading: View, Center: View, Trailing: View>: View {
+    // `static let` is disallowed on generic types; the `static var { 24 }`
+    // form returns the literal every call but inlines to a constant.
     private static var barHeight: CGFloat { 24 }
 
     private let leading: Leading

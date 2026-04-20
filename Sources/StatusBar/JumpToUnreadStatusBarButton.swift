@@ -26,7 +26,8 @@ struct JumpToUnreadStatusBarButton: View {
     }
 
     var body: some View {
-        Button(action: jump) {
+        let display = self.display
+        return Button(action: jump) {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: "bell")
                     .font(.system(size: 13, weight: .regular))
@@ -54,7 +55,7 @@ struct JumpToUnreadStatusBarButton: View {
         .opacity(display.isEnabled ? 1.0 : 0.45)
         .accessibilityIdentifier("statusBar.jumpToUnread.button")
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue(display.badgeText ?? "0")
+        .accessibilityValue(display.badgeText ?? "")
         .safeHelp(
             KeyboardShortcutSettings.Action.jumpToUnread.tooltip(tooltipBase)
         )

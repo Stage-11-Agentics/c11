@@ -1,0 +1,78 @@
+[identity]
+name         = "radical"
+display_name = "Radical"
+author       = "Stage 11 Agentics"
+version      = "0.01.001"
+schema       = 1
+
+# Synthwave radical — hot magenta + cyan on deep indigo.
+# Intentionally loud: demonstrates the theme system at a glance.
+
+[palette]
+void      = "#0B0420"
+surface   = "#1A0933"
+magenta   = "#FF2EC4"
+cyan      = "#3CF0FF"
+violet    = "#7A3BFF"
+sunset    = "#FF6A3D"
+text      = "#F6E9FF"
+textDim   = "#A88CC8"
+grid      = "#3A1A6B"
+
+[variables]
+background          = "$palette.void"
+surface             = "$palette.surface"
+foreground          = "$palette.text"
+foregroundSecondary = "$palette.textDim"
+accent              = "$palette.magenta"
+accentAlt           = "$palette.cyan"
+separator           = "$palette.grid"
+workspaceColor      = "$workspaceColor"
+ghosttyBackground   = "$ghosttyBackground"
+
+[chrome.windowFrame]
+color            = "$accent"
+thicknessPt      = 2.0
+inactiveOpacity  = 0.35
+unfocusedOpacity = 0.70
+
+[chrome.sidebar]
+tintOverlay                   = "$accent.opacity(0.10)"
+tintBase                      = "$palette.violet"
+tintBaseOpacity               = 0.22
+activeTabFill                 = "$accent"
+activeTabFillFallback         = "$accentAlt"
+activeTabRail                 = "$accentAlt"
+activeTabRailFallback         = "$accent"
+activeTabRailOpacity          = 1.0
+inactiveTabCustomOpacity      = 0.75
+inactiveTabMultiSelectOpacity = 0.40
+badgeFill                     = "$accentAlt"
+borderLeading                 = "$accent"
+
+[chrome.dividers]
+color       = "$accent.mix($background, 0.55)"
+thicknessPt = 1.5
+
+[chrome.titleBar]
+background          = "$surface"
+backgroundOpacity   = 0.88
+foreground          = "$foreground"
+foregroundSecondary = "$accentAlt"
+borderBottom        = "$accent"
+
+[chrome.tabBar]
+background       = "$ghosttyBackground"
+activeFill       = "$ghosttyBackground.lighten(0.08)"
+divider          = "$separator"
+activeIndicator  = "$accentAlt"
+
+[chrome.browserChrome]
+background   = "$ghosttyBackground"
+omnibarFill  = "$surface.mix($accent, 0.12)"
+
+[chrome.markdownChrome]
+background = "$background"
+
+[behavior]
+animateWorkspaceCrossfade = true

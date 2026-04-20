@@ -2354,7 +2354,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         NSWindow.allowsAutomaticWindowTabbing = false
         disableNativeTabbingShortcut()
         installGhosttySettingsMenuItem()
-        ensureApplicationIcon()
         if !isRunningUnderXCTest {
             configureUserNotifications()
             installMenuBarVisibilityObserver()
@@ -11107,11 +11106,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @objc private func openGhosttySettingsFromMenu(_ sender: Any?) {
         GhosttyApp.shared.openConfigurationInTextEdit()
-    }
-
-    private func ensureApplicationIcon() {
-        let mode = AppIconSettings.resolvedMode()
-        AppIconSettings.applyIcon(mode)
     }
 
     private func scheduleLaunchServicesBundleRegistration(

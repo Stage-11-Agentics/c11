@@ -192,8 +192,10 @@ struct cmuxApp: App {
         // Apply saved language preference before any UI loads
         LanguageSettings.apply(LanguageSettings.languageAtLaunch)
 
-        let startupAppearance = AppearanceSettings.resolvedMode()
-        Self.applyAppearance(startupAppearance)
+        // Themes are the single source of truth for appearance. Force dark so the
+        // system light/dark setting doesn't recolor NSColor-based chrome under us.
+        UserDefaults.standard.set(AppearanceMode.dark.rawValue, forKey: AppearanceSettings.appearanceModeKey)
+        Self.applyAppearance(.dark)
         _tabManager = StateObject(wrappedValue: TabManager())
         // Migrate legacy and old-format socket mode values to the new enum.
         let defaults = UserDefaults.standard
@@ -3887,60 +3889,6 @@ enum LanguageSettings {
     }()
 }
 
-enum AppIconMode: String, CaseIterable, Identifiable {
-    case automatic
-    case light
-    case dark
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .automatic: return String(localized: "appIcon.automatic", defaultValue: "Automatic")
-        case .light: return String(localized: "appIcon.light", defaultValue: "Light")
-        case .dark: return String(localized: "appIcon.dark", defaultValue: "Dark")
-        }
-    }
-
-    var imageName: String? {
-        switch self {
-        case .automatic: return nil
-        case .light: return "AppIconLight"
-        case .dark: return "AppIconDark"
-        }
-    }
-}
-
-enum AppIconSettings {
-    static let modeKey = "appIconMode"
-    static let defaultMode: AppIconMode = .automatic
-
-    static func resolvedMode(defaults: UserDefaults = .standard) -> AppIconMode {
-        guard let raw = defaults.string(forKey: modeKey),
-              let mode = AppIconMode(rawValue: raw) else {
-            return defaultMode
-        }
-        return mode
-    }
-
-    static func applyIcon(_ mode: AppIconMode) {
-        switch mode {
-        case .automatic:
-            // Let the asset catalog handle appearance-based icon selection (macOS 15+).
-            // Reset to the default bundle icon.
-            NSApplication.shared.applicationIconImage = nil
-        case .light:
-            if let icon = NSImage(named: "AppIconLight") {
-                NSApplication.shared.applicationIconImage = icon
-            }
-        case .dark:
-            if let icon = NSImage(named: "AppIconDark") {
-                NSApplication.shared.applicationIconImage = icon
-            }
-        }
-    }
-}
-
 enum QuitWarningSettings {
     static let warnBeforeQuitKey = "warnBeforeQuitShortcut"
     static let defaultWarnBeforeQuit = true
@@ -4248,8 +4196,6 @@ struct SettingsView: View {
     private let notificationSoundControlWidth: CGFloat = 280
 
     @AppStorage(LanguageSettings.languageKey) private var appLanguage = LanguageSettings.defaultLanguage.rawValue
-    @AppStorage(AppearanceSettings.appearanceModeKey) private var appearanceMode = AppearanceSettings.defaultMode.rawValue
-    @AppStorage(AppIconSettings.modeKey) private var appIconMode = AppIconSettings.defaultMode.rawValue
     @AppStorage(WorkspacePresentationModeSettings.modeKey)
     private var workspacePresentationMode = WorkspacePresentationModeSettings.defaultMode.rawValue
     @AppStorage(SocketControlSettings.appStorageKey) private var socketControlMode = SocketControlSettings.defaultMode.rawValue
@@ -4799,22 +4745,7 @@ struct SettingsView: View {
 
                         SettingsCardDivider()
 
-                        ThemePickerRow(
-                            selectedMode: appearanceMode,
-                            onSelect: { mode in
-                                appearanceMode = mode.rawValue
-                            }
-                        )
-
-                        SettingsCardDivider()
-
-                        AppIconPickerRow(
-                            selectedMode: appIconMode,
-                            onSelect: { mode in
-                                appIconMode = mode.rawValue
-                                AppIconSettings.applyIcon(mode)
-                            }
-                        )
+                        ThemePickerRow()
 
                         SettingsCardDivider()
 
@@ -6029,9 +5960,6 @@ struct SettingsView: View {
         if appLanguage != LanguageSettings.languageAtLaunch.rawValue {
             showLanguageRestartAlert = true
         }
-        appearanceMode = AppearanceSettings.defaultMode.rawValue
-        appIconMode = AppIconSettings.defaultMode.rawValue
-        AppIconSettings.applyIcon(.automatic)
         socketControlMode = SocketControlSettings.defaultMode.rawValue
         claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
         sendAnonymousTelemetry = TelemetrySettings.defaultSendAnonymousTelemetry
@@ -6476,9 +6404,6 @@ private struct ThemeWindowThumbnail: View {
 }
 
 private struct ThemePickerRow: View {
-    let selectedMode: String
-    let onSelect: (AppearanceMode) -> Void
-
     @ObservedObject private var themeManager = ThemeManager.shared
     @AppStorage(ThemeManager.defaultLightSlotKey) private var activeLight: String = "stage11"
     @AppStorage(ThemeManager.defaultDarkSlotKey) private var activeDark: String = "stage11"
@@ -6486,186 +6411,77 @@ private struct ThemePickerRow: View {
     private let thumbWidth: CGFloat = 76
     private let thumbHeight: CGFloat = 50
 
-    private var lightTokens: ChromeThemeTokens {
-        ChromeThemeTokens.resolve(
-            for: themeManager.theme(named: activeLight) ?? themeManager.activeLight,
-            scheme: .light
+    private var selection: Binding<String> {
+        Binding(
+            get: { activeLight },
+            set: { newValue in
+                activeLight = newValue
+                activeDark = newValue
+            }
         )
     }
 
-    private var darkTokens: ChromeThemeTokens {
+    private var previewTokens: ChromeThemeTokens {
         ChromeThemeTokens.resolve(
-            for: themeManager.theme(named: activeDark) ?? themeManager.activeDark,
+            for: themeManager.theme(named: activeLight) ?? themeManager.activeLight,
             scheme: .dark
         )
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
-                Text(String(localized: "settings.app.theme", defaultValue: "Theme"))
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(alignment: .center, spacing: 12) {
+            Text(String(localized: "settings.app.theme", defaultValue: "Theme"))
+                .font(.system(size: 13, weight: .medium))
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                HStack(spacing: 8) {
-                    ForEach(AppearanceMode.visibleCases) { mode in
-                        let isSelected = selectedMode == mode.rawValue
-                        Button {
-                            onSelect(mode)
-                        } label: {
-                            VStack(spacing: 4) {
-                                Group {
-                                    if mode == .system {
-                                        ZStack {
-                                            ThemeWindowThumbnail(isDark: false, tokens: lightTokens)
-                                                .mask(
-                                                    GeometryReader { geo in
-                                                        Rectangle()
-                                                            .frame(width: geo.size.width / 2, height: geo.size.height)
-                                                            .position(x: geo.size.width / 4, y: geo.size.height / 2)
-                                                    }
-                                                )
-                                            ThemeWindowThumbnail(isDark: true, tokens: darkTokens)
-                                                .mask(
-                                                    GeometryReader { geo in
-                                                        Rectangle()
-                                                            .frame(width: geo.size.width / 2, height: geo.size.height)
-                                                            .position(x: geo.size.width * 0.75, y: geo.size.height / 2)
-                                                    }
-                                                )
-                                            GeometryReader { geo in
-                                                Rectangle()
-                                                    .fill(Color.primary.opacity(0.15))
-                                                    .frame(width: 1, height: geo.size.height)
-                                                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
-                                            }
-                                        }
-                                    } else {
-                                        ThemeWindowThumbnail(
-                                            isDark: mode == .dark,
-                                            tokens: mode == .dark ? darkTokens : lightTokens
-                                        )
-                                    }
-                                }
-                                .frame(width: thumbWidth, height: thumbHeight)
+            ThemeWindowThumbnail(isDark: true, tokens: previewTokens)
+                .frame(width: thumbWidth, height: thumbHeight)
 
-                                Text(mode.displayName)
-                                    .font(.system(size: 10))
-                                    .fontWeight(isSelected ? .semibold : .regular)
-                                    .foregroundColor(isSelected ? .primary : .secondary)
-                            }
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 10)
-                            .contentShape(Rectangle())
-                            .background(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .fill(isSelected
-                                        ? Color.accentColor.opacity(0.12)
-                                        : Color.clear)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
-                            )
+            Picker(selection: selection, label: EmptyView()) {
+                ForEach(themeManager.availableThemes, id: \.identity.name) { descriptor in
+                    HStack(spacing: 6) {
+                        Text(descriptor.identity.displayName)
+                        if descriptor.warning != nil {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
                         }
-                        .buttonStyle(.plain)
-                        .focusable(false)
-                        .accessibilityAddTraits(isSelected ? .isSelected : [])
                     }
+                    .tag(descriptor.identity.name)
                 }
-                .layoutPriority(1)
             }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(minWidth: 160)
 
-            // Chrome theme bindings — two dropdowns + Apply-to-both + open-folder + reload.
-            // Overloaded into this row (no separate Appearance section); see CMUX-35.
-            ThemeBindingControls(themeManager: themeManager)
-                .padding(.top, 2)
+            Button {
+                openThemesFolder()
+            } label: {
+                Image(systemName: "folder")
+            }
+            .buttonStyle(.borderless)
+            .help(String(localized: "settings.app.theme.openFolder", defaultValue: "Open themes folder"))
+
+            Button {
+                themeManager.forceReloadUserThemes()
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.borderless)
+            .help(String(localized: "settings.app.theme.reload", defaultValue: "Reload themes"))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: activeLight) { _ in themeManager.forceReloadUserThemes() }
     }
-}
 
-private struct AppIconPickerRow: View {
-    let selectedMode: String
-    let onSelect: (AppIconMode) -> Void
-
-    private let iconSize: CGFloat = 48
-    private let autoIconSize: CGFloat = 36
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(String(localized: "settings.app.appIcon", defaultValue: "App Icon"))
-                    .font(.system(size: 13, weight: .medium))
-                Text(String(localized: "settings.app.appIcon.subtitle", defaultValue: "Dock and app switcher"))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            HStack(spacing: 8) {
-                ForEach(AppIconMode.allCases) { mode in
-                    let isSelected = selectedMode == mode.rawValue
-                    Button {
-                        onSelect(mode)
-                    } label: {
-                        VStack(spacing: 4) {
-                            Group {
-                                if mode == .automatic {
-                                    ZStack {
-                                        Image("AppIconLight")
-                                            .resizable()
-                                            .interpolation(.high)
-                                            .frame(width: autoIconSize, height: autoIconSize)
-                                            .clipShape(RoundedRectangle(cornerRadius: autoIconSize * 0.22, style: .continuous))
-                                            .offset(x: -10)
-                                        Image("AppIconDark")
-                                            .resizable()
-                                            .interpolation(.high)
-                                            .frame(width: autoIconSize, height: autoIconSize)
-                                            .clipShape(RoundedRectangle(cornerRadius: autoIconSize * 0.22, style: .continuous))
-                                            .offset(x: 10)
-                                    }
-                                    .frame(width: iconSize, height: iconSize)
-                                } else {
-                                    Image(mode.imageName ?? "AppIconLight")
-                                        .resizable()
-                                        .interpolation(.high)
-                                        .frame(width: iconSize, height: iconSize)
-                                        .clipShape(RoundedRectangle(cornerRadius: iconSize * 0.22, style: .continuous))
-                                }
-                            }
-
-                            Text(mode.displayName)
-                                .font(.system(size: 10))
-                                .foregroundColor(isSelected ? .primary : .secondary)
-                        }
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 10)
-                        .contentShape(Rectangle())
-                        .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(isSelected
-                                    ? Color.accentColor.opacity(0.12)
-                                    : Color.clear)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .focusable(false)
-                    .accessibilityAddTraits(isSelected ? .isSelected : [])
-                }
-            }
-            .layoutPriority(1)
+    private func openThemesFolder() {
+        let url = themeManager.userThemesDirectory
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: url.path) {
+            try? fm.createDirectory(at: url, withIntermediateDirectories: true)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 }
 

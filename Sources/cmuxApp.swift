@@ -5825,6 +5825,15 @@ struct SettingsView: View {
                         .padding(.leading, 2)
                         .accessibilityIdentifier("ShortcutRecordingHint")
 
+                    SettingsSectionHeader(title: String(localized: "settings.section.agentSkills", defaultValue: "Agent Skills"))
+                    SettingsCard {
+                        AgentSkillsSettingsSection()
+                    }
+                    SettingsCardNote(String(
+                        localized: "settings.agentSkills.note",
+                        defaultValue: "c11mux installs its skill file into Claude Code (~/.claude/skills) on request. For other agents, c11mux copies a ready-to-paste command — the operator runs it."
+                    ))
+
                     SettingsSectionHeader(title: String(localized: "settings.section.reset", defaultValue: "Reset"))
                     SettingsCard {
                         HStack {

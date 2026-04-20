@@ -10,8 +10,8 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KPH8X381KQW6QBZZ72VZHSJK",
-  "last_event_id": "ev_01KPH8XKPZXX06J2ZWJ81BHDJV",
-  "last_status_changed_at": "2026-04-18T21:45:44Z",
+  "last_event_id": "ev_01KPMVHF6REWV0F7PN1K8BJ55Y",
+  "last_status_changed_at": "2026-04-20T07:09:09Z",
   "linked_files": [],
   "priority": "low",
   "relationships_out": [
@@ -33,7 +33,7 @@
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "CMUX-5",
-  "status": "backlog",
+  "status": "cancelled",
   "tags": [
     "tier1b",
     "persistence",
@@ -43,6 +43,6 @@
   ],
   "title": "Tier 1 Phase 5: recovery UI (Tier 1b, depends on Phase 4)",
   "type": "task",
-  "updated_at": "2026-04-18T21:46:01Z",
+  "updated_at": "2026-04-20T07:09:09Z",
   "urgency": null
 }

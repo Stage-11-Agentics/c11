@@ -1,0 +1,14 @@
+{
+  "agent_type": "implement",
+  "base_name": "cmux-36-impl",
+  "framework": "claude-code",
+  "last_active": "2026-04-20T06:56:31Z",
+  "model": "claude-opus-4-7",
+  "name": "cmux-36-impl-1",
+  "parent": "human:atin",
+  "prompt": "CMUX-36 worker prompt",
+  "serial": 1,
+  "session": "sess_01KPMTGKS1EAZBAN9PD1BEKSNG",
+  "started_at": "2026-04-20T06:51:13Z",
+  "status": "active"
+}

@@ -6055,11 +6055,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func sendWelcomeCommandWhenReady(to workspace: Workspace, markShownOnSend: Bool = false) {
-        runWhenInitialTerminalReady(in: workspace) { initialPanel in
+        runWhenInitialTerminalReady(in: workspace) { [weak self] initialPanel in
             if markShownOnSend {
                 UserDefaults.standard.set(true, forKey: WelcomeSettings.shownKey)
             }
             WelcomeSettings.performQuadLayout(on: workspace, initialPanel: initialPanel)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                self?.presentAgentSkillsOnboardingIfNeeded()
+            }
+        }
+    }
+
+    // MARK: - Agent skill onboarding
+
+    /// Strong reference so the NSWindow isn't deallocated while visible. A
+    /// weak ref + isReleasedWhenClosed=false is not a replacement — AppKit
+    /// retains the window only when it's on-screen as a key/main window, and
+    /// can release it across app-activation edges. The `willClose` observer
+    /// below nils this out on user-initiated close so we don't leak.
+    private var agentSkillsOnboardingWindow: NSWindow?
+    private var agentSkillsOnboardingCloseObserver: NSObjectProtocol?
+
+    /// If the user has Claude Code installed and hasn't already seen the skill
+    /// onboarding sheet, show it over the frontmost window. Consent-gated; the
+    /// sheet never writes without an explicit click.
+    func presentAgentSkillsOnboardingIfNeeded() {
+        guard AgentSkillsOnboarding.shouldPresent() else { return }
+        presentAgentSkillsOnboarding()
+    }
+
+    func presentAgentSkillsOnboarding() {
+        if let existing = agentSkillsOnboardingWindow {
+            existing.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 320),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = String(localized: "agentSkills.onboarding.windowTitle", defaultValue: "c11mux Agent Skills")
+        window.isReleasedWhenClosed = false
+        window.level = .modalPanel
+        let rootView = AgentSkillsOnboardingSheet(onDismiss: { [weak window] in
+            window?.close()
+        })
+        window.contentView = NSHostingView(rootView: rootView)
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        agentSkillsOnboardingWindow = window
+        // Observe willClose so we can drop the strong reference and mark the
+        // onboarding sheet as dismissed for the remainder of this launch —
+        // covers the close-button path that never runs our SwiftUI onDismiss
+        // callbacks and would otherwise let a sibling welcome workspace pop
+        // the panel back up in the same run.
+        agentSkillsOnboardingCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            AgentSkillsOnboarding.markDismissedThisLaunch()
+            if let observer = self.agentSkillsOnboardingCloseObserver {
+                NotificationCenter.default.removeObserver(observer)
+            }
+            self.agentSkillsOnboardingCloseObserver = nil
+            self.agentSkillsOnboardingWindow = nil
         }
     }
 

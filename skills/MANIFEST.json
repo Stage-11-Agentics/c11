@@ -1,0 +1,9 @@
+{
+  "c11mux_skill_manifest_schema": 1,
+  "installable": [
+    "cmux",
+    "cmux-browser",
+    "cmux-markdown",
+    "cmux-debug-windows"
+  ]
+}

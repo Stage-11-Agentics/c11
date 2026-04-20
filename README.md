@@ -50,13 +50,34 @@ brew install --cask c11mux
 # 2. launch
 open -a c11mux
 
-# 3. teach your agent the protocol (Claude Code example)
-cp -r skills/cmux ~/.claude/skills/
+# 3. teach your agents the protocol (first-launch wizard will offer this too)
+cmux skill install                # → ~/.claude/skills/
+cmux skill install --tool codex   # → ~/.codex/skills/ (explicit opt-in)
 ```
 
 or grab the [DMG directly](https://github.com/Stage-11-Agentics/c11mux/releases/latest/download/c11mux-macos.dmg). auto-updates via Sparkle. the c11mux cask conflicts with the upstream `cmux` cask — Homebrew will ask you to pick one.
 
 that's it. now your agent spawns its own terminals, opens a markdown surface for its plan, splits a browser pane for the dev server it just started, and reports status to the sidebar while it works.
+
+---
+
+## teach your agents about c11mux
+
+**agents only know about c11mux's splits, sidebar metadata, and embedded browser once they've read the c11mux skill.** without it, they don't know the CLI exists; with it, the patterns in this README become their default.
+
+on first launch, c11mux detects Claude Code and offers to install the skill through a consent sheet — one click, no hidden writes. for Codex, Kimi, and OpenCode, the operator stays in charge (c11mux copies a ready-to-paste command; you run it, or you flip the explicit `--tool` switch below).
+
+re-run the same flow any time from **Settings → Agent Skills**, or from the CLI:
+
+```bash
+cmux skill status                 # see what's detected and installed
+cmux skill install                # install for Claude Code (idempotent)
+cmux skill install --tool codex   # explicit opt-in for another agent
+cmux skill remove                 # remove the installed copies (Claude Code)
+cmux skill path                   # print the bundled skill path
+```
+
+the skill is [`skills/cmux/SKILL.md`](./skills/cmux/SKILL.md) plus peer skills for the embedded browser, markdown surfaces, and debug windows. updating c11mux re-bundles fresh copies; the Settings pane flags when your installed copy is out of date.
 
 ---
 

@@ -43,20 +43,50 @@ final class AgentSkillsModel: ObservableObject {
         self.fileManager = fileManager
     }
 
+    /// Snapshot of a completed off-main refresh. Carried back to the main
+    /// actor via an `async` hop before publishing.
+    struct RefreshSnapshot: Sendable {
+        let sourceDir: URL?
+        let sourceError: String?
+        let rows: [TargetRow]
+    }
+
     func refresh() {
         loading = true
-        defer { loading = false }
-
+        let home = self.home
+        let fileManager = self.fileManager
         let executableURL = Bundle.main.executableURL
-        guard let source = SkillInstaller.defaultSourceURL(executableURL: executableURL) else {
-            sourceError = String(localized: "agentSkills.error.sourceNotFound", defaultValue: "Could not locate the bundled skills directory.")
-            sourceDir = nil
-            rows = []
-            return
+        Task.detached(priority: .userInitiated) {
+            let snapshot = AgentSkillsModel.computeSnapshot(
+                executableURL: executableURL,
+                home: home,
+                fileManager: fileManager
+            )
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.sourceDir = snapshot.sourceDir
+                self.sourceError = snapshot.sourceError
+                self.rows = snapshot.rows
+                self.loading = false
+            }
         }
-        sourceError = nil
-        sourceDir = source
+    }
 
+    /// Filesystem + hashing happen off-main. Declared `nonisolated` so it
+    /// can run from a detached task without hopping back through the
+    /// main-actor-isolated instance.
+    nonisolated static func computeSnapshot(
+        executableURL: URL?,
+        home: URL,
+        fileManager: FileManager
+    ) -> RefreshSnapshot {
+        guard let source = SkillInstaller.defaultSourceURL(executableURL: executableURL) else {
+            return RefreshSnapshot(
+                sourceDir: nil,
+                sourceError: String(localized: "agentSkills.error.sourceNotFound", defaultValue: "Could not locate the bundled skills directory."),
+                rows: []
+            )
+        }
         var newRows: [TargetRow] = []
         for target in SkillInstallerTarget.allCases {
             let detected = target.isDetected(home: home, fileManager: fileManager)
@@ -85,7 +115,7 @@ final class AgentSkillsModel: ObservableObject {
                 statusError: statusError
             ))
         }
-        rows = newRows
+        return RefreshSnapshot(sourceDir: source, sourceError: nil, rows: newRows)
     }
 
     func install(target: SkillInstallerTarget, force: Bool) {
@@ -130,9 +160,11 @@ final class AgentSkillsModel: ObservableObject {
     }
 
     func copyManualCommandToPasteboard(target: SkillInstallerTarget) {
-        guard let source = sourceDir else { return }
-        let destRoot = target.skillsDir(home: home).path
-        let snippet = "mkdir -p \"\(destRoot)\" && rsync -a \"\(source.path)/\" \"\(destRoot)/\""
+        // Route through the managed installer so the operator copies the
+        // same allowlisted + manifested install path c11mux itself uses —
+        // no unmanaged rsync over the whole bundled `skills/` tree (which
+        // would also copy maintainer-only packages).
+        let snippet = "cmux skill install --tool \(target.rawValue)"
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(snippet, forType: .string)

@@ -95,7 +95,7 @@ final class AgentSkillsModel: ObservableObject {
             )
             lastActionMessage = formatInstallMessage(result: result)
         } catch let err as SkillInstallerError {
-            lastActionMessage = err.message
+            lastActionMessage = AgentSkillsLocalized.description(for: err, target: target)
         } catch {
             lastActionMessage = error.localizedDescription
         }
@@ -113,7 +113,7 @@ final class AgentSkillsModel: ObservableObject {
             )
             lastActionMessage = formatRemoveMessage(result: result)
         } catch let err as SkillInstallerError {
-            lastActionMessage = err.message
+            lastActionMessage = AgentSkillsLocalized.description(for: err, target: target)
         } catch {
             lastActionMessage = error.localizedDescription
         }
@@ -139,21 +139,153 @@ final class AgentSkillsModel: ObservableObject {
 
     private func formatInstallMessage(result: SkillInstallerApplyResult) -> String {
         var parts: [String] = []
-        if !result.installed.isEmpty { parts.append("installed: \(result.installed.joined(separator: ", "))") }
-        if !result.refreshed.isEmpty { parts.append("refreshed: \(result.refreshed.joined(separator: ", "))") }
-        if !result.skipped.isEmpty { parts.append("skipped: \(result.skipped.joined(separator: ", "))") }
-        if parts.isEmpty { parts.append("no-op") }
-        return "\(result.target.displayName) — \(parts.joined(separator: "; "))"
+        if !result.installed.isEmpty { parts.append(AgentSkillsLocalized.installedFragment(result.installed)) }
+        if !result.refreshed.isEmpty { parts.append(AgentSkillsLocalized.refreshedFragment(result.refreshed)) }
+        if !result.skipped.isEmpty { parts.append(AgentSkillsLocalized.skippedFragment(result.skipped)) }
+        if parts.isEmpty { parts.append(AgentSkillsLocalized.noOpFragment()) }
+        return AgentSkillsLocalized.envelope(target: result.target.displayName, body: parts.joined(separator: "; "))
     }
 
     private func formatRemoveMessage(result: SkillInstallerRemoveResult) -> String {
         if result.removed.isEmpty && result.skipped.isEmpty {
-            return "\(result.target.displayName) — nothing to remove"
+            return AgentSkillsLocalized.envelope(
+                target: result.target.displayName,
+                body: AgentSkillsLocalized.nothingToRemove()
+            )
         }
         var parts: [String] = []
-        if !result.removed.isEmpty { parts.append("removed: \(result.removed.joined(separator: ", "))") }
-        if !result.skipped.isEmpty { parts.append("skipped: \(result.skipped.joined(separator: ", "))") }
-        return "\(result.target.displayName) — \(parts.joined(separator: "; "))"
+        if !result.removed.isEmpty { parts.append(AgentSkillsLocalized.removedFragment(result.removed)) }
+        if !result.skipped.isEmpty { parts.append(AgentSkillsLocalized.skippedFragment(result.skipped)) }
+        return AgentSkillsLocalized.envelope(target: result.target.displayName, body: parts.joined(separator: "; "))
+    }
+}
+
+// MARK: - Localization helpers
+
+/// Single point that knows how to turn action results and installer errors
+/// into user-visible strings. Keeps `String(localized:)` call sites out of
+/// the hot per-row format methods so xcstrings stays the source of truth.
+enum AgentSkillsLocalized {
+    static func envelope(target: String, body: String) -> String {
+        let fmt = String(
+            localized: "agentSkills.action.envelope",
+            defaultValue: "%1$@ — %2$@"
+        )
+        return String(format: fmt, target, body)
+    }
+
+    static func installedFragment(_ items: [String]) -> String {
+        let fmt = String(
+            localized: "agentSkills.action.installedFragment",
+            defaultValue: "installed: %@"
+        )
+        return String(format: fmt, items.joined(separator: ", "))
+    }
+
+    static func refreshedFragment(_ items: [String]) -> String {
+        let fmt = String(
+            localized: "agentSkills.action.refreshedFragment",
+            defaultValue: "refreshed: %@"
+        )
+        return String(format: fmt, items.joined(separator: ", "))
+    }
+
+    static func skippedFragment(_ items: [String]) -> String {
+        let fmt = String(
+            localized: "agentSkills.action.skippedFragment",
+            defaultValue: "skipped: %@"
+        )
+        return String(format: fmt, items.joined(separator: ", "))
+    }
+
+    static func removedFragment(_ items: [String]) -> String {
+        let fmt = String(
+            localized: "agentSkills.action.removedFragment",
+            defaultValue: "removed: %@"
+        )
+        return String(format: fmt, items.joined(separator: ", "))
+    }
+
+    static func noOpFragment() -> String {
+        String(
+            localized: "agentSkills.action.noOp",
+            defaultValue: "no-op"
+        )
+    }
+
+    static func nothingToRemove() -> String {
+        String(
+            localized: "agentSkills.action.nothingToRemove",
+            defaultValue: "nothing to remove"
+        )
+    }
+
+    /// Maps `SkillInstallerError.Code` to a localized message. The underlying
+    /// error's `path` is injected as `%@` so the operator sees what got
+    /// refused. Keeps the core installer language-agnostic (CLI users still
+    /// see the raw English message).
+    static func description(for error: SkillInstallerError, target: SkillInstallerTarget) -> String {
+        let path = error.path ?? ""
+        switch error.code {
+        case .noSourceFound:
+            return String(
+                localized: "agentSkills.error.sourceNotFound",
+                defaultValue: "Could not locate the bundled skills directory."
+            )
+        case .sourceNotReadable:
+            return String(
+                format: String(
+                    localized: "agentSkills.error.sourceNotReadable",
+                    defaultValue: "Cannot read the bundled skills directory at %@."
+                ),
+                path
+            )
+        case .targetNotDetected:
+            return String(
+                format: String(
+                    localized: "agentSkills.error.targetNotDetected",
+                    defaultValue: "%@ is not installed — create its config directory first."
+                ),
+                target.displayName
+            )
+        case .destUnwritable:
+            return String(
+                format: String(
+                    localized: "agentSkills.error.destUnwritable",
+                    defaultValue: "Cannot write to %@. Check permissions."
+                ),
+                path
+            )
+        case .destNotManaged:
+            return String(
+                format: String(
+                    localized: "agentSkills.error.destNotManaged",
+                    defaultValue: "%@ already exists but is not a c11mux-managed skill. Use Update/Refresh to replace it."
+                ),
+                path
+            )
+        case .copyFailed:
+            return String(
+                format: String(
+                    localized: "agentSkills.error.copyFailed",
+                    defaultValue: "Could not copy the skill to %@."
+                ),
+                path
+            )
+        case .manifestMalformed:
+            return String(
+                format: String(
+                    localized: "agentSkills.error.manifestMalformed",
+                    defaultValue: "The bundled skills manifest at %@ is malformed."
+                ),
+                path
+            )
+        case .emptyPackageSet:
+            return String(
+                localized: "agentSkills.error.emptyPackageSet",
+                defaultValue: "No installable skill packages were found. Reinstall c11mux."
+            )
+        }
     }
 }
 
@@ -405,6 +537,7 @@ struct AgentSkillsOnboardingSheet: View {
                 Spacer()
 
                 Button(String(localized: "agentSkills.onboarding.later", defaultValue: "Later")) {
+                    AgentSkillsOnboarding.markDismissedThisLaunch()
                     onDismiss()
                 }
                 .buttonStyle(.bordered)
@@ -487,17 +620,35 @@ struct AgentSkillsOnboardingSheet: View {
 // MARK: - Onboarding plumbing
 
 enum AgentSkillsOnboarding {
+    /// Persistent "Don't ask again" flag. Set only by the explicit button in
+    /// the onboarding sheet; never by a plain close or "Later" click.
     static let sheetShownKey = "cmuxAgentSkillsOnboardingShown"
+
+    /// In-memory flag scoped to the current app launch. Set when the user
+    /// dismisses the sheet by clicking "Later", or by hitting the window's
+    /// close button. Prevents another welcome workspace from re-triggering
+    /// the sheet in the same run without promoting the persistent
+    /// "don't ask again" state.
+    @MainActor private static var _dismissedThisLaunch: Bool = false
+
+    @MainActor static func markDismissedThisLaunch() {
+        _dismissedThisLaunch = true
+    }
+
+    @MainActor static var dismissedThisLaunch: Bool {
+        _dismissedThisLaunch
+    }
 
     /// Should the onboarding sheet be offered on this launch? True iff a
     /// claude config dir exists AND at least one bundled package is not yet
     /// installed in it AND the user hasn't already dismissed the sheet.
-    static func shouldPresent(
+    @MainActor static func shouldPresent(
         home: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true),
         defaults: UserDefaults = .standard,
         fileManager: FileManager = .default
     ) -> Bool {
         if defaults.bool(forKey: sheetShownKey) { return false }
+        if _dismissedThisLaunch { return false }
         let target = SkillInstallerTarget.claude
         guard target.isDetected(home: home, fileManager: fileManager) else { return false }
         guard let source = SkillInstaller.defaultSourceURL(executableURL: Bundle.main.executableURL) else { return false }

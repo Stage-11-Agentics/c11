@@ -6068,7 +6068,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     // MARK: - Agent skill onboarding
 
-    private weak var agentSkillsOnboardingWindow: NSWindow?
+    /// Strong reference so the NSWindow isn't deallocated while visible. A
+    /// weak ref + isReleasedWhenClosed=false is not a replacement — AppKit
+    /// retains the window only when it's on-screen as a key/main window, and
+    /// can release it across app-activation edges. The `willClose` observer
+    /// below nils this out on user-initiated close so we don't leak.
+    private var agentSkillsOnboardingWindow: NSWindow?
+    private var agentSkillsOnboardingCloseObserver: NSObjectProtocol?
 
     /// If the user has Claude Code installed and hasn't already seen the skill
     /// onboarding sheet, show it over the frontmost window. Consent-gated; the
@@ -6100,6 +6106,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         window.center()
         window.makeKeyAndOrderFront(nil)
         agentSkillsOnboardingWindow = window
+        // Observe willClose so we can drop the strong reference and mark the
+        // onboarding sheet as dismissed for the remainder of this launch —
+        // covers the close-button path that never runs our SwiftUI onDismiss
+        // callbacks and would otherwise let a sibling welcome workspace pop
+        // the panel back up in the same run.
+        agentSkillsOnboardingCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            AgentSkillsOnboarding.markDismissedThisLaunch()
+            if let observer = self.agentSkillsOnboardingCloseObserver {
+                NotificationCenter.default.removeObserver(observer)
+            }
+            self.agentSkillsOnboardingCloseObserver = nil
+            self.agentSkillsOnboardingWindow = nil
+        }
     }
 
     func spawnDefaultGridWhenReady(to workspace: Workspace) {

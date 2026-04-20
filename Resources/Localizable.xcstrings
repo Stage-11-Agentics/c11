@@ -1262,6 +1262,125 @@
         }
       }
     },
+    "agentSkills.action.envelope": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ — %2$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ — %2$@"
+          }
+        }
+      }
+    },
+    "agentSkills.action.installedFragment": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "installed: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インストール: %@"
+          }
+        }
+      }
+    },
+    "agentSkills.action.noOp": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "no-op"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更なし"
+          }
+        }
+      }
+    },
+    "agentSkills.action.nothingToRemove": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "nothing to remove"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除対象はありません"
+          }
+        }
+      }
+    },
+    "agentSkills.action.refreshedFragment": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "refreshed: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新: %@"
+          }
+        }
+      }
+    },
+    "agentSkills.action.removedFragment": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "removed: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除: %@"
+          }
+        }
+      }
+    },
+    "agentSkills.action.skippedFragment": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "skipped: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スキップ: %@"
+          }
+        }
+      }
+    },
     "agentSkills.button.copyCommand": {
       "extractionState": "manual",
       "localizations": {
@@ -1381,6 +1500,91 @@
         }
       }
     },
+    "agentSkills.error.copyFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not copy the skill to %@."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スキルを %@ にコピーできませんでした。"
+          }
+        }
+      }
+    },
+    "agentSkills.error.destNotManaged": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ already exists but is not a c11mux-managed skill. Use Update/Refresh to replace it."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ は既に存在しますが、c11mux が管理するスキルではありません。「アップデート／更新」で置き換えてください。"
+          }
+        }
+      }
+    },
+    "agentSkills.error.destUnwritable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cannot write to %@. Check permissions."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に書き込めません。権限を確認してください。"
+          }
+        }
+      }
+    },
+    "agentSkills.error.emptyPackageSet": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No installable skill packages were found. Reinstall c11mux."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インストール可能なスキルパッケージが見つかりませんでした。c11mux を再インストールしてください。"
+          }
+        }
+      }
+    },
+    "agentSkills.error.manifestMalformed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The bundled skills manifest at %@ is malformed."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ のスキルマニフェストの形式が正しくありません。"
+          }
+        }
+      }
+    },
     "agentSkills.error.sourceNotFound": {
       "extractionState": "manual",
       "localizations": {
@@ -1388,6 +1592,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "Could not locate the bundled skills directory."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同梱スキルのディレクトリが見つかりませんでした。"
+          }
+        }
+      }
+    },
+    "agentSkills.error.sourceNotReadable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cannot read the bundled skills directory at %@."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の同梱スキルディレクトリを読み込めません。"
+          }
+        }
+      }
+    },
+    "agentSkills.error.targetNotDetected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ is not installed — create its config directory first."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ はインストールされていません。先に設定ディレクトリを作成してください。"
           }
         }
       }

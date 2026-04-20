@@ -4966,6 +4966,12 @@ final class Workspace: Identifiable, ObservableObject {
     @Published var customColor: String?  // hex string, e.g. "#C0392B"
     @Published var currentDirectory: String
 
+    /// Publishes the new `customColor` value whenever it changes via `setCustomColor`.
+    /// Used by `WorkspaceContentView` to re-apply bonsplit chrome (divider color, frame
+    /// tint) without waiting for a full SwiftUI render pass. The plumbed `applyGhosttyChrome`
+    /// already runs a no-op guard, so rapid changes are safe.
+    let customColorDidChange = PassthroughSubject<String?, Never>()
+
     /// Operator-authored workspace metadata (e.g. "description", "icon").
     /// Workspace-scoped; not to be confused with surface-scoped
     /// `SurfaceMetadataStore`. Persisted across restart via
@@ -5172,7 +5178,8 @@ final class Workspace: Identifiable, ObservableObject {
     private static func bonsplitAppearance(from config: GhosttyConfig) -> BonsplitConfiguration.Appearance {
         bonsplitAppearance(
             from: config.backgroundColor,
-            backgroundOpacity: config.backgroundOpacity
+            backgroundOpacity: config.backgroundOpacity,
+            context: nil
         )
     }
 
@@ -5191,19 +5198,46 @@ final class Workspace: Identifiable, ObservableObject {
         .init(backgroundHex: backgroundColor.hexString())
     }
 
+    /// Resolved theme-aware divider presentation for bonsplit. `borderHex` encodes
+    /// RGBA so the alpha from `$workspaceColor.mix(...)` survives into bonsplit.
+    private struct BonsplitDividerResolution {
+        var borderHex: String?
+        var thicknessPt: CGFloat?
+    }
+
+    private static func resolvedDividerPresentation(
+        context: ThemeContext?
+    ) -> BonsplitDividerResolution {
+        guard let context else { return BonsplitDividerResolution() }
+        let manager = ThemeManager.shared
+        guard manager.isEnabled else { return BonsplitDividerResolution() }
+
+        let color: NSColor? = manager.resolve(.dividers_color, context: context)
+        let thickness: CGFloat? = manager.resolve(.dividers_thicknessPt, context: context)
+
+        return BonsplitDividerResolution(
+            borderHex: color?.hexString(includeAlpha: (color?.alphaComponent ?? 1.0) < 0.999),
+            thicknessPt: thickness
+        )
+    }
+
     private static func bonsplitAppearance(
         from backgroundColor: NSColor,
-        backgroundOpacity: Double
+        backgroundOpacity: Double,
+        context: ThemeContext?
     ) -> BonsplitConfiguration.Appearance {
-        BonsplitConfiguration.Appearance(
+        let divider = resolvedDividerPresentation(context: context)
+        return BonsplitConfiguration.Appearance(
             splitButtonTooltips: Self.currentSplitButtonTooltips(),
             enableAnimations: false,
             chromeColors: .init(
                 backgroundHex: Self.bonsplitChromeHex(
                     backgroundColor: backgroundColor,
                     backgroundOpacity: backgroundOpacity
-                )
-            )
+                ),
+                borderHex: divider.borderHex
+            ),
+            dividerStyle: .init(thicknessPt: divider.thicknessPt)
         )
     }
 
@@ -5224,32 +5258,67 @@ final class Workspace: Identifiable, ObservableObject {
             forKey: ThemeAppStorage.Keys.m1bBonsplitAppearanceMigrated,
             default: false
         )
-        if useThemeM1bPath {
+
+        // Theme-resolved divider presentation threads through the M2a bonsplit
+        // `DividerStyle` seam. Resolution uses the workspace's current `customColor`
+        // so `$workspaceColor.mix($background, 0.65)` picks up the live tint.
+        var nextBorderHex: String? = nil
+        var nextThicknessPt: CGFloat? = nil
+        if ThemeManager.shared.isEnabled {
             let context = ThemeManager.shared.makeContext(
                 workspaceColor: customColor,
                 colorScheme: ThemeManager.currentColorScheme()
             )
-            if let themed: NSColor = ThemeManager.shared.resolve(.tabBar_background, context: context) {
+            if useThemeM1bPath,
+               let themed: NSColor = ThemeManager.shared.resolve(.tabBar_background, context: context) {
                 nextHex = themed.hexString(includeAlpha: themed.alphaComponent < 0.999)
             }
+            if let dividerColor: NSColor = ThemeManager.shared.resolve(.dividers_color, context: context) {
+                nextBorderHex = dividerColor.hexString(includeAlpha: dividerColor.alphaComponent < 0.999)
+            }
+            nextThicknessPt = ThemeManager.shared.resolve(.dividers_thicknessPt, context: context)
         }
-        let currentChromeColors = bonsplitController.configuration.appearance.chromeColors
-        let isNoOp = currentChromeColors.backgroundHex == nextHex
+
+        let currentAppearance = bonsplitController.configuration.appearance
+        let currentChromeColors = currentAppearance.chromeColors
+        let currentThickness = currentAppearance.dividerStyle.thicknessPt
+
+        // No-op guard spans background + divider color + divider thickness + custom color so
+        // rapid `customColorDidChange` / `ghosttyDefaultBackgroundDidChange` fires don't cause
+        // redundant chrome mutations. Each axis is compared independently — any drift on any
+        // axis triggers the update.
+        let backgroundMatches = currentChromeColors.backgroundHex == nextHex
+        let borderMatches = currentChromeColors.borderHex == nextBorderHex
+        let thicknessMatches = currentThickness == nextThicknessPt
+        let isNoOp = backgroundMatches && borderMatches && thicknessMatches
 
         if GhosttyApp.shared.backgroundLogEnabled {
             let currentBackgroundHex = currentChromeColors.backgroundHex ?? "nil"
+            let currentBorderHex = currentChromeColors.borderHex ?? "nil"
+            let currentThicknessLog = currentThickness.map { String(format: "%.2f", $0) } ?? "nil"
+            let nextThicknessLog = nextThicknessPt.map { String(format: "%.2f", $0) } ?? "nil"
             GhosttyApp.shared.logBackground(
-                "theme apply workspace=\(id.uuidString) reason=\(reason) m1b=\(useThemeM1bPath) currentBg=\(currentBackgroundHex) nextBg=\(nextHex) noop=\(isNoOp)"
+                "theme apply workspace=\(id.uuidString) reason=\(reason) m1b=\(useThemeM1bPath) customColor=\(customColor ?? "nil") currentBg=\(currentBackgroundHex) nextBg=\(nextHex) currentBorder=\(currentBorderHex) nextBorder=\(nextBorderHex ?? "nil") currentThickness=\(currentThicknessLog) nextThickness=\(nextThicknessLog) noop=\(isNoOp)"
             )
         }
 
         if isNoOp {
             return
         }
-        bonsplitController.configuration.appearance.chromeColors.backgroundHex = nextHex
+
+        if !backgroundMatches {
+            bonsplitController.configuration.appearance.chromeColors.backgroundHex = nextHex
+        }
+        if !borderMatches {
+            bonsplitController.configuration.appearance.chromeColors.borderHex = nextBorderHex
+        }
+        if !thicknessMatches {
+            bonsplitController.configuration.appearance.dividerStyle.thicknessPt = nextThicknessPt
+        }
+
         if GhosttyApp.shared.backgroundLogEnabled {
             GhosttyApp.shared.logBackground(
-                "theme applied workspace=\(id.uuidString) reason=\(reason) resultingBg=\(bonsplitController.configuration.appearance.chromeColors.backgroundHex ?? "nil")"
+                "theme applied workspace=\(id.uuidString) reason=\(reason) resultingBg=\(bonsplitController.configuration.appearance.chromeColors.backgroundHex ?? "nil") resultingBorder=\(bonsplitController.configuration.appearance.chromeColors.borderHex ?? "nil") resultingThickness=\(bonsplitController.configuration.appearance.dividerStyle.thicknessPt.map { String(format: "%.2f", $0) } ?? "nil")"
             )
         }
     }
@@ -5283,9 +5352,14 @@ final class Workspace: Identifiable, ObservableObject {
         // and keep split entry instantaneous.
         // Avoid re-reading/parsing Ghostty config on every new workspace; this hot path
         // runs for socket/CLI workspace creation and can cause visible typing lag.
+        // At Workspace.init time the custom color is not yet set, so initial bonsplit
+        // appearance uses the theme's default context (workspaceColor=nil). The first
+        // `applyGhosttyChrome` call — triggered on workspace mount — re-applies with the
+        // actual custom color once the Workspace is installed in the sidebar.
         let appearance = Self.bonsplitAppearance(
             from: GhosttyApp.shared.defaultBackgroundColor,
-            backgroundOpacity: GhosttyApp.shared.defaultBackgroundOpacity
+            backgroundOpacity: GhosttyApp.shared.defaultBackgroundOpacity,
+            context: nil
         )
         let config = BonsplitConfiguration(
             allowSplits: true,
@@ -5892,11 +5966,15 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     func setCustomColor(_ hex: String?) {
+        let next: String?
         if let hex {
-            customColor = WorkspaceTabColorSettings.normalizedHex(hex)
+            next = WorkspaceTabColorSettings.normalizedHex(hex)
         } else {
-            customColor = nil
+            next = nil
         }
+        guard customColor != next else { return }
+        customColor = next
+        customColorDidChange.send(next)
     }
 
     func setCustomTitle(_ title: String?) {

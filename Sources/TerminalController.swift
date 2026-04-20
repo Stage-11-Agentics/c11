@@ -2100,6 +2100,30 @@ class TerminalController {
             return v2Result(id: id, self.v2WorkspaceGetMetadata(params: params))
         case "workspace.clear_metadata":
             return v2Result(id: id, self.v2WorkspaceClearMetadata(params: params))
+        case "workspace.set_custom_color":
+            return v2Result(id: id, self.v2WorkspaceSetCustomColor(params: params))
+
+        // Themes (CMUX-35)
+        case "theme.list":
+            return v2Result(id: id, .ok(ThemeSocketMethods.list()))
+        case "theme.get":
+            return v2Result(id: id, .ok(ThemeSocketMethods.get(params: params)))
+        case "theme.set_active":
+            return v2Result(id: id, .ok(ThemeSocketMethods.setActive(params: params)))
+        case "theme.clear_active":
+            return v2Result(id: id, .ok(ThemeSocketMethods.clearActive()))
+        case "theme.reload":
+            return v2Result(id: id, .ok(ThemeSocketMethods.reload()))
+        case "theme.paths":
+            return v2Result(id: id, .ok(ThemeSocketMethods.paths()))
+        case "theme.dump":
+            return v2Result(id: id, .ok(ThemeSocketMethods.dumpActive(params: params)))
+        case "theme.validate":
+            return v2Result(id: id, .ok(ThemeSocketMethods.validate(params: params)))
+        case "theme.diff":
+            return v2Result(id: id, .ok(ThemeSocketMethods.diff(params: params)))
+        case "theme.inherit":
+            return v2Result(id: id, .ok(ThemeSocketMethods.inherit(params: params)))
 
         // Settings
         case "settings.open":
@@ -3857,6 +3881,51 @@ class TerminalController {
             "index": v2OrNull(newIndex)
         ])
     }
+    private func v2WorkspaceSetCustomColor(params: [String: Any]) -> V2CallResult {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+        guard let workspaceId = v2UUID(params, "workspace_id") else {
+            return .err(code: "invalid_params", message: "Missing or invalid workspace_id", data: nil)
+        }
+
+        // Accept either a hex string to set, or `clear: true` to reset.
+        let clear = (params["clear"] as? Bool) ?? false
+        let hex = params["hex"] as? String
+
+        if !clear && hex == nil {
+            return .err(code: "invalid_params", message: "Provide either 'hex' or 'clear=true'", data: nil)
+        }
+
+        var applied: String? = nil
+        var found = false
+        v2MainSync {
+            guard let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }) else { return }
+            found = true
+            if clear {
+                workspace.setCustomColor(nil)
+                applied = nil
+            } else if let hex {
+                workspace.setCustomColor(hex)
+                applied = workspace.customColor
+            }
+        }
+
+        guard found else {
+            return .err(code: "not_found", message: "Workspace not found", data: [
+                "workspace_id": workspaceId.uuidString,
+                "workspace_ref": v2Ref(kind: .workspace, uuid: workspaceId)
+            ])
+        }
+
+        return .ok([
+            "workspace_id": workspaceId.uuidString,
+            "workspace_ref": v2Ref(kind: .workspace, uuid: workspaceId),
+            "hex": v2OrNull(applied),
+            "cleared": clear
+        ])
+    }
+
     private func v2WorkspaceRename(params: [String: Any]) -> V2CallResult {
         guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)

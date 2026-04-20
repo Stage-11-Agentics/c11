@@ -2487,6 +2487,13 @@ struct CMUXCLI {
         case "markdown-content":
             try runMarkdownGetContentCommand(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
 
+        // UI / theme commands (CMUX-35)
+        case "ui":
+            try runUi(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput)
+
+        case "workspace-color":
+            try runWorkspaceColor(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput)
+
         default:
             print(usage())
             throw CLIError(message: "Unknown command: \(command)")
@@ -8109,6 +8116,346 @@ struct CMUXCLI {
         case (nil, nil):
             return nil
         }
+    }
+
+    // MARK: - `cmux ui themes` + `cmux workspace-color` (CMUX-35)
+
+    private func runUi(commandArgs: [String], client: SocketClient, jsonOutput: Bool) throws {
+        guard let first = commandArgs.first else {
+            throw CLIError(message: "ui requires a subcommand. Try: cmux ui themes list")
+        }
+        let sub = first.lowercased()
+        let rest = Array(commandArgs.dropFirst())
+
+        switch sub {
+        case "themes":
+            try runUiThemes(commandArgs: rest, client: client, jsonOutput: jsonOutput)
+        default:
+            throw CLIError(message: "Unknown ui subcommand: \(first)")
+        }
+    }
+
+    private func runUiThemes(commandArgs: [String], client: SocketClient, jsonOutput: Bool) throws {
+        guard let first = commandArgs.first else {
+            try runUiThemesList(client: client, jsonOutput: jsonOutput)
+            return
+        }
+        let sub = first.lowercased()
+        let rest = Array(commandArgs.dropFirst())
+
+        switch sub {
+        case "list":
+            try runUiThemesList(client: client, jsonOutput: jsonOutput)
+        case "get":
+            try runUiThemesGet(args: rest, client: client, jsonOutput: jsonOutput)
+        case "set":
+            try runUiThemesSet(args: rest, client: client, jsonOutput: jsonOutput)
+        case "clear":
+            try runUiThemesClear(client: client, jsonOutput: jsonOutput)
+        case "reload":
+            try runUiThemesReload(client: client, jsonOutput: jsonOutput)
+        case "path":
+            try runUiThemesPath(client: client, jsonOutput: jsonOutput)
+        case "dump":
+            try runUiThemesDump(args: rest, client: client, jsonOutput: jsonOutput)
+        case "validate":
+            try runUiThemesValidate(args: rest, client: client, jsonOutput: jsonOutput)
+        case "diff":
+            try runUiThemesDiff(args: rest, client: client, jsonOutput: jsonOutput)
+        case "inherit":
+            try runUiThemesInherit(args: rest, client: client, jsonOutput: jsonOutput)
+        default:
+            throw CLIError(message: "Unknown ui themes subcommand: \(first)")
+        }
+    }
+
+    private func runUiThemesList(client: SocketClient, jsonOutput: Bool) throws {
+        let response = try client.sendV2(method: "theme.list")
+        if jsonOutput {
+            print(jsonString(response))
+            return
+        }
+        let activeLight = response["active_light"] as? String ?? "?"
+        let activeDark = response["active_dark"] as? String ?? "?"
+        print("Active light: \(activeLight)")
+        print("Active dark:  \(activeDark)")
+        print("")
+
+        let items = response["themes"] as? [[String: Any]] ?? []
+        for item in items {
+            let name = item["name"] as? String ?? "?"
+            let source = item["source"] as? String ?? "?"
+            let display = item["display_name"] as? String ?? name
+            let tags = [
+                (item["is_active_light"] as? Bool == true) ? "light" : nil,
+                (item["is_active_dark"] as? Bool == true) ? "dark" : nil,
+                source
+            ].compactMap { $0 }
+            let tagText = tags.isEmpty ? "" : " [\(tags.joined(separator: ","))]"
+            print("\(name)  \"\(display)\"\(tagText)")
+            if let warning = item["warning"] as? String {
+                print("  warning: \(warning)")
+            }
+        }
+    }
+
+    private func runUiThemesGet(args: [String], client: SocketClient, jsonOutput: Bool) throws {
+        let (slotOpt, rest) = parseOption(args, name: "--slot")
+        guard rest.isEmpty else {
+            throw CLIError(message: "ui themes get: unexpected argument '\(rest[0])'")
+        }
+        var params: [String: Any] = [:]
+        if let slot = slotOpt { params["slot"] = slot }
+        let response = try client.sendV2(method: "theme.get", params: params)
+        if jsonOutput {
+            print(jsonString(response))
+            return
+        }
+        if let name = response["name"] as? String, let slot = response["slot"] as? String {
+            print("\(slot): \(name)")
+        } else {
+            let l = response["active_light"] as? String ?? "?"
+            let d = response["active_dark"] as? String ?? "?"
+            print("active_light: \(l)")
+            print("active_dark:  \(d)")
+        }
+    }
+
+    private func runUiThemesSet(args: [String], client: SocketClient, jsonOutput: Bool) throws {
+        let (slotOpt, rest) = parseOption(args, name: "--slot")
+        let positional = rest.filter { !$0.hasPrefix("-") }
+        guard let name = positional.first else {
+            throw CLIError(message: "ui themes set requires a theme name. Example: cmux ui themes set phosphor [--slot light|dark|both]")
+        }
+        if positional.count > 1 {
+            throw CLIError(message: "ui themes set: unexpected extra argument '\(positional[1])'")
+        }
+        var params: [String: Any] = ["name": name]
+        if let slot = slotOpt { params["slot"] = slot }
+        let response = try client.sendV2(method: "theme.set_active", params: params)
+        if jsonOutput {
+            print(jsonString(response))
+            return
+        }
+        if (response["ok"] as? Bool) == true {
+            let applied = response["slot"] as? String ?? "both"
+            print("OK set \(applied)=\(name)")
+        } else {
+            let msg = response["error"] as? String ?? "failed"
+            throw CLIError(message: "ui themes set failed: \(msg)")
+        }
+    }
+
+    private func runUiThemesClear(client: SocketClient, jsonOutput: Bool) throws {
+        let response = try client.sendV2(method: "theme.clear_active")
+        if jsonOutput {
+            print(jsonString(response))
+        } else {
+            print("OK cleared active theme overrides")
+        }
+    }
+
+    private func runUiThemesReload(client: SocketClient, jsonOutput: Bool) throws {
+        let response = try client.sendV2(method: "theme.reload")
+        if jsonOutput {
+            print(jsonString(response))
+        } else {
+            print("OK themes reloaded")
+        }
+    }
+
+    private func runUiThemesPath(client: SocketClient, jsonOutput: Bool) throws {
+        let response = try client.sendV2(method: "theme.paths")
+        if jsonOutput {
+            print(jsonString(response))
+            return
+        }
+        if let user = response["user_themes_directory"] as? String {
+            print("user:    \(user)")
+        }
+        if let bundled = response["bundled_themes_directory"] as? String {
+            print("bundled: \(bundled)")
+        }
+    }
+
+    private func runUiThemesDump(args: [String], client: SocketClient, jsonOutput: Bool) throws {
+        let (schemeOpt, rest) = parseOption(args, name: "--color-scheme")
+        let wantJson = jsonOutput || rest.contains("--json")
+        var params: [String: Any] = [:]
+        if let scheme = schemeOpt { params["color_scheme"] = scheme }
+        let response = try client.sendV2(method: "theme.dump", params: params)
+        guard let json = response["dump_json"] as? String else {
+            throw CLIError(message: "ui themes dump: missing dump_json")
+        }
+        if wantJson {
+            print(json)
+        } else {
+            print(json)
+        }
+    }
+
+    private func runUiThemesValidate(args: [String], client: SocketClient, jsonOutput: Bool) throws {
+        guard let path = args.first else {
+            throw CLIError(message: "ui themes validate requires a file path")
+        }
+        let absolutePath = resolvePath(path)
+        let response = try client.sendV2(method: "theme.validate", params: ["path": absolutePath])
+        if jsonOutput {
+            print(jsonString(response))
+            return
+        }
+        if (response["ok"] as? Bool) == true {
+            let name = response["name"] as? String ?? "?"
+            print("OK \(absolutePath): parses as '\(name)'")
+        } else {
+            let msg = response["error"] as? String ?? "invalid"
+            print("FAIL \(absolutePath): \(msg)")
+            throw CLIError(message: "validation failed")
+        }
+    }
+
+    private func runUiThemesDiff(args: [String], client: SocketClient, jsonOutput: Bool) throws {
+        guard args.count >= 2 else {
+            throw CLIError(message: "ui themes diff requires two theme names or paths")
+        }
+        let response = try client.sendV2(
+            method: "theme.diff",
+            params: ["a": args[0], "b": args[1]]
+        )
+        if jsonOutput {
+            print(jsonString(response))
+            return
+        }
+        if (response["ok"] as? Bool) == true {
+            let a = response["a"] as? String ?? args[0]
+            let b = response["b"] as? String ?? args[1]
+            let count = response["changed_role_count"] as? Int ?? 0
+            print("\(a) vs \(b): \(count) role(s) differ")
+            if let changed = response["changed_roles"] as? [String] {
+                for role in changed { print("  \(role)") }
+            }
+        } else {
+            let msg = response["error"] as? String ?? "diff failed"
+            throw CLIError(message: msg)
+        }
+    }
+
+    private func runUiThemesInherit(args: [String], client: SocketClient, jsonOutput: Bool) throws {
+        let (asOpt, rest) = parseOption(args, name: "--as")
+        guard let parent = rest.first, let child = asOpt else {
+            throw CLIError(message: "ui themes inherit requires a parent theme and --as <new-name>. Example: cmux ui themes inherit stage11 --as my-theme")
+        }
+        let response = try client.sendV2(
+            method: "theme.inherit",
+            params: ["parent": parent, "as": child]
+        )
+        if jsonOutput {
+            print(jsonString(response))
+            return
+        }
+        if (response["ok"] as? Bool) == true, let path = response["path"] as? String {
+            print("OK wrote \(path)")
+        } else {
+            let msg = response["error"] as? String ?? "inherit failed"
+            throw CLIError(message: msg)
+        }
+    }
+
+    private func runWorkspaceColor(commandArgs: [String], client: SocketClient, jsonOutput: Bool) throws {
+        guard let first = commandArgs.first else {
+            throw CLIError(message: "workspace-color requires a subcommand. Try: cmux workspace-color get")
+        }
+        let sub = first.lowercased()
+        let rest = Array(commandArgs.dropFirst())
+        switch sub {
+        case "set":
+            try runWorkspaceColorSet(args: rest, client: client, jsonOutput: jsonOutput)
+        case "clear":
+            try runWorkspaceColorClear(args: rest, client: client, jsonOutput: jsonOutput)
+        case "get":
+            try runWorkspaceColorGet(args: rest, client: client, jsonOutput: jsonOutput)
+        case "list-palette":
+            try runWorkspaceColorListPalette(client: client, jsonOutput: jsonOutput)
+        default:
+            throw CLIError(message: "Unknown workspace-color subcommand: \(first)")
+        }
+    }
+
+    private func runWorkspaceColorSet(args: [String], client: SocketClient, jsonOutput: Bool) throws {
+        let (workspaceOpt, rest) = parseOption(args, name: "--workspace")
+        let positional = rest.filter { !$0.hasPrefix("-") }
+        guard let hex = positional.first else {
+            throw CLIError(message: "workspace-color set <hex> [--workspace <ref>]")
+        }
+        let workspaceHandle = try resolveWorkspaceColorTarget(workspaceOpt, client: client)
+        var params: [String: Any] = ["hex": hex]
+        if let workspaceHandle { params["workspace_id"] = workspaceHandle }
+        let response = try client.sendV2(method: "workspace.set_custom_color", params: params)
+        if jsonOutput {
+            print(jsonString(response))
+        } else {
+            let applied = response["hex"] as? String ?? hex
+            print("OK workspace_color=\(applied)")
+        }
+    }
+
+    private func runWorkspaceColorClear(args: [String], client: SocketClient, jsonOutput: Bool) throws {
+        let (workspaceOpt, _) = parseOption(args, name: "--workspace")
+        let workspaceHandle = try resolveWorkspaceColorTarget(workspaceOpt, client: client)
+        var params: [String: Any] = ["clear": true]
+        if let workspaceHandle { params["workspace_id"] = workspaceHandle }
+        let response = try client.sendV2(method: "workspace.set_custom_color", params: params)
+        if jsonOutput {
+            print(jsonString(response))
+        } else {
+            print("OK workspace color cleared")
+        }
+    }
+
+    private func runWorkspaceColorGet(args: [String], client: SocketClient, jsonOutput: Bool) throws {
+        let (workspaceOpt, _) = parseOption(args, name: "--workspace")
+        let workspaceHandle = try resolveWorkspaceColorTarget(workspaceOpt, client: client)
+        let response = try client.sendV2(method: "workspace.list")
+        guard let workspaces = response["workspaces"] as? [[String: Any]] else {
+            throw CLIError(message: "workspace-color get: unexpected workspace.list response")
+        }
+        let match = workspaces.first {
+            ($0["id"] as? String) == workspaceHandle || ($0["ref"] as? String) == workspaceHandle
+        } ?? workspaces.first { ($0["selected"] as? Bool) == true }
+        if jsonOutput {
+            print(jsonString(match ?? [:]))
+            return
+        }
+        if let color = match?["color_hex"] as? String {
+            print("color: \(color)")
+        } else if let color = match?["custom_color"] as? String {
+            print("color: \(color)")
+        } else {
+            print("color: (none)")
+        }
+    }
+
+    private func runWorkspaceColorListPalette(client _: SocketClient, jsonOutput: Bool) throws {
+        // Default palette names — keeps `workspace-color list-palette` purely informational.
+        let palette = [
+            "aurora", "carbon", "ember", "graphite", "lagoon", "lilac", "moss",
+            "ochre", "pine", "plum", "rose", "sand", "sky", "slate", "void"
+        ]
+        if jsonOutput {
+            print(jsonString(["palette": palette]))
+            return
+        }
+        for name in palette {
+            print(name)
+        }
+    }
+
+    private func resolveWorkspaceColorTarget(_ raw: String?, client: SocketClient) throws -> String? {
+        let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value == nil || value?.isEmpty == true || value == "@current" || value == "@focused" {
+            return try normalizeWorkspaceHandle(nil, client: client, allowCurrent: true)
+        }
+        return try normalizeWorkspaceHandle(value, client: client)
     }
 
     private func availableThemeNames() -> [String] {

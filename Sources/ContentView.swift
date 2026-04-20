@@ -11492,6 +11492,10 @@ private struct TabItemView: View, Equatable {
                 }
             }
         }
+        .help(String(
+            localized: "contextMenu.workspaceColor.tooltip",
+            defaultValue: "Per-workspace accent. Chrome theme (Light/Dark) lives in Settings → Theme."
+        ))
 
         if let copyableSidebarSSHError {
             Button(String(localized: "contextMenu.copySshError", defaultValue: "Copy SSH Error")) {

@@ -7,7 +7,29 @@ import SwiftUI
 public final class ThemeManager: ObservableObject {
     public static let shared = ThemeManager()
 
+    public struct ThemeDescriptor: Equatable, Sendable {
+        public enum Source: String, Equatable, Sendable {
+            case builtin
+            case user
+        }
+
+        public let identity: C11muxTheme.Identity
+        public let source: Source
+        public let sourcePath: String?
+        public let warning: String?
+
+        public init(identity: C11muxTheme.Identity, source: Source, sourcePath: String?, warning: String? = nil) {
+            self.identity = identity
+            self.source = source
+            self.sourcePath = sourcePath
+            self.warning = warning
+        }
+    }
+
     @Published public private(set) var active: C11muxTheme
+    @Published public private(set) var activeLight: C11muxTheme
+    @Published public private(set) var activeDark: C11muxTheme
+    @Published public private(set) var availableThemes: [ThemeDescriptor] = []
     @Published public private(set) var version: UInt64 = 1
 
     public private(set) var snapshot: ResolvedThemeSnapshot
@@ -26,17 +48,42 @@ public final class ThemeManager: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
     private let disabledByEnvironment: Bool
 
+    private var themesByName: [String: ThemeDescriptor] = [:]
+    private var loadedThemeCache: [String: C11muxTheme] = [:]
+    private var lastKnownGoodThemes: [String: C11muxTheme] = [:]
+    private var malformedThemes: [String: String] = [:]
+
+    private var watcher: ThemeDirectoryWatcher?
+    private let pathsOverride: PathsOverride?
+
+    public struct PathsOverride {
+        public let userThemesDirectory: URL?
+        public let builtinDirectory: URL?
+
+        public init(userThemesDirectory: URL? = nil, builtinDirectory: URL? = nil) {
+            self.userThemesDirectory = userThemesDirectory
+            self.builtinDirectory = builtinDirectory
+        }
+    }
+
     public var isEnabled: Bool {
         guard !disabledByEnvironment else { return false }
         return !ThemeAppStorage.bool(forKey: ThemeAppStorage.Keys.engineDisabledRuntime, default: false)
     }
 
-    public init(notificationCenter: NotificationCenter = .default) {
+    public init(
+        notificationCenter: NotificationCenter = .default,
+        pathsOverride: PathsOverride? = nil
+    ) {
         self.notificationCenter = notificationCenter
         self.disabledByEnvironment = ProcessInfo.processInfo.environment["CMUX_DISABLE_THEME_ENGINE"] == "1"
+        self.pathsOverride = pathsOverride
 
-        let loaded = ThemeManager.loadThemeFromBundle(named: "stage11") ?? C11muxTheme.fallbackStage11
+        let loaded = ThemeManager.loadThemeFromBundle(named: "stage11", override: pathsOverride)
+            ?? C11muxTheme.fallbackStage11
         self.active = loaded
+        self.activeLight = loaded
+        self.activeDark = loaded
         self.snapshot = ResolvedThemeSnapshot(theme: loaded)
 
         notificationCenter.publisher(for: .ghosttyDefaultBackgroundDidChange)
@@ -48,6 +95,9 @@ public final class ThemeManager: ObservableObject {
         if disabledByEnvironment {
             ThemeDiagnostics.engine("theme engine disabled by CMUX_DISABLE_THEME_ENGINE=1")
         }
+
+        rescanThemes()
+        applyActiveSelections()
     }
 
     public func resolve<T>(_ role: ThemeRole, context: ThemeContext) -> T? {
@@ -111,7 +161,7 @@ public final class ThemeManager: ObservableObject {
     }
 
     public func reloadFromBundle(named name: String = "stage11") {
-        guard let loaded = ThemeManager.loadThemeFromBundle(named: name) else {
+        guard let loaded = ThemeManager.loadThemeFromBundle(named: name, override: pathsOverride) else {
             ThemeDiagnostics.loader("failed to load bundled theme '\(name)'; keeping active theme '\(active.identity.name)'")
             return
         }
@@ -182,6 +232,15 @@ public final class ThemeManager: ObservableObject {
             }
         }
 
+        let descriptor = themesByName[active.identity.name]
+        let sourcePath = descriptor?.sourcePath ?? "<bundled>"
+        let warnings: [String]
+        if let warning = descriptor?.warning {
+            warnings = [warning]
+        } else {
+            warnings = []
+        }
+
         let payload: [String: Any] = [
             "theme": [
                 "identity": [
@@ -190,14 +249,14 @@ public final class ThemeManager: ObservableObject {
                     "version": active.identity.version,
                     "schema": active.identity.schema,
                 ],
-                "source_path": "<bundled>",
+                "source_path": sourcePath,
                 "context": [
                     "workspaceColor": context.workspaceColor as Any,
                     "colorScheme": context.colorScheme.rawValue,
                     "ghosttyBackgroundGeneration": context.ghosttyBackgroundGeneration,
                 ],
                 "roles": rolesPayload,
-                "warnings": [],
+                "warnings": warnings,
             ],
         ]
 
@@ -236,6 +295,260 @@ public final class ThemeManager: ObservableObject {
         return .light
     }
 
+    // MARK: - User themes + hot reload (M3)
+
+    public static let defaultLightSlotKey = "theme.active.light"
+    public static let defaultDarkSlotKey = "theme.active.dark"
+
+    public var userThemesDirectory: URL {
+        ThemeManager.userThemesDirectory(override: pathsOverride)
+    }
+
+    public var activeLightName: String {
+        ThemeAppStorage.defaults.string(forKey: Self.defaultLightSlotKey) ?? "stage11"
+    }
+
+    public var activeDarkName: String {
+        ThemeAppStorage.defaults.string(forKey: Self.defaultDarkSlotKey) ?? "stage11"
+    }
+
+    public func descriptor(named name: String) -> ThemeDescriptor? {
+        themesByName[name]
+    }
+
+    public func theme(named name: String) -> C11muxTheme? {
+        loadedThemeCache[name]
+    }
+
+    public func startWatchingUserThemes() {
+        guard watcher == nil else { return }
+        let dir = userThemesDirectory
+
+        ensureUserThemesDirectoryExists(at: dir)
+
+        let handler: @Sendable () -> Void = { [weak self] in
+            Task { @MainActor in
+                self?.rescanThemes()
+                self?.applyActiveSelections()
+            }
+        }
+
+        let w = ThemeDirectoryWatcher(url: dir, handler: handler)
+        w.start()
+        self.watcher = w
+    }
+
+    public func forceReloadUserThemes() {
+        rescanThemes()
+        applyActiveSelections()
+    }
+
+    public func setActiveTheme(name: String, for scheme: ThemeContext.ColorScheme) -> Bool {
+        guard themesByName[name] != nil else {
+            ThemeDiagnostics.loader("setActiveTheme: unknown theme '\(name)'")
+            return false
+        }
+        switch scheme {
+        case .light:
+            ThemeAppStorage.defaults.set(name, forKey: Self.defaultLightSlotKey)
+        case .dark:
+            ThemeAppStorage.defaults.set(name, forKey: Self.defaultDarkSlotKey)
+        }
+        applyActiveSelections()
+        return true
+    }
+
+    public func setActiveThemeForBothSlots(name: String) -> Bool {
+        guard themesByName[name] != nil else { return false }
+        ThemeAppStorage.defaults.set(name, forKey: Self.defaultLightSlotKey)
+        ThemeAppStorage.defaults.set(name, forKey: Self.defaultDarkSlotKey)
+        applyActiveSelections()
+        return true
+    }
+
+    public func clearActiveOverrides() {
+        ThemeAppStorage.defaults.removeObject(forKey: Self.defaultLightSlotKey)
+        ThemeAppStorage.defaults.removeObject(forKey: Self.defaultDarkSlotKey)
+        applyActiveSelections()
+    }
+
+    private func rescanThemes() {
+        var descriptors: [ThemeDescriptor] = []
+        var byName: [String: ThemeDescriptor] = [:]
+        var loaded: [String: C11muxTheme] = [:]
+        var malformed: [String: String] = [:]
+
+        let builtinDir = pathsOverride?.builtinDirectory ?? Bundle.main.resourceURL?
+            .appendingPathComponent("c11mux-themes", isDirectory: true)
+
+        if let builtinDir {
+            scan(
+                directory: builtinDir,
+                source: .builtin,
+                descriptors: &descriptors,
+                byName: &byName,
+                loaded: &loaded,
+                malformed: &malformed
+            )
+        }
+
+        // Fallback: ensure `stage11` always enumerated even if the bundled file is missing.
+        if byName["stage11"] == nil {
+            let stage11 = C11muxTheme.fallbackStage11
+            let desc = ThemeDescriptor(identity: stage11.identity, source: .builtin, sourcePath: nil)
+            descriptors.append(desc)
+            byName["stage11"] = desc
+            loaded["stage11"] = stage11
+        }
+
+        let userDir = userThemesDirectory
+        scan(
+            directory: userDir,
+            source: .user,
+            descriptors: &descriptors,
+            byName: &byName,
+            loaded: &loaded,
+            malformed: &malformed
+        )
+
+        self.themesByName = byName
+        self.loadedThemeCache = loaded
+
+        for (name, theme) in loaded {
+            lastKnownGoodThemes[name] = theme
+        }
+
+        self.malformedThemes = malformed
+
+        self.availableThemes = descriptors.sorted { lhs, rhs in
+            lhs.identity.displayName.localizedCaseInsensitiveCompare(rhs.identity.displayName) == .orderedAscending
+        }
+    }
+
+    private func scan(
+        directory: URL,
+        source: ThemeDescriptor.Source,
+        descriptors: inout [ThemeDescriptor],
+        byName: inout [String: ThemeDescriptor],
+        loaded: inout [String: C11muxTheme],
+        malformed: inout [String: String]
+    ) {
+        let fm = FileManager.default
+        guard let contents = try? fm.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+
+        for fileURL in contents where fileURL.pathExtension.lowercased() == "toml" {
+            let name = fileURL.deletingPathExtension().lastPathComponent
+
+            guard let source0 = try? String(contentsOf: fileURL, encoding: .utf8) else {
+                malformed[name] = "unable to read file"
+                continue
+            }
+
+            do {
+                let table = try TomlSubsetParser.parse(file: fileURL.path, source: source0)
+                let theme = try C11muxTheme.fromToml(table)
+
+                guard theme.identity.name == name else {
+                    let msg = "theme identity '\(theme.identity.name)' does not match filename '\(name)'"
+                    ThemeDiagnostics.loader(msg)
+                    malformed[name] = msg
+                    continue
+                }
+
+                let descriptor = ThemeDescriptor(
+                    identity: theme.identity,
+                    source: source,
+                    sourcePath: fileURL.path
+                )
+
+                if let existing = byName[name], existing.source == .builtin, source == .user {
+                    // User wins: remove the built-in entry, insert the user version.
+                    descriptors.removeAll(where: { $0.identity.name == name && $0.source == .builtin })
+                }
+
+                byName[name] = descriptor
+                descriptors.append(descriptor)
+                loaded[name] = theme
+            } catch {
+                let msg = "failed to parse '\(fileURL.lastPathComponent)': \(error)"
+                ThemeDiagnostics.loader(msg)
+                malformed[name] = String(describing: error)
+
+                if let lastGood = lastKnownGoodThemes[name] {
+                    loaded[name] = lastGood
+                    let desc = ThemeDescriptor(
+                        identity: lastGood.identity,
+                        source: source,
+                        sourcePath: fileURL.path,
+                        warning: "using last-known-good: \(error)"
+                    )
+                    byName[name] = desc
+                    descriptors.append(desc)
+                }
+            }
+        }
+    }
+
+    private func applyActiveSelections() {
+        let lightName = activeLightName
+        let darkName = activeDarkName
+
+        let lightTheme = resolvedTheme(for: lightName)
+        let darkTheme = resolvedTheme(for: darkName)
+
+        activeLight = lightTheme
+        activeDark = darkTheme
+
+        let currentScheme = Self.currentColorScheme()
+        let chosen = currentScheme == .dark ? darkTheme : lightTheme
+        active = chosen
+        snapshot = ResolvedThemeSnapshot(theme: chosen)
+        bumpVersionAndPublishAll()
+    }
+
+    private func resolvedTheme(for name: String) -> C11muxTheme {
+        if let theme = loadedThemeCache[name] { return theme }
+        if let fallback = lastKnownGoodThemes[name] { return fallback }
+        return loadedThemeCache["stage11"] ?? C11muxTheme.fallbackStage11
+    }
+
+    private func ensureUserThemesDirectoryExists(at url: URL) {
+        let fm = FileManager.default
+        if fm.fileExists(atPath: url.path) { return }
+        do {
+            try fm.createDirectory(at: url, withIntermediateDirectories: true)
+            let readmePath = url.appendingPathComponent("README.md").path
+            if !fm.fileExists(atPath: readmePath),
+               let seedURL = Bundle.main.resourceURL?
+                   .appendingPathComponent("c11mux-themes", isDirectory: true)
+                   .appendingPathComponent("README.md"),
+               let data = try? Data(contentsOf: seedURL) {
+                try? data.write(to: URL(fileURLWithPath: readmePath))
+            }
+        } catch {
+            ThemeDiagnostics.loader("failed to create user themes directory: \(error)")
+        }
+    }
+
+    public nonisolated static func userThemesDirectory(override: PathsOverride? = nil) -> URL {
+        if let override, let dir = override.userThemesDirectory { return dir }
+        let fm = FileManager.default
+        let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory())
+                .appendingPathComponent("Library", isDirectory: true)
+                .appendingPathComponent("Application Support", isDirectory: true)
+        return base.appendingPathComponent("c11mux", isDirectory: true)
+            .appendingPathComponent("themes", isDirectory: true)
+    }
+
+    // MARK: - Internals
+
     private func handleGhosttyBackgroundChange() {
         ghosttyBackgroundGeneration &+= 1
         snapshot.invalidateCaches()
@@ -262,14 +575,23 @@ public final class ThemeManager: ObservableObject {
         tabBarPublisher.send()
     }
 
-    private static func loadThemeFromBundle(named name: String) -> C11muxTheme? {
-        guard let resourceURL = Bundle.main.resourceURL else {
+    private static func loadThemeFromBundle(
+        named name: String,
+        override: PathsOverride? = nil
+    ) -> C11muxTheme? {
+        let resourceURL: URL?
+        if let override, let dir = override.builtinDirectory {
+            resourceURL = dir
+        } else {
+            resourceURL = Bundle.main.resourceURL?
+                .appendingPathComponent("c11mux-themes", isDirectory: true)
+        }
+
+        guard let resourceURL else {
             return C11muxTheme.fallbackStage11
         }
 
-        let themeURL = resourceURL
-            .appendingPathComponent("c11mux-themes", isDirectory: true)
-            .appendingPathComponent("\(name).toml")
+        let themeURL = resourceURL.appendingPathComponent("\(name).toml")
 
         guard let source = try? String(contentsOf: themeURL, encoding: .utf8) else {
             if name == "stage11" {

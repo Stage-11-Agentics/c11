@@ -1,0 +1,77 @@
+[identity]
+name         = "phosphor"
+display_name = "Phosphor"
+author       = "Stage 11 Agentics"
+version      = "0.01.001"
+schema       = 1
+
+# The light-bearer. A subtle nod to CRT phosphor and matrix glow —
+# near-black void with a pale green emission, restrained rather than neon.
+# Self-contained palette; does not inherit from stage11.
+
+[palette]
+void         = "#060A08"
+surface      = "#0B1310"
+phosphor     = "#6BE8A5"
+phosphorDim  = "#3DB17A"
+filament     = "#1F3028"
+text         = "#D6EBD9"
+textDim      = "#7A9A88"
+
+[variables]
+background          = "$palette.void"
+surface             = "$palette.surface"
+foreground          = "$palette.text"
+foregroundSecondary = "$palette.textDim"
+accent              = "$palette.phosphor"
+accentDim           = "$palette.phosphorDim"
+separator           = "$palette.filament"
+workspaceColor      = "$workspaceColor"
+ghosttyBackground   = "$ghosttyBackground"
+
+[chrome.windowFrame]
+color            = "$workspaceColor"
+thicknessPt      = 1.5
+inactiveOpacity  = 0.22
+unfocusedOpacity = 0.55
+
+[chrome.sidebar]
+tintOverlay                   = "$accent.opacity(0.06)"
+tintBase                      = "$background"
+tintBaseOpacity               = 0.22
+activeTabFill                 = "$workspaceColor"
+activeTabFillFallback         = "$surface"
+activeTabRail                 = "$accent"
+activeTabRailFallback         = "$accent"
+activeTabRailOpacity          = 0.90
+inactiveTabCustomOpacity      = 0.65
+inactiveTabMultiSelectOpacity = 0.30
+badgeFill                     = "$accent"
+borderLeading                 = "$separator"
+
+[chrome.dividers]
+color       = "$separator.mix($background, 0.25)"
+thicknessPt = 1.0
+
+[chrome.titleBar]
+background          = "$surface"
+backgroundOpacity   = 0.82
+foreground          = "$foreground"
+foregroundSecondary = "$foregroundSecondary"
+borderBottom        = "$separator"
+
+[chrome.tabBar]
+background       = "$ghosttyBackground"
+activeFill       = "$ghosttyBackground.lighten(0.05)"
+divider          = "$separator"
+activeIndicator  = "$accent"
+
+[chrome.browserChrome]
+background   = "$ghosttyBackground"
+omnibarFill  = "$surface.mix($background, 0.20)"
+
+[chrome.markdownChrome]
+background = "$background"
+
+[behavior]
+animateWorkspaceCrossfade = false

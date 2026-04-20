@@ -2,11 +2,13 @@
   "active_sessions": {
     "cc-opus-cmux9-kickoff-1": "sess_01KPJ7XS8T1PQND3RPWGXX8FC3",
     "cmux-30-orchestrator-1": "sess_01KPKQCNA3ZNB2GQRRRP8PAXPN",
+    "cmux-36-impl-1": "sess_01KPMTGKS1EAZBAN9PD1BEKSNG",
     "cmux-drift-consolidate-1": "sess_01KPKK3NPCY73PASQFT2TWV8F3"
   },
   "serial_counters": {
     "cc-opus-cmux9-kickoff": 1,
     "cmux-30-orchestrator": 1,
+    "cmux-36-impl": 1,
     "cmux-drift-consolidate": 1
   }
 }

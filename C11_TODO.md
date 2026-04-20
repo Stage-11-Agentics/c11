@@ -1,6 +1,6 @@
-# c11mux TODO
+# c11 TODO
 
-c11mux-specific work. Upstream cmux backlog lives in `TODO.md`.
+c11-specific work. Upstream cmux backlog lives in `TODO.md`.
 
 ## CI
 - [ ] **P0** Fix CI — legacy from upstream has never run green on this repo; audit workflows, cull/retarget ones that don't apply, and get a successful run on `main`

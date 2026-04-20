@@ -1,4 +1,4 @@
-> **Note — this README is the upstream cmux version and does not reflect the c11mux fork.** For current Stage 11 fork content, see the [English README](README.md). Translations will be refreshed as c11mux's fork copy stabilizes.
+> **Note — this README is the upstream cmux version and does not reflect the c11 fork.** For current Stage 11 fork content, see the [English README](README.md). Translations will be refreshed as c11's fork copy stabilizes.
 
 > この翻訳は Claude によって生成されました。改善の提案がある場合は、PR を作成してください。
 

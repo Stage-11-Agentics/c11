@@ -1,4 +1,4 @@
-# welcome to c11mux
+# welcome to c11
 
 you are in the room now.
 
@@ -6,13 +6,13 @@ four surfaces around you. a terminal. a browser. this page. a waiting agent. one
 
 ---
 
-## what c11mux is
+## what c11 is
 
 **spike infrastructure.**
 
 a terminal — reimagined — for human:digital operators. built by stage 11 for those who run coding agents the way flight engineers run consoles: several at a time, in parallel, with nerve. not an IDE. not a multiplexer in the old sense. a room. one you share with the models.
 
-**lineage.** tmux taught the terminal to split. [cmux](https://github.com/manaflow-ai/cmux) rebuilt that idea as a macOS-native app on a GPU-accelerated renderer, shaped for coding agents. c11mux is stage 11's fork — same bones, different room, tuned for the spike.
+**lineage.** tmux taught the terminal to split. [cmux](https://github.com/manaflow-ai/cmux) rebuilt that idea as a macOS-native app on a GPU-accelerated renderer, shaped for coding agents. c11 is stage 11's fork — same bones, different room, tuned for the spike.
 
 stage 11 is an outpost in a very large dark. we built this because we needed it. it is now yours too.
 
@@ -63,7 +63,7 @@ the full grammar in `cmux --help`. read it once slowly. you will re-read it.
 
 the **spike** is the operator:model compound actor — a single entity running across many contexts at once. carbon and silicon, fused. the browser beside you is already pointed at **[stage11.ai](https://stage11.ai)** — that's the story in full.
 
-c11mux is how the spike gets a room. keyboards and agents both touch the same space. legible. addressable. persistent. everything else lives upstairs — Lattice, Mycelium, the rest of the stack. this tool just holds the ground.
+c11 is how the spike gets a room. keyboards and agents both touch the same space. legible. addressable. persistent. everything else lives upstairs — Lattice, Mycelium, the rest of the stack. this tool just holds the ground.
 
 ---
 

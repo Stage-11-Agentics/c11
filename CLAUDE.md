@@ -2,16 +2,16 @@
 
 ## Principle: unopinionated about the terminal
 
-c11mux is **host and primitive, not configurator.** It provides surfaces, panes, a socket, a CLI, and a metadata seam — all scoped to c11mux's own runtime. It does not reach outside that boundary to install hooks, write to tenant config files (`~/.claude/settings.json`, `~/.codex/*`, `~/.kimi/*`, shell rc files, etc.), or inject behavior into any other TUI's launch path. The one outgoing touch is the cmux skill file, which agents opt into by reading it.
+c11 is **host and primitive, not configurator.** It provides surfaces, panes, a socket, a CLI, and a metadata seam — all scoped to c11's own runtime. It does not reach outside that boundary to install hooks, write to tenant config files (`~/.claude/settings.json`, `~/.codex/*`, `~/.kimi/*`, shell rc files, etc.), or inject behavior into any other TUI's launch path. The one outgoing touch is the cmux skill file, which agents opt into by reading it.
 
 Consequences:
 
 - **`cmux install <tui>` is rejected.** Any proposal that writes to a user's persistent tool config is a non-starter, even with consent prompts and markers. The 691-line spec at `docs/c11mux-module-4-integration-installers-spec.md` exists as a historical artifact only — do not revive it.
 - **`Resources/bin/claude` is a grandfathered cc-specific exception**, not a pattern to extend. PATH-scoped, no persistent writes anywhere. The wrapper's header carries a `DO NOT GENERALIZE` note. Do not build equivalent wrappers for codex, kimi, opencode, or any future TUI.
 - **Skill-driven self-reporting is the standard pattern** for every agent except cc. Agents that read the cmux skill learn to call `cmux set-metadata` / `cmux set-status` from their own lifecycle. Agents that ignore the skill don't emit — that's the expected and correct outcome under the principle.
-- **The skill file is the only outgoing touch.** How it reaches each TUI (cc's `~/.claude/skills/`, codex's equivalent, etc.) is the operator's problem, not c11mux's.
+- **The skill file is the only outgoing touch.** How it reaches each TUI (cc's `~/.claude/skills/`, codex's equivalent, etc.) is the operator's problem, not c11's.
 
-When in doubt: c11mux's job stops at the edge of its surfaces. What happens inside an agent's process is the agent's business.
+When in doubt: c11's job stops at the edge of its surfaces. What happens inside an agent's process is the agent's business.
 
 ## Initial setup
 
@@ -83,7 +83,7 @@ cd cmuxd && zig build -Doptimize=ReleaseFast
 ./scripts/reloadp.sh
 ```
 
-**Apply Release changes without killing the running app.** `reloadp.sh` starts with `pkill -x cmux`, which tears down every c11mux pane and session — fatal if another agent is mid-task in a sibling pane, or if the current Claude Code session is itself hosted inside c11mux. To update the `.app` on disk without disturbing any running process, build only:
+**Apply Release changes without killing the running app.** `reloadp.sh` starts with `pkill -x cmux`, which tears down every c11 pane and session — fatal if another agent is mid-task in a sibling pane, or if the current Claude Code session is itself hosted inside c11. To update the `.app` on disk without disturbing any running process, build only:
 
 ```bash
 xcodebuild -project GhosttyTabs.xcodeproj -scheme cmux -configuration Release -destination 'platform=macOS' build

@@ -137,11 +137,30 @@ cmux send --workspace $WS --surface $SURF "Read /tmp/agent-prompt.md and follow 
 cmux send-key --workspace $WS --surface $SURF enter
 ```
 
-## Ready-state polling
+## Ready-state handoff
 
-`cc` takes a few seconds to start. Do not `sleep 5` and do not screen-scrape for the prompt glyph — the `Resources/bin/claude` wrapper (which fires when you launch `cc` or `claude` from a c11mux surface) already installs a cc hook set that writes **workspace-level status** to a canonical `claude_code` sidebar entry. Read that entry instead.
+`cc` takes a few seconds to start. Do not `sleep 5` and do not screen-scrape for the prompt glyph. Two patterns solve this depending on whether you need a post-boot conversation or a single-turn handoff.
 
-Supported values: `Idle` (prompt waiting), `Running` (processing a turn), `Needs input` (permission/dialog), plus opt-in verbose tool descriptions. Values are `TitleCase`.
+### Preferred — one-shot prompt via cc argv
+
+For the common orchestration case ("spawn a fresh-context sub-agent with a complete brief"), pass the initial prompt to `cc` as a positional argument. cc boots and submits the message in one step, so there is no ready-state race to solve:
+
+```bash
+# Complex prompt → stage to file (shell escaping in cmux send is brittle)
+cat > /tmp/agent-prompt.md <<'EOF'
+[full prompt here, with backticks / code blocks / etc.]
+EOF
+
+# One-shot launch — cc consumes the short argv instruction, which points it at the file
+cmux send --workspace $WS --surface $SURF "cd /path && cc \"Read /tmp/agent-prompt.md and follow the instructions.\""
+cmux send-key --workspace $WS --surface $SURF enter
+```
+
+This is the default for orchestrated sub-agents. No polling, no sleep, no screen-scraping. Works regardless of how many other cc surfaces are in the workspace.
+
+### Fallback — polling the workspace `claude_code` status
+
+When you need cc interactive first (e.g. to send follow-up messages over the course of the session) and can guarantee no sibling cc is running concurrently in the workspace, you can poll the sidebar status that cc's PATH wrapper populates:
 
 ```bash
 # Wait for cc to reach Idle before sending the prompt
@@ -150,14 +169,15 @@ cmux send --workspace $WS --surface $SURF "Read /tmp/prompt.md and follow the in
 cmux send-key --workspace $WS --surface $SURF enter
 ```
 
-(The trailing space in the grep anchors the match to just `Idle` and not `Idle something-else` in the unlikely case of value drift.)
+Supported status values: `Idle` (prompt waiting), `Running` (processing a turn), `Needs input` (permission/dialog), plus opt-in verbose tool descriptions. Values are `TitleCase`. The trailing space in the grep anchors the match to just `Idle`.
 
-- `cmux list-status --workspace $WS` shows every sidebar entry on that workspace; the `claude_code` row is what cc's hooks populate.
-- This is a **workspace-level** signal — if you have multiple cc surfaces in the same workspace, it will reflect whichever most recently emitted. For strict per-surface ordering, dispatch one sub-agent per workspace or sequence launches.
+> **Critical gotcha — workspace aggregation.** `cmux list-status` is workspace-scoped; `--surface` is silently ignored. The `claude_code=...` row reflects activity across **every** cc surface in the workspace, not the one you're targeting. With two or more cc's running (orchestrator + sub-agent, planner + triage + impl, or any parallel review fan-out), the row never decisively reports `Idle` and the `until` loop deadlocks. Prefer the one-shot pattern above whenever any sibling cc is in flight. This gotcha is a known binary limitation (no surface-scoped agent-status query exists); there is no polling recipe that safely substitutes in the multi-cc case.
+
+Additional notes on the polling signal:
 - The signal only exists when cc was launched through c11mux's bundled PATH. A cc / claude invocation that bypasses the PATH wrapper will not emit status. For sub-agents you orchestrate from inside a c11mux surface this is almost always fine — the wrapper is the default for `cc` / `claude` in that context.
 - Other TUIs (codex, kimi, opencode, etc.) do **not** get an equivalent wrapper, by design. For those, agents self-report by calling `cmux set-metadata --key status --value idle` / `running` themselves, following instructions in the cmux skill file they load at session start. If an agent hasn't been taught to self-report, you won't see status for them — that's expected.
 
-**Do not** regex for `❯`, `> `, or `Welcome to Claude Code`. Those patterns drift across cc releases and produce silent stalls when they miss (v2.1.114 dropped the box prompt and changed the banner, breaking every previous recipe). Read the status instead.
+**Do not** regex for `❯`, `> `, or `Welcome to Claude Code`. Those patterns drift across cc releases and produce silent stalls when they miss (v2.1.114 dropped the box prompt and changed the banner, breaking every previous recipe). Use one-shot argv delivery, or poll the status row when it's safe to do so.
 
 ### Why this works only for cc, and why that's okay
 

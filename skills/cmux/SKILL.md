@@ -280,7 +280,22 @@ Use **`cc`** (the `--dangerously-skip-permissions` alias) — never bare `claude
 - Plain `claude` stalls on permission approvals.
 - `cc` in an interactive pane inherits c11mux env vars, preserves the auth chain, and skips approvals. Sub-agents can `cmux set-status`, `cmux log`, `cmux set-progress` freely.
 
-Standard launch: create the pane, launch `cc`, **wait for the sidebar `claude_code` status to hit `Idle`** (the cc wrapper emits it for you), name the tab, send the task as two calls (`send` then `send-key enter`):
+**Preferred launch — one-shot prompt via cc argv.** Write the prompt to a file first, then launch `cc` with a short positional argument that tells it to read the file. cc boots and submits the initial message in one step, so there is no ready-state race to solve:
+
+```bash
+# 1. Stage the prompt (complex content → file; shell escaping in `cmux send` is brittle)
+cat > /tmp/lat-xxx-prompt.md <<'EOF'
+[full prompt here]
+EOF
+
+# 2. One-shot launch
+cmux send --workspace $WS --surface $SURF "cd /path && cc \"Read /tmp/lat-xxx-prompt.md and follow the instructions.\""
+cmux send-key --workspace $WS --surface $SURF enter
+```
+
+This is the default pattern for all orchestrated sub-agent launches. No polling, no sleep, no screen-scraping.
+
+**Two-call launch — only when you need to interact post-boot.** Launch `cc` bare, wait for the sidebar `claude_code` status to hit `Idle` (the cc wrapper emits it), then send additional input:
 
 ```bash
 cmux send --workspace $WS --surface $SURF "cd /path && cc"
@@ -289,6 +304,8 @@ until cmux list-status --workspace $WS 2>/dev/null | grep -q '^claude_code=Idle 
 cmux send --workspace $WS --surface $SURF "Read /tmp/prompt.md and follow the instructions."
 cmux send-key --workspace $WS --surface $SURF enter
 ```
+
+> **Multi-cc gotcha:** `cmux list-status` is **workspace-scoped**; `--surface` is silently ignored. The `claude_code=Running|Idle` row reflects activity across every cc surface in the workspace, not the one you're targeting. With two or more cc's running in the same workspace (the common orchestration case — planner + triage + impl, or orchestrator + sub-agent), the row never decisively reports `Idle` and the `until` loop deadlocks. Prefer the one-shot pattern above when any sibling cc is in flight. Polling is only safe when your target is the sole cc in the workspace.
 
 **Never screen-scrape `cmux read-screen` for `❯`, `> `, `Welcome to Claude Code`, `Claude Code v`, or any other banner string** — those drift across cc releases and fail silently. See [references/orchestration.md](references/orchestration.md) for the full pattern including tab-naming conventions and agent-to-agent handoffs.
 

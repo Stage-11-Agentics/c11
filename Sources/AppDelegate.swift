@@ -12886,11 +12886,21 @@ private extension NSWindow {
         // NSWindow.performKeyEquivalent consumes Enter first, submission never reaches
         // WebKit. Route Return/Enter directly to the current first responder and
         // mark handled to avoid the AppKit alert sound path.
-        if shouldDispatchBrowserReturnViaFirstResponderKeyDown(
-            keyCode: event.keyCode,
-            firstResponderIsBrowser: firstResponderWebView != nil,
-            flags: event.modifierFlags
-        ) {
+        //
+        // Suppress this forwarding while a pane-interaction dialog is presented:
+        // if a WKWebView held first responder when the overlay appeared and it
+        // refused to resign, forwarding Return into the web content submits
+        // whatever form field / omnibar input is focused and shows up as a
+        // spurious page reload. The overlay's keyDown handler owns Return in
+        // that state — see PaneInteractionOverlayHost.
+        let paneInteractionActiveForReturnGate =
+            AppDelegate.shared?.tabManager?.hasActivePaneInteraction == true
+        if !paneInteractionActiveForReturnGate,
+           shouldDispatchBrowserReturnViaFirstResponderKeyDown(
+               keyCode: event.keyCode,
+               firstResponderIsBrowser: firstResponderWebView != nil,
+               flags: event.modifierFlags
+           ) {
             // Forwarding keyDown can re-enter performKeyEquivalent in WebKit/AppKit internals.
             // On re-entry, fall back to normal dispatch to avoid an infinite loop.
             if cmuxBrowserReturnForwardingDepth > 0 {
@@ -12907,6 +12917,13 @@ private extension NSWindow {
             self.firstResponder?.keyDown(with: event)
             return true
         }
+#if DEBUG
+        if paneInteractionActiveForReturnGate,
+           firstResponderWebView != nil,
+           event.keyCode == 36 || event.keyCode == 76 {
+            dlog("  → browser Return/Enter suppressed (pane interaction active)")
+        }
+#endif
 
         if AppDelegate.shared?.handleBrowserSurfaceKeyEquivalent(event) == true {
 #if DEBUG

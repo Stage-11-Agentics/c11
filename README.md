@@ -14,15 +14,17 @@ listen.
 
 the old atom of work was a terminal. one shell running Claude Code or similar. one process. one cursor. a human's attention narrowed to a single point. that was the shape of the work because that was the shape of the mind doing it.
 
-you run eight of them now. ten. soon thirty. each on its own branch, its own task, its own small theater. they need terminals. they need browsers to validate what they built. they need markdown surfaces for the plans you handed them three sessions ago. they need to see each other, occasionally talk to each other, and you need to hold the whole thing in one field of view without losing the shape when the laptop closes and reopens.
+you run eight of them now. ten. soon thirty. each on its own context, its own task, its own small story and theater. they need terminals. they need browsers to validate what they built. they need markdown surfaces for the plans you handed them three sessions ago. they need to see each other, occasionally talk to each other, **and you need to hold the whole thing in one field of view** without losing the shape when the laptop closes and reopens.
 
 **c11 makes the workspace the atom.** terminals, browsers, and markdown surfaces — composed, addressable, scriptable — held in one window that the agents themselves can drive. every surface has a handle. every handle is scriptable. agents spawn the structures they need. they dissolve them when the work is done.
 
-this tool was built by the shape it describes.
 
 tmux was for humans driving shells. cmux was for humans driving agents. c11 is for the operator:agent pair working in the pocket ahead of where most tools still think the frontier is.
 
 **first-class substrates:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex), and any agent that reads the [c11 skill](./skills/c11/SKILL.md) or speaks the CLI. the agents drive their own workspaces. you watch. steer. decide.
+
+this tool was built by the shape it describes.
+
 
 <!--
 ---

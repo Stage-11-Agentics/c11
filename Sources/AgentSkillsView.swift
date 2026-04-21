@@ -159,12 +159,19 @@ final class AgentSkillsModel: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
+    /// Snippet the operator copies to the clipboard to install skills via
+    /// the managed c11 CLI path. Pure function so tests can lock down the
+    /// exact shape without mounting NSPasteboard.
+    static func manualInstallCommandSnippet(target: SkillInstallerTarget) -> String {
+        "c11 skill install --tool \(target.rawValue)"
+    }
+
     func copyManualCommandToPasteboard(target: SkillInstallerTarget) {
         // Route through the managed installer so the operator copies the
         // same allowlisted + manifested install path c11 itself uses —
         // no unmanaged rsync over the whole bundled `skills/` tree (which
         // would also copy maintainer-only packages).
-        let snippet = "cmux skill install --tool \(target.rawValue)"
+        let snippet = Self.manualInstallCommandSnippet(target: target)
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(snippet, forType: .string)

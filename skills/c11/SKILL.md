@@ -11,9 +11,9 @@ description: c11 — Stage 11's native macOS terminal multiplexer built as infra
 
 The goal is narrow and deliberate: be best-in-class for the hyperengineer — the operator running extensive terminal-based LLM coding agents in parallel — and for the agents themselves. Wherever the work happens. Terrestrial, orbital, or elsewhere — the interface is the same. That is who this tool is for. Everything else is scaffolding.
 
-c11 is not an intelligence layer. The opinion about what agents *do* lives upstairs — Lattice, Mycelium, the rest of the Stage 11 stack. c11 is host and primitive: terminal, browser, and markdown surfaces; workspaces, panes, tabs; notifications; one CLI and socket API for every seam. The binary is `c11`. The app is `c11`. A `cmux` compat alias dispatches to the same binary.
+c11 is not an intelligence layer. The opinion about what agents *do* lives upstairs — Lattice, Mycelium, the rest of the Stage 11 stack. c11 is host and primitive: terminal, browser, and markdown surfaces; workspaces, panes, tabs; notifications; one CLI and socket API for every seam. The binary is `c11`. The app is `c11`.
 
-The binary is `c11` (the `cmux` command is a compat alias that resolves to the same binary). Commands below use the primary name.
+The binary is `c11`. Commands below use that name.
 
 ## Detect c11
 

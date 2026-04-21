@@ -92,7 +92,7 @@ body:
     attributes:
       label: Shell and environment
       description: "Which shell are you using? Any relevant env config (oh-my-zsh, starship, tmux, etc.)?"
-      placeholder: "e.g. zsh with starship prompt, using tmux inside cmux"
+      placeholder: "e.g. zsh with starship prompt, using tmux inside c11"
     validations:
       required: false
 

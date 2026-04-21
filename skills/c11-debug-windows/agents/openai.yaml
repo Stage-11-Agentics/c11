@@ -1,4 +1,4 @@
 interface:
-  display_name: "cmux Debug Windows"
-  short_description: "Tune cmux debug windows and copy snapshots."
-  default_prompt: "Use this skill to manage cmux sidebar/background/menu-bar debug windows, keep Debug menu wiring clean, and capture copyable debug snapshots."
+  display_name: "c11 Debug Windows"
+  short_description: "Tune c11 debug windows and copy snapshots."
+  default_prompt: "Use this skill to manage c11 sidebar/background/menu-bar debug windows, keep Debug menu wiring clean, and capture copyable debug snapshots."

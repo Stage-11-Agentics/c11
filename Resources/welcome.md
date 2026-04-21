@@ -46,16 +46,18 @@ the palette is where everything else lives. find a command once, your fingers wi
 
 ## the CLI
 
-every surface talks to `cmux` over a socket. the binary is `~/.local/bin/cmux`. try this in the terminal to your upper-left:
+every surface talks to `c11` over a socket. install the binary from the command palette — **Shell Command: Install 'c11' in PATH** — and it lands at `/usr/local/bin/c11`. try this in the terminal to your upper-left:
 
 ```
-cmux identify          # who am i, where am i
-cmux tree              # what does the room look like
-cmux new-split right   # split a pane
-cmux set-title "..."   # name the work you are doing
+c11 identify          # who am i, where am i
+c11 tree              # what does the room look like
+c11 new-split right   # split a pane
+c11 set-title "..."   # name the work you are doing
 ```
 
-the full grammar in `cmux --help`. read it once slowly. you will re-read it.
+the full grammar in `c11 --help`. read it once slowly. you will re-read it.
+
+> c11 is a fork of upstream [cmux](https://github.com/manaflow-ai/cmux). if you also run cmux itself, the two coexist — c11 will not claim the `cmux` name on your PATH.
 
 ---
 
@@ -69,7 +71,7 @@ c11 is how the spike gets a room. keyboards and agents both touch the same space
 
 ## one small ritual
 
-name your surfaces. `cmux set-title` costs nothing and saves future-you from a wall of untitled tabs. an unnamed surface is an unidentifiable agent. an unnamed agent is coordination debt.
+name your surfaces. `c11 set-title` costs nothing and saves future-you from a wall of untitled tabs. an unnamed surface is an unidentifiable agent. an unnamed agent is coordination debt.
 
 you are not the last mind that will touch this work. leave a trail.
 

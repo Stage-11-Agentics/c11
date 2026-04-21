@@ -1166,6 +1166,7 @@ struct CmuxCLIPathInstaller {
         case bundledCLIMissing(expectedPath: String)
         case destinationParentNotDirectory(path: String)
         case destinationIsDirectory(path: String)
+        case destinationNotOwnedByC11(path: String, currentTarget: String?)
         case installVerificationFailed(path: String)
         case uninstallVerificationFailed(path: String)
         case privilegedCommandFailed(message: String)
@@ -1173,13 +1174,18 @@ struct CmuxCLIPathInstaller {
         var errorDescription: String? {
             switch self {
             case .bundledCLIMissing(let expectedPath):
-                return "Bundled cmux CLI was not found at \(expectedPath)."
+                return "Bundled c11 CLI was not found at \(expectedPath)."
             case .destinationParentNotDirectory(let path):
                 return "Expected \(path) to be a directory."
             case .destinationIsDirectory(let path):
                 return "\(path) is a directory. Remove or rename it and try again."
+            case .destinationNotOwnedByC11(let path, let currentTarget):
+                if let currentTarget {
+                    return "\(path) already exists and points at \(currentTarget). Remove it manually if you want c11 to replace it."
+                }
+                return "\(path) already exists and was not created by c11. Remove it manually if you want c11 to replace it."
             case .installVerificationFailed(let path):
-                return "Installed symlink at \(path) did not point to the bundled cmux CLI."
+                return "Installed symlink at \(path) did not point to the bundled c11 CLI."
             case .uninstallVerificationFailed(let path):
                 return "Failed to remove \(path)."
             case .privilegedCommandFailed(let message):
@@ -1200,7 +1206,7 @@ struct CmuxCLIPathInstaller {
 
     init(
         fileManager: FileManager = .default,
-        destinationURL: URL = URL(fileURLWithPath: "/usr/local/bin/cmux"),
+        destinationURL: URL = URL(fileURLWithPath: "/usr/local/bin/c11"),
         bundledCLIURLProvider: @escaping () -> URL? = {
             CmuxCLIPathInstaller.defaultBundledCLIURL()
         },
@@ -1222,6 +1228,7 @@ struct CmuxCLIPathInstaller {
 
     func install() throws -> InstallOutcome {
         let sourceURL = try resolveBundledCLIURL()
+        try ensureDestinationIsClaimable(expectedSourceURL: sourceURL)
         do {
             try installWithoutAdministratorPrivileges(sourceURL: sourceURL)
             return InstallOutcome(
@@ -1243,6 +1250,7 @@ struct CmuxCLIPathInstaller {
     }
 
     func uninstall() throws -> UninstallOutcome {
+        try ensureDestinationIsRemovable()
         do {
             let removedExistingEntry = try uninstallWithoutAdministratorPrivileges()
             return UninstallOutcome(
@@ -1264,6 +1272,63 @@ struct CmuxCLIPathInstaller {
                 removedExistingEntry: removedExistingEntry
             )
         }
+    }
+
+    /// Refuse to overwrite an existing destination entry unless it's a c11-owned symlink
+    /// pointing at our bundled CLI (either the current bundle or a prior c11.app location
+    /// whose `bin/c11` file no longer resolves — dangling c11 symlinks count as claimable
+    /// so re-install fixes them).
+    private func ensureDestinationIsClaimable(expectedSourceURL: URL) throws {
+        guard destinationEntryExists() else { return }
+        if let installedTargetURL = symlinkDestinationURL() {
+            if installedTargetURL == expectedSourceURL.standardizedFileURL {
+                return
+            }
+            throw InstallerError.destinationNotOwnedByC11(
+                path: destinationURL.path,
+                currentTarget: installedTargetURL.path
+            )
+        }
+        // Entry exists but doesn't resolve as a symlink to an existing file.
+        // Either it's a regular file/directory (not c11-owned) or a dangling symlink.
+        // Inspect raw symlink target: dangling c11 links look like ".../c11.app/.../bin/c11".
+        if let rawTargetPath = try? fileManager.destinationOfSymbolicLink(atPath: destinationURL.path),
+           looksLikeC11CLISymlink(rawTargetPath: rawTargetPath) {
+            return
+        }
+        let currentTarget = (try? fileManager.destinationOfSymbolicLink(atPath: destinationURL.path))
+        throw InstallerError.destinationNotOwnedByC11(
+            path: destinationURL.path,
+            currentTarget: currentTarget
+        )
+    }
+
+    /// Refuse to remove a destination that isn't c11-owned. Resolves dangling c11 symlinks
+    /// (from a moved or replaced app bundle) by raw-path inspection so they can still be
+    /// cleaned up via uninstall.
+    private func ensureDestinationIsRemovable() throws {
+        guard destinationEntryExists() else { return }
+        if let installedTargetURL = symlinkDestinationURL(),
+           let sourceURL = bundledCLIURLProvider()?.standardizedFileURL,
+           installedTargetURL == sourceURL {
+            return
+        }
+        if let rawTargetPath = try? fileManager.destinationOfSymbolicLink(atPath: destinationURL.path),
+           looksLikeC11CLISymlink(rawTargetPath: rawTargetPath) {
+            return
+        }
+        let currentTarget = (try? fileManager.destinationOfSymbolicLink(atPath: destinationURL.path))
+        throw InstallerError.destinationNotOwnedByC11(
+            path: destinationURL.path,
+            currentTarget: currentTarget
+        )
+    }
+
+    /// A symlink target shaped like `.../c11.app/Contents/Resources/bin/c11` is assumed
+    /// to have been written by a prior c11 install; safe to replace or remove even if
+    /// the bundle it points at no longer exists (app moved or deleted).
+    private func looksLikeC11CLISymlink(rawTargetPath: String) -> Bool {
+        rawTargetPath.hasSuffix("/c11.app/Contents/Resources/bin/c11")
     }
 
     func isInstalled() -> Bool {
@@ -6208,7 +6273,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     /// Module 4: opens a new terminal surface in the active main window and sends
-    /// `cmux install <tui>` to run the installer interactively (with TTY confirm).
+    /// `c11 install <tui>` to run the installer interactively (with TTY confirm).
     /// Focus-intent: raises the window and creates a visible surface per the spec.
     func openIntegrationInstallSurface(tui: String) {
         guard let context = preferredMainWindowContextForWorkspaceCreation(event: nil, debugSource: "menu.integrations") else {
@@ -6220,7 +6285,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         let workspace = context.tabManager.addWorkspace(select: true, autoWelcomeIfNeeded: false)
         let safeName = tui.replacingOccurrences(of: "\"", with: "")
-        sendTextWhenReady("cmux install \(safeName)\n", to: workspace)
+        sendTextWhenReady("c11 install \(safeName)\n", to: workspace)
     }
 
     @objc func applyUpdateIfAvailable(_ sender: Any?) {
@@ -6246,13 +6311,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 informativeText += "\n\n" + String(localized: "cli.install.adminRequired", defaultValue: "Administrator privileges were required to write to /usr/local/bin.")
             }
             presentCLIPathAlert(
-                title: String(localized: "cli.installed", defaultValue: "cmux CLI Installed"),
+                title: String(localized: "cli.installed", defaultValue: "c11 CLI Installed"),
                 informativeText: informativeText,
                 style: .informational
             )
         } catch {
             presentCLIPathAlert(
-                title: String(localized: "cli.installFailed", defaultValue: "Couldn't Install cmux CLI"),
+                title: String(localized: "cli.installFailed", defaultValue: "Couldn't Install c11 CLI"),
                 informativeText: error.localizedDescription,
                 style: .warning
             )
@@ -6265,19 +6330,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let outcome = try installer.uninstall()
             let prefix = outcome.removedExistingEntry
                 ? String(localized: "cli.uninstall.removed", defaultValue: "Removed \(outcome.destinationURL.path).")
-                : String(localized: "cli.uninstall.notFound", defaultValue: "No cmux CLI symlink was found at \(outcome.destinationURL.path).")
+                : String(localized: "cli.uninstall.notFound", defaultValue: "No c11 CLI symlink was found at \(outcome.destinationURL.path).")
             var informativeText = prefix
             if outcome.usedAdministratorPrivileges {
                 informativeText += "\n\n" + String(localized: "cli.uninstall.adminRequired", defaultValue: "Administrator privileges were required to modify /usr/local/bin.")
             }
             presentCLIPathAlert(
-                title: String(localized: "cli.uninstalled", defaultValue: "cmux CLI Uninstalled"),
+                title: String(localized: "cli.uninstalled", defaultValue: "c11 CLI Uninstalled"),
                 informativeText: informativeText,
                 style: .informational
             )
         } catch {
             presentCLIPathAlert(
-                title: String(localized: "cli.uninstallFailed", defaultValue: "Couldn't Uninstall cmux CLI"),
+                title: String(localized: "cli.uninstallFailed", defaultValue: "Couldn't Uninstall c11 CLI"),
                 informativeText: error.localizedDescription,
                 style: .warning
             )
@@ -11741,7 +11806,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 @MainActor
 final class MenuBarExtraController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
-    private let menu = NSMenu(title: "cmux")
+    private let menu = NSMenu(title: "c11")
     private let notificationStore: TerminalNotificationStore
     private let onShowNotifications: () -> Void
     private let onOpenNotification: (TerminalNotification) -> Void
@@ -11881,7 +11946,7 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
             if installed {
                 item.toolTip = String(localized: "menu.integrations.installed", defaultValue: "Already installed — running again will re-apply or update")
             } else {
-                item.toolTip = String(localized: "menu.integrations.install", defaultValue: "Opens a new terminal tab and runs cmux install")
+                item.toolTip = String(localized: "menu.integrations.install", defaultValue: "Opens a new terminal tab and runs c11 install")
             }
             integrationsSubmenu.addItem(item)
         }

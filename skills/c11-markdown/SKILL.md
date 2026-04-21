@@ -5,7 +5,7 @@ description: Open markdown files in a c11 markdown surface with live reload. Use
 
 # c11 Markdown Surfaces
 
-Use this skill to display markdown files in a c11 markdown surface — a first-class surface type that lives alongside terminal and browser surfaces in the same workspace, driven from the same `c11` CLI. The binary is `c11` (a `cmux` compat alias dispatches to the same binary).
+Use this skill to display markdown files in a c11 markdown surface — a first-class surface type that lives alongside terminal and browser surfaces in the same workspace, driven from the same `c11` CLI. The binary is `c11`.
 
 Rich rendering (headings, code blocks, tables, lists, Mermaid) with live file watching — the panel auto-updates when the file changes on disk.
 

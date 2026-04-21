@@ -1,5 +1,39 @@
 # c11 agent notes
 
+## Mission
+
+c11 is a macOS command center for the operator:agent pair. Terminals, browsers, and markdown surfaces composed in one window — addressable, scriptable, held in one field of view while many agents work in parallel. It embeds Ghostty as the terminal engine and treats the workspace itself as the atom of work.
+
+Short name: **c11**. Formal long name (publicly): **c11 terminal multiplexer**. Use the short form in CLI, UI, filenames, and default prose; reach for the long form for first references in formal external contexts (press, docs landing pages, legal copy).
+
+**Who it's for.** The operator running eight, ten, thirty agents at once. The one already feeling the pain of `cmd-tab` roulette across a screen full of terminal windows and wanting structure — not less work, just enough shape that the whole orchestra stays legible while the agents drive.
+
+**What that implies for this codebase.** Every surface has a handle. Every handle is scriptable from outside the process. Agents are first-class; the CLI and socket exist so they can compose their own environment without the operator in the loop for routine moves.
+
+## Lineage
+
+tmux → [cmux](https://github.com/manaflow-ai/cmux) → c11. tmux was for humans driving shells. cmux by [manaflow-ai](https://github.com/manaflow-ai) is the parent — the Ghostty embed, the browser substrate, and the CLI shape all belong to them upstream. c11 is the fork-level iteration for the operator:agent pair: more primitives (markdown surfaces, addressable surface handles, the skill system, agent-written sidebar telemetry), same ancestry. The tab bar and split chrome come from [Bonsplit](https://github.com/almonk/bonsplit) by [almonk](https://github.com/almonk), forked in `vendor/bonsplit/`.
+
+### The cmux ↔ c11 relationship is bidirectional
+
+Both projects are open source. The relationship between them is unusual and worth making explicit so nobody has to guess:
+
+- **Upstream → c11 (pull).** We may cherry-pick or merge PRs and commits from `manaflow-ai/cmux` when they fix bugs, improve performance, or add primitives we want. Credit stays with the original authors in the commit metadata. Don't rewrite their code to look like ours; import it cleanly so the provenance is obvious and future syncs stay clean.
+- **c11 → upstream (suggest).** When a fix or improvement made in c11 would also benefit cmux — a bug fix in a shared code path, a performance win in Ghostty embedding, a CLI ergonomics improvement that isn't c11-specific — surface it. Options: open a PR against `manaflow-ai/cmux` directly, or flag it to the operator with a one-line note so they can decide. Default to offering the fix upstream; c11-specific work (skill system, agent telemetry, markdown surfaces, operator-centric primitives) stays here.
+- **What stays c11-only.** Anything that only makes sense under "the operator:agent pair is the unit" framing. Agent-facing primitives, skill infrastructure, sidebar telemetry written by agents, the c11 brand surface. These are fork-level by design.
+
+**Practical implication for agents working in this repo:** when you touch a file that clearly came from upstream and your fix isn't c11-specific, flag it. The operator can decide whether to land it here, upstream, or both. Don't silently diverge on shared code — it makes future upstream merges painful and costs both projects improvements they'd otherwise share.
+
+Treat upstream patterns as load-bearing unless you have a specific reason to diverge. Gratuitous divergence burns goodwill and future merge bandwidth.
+
+## The skill is the agent's steering wheel
+
+c11's value to an agent is **the skill** — `skills/c11/SKILL.md` plus the peer skills (`c11-browser`, `c11-markdown`, `c11-debug-windows`, `c11-hotload`, `release`). An agent that's read the skill learns to split panes, open markdown surfaces, drive the embedded browser, report status to the sidebar, and navigate the workspace as infrastructure. An agent that hasn't just sees another terminal.
+
+**The bar: fast, fluid, effective.** An agent should be able to fully drive a c11 session — spawning the surfaces it needs, dissolving them when done, reporting progress, recovering from its own mistakes — without the operator having to intervene for routine moves. That only happens if the skill teaches it how, accurately, tersely, and in the exact shape of the CLI that ships.
+
+**Therefore:** every change to the CLI, socket protocol, metadata schema, or surface model is incomplete until the skill is updated to match. If you add a command, add it to the skill. If you rename a command, rename it in the skill. If you change defaults, update the examples. The skill is the contract; let it rot and agents get worse at using c11. Invest there first, not last.
+
 ## Principle: unopinionated about the terminal
 
 c11 is **host and primitive, not configurator.** It provides surfaces, panes, a socket, a CLI, and a metadata seam — all scoped to c11's own runtime. It does not reach outside that boundary to install hooks, write to tenant config files (`~/.claude/settings.json`, `~/.codex/*`, `~/.kimi/*`, shell rc files, etc.), or inject behavior into any other TUI's launch path. The one outgoing touch is the c11 skill file, which agents opt into by reading it.
@@ -13,133 +47,11 @@ Consequences:
 
 When in doubt: c11's job stops at the edge of its surfaces. What happens inside an agent's process is the agent's business.
 
-## Initial setup
-
-Run the setup script to initialize submodules and build GhosttyKit:
-
-```bash
-./scripts/setup.sh
-```
-
 ## Local dev
 
-After making code changes, always run the reload script with a tag to launch the Debug app:
+See `skills/c11-hotload/SKILL.md` for the full workflow — `reload.sh --tag` build-and-launch, Release variants, the debug event log, tag hygiene, and the tagged-build reporting format.
 
-```bash
-./scripts/reload.sh --tag fix-zsh-autosuggestions
-```
-
-When reporting a tagged reload result in chat, use the format for your agent type:
-
-**Claude Code** (markdown link with correct derived-data path, cmd+clickable):
-```markdown
-=======================================================
-[c11 DEV <tag-name>.app](file:///Users/lawrencechen/Library/Developer/Xcode/DerivedData/c11-<tag-name>/Build/Products/Debug/c11%20DEV%20<tag-name>.app)
-=======================================================
-```
-
-**Codex** (plain text format):
-```
-=======================================================
-[<tag-name>: file:///Users/lawrencechen/Library/Developer/Xcode/DerivedData/c11-<tag-name>/Build/Products/Debug/c11%20DEV%20<tag-name>.app](file:///Users/lawrencechen/Library/Developer/Xcode/DerivedData/c11-<tag-name>/Build/Products/Debug/c11%20DEV%20<tag-name>.app)
-=======================================================
-```
-
-Never use `/tmp/c11-<tag>/...` app links in chat output. If the expected DerivedData path is missing, resolve the real `.app` path and report that `file://` URL.
-
-After making code changes, always use `reload.sh --tag` to build and launch. **Never run bare `xcodebuild` or `open` an untagged `c11 DEV.app`.** Untagged builds share the default debug socket and bundle ID with other agents, causing conflicts and stealing focus.
-
-```bash
-./scripts/reload.sh --tag <your-branch-slug>
-```
-
-If you only need to verify the build compiles (no launch), use a tagged derivedDataPath:
-
-```bash
-xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/c11-<your-tag> build
-```
-
-When rebuilding GhosttyKit.xcframework, always use Release optimizations:
-
-```bash
-cd ghostty && zig build -Demit-xcframework=true -Dxcframework-target=universal -Doptimize=ReleaseFast
-```
-
-`reload` = kill and launch the Debug app only (tag required):
-
-```bash
-./scripts/reload.sh --tag <tag>
-```
-
-`reloadp` = kill and launch the Release app:
-
-```bash
-./scripts/reloadp.sh
-```
-
-**Apply Release changes without killing the running app.** `reloadp.sh` starts with `pkill -x c11`, which tears down every c11 pane and session — fatal if another agent is mid-task in a sibling pane, or if the current Claude Code session is itself hosted inside c11. To update the `.app` on disk without disturbing any running process, build only:
-
-```bash
-xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Release -destination 'platform=macOS' build
-```
-
-macOS lets you overwrite a running app's bundle — the already-loaded binary stays in memory, and the rebuilt `.app` is picked up on the next manual launch (⌘Q then relaunch). Use this when collaborating with other agents or when the user explicitly asks to avoid session churn.
-
-`reloads` = kill and launch the Release app as "cmux STAGING" (isolated from production cmux):
-
-```bash
-./scripts/reloads.sh
-```
-
-`reload2` = reload both Debug and Release (tag required for Debug reload):
-
-```bash
-./scripts/reload2.sh --tag <tag>
-```
-
-For parallel/isolated builds (e.g., testing a feature alongside the main app), use `--tag` with a short descriptive name:
-
-```bash
-./scripts/reload.sh --tag fix-blur-effect
-```
-
-This creates an isolated app with its own name, bundle ID, socket, and derived data path so it runs side-by-side with the main app. Important: use a non-`/tmp` derived data path if you need xcframework resolution (the script handles this automatically).
-
-Before launching a new tagged run, clean up any older tags you started in this session (quit old tagged app + remove its `/tmp` socket/derived data).
-
-**Prune stale tags periodically.** Each `reload.sh --tag` leaves ~3.5G behind in DerivedData and `/tmp` that nothing auto-cleans — across many iterations this has consumed hundreds of GB. Use `./scripts/prune-tags.sh` (dry run) or `./scripts/prune-tags.sh --yes` to remove every stale tag artifact. Running tags are auto-protected; pass `--keep <tag>` to preserve additional ones.
-
-## Debug event log
-
-All debug events (keys, mouse, focus, splits, tabs) go to a unified log in DEBUG builds:
-
-```bash
-tail -f "$(cat /tmp/c11-last-debug-log-path 2>/dev/null || echo /tmp/c11-debug.log)"
-```
-
-- Untagged Debug app: `/tmp/c11-debug.log`
-- Tagged Debug app (`./scripts/reload.sh --tag <tag>`): `/tmp/c11-debug-<tag>.log`
-- `reload.sh` writes the current path to `/tmp/c11-last-debug-log-path`
-- `reload.sh` writes the selected dev CLI path to `/tmp/c11-last-cli-path`
-- `reload.sh` updates `/tmp/c11-cli`, `$HOME/.local/bin/c11-dev`, and `$HOME/.local/bin/cmux-dev` (compat alias) to that CLI
-
-- Implementation: `vendor/bonsplit/Sources/Bonsplit/Public/DebugEventLog.swift`
-- Free function `dlog("message")` — logs with timestamp and appends to file in real time
-- Entire file is `#if DEBUG`; all call sites must be wrapped in `#if DEBUG` / `#endif`
-- 500-entry ring buffer; `DebugEventLog.shared.dump()` writes full buffer to file
-- Key events logged in `AppDelegate.swift` (monitor, performKeyEquivalent)
-- Mouse/UI events logged inline in views (ContentView, BrowserPanelView, etc.)
-- Focus events: `focus.panel`, `focus.bonsplit`, `focus.firstResponder`, `focus.moveFocus`
-- Bonsplit events: `tab.select`, `tab.close`, `tab.dragStart`, `tab.drop`, `pane.focus`, `pane.drop`, `divider.dragStart`
-
-## Regression test commit policy
-
-When adding a regression test for a bug fix, use a two-commit structure so CI proves the test catches the bug:
-
-1. **Commit 1:** Add the failing test only (no fix). CI should go red.
-2. **Commit 2:** Add the fix. CI should go green.
-
-This makes it visible in the GitHub PR UI (Commits tab, check statuses) that the test genuinely fails without the fix.
+The one-liner: after any code change, `./scripts/reload.sh --tag <your-branch-slug>`. Never `open` an untagged `c11 DEV.app`.
 
 ## Pitfalls
 
@@ -162,6 +74,15 @@ This makes it visible in the GitHub PR UI (Commits tab, check statuses) that the
 - If a behavior cannot be exercised end-to-end yet, add a small runtime seam or harness first, then test through that seam.
 - If no meaningful behavioral or artifact-level test is practical, skip the fake regression test and state that explicitly.
 
+## Testing policy
+
+**Never run tests locally.** All tests (E2E, UI, python socket tests) run via GitHub Actions or on the VM.
+
+- **E2E / UI tests:** trigger via `gh workflow run test-e2e.yml` (see cmuxterm-hq CLAUDE.md for details)
+- **Unit tests:** `xcodebuild -scheme c11-unit` is safe (no app launch), but prefer CI
+- **Python socket tests (tests_v2/):** these connect to a running c11 instance's socket. Never launch an untagged `c11 DEV.app` to run them. If you must test locally, use a tagged build's socket (`/tmp/c11-debug-<tag>.sock`) with `C11_SOCKET=/tmp/c11-debug-<tag>.sock` (or `CMUX_SOCKET=…` as compat).
+- **Never `open` an untagged `c11 DEV.app`** from DerivedData. It conflicts with the user's running debug instance.
+
 ## Socket command threading policy
 
 - Do not use `DispatchQueue.main.sync` for high-frequency socket telemetry commands (`report_*`, `ports_kick`, status/progress/log metadata updates).
@@ -178,19 +99,9 @@ This makes it visible in the GitHub PR UI (Commits tab, check statuses) that the
 - Only explicit focus-intent commands may mutate in-app focus/selection (`window.focus`, `workspace.select/next/previous/last`, `surface.focus`, `pane.focus/last`, browser focus commands, and v1 focus equivalents).
 - All non-focus commands should preserve current user focus context while still applying data/model changes.
 
-## Testing policy
-
-**Never run tests locally.** All tests (E2E, UI, python socket tests) run via GitHub Actions or on the VM.
-
-- **E2E / UI tests:** trigger via `gh workflow run test-e2e.yml` (see cmuxterm-hq CLAUDE.md for details)
-- **Unit tests:** `xcodebuild -scheme c11-unit` is safe (no app launch), but prefer CI
-- **Python socket tests (tests_v2/):** these connect to a running c11 instance's socket. Never launch an untagged `c11 DEV.app` to run them. If you must test locally, use a tagged build's socket (`/tmp/c11-debug-<tag>.sock`) with `C11_SOCKET=/tmp/c11-debug-<tag>.sock` (or `CMUX_SOCKET=…` as compat).
-- **Never `open` an untagged `c11 DEV.app`** from DerivedData. It conflicts with the user's running debug instance.
-
 ## Ghostty submodule workflow
 
-Ghostty changes must be committed in the `ghostty` submodule and pushed to the `manaflow-ai/ghostty` fork.
-Keep `docs/ghostty-fork.md` up to date with any fork changes and conflict notes.
+Ghostty changes must be committed in the `ghostty` submodule and pushed to the `manaflow-ai/ghostty` fork. Keep `docs/ghostty-fork.md` up to date with any fork changes and conflict notes.
 
 ```bash
 cd ghostty
@@ -221,36 +132,4 @@ git commit -m "Update ghostty submodule"
 
 ## Release
 
-Use the `/release` command to prepare a new release. This will:
-1. Determine the new version (bumps minor by default)
-2. Gather commits since the last tag and update the changelog
-3. Update `CHANGELOG.md` (the docs changelog page at `web/app/docs/changelog/page.tsx` reads from it)
-4. Run `./scripts/bump-version.sh` to update both versions
-5. Commit, tag, and push
-
-Version bumping:
-
-```bash
-./scripts/bump-version.sh          # bump minor (0.15.0 → 0.16.0)
-./scripts/bump-version.sh patch    # bump patch (0.15.0 → 0.15.1)
-./scripts/bump-version.sh major    # bump major (0.15.0 → 1.0.0)
-./scripts/bump-version.sh 1.0.0    # set specific version
-```
-
-This updates both `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` (build number). The build number is auto-incremented and is required for Sparkle auto-update to work.
-
-Manual release steps (if not using the command):
-
-```bash
-git tag vX.Y.Z
-git push origin vX.Y.Z
-gh run watch --repo Stage-11-Agentics/c11
-```
-
-Notes:
-- Requires GitHub secrets: `APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`,
-  `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`.
-- The release asset is `c11-macos.dmg` attached to the tag.
-- README download button points to `releases/latest/download/c11-macos.dmg`.
-- Versioning: bump the minor version for updates unless explicitly asked otherwise.
-- Changelog: update `CHANGELOG.md`; docs changelog is rendered from it.
+See `skills/release/SKILL.md`. Invoke with `/release`.

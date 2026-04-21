@@ -74,3 +74,35 @@ Credit the people who made each release happen:
 - **Per-entry:** Append `— thanks @user!` for community code contributions. Use `— thanks @user for the report!` for bug reporters (when different from PR author). No callout for core team (`lawrencecchen`, `austinywang`) — core work is the baseline.
 - **Summary:** Add a `### Thanks to N contributors!` section at the bottom of each release with an alphabetical list of all `[@handle](https://github.com/handle)` links (including core team).
 - **GitHub Release body:** Include the same "Thanks to N contributors!" section with linked handles.
+
+## Version bumping
+
+Prefer `./scripts/bump-version.sh`:
+
+```bash
+./scripts/bump-version.sh          # bump minor (0.15.0 → 0.16.0)
+./scripts/bump-version.sh patch    # bump patch (0.15.0 → 0.15.1)
+./scripts/bump-version.sh major    # bump major (0.15.0 → 1.0.0)
+./scripts/bump-version.sh 1.0.0    # set specific version
+```
+
+Updates both `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` (build number). The build number is auto-incremented and is required for Sparkle auto-update to work.
+
+**Default policy:** bump the minor version unless the user explicitly asks for patch or major.
+
+## Manual release (fallback)
+
+If not using the `/release` command:
+
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+gh run watch --repo Stage-11-Agentics/c11
+```
+
+## Reference
+
+- **Release asset:** `c11-macos.dmg`, attached to the tag
+- **Download URL:** `https://github.com/Stage-11-Agentics/c11/releases/latest/download/c11-macos.dmg`
+- **Changelog file:** `CHANGELOG.md` (the docs changelog page at `web/app/docs/changelog/page.tsx` renders from it — do not maintain separately)
+- **Required GitHub secrets:** `APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`

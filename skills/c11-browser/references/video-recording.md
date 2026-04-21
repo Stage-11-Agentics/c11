@@ -1,6 +1,6 @@
 # Video Recording
 
-Status and alternatives for capturing browser automation evidence in cmux.
+Status and alternatives for capturing browser automation evidence in c11.
 
 **Related**: [commands.md](commands.md), [SKILL.md](../SKILL.md)
 
@@ -13,26 +13,26 @@ Status and alternatives for capturing browser automation evidence in cmux.
 
 ## Current Status
 
-`cmux browser` currently does not expose a built-in video recording command.
+`c11 browser` currently does not expose a built-in video recording command.
 
-Why: cmux browser automation runs on WKWebView, and the agent-browser style recording pipeline is Chrome/CDP-specific.
+Why: c11 browser automation runs on WKWebView, and the agent-browser style recording pipeline is Chrome/CDP-specific.
 
 ## Recommended Alternatives
 
 ### 1. Step Screenshots
 
 ```bash
-cmux browser surface:7 screenshot > /tmp/step1.b64
-cmux browser surface:7 click e3 --snapshot-after --json
-cmux browser surface:7 screenshot > /tmp/step2.b64
+c11 browser surface:7 screenshot > /tmp/step1.b64
+c11 browser surface:7 click e3 --snapshot-after --json
+c11 browser surface:7 screenshot > /tmp/step2.b64
 ```
 
 ### 2. Snapshot Timeline
 
 ```bash
-cmux browser surface:7 snapshot --interactive > /tmp/snap-1.txt
-cmux browser surface:7 click e3 --snapshot-after --json > /tmp/action-1.json
-cmux browser surface:7 snapshot --interactive > /tmp/snap-2.txt
+c11 browser surface:7 snapshot --interactive > /tmp/snap-1.txt
+c11 browser surface:7 click e3 --snapshot-after --json > /tmp/action-1.json
+c11 browser surface:7 snapshot --interactive > /tmp/snap-2.txt
 ```
 
 ### 3. macOS Window Capture (external)

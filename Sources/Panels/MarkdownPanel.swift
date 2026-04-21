@@ -61,7 +61,7 @@ final class MarkdownPanel: Panel, ObservableObject {
     private nonisolated(unsafe) var fileWatchSource: DispatchSourceFileSystemObject?
     private var fileDescriptor: Int32 = -1
     private var isClosed: Bool = false
-    private let watchQueue = DispatchQueue(label: "com.cmux.markdown-file-watch", qos: .utility)
+    private let watchQueue = DispatchQueue(label: "com.stage11.c11.markdown-file-watch", qos: .utility)
 
     /// Maximum number of reattach attempts after a file delete/rename event.
     private static let maxReattachAttempts = 6

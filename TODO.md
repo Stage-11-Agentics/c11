@@ -2,12 +2,12 @@
 
 ## Issue 151: Remote SSH (Living Execution)
 - [x] `cmux ssh` creates remote workspace metadata and does not require `--name`
-- [x] Remote daemon bootstrap/upload/start path with `cmuxd-remote serve --stdio`
+- [x] Remote daemon bootstrap/upload/start path with `c11d-remote serve --stdio`
 - [x] Reconnect/disconnect controls (CLI/API/context menu) + improved error surfacing
 - [x] Retry count/time surfaced in remote daemon/probe error details
 - [ ] Remove automatic remote service port mirroring (`ssh -L` from detected remote listening ports)
 - [ ] Add transport-scoped proxy broker (SOCKS5 + HTTP CONNECT) for remote traffic
-- [ ] Extend `cmuxd-remote` RPC beyond `hello/ping` with proxy stream methods (`proxy.open|close`)
+- [ ] Extend `c11d-remote` RPC beyond `hello/ping` with proxy stream methods (`proxy.open|close`)
 - [ ] Auto-wire WKWebView in remote workspaces to proxy via `WKWebsiteDataStore.proxyConfigurations`
 - [ ] Add browser proxy e2e tests (remote egress IP, websocket, reconnect continuity)
 - [ ] Implement PTY resize coordinator with tmux semantics (`smallest screen wins`)

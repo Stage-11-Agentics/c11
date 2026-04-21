@@ -104,11 +104,11 @@ fi
 
 TAG_ID="$(sanitize_bundle "$TAG")"
 TAG_SLUG="$(sanitize_path "$TAG")"
-APP="$HOME/Library/Developer/Xcode/DerivedData/cmux-${TAG_SLUG}/Build/Products/Debug/c11mux DEV ${TAG}.app"
-BID="com.stage11.c11mux.debug.${TAG_ID}"
-SOCK="/tmp/c11mux-debug-${TAG_SLUG}.sock"
-DSOCK="$HOME/Library/Application Support/c11mux/cmuxd-dev-${TAG_SLUG}.sock"
-LOG="/tmp/c11mux-debug-${TAG_SLUG}.log"
+APP="$HOME/Library/Developer/Xcode/DerivedData/c11-${TAG_SLUG}/Build/Products/Debug/c11 DEV ${TAG}.app"
+BID="com.stage11.c11.debug.${TAG_ID}"
+SOCK="/tmp/c11-debug-${TAG_SLUG}.sock"
+DSOCK="$HOME/Library/Application Support/c11/c11d-dev-${TAG_SLUG}.sock"
+LOG="/tmp/c11-debug-${TAG_SLUG}.log"
 
 if [[ ! -d "$APP" ]]; then
   echo "error: tagged app not found at $APP" >&2
@@ -117,7 +117,7 @@ fi
 
 /usr/bin/osascript -e "tell application id \"${BID}\" to quit" >/dev/null 2>&1 || true
 sleep 0.5
-pkill -f "c11mux DEV ${TAG}.app/Contents/MacOS/cmux" || true
+pkill -f "c11 DEV ${TAG}.app/Contents/MacOS/c11" || true
 rm -f "$SOCK" "$DSOCK"
 sleep 0.5
 
@@ -174,7 +174,7 @@ fi
 echo "app: $APP"
 echo "bundle_id: $BID"
 echo "socket: $SOCK"
-echo "cmuxd_socket: $DSOCK"
+echo "c11d_socket: $DSOCK"
 echo "log: $LOG"
 echo "mode: $MODE"
 echo "socket_ready: $(if [[ -S "$SOCK" ]]; then echo yes; else echo no; fi)"

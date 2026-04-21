@@ -4,7 +4,7 @@ on:
   # Trigger after the release workflow completes (not on release:published,
   # which fires before assets finish uploading — causing SHA mismatch).
   workflow_run:
-    workflows: ["Release c11mux macOS app"]
+    workflows: ["Release c11 macOS app"]
     types: [completed]
   workflow_dispatch:
     inputs:
@@ -55,11 +55,11 @@ jobs:
         if: steps.version.outputs.skip != 'true'
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          URL="https://github.com/Stage-11-Agentics/c11mux/releases/download/v${VERSION}/c11mux-macos.dmg"
+          URL="https://github.com/Stage-11-Agentics/c11/releases/download/v${VERSION}/c11-macos.dmg"
           MAX_RETRIES=5
           for i in $(seq 1 $MAX_RETRIES); do
-            HTTP_CODE=$(curl -sL -w '%{http_code}' "$URL" -o c11mux.dmg)
-            FILE_SIZE=$(stat --printf="%s" c11mux.dmg 2>/dev/null || stat -f%z c11mux.dmg)
+            HTTP_CODE=$(curl -sL -w '%{http_code}' "$URL" -o c11.dmg)
+            FILE_SIZE=$(stat --printf="%s" c11.dmg 2>/dev/null || stat -f%z c11.dmg)
             if [ "$HTTP_CODE" = "200" ] && [ "$FILE_SIZE" -gt 1000000 ]; then
               echo "Download OK: HTTP $HTTP_CODE, size $FILE_SIZE bytes"
               break
@@ -71,17 +71,17 @@ jobs:
             fi
             sleep 30
           done
-          SHA256=$(shasum -a 256 c11mux.dmg | cut -d' ' -f1)
+          SHA256=$(shasum -a 256 c11.dmg | cut -d' ' -f1)
           echo "sha256=$SHA256" >> $GITHUB_OUTPUT
           echo "DMG SHA256: $SHA256"
 
-      - name: Checkout homebrew-c11mux
+      - name: Checkout homebrew-c11
         if: steps.version.outputs.skip != 'true'
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          repository: Stage-11-Agentics/homebrew-c11mux
+          repository: Stage-11-Agentics/homebrew-c11
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          path: homebrew-c11mux
+          path: homebrew-c11
 
       - name: Update cask formula
         if: steps.version.outputs.skip != 'true'
@@ -89,15 +89,15 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           SHA256: ${{ steps.sha.outputs.sha256 }}
         run: |
-          cat > homebrew-c11mux/Casks/c11mux.rb << CASKEOF
-          cask "c11mux" do
+          cat > homebrew-c11/Casks/c11.rb << CASKEOF
+          cask "c11" do
             version "${VERSION}"
             sha256 "${SHA256}"
 
-            url "https://github.com/Stage-11-Agentics/c11mux/releases/download/v#{version}/c11mux-macos.dmg"
-            name "c11mux"
-            desc "Stage 11's fork of cmux — native macOS terminal multiplexer for AI coding agents"
-            homepage "https://github.com/Stage-11-Agentics/c11mux"
+            url "https://github.com/Stage-11-Agentics/c11/releases/download/v#{version}/c11-macos.dmg"
+            name "c11"
+            desc "Native macOS terminal multiplexer for AI coding agents"
+            homepage "https://github.com/Stage-11-Agentics/c11"
 
             livecheck do
               url :url
@@ -108,27 +108,31 @@ jobs:
 
             conflicts_with cask: "cmux"
 
-            app "c11mux.app"
-            binary "#{appdir}/c11mux.app/Contents/Resources/bin/cmux"
+            app "c11.app"
+            binary "#{appdir}/c11.app/Contents/Resources/bin/c11"
+            binary "#{appdir}/c11.app/Contents/Resources/bin/c11", target: "cmux"
 
             zap trash: [
+              "~/Library/Application Support/c11",
               "~/Library/Application Support/c11mux",
               "~/Library/Application Support/cmux",
+              "~/Library/Caches/c11",
               "~/Library/Caches/c11mux",
               "~/Library/Caches/cmux",
+              "~/Library/Preferences/com.stage11.c11.plist",
               "~/Library/Preferences/com.stage11.c11mux.plist",
               "~/Library/Preferences/ai.manaflow.cmuxterm.plist",
             ]
           end
           CASKEOF
           # Remove leading whitespace from heredoc
-          sed -i 's/^          //' homebrew-c11mux/Casks/c11mux.rb
+          sed -i 's/^          //' homebrew-c11/Casks/c11.rb
 
       - name: Verify cask SHA matches DMG
         if: steps.version.outputs.skip != 'true'
         run: |
-          CASK_SHA=$(grep 'sha256' homebrew-c11mux/Casks/c11mux.rb | sed 's/.*"\(.*\)".*/\1/')
-          ACTUAL_SHA=$(shasum -a 256 c11mux.dmg | cut -d' ' -f1)
+          CASK_SHA=$(grep 'sha256' homebrew-c11/Casks/c11.rb | sed 's/.*"\(.*\)".*/\1/')
+          ACTUAL_SHA=$(shasum -a 256 c11.dmg | cut -d' ' -f1)
           if [ "$CASK_SHA" != "$ACTUAL_SHA" ]; then
             echo "SHA mismatch! Cask: $CASK_SHA, Actual: $ACTUAL_SHA" >&2
             exit 1
@@ -140,13 +144,13 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          cd homebrew-c11mux
+          cd homebrew-c11
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Casks/c11mux.rb
+          git add Casks/c11.rb
           if git diff --staged --quiet; then
             echo "No changes - cask already up to date"
           else
-            git commit -m "Update c11mux to ${VERSION}"
+            git commit -m "Update c11 to ${VERSION}"
             git push
           fi

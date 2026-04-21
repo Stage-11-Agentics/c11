@@ -780,15 +780,15 @@ final class WorkspaceRemoteDaemonManifestTests: XCTestCase {
           "schemaVersion": 1,
           "appVersion": "0.62.0",
           "releaseTag": "v0.62.0",
-          "releaseURL": "https://github.com/manaflow-ai/cmux/releases/tag/v0.62.0",
-          "checksumsAssetName": "cmuxd-remote-checksums.txt",
-          "checksumsURL": "https://github.com/manaflow-ai/cmux/releases/download/v0.62.0/cmuxd-remote-checksums.txt",
+          "releaseURL": "https://github.com/Stage-11-Agentics/c11/releases/tag/v0.62.0",
+          "checksumsAssetName": "c11d-remote-checksums.txt",
+          "checksumsURL": "https://github.com/Stage-11-Agentics/c11/releases/download/v0.62.0/c11d-remote-checksums.txt",
           "entries": [
             {
               "goOS": "linux",
               "goArch": "amd64",
-              "assetName": "cmuxd-remote-linux-amd64",
-              "downloadURL": "https://github.com/manaflow-ai/cmux/releases/download/v0.62.0/cmuxd-remote-linux-amd64",
+              "assetName": "c11d-remote-linux-amd64",
+              "downloadURL": "https://github.com/Stage-11-Agentics/c11/releases/download/v0.62.0/c11d-remote-linux-amd64",
               "sha256": "abc123"
             }
           ]
@@ -800,7 +800,7 @@ final class WorkspaceRemoteDaemonManifestTests: XCTestCase {
         ])
 
         XCTAssertEqual(manifest?.releaseTag, "v0.62.0")
-        XCTAssertEqual(manifest?.entry(goOS: "linux", goArch: "amd64")?.assetName, "cmuxd-remote-linux-amd64")
+        XCTAssertEqual(manifest?.entry(goOS: "linux", goArch: "amd64")?.assetName, "c11d-remote-linux-amd64")
     }
 
     func testRemoteDaemonCachePathIsVersionedByPlatform() throws {
@@ -810,8 +810,8 @@ final class WorkspaceRemoteDaemonManifestTests: XCTestCase {
             goArch: "arm64"
         )
 
-        XCTAssertTrue(url.path.contains("/Application Support/c11mux/remote-daemons/0.62.0/linux-arm64/"))
-        XCTAssertEqual(url.lastPathComponent, "cmuxd-remote")
+        XCTAssertTrue(url.path.contains("/remote-daemons/0.62.0/linux-arm64/"))
+        XCTAssertEqual(url.lastPathComponent, "c11d-remote")
     }
 }
 
@@ -820,37 +820,37 @@ final class RemoteLoopbackHTTPRequestRewriterTests: XCTestCase {
         let original = Data(
             (
                 "GET /demo HTTP/1.1\r\n" +
-                "Host: cmux-loopback.localtest.me:3000\r\n" +
-                "Origin: http://cmux-loopback.localtest.me:3000\r\n" +
-                "Referer: http://cmux-loopback.localtest.me:3000/app\r\n" +
+                "Host: c11-loopback.localtest.me:3000\r\n" +
+                "Origin: http://c11-loopback.localtest.me:3000\r\n" +
+                "Referer: http://c11-loopback.localtest.me:3000/app\r\n" +
                 "\r\n"
             ).utf8
         )
 
         let rewritten = RemoteLoopbackHTTPRequestRewriter.rewriteIfNeeded(
             data: original,
-            aliasHost: "cmux-loopback.localtest.me"
+            aliasHost: "c11-loopback.localtest.me"
         )
 
         let text = String(decoding: rewritten, as: UTF8.self)
         XCTAssertTrue(text.contains("Host: localhost:3000"))
         XCTAssertTrue(text.contains("Origin: http://localhost:3000"))
         XCTAssertTrue(text.contains("Referer: http://localhost:3000/app"))
-        XCTAssertFalse(text.contains("cmux-loopback.localtest.me"))
+        XCTAssertFalse(text.contains("c11-loopback.localtest.me"))
     }
 
     func testRewritesAbsoluteFormRequestLineForLoopbackAlias() {
         let original = Data(
             (
-                "GET http://cmux-loopback.localtest.me:3000/demo HTTP/1.1\r\n" +
-                "Host: cmux-loopback.localtest.me:3000\r\n" +
+                "GET http://c11-loopback.localtest.me:3000/demo HTTP/1.1\r\n" +
+                "Host: c11-loopback.localtest.me:3000\r\n" +
                 "\r\n"
             ).utf8
         )
 
         let rewritten = RemoteLoopbackHTTPRequestRewriter.rewriteIfNeeded(
             data: original,
-            aliasHost: "cmux-loopback.localtest.me"
+            aliasHost: "c11-loopback.localtest.me"
         )
 
         let text = String(decoding: rewritten, as: UTF8.self)
@@ -862,14 +862,14 @@ final class RemoteLoopbackHTTPRequestRewriterTests: XCTestCase {
         let original = Data([0x16, 0x03, 0x01, 0x00, 0x2a, 0x01, 0x00])
         let rewritten = RemoteLoopbackHTTPRequestRewriter.rewriteIfNeeded(
             data: original,
-            aliasHost: "cmux-loopback.localtest.me"
+            aliasHost: "c11-loopback.localtest.me"
         )
         XCTAssertEqual(rewritten, original)
     }
 
     func testBuffersSplitLoopbackAliasHeadersUntilFullRequestArrives() {
         var streamRewriter = RemoteLoopbackHTTPRequestStreamRewriter(
-            aliasHost: "cmux-loopback.localtest.me"
+            aliasHost: "c11-loopback.localtest.me"
         )
 
         let firstChunk = Data(
@@ -881,8 +881,8 @@ final class RemoteLoopbackHTTPRequestRewriterTests: XCTestCase {
         let secondChunk = Data(
             (
                 "back.localtest.me:3000\r\n" +
-                "Origin: http://cmux-loopback.localtest.me:3000\r\n" +
-                "Referer: http://cmux-loopback.localtest.me:3000/app\r\n" +
+                "Origin: http://c11-loopback.localtest.me:3000\r\n" +
+                "Referer: http://c11-loopback.localtest.me:3000/app\r\n" +
                 "\r\n" +
                 "body=1"
             ).utf8
@@ -898,12 +898,12 @@ final class RemoteLoopbackHTTPRequestRewriterTests: XCTestCase {
         XCTAssertTrue(text.contains("Origin: http://localhost:3000"))
         XCTAssertTrue(text.contains("Referer: http://localhost:3000/app"))
         XCTAssertTrue(text.hasSuffix("\r\n\r\nbody=1"))
-        XCTAssertFalse(text.contains("cmux-loopback.localtest.me"))
+        XCTAssertFalse(text.contains("c11-loopback.localtest.me"))
     }
 
     func testFlushesBufferedLoopbackAliasHeadersOnEOFWhenHeadersRemainIncomplete() {
         var streamRewriter = RemoteLoopbackHTTPRequestStreamRewriter(
-            aliasHost: "cmux-loopback.localtest.me"
+            aliasHost: "c11-loopback.localtest.me"
         )
 
         let firstChunk = Data(
@@ -915,8 +915,8 @@ final class RemoteLoopbackHTTPRequestRewriterTests: XCTestCase {
         let secondChunk = Data(
             (
                 "back.localtest.me:3000\r\n" +
-                "Origin: http://cmux-loopback.localtest.me:3000\r\n" +
-                "Referer: http://cmux-loopback.localtest.me:3000/app\r\n" +
+                "Origin: http://c11-loopback.localtest.me:3000\r\n" +
+                "Referer: http://c11-loopback.localtest.me:3000/app\r\n" +
                 "body=1"
             ).utf8
         )
@@ -932,7 +932,7 @@ final class RemoteLoopbackHTTPRequestRewriterTests: XCTestCase {
         XCTAssertTrue(text.contains("Origin: http://localhost:3000"))
         XCTAssertTrue(text.contains("Referer: http://localhost:3000/app"))
         XCTAssertTrue(text.hasSuffix("\r\nbody=1"))
-        XCTAssertFalse(text.contains("cmux-loopback.localtest.me"))
+        XCTAssertFalse(text.contains("c11-loopback.localtest.me"))
         XCTAssertTrue(thirdOutput.isEmpty)
     }
 
@@ -949,13 +949,13 @@ final class RemoteLoopbackHTTPRequestRewriterTests: XCTestCase {
 
         let rewritten = RemoteLoopbackHTTPResponseRewriter.rewriteIfNeeded(
             data: original,
-            aliasHost: "cmux-loopback.localtest.me"
+            aliasHost: "c11-loopback.localtest.me"
         )
 
         let text = String(decoding: rewritten, as: UTF8.self)
-        XCTAssertTrue(text.contains("Location: http://cmux-loopback.localtest.me:3000/login"))
-        XCTAssertTrue(text.contains("Access-Control-Allow-Origin: http://cmux-loopback.localtest.me:3000"))
-        XCTAssertTrue(text.contains("Set-Cookie: sid=1; Domain=cmux-loopback.localtest.me; Path=/"))
+        XCTAssertTrue(text.contains("Location: http://c11-loopback.localtest.me:3000/login"))
+        XCTAssertTrue(text.contains("Access-Control-Allow-Origin: http://c11-loopback.localtest.me:3000"))
+        XCTAssertTrue(text.contains("Set-Cookie: sid=1; Domain=c11-loopback.localtest.me; Path=/"))
     }
 }
 
@@ -1046,7 +1046,7 @@ final class BrowserPanelRemoteStoreTests: XCTestCase {
         while panel.webView.url == nil, RunLoop.main.run(mode: .default, before: deadline), Date() < deadline {}
 
         XCTAssertEqual(panel.preferredURLStringForOmnibar(), url.absoluteString)
-        XCTAssertEqual(panel.webView.url?.host, "cmux-loopback.localtest.me")
+        XCTAssertEqual(panel.webView.url?.host, "c11-loopback.localtest.me")
     }
 
     func testRemoteWorkspaceKeepsHTTPSLoopbackUnaliased() {

@@ -3,7 +3,7 @@
 <p align="center"><b><i>terminal command center for advanced hyperengineers.</i></b></p>
 
 <p align="center">
-  <a href="https://github.com/Stage-11-Agentics/c11mux/releases/latest/download/c11mux-macos.dmg">
+  <a href="https://github.com/Stage-11-Agentics/c11/releases/latest/download/c11-macos.dmg">
     <img src="./docs/assets/macos-badge.png" alt="Download c11 for macOS" width="180" />
   </a>
 </p>
@@ -22,7 +22,7 @@ this tool was built by the shape it describes.
 
 tmux was for humans driving shells. cmux was for humans driving agents. c11 is for the operator:agent pair working in the pocket ahead of where most tools still think the frontier is.
 
-**first-class substrates:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex), and any agent that reads the [c11 skill](./skills/cmux/SKILL.md) or speaks the CLI. the agents drive their own workspaces. you watch. steer. decide.
+**first-class substrates:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex), and any agent that reads the [c11 skill](./skills/c11/SKILL.md) or speaks the CLI. the agents drive their own workspaces. you watch. steer. decide.
 
 <!--
 ---
@@ -44,18 +44,18 @@ the tab bar and split chrome come from [Bonsplit](https://github.com/almonk/bons
 
 ```bash
 # 1. install
-brew tap stage-11-agentics/c11mux
-brew install --cask c11mux
+brew tap stage-11-agentics/c11
+brew install --cask c11
 
 # 2. launch
-open -a c11mux
+open -a c11
 
 # 3. teach your agents the protocol (first-launch wizard will offer this too)
-cmux skill install                # → ~/.claude/skills/
-cmux skill install --tool codex   # → ~/.codex/skills/ (explicit opt-in)
+c11 skill install                # → ~/.claude/skills/
+c11 skill install --tool codex   # → ~/.codex/skills/ (explicit opt-in)
 ```
 
-or grab the [DMG directly](https://github.com/Stage-11-Agentics/c11mux/releases/latest/download/c11mux-macos.dmg). auto-updates via Sparkle. the c11 cask conflicts with the upstream `cmux` cask — Homebrew will ask you to pick one.
+or grab the [DMG directly](https://github.com/Stage-11-Agentics/c11/releases/latest/download/c11-macos.dmg). auto-updates via Sparkle. the c11 cask conflicts with the upstream `cmux` cask — Homebrew will ask you to pick one.
 
 that's it. now your agent spawns its own terminals, opens a markdown surface for its plan, splits a browser pane for the dev server it just started, and reports status to the sidebar while it works.
 
@@ -70,14 +70,14 @@ on first launch, c11 detects Claude Code and offers to install the skill through
 re-run the same flow any time from **Settings → Agent Skills**, or from the CLI:
 
 ```bash
-cmux skill status                 # see what's detected and installed
-cmux skill install                # install for Claude Code (idempotent)
-cmux skill install --tool codex   # explicit opt-in for another agent
-cmux skill remove                 # remove the installed copies (Claude Code)
-cmux skill path                   # print the bundled skill path
+c11 skill status                 # see what's detected and installed
+c11 skill install                # install for Claude Code (idempotent)
+c11 skill install --tool codex   # explicit opt-in for another agent
+c11 skill remove                 # remove the installed copies (Claude Code)
+c11 skill path                   # print the bundled skill path
 ```
 
-the skill is [`skills/cmux/SKILL.md`](./skills/cmux/SKILL.md) plus peer skills for the embedded browser, markdown surfaces, and debug windows. updating c11 re-bundles fresh copies; the Settings pane flags when your installed copy is out of date.
+the skill is [`skills/c11/SKILL.md`](./skills/c11/SKILL.md) plus peer skills for the embedded browser, markdown surfaces, and debug windows. updating c11 re-bundles fresh copies; the Settings pane flags when your installed copy is out of date.
 
 ---
 

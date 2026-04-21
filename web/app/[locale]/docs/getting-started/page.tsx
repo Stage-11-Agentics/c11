@@ -30,10 +30,10 @@ export default function GettingStartedPage() {
       <p>{t("dmgDesc")}</p>
 
       <h3>{t("homebrew")}</h3>
-      <CodeBlock lang="bash">{`brew tap manaflow-ai/cmux
-brew install --cask cmux`}</CodeBlock>
+      <CodeBlock lang="bash">{`brew tap stage-11-agentics/c11
+brew install --cask c11`}</CodeBlock>
       <p>{t("updateLater")}</p>
-      <CodeBlock lang="bash">{`brew upgrade --cask cmux`}</CodeBlock>
+      <CodeBlock lang="bash">{`brew upgrade --cask c11`}</CodeBlock>
 
       <Callout>
         {t.rich("firstLaunchCallout", {
@@ -51,10 +51,10 @@ brew install --cask cmux`}</CodeBlock>
 
       <h2>{t("cliSetup")}</h2>
       <p>{t("cliDesc")}</p>
-      <CodeBlock lang="bash">{`sudo ln -sf "/Applications/cmux.app/Contents/Resources/bin/cmux" /usr/local/bin/cmux`}</CodeBlock>
+      <CodeBlock lang="bash">{`sudo ln -sf "/Applications/c11.app/Contents/Resources/bin/c11" /usr/local/bin/c11`}</CodeBlock>
       <p>{t("cliThen")}</p>
-      <CodeBlock lang="bash">{`cmux list-workspaces
-cmux notify --title "Build Complete" --body "Your build finished"`}</CodeBlock>
+      <CodeBlock lang="bash">{`c11 list-workspaces
+c11 notify --title "Build Complete" --body "Your build finished"`}</CodeBlock>
 
       <h2>{t("autoUpdates")}</h2>
       <p>{t("autoUpdatesDesc")}</p>

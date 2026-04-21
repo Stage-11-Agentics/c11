@@ -1,14 +1,14 @@
-# cmux agent notes
+# c11 agent notes
 
 ## Principle: unopinionated about the terminal
 
-c11 is **host and primitive, not configurator.** It provides surfaces, panes, a socket, a CLI, and a metadata seam — all scoped to c11's own runtime. It does not reach outside that boundary to install hooks, write to tenant config files (`~/.claude/settings.json`, `~/.codex/*`, `~/.kimi/*`, shell rc files, etc.), or inject behavior into any other TUI's launch path. The one outgoing touch is the cmux skill file, which agents opt into by reading it.
+c11 is **host and primitive, not configurator.** It provides surfaces, panes, a socket, a CLI, and a metadata seam — all scoped to c11's own runtime. It does not reach outside that boundary to install hooks, write to tenant config files (`~/.claude/settings.json`, `~/.codex/*`, `~/.kimi/*`, shell rc files, etc.), or inject behavior into any other TUI's launch path. The one outgoing touch is the c11 skill file, which agents opt into by reading it.
 
 Consequences:
 
-- **`cmux install <tui>` is rejected.** Any proposal that writes to a user's persistent tool config is a non-starter, even with consent prompts and markers. The 691-line spec at `docs/c11mux-module-4-integration-installers-spec.md` exists as a historical artifact only — do not revive it.
+- **`c11 install <tui>` is rejected.** Any proposal that writes to a user's persistent tool config is a non-starter, even with consent prompts and markers. The 691-line spec at `docs/c11mux-module-4-integration-installers-spec.md` exists as a historical artifact only — do not revive it.
 - **`Resources/bin/claude` is a grandfathered cc-specific exception**, not a pattern to extend. PATH-scoped, no persistent writes anywhere. The wrapper's header carries a `DO NOT GENERALIZE` note. Do not build equivalent wrappers for codex, kimi, opencode, or any future TUI.
-- **Skill-driven self-reporting is the standard pattern** for every agent except cc. Agents that read the cmux skill learn to call `cmux set-metadata` / `cmux set-status` from their own lifecycle. Agents that ignore the skill don't emit — that's the expected and correct outcome under the principle.
+- **Skill-driven self-reporting is the standard pattern** for every agent except cc. Agents that read the c11 skill learn to call `c11 set-metadata` / `c11 set-status` from their own lifecycle. The `cmux` CLI is a compat alias that dispatches to the same binary. Agents that ignore the skill don't emit — that's the expected and correct outcome under the principle.
 - **The skill file is the only outgoing touch.** How it reaches each TUI (cc's `~/.claude/skills/`, codex's equivalent, etc.) is the operator's problem, not c11's.
 
 When in doubt: c11's job stops at the edge of its surfaces. What happens inside an agent's process is the agent's business.
@@ -34,20 +34,20 @@ When reporting a tagged reload result in chat, use the format for your agent typ
 **Claude Code** (markdown link with correct derived-data path, cmd+clickable):
 ```markdown
 =======================================================
-[cmux DEV <tag-name>.app](file:///Users/lawrencechen/Library/Developer/Xcode/DerivedData/cmux-<tag-name>/Build/Products/Debug/cmux%20DEV%20<tag-name>.app)
+[c11 DEV <tag-name>.app](file:///Users/lawrencechen/Library/Developer/Xcode/DerivedData/c11-<tag-name>/Build/Products/Debug/c11%20DEV%20<tag-name>.app)
 =======================================================
 ```
 
 **Codex** (plain text format):
 ```
 =======================================================
-[<tag-name>: file:///Users/lawrencechen/Library/Developer/Xcode/DerivedData/cmux-<tag-name>/Build/Products/Debug/cmux%20DEV%20<tag-name>.app](file:///Users/lawrencechen/Library/Developer/Xcode/DerivedData/cmux-<tag-name>/Build/Products/Debug/cmux%20DEV%20<tag-name>.app)
+[<tag-name>: file:///Users/lawrencechen/Library/Developer/Xcode/DerivedData/c11-<tag-name>/Build/Products/Debug/c11%20DEV%20<tag-name>.app](file:///Users/lawrencechen/Library/Developer/Xcode/DerivedData/c11-<tag-name>/Build/Products/Debug/c11%20DEV%20<tag-name>.app)
 =======================================================
 ```
 
-Never use `/tmp/cmux-<tag>/...` app links in chat output. If the expected DerivedData path is missing, resolve the real `.app` path and report that `file://` URL.
+Never use `/tmp/c11-<tag>/...` app links in chat output. If the expected DerivedData path is missing, resolve the real `.app` path and report that `file://` URL.
 
-After making code changes, always use `reload.sh --tag` to build and launch. **Never run bare `xcodebuild` or `open` an untagged `cmux DEV.app`.** Untagged builds share the default debug socket and bundle ID with other agents, causing conflicts and stealing focus.
+After making code changes, always use `reload.sh --tag` to build and launch. **Never run bare `xcodebuild` or `open` an untagged `c11 DEV.app`.** Untagged builds share the default debug socket and bundle ID with other agents, causing conflicts and stealing focus.
 
 ```bash
 ./scripts/reload.sh --tag <your-branch-slug>
@@ -56,19 +56,13 @@ After making code changes, always use `reload.sh --tag` to build and launch. **N
 If you only need to verify the build compiles (no launch), use a tagged derivedDataPath:
 
 ```bash
-xcodebuild -project GhosttyTabs.xcodeproj -scheme cmux -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/cmux-<your-tag> build
+xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/c11-<your-tag> build
 ```
 
 When rebuilding GhosttyKit.xcframework, always use Release optimizations:
 
 ```bash
 cd ghostty && zig build -Demit-xcframework=true -Dxcframework-target=universal -Doptimize=ReleaseFast
-```
-
-When rebuilding cmuxd for release/bundling, always use ReleaseFast:
-
-```bash
-cd cmuxd && zig build -Doptimize=ReleaseFast
 ```
 
 `reload` = kill and launch the Debug app only (tag required):
@@ -83,10 +77,10 @@ cd cmuxd && zig build -Doptimize=ReleaseFast
 ./scripts/reloadp.sh
 ```
 
-**Apply Release changes without killing the running app.** `reloadp.sh` starts with `pkill -x cmux`, which tears down every c11 pane and session — fatal if another agent is mid-task in a sibling pane, or if the current Claude Code session is itself hosted inside c11. To update the `.app` on disk without disturbing any running process, build only:
+**Apply Release changes without killing the running app.** `reloadp.sh` starts with `pkill -x c11`, which tears down every c11 pane and session — fatal if another agent is mid-task in a sibling pane, or if the current Claude Code session is itself hosted inside c11. To update the `.app` on disk without disturbing any running process, build only:
 
 ```bash
-xcodebuild -project GhosttyTabs.xcodeproj -scheme cmux -configuration Release -destination 'platform=macOS' build
+xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Release -destination 'platform=macOS' build
 ```
 
 macOS lets you overwrite a running app's bundle — the already-loaded binary stays in memory, and the rebuilt `.app` is picked up on the next manual launch (⌘Q then relaunch). Use this when collaborating with other agents or when the user explicitly asks to avoid session churn.
@@ -120,14 +114,14 @@ Before launching a new tagged run, clean up any older tags you started in this s
 All debug events (keys, mouse, focus, splits, tabs) go to a unified log in DEBUG builds:
 
 ```bash
-tail -f "$(cat /tmp/cmux-last-debug-log-path 2>/dev/null || echo /tmp/cmux-debug.log)"
+tail -f "$(cat /tmp/c11-last-debug-log-path 2>/dev/null || echo /tmp/c11-debug.log)"
 ```
 
-- Untagged Debug app: `/tmp/cmux-debug.log`
-- Tagged Debug app (`./scripts/reload.sh --tag <tag>`): `/tmp/cmux-debug-<tag>.log`
-- `reload.sh` writes the current path to `/tmp/cmux-last-debug-log-path`
-- `reload.sh` writes the selected dev CLI path to `/tmp/cmux-last-cli-path`
-- `reload.sh` updates `/tmp/cmux-cli` and `$HOME/.local/bin/cmux-dev` to that CLI
+- Untagged Debug app: `/tmp/c11-debug.log`
+- Tagged Debug app (`./scripts/reload.sh --tag <tag>`): `/tmp/c11-debug-<tag>.log`
+- `reload.sh` writes the current path to `/tmp/c11-last-debug-log-path`
+- `reload.sh` writes the selected dev CLI path to `/tmp/c11-last-cli-path`
+- `reload.sh` updates `/tmp/c11-cli`, `$HOME/.local/bin/c11-dev`, and `$HOME/.local/bin/cmux-dev` (compat alias) to that CLI
 
 - Implementation: `vendor/bonsplit/Sources/Bonsplit/Public/DebugEventLog.swift`
 - Free function `dlog("message")` — logs with timestamp and appends to file in real time
@@ -149,7 +143,7 @@ This makes it visible in the GitHub PR UI (Commits tab, check statuses) that the
 
 ## Pitfalls
 
-- **Custom UTTypes** for drag-and-drop must be declared in `Resources/Info.plist` under `UTExportedTypeDeclarations` (e.g. `com.splittabbar.tabtransfer`, `com.cmux.sidebar-tab-reorder`).
+- **Custom UTTypes** for drag-and-drop must be declared in `Resources/Info.plist` under `UTExportedTypeDeclarations` (e.g. `com.stage11.c11.tabtransfer`, `com.stage11.c11.sidebar-tab-reorder`).
 - Do not add an app-level display link or manual `ghostty_surface_draw` loop; rely on Ghostty wakeups/renderer to avoid typing lag.
 - **Typing-latency-sensitive paths** (read carefully before touching these areas):
   - `WindowTerminalHostView.hitTest()` in `TerminalWindowPortal.swift`: called on every event including keyboard. All divider/sidebar/drag routing is gated to pointer events only. Do not add work outside the `isPointerEvent` guard.
@@ -189,9 +183,9 @@ This makes it visible in the GitHub PR UI (Commits tab, check statuses) that the
 **Never run tests locally.** All tests (E2E, UI, python socket tests) run via GitHub Actions or on the VM.
 
 - **E2E / UI tests:** trigger via `gh workflow run test-e2e.yml` (see cmuxterm-hq CLAUDE.md for details)
-- **Unit tests:** `xcodebuild -scheme cmux-unit` is safe (no app launch), but prefer CI
-- **Python socket tests (tests_v2/):** these connect to a running cmux instance's socket. Never launch an untagged `cmux DEV.app` to run them. If you must test locally, use a tagged build's socket (`/tmp/cmux-debug-<tag>.sock`) with `CMUX_SOCKET=/tmp/cmux-debug-<tag>.sock`
-- **Never `open` an untagged `cmux DEV.app`** from DerivedData. It conflicts with the user's running debug instance.
+- **Unit tests:** `xcodebuild -scheme c11-unit` is safe (no app launch), but prefer CI
+- **Python socket tests (tests_v2/):** these connect to a running c11 instance's socket. Never launch an untagged `c11 DEV.app` to run them. If you must test locally, use a tagged build's socket (`/tmp/c11-debug-<tag>.sock`) with `C11_SOCKET=/tmp/c11-debug-<tag>.sock` (or `CMUX_SOCKET=…` as compat).
+- **Never `open` an untagged `c11 DEV.app`** from DerivedData. It conflicts with the user's running debug instance.
 
 ## Ghostty submodule workflow
 
@@ -250,13 +244,13 @@ Manual release steps (if not using the command):
 ```bash
 git tag vX.Y.Z
 git push origin vX.Y.Z
-gh run watch --repo manaflow-ai/cmux
+gh run watch --repo Stage-11-Agentics/c11
 ```
 
 Notes:
 - Requires GitHub secrets: `APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`,
   `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`.
-- The release asset is `cmux-macos.dmg` attached to the tag.
-- README download button points to `releases/latest/download/cmux-macos.dmg`.
+- The release asset is `c11-macos.dmg` attached to the tag.
+- README download button points to `releases/latest/download/c11-macos.dmg`.
 - Versioning: bump the minor version for updates unless explicitly asked otherwise.
 - Changelog: update `CHANGELOG.md`; docs changelog is rendered from it.

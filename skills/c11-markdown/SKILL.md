@@ -5,7 +5,7 @@ description: Open markdown files in a c11 markdown surface with live reload. Use
 
 # c11 Markdown Surfaces
 
-Use this skill to display markdown files in a c11 markdown surface — a first-class surface type that lives alongside terminal and browser surfaces in the same workspace, driven from the same `cmux` CLI. The binary is `cmux`.
+Use this skill to display markdown files in a c11 markdown surface — a first-class surface type that lives alongside terminal and browser surfaces in the same workspace, driven from the same `c11` CLI. The binary is `c11` (a `cmux` compat alias dispatches to the same binary).
 
 Rich rendering (headings, code blocks, tables, lists, Mermaid) with live file watching — the panel auto-updates when the file changes on disk.
 
@@ -17,13 +17,13 @@ Rich rendering (headings, code blocks, tables, lists, Mermaid) with live file wa
 
 ```bash
 # Open a markdown file as a split panel next to the current terminal
-cmux markdown open plan.md
+c11 markdown open plan.md
 
 # Absolute path
-cmux markdown open /path/to/PLAN.md
+c11 markdown open /path/to/PLAN.md
 
 # Target a specific workspace
-cmux markdown open design.md --workspace workspace:2
+c11 markdown open design.md --workspace workspace:2
 ```
 
 ## When to Use
@@ -60,7 +60,7 @@ cat > plan.md << 'EOF'
 4. Verify the build
 EOF
 
-cmux markdown open plan.md
+c11 markdown open plan.md
 ```
 
 ### Updating a plan in real-time
@@ -79,9 +79,9 @@ Add this to your project's `AGENTS.md` to instruct coding agents to use the mark
 ```markdown
 ## Plan Display
 
-When creating a plan or task list, write it to a `.md` file and open it in cmux:
+When creating a plan or task list, write it to a `.md` file and open it in c11:
 
-    cmux markdown open plan.md
+    c11 markdown open plan.md
 
 The panel renders markdown with rich formatting and auto-updates when the file changes.
 ```
@@ -89,17 +89,17 @@ The panel renders markdown with rich formatting and auto-updates when the file c
 ## Routing
 
 ```bash
-# Open in the caller's workspace (default -- uses CMUX_WORKSPACE_ID)
-cmux markdown open plan.md
+# Open in the caller's workspace (default -- uses CMUX_WORKSPACE_ID; C11_WORKSPACE_ID is the primary name going forward, CMUX_WORKSPACE_ID still works)
+c11 markdown open plan.md
 
 # Open in a specific workspace
-cmux markdown open plan.md --workspace workspace:2
+c11 markdown open plan.md --workspace workspace:2
 
 # Open splitting from a specific surface
-cmux markdown open plan.md --surface surface:5
+c11 markdown open plan.md --surface surface:5
 
 # Open in a specific window
-cmux markdown open plan.md --window window:1
+c11 markdown open plan.md --window window:1
 ```
 
 ## Deep-Dive References

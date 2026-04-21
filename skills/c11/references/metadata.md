@@ -46,51 +46,51 @@ All CLI commands are sugar over the socket methods below.
 
 ```bash
 # Write (merge by default)
-cmux set-metadata --json '{"role":"reviewer","task":"lat-412","progress":0.4}'
-cmux set-metadata --key status --value "running"
-cmux set-metadata --key progress --value 0.6 --type number
-cmux set-metadata --key config --value '{"shards":10}' --type json
+c11 set-metadata --json '{"role":"reviewer","task":"lat-412","progress":0.4}'
+c11 set-metadata --key status --value "running"
+c11 set-metadata --key progress --value 0.6 --type number
+c11 set-metadata --key config --value '{"shards":10}' --type json
 
 # Replace (wipes everything; requires explicit source)
-cmux set-metadata --mode replace --json '{"role":"fresh"}'
+c11 set-metadata --mode replace --json '{"role":"fresh"}'
 
 # Read
-cmux get-metadata                    # full blob, no sources
-cmux get-metadata --key role --key model
-cmux get-metadata --sources          # include metadata_sources sidecar
-cmux get-metadata --json             # raw socket result
+c11 get-metadata                     # full blob, no sources
+c11 get-metadata --key role --key model
+c11 get-metadata --sources           # include metadata_sources sidecar
+c11 get-metadata --json              # raw socket result
 
 # Clear
-cmux clear-metadata --key task
-cmux clear-metadata                  # clear everything (requires explicit source)
+c11 clear-metadata --key task
+c11 clear-metadata                   # clear everything (requires explicit source)
 ```
 
 ### Agent-declaration sugar (M1)
 
-`cmux set-agent` is a wrapper over `set-metadata` with `source: declare`:
+`c11 set-agent` is a wrapper over `set-metadata` with `source: declare`:
 
 ```bash
-cmux set-agent --type claude-code --model claude-opus-4-7
-cmux set-agent --type codex --task lat-412 --role reviewer
+c11 set-agent --type claude-code --model claude-opus-4-7
+c11 set-agent --type codex --task lat-412 --role reviewer
 ```
 
-Writes `terminal_type`, and optionally `model`, `task`, `role` with `source: declare`. Declaration overrides heuristic auto-detection but not user-explicit writes. Clear with `cmux clear-metadata --key terminal_type`.
+Writes `terminal_type`, and optionally `model`, `task`, `role` with `source: declare`. Declaration overrides heuristic auto-detection but not user-explicit writes. Clear with `c11 clear-metadata --key terminal_type`.
 
 ### Title & description sugar (M7)
 
 ```bash
-cmux set-title "My Surface Title"
-cmux set-title --from-file /tmp/title.txt
-cmux set-description "Long-form description of what this surface is doing and why."
-cmux set-description --from-file /tmp/desc.md
+c11 set-title "My Surface Title"
+c11 set-title --from-file /tmp/title.txt
+c11 set-description "Long-form description of what this surface is doing and why."
+c11 set-description --from-file /tmp/desc.md
 
 # Read the rendered title-bar state (title, description, sources, collapsed,
 # effective_collapsed, visible, sidebar_label). Defaults to caller's surface.
-cmux get-titlebar-state
-cmux get-titlebar-state --surface surface:3
+c11 get-titlebar-state
+c11 get-titlebar-state --surface surface:3
 ```
 
-Writes canonical `title` or `description` with `source: explicit`. `cmux rename-tab` is an alias for `cmux set-title`.
+Writes canonical `title` or `description` with `source: explicit`. `c11 rename-tab` is an alias for `c11 set-title`.
 
 The description renders with MarkdownUI at 11pt with a compact heading hierarchy (13/12/11). Links render styled but are **not navigable** in v1 (`OpenURLAction { .discarded }`). Images, fenced code blocks, and table rows are stripped at render time; the raw string still round-trips through the store unchanged. Content over ~5 lines scrolls internally inside a 90pt-capped region.
 
@@ -173,8 +173,8 @@ Every canonical key's value carries a parallel `metadata_sources[key]` record de
 |-------|--------|-------|
 | `heuristic` | c11 internal process-tree scan (M1) | Best-effort auto-detection. Never overwrites higher-precedence values. |
 | `osc` | Terminal emulator OSC 0/1/2 sequence (M7) | Writes `title` only. Newer OSC writes overwrite older `osc` writes. |
-| `declare` | Agent declaration (`cmux set-agent`, env vars) | Explicit agent self-identification. |
-| `explicit` | User CLI (`cmux set-metadata`, `cmux set-title`, inline edit) | Highest precedence; user intent wins. |
+| `declare` | Agent declaration (`c11 set-agent`, env vars) | Explicit agent self-identification. |
+| `explicit` | User CLI (`c11 set-metadata`, `c11 set-title`, inline edit) | Highest precedence; user intent wins. |
 
 ### Precedence chain
 
@@ -182,7 +182,7 @@ Every canonical key's value carries a parallel `metadata_sources[key]` record de
 explicit > declare > osc > heuristic
 ```
 
-- **`explicit` always wins.** `cmux set-metadata` overwrites any prior value.
+- **`explicit` always wins.** `c11 set-metadata` overwrites any prior value.
 - **`declare` overwrites `osc` and `heuristic`**, not `explicit`.
 - **`osc` overwrites `heuristic`** and older `osc`, not `declare` or `explicit`.
 - **`heuristic` only writes when the key is unset or current source is `heuristic`.**
@@ -211,6 +211,6 @@ A write that fails the precedence check returns `ok: true` with `result.applied[
 
 **Orchestrators.** Write `status`, `progress`, `role` at each milestone. The orchestrator does not need to ping the operator — canonical keys drive sidebar chips and title bars. Also use `title` / `description` for high-signal surface identity ("SIG Delegator", "Running smoke suite across 10 shards; reports to Lattice task lat-412").
 
-**Handoffs.** Structured handoffs between agents can ride on non-canonical keys — e.g. agent A writes `cmux set-metadata --json '{"handoff":{"from":"A","to":"B","result":{...}}}'` on agent B's surface; agent B polls `get-metadata --key handoff` at its prompt loop. Pull-on-demand, no subscribe.
+**Handoffs.** Structured handoffs between agents can ride on non-canonical keys — e.g. agent A writes `c11 set-metadata --json '{"handoff":{"from":"A","to":"B","result":{...}}}'` on agent B's surface; agent B polls `get-metadata --key handoff` at its prompt loop. Pull-on-demand, no subscribe.
 
 **Custom surfaces.** Any app that creates a c11 surface (via the socket `surface.create` method) owns that surface's metadata. Use it to carry domain-specific state — a markdown viewer could write `{"doc_path":"/path/to/file.md","last_modified_ts":...}` on its own surface so other agents can pull the current doc without asking.

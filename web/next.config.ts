@@ -15,6 +15,20 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  async redirects() {
+    return [
+      {
+        source: "/blog/introducing-cmux",
+        destination: "/blog/introducing-c11",
+        permanent: true,
+      },
+      {
+        source: "/:locale/blog/introducing-cmux",
+        destination: "/:locale/blog/introducing-c11",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default withNextIntl(nextConfig);

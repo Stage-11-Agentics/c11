@@ -2,32 +2,33 @@
 # Smoke test for CI: launch the app, send a command, verify it stays alive for 15 seconds.
 set -euo pipefail
 
-SOCKET_PATH="/tmp/c11mux-debug.sock"
+SOCKET_PATH="/tmp/c11-debug.sock"
 STABILITY_WAIT=15
 
 echo "=== Smoke Test ==="
 
 # --- Find the built app ---
-APP=$(find ~/Library/Developer/Xcode/DerivedData -path "*/Build/Products/Debug/c11mux DEV.app" -print -quit 2>/dev/null || true)
+APP=$(find ~/Library/Developer/Xcode/DerivedData -path "*/Build/Products/Debug/c11 DEV.app" -print -quit 2>/dev/null || true)
 if [ -z "$APP" ]; then
   echo "ERROR: Built app not found in DerivedData"
   exit 1
 fi
 echo "App: $APP"
-BINARY="$APP/Contents/MacOS/cmux"
+BINARY="$APP/Contents/MacOS/c11"
 if [ ! -x "$BINARY" ]; then
   echo "ERROR: App binary not found or not executable: $BINARY"
   exit 1
 fi
 
 # --- Clean up stale socket and any existing instances ---
-rm -f "$SOCKET_PATH"
+rm -f "$SOCKET_PATH" /tmp/c11mux-debug.sock
+pkill -x "c11" 2>/dev/null || true
 pkill -x "cmux" 2>/dev/null || true
 sleep 1
 
 # --- Launch the app directly (not via `open`, which can silently fail on CI) ---
 echo "Launching app..."
-CMUX_SOCKET_MODE=allowAll CMUX_UI_TEST_MODE=1 "$BINARY" > /tmp/c11mux-smoke-stdout.log 2>&1 &
+C11_SOCKET_MODE=allowAll CMUX_SOCKET_MODE=allowAll C11_UI_TEST_MODE=1 CMUX_UI_TEST_MODE=1 "$BINARY" > /tmp/c11-smoke-stdout.log 2>&1 &
 APP_PID=$!
 echo "App PID: $APP_PID"
 
@@ -36,11 +37,11 @@ sleep 2
 if ! kill -0 "$APP_PID" 2>/dev/null; then
   echo "ERROR: App exited immediately after launch"
   echo "--- stdout/stderr ---"
-  cat /tmp/c11mux-smoke-stdout.log 2>/dev/null | tail -50 || true
+  cat /tmp/c11-smoke-stdout.log 2>/dev/null | tail -50 || true
   echo "--- debug log ---"
-  tail -50 /tmp/c11mux-debug.log 2>/dev/null || true
+  tail -50 /tmp/c11-debug.log 2>/dev/null || true
   echo "--- crash reports ---"
-  ls -lt ~/Library/Logs/DiagnosticReports/*c11mux* ~/Library/Logs/DiagnosticReports/*cmux* 2>/dev/null | head -5 || echo "(none)"
+  ls -lt ~/Library/Logs/DiagnosticReports/*c11* ~/Library/Logs/DiagnosticReports/*cmux* 2>/dev/null | head -5 || echo "(none)"
   exit 1
 fi
 
@@ -57,9 +58,9 @@ for i in $(seq 1 60); do
   if ! kill -0 "$APP_PID" 2>/dev/null; then
     echo "ERROR: App crashed while waiting for socket"
     echo "--- stdout/stderr ---"
-    cat /tmp/c11mux-smoke-stdout.log 2>/dev/null | tail -50 || true
+    cat /tmp/c11-smoke-stdout.log 2>/dev/null | tail -50 || true
     echo "--- debug log ---"
-    tail -50 /tmp/c11mux-debug.log 2>/dev/null || true
+    tail -50 /tmp/c11-debug.log 2>/dev/null || true
     exit 1
   fi
   sleep 0.5
@@ -67,11 +68,11 @@ done
 if [ "$SOCKET_READY" != "true" ]; then
   echo "ERROR: Socket not ready after 30s"
   echo "--- stdout/stderr ---"
-  cat /tmp/c11mux-smoke-stdout.log 2>/dev/null | tail -30 || true
+  cat /tmp/c11-smoke-stdout.log 2>/dev/null | tail -30 || true
   echo "--- debug log ---"
-  tail -30 /tmp/c11mux-debug.log 2>/dev/null || true
-  ls -la /tmp/c11mux-debug* 2>/dev/null || true
-  pgrep -la "cmux" || echo "No cmux processes found"
+  tail -30 /tmp/c11-debug.log 2>/dev/null || true
+  ls -la /tmp/c11-debug* 2>/dev/null || true
+  pgrep -la "c11" || pgrep -la "cmux" || echo "No c11/cmux processes found"
   exit 1
 fi
 
@@ -114,9 +115,9 @@ sleep "$STABILITY_WAIT"
 if ! kill -0 "$APP_PID" 2>/dev/null; then
   echo "ERROR: App crashed during ${STABILITY_WAIT}s stability check"
   echo "--- stdout/stderr ---"
-  cat /tmp/c11mux-smoke-stdout.log 2>/dev/null | tail -30 || true
+  cat /tmp/c11-smoke-stdout.log 2>/dev/null | tail -30 || true
   echo "--- debug log ---"
-  tail -30 /tmp/c11mux-debug.log 2>/dev/null || true
+  tail -30 /tmp/c11-debug.log 2>/dev/null || true
   exit 1
 fi
 

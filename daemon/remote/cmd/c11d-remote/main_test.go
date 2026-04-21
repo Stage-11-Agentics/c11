@@ -105,7 +105,7 @@ func TestWrapperBinaryDispatchesIntoCLI(t *testing.T) {
 	}
 
 	sockPath := startMockSocket(t, "PONG")
-	wrapperPath := filepath.Join(t.TempDir(), "cmuxd-remote-current")
+	wrapperPath := filepath.Join(t.TempDir(), "c11d-remote-current")
 	if err := os.Symlink(os.Args[0], wrapperPath); err != nil {
 		t.Fatalf("symlink wrapper path: %v", err)
 	}

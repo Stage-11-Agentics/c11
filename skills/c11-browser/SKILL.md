@@ -5,7 +5,7 @@ description: Browser automation for c11 browser surfaces (WKWebView-backed). Use
 
 # c11 Browser Automation
 
-Use this skill for browser tasks inside c11 webviews. c11 browser surfaces are a native surface type — scriptable alongside terminals and markdown viewers in the same workspace, from the same `cmux` CLI. The binary is `cmux`.
+Use this skill for browser tasks inside c11 webviews. c11 browser surfaces are a native surface type — scriptable alongside terminals and markdown viewers in the same workspace, from the same `c11` CLI. The binary is `c11` (a `cmux` compat alias dispatches to the same binary).
 
 Prefer this over Chrome MCP when running inside c11: lighter, integrated into the workspace, no stray Chrome windows.
 
@@ -19,25 +19,25 @@ Prefer this over Chrome MCP when running inside c11: lighter, integrated into th
 6. Re-snapshot after DOM/navigation changes.
 
 ```bash
-cmux --json browser open https://example.com
+c11 --json browser open https://example.com
 # use returned surface ref, for example: surface:7
 
-cmux browser surface:7 get url
-cmux browser surface:7 wait --load-state complete --timeout-ms 15000
-cmux browser surface:7 snapshot --interactive
-cmux browser surface:7 fill e1 "hello"
-cmux --json browser surface:7 click e2 --snapshot-after
-cmux browser surface:7 snapshot --interactive
+c11 browser surface:7 get url
+c11 browser surface:7 wait --load-state complete --timeout-ms 15000
+c11 browser surface:7 snapshot --interactive
+c11 browser surface:7 fill e1 "hello"
+c11 --json browser surface:7 click e2 --snapshot-after
+c11 browser surface:7 snapshot --interactive
 ```
 
 ## Surface Targeting
 
 ```bash
 # identify current context
-cmux identify --json
+c11 identify --json
 
 # open routed to a specific topology target
-cmux browser open https://example.com --workspace workspace:2 --window window:1 --json
+c11 browser open https://example.com --workspace workspace:2 --window window:1 --json
 ```
 
 Notes:
@@ -47,14 +47,14 @@ Notes:
 
 ## Wait Support
 
-cmux supports wait patterns similar to agent-browser:
+c11 supports wait patterns similar to agent-browser:
 
 ```bash
-cmux browser <surface> wait --selector "#ready" --timeout-ms 10000
-cmux browser <surface> wait --text "Success" --timeout-ms 10000
-cmux browser <surface> wait --url-contains "/dashboard" --timeout-ms 10000
-cmux browser <surface> wait --load-state complete --timeout-ms 15000
-cmux browser <surface> wait --function "document.readyState === 'complete'" --timeout-ms 10000
+c11 browser <surface> wait --selector "#ready" --timeout-ms 10000
+c11 browser <surface> wait --text "Success" --timeout-ms 10000
+c11 browser <surface> wait --url-contains "/dashboard" --timeout-ms 10000
+c11 browser <surface> wait --load-state complete --timeout-ms 15000
+c11 browser <surface> wait --function "document.readyState === 'complete'" --timeout-ms 10000
 ```
 
 ## Common Flows
@@ -62,33 +62,33 @@ cmux browser <surface> wait --function "document.readyState === 'complete'" --ti
 ### Form Submit
 
 ```bash
-cmux --json browser open https://example.com/signup
-cmux browser surface:7 get url
-cmux browser surface:7 wait --load-state complete --timeout-ms 15000
-cmux browser surface:7 snapshot --interactive
-cmux browser surface:7 fill e1 "Jane Doe"
-cmux browser surface:7 fill e2 "jane@example.com"
-cmux --json browser surface:7 click e3 --snapshot-after
-cmux browser surface:7 wait --url-contains "/welcome" --timeout-ms 15000
-cmux browser surface:7 snapshot --interactive
+c11 --json browser open https://example.com/signup
+c11 browser surface:7 get url
+c11 browser surface:7 wait --load-state complete --timeout-ms 15000
+c11 browser surface:7 snapshot --interactive
+c11 browser surface:7 fill e1 "Jane Doe"
+c11 browser surface:7 fill e2 "jane@example.com"
+c11 --json browser surface:7 click e3 --snapshot-after
+c11 browser surface:7 wait --url-contains "/welcome" --timeout-ms 15000
+c11 browser surface:7 snapshot --interactive
 ```
 
 ### Clear an Input
 
 ```bash
-cmux browser surface:7 fill e11 "" --snapshot-after --json
-cmux browser surface:7 get value e11 --json
+c11 browser surface:7 fill e11 "" --snapshot-after --json
+c11 browser surface:7 get value e11 --json
 ```
 
 ### Stable Agent Loop (Recommended)
 
 ```bash
 # navigate -> verify -> wait -> snapshot -> action -> snapshot
-cmux browser surface:7 get url
-cmux browser surface:7 wait --load-state complete --timeout-ms 15000
-cmux browser surface:7 snapshot --interactive
-cmux --json browser surface:7 click e5 --snapshot-after
-cmux browser surface:7 snapshot --interactive
+c11 browser surface:7 get url
+c11 browser surface:7 wait --load-state complete --timeout-ms 15000
+c11 browser surface:7 snapshot --interactive
+c11 --json browser surface:7 click e5 --snapshot-after
+c11 browser surface:7 snapshot --interactive
 ```
 
 If `get url` is empty or `about:blank`, navigate first instead of waiting on load state.
@@ -133,9 +133,9 @@ Some complex pages can reject or break the JavaScript used for rich snapshots an
 Recovery steps:
 
 ```bash
-cmux browser surface:7 get url
-cmux browser surface:7 get text body
-cmux browser surface:7 get html body
+c11 browser surface:7 get url
+c11 browser surface:7 get text body
+c11 browser surface:7 get html body
 ```
 
 - Use `get url` first so you know whether the page actually navigated.

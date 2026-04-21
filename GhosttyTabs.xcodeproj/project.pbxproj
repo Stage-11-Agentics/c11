@@ -7,7 +7,7 @@
 	objects = {
 
 		/* Begin PBXBuildFile section */
-			A5001001 /* cmuxApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001011 /* cmuxApp.swift */; };
+			A5001001 /* c11App.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001011 /* c11App.swift */; };
 			A5001002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001012 /* ContentView.swift */; };
 			E62155868BB29FEB5DAAAF25 /* SidebarSelectionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AD52285508B1D6A9875E7B3 /* SidebarSelectionState.swift */; };
 			B9000018A1B2C3D4E5F60719 /* WindowDragHandleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000017A1B2C3D4E5F60719 /* WindowDragHandleView.swift */; };
@@ -115,11 +115,11 @@
 		A5005B02 /* BrandColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5005B01 /* BrandColors.swift */; };
 		A5001100 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A5001101 /* Assets.xcassets */; };
 		A5001230 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A5001231 /* Sparkle */; };
-		B9000002A1B2C3D4E5F60719 /* cmux.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000001A1B2C3D4E5F60719 /* cmux.swift */; };
+		B9000002A1B2C3D4E5F60719 /* c11.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000001A1B2C3D4E5F60719 /* c11.swift */; };
 		CC401002A1B2C3D4E5F60719 /* SkillInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC401001A1B2C3D4E5F60719 /* SkillInstaller.swift */; };
 		CC401003A1B2C3D4E5F60719 /* SkillInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC401001A1B2C3D4E5F60719 /* SkillInstaller.swift */; };
 		CC401005A1B2C3D4E5F60719 /* AgentSkillsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC401004A1B2C3D4E5F60719 /* AgentSkillsView.swift */; };
-		B900000BA1B2C3D4E5F60719 /* cmux in Copy CLI */ = {isa = PBXBuildFile; fileRef = B9000004A1B2C3D4E5F60719 /* cmux */; };
+		B900000BA1B2C3D4E5F60719 /* c11 in Copy CLI */ = {isa = PBXBuildFile; fileRef = B9000004A1B2C3D4E5F60719 /* c11 */; };
 		C1ADE00002A1B2C3D4E5F719 /* claude in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1ADE00001A1B2C3D4E5F719 /* claude */; };
 		D1BEF00002A1B2C3D4E5F719 /* open in Copy CLI */ = {isa = PBXBuildFile; fileRef = D1BEF00001A1B2C3D4E5F719 /* open */; };
 		84E00D47E4584162AE53BC8D /* xterm-ghostty in Resources */ = {isa = PBXBuildFile; fileRef = B2E7294509CC42FE9191870E /* xterm-ghostty */; };
@@ -172,7 +172,7 @@
 		DA7A10CA710E000000000003 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = DA7A10CA710E000000000001 /* Localizable.xcstrings */; };
 		DA7A10CA710E000000000004 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = DA7A10CA710E000000000002 /* InfoPlist.xcstrings */; };
 		DA7A10CA710E000000000006 /* welcome.md in Resources */ = {isa = PBXBuildFile; fileRef = DA7A10CA710E000000000005 /* welcome.md */; };
-		A5001623 /* cmux.sdef in Resources */ = {isa = PBXBuildFile; fileRef = A5001622 /* cmux.sdef */; };
+		A5001623 /* c11.sdef in Resources */ = {isa = PBXBuildFile; fileRef = A5001622 /* c11.sdef */; };
 						E12E88F82733EC42F32C36A3 /* BrowserConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 970226F3C99D0D937CD00539 /* BrowserConfigTests.swift */; };
 					1F14445B9627DE9D3AF4FD2E /* BrowserPanelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58C7B1B978620BE162CC057E /* BrowserPanelTests.swift */; };
 					46F6AC15863EC84DCD3770A2 /* TerminalAndGhosttyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02FC74F2C27127CC565B3E8C /* TerminalAndGhosttyTests.swift */; };
@@ -211,7 +211,7 @@
 			dstPath = "bin";
 			dstSubfolderSpec = 7;
 			files = (
-				B900000BA1B2C3D4E5F60719 /* cmux in Copy CLI */,
+				B900000BA1B2C3D4E5F60719 /* c11 in Copy CLI */,
 				C1ADE00002A1B2C3D4E5F719 /* claude in Copy CLI */,
 				D1BEF00002A1B2C3D4E5F719 /* open in Copy CLI */,
 			);
@@ -225,30 +225,30 @@
 			isa = PBXContainerItemProxy;
 			containerPortal = A5001070 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = A5001050 /* GhosttyTabs */;
-			remoteInfo = GhosttyTabs;
+			remoteGlobalIDString = A5001050 /* c11 */;
+			remoteInfo = c11;
 		};
 		B900000DA1B2C3D4E5F60719 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = A5001070 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = B9000005A1B2C3D4E5F60719 /* cmux-cli */;
-			remoteInfo = "cmux-cli";
+			remoteGlobalIDString = B9000005A1B2C3D4E5F60719 /* c11-cli */;
+			remoteInfo = "c11-cli";
 		};
 		F1000008A1B2C3D4E5F60718 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = A5001070 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = A5001050 /* GhosttyTabs */;
-			remoteInfo = GhosttyTabs;
+			remoteGlobalIDString = A5001050 /* c11 */;
+			remoteInfo = c11;
 		};
 /* End PBXContainerItemProxy section */
 
 		/* Begin PBXFileReference section */
-			A5001000 /* cmux.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = cmux.app; sourceTree = BUILT_PRODUCTS_DIR; };
-			F1000002A1B2C3D4E5F60718 /* cmuxTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = cmuxTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-			7E7E6EF344A568AC7FEE3715 /* cmuxUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = cmuxUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-			A5001011 /* cmuxApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = cmuxApp.swift; sourceTree = "<group>"; };
+			A5001000 /* c11.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = c11.app; sourceTree = BUILT_PRODUCTS_DIR; };
+			F1000002A1B2C3D4E5F60718 /* c11Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = c11Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+			7E7E6EF344A568AC7FEE3715 /* c11UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = c11UITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+			A5001011 /* c11App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = c11App.swift; sourceTree = "<group>"; };
 			A5001012 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 			9AD52285508B1D6A9875E7B3 /* SidebarSelectionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarSelectionState.swift; sourceTree = "<group>"; };
 			B9000017A1B2C3D4E5F60719 /* WindowDragHandleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowDragHandleView.swift; sourceTree = "<group>"; };
@@ -305,15 +305,15 @@
 			A5F1002001A1B2C3D4E5F01A /* SidebarSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarSnapshotTests.swift; sourceTree = "<group>"; };
 			A5F1002001A1B2C3D4E5F01B /* TitlebarSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitlebarSnapshotTests.swift; sourceTree = "<group>"; };
 			A5F1002001A1B2C3D4E5F01C /* BrowserChromeSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserChromeSnapshotTests.swift; sourceTree = "<group>"; };
-			A5F1002001A1B2C3D4E5F019 /* stage11.toml */ = {isa = PBXFileReference; lastKnownFileType = text; path = c11mux-themes/stage11.toml; sourceTree = "<group>"; };
-		A5F1002001A1B2C3D4E5F120 /* phosphor.toml */ = {isa = PBXFileReference; lastKnownFileType = text; path = c11mux-themes/phosphor.toml; sourceTree = "<group>"; };
-		A5F1002001A1B2C3D4E5F222 /* radical.toml */ = {isa = PBXFileReference; lastKnownFileType = text; path = c11mux-themes/radical.toml; sourceTree = "<group>"; };
-		A5F1002001A1B2C3D4E5F121 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = c11mux-themes/README.md; sourceTree = "<group>"; };
+			A5F1002001A1B2C3D4E5F019 /* stage11.toml */ = {isa = PBXFileReference; lastKnownFileType = text; path = c11-themes/stage11.toml; sourceTree = "<group>"; };
+		A5F1002001A1B2C3D4E5F120 /* phosphor.toml */ = {isa = PBXFileReference; lastKnownFileType = text; path = c11-themes/phosphor.toml; sourceTree = "<group>"; };
+		A5F1002001A1B2C3D4E5F222 /* radical.toml */ = {isa = PBXFileReference; lastKnownFileType = text; path = c11-themes/radical.toml; sourceTree = "<group>"; };
+		A5F1002001A1B2C3D4E5F121 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = c11-themes/README.md; sourceTree = "<group>"; };
 		A5008F12 /* SurfaceTitleBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceTitleBarView.swift; sourceTree = "<group>"; };
 		A5008F22 /* TitleFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleFormatting.swift; sourceTree = "<group>"; };
 			A5001016 /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = GhosttyKit.xcframework; sourceTree = "<group>"; };
 		A5001017 /* ghostty.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ghostty.h; sourceTree = "<group>"; };
-		A5001018 /* cmux-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "cmux-Bridging-Header.h"; sourceTree = "<group>"; };
+		A5001018 /* c11-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "c11-Bridging-Header.h"; sourceTree = "<group>"; };
 		A5001019 /* TerminalController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalController.swift; sourceTree = "<group>"; };
 		A5001600 /* SentryHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentryHelper.swift; sourceTree = "<group>"; };
 		A5001620 /* AppleScriptSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleScriptSupport.swift; sourceTree = "<group>"; };
@@ -380,10 +380,10 @@
 		C1ADE00001A1B2C3D4E5F719 /* claude */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "Resources/bin/claude"; sourceTree = SOURCE_ROOT; };
 		D1BEF00001A1B2C3D4E5F719 /* open */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "Resources/bin/open"; sourceTree = SOURCE_ROOT; };
 		A5002001 /* THIRD_PARTY_LICENSES.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = THIRD_PARTY_LICENSES.md; sourceTree = SOURCE_ROOT; };
-		B9000001A1B2C3D4E5F60719 /* cmux.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = cmux.swift; sourceTree = "<group>"; };
+		B9000001A1B2C3D4E5F60719 /* c11.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = c11.swift; sourceTree = "<group>"; };
 		CC401001A1B2C3D4E5F60719 /* SkillInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillInstaller.swift; sourceTree = "<group>"; };
 		CC401004A1B2C3D4E5F60719 /* AgentSkillsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillsView.swift; sourceTree = "<group>"; };
-		B9000004A1B2C3D4E5F60719 /* cmux */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = cmux; sourceTree = BUILT_PRODUCTS_DIR; };
+		B9000004A1B2C3D4E5F60719 /* c11 */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = c11; sourceTree = BUILT_PRODUCTS_DIR; };
 				B9000011A1B2C3D4E5F60719 /* AutomationSocketUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationSocketUITests.swift; sourceTree = "<group>"; };
 					B9000013A1B2C3D4E5F60719 /* JumpToUnreadUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JumpToUnreadUITests.swift; sourceTree = "<group>"; };
 					B9000016A1B2C3D4E5F60719 /* MultiWindowNotificationsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiWindowNotificationsUITests.swift; sourceTree = "<group>"; };
@@ -410,7 +410,7 @@
 		DA7A10CA710E000000000001 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		DA7A10CA710E000000000002 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		DA7A10CA710E000000000005 /* welcome.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = welcome.md; sourceTree = "<group>"; };
-		A5001622 /* cmux.sdef */ = {isa = PBXFileReference; lastKnownFileType = text.sdef; path = cmux.sdef; sourceTree = "<group>"; };
+		A5001622 /* c11.sdef */ = {isa = PBXFileReference; lastKnownFileType = text.sdef; path = c11.sdef; sourceTree = "<group>"; };
 				970226F3C99D0D937CD00539 /* BrowserConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserConfigTests.swift; sourceTree = "<group>"; };
 				58C7B1B978620BE162CC057E /* BrowserPanelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPanelTests.swift; sourceTree = "<group>"; };
 				02FC74F2C27127CC565B3E8C /* TerminalAndGhosttyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalAndGhosttyTests.swift; sourceTree = "<group>"; };
@@ -480,7 +480,7 @@
 				DA7A10CA710E000000000003 /* Localizable.xcstrings in Resources */,
 				DA7A10CA710E000000000004 /* InfoPlist.xcstrings in Resources */,
 				DA7A10CA710E000000000006 /* welcome.md in Resources */,
-				A5001623 /* cmux.sdef in Resources */,
+				A5001623 /* c11.sdef in Resources */,
 				A5F1001001A1B2C3D4E5F019 /* stage11.toml in Resources */,
 				A5F1001001A1B2C3D4E5F120 /* phosphor.toml in Resources */,
 				A5F1001001A1B2C3D4E5F222 /* radical.toml in Resources */,
@@ -520,7 +520,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -euo pipefail\nDEST=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\nGHOSTTY_DEST=\"${DEST}/ghostty\"\nTERMINFO_DEST=\"${DEST}/terminfo\"\nCMUX_SHELL_DEST=\"${DEST}/shell-integration\"\nBIN_DEST=\"${DEST}/bin\"\nSRC_SHARE=\"${SRCROOT}/ghostty/zig-out/share\"\nGHOSTTY_SRC=\"${SRC_SHARE}/ghostty\"\nTERMINFO_SRC=\"${SRC_SHARE}/terminfo\"\nFALLBACK_GHOSTTY=\"${SRCROOT}/Resources/ghostty\"\nFALLBACK_TERMINFO=\"${SRCROOT}/Resources/ghostty/terminfo\"\nTERMINFO_OVERLAY=\"${SRCROOT}/Resources/terminfo-overlay\"\nCMUX_SHELL_SRC=\"${SRCROOT}/Resources/shell-integration\"\nCMUX_GHOSTTY_ZSH_SRC=\"${SRCROOT}/ghostty/src/shell-integration/zsh/ghostty-integration\"\nBUILD_GHOSTTY_HELPER=\"${SRCROOT}/scripts/build-ghostty-cli-helper.sh\"\nGHOSTTY_HELPER_DEST=\"${BIN_DEST}/ghostty\"\nif [ -d \"$GHOSTTY_SRC\" ]; then\n  mkdir -p \"$GHOSTTY_DEST\"\n  rsync -a --delete \"$GHOSTTY_SRC/\" \"$GHOSTTY_DEST/\"\nelif [ -d \"$FALLBACK_GHOSTTY\" ]; then\n  mkdir -p \"$GHOSTTY_DEST\"\n  rsync -a --delete \"$FALLBACK_GHOSTTY/\" \"$GHOSTTY_DEST/\"\nfi\nif [ -f \"${SRCROOT}/Resources/ghostty/c11mux-default.conf\" ]; then\n  mkdir -p \"$GHOSTTY_DEST\"\n  rsync -a \"${SRCROOT}/Resources/ghostty/c11mux-default.conf\" \"$GHOSTTY_DEST/c11mux-default.conf\"\nfi\nif [ -d \"$TERMINFO_SRC\" ]; then\n  mkdir -p \"$TERMINFO_DEST\"\n  rsync -a --delete \"$TERMINFO_SRC/\" \"$TERMINFO_DEST/\"\nelif [ -d \"$FALLBACK_TERMINFO\" ]; then\n  mkdir -p \"$TERMINFO_DEST\"\n  rsync -a --delete \"$FALLBACK_TERMINFO/\" \"$TERMINFO_DEST/\"\nfi\n# Overlay any cmux-specific terminfo adjustments.\n# This intentionally does not use --delete so we only patch specific entries.\nif [ -d \"$TERMINFO_OVERLAY\" ]; then\n  mkdir -p \"$TERMINFO_DEST\"\n  rsync -a \"$TERMINFO_OVERLAY/\" \"$TERMINFO_DEST/\"\nfi\nif [ -d \"$CMUX_SHELL_SRC\" ]; then\n  mkdir -p \"$CMUX_SHELL_DEST\"\n  # Use '/.' so dotfiles like .zshenv/.zprofile are copied too.\n  rsync -a \"$CMUX_SHELL_SRC/.\" \"$CMUX_SHELL_DEST/\"\nfi\nif [ -f \"$CMUX_GHOSTTY_ZSH_SRC\" ]; then\n  mkdir -p \"$CMUX_SHELL_DEST\"\n  rsync -a \"$CMUX_GHOSTTY_ZSH_SRC\" \"$CMUX_SHELL_DEST/ghostty-integration.zsh\"\nfi\nSKILLS_SRC=\"${SRCROOT}/skills\"\nSKILLS_DEST=\"${DEST}/skills\"\nif [ -d \"$SKILLS_SRC\" ]; then\n  mkdir -p \"$SKILLS_DEST\"\n  rsync -a --delete \"$SKILLS_SRC/\" \"$SKILLS_DEST/\"\nfi\nTHEMES_SRC=\"${SRCROOT}/Resources/c11mux-themes\"\nTHEMES_DEST=\"${DEST}/c11mux-themes\"\nif [ -d \"$THEMES_SRC\" ]; then\n  mkdir -p \"$THEMES_DEST\"\n  rsync -a --delete \"$THEMES_SRC/\" \"$THEMES_DEST/\"\nfi\nif [ ! -x \"$BUILD_GHOSTTY_HELPER\" ]; then\n  echo \"error: missing Ghostty CLI helper build script at $BUILD_GHOSTTY_HELPER\" >&2\n  exit 1\nfi\nARCHS_LIST=\" ${ARCHS:-} \"\nHAS_ARM64=0\nHAS_X86_64=0\nGHOSTTY_HELPER_TARGET=\"\"\ncase \"$ARCHS_LIST\" in\n  *\" arm64 \"*) HAS_ARM64=1 ;;\nesac\ncase \"$ARCHS_LIST\" in\n  *\" x86_64 \"*) HAS_X86_64=1 ;;\nesac\nif [ \"$HAS_ARM64\" -eq 1 ] && [ \"$HAS_X86_64\" -eq 1 ]; then\n  \"$BUILD_GHOSTTY_HELPER\" --universal --output \"$GHOSTTY_HELPER_DEST\"\nelif [ \"$HAS_ARM64\" -eq 1 ]; then\n  GHOSTTY_HELPER_TARGET=\"aarch64-macos\"\nelif [ \"$HAS_X86_64\" -eq 1 ]; then\n  GHOSTTY_HELPER_TARGET=\"x86_64-macos\"\nfi\nif [ -n \"$GHOSTTY_HELPER_TARGET\" ]; then\n  \"$BUILD_GHOSTTY_HELPER\" --target \"$GHOSTTY_HELPER_TARGET\" --output \"$GHOSTTY_HELPER_DEST\"\nelif [ \"$HAS_ARM64\" -eq 0 ] || [ \"$HAS_X86_64\" -eq 0 ]; then\n  \"$BUILD_GHOSTTY_HELPER\" --output \"$GHOSTTY_HELPER_DEST\"\nfi\nif [ ! -x \"$GHOSTTY_HELPER_DEST\" ]; then\n  echo \"error: Ghostty CLI helper was not created at $GHOSTTY_HELPER_DEST\" >&2\n  exit 1\nfi\nINFO_PLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\nCOMMIT=\"$(git -C \"${SRCROOT}\" rev-parse --short=9 HEAD 2>/dev/null || true)\"\nif [ -n \"$COMMIT\" ] && [ -f \"$INFO_PLIST\" ]; then\n  /usr/libexec/PlistBuddy -c \"Set :CMUXCommit $COMMIT\" \"$INFO_PLIST\" >/dev/null 2>&1 || /usr/libexec/PlistBuddy -c \"Add :CMUXCommit string $COMMIT\" \"$INFO_PLIST\" >/dev/null 2>&1 || true\nfi\n";
+			shellScript = "set -euo pipefail\nDEST=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\nGHOSTTY_DEST=\"${DEST}/ghostty\"\nTERMINFO_DEST=\"${DEST}/terminfo\"\nC11_SHELL_DEST=\"${DEST}/shell-integration\"\nBIN_DEST=\"${DEST}/bin\"\nSRC_SHARE=\"${SRCROOT}/ghostty/zig-out/share\"\nGHOSTTY_SRC=\"${SRC_SHARE}/ghostty\"\nTERMINFO_SRC=\"${SRC_SHARE}/terminfo\"\nFALLBACK_GHOSTTY=\"${SRCROOT}/Resources/ghostty\"\nFALLBACK_TERMINFO=\"${SRCROOT}/Resources/ghostty/terminfo\"\nTERMINFO_OVERLAY=\"${SRCROOT}/Resources/terminfo-overlay\"\nC11_SHELL_SRC=\"${SRCROOT}/Resources/shell-integration\"\nC11_GHOSTTY_ZSH_SRC=\"${SRCROOT}/ghostty/src/shell-integration/zsh/ghostty-integration\"\nBUILD_GHOSTTY_HELPER=\"${SRCROOT}/scripts/build-ghostty-cli-helper.sh\"\nGHOSTTY_HELPER_DEST=\"${BIN_DEST}/ghostty\"\nif [ -d \"$GHOSTTY_SRC\" ]; then\n  mkdir -p \"$GHOSTTY_DEST\"\n  rsync -a --delete \"$GHOSTTY_SRC/\" \"$GHOSTTY_DEST/\"\nelif [ -d \"$FALLBACK_GHOSTTY\" ]; then\n  mkdir -p \"$GHOSTTY_DEST\"\n  rsync -a --delete \"$FALLBACK_GHOSTTY/\" \"$GHOSTTY_DEST/\"\nfi\nif [ -f \"${SRCROOT}/Resources/ghostty/c11-default.conf\" ]; then\n  mkdir -p \"$GHOSTTY_DEST\"\n  rsync -a \"${SRCROOT}/Resources/ghostty/c11-default.conf\" \"$GHOSTTY_DEST/c11-default.conf\"\nfi\nif [ -d \"$TERMINFO_SRC\" ]; then\n  mkdir -p \"$TERMINFO_DEST\"\n  rsync -a --delete \"$TERMINFO_SRC/\" \"$TERMINFO_DEST/\"\nelif [ -d \"$FALLBACK_TERMINFO\" ]; then\n  mkdir -p \"$TERMINFO_DEST\"\n  rsync -a --delete \"$FALLBACK_TERMINFO/\" \"$TERMINFO_DEST/\"\nfi\n# Overlay any c11-specific terminfo adjustments.\n# This intentionally does not use --delete so we only patch specific entries.\nif [ -d \"$TERMINFO_OVERLAY\" ]; then\n  mkdir -p \"$TERMINFO_DEST\"\n  rsync -a \"$TERMINFO_OVERLAY/\" \"$TERMINFO_DEST/\"\nfi\nif [ -d \"$C11_SHELL_SRC\" ]; then\n  mkdir -p \"$C11_SHELL_DEST\"\n  # Use '/.' so dotfiles like .zshenv/.zprofile are copied too.\n  rsync -a \"$C11_SHELL_SRC/.\" \"$C11_SHELL_DEST/\"\nfi\nif [ -f \"$C11_GHOSTTY_ZSH_SRC\" ]; then\n  mkdir -p \"$C11_SHELL_DEST\"\n  rsync -a \"$C11_GHOSTTY_ZSH_SRC\" \"$C11_SHELL_DEST/ghostty-integration.zsh\"\nfi\nSKILLS_SRC=\"${SRCROOT}/skills\"\nSKILLS_DEST=\"${DEST}/skills\"\nif [ -d \"$SKILLS_SRC\" ]; then\n  mkdir -p \"$SKILLS_DEST\"\n  rsync -a --delete \"$SKILLS_SRC/\" \"$SKILLS_DEST/\"\nfi\nTHEMES_SRC=\"${SRCROOT}/Resources/c11-themes\"\nTHEMES_DEST=\"${DEST}/c11-themes\"\nif [ -d \"$THEMES_SRC\" ]; then\n  mkdir -p \"$THEMES_DEST\"\n  rsync -a --delete \"$THEMES_SRC/\" \"$THEMES_DEST/\"\nfi\nif [ ! -x \"$BUILD_GHOSTTY_HELPER\" ]; then\n  echo \"error: missing Ghostty CLI helper build script at $BUILD_GHOSTTY_HELPER\" >&2\n  exit 1\nfi\nARCHS_LIST=\" ${ARCHS:-} \"\nHAS_ARM64=0\nHAS_X86_64=0\nGHOSTTY_HELPER_TARGET=\"\"\ncase \"$ARCHS_LIST\" in\n  *\" arm64 \"*) HAS_ARM64=1 ;;\nesac\ncase \"$ARCHS_LIST\" in\n  *\" x86_64 \"*) HAS_X86_64=1 ;;\nesac\nif [ \"$HAS_ARM64\" -eq 1 ] && [ \"$HAS_X86_64\" -eq 1 ]; then\n  \"$BUILD_GHOSTTY_HELPER\" --universal --output \"$GHOSTTY_HELPER_DEST\"\nelif [ \"$HAS_ARM64\" -eq 1 ]; then\n  GHOSTTY_HELPER_TARGET=\"aarch64-macos\"\nelif [ \"$HAS_X86_64\" -eq 1 ]; then\n  GHOSTTY_HELPER_TARGET=\"x86_64-macos\"\nfi\nif [ -n \"$GHOSTTY_HELPER_TARGET\" ]; then\n  \"$BUILD_GHOSTTY_HELPER\" --target \"$GHOSTTY_HELPER_TARGET\" --output \"$GHOSTTY_HELPER_DEST\"\nelif [ \"$HAS_ARM64\" -eq 0 ] || [ \"$HAS_X86_64\" -eq 0 ]; then\n  \"$BUILD_GHOSTTY_HELPER\" --output \"$GHOSTTY_HELPER_DEST\"\nfi\nif [ ! -x \"$GHOSTTY_HELPER_DEST\" ]; then\n  echo \"error: Ghostty CLI helper was not created at $GHOSTTY_HELPER_DEST\" >&2\n  exit 1\nfi\nINFO_PLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\nCOMMIT=\"$(git -C \"${SRCROOT}\" rev-parse --short=9 HEAD 2>/dev/null || true)\"\nif [ -n \"$COMMIT\" ] && [ -f \"$INFO_PLIST\" ]; then\n  /usr/libexec/PlistBuddy -c \"Set :C11Commit $COMMIT\" \"$INFO_PLIST\" >/dev/null 2>&1 || /usr/libexec/PlistBuddy -c \"Add :C11Commit string $COMMIT\" \"$INFO_PLIST\" >/dev/null 2>&1 || true\nfi\nMACOS_DIR=\"${TARGET_BUILD_DIR}/${EXECUTABLE_FOLDER_PATH}\"\nif [ -f \"$MACOS_DIR/${EXECUTABLE_NAME}\" ]; then\n  ln -sfh \"${EXECUTABLE_NAME}\" \"$MACOS_DIR/cmux\"\nfi\nif [ -f \"$BIN_DEST/${EXECUTABLE_NAME}\" ]; then\n  ln -sfh \"${EXECUTABLE_NAME}\" \"$BIN_DEST/cmux\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -535,9 +535,9 @@
 				IC000002 /* AppIcon.icon */,
 				A5001016 /* GhosttyKit.xcframework */,
 				A5001017 /* ghostty.h */,
-				A5001018 /* cmux-Bridging-Header.h */,
-				3196C9C2D01F054C1D3385DD /* cmuxUITests */,
-				F1000003A1B2C3D4E5F60718 /* cmuxTests */,
+				A5001018 /* c11-Bridging-Header.h */,
+				3196C9C2D01F054C1D3385DD /* c11UITests */,
+				F1000003A1B2C3D4E5F60718 /* c11Tests */,
 				A5001042 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -545,7 +545,7 @@
 			A5001041 /* Sources */ = {
 				isa = PBXGroup;
 				children = (
-					A5001011 /* cmuxApp.swift */,
+					A5001011 /* c11App.swift */,
 					A5001012 /* ContentView.swift */,
 					9AD52285508B1D6A9875E7B3 /* SidebarSelectionState.swift */,
 					B9000017A1B2C3D4E5F60719 /* WindowDragHandleView.swift */,
@@ -643,7 +643,7 @@
 		B9000003A1B2C3D4E5F60719 /* CLI */ = {
 			isa = PBXGroup;
 			children = (
-				B9000001A1B2C3D4E5F60719 /* cmux.swift */,
+				B9000001A1B2C3D4E5F60719 /* c11.swift */,
 			);
 			path = CLI;
 			sourceTree = "<group>";
@@ -657,7 +657,7 @@
 				DA7A10CA710E000000000001 /* Localizable.xcstrings */,
 				DA7A10CA710E000000000002 /* InfoPlist.xcstrings */,
 				DA7A10CA710E000000000005 /* welcome.md */,
-				A5001622 /* cmux.sdef */,
+				A5001622 /* c11.sdef */,
 				A5F1002001A1B2C3D4E5F019 /* stage11.toml */,
 				A5F1002001A1B2C3D4E5F120 /* phosphor.toml */,
 				A5F1002001A1B2C3D4E5F222 /* radical.toml */,
@@ -669,15 +669,15 @@
 		A5001042 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A5001000 /* cmux.app */,
-				B9000004A1B2C3D4E5F60719 /* cmux */,
-				7E7E6EF344A568AC7FEE3715 /* cmuxUITests.xctest */,
-				F1000002A1B2C3D4E5F60718 /* cmuxTests.xctest */,
+				A5001000 /* c11.app */,
+				B9000004A1B2C3D4E5F60719 /* c11 */,
+				7E7E6EF344A568AC7FEE3715 /* c11UITests.xctest */,
+				F1000002A1B2C3D4E5F60718 /* c11Tests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-			3196C9C2D01F054C1D3385DD /* cmuxUITests */ = {
+			3196C9C2D01F054C1D3385DD /* c11UITests */ = {
 				isa = PBXGroup;
 						children = (
 							B9000011A1B2C3D4E5F60719 /* AutomationSocketUITests.swift */,
@@ -695,10 +695,10 @@
 							C0B4D9B1A1B2C3D4E5F60718 /* UpdatePillUITests.swift */,
 						E1000001A1B2C3D4E5F60718 /* MenuKeyEquivalentRoutingUITests.swift */,
 					);
-				path = cmuxUITests;
+				path = c11UITests;
 				sourceTree = "<group>";
 			};
-			F1000003A1B2C3D4E5F60718 /* cmuxTests */ = {
+			F1000003A1B2C3D4E5F60718 /* c11Tests */ = {
 				isa = PBXGroup;
 				children = (
 					F2000001A1B2C3D4E5F60718 /* UpdatePillReleaseVisibilityTests.swift */,
@@ -760,15 +760,15 @@
 					D7015BF1A1B2C3D4E5F60718 /* DefaultGridSettingsTests.swift */,
 					A5C36031 /* StatusBarButtonDisplayTests.swift */,
 				);
-				path = cmuxTests;
+				path = c11Tests;
 				sourceTree = "<group>";
 			};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A5001050 /* GhosttyTabs */ = {
+		A5001050 /* c11 */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A5001060 /* Build configuration list for PBXNativeTarget "GhosttyTabs" */;
+			buildConfigurationList = A5001060 /* Build configuration list for PBXNativeTarget "c11" */;
 			buildPhases = (
 				A5001051 /* Sources */,
 				A5001030 /* Frameworks */,
@@ -789,14 +789,14 @@
 					A5001261 /* Bonsplit */,
 					A5001291 /* MarkdownUI */,
 				);
-			name = GhosttyTabs;
-			productName = GhosttyTabs;
-			productReference = A5001000 /* cmux.app */;
+			name = c11;
+			productName = c11;
+			productReference = A5001000 /* c11.app */;
 			productType = "com.apple.product-type.application";
 		};
-		B9000005A1B2C3D4E5F60719 /* cmux-cli */ = {
+		B9000005A1B2C3D4E5F60719 /* c11-cli */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = B9000007A1B2C3D4E5F60719 /* Build configuration list for PBXNativeTarget "cmux-cli" */;
+			buildConfigurationList = B9000007A1B2C3D4E5F60719 /* Build configuration list for PBXNativeTarget "c11-cli" */;
 			buildPhases = (
 				B9000006A1B2C3D4E5F60719 /* Sources */,
 				B900000CA1B2C3D4E5F60719 /* Frameworks */,
@@ -808,14 +808,14 @@
 			packageProductDependencies = (
 				A5001251 /* Sentry */,
 			);
-			name = "cmux-cli";
-			productName = cmux;
-			productReference = B9000004A1B2C3D4E5F60719 /* cmux */;
+			name = "c11-cli";
+			productName = c11;
+			productReference = B9000004A1B2C3D4E5F60719 /* c11 */;
 			productType = "com.apple.product-type.tool";
 		};
-		CB450DF0F0B3839599082C4D /* cmuxUITests */ = {
+		CB450DF0F0B3839599082C4D /* c11UITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = AD2C7ED08993D3CD4910A1FF /* Build configuration list for PBXNativeTarget "cmuxUITests" */;
+			buildConfigurationList = AD2C7ED08993D3CD4910A1FF /* Build configuration list for PBXNativeTarget "c11UITests" */;
 			buildPhases = (
 				E436EF0BA8EC9E6721A42F79 /* Sources */,
 				AB408954939A11B8A87BB5DE /* Frameworks */,
@@ -826,14 +826,14 @@
 			dependencies = (
 				32568B0DCFC8656BA952468E /* PBXTargetDependency */,
 			);
-			name = cmuxUITests;
-			productName = cmuxUITests;
-			productReference = 7E7E6EF344A568AC7FEE3715 /* cmuxUITests.xctest */;
+			name = c11UITests;
+			productName = c11UITests;
+			productReference = 7E7E6EF344A568AC7FEE3715 /* c11UITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
-		F1000004A1B2C3D4E5F60718 /* cmuxTests */ = {
+		F1000004A1B2C3D4E5F60718 /* c11Tests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = F1000010A1B2C3D4E5F60718 /* Build configuration list for PBXNativeTarget "cmuxTests" */;
+			buildConfigurationList = F1000010A1B2C3D4E5F60718 /* Build configuration list for PBXNativeTarget "c11Tests" */;
 			buildPhases = (
 				F1000005A1B2C3D4E5F60718 /* Sources */,
 				F1000006A1B2C3D4E5F60718 /* Frameworks */,
@@ -844,9 +844,9 @@
 			dependencies = (
 				F1000009A1B2C3D4E5F60718 /* PBXTargetDependency */,
 			);
-			name = cmuxTests;
-			productName = cmuxTests;
-			productReference = F1000002A1B2C3D4E5F60718 /* cmuxTests.xctest */;
+			name = c11Tests;
+			productName = c11Tests;
+			productReference = F1000002A1B2C3D4E5F60718 /* c11Tests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
@@ -859,7 +859,7 @@
 				LastSwiftUpdateCheck = 1500;
 				LastUpgradeCheck = 1500;
 			};
-			buildConfigurationList = A5001071 /* Build configuration list for PBXProject "GhosttyTabs" */;
+			buildConfigurationList = A5001071 /* Build configuration list for PBXProject "c11" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -896,10 +896,10 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A5001050 /* GhosttyTabs */,
-				B9000005A1B2C3D4E5F60719 /* cmux-cli */,
-				CB450DF0F0B3839599082C4D /* cmuxUITests */,
-				F1000004A1B2C3D4E5F60718 /* cmuxTests */,
+				A5001050 /* c11 */,
+				B9000005A1B2C3D4E5F60719 /* c11-cli */,
+				CB450DF0F0B3839599082C4D /* c11UITests */,
+				F1000004A1B2C3D4E5F60718 /* c11Tests */,
 			);
 		};
 /* End PBXProject section */
@@ -909,7 +909,7 @@
 				isa = PBXSourcesBuildPhase;
 				buildActionMask = 2147483647;
 				files = (
-					A5001001 /* cmuxApp.swift in Sources */,
+					A5001001 /* c11App.swift in Sources */,
 					A5001002 /* ContentView.swift in Sources */,
 					E62155868BB29FEB5DAAAF25 /* SidebarSelectionState.swift in Sources */,
 					B9000018A1B2C3D4E5F60719 /* WindowDragHandleView.swift in Sources */,
@@ -1093,7 +1093,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B9000002A1B2C3D4E5F60719 /* cmux.swift in Sources */,
+				B9000002A1B2C3D4E5F60719 /* c11.swift in Sources */,
 				CC401003A1B2C3D4E5F60719 /* SkillInstaller.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1103,17 +1103,17 @@
 /* Begin PBXTargetDependency section */
 		32568B0DCFC8656BA952468E /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = A5001050 /* GhosttyTabs */;
+			target = A5001050 /* c11 */;
 			targetProxy = 738BF3D3196765B250928A93 /* PBXContainerItemProxy */;
 		};
 		F1000009A1B2C3D4E5F60718 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = A5001050 /* GhosttyTabs */;
+			target = A5001050 /* c11 */;
 			targetProxy = F1000008A1B2C3D4E5F60718 /* PBXContainerItemProxy */;
 		};
 		B900000EA1B2C3D4E5F60719 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = B9000005A1B2C3D4E5F60719 /* cmux-cli */;
+			target = B9000005A1B2C3D4E5F60719 /* c11-cli */;
 			targetProxy = B900000DA1B2C3D4E5F60719 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -1211,13 +1211,13 @@
 					"-framework",
 					Carbon,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11mux.debug;
+				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11.debug;
 				PRODUCT_NAME = "c11 DEV";
-				PRODUCT_MODULE_NAME = cmux_DEV;
-				EXECUTABLE_NAME = cmux;
+				PRODUCT_MODULE_NAME = c11_DEV;
+				EXECUTABLE_NAME = c11;
 				SPARKLE_PUBLIC_KEY = "avjcgKibf1FTvhIjLBxhd+0HSpsXU4D0IGlVk8cgqRc=";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "cmux-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "c11-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
@@ -1253,13 +1253,13 @@
 					Carbon,
 				);
 				ONLY_ACTIVE_ARCH = NO;
-				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11mux;
+				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11;
 				PRODUCT_NAME = c11;
-				PRODUCT_MODULE_NAME = cmux;
-				EXECUTABLE_NAME = cmux;
+				PRODUCT_MODULE_NAME = c11;
+				EXECUTABLE_NAME = c11;
 				SPARKLE_PUBLIC_KEY = "avjcgKibf1FTvhIjLBxhd+0HSpsXU4D0IGlVk8cgqRc=";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "cmux-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "c11-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
@@ -1275,8 +1275,8 @@
 					"@executable_path/../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				PRODUCT_NAME = cmux;
-				PRODUCT_MODULE_NAME = cmux_cli;
+				PRODUCT_NAME = c11;
+				PRODUCT_MODULE_NAME = c11_cli;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -1294,8 +1294,8 @@
 					"@executable_path/../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				PRODUCT_NAME = cmux;
-				PRODUCT_MODULE_NAME = cmux_cli;
+				PRODUCT_NAME = c11;
+				PRODUCT_MODULE_NAME = c11_cli;
 				ONLY_ACTIVE_ARCH = NO;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
@@ -1312,11 +1312,11 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 0.37.0;
 				ONLY_ACTIVE_ARCH = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11mux.appuitests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11.appuitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = GhosttyTabs;
+				TEST_TARGET_NAME = c11;
 			};
 			name = Debug;
 		};
@@ -1329,10 +1329,10 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 0.37.0;
 				ONLY_ACTIVE_ARCH = NO;
-				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11mux.appuitests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11.appuitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = GhosttyTabs;
+				TEST_TARGET_NAME = c11;
 			};
 			name = Release;
 		};
@@ -1346,12 +1346,12 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 0.37.0;
 				ONLY_ACTIVE_ARCH = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11mux.apptests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11.apptests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/c11 DEV.app/Contents/MacOS/cmux";
-				TEST_TARGET_NAME = GhosttyTabs;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/c11 DEV.app/Contents/MacOS/c11";
+				TEST_TARGET_NAME = c11;
 			};
 			name = Debug;
 		};
@@ -1365,11 +1365,11 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 0.37.0;
 				ONLY_ACTIVE_ARCH = NO;
-				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11mux.apptests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11.apptests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/c11.app/Contents/MacOS/cmux";
-				TEST_TARGET_NAME = GhosttyTabs;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/c11.app/Contents/MacOS/c11";
+				TEST_TARGET_NAME = c11;
 			};
 			name = Release;
 		};
@@ -1443,7 +1443,7 @@
 /* End XCSwiftPackageProductDependency section */
 
 /* Begin XCConfigurationList section */
-	A5001060 /* Build configuration list for PBXNativeTarget "GhosttyTabs" */ = {
+	A5001060 /* Build configuration list for PBXNativeTarget "c11" */ = {
 		isa = XCConfigurationList;
 		buildConfigurations = (
 			A5001082 /* Debug */,
@@ -1452,7 +1452,7 @@
 		defaultConfigurationIsVisible = 0;
 		defaultConfigurationName = Release;
 	};
-	AD2C7ED08993D3CD4910A1FF /* Build configuration list for PBXNativeTarget "cmuxUITests" */ = {
+	AD2C7ED08993D3CD4910A1FF /* Build configuration list for PBXNativeTarget "c11UITests" */ = {
 		isa = XCConfigurationList;
 		buildConfigurations = (
 			C117776A77E71D1432F570D7 /* Debug */,
@@ -1461,7 +1461,7 @@
 		defaultConfigurationIsVisible = 0;
 		defaultConfigurationName = Release;
 	};
-	F1000010A1B2C3D4E5F60718 /* Build configuration list for PBXNativeTarget "cmuxTests" */ = {
+	F1000010A1B2C3D4E5F60718 /* Build configuration list for PBXNativeTarget "c11Tests" */ = {
 		isa = XCConfigurationList;
 		buildConfigurations = (
 			F1000011A1B2C3D4E5F60718 /* Debug */,
@@ -1470,7 +1470,7 @@
 		defaultConfigurationIsVisible = 0;
 		defaultConfigurationName = Release;
 	};
-	B9000007A1B2C3D4E5F60719 /* Build configuration list for PBXNativeTarget "cmux-cli" */ = {
+	B9000007A1B2C3D4E5F60719 /* Build configuration list for PBXNativeTarget "c11-cli" */ = {
 		isa = XCConfigurationList;
 		buildConfigurations = (
 			B9000008A1B2C3D4E5F60719 /* Debug */,
@@ -1479,7 +1479,7 @@
 		defaultConfigurationIsVisible = 0;
 		defaultConfigurationName = Release;
 	};
-	A5001071 /* Build configuration list for PBXProject "GhosttyTabs" */ = {
+	A5001071 /* Build configuration list for PBXProject "c11" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A5001080 /* Debug */,

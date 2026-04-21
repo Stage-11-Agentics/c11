@@ -1161,8 +1161,8 @@ final class CmuxWebView: WKWebView {
         .string, // public.utf8-plain-text — matches bonsplit's NSString tab drags
         NSPasteboard.PasteboardType("public.text"),
         NSPasteboard.PasteboardType("public.plain-text"),
-        NSPasteboard.PasteboardType("com.splittabbar.tabtransfer"),
-        NSPasteboard.PasteboardType("com.cmux.sidebar-tab-reorder"),
+        NSPasteboard.PasteboardType("com.stage11.c11.tabtransfer"),
+        NSPasteboard.PasteboardType("com.stage11.c11.sidebar-tab-reorder"),
     ]
 
     static func shouldRejectInternalPaneDrag(_ pasteboardTypes: [NSPasteboard.PasteboardType]?) -> Bool {

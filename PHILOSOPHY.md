@@ -10,7 +10,7 @@ The test: if a proposed feature requires c11 to know what the agent is working o
 
 ## Observe from outside — never hook into agents
 
-c11 features must not require agent-side cooperation. When a feature needs information about what's happening in a pane — auto-titles, session recaps, activity summaries, stall detection, metadata inference — c11 reads the pane externally (`cmux tree`, pane scrollback, screen content) and processes it, typically via a cheap local model, rather than asking the agent to write to a file, call a CLI, or otherwise play along.
+c11 features must not require agent-side cooperation. When a feature needs information about what's happening in a pane — auto-titles, session recaps, activity summaries, stall detection, metadata inference — c11 reads the pane externally (`c11 tree`, pane scrollback, screen content) and processes it, typically via a cheap local model, rather than asking the agent to write to a file, call a CLI, or otherwise play along.
 
 **Why this matters:** c11 has to work identically for Claude Code, Codex, Gemini, Kimi, bash sessions, REPLs, log tails, and anything else in a pane. Requiring agent cooperation couples c11 to specific agents and breaks the neutrality of the substrate. The moment an agent has to be modified to work well in c11, c11 has already lost.
 
@@ -34,8 +34,9 @@ If a feature can be built by users composing existing primitives (splits, surfac
 
 ## Lineage matters
 
-cmux is a macOS-native reinterpretation of tmux rebuilt on Ghostty. That lineage is load-bearing:
+c11 is a macOS-native reinterpretation of tmux rebuilt on Ghostty, forked from the upstream cmux project. That lineage is load-bearing:
 - **tmux** — for the ergonomics of panes, splits, persistent sessions, programmatic control.
+- **cmux** — for the macOS-native tmux reinterpretation this fork builds on.
 - **Ghostty** — for a GPU-accelerated renderer that keeps typing latency honest.
 - **macOS-native** — for first-class AppKit surfaces, not a font-pushing TTY widget.
 

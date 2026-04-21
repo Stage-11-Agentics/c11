@@ -1,6 +1,6 @@
 ---
 name: c11-debug-windows
-description: Manage c11 debug windows and related debug menu wiring for Sidebar Debug, Background Debug, and Menu Bar Extra Debug. Use this when the user asks to open/tune these debug controls, add or adjust Debug menu entries, or capture/copy a combined debug config snapshot. Applies to the c11 macOS app (binary `cmux`).
+description: Manage c11 debug windows and related debug menu wiring for Sidebar Debug, Background Debug, and Menu Bar Extra Debug. Use this when the user asks to open/tune these debug controls, add or adjust Debug menu entries, or capture/copy a combined debug config snapshot. Applies to the c11 macOS app (binary `c11`; a `cmux` compat alias dispatches to the same binary).
 ---
 
 # c11 Debug Windows
@@ -25,7 +25,7 @@ skills/c11-debug-windows/scripts/debug_windows_snapshot.sh --copy
 ```
 5. After code edits, run build + tagged reload:
 ```bash
-xcodebuild -project GhosttyTabs.xcodeproj -scheme cmux -configuration Debug -destination 'platform=macOS' build
+xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug -destination 'platform=macOS' build
 ./scripts/reload.sh --tag <tag>
 ```
 

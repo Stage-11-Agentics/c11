@@ -441,7 +441,7 @@ pane.confirm panel=<uuid> title=<urlencoded> [message=<urlencoded>] [role=destru
 
 **ACL (day-one shape, minimal):** honor the existing cmux socket access controls (same as `surface.focus` etc.). No new ACL plumbing. Include the `clientId` in the `InteractionSource` for future audit/ACL work.
 
-**CLI wrapper** (cmuxd side, follow-up commit in the same PR): `cmux pane confirm --panel <uuid> --title ... [--message ...] [--destructive] [--timeout 30]`. Exit codes map to the response.
+**CLI wrapper** (c11d side, follow-up commit in the same PR): `c11 pane confirm --panel <uuid> --title ... [--message ...] [--destructive] [--timeout 30]`. Exit codes map to the response.
 
 **Tests:** a Python integration test in `tests_v2/` (or the Swift-side equivalent) exercises:
 1. `pane.confirm` on a known panel → overlay appears → accept → `ok` returned.
@@ -719,7 +719,7 @@ cd ../cmux-m10-pane-interaction
 
 ### Phase 6 — Socket command `pane.confirm`
 - Add to dispatcher in `TerminalController.swift` (alongside the existing `pane.*` cases at `:2148-2159`).
-- `cmuxd` CLI wrapper: `cmux pane confirm --panel <uuid> ...`.
+- `c11d` CLI wrapper: `c11 pane confirm --panel <uuid> ...`.
 - `tests_v2/test_pane_confirm_socket.py` integration test.
 - Manual: `cmux pane confirm --panel <uuid> --title test --message hello` from a sibling pane.
 

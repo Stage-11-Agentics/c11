@@ -816,7 +816,7 @@ final class WorkspaceRemoteDaemonPendingCallRegistry {
         case timedOut
     }
 
-    private let queue = DispatchQueue(label: "com.cmux.remote-ssh.daemon-rpc.pending.\(UUID().uuidString)")
+    private let queue = DispatchQueue(label: "com.stage11.c11.remote-ssh.daemon-rpc.pending.\(UUID().uuidString)")
     private var nextRequestID = 1
     private var pendingCalls: [Int: PendingCall] = [:]
 
@@ -907,8 +907,8 @@ private final class WorkspaceRemoteDaemonRPCClient {
     private let configuration: WorkspaceRemoteConfiguration
     private let remotePath: String
     private let onUnexpectedTermination: (String) -> Void
-    private let writeQueue = DispatchQueue(label: "com.cmux.remote-ssh.daemon-rpc.write.\(UUID().uuidString)")
-    private let stateQueue = DispatchQueue(label: "com.cmux.remote-ssh.daemon-rpc.state.\(UUID().uuidString)")
+    private let writeQueue = DispatchQueue(label: "com.stage11.c11.remote-ssh.daemon-rpc.write.\(UUID().uuidString)")
+    private let stateQueue = DispatchQueue(label: "com.stage11.c11.remote-ssh.daemon-rpc.state.\(UUID().uuidString)")
     private let pendingCalls = WorkspaceRemoteDaemonPendingCallRegistry()
 
     private var process: Process?
@@ -1679,7 +1679,7 @@ enum RemoteLoopbackHTTPResponseRewriter {
 private final class WorkspaceRemoteDaemonProxyTunnel {
     private final class ProxySession {
         private static let maxHandshakeBytes = 64 * 1024
-        private static let remoteLoopbackProxyAliasHost = "cmux-loopback.localtest.me"
+        private static let remoteLoopbackProxyAliasHost = "c11-loopback.localtest.me"
 
         private enum HandshakeProtocol {
             case undecided
@@ -2154,7 +2154,7 @@ private final class WorkspaceRemoteDaemonProxyTunnel {
     private let remotePath: String
     private let localPort: Int
     private let onFatalError: (String) -> Void
-    private let queue = DispatchQueue(label: "com.cmux.remote-ssh.daemon-tunnel.\(UUID().uuidString)", qos: .utility)
+    private let queue = DispatchQueue(label: "com.stage11.c11.remote-ssh.daemon-tunnel.\(UUID().uuidString)", qos: .utility)
 
     private var listener: NWListener?
     private var rpcClient: WorkspaceRemoteDaemonRPCClient?
@@ -2343,7 +2343,7 @@ private final class WorkspaceRemoteProxyBroker {
 
     static let shared = WorkspaceRemoteProxyBroker()
 
-    private let queue = DispatchQueue(label: "com.cmux.remote-ssh.proxy-broker", qos: .utility)
+    private let queue = DispatchQueue(label: "com.stage11.c11.remote-ssh.proxy-broker", qos: .utility)
     private var entries: [String: Entry] = [:]
 
     func acquire(
@@ -2873,7 +2873,7 @@ private final class WorkspaceRemoteCLIRelayServer {
     private let localSocketPath: String
     private let relayID: String
     private let relayToken: Data
-    private let queue = DispatchQueue(label: "com.cmux.remote-ssh.cli-relay.\(UUID().uuidString)", qos: .utility)
+    private let queue = DispatchQueue(label: "com.stage11.c11.remote-ssh.cli-relay.\(UUID().uuidString)", qos: .utility)
 
     private var listener: NWListener?
     private var sessions: [UUID: Session] = [:]
@@ -3037,7 +3037,7 @@ final class WorkspaceRemoteSessionController {
         let remotePath: String
     }
 
-    private let queue = DispatchQueue(label: "com.cmux.remote-ssh.\(UUID().uuidString)", qos: .utility)
+    private let queue = DispatchQueue(label: "com.stage11.c11.remote-ssh.\(UUID().uuidString)", qos: .utility)
     private let queueKey = DispatchSpecificKey<Void>()
     private weak var workspace: Workspace?
     private let configuration: WorkspaceRemoteConfiguration
@@ -3834,7 +3834,7 @@ final class WorkspaceRemoteSessionController {
           armv7l) cmux_go_arch=arm ;;
           *) exit 71 ;;
         esac
-        cmux_remote_path="$HOME/.cmux/bin/cmuxd-remote/\(version)/${cmux_go_os}-${cmux_go_arch}/cmuxd-remote"
+        cmux_remote_path="$HOME/.cmux/bin/c11d-remote/\(version)/${cmux_go_os}-${cmux_go_arch}/c11d-remote"
         if [ -x "$cmux_remote_path" ]; then
           printf '%syes\\n' '\(Self.remotePlatformProbeExistsMarker)'
         else
@@ -3918,7 +3918,7 @@ final class WorkspaceRemoteSessionController {
         try remoteDaemonCacheRoot(fileManager: fileManager)
             .appendingPathComponent(version, isDirectory: true)
             .appendingPathComponent("\(goOS)-\(goArch)", isDirectory: true)
-            .appendingPathComponent("cmuxd-remote", isDirectory: false)
+            .appendingPathComponent("c11d-remote", isDirectory: false)
     }
 
     private static func sha256Hex(forFile url: URL) throws -> String {
@@ -3928,13 +3928,15 @@ final class WorkspaceRemoteSessionController {
     }
 
     private static func allowLocalDaemonBuildFallback(environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
-        environment["CMUX_REMOTE_DAEMON_ALLOW_LOCAL_BUILD"] == "1"
+        environment["C11_REMOTE_DAEMON_ALLOW_LOCAL_BUILD"] == "1"
+            || environment["CMUX_REMOTE_DAEMON_ALLOW_LOCAL_BUILD"] == "1"
     }
 
     private static func explicitRemoteDaemonBinaryURL(environment: [String: String] = ProcessInfo.processInfo.environment) -> URL? {
         guard allowLocalDaemonBuildFallback(environment: environment) else { return nil }
-        guard let path = environment["CMUX_REMOTE_DAEMON_BINARY"]?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !path.isEmpty else {
+        let value = environment["C11_REMOTE_DAEMON_BINARY"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? environment["CMUX_REMOTE_DAEMON_BINARY"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let path = value, !path.isEmpty else {
             return nil
         }
         return URL(fileURLWithPath: path, isDirectory: false).standardizedFileURL
@@ -3942,10 +3944,10 @@ final class WorkspaceRemoteSessionController {
 
     private static func versionedRemoteDaemonBuildURL(goOS: String, goArch: String, version: String) -> URL {
         URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-            .appendingPathComponent("cmux-remote-daemon-build", isDirectory: true)
+            .appendingPathComponent("c11-remote-daemon-build", isDirectory: true)
             .appendingPathComponent(version, isDirectory: true)
             .appendingPathComponent("\(goOS)-\(goArch)", isDirectory: true)
-            .appendingPathComponent("cmuxd-remote", isDirectory: false)
+            .appendingPathComponent("c11d-remote", isDirectory: false)
     }
 
     private func downloadRemoteDaemonBinaryLocked(entry: WorkspaceRemoteDaemonManifest.Entry, version: String) throws -> URL {
@@ -3961,7 +3963,7 @@ final class WorkspaceRemoteSessionController {
 
         let request = NSMutableURLRequest(url: url)
         request.timeoutInterval = 60
-        request.setValue("cmux/\(version)", forHTTPHeaderField: "User-Agent")
+        request.setValue("c11/\(version)", forHTTPHeaderField: "User-Agent")
         let session = URLSession(configuration: .ephemeral)
 
         let semaphore = DispatchSemaphore(value: 0)
@@ -4038,13 +4040,13 @@ final class WorkspaceRemoteSessionController {
 
         guard Self.allowLocalDaemonBuildFallback() else {
             throw NSError(domain: "cmux.remote.daemon", code: 20, userInfo: [
-                NSLocalizedDescriptionKey: "this build does not include a verified cmuxd-remote manifest for \(goOS)-\(goArch). Use a release/nightly build, or set CMUX_REMOTE_DAEMON_ALLOW_LOCAL_BUILD=1 for a dev-only fallback.",
+                NSLocalizedDescriptionKey: "this build does not include a verified c11d-remote manifest for \(goOS)-\(goArch). Use a release/nightly build, or set C11_REMOTE_DAEMON_ALLOW_LOCAL_BUILD=1 for a dev-only fallback.",
             ])
         }
 
         guard let repoRoot = Self.findRepoRoot() else {
             throw NSError(domain: "cmux.remote.daemon", code: 20, userInfo: [
-                NSLocalizedDescriptionKey: "cannot locate cmux repo root for dev-only cmuxd-remote build fallback",
+                NSLocalizedDescriptionKey: "cannot locate c11 repo root for dev-only c11d-remote build fallback",
             ])
         }
         let daemonRoot = repoRoot.appendingPathComponent("daemon/remote", isDirectory: true)
@@ -4056,7 +4058,7 @@ final class WorkspaceRemoteSessionController {
         }
         guard let goBinary = Self.which("go") else {
             throw NSError(domain: "cmux.remote.daemon", code: 22, userInfo: [
-                NSLocalizedDescriptionKey: "go is required for the dev-only cmuxd-remote build fallback",
+                NSLocalizedDescriptionKey: "go is required for the dev-only c11d-remote build fallback",
             ])
         }
 
@@ -4070,7 +4072,7 @@ final class WorkspaceRemoteSessionController {
         let ldflags = "-s -w -X main.version=\(version)"
         let result = try runProcess(
             executable: goBinary,
-            arguments: ["build", "-trimpath", "-buildvcs=false", "-ldflags", ldflags, "-o", output.path, "./cmd/cmuxd-remote"],
+            arguments: ["build", "-trimpath", "-buildvcs=false", "-ldflags", ldflags, "-o", output.path, "./cmd/c11d-remote"],
             environment: env,
             currentDirectory: daemonRoot,
             stdin: nil,
@@ -4079,12 +4081,12 @@ final class WorkspaceRemoteSessionController {
         guard result.status == 0 else {
             let detail = Self.bestErrorLine(stderr: result.stderr, stdout: result.stdout) ?? "go build failed with status \(result.status)"
             throw NSError(domain: "cmux.remote.daemon", code: 23, userInfo: [
-                NSLocalizedDescriptionKey: "failed to build cmuxd-remote: \(detail)",
+                NSLocalizedDescriptionKey: "failed to build c11d-remote: \(detail)",
             ])
         }
         guard FileManager.default.isExecutableFile(atPath: output.path) else {
             throw NSError(domain: "cmux.remote.daemon", code: 24, userInfo: [
-                NSLocalizedDescriptionKey: "cmuxd-remote build output is not executable",
+                NSLocalizedDescriptionKey: "c11d-remote build output is not executable",
             ])
         }
         debugLog("remote.build.output path=\(output.path)")
@@ -4129,7 +4131,7 @@ final class WorkspaceRemoteSessionController {
         guard scpResult.status == 0 else {
             let detail = Self.bestErrorLine(stderr: scpResult.stderr, stdout: scpResult.stdout) ?? "scp exited \(scpResult.status)"
             throw NSError(domain: "cmux.remote.daemon", code: 31, userInfo: [
-                NSLocalizedDescriptionKey: "failed to upload cmuxd-remote: \(detail)",
+                NSLocalizedDescriptionKey: "failed to upload c11d-remote: \(detail)",
             ])
         }
 
@@ -4190,7 +4192,7 @@ final class WorkspaceRemoteSessionController {
         let version = (resultObject["version"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         let capabilities = (resultObject["capabilities"] as? [String]) ?? []
         return DaemonHello(
-            name: (name?.isEmpty == false ? name! : "cmuxd-remote"),
+            name: (name?.isEmpty == false ? name! : "c11d-remote"),
             version: (version?.isEmpty == false ? version! : "dev"),
             capabilities: capabilities,
             remotePath: remotePath
@@ -4253,8 +4255,11 @@ final class WorkspaceRemoteSessionController {
         #!/usr/bin/env bash
         set -euo pipefail
 
-        daemon="$HOME/.cmux/bin/cmuxd-remote-current"
-        socket_path="${CMUX_SOCKET_PATH:-}"
+        daemon="$HOME/.cmux/bin/c11d-remote-current"
+        if [ ! -x "$daemon" ] && [ -x "$HOME/.cmux/bin/cmuxd-remote-current" ]; then
+          daemon="$HOME/.cmux/bin/cmuxd-remote-current"
+        fi
+        socket_path="${C11_SOCKET_PATH:-${CMUX_SOCKET_PATH:-}}"
         if [ -z "$socket_path" ] && [ -r "$HOME/.cmux/socket_addr" ]; then
           socket_path="$(tr -d '\\r\\n' < "$HOME/.cmux/socket_addr")"
         fi
@@ -4278,13 +4283,15 @@ final class WorkspaceRemoteSessionController {
         let trimmedRemotePath = daemonRemotePath.trimmingCharacters(in: .whitespacesAndNewlines)
         return """
         mkdir -p "$HOME/.cmux/bin" "$HOME/.cmux/relay"
-        ln -sf "$HOME/\(trimmedRemotePath)" "$HOME/.cmux/bin/cmuxd-remote-current"
-        wrapper_tmp="$HOME/.cmux/bin/.cmux-wrapper.tmp.$$"
-        cat > "$wrapper_tmp" <<'CMUXWRAPPER'
+        ln -sf "$HOME/\(trimmedRemotePath)" "$HOME/.cmux/bin/c11d-remote-current"
+        ln -sf "c11d-remote-current" "$HOME/.cmux/bin/cmuxd-remote-current"
+        wrapper_tmp="$HOME/.cmux/bin/.c11-wrapper.tmp.$$"
+        cat > "$wrapper_tmp" <<'C11WRAPPER'
         \(remoteCLIWrapperScript())
-        CMUXWRAPPER
+        C11WRAPPER
         chmod 755 "$wrapper_tmp"
-        mv -f "$wrapper_tmp" "$HOME/.cmux/bin/cmux"
+        mv -f "$wrapper_tmp" "$HOME/.cmux/bin/c11"
+        ln -sf "c11" "$HOME/.cmux/bin/cmux"
         """
     }
 
@@ -4395,7 +4402,7 @@ final class WorkspaceRemoteSessionController {
     }
 
     private static func remoteDaemonPath(version: String, goOS: String, goArch: String) -> String {
-        ".cmux/bin/cmuxd-remote/\(version)/\(goOS)-\(goArch)/cmuxd-remote"
+        ".cmux/bin/c11d-remote/\(version)/\(goOS)-\(goArch)/c11d-remote"
     }
 
     private static func killOrphanedRelayProcesses(relayPort: Int, destination: String) {

@@ -28,7 +28,7 @@ final class MermaidRenderer: FencedCodeRenderer {
     /// All access to mmdcPath/mmdcCheckedAt is serialized through `queue`.
     private var mmdcPath: String?
     private var mmdcCheckedAt: Date?
-    private let queue = DispatchQueue(label: "com.cmux.mermaid-renderer", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "com.stage11.c11.mermaid-renderer", qos: .userInitiated)
 
     /// In-flight render processes keyed by cache key. Access only on `queue`.
     private var inFlightProcesses: [String: Process] = [:]
@@ -38,7 +38,7 @@ final class MermaidRenderer: FencedCodeRenderer {
 
     private init() {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-        cacheDirectory = caches.appendingPathComponent("com.cmux.mermaid", isDirectory: true)
+        cacheDirectory = caches.appendingPathComponent("com.stage11.c11.mermaid", isDirectory: true)
         try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
         // Resolve mmdc asynchronously on init so isAvailable is populated without blocking.
         queue.async { [self] in

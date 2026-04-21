@@ -40,7 +40,7 @@ final class PaneMetadataStore: @unchecked Sendable {
 
     // MARK: - State
 
-    private let queue = DispatchQueue(label: "com.cmux.pane-metadata", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "com.stage11.c11.pane-metadata", qos: .userInitiated)
 
     /// `[workspaceId: [paneId: blob]]`.
     private var metadata: [UUID: [UUID: [String: Any]]] = [:]

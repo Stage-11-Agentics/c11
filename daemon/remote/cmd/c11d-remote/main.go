@@ -91,10 +91,10 @@ func main() {
 
 func shouldRunCLIForInvocation(argv0 string, args []string) bool {
 	base := filepath.Base(argv0)
-	if base == "cmux" {
+	if base == "c11" || base == "cmux" {
 		return true
 	}
-	if !strings.HasPrefix(base, "cmuxd-remote") || len(args) == 0 {
+	if !(strings.HasPrefix(base, "c11d-remote") || strings.HasPrefix(base, "cmuxd-remote")) || len(args) == 0 {
 		return false
 	}
 	return !isDaemonEntryCommand(args[0])
@@ -145,9 +145,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 func usage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "Usage:")
-	_, _ = fmt.Fprintln(w, "  cmuxd-remote version")
-	_, _ = fmt.Fprintln(w, "  cmuxd-remote serve --stdio")
-	_, _ = fmt.Fprintln(w, "  cmuxd-remote cli <command> [args...]")
+	_, _ = fmt.Fprintln(w, "  c11d-remote version")
+	_, _ = fmt.Fprintln(w, "  c11d-remote serve --stdio")
+	_, _ = fmt.Fprintln(w, "  c11d-remote cli <command> [args...]")
 }
 
 func runStdioServer(stdin io.Reader, stdout io.Writer) error {
@@ -308,7 +308,7 @@ func (s *rpcServer) handleRequest(req rpcRequest) rpcResponse {
 			ID: req.ID,
 			OK: true,
 			Result: map[string]any{
-				"name":    "cmuxd-remote",
+				"name":    "c11d-remote",
 				"version": version,
 				"capabilities": []string{
 					"session.basic",

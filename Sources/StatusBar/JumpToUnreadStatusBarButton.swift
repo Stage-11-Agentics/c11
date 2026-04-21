@@ -24,7 +24,7 @@ struct JumpToUnreadStatusBarButton: View {
     private var label: String {
         String(
             localized: "statusBar.nextNotification.title",
-            defaultValue: "Next Notification"
+            defaultValue: "Go To Next Notification"
         )
     }
 

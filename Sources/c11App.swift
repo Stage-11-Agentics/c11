@@ -3950,7 +3950,7 @@ enum WelcomeSettings {
     /// top-left terminal's Ghostty surface is ready.
     ///
     /// Layout:
-    ///   TL: initialPanel (terminal, renders `cmux welcome` ASCII)
+    ///   TL: initialPanel (terminal, renders `c11 welcome` ASCII)
     ///   TR: browser → stage11.ai
     ///   BL: markdown → bundled welcome.md
     ///   BR: terminal → attempts `claude --dangerously-skip-permissions` if installed
@@ -3996,7 +3996,7 @@ enum WelcomeSettings {
             )
         }
 
-        initialPanel.sendText("cmux welcome\n")
+        initialPanel.sendText("c11 welcome\n")
     }
 }
 

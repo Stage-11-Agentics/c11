@@ -12793,8 +12793,8 @@ struct CMUXCLI {
         \(g1)  ::\(reset)
         \(g2)    ::::\(reset)              \(goldBold)c11\(reset)
         \(g3)      ::::::\(reset)
-        \(g4)        ::::::\(reset)        \(tagline)a terminal for the spike\(reset)
-        \(g5)      ::::::\(reset)          \(tagline)human:digital by default\(reset)
+        \(g4)        ::::::\(reset)        \(tagline)terminal multiplexing for the 10,000x hyperengineer\(reset)
+        \(g5)      ::::::\(reset)
         \(g6)    ::::\(reset)
         \(g7)  ::\(reset)
         """
@@ -16022,4 +16022,3 @@ extension CMUXCLI {
         }
     }
 }
-

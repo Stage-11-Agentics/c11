@@ -10,7 +10,7 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KPRX53F0GK7RT99S0TM86T88",
-  "last_event_id": "ev_01KPRX53F1BPKQBC8NF1EGSF1V",
+  "last_event_id": "ev_01KPRY4YF1FNSNQP5ZGRWTCEPQ",
   "last_status_changed_at": "2026-04-21T20:54:19Z",
   "linked_files": [],
   "priority": "medium",
@@ -24,8 +24,8 @@
     "sidebar",
     "workspace"
   ],
-  "title": "Improving the workspace card in the sidebar",
+  "title": "Workspace sidebar cards: stable names first, agent details second",
   "type": "task",
-  "updated_at": "2026-04-21T20:54:19Z",
+  "updated_at": "2026-04-21T21:11:42Z",
   "urgency": "normal"
 }

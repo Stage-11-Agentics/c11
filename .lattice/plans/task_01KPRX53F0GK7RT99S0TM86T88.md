@@ -1,4 +1,4 @@
-# C11-5: Improving the workspace card in the sidebar
+# C11-5: Workspace sidebar cards: stable names first, agent details second
 
 ## Problem
 

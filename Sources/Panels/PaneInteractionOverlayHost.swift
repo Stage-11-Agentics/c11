@@ -1,4 +1,5 @@
 import AppKit
+import Bonsplit
 import Combine
 import SwiftUI
 
@@ -165,7 +166,7 @@ final class PaneInteractionOverlayHost: NSView {
                    let prior = window.firstResponder, prior !== self {
                     priorFirstResponder = prior
                 }
-                window.makeFirstResponder(self)
+                forciblyAcquireFirstResponder(in: window)
             }
         } else {
             isHidden = true
@@ -183,6 +184,38 @@ final class PaneInteractionOverlayHost: NSView {
             }
             priorFirstResponder = nil
             lastTextInputSelection = nil
+        }
+    }
+
+    /// Take first responder for the overlay, retrying if the current responder
+    /// refuses to resign. WKWebView-hosted WebContentView refuses
+    /// `resignFirstResponder` in common states (focused form field, active IME
+    /// composition, etc.). When that happens, Return / arrow / Tab routed to the
+    /// leftover WKWebView responder — manifesting as "pressing Enter on a pane
+    /// close dialog refreshes the adjacent browser pane" and arrow/tab keys
+    /// failing to navigate the dialog buttons. Clearing the responder chain
+    /// with `makeFirstResponder(nil)` and retrying gets past that veto; a final
+    /// async retry covers the case where release only lands after the current
+    /// event completes.
+    private func forciblyAcquireFirstResponder(in window: NSWindow) {
+        if window.firstResponder === self { return }
+        if window.makeFirstResponder(self) { return }
+#if DEBUG
+        dlog(
+            "paneInteraction.focus firstResponderSteal failed=1 prior=" +
+            String(describing: window.firstResponder.map { type(of: $0) })
+        )
+#endif
+        window.makeFirstResponder(nil)
+        if window.makeFirstResponder(self) { return }
+#if DEBUG
+        dlog("paneInteraction.focus firstResponderSteal retryAfterNil failed=1")
+#endif
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.isHidden, let window = self.window else { return }
+            if window.firstResponder === self { return }
+            window.makeFirstResponder(nil)
+            _ = window.makeFirstResponder(self)
         }
     }
 
@@ -205,9 +238,7 @@ final class PaneInteractionOverlayHost: NSView {
                 window.makeFirstResponder(textField)
             }
         case .cancel, .confirm:
-            if window.firstResponder !== self {
-                window.makeFirstResponder(self)
-            }
+            forciblyAcquireFirstResponder(in: window)
         }
     }
 

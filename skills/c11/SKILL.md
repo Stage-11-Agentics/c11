@@ -284,6 +284,13 @@ Use **`cc`** (the `--dangerously-skip-permissions` alias) — never bare `claude
 - Plain `claude` stalls on permission approvals.
 - `cc` in an interactive pane inherits c11 env vars, preserves the auth chain, and skips approvals. Sub-agents can `c11 set-status`, `c11 log`, `c11 set-progress` freely.
 
+For **Codex** in a visible c11 surface, launch the interactive TUI with `codex --yolo`, not `codex exec`. `codex exec` is headless/non-interactive and is only appropriate for background jobs whose output will be read after completion; it is the wrong tool when the operator should be able to watch, inspect, or take over the agent in c11.
+
+```bash
+c11 send --workspace $WS --surface $SURF "cd /path && codex --yolo \"Read /tmp/lat-xxx-prompt.md and follow the instructions.\""
+c11 send-key --workspace $WS --surface $SURF enter
+```
+
 **Preferred launch — one-shot prompt via cc argv.** Write the prompt to a file first, then launch `cc` with a short positional argument that tells it to read the file. cc boots and submits the initial message in one step, so there is no ready-state race to solve:
 
 ```bash

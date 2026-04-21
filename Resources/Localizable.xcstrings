@@ -68529,13 +68529,30 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Jump to latest unread notification"
+            "value": "Jump to next unread notification"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "最新の未読通知へジャンプ"
+            "value": "次の未読通知へジャンプ"
+          }
+        }
+      }
+    },
+    "statusBar.nextNotification.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next Notification"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次の通知"
           }
         }
       }

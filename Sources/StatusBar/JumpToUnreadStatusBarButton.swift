@@ -1,9 +1,8 @@
 import SwiftUI
 
-/// First tenant of the bottom status bar. Icon + badge only — no visible
-/// text label (tooltip carries the affordance copy). Mirrors the binding
-/// and click-handler pattern at `UpdateTitlebarAccessory.swift:1008` and
-/// the `.safeHelp` shortcut-tooltip pattern at `NotificationsPage.swift:117`.
+/// First tenant of the bottom status bar. Mirrors the binding and
+/// click-handler pattern at `UpdateTitlebarAccessory.swift:1008` and the
+/// `.safeHelp` shortcut-tooltip pattern at `NotificationsPage.swift:117`.
 struct JumpToUnreadStatusBarButton: View {
     @EnvironmentObject private var notificationStore: TerminalNotificationStore
 
@@ -12,47 +11,66 @@ struct JumpToUnreadStatusBarButton: View {
     }
 
     private var tooltipBase: String {
-        String(
-            localized: "notifications.jumpToLatestUnread",
-            defaultValue: "Jump to Latest Unread"
-        )
+        label
     }
 
     private var accessibilityLabel: String {
         String(
             localized: "statusBar.jumpToUnread.accessibility",
-            defaultValue: "Jump to latest unread notification"
+            defaultValue: "Jump to next unread notification"
+        )
+    }
+
+    private var label: String {
+        String(
+            localized: "statusBar.nextNotification.title",
+            defaultValue: "Next Notification"
         )
     }
 
     var body: some View {
         let display = self.display
         return Button(action: jump) {
-            ZStack(alignment: .topTrailing) {
+            HStack(spacing: 7) {
                 Image(systemName: "bell")
-                    .font(.system(size: 13, weight: .regular))
-                    .frame(width: 16, height: 16)
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 14, height: 14)
+
+                Text(label)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
 
                 if let badge = display.badgeText {
                     Text(badge)
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(size: 9, weight: .bold))
                         .monospacedDigit()
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
                         .background(
                             Capsule(style: .continuous)
-                                .fill(Color.accentColor)
+                                .fill(BrandColors.blackSwiftUI.opacity(0.18))
                         )
-                        .foregroundColor(.white)
-                        .offset(x: 7, y: -5)
+                        .foregroundColor(BrandColors.blackSwiftUI)
                         .accessibilityHidden(true)
                 }
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .frame(minHeight: 24)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(cmuxAccentColor().opacity(display.isEnabled ? 1.0 : 0.18))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(cmuxAccentColor().opacity(display.isEnabled ? 0 : 0.5), lineWidth: 1)
+            )
+            .foregroundColor(display.isEnabled ? BrandColors.blackSwiftUI : .secondary)
+            .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
-        .contentShape(Rectangle())
         .disabled(!display.isEnabled)
-        .opacity(display.isEnabled ? 1.0 : 0.45)
+        .opacity(display.isEnabled ? 1.0 : 0.72)
         .accessibilityIdentifier("statusBar.jumpToUnread.button")
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(display.badgeText ?? "")

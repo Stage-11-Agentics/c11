@@ -3,7 +3,7 @@
 	url = https://github.com/manaflow-ai/ghostty.git
 	branch = main
 [submodule "homebrew-cmux"]
-	path = homebrew-c11mux
+	path = homebrew-c11
 	url = https://github.com/Stage-11-Agentics/homebrew-c11mux.git
 [submodule "vendor/bonsplit"]
 	path = vendor/bonsplit

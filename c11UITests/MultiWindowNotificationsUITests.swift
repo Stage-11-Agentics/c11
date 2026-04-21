@@ -707,7 +707,7 @@ final class MultiWindowNotificationsUITests: XCTestCase {
             )
         }
 
-        let fallbackArgs = ["cmux"] + args
+        let fallbackArgs = ["c11"] + args
         let fallbackResult = executeCmuxCommand(
             executablePath: "/usr/bin/env",
             arguments: fallbackArgs,
@@ -766,9 +766,12 @@ final class MultiWindowNotificationsUITests: XCTestCase {
             appendCLIPathCandidates(fromProductsDirectory: productsDir, strategy: strategy, to: &candidates)
         }
 
+        candidates.append("/tmp/cmux-\(launchTag)/Build/Products/Debug/c11 DEV.app/Contents/Resources/bin/c11")
+        candidates.append("/tmp/cmux-\(launchTag)/Build/Products/Debug/c11.app/Contents/Resources/bin/c11")
         candidates.append("/tmp/cmux-\(launchTag)/Build/Products/Debug/cmux DEV.app/Contents/Resources/bin/cmux")
         candidates.append("/tmp/cmux-\(launchTag)/Build/Products/Debug/cmux.app/Contents/Resources/bin/cmux")
         if strategy == .any {
+            candidates.append("/tmp/cmux-\(launchTag)/Build/Products/Debug/c11")
             candidates.append("/tmp/cmux-\(launchTag)/Build/Products/Debug/cmux")
         }
 
@@ -803,9 +806,12 @@ final class MultiWindowNotificationsUITests: XCTestCase {
         strategy: CmuxCLIStrategy,
         to candidates: inout [String]
     ) {
+        candidates.append("\(productsDir)/c11 DEV.app/Contents/Resources/bin/c11")
+        candidates.append("\(productsDir)/c11.app/Contents/Resources/bin/c11")
         candidates.append("\(productsDir)/cmux DEV.app/Contents/Resources/bin/cmux")
         candidates.append("\(productsDir)/cmux.app/Contents/Resources/bin/cmux")
         if strategy == .any {
+            candidates.append("\(productsDir)/c11")
             candidates.append("\(productsDir)/cmux")
         }
 
@@ -814,14 +820,19 @@ final class MultiWindowNotificationsUITests: XCTestCase {
         }
 
         for entry in entries.sorted() where entry.hasSuffix(".app") {
-            let cliPath = URL(fileURLWithPath: productsDir)
+            let cliPathC11 = URL(fileURLWithPath: productsDir)
+                .appendingPathComponent(entry)
+                .appendingPathComponent("Contents/Resources/bin/c11")
+                .path
+            candidates.append(cliPathC11)
+            let cliPathCmux = URL(fileURLWithPath: productsDir)
                 .appendingPathComponent(entry)
                 .appendingPathComponent("Contents/Resources/bin/cmux")
                 .path
-            candidates.append(cliPath)
+            candidates.append(cliPathCmux)
         }
         if strategy == .any {
-            for entry in entries.sorted() where entry == "cmux" {
+            for entry in entries.sorted() where entry == "c11" || entry == "cmux" {
                 let cliPath = URL(fileURLWithPath: productsDir)
                     .appendingPathComponent(entry)
                     .path

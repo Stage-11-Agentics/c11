@@ -26,7 +26,7 @@ final class PostHogAnalytics {
     private var activeCheckTimer: Timer?
 
     private init() {
-        workQueue = DispatchQueue(label: "com.cmux.posthog.analytics", qos: .utility)
+        workQueue = DispatchQueue(label: "com.stage11.c11.posthog.analytics", qos: .utility)
         utcHourFormatter = Self.makeUTCFormatter("yyyy-MM-dd'T'HH")
         utcDayFormatter = Self.makeUTCFormatter("yyyy-MM-dd")
         workQueue.setSpecific(key: workQueueSpecificKey, value: ())

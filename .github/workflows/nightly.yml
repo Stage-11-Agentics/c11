@@ -1,4 +1,4 @@
-name: Nightly c11mux macOS build
+name: Nightly c11 macOS build
 
 on:
   push:
@@ -206,7 +206,7 @@ jobs:
       - name: Build universal nightly app (Release)
         if: needs.decide.outputs.should_publish != 'true' || steps.current_head_prebuild.outputs.still_current == 'true'
         run: |
-          xcodebuild -scheme cmux -configuration Release -derivedDataPath build-universal \
+          xcodebuild -scheme c11 -configuration Release -derivedDataPath build-universal \
             -destination 'generic/platform=macOS' \
             -clonedSourcePackagesDirPath .spm-cache \
             ARCHS="arm64 x86_64" \
@@ -217,9 +217,9 @@ jobs:
         if: needs.decide.outputs.should_publish != 'true' || steps.current_head_prebuild.outputs.still_current == 'true'
         run: |
           set -euo pipefail
-          APP_BINARY="build-universal/Build/Products/Release/c11mux.app/Contents/MacOS/cmux"
-          CLI_BINARY="build-universal/Build/Products/Release/c11mux.app/Contents/Resources/bin/cmux"
-          HELPER_BINARY="build-universal/Build/Products/Release/c11mux.app/Contents/Resources/bin/ghostty"
+          APP_BINARY="build-universal/Build/Products/Release/c11.app/Contents/MacOS/c11"
+          CLI_BINARY="build-universal/Build/Products/Release/c11.app/Contents/Resources/bin/c11"
+          HELPER_BINARY="build-universal/Build/Products/Release/c11.app/Contents/Resources/bin/ghostty"
           APP_ARCHS="$(lipo -archs "$APP_BINARY")"
           CLI_ARCHS="$(lipo -archs "$CLI_BINARY")"
           HELPER_ARCHS="$(lipo -archs "$HELPER_BINARY")"
@@ -234,9 +234,9 @@ jobs:
         if: needs.decide.outputs.should_publish != 'true' || steps.current_head_prebuild.outputs.still_current == 'true'
         run: |
           set -euo pipefail
-          CLI_BINARY="build-universal/Build/Products/Release/c11mux.app/Contents/Resources/bin/cmux"
-          [ -x "$CLI_BINARY" ] || { echo "cmux CLI binary not found at $CLI_BINARY" >&2; exit 1; }
-          CMUX_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_version_memory_guard.py
+          CLI_BINARY="build-universal/Build/Products/Release/c11.app/Contents/Resources/bin/c11"
+          [ -x "$CLI_BINARY" ] || { echo "c11 CLI binary not found at $CLI_BINARY" >&2; exit 1; }
+          C11_CLI_BIN="$CLI_BINARY" CMUX_CLI_BIN="$CLI_BINARY" python3 tests/test_cli_version_memory_guard.py
 
       - name: Check whether build commit is still current main HEAD after build
         if: needs.decide.outputs.should_publish == 'true' && steps.current_head_prebuild.outputs.still_current == 'true'
@@ -266,7 +266,7 @@ jobs:
           SHORT_SHA="${{ needs.decide.outputs.short_sha }}"
           APP_DIR="build-universal/Build/Products/Release"
 
-          BASE_MARKETING=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "${APP_DIR}/c11mux.app/Contents/Info.plist")
+          BASE_MARKETING=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "${APP_DIR}/c11.app/Contents/Info.plist")
           NIGHTLY_DATE=$(date -u +%Y%m%d)
 
           # Build number: unique/monotonic per workflow run attempt so same-day
@@ -282,17 +282,17 @@ jobs:
           echo "NIGHTLY_MARKETING_VERSION=${NIGHTLY_MARKETING_VERSION}" >> "$GITHUB_ENV"
           echo "NIGHTLY_REMOTE_DAEMON_VERSION=${NIGHTLY_MARKETING_VERSION}" >> "$GITHUB_ENV"
 
-          NIGHTLY_DMG_IMMUTABLE="c11mux-nightly-macos-${NIGHTLY_BUILD}.dmg"
+          NIGHTLY_DMG_IMMUTABLE="c11-nightly-macos-${NIGHTLY_BUILD}.dmg"
           echo "NIGHTLY_DMG_IMMUTABLE=${NIGHTLY_DMG_IMMUTABLE}" >> "$GITHUB_ENV"
 
           prepare_variant() {
             local app_dir="$1"
             local bundle_id="$2"
             local feed_url="$3"
-            local app_plist="$app_dir/c11mux.app/Contents/Info.plist"
+            local app_plist="$app_dir/c11.app/Contents/Info.plist"
 
-            /usr/libexec/PlistBuddy -c "Set :CFBundleName c11mux NIGHTLY" "$app_plist"
-            /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName c11mux NIGHTLY" "$app_plist"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleName c11 NIGHTLY" "$app_plist"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName c11 NIGHTLY" "$app_plist"
             /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${bundle_id}" "$app_plist"
             /usr/libexec/PlistBuddy -c "Delete :SUPublicEDKey" "$app_plist" >/dev/null 2>&1 || true
             /usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$app_plist" >/dev/null 2>&1 || true
@@ -300,18 +300,20 @@ jobs:
             /usr/libexec/PlistBuddy -c "Add :SUFeedURL string ${feed_url}" "$app_plist"
             /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${NIGHTLY_MARKETING_VERSION}" "$app_plist"
             /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${NIGHTLY_BUILD}" "$app_plist"
+            /usr/libexec/PlistBuddy -c "Delete :C11Commit" "$app_plist" >/dev/null 2>&1 || true
+            /usr/libexec/PlistBuddy -c "Add :C11Commit string ${SHORT_SHA}" "$app_plist"
             /usr/libexec/PlistBuddy -c "Delete :CMUXCommit" "$app_plist" >/dev/null 2>&1 || true
             /usr/libexec/PlistBuddy -c "Add :CMUXCommit string ${SHORT_SHA}" "$app_plist"
-            mv "$app_dir/c11mux.app" "$app_dir/c11mux NIGHTLY.app"
+            mv "$app_dir/c11.app" "$app_dir/c11 NIGHTLY.app"
           }
 
           prepare_variant \
             "$APP_DIR" \
-            "com.stage11.c11mux.nightly" \
-            "https://github.com/Stage-11-Agentics/c11mux/releases/download/nightly/appcast.xml"
+            "com.stage11.c11.nightly" \
+            "https://github.com/Stage-11-Agentics/c11/releases/download/nightly/appcast.xml"
 
-          echo "Nightly app name: c11mux NIGHTLY"
-          echo "Nightly bundle ID: com.stage11.c11mux.nightly"
+          echo "Nightly app name: c11 NIGHTLY"
+          echo "Nightly bundle ID: com.stage11.c11.nightly"
           echo "Nightly marketing version: ${NIGHTLY_MARKETING_VERSION}"
           echo "Nightly build number: ${NIGHTLY_BUILD}"
           echo "Nightly immutable DMG: ${NIGHTLY_DMG_IMMUTABLE}"
@@ -324,14 +326,16 @@ jobs:
           ./scripts/build_remote_daemon_release_assets.sh \
             --version "$NIGHTLY_REMOTE_DAEMON_VERSION" \
             --release-tag "nightly" \
-            --repo "Stage-11-Agentics/c11mux" \
+            --repo "Stage-11-Agentics/c11" \
             --output-dir "remote-daemon-assets"
-          MANIFEST_JSON="$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1], encoding="utf-8")), separators=(",",":")))' remote-daemon-assets/cmuxd-remote-manifest.json)"
-          APP_PLIST="build-universal/Build/Products/Release/c11mux NIGHTLY.app/Contents/Info.plist"
+          MANIFEST_JSON="$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1], encoding="utf-8")), separators=(",",":")))' remote-daemon-assets/c11d-remote-manifest.json)"
+          APP_PLIST="build-universal/Build/Products/Release/c11 NIGHTLY.app/Contents/Info.plist"
           if [ ! -f "$APP_PLIST" ]; then
             echo "Missing nightly app Info.plist at $APP_PLIST" >&2
             exit 1
           fi
+          plutil -remove C11RemoteDaemonManifestJSON "$APP_PLIST" >/dev/null 2>&1 || true
+          plutil -insert C11RemoteDaemonManifestJSON -string "$MANIFEST_JSON" "$APP_PLIST"
           plutil -remove CMUXRemoteDaemonManifestJSON "$APP_PLIST" >/dev/null 2>&1 || true
           plutil -insert CMUXRemoteDaemonManifestJSON -string "$MANIFEST_JSON" "$APP_PLIST"
 
@@ -370,9 +374,9 @@ jobs:
           fi
           ENTITLEMENTS="cmux.entitlements"
           for APP_PATH in \
-            "build-universal/Build/Products/Release/c11mux NIGHTLY.app"
+            "build-universal/Build/Products/Release/c11 NIGHTLY.app"
           do
-            CLI_PATH="$APP_PATH/Contents/Resources/bin/cmux"
+            CLI_PATH="$APP_PATH/Contents/Resources/bin/c11"
             HELPER_PATH="$APP_PATH/Contents/Resources/bin/ghostty"
             if [ -f "$CLI_PATH" ]; then
               /usr/bin/codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" "$CLI_PATH"
@@ -445,8 +449,8 @@ jobs:
           }
 
           notarize_and_package \
-            "build-universal/Build/Products/Release/c11mux NIGHTLY.app" \
-            "c11mux-nightly-macos.dmg" \
+            "build-universal/Build/Products/Release/c11 NIGHTLY.app" \
+            "c11-nightly-macos.dmg" \
             "$NIGHTLY_DMG_IMMUTABLE"
 
       - name: Upload dSYMs to Sentry
@@ -482,16 +486,16 @@ jobs:
         if: needs.decide.outputs.should_publish != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: c11mux-nightly-${{ needs.decide.outputs.short_sha }}
+          name: c11-nightly-${{ needs.decide.outputs.short_sha }}
           path: |
-            c11mux-nightly-macos*.dmg
+            c11-nightly-macos*.dmg
             appcast.xml
-            remote-daemon-assets/cmuxd-remote-darwin-arm64
-            remote-daemon-assets/cmuxd-remote-darwin-amd64
-            remote-daemon-assets/cmuxd-remote-linux-arm64
-            remote-daemon-assets/cmuxd-remote-linux-amd64
-            remote-daemon-assets/cmuxd-remote-checksums.txt
-            remote-daemon-assets/cmuxd-remote-manifest.json
+            remote-daemon-assets/c11d-remote-darwin-arm64
+            remote-daemon-assets/c11d-remote-darwin-amd64
+            remote-daemon-assets/c11d-remote-linux-arm64
+            remote-daemon-assets/c11d-remote-linux-amd64
+            remote-daemon-assets/c11d-remote-checksums.txt
+            remote-daemon-assets/c11d-remote-manifest.json
             appcast-universal.xml
           if-no-files-found: error
 
@@ -515,22 +519,22 @@ jobs:
           body: |
             Automated nightly build for `${{ needs.decide.outputs.short_sha }}`.
 
-            **c11mux NIGHTLY** is published as a universal app:
-            - bundle ID `com.stage11.c11mux.nightly`
+            **c11 NIGHTLY** is published as a universal app:
+            - bundle ID `com.stage11.c11.nightly`
             - feed `appcast.xml`
             - compatibility feed `appcast-universal.xml` for older universal nightlies
 
-            [Download c11mux-nightly-macos.dmg](https://github.com/Stage-11-Agentics/c11mux/releases/download/nightly/c11mux-nightly-macos.dmg)
+            [Download c11-nightly-macos.dmg](https://github.com/Stage-11-Agentics/c11/releases/download/nightly/c11-nightly-macos.dmg)
           files: |
-            c11mux-nightly-macos-${{ github.run_id }}*.dmg
-            c11mux-nightly-macos.dmg
+            c11-nightly-macos-${{ github.run_id }}*.dmg
+            c11-nightly-macos.dmg
             appcast.xml
-            remote-daemon-assets/cmuxd-remote-darwin-arm64
-            remote-daemon-assets/cmuxd-remote-darwin-amd64
-            remote-daemon-assets/cmuxd-remote-linux-arm64
-            remote-daemon-assets/cmuxd-remote-linux-amd64
-            remote-daemon-assets/cmuxd-remote-checksums.txt
-            remote-daemon-assets/cmuxd-remote-manifest.json
+            remote-daemon-assets/c11d-remote-darwin-arm64
+            remote-daemon-assets/c11d-remote-darwin-amd64
+            remote-daemon-assets/c11d-remote-linux-arm64
+            remote-daemon-assets/c11d-remote-linux-amd64
+            remote-daemon-assets/c11d-remote-checksums.txt
+            remote-daemon-assets/c11d-remote-manifest.json
             appcast-universal.xml
           overwrite_files: true
 

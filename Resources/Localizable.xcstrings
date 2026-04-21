@@ -8,109 +8,109 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "c11"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "c11"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "c11"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "c11"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "c11"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "c11"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "c11"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "c11"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "c11"
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "c11"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "c11"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "c11"
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "c11"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "c11"
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "c11"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "c11"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "c11"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux"
+            "value": "c11"
           }
         }
       }
@@ -4661,97 +4661,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "始终允许此主机在 cmux 中打开"
+            "value": "始终允许此主机在 c11 中打开"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "一律允許此主機在 cmux 中開啟"
+            "value": "一律允許此主機在 c11 中開啟"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux에서 이 호스트 항상 허용"
+            "value": "c11에서 이 호스트 항상 허용"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Diesen Host immer in cmux zulassen"
+            "value": "Diesen Host immer in c11 zulassen"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Permitir siempre este host en cmux"
+            "value": "Permitir siempre este host en c11"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Toujours autoriser cet hôte dans cmux"
+            "value": "Toujours autoriser cet hôte dans c11"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Consenti sempre questo host in cmux"
+            "value": "Consenti sempre questo host in c11"
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tillad altid denne vært i cmux"
+            "value": "Tillad altid denne vært i c11"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Zawsze zezwalaj na ten host w cmux"
+            "value": "Zawsze zezwalaj na ten host w c11"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Всегда разрешать этот хост в cmux"
+            "value": "Всегда разрешать этот хост в c11"
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Uvijek dozvoli ovaj host u cmux"
+            "value": "Uvijek dozvoli ovaj host u c11"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "السماح دائمًا لهذا المضيف في cmux"
+            "value": "السماح دائمًا لهذا المضيف في c11"
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Alltid tillat denne verten i cmux"
+            "value": "Alltid tillat denne verten i c11"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sempre permitir este host no cmux"
+            "value": "Sempre permitir este host no c11"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "อนุญาตโฮสต์นี้ใน cmux เสมอ"
+            "value": "อนุญาตโฮสต์นี้ใน c11 เสมอ"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Bu ana bilgisayarı cmux'ta her zaman izin ver"
+            "value": "Bu ana bilgisayarı c11'ta her zaman izin ver"
           }
         }
       }
@@ -6130,97 +6130,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ 使用纯 HTTP 连接，网络上的流量可能被读取或修改。\n\n请在默认浏览器中打开此 URL，或在 cmux 中继续访问。"
+            "value": "%@ 使用纯 HTTP 连接，网络上的流量可能被读取或修改。\n\n请在默认浏览器中打开此 URL，或在 c11 中继续访问。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ 使用未加密的 HTTP，網路上的流量可能被讀取或竄改。\n\n在您的預設瀏覽器中開啟此 URL，或在 cmux 中繼續。"
+            "value": "%@ 使用未加密的 HTTP，網路上的流量可能被讀取或竄改。\n\n在您的預設瀏覽器中開啟此 URL，或在 c11 中繼續。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@은(는) 일반 HTTP를 사용하므로, 네트워크에서 트래픽이 읽히거나 변조될 수 있습니다.\n\n기본 브라우저에서 이 URL을 열거나, cmux에서 계속 진행하세요."
+            "value": "%@은(는) 일반 HTTP를 사용하므로, 네트워크에서 트래픽이 읽히거나 변조될 수 있습니다.\n\n기본 브라우저에서 이 URL을 열거나, c11에서 계속 진행하세요."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ verwendet unverschlüsseltes HTTP, daher kann der Datenverkehr im Netzwerk gelesen oder verändert werden.\n\nÖffnen Sie diese URL in Ihrem Standardbrowser oder fahren Sie in cmux fort."
+            "value": "%@ verwendet unverschlüsseltes HTTP, daher kann der Datenverkehr im Netzwerk gelesen oder verändert werden.\n\nÖffnen Sie diese URL in Ihrem Standardbrowser oder fahren Sie in c11 fort."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ usa HTTP sin cifrar, por lo que el tráfico puede ser leído o modificado en la red.\n\nAbre esta URL en tu navegador predeterminado o continúa en cmux."
+            "value": "%@ usa HTTP sin cifrar, por lo que el tráfico puede ser leído o modificado en la red.\n\nAbre esta URL en tu navegador predeterminado o continúa en c11."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ utilise le protocole HTTP non chiffré, le trafic peut donc être lu ou modifié sur le réseau.\n\nOuvrez cette URL dans votre navigateur par défaut ou continuez dans cmux."
+            "value": "%@ utilise le protocole HTTP non chiffré, le trafic peut donc être lu ou modifié sur le réseau.\n\nOuvrez cette URL dans votre navigateur par défaut ou continuez dans c11."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ utilizza HTTP non crittografato, quindi il traffico può essere letto o modificato sulla rete.\n\nApri questo URL nel browser predefinito oppure continua in cmux."
+            "value": "%@ utilizza HTTP non crittografato, quindi il traffico può essere letto o modificato sulla rete.\n\nApri questo URL nel browser predefinito oppure continua in c11."
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ bruger almindelig HTTP, så trafikken kan læses eller ændres på netværket.\n\nÅbn denne URL i din standardbrowser, eller fortsæt i cmux."
+            "value": "%@ bruger almindelig HTTP, så trafikken kan læses eller ændres på netværket.\n\nÅbn denne URL i din standardbrowser, eller fortsæt i c11."
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ używa zwykłego HTTP, więc ruch sieciowy może być odczytany lub zmodyfikowany.\n\nOtwórz ten URL w domyślnej przeglądarce lub kontynuuj w cmux."
+            "value": "%@ używa zwykłego HTTP, więc ruch sieciowy może być odczytany lub zmodyfikowany.\n\nOtwórz ten URL w domyślnej przeglądarce lub kontynuuj w c11."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ использует незащищенный протокол HTTP, поэтому трафик может быть перехвачен или изменен в сети.\n\nОткройте этот URL в браузере по умолчанию или продолжите в cmux."
+            "value": "%@ использует незащищенный протокол HTTP, поэтому трафик может быть перехвачен или изменен в сети.\n\nОткройте этот URL в браузере по умолчанию или продолжите в c11."
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ koristi čisti HTTP, pa se promet može čitati ili mijenjati na mreži.\n\nOtvorite ovaj URL u podrazumijevanom pregledniku ili nastavite u cmux."
+            "value": "%@ koristi čisti HTTP, pa se promet može čitati ili mijenjati na mreži.\n\nOtvorite ovaj URL u podrazumijevanom pregledniku ili nastavite u c11."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "يستخدم %@ بروتوكول HTTP غير مشفر، لذا يمكن قراءة حركة البيانات أو تعديلها على الشبكة.\n\nافتح هذا URL في متصفحك الافتراضي، أو تابع في cmux."
+            "value": "يستخدم %@ بروتوكول HTTP غير مشفر، لذا يمكن قراءة حركة البيانات أو تعديلها على الشبكة.\n\nافتح هذا URL في متصفحك الافتراضي، أو تابع في c11."
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ bruker vanlig HTTP, så trafikk kan leses eller endres på nettverket.\n\nÅpne denne URL-en i standard nettleser, eller fortsett i cmux."
+            "value": "%@ bruker vanlig HTTP, så trafikk kan leses eller endres på nettverket.\n\nÅpne denne URL-en i standard nettleser, eller fortsett i c11."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ usa HTTP simples, então o tráfego pode ser lido ou modificado na rede.\n\nAbra esta URL no seu navegador padrão ou continue no cmux."
+            "value": "%@ usa HTTP simples, então o tráfego pode ser lido ou modificado na rede.\n\nAbra esta URL no seu navegador padrão ou continue no c11."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ ใช้ HTTP แบบธรรมดา ดังนั้นข้อมูลอาจถูกอ่านหรือแก้ไขบนเครือข่ายได้\n\nเปิด URL นี้ในเบราว์เซอร์เริ่มต้น หรือดำเนินการต่อใน cmux"
+            "value": "%@ ใช้ HTTP แบบธรรมดา ดังนั้นข้อมูลอาจถูกอ่านหรือแก้ไขบนเครือข่ายได้\n\nเปิด URL นี้ในเบราว์เซอร์เริ่มต้น หรือดำเนินการต่อใน c11"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ düz HTTP kullanıyor, bu nedenle trafik ağda okunabilir veya değiştirilebilir.\n\nBu URL'yi varsayılan tarayıcınızda açın ya da cmux'ta devam edin."
+            "value": "%@ düz HTTP kullanıyor, bu nedenle trafik ağda okunabilir veya değiştirilebilir.\n\nBu URL'yi varsayılan tarayıcınızda açın ya da c11'ta devam edin."
           }
         }
       }
@@ -7396,13 +7396,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Imported data goes into the selected cmux profile."
+            "value": "Imported data goes into the selected c11 profile."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "インポートしたデータは、選択した cmux プロファイルに保存されます。"
+            "value": "インポートしたデータは、選択した c11 プロファイルに保存されます。"
           }
         }
       }
@@ -8535,97 +8535,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在 cmux 中继续"
+            "value": "在 c11 中继续"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在 cmux 中繼續"
+            "value": "在 c11 中繼續"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux에서 계속"
+            "value": "c11에서 계속"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "In cmux fortfahren"
+            "value": "In c11 fortfahren"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Continuar en cmux"
+            "value": "Continuar en c11"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Continuer dans cmux"
+            "value": "Continuer dans c11"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Continua in cmux"
+            "value": "Continua in c11"
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Fortsæt i cmux"
+            "value": "Fortsæt i c11"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kontynuuj w cmux"
+            "value": "Kontynuuj w c11"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Продолжить в cmux"
+            "value": "Продолжить в c11"
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nastavi u cmux"
+            "value": "Nastavi u c11"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "المتابعة في cmux"
+            "value": "المتابعة في c11"
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Fortsett i cmux"
+            "value": "Fortsett i c11"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Continuar no cmux"
+            "value": "Continuar no c11"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "ดำเนินการต่อใน cmux"
+            "value": "ดำเนินการต่อใน c11"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux'ta devam et"
+            "value": "c11'ta devam et"
           }
         }
       }
@@ -9388,13 +9388,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Usage: cmux claude-teams [claude-args...]\n\nLaunch Claude Code with agent teams enabled.\n\nThis command:\n  - defaults Claude teammate mode to auto\n  - sets a tmux-like environment so Claude auto mode uses cmux splits\n  - sets CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1\n  - prepends a private tmux shim to PATH\n  - forwards all remaining arguments to claude\n\nThe tmux shim translates supported tmux window/pane commands into cmux\nworkspace and split operations in the current cmux session.\n\nExamples:\n  cmux claude-teams\n  cmux claude-teams --continue\n  cmux claude-teams --model sonnet"
+            "value": "Usage: c11 claude-teams [claude-args...]\n\nLaunch Claude Code with agent teams enabled.\n\nThis command:\n  - defaults Claude teammate mode to auto\n  - sets a tmux-like environment so Claude auto mode uses c11 splits\n  - sets CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1\n  - prepends a private tmux shim to PATH\n  - forwards all remaining arguments to claude\n\nThe tmux shim translates supported tmux window/pane commands into c11\nworkspace and split operations in the current c11 session.\n\nExamples:\n  c11 claude-teams\n  c11 claude-teams --continue\n  c11 claude-teams --model sonnet"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "使い方: cmux claude-teams [claude-args...]\n\nエージェントチームを有効にした状態で Claude Code を起動します。\n\nこのコマンドは次を行います:\n  - Claude の teammate mode を auto に設定\n  - Claude の auto mode が cmux の split を使うよう tmux 風の環境を設定\n  - CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 を設定\n  - 専用の tmux shim を PATH の先頭に追加\n  - 残りの引数をそのまま claude に渡す\n\ntmux shim は、対応している tmux の window/pane コマンドを、現在の cmux セッション内の workspace と split 操作に変換します。\n\n例:\n  cmux claude-teams\n  cmux claude-teams --continue\n  cmux claude-teams --model sonnet"
+            "value": "使い方: c11 claude-teams [claude-args...]\n\nエージェントチームを有効にした状態で Claude Code を起動します。\n\nこのコマンドは次を行います:\n  - Claude の teammate mode を auto に設定\n  - Claude の auto mode が c11 の split を使うよう tmux 風の環境を設定\n  - CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 を設定\n  - 専用の tmux shim を PATH の先頭に追加\n  - 残りの引数をそのまま claude に渡す\n\ntmux shim は、対応している tmux の window/pane コマンドを、現在の c11 セッション内の workspace と split 操作に変換します。\n\n例:\n  c11 claude-teams\n  c11 claude-teams --continue\n  c11 claude-teams --model sonnet"
           }
         }
       }
@@ -9631,109 +9631,109 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Couldn't Install cmux CLI"
+            "value": "Couldn't Install c11 CLI"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI をインストールできませんでした"
+            "value": "c11 CLI をインストールできませんでした"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "无法安装 cmux CLI"
+            "value": "无法安装 c11 CLI"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "無法安裝 cmux CLI"
+            "value": "無法安裝 c11 CLI"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI를 설치할 수 없습니다"
+            "value": "c11 CLI를 설치할 수 없습니다"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI konnte nicht installiert werden"
+            "value": "c11 CLI konnte nicht installiert werden"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "No se pudo instalar la CLI de cmux"
+            "value": "No se pudo instalar la CLI de c11"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Impossible d'installer la CLI cmux"
+            "value": "Impossible d'installer la CLI c11"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Impossibile installare la CLI di cmux"
+            "value": "Impossibile installare la CLI di c11"
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kunne ikke installere cmux CLI"
+            "value": "Kunne ikke installere c11 CLI"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nie udało się zainstalować CLI cmux"
+            "value": "Nie udało się zainstalować CLI c11"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Не удалось установить cmux CLI"
+            "value": "Не удалось установить c11 CLI"
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nije moguće instalirati cmux CLI"
+            "value": "Nije moguće instalirati c11 CLI"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "تعذر تثبيت واجهة أوامر cmux"
+            "value": "تعذر تثبيت واجهة أوامر c11"
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kunne ikke installere cmux CLI"
+            "value": "Kunne ikke installere c11 CLI"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Não Foi Possível Instalar o CLI do cmux"
+            "value": "Não Foi Possível Instalar o CLI do c11"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "ไม่สามารถติดตั้ง cmux CLI ได้"
+            "value": "ไม่สามารถติดตั้ง c11 CLI ได้"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI Yüklenemedi"
+            "value": "c11 CLI Yüklenemedi"
           }
         }
       }
@@ -9744,109 +9744,109 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI Installed"
+            "value": "c11 CLI Installed"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI がインストールされました"
+            "value": "c11 CLI がインストールされました"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI 已安装"
+            "value": "c11 CLI 已安装"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI 已安裝"
+            "value": "c11 CLI 已安裝"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI 설치 완료"
+            "value": "c11 CLI 설치 완료"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI installiert"
+            "value": "c11 CLI installiert"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "CLI de cmux instalada"
+            "value": "CLI de c11 instalada"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "CLI cmux installée"
+            "value": "CLI c11 installée"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "CLI di cmux installata"
+            "value": "CLI di c11 installata"
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI installeret"
+            "value": "c11 CLI installeret"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "CLI cmux zainstalowane"
+            "value": "CLI c11 zainstalowane"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI установлен"
+            "value": "c11 CLI установлен"
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI instaliran"
+            "value": "c11 CLI instaliran"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "تم تثبيت واجهة أوامر cmux"
+            "value": "تم تثبيت واجهة أوامر c11"
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI installert"
+            "value": "c11 CLI installert"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "CLI do cmux Instalado"
+            "value": "CLI do c11 Instalado"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "ติดตั้ง cmux CLI แล้ว"
+            "value": "ติดตั้ง c11 CLI แล้ว"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI Yüklendi"
+            "value": "c11 CLI Yüklendi"
           }
         }
       }
@@ -9970,109 +9970,109 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No cmux CLI symlink was found at %@."
+            "value": "No c11 CLI symlink was found at %@."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@にcmux CLIのシンボリックリンクが見つかりませんでした。"
+            "value": "%@にc11 CLIのシンボリックリンクが見つかりませんでした。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在 %@ 处未找到 cmux CLI 符号链接。"
+            "value": "在 %@ 处未找到 c11 CLI 符号链接。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在 %@ 找不到 cmux CLI 的符號連結。"
+            "value": "在 %@ 找不到 c11 CLI 的符號連結。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@에서 cmux CLI 심볼릭 링크를 찾을 수 없습니다."
+            "value": "%@에서 c11 CLI 심볼릭 링크를 찾을 수 없습니다."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Es wurde keine symbolische Verknüpfung für cmux CLI unter %@ gefunden."
+            "value": "Es wurde keine symbolische Verknüpfung für c11 CLI unter %@ gefunden."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "No se encontró ningún enlace simbólico de la CLI de cmux en %@."
+            "value": "No se encontró ningún enlace simbólico de la CLI de c11 en %@."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aucun lien symbolique de la CLI cmux n'a été trouvé à l'emplacement %@."
+            "value": "Aucun lien symbolique de la CLI c11 n'a été trouvé à l'emplacement %@."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nessun collegamento simbolico della CLI di cmux trovato in %@."
+            "value": "Nessun collegamento simbolico della CLI di c11 trovato in %@."
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Intet cmux CLI symbolsk link blev fundet på %@."
+            "value": "Intet c11 CLI symbolsk link blev fundet på %@."
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nie znaleziono dowiązania symbolicznego CLI cmux pod adresem %@."
+            "value": "Nie znaleziono dowiązania symbolicznego CLI c11 pod adresem %@."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Символическая ссылка cmux CLI не найдена по пути %@."
+            "value": "Символическая ссылка c11 CLI не найдена по пути %@."
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Simbolička veza cmux CLI nije pronađena na %@."
+            "value": "Simbolička veza c11 CLI nije pronađena na %@."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "لم يتم العثور على رابط رمزي لواجهة أوامر cmux في %@."
+            "value": "لم يتم العثور على رابط رمزي لواجهة أوامر c11 في %@."
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ingen cmux CLI-symbolsk lenke ble funnet på %@."
+            "value": "Ingen c11 CLI-symbolsk lenke ble funnet på %@."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nenhum link simbólico do CLI do cmux foi encontrado em %@."
+            "value": "Nenhum link simbólico do CLI do c11 foi encontrado em %@."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "ไม่พบลิงก์สัญลักษณ์ cmux CLI ที่ %@"
+            "value": "ไม่พบลิงก์สัญลักษณ์ c11 CLI ที่ %@"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ konumunda cmux CLI sembolik bağı bulunamadı."
+            "value": "%@ konumunda c11 CLI sembolik bağı bulunamadı."
           }
         }
       }
@@ -10196,109 +10196,109 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Couldn't Uninstall cmux CLI"
+            "value": "Couldn't Uninstall c11 CLI"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI をアンインストールできませんでした"
+            "value": "c11 CLI をアンインストールできませんでした"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "无法卸载 cmux CLI"
+            "value": "无法卸载 c11 CLI"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "無法解除安裝 cmux CLI"
+            "value": "無法解除安裝 c11 CLI"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI를 제거할 수 없습니다"
+            "value": "c11 CLI를 제거할 수 없습니다"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI konnte nicht deinstalliert werden"
+            "value": "c11 CLI konnte nicht deinstalliert werden"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "No se pudo desinstalar la CLI de cmux"
+            "value": "No se pudo desinstalar la CLI de c11"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Impossible de désinstaller la CLI cmux"
+            "value": "Impossible de désinstaller la CLI c11"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Impossibile disinstallare la CLI di cmux"
+            "value": "Impossibile disinstallare la CLI di c11"
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kunne ikke afinstallere cmux CLI"
+            "value": "Kunne ikke afinstallere c11 CLI"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nie udało się odinstalować CLI cmux"
+            "value": "Nie udało się odinstalować CLI c11"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Не удалось удалить cmux CLI"
+            "value": "Не удалось удалить c11 CLI"
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nije moguće deinstalirati cmux CLI"
+            "value": "Nije moguće deinstalirati c11 CLI"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "تعذر إلغاء تثبيت واجهة أوامر cmux"
+            "value": "تعذر إلغاء تثبيت واجهة أوامر c11"
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kunne ikke avinstallere cmux CLI"
+            "value": "Kunne ikke avinstallere c11 CLI"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Não Foi Possível Desinstalar o CLI do cmux"
+            "value": "Não Foi Possível Desinstalar o CLI do c11"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "ไม่สามารถถอนการติดตั้ง cmux CLI ได้"
+            "value": "ไม่สามารถถอนการติดตั้ง c11 CLI ได้"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI Kaldırılamadı"
+            "value": "c11 CLI Kaldırılamadı"
           }
         }
       }
@@ -10309,109 +10309,109 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI Uninstalled"
+            "value": "c11 CLI Uninstalled"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI がアンインストールされました"
+            "value": "c11 CLI がアンインストールされました"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI 已卸载"
+            "value": "c11 CLI 已卸载"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI 已解除安裝"
+            "value": "c11 CLI 已解除安裝"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI 제거 완료"
+            "value": "c11 CLI 제거 완료"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI deinstalliert"
+            "value": "c11 CLI deinstalliert"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "CLI de cmux desinstalada"
+            "value": "CLI de c11 desinstalada"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "CLI cmux désinstallée"
+            "value": "CLI c11 désinstallée"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "CLI di cmux disinstallata"
+            "value": "CLI di c11 disinstallata"
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI afinstalleret"
+            "value": "c11 CLI afinstalleret"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "CLI cmux odinstalowane"
+            "value": "CLI c11 odinstalowane"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI удален"
+            "value": "c11 CLI удален"
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI deinstaliran"
+            "value": "c11 CLI deinstaliran"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "تم إلغاء تثبيت واجهة أوامر cmux"
+            "value": "تم إلغاء تثبيت واجهة أوامر c11"
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI avinstallert"
+            "value": "c11 CLI avinstallert"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "CLI do cmux Desinstalado"
+            "value": "CLI do c11 Desinstalado"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "ถอนการติดตั้ง cmux CLI แล้ว"
+            "value": "ถอนการติดตั้ง c11 CLI แล้ว"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux CLI Kaldırıldı"
+            "value": "c11 CLI Kaldırıldı"
           }
         }
       }
@@ -14332,109 +14332,109 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Shell Command: Install 'cmux' in PATH"
+            "value": "Shell Command: Install 'c11' in PATH"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "シェルコマンド: 'cmux'をPATHにインストール"
+            "value": "シェルコマンド: 'c11'をPATHにインストール"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Shell 命令：将 'cmux' 安装到 PATH"
+            "value": "Shell 命令：将 'c11' 安装到 PATH"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Shell 指令：將「cmux」安裝至 PATH"
+            "value": "Shell 指令：將「c11」安裝至 PATH"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "셸 명령어: PATH에 'cmux' 설치"
+            "value": "셸 명령어: PATH에 'c11' 설치"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Shell-Befehl: 'cmux' im PATH installieren"
+            "value": "Shell-Befehl: 'c11' im PATH installieren"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Comando de shell: Instalar 'cmux' en PATH"
+            "value": "Comando de shell: Instalar 'c11' en PATH"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Commande Shell : installer « cmux » dans le PATH"
+            "value": "Commande Shell : installer « c11 » dans le PATH"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Comando shell: installa 'cmux' nel PATH"
+            "value": "Comando shell: installa 'c11' nel PATH"
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Skalkommando: Installer 'cmux' i PATH"
+            "value": "Skalkommando: Installer 'c11' i PATH"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Polecenie powłoki: Zainstaluj „cmux” w PATH"
+            "value": "Polecenie powłoki: Zainstaluj „c11” w PATH"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Команда оболочки: установить «cmux» в PATH"
+            "value": "Команда оболочки: установить «c11» в PATH"
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Shell naredba: Instaliraj 'cmux' u PATH"
+            "value": "Shell naredba: Instaliraj 'c11' u PATH"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "أمر الصدفة: تثبيت 'cmux' في PATH"
+            "value": "أمر الصدفة: تثبيت 'c11' في PATH"
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Skallkommando: Installer «cmux» i PATH"
+            "value": "Skallkommando: Installer «c11» i PATH"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Comando Shell: Instalar 'cmux' no PATH"
+            "value": "Comando Shell: Instalar 'c11' no PATH"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "คำสั่ง Shell: ติดตั้ง 'cmux' ใน PATH"
+            "value": "คำสั่ง Shell: ติดตั้ง 'c11' ใน PATH"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kabuk Komutu: 'cmux'u PATH'e Yükle"
+            "value": "Kabuk Komutu: 'c11'u PATH'e Yükle"
           }
         }
       }
@@ -20886,109 +20886,109 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Shell Command: Uninstall 'cmux' from PATH"
+            "value": "Shell Command: Uninstall 'c11' from PATH"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "シェルコマンド: 'cmux'をPATHからアンインストール"
+            "value": "シェルコマンド: 'c11'をPATHからアンインストール"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Shell 命令：从 PATH 卸载 'cmux'"
+            "value": "Shell 命令：从 PATH 卸载 'c11'"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Shell 指令：從 PATH 解除安裝「cmux」"
+            "value": "Shell 指令：從 PATH 解除安裝「c11」"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "셸 명령어: PATH에서 'cmux' 제거"
+            "value": "셸 명령어: PATH에서 'c11' 제거"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Shell-Befehl: 'cmux' aus PATH entfernen"
+            "value": "Shell-Befehl: 'c11' aus PATH entfernen"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Comando de shell: Desinstalar 'cmux' de PATH"
+            "value": "Comando de shell: Desinstalar 'c11' de PATH"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Commande Shell : désinstaller « cmux » du PATH"
+            "value": "Commande Shell : désinstaller « c11 » du PATH"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Comando shell: disinstalla 'cmux' dal PATH"
+            "value": "Comando shell: disinstalla 'c11' dal PATH"
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Skalkommando: Afinstaller 'cmux' fra PATH"
+            "value": "Skalkommando: Afinstaller 'c11' fra PATH"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Polecenie powłoki: Odinstaluj „cmux” z PATH"
+            "value": "Polecenie powłoki: Odinstaluj „c11” z PATH"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Команда оболочки: удалить «cmux» из PATH"
+            "value": "Команда оболочки: удалить «c11» из PATH"
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Shell naredba: Deinstaliraj 'cmux' iz PATH"
+            "value": "Shell naredba: Deinstaliraj 'c11' iz PATH"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "أمر الصدفة: إلغاء تثبيت 'cmux' من PATH"
+            "value": "أمر الصدفة: إلغاء تثبيت 'c11' من PATH"
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Skallkommando: Avinstaller «cmux» fra PATH"
+            "value": "Skallkommando: Avinstaller «c11» fra PATH"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Comando Shell: Desinstalar 'cmux' do PATH"
+            "value": "Comando Shell: Desinstalar 'c11' do PATH"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "คำสั่ง Shell: ถอนการติดตั้ง 'cmux' จาก PATH"
+            "value": "คำสั่ง Shell: ถอนการติดตั้ง 'c11' จาก PATH"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kabuk Komutu: 'cmux'u PATH'ten Kaldır"
+            "value": "Kabuk Komutu: 'c11'u PATH'ten Kaldır"
           }
         }
       }
@@ -30409,97 +30409,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux 的通知已被禁用。请在系统设置中启用通知以接收提醒。"
+            "value": "c11 的通知已被禁用。请在系统设置中启用通知以接收提醒。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux 的通知已停用。請在「系統設定」中啟用，以接收提示。"
+            "value": "c11 的通知已停用。請在「系統設定」中啟用，以接收提示。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux에 대한 알림이 비활성화되어 있습니다. 알림을 보려면 시스템 설정에서 활성화하세요."
+            "value": "c11에 대한 알림이 비활성화되어 있습니다. 알림을 보려면 시스템 설정에서 활성화하세요."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Benachrichtigungen sind für cmux deaktiviert. Aktivieren Sie sie in den Systemeinstellungen, um Hinweise zu sehen."
+            "value": "Benachrichtigungen sind für c11 deaktiviert. Aktivieren Sie sie in den Systemeinstellungen, um Hinweise zu sehen."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Las notificaciones están desactivadas para cmux. Actívalas en Ajustes del Sistema para ver alertas."
+            "value": "Las notificaciones están desactivadas para c11. Actívalas en Ajustes del Sistema para ver alertas."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Les notifications sont désactivées pour cmux. Activez-les dans les Réglages Système pour voir les alertes."
+            "value": "Les notifications sont désactivées pour c11. Activez-les dans les Réglages Système pour voir les alertes."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Le notifiche sono disabilitate per cmux. Abilitale nelle Impostazioni di Sistema per visualizzare gli avvisi."
+            "value": "Le notifiche sono disabilitate per c11. Abilitale nelle Impostazioni di Sistema per visualizzare gli avvisi."
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Notifikationer er deaktiveret for cmux. Aktiver dem i Systemindstillinger for at se advarsler."
+            "value": "Notifikationer er deaktiveret for c11. Aktiver dem i Systemindstillinger for at se advarsler."
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Powiadomienia są wyłączone dla cmux. Włącz je w Ustawieniach systemowych, aby widzieć alerty."
+            "value": "Powiadomienia są wyłączone dla c11. Włącz je w Ustawieniach systemowych, aby widzieć alerty."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Уведомления для cmux отключены. Включите их в Системных настройках, чтобы видеть оповещения."
+            "value": "Уведомления для c11 отключены. Включите их в Системных настройках, чтобы видеть оповещения."
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Obavještenja su onemogućena za cmux. Omogućite ih u Postavkama sistema da biste vidjeli upozorenja."
+            "value": "Obavještenja su onemogućena za c11. Omogućite ih u Postavkama sistema da biste vidjeli upozorenja."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "الإشعارات معطلة لـ cmux. قم بتفعيلها في إعدادات النظام لرؤية التنبيهات."
+            "value": "الإشعارات معطلة لـ c11. قم بتفعيلها في إعدادات النظام لرؤية التنبيهات."
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Varsler er deaktivert for cmux. Aktiver dem i Systeminnstillinger for å se varsler."
+            "value": "Varsler er deaktivert for c11. Aktiver dem i Systeminnstillinger for å se varsler."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "As notificações estão desativadas para o cmux. Ative-as nos Ajustes do Sistema para ver os alertas."
+            "value": "As notificações estão desativadas para o c11. Ative-as nos Ajustes do Sistema para ver os alertas."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "การแจ้งเตือนถูกปิดใช้งานสำหรับ cmux เปิดใช้งานในการตั้งค่าระบบเพื่อดูการแจ้งเตือน"
+            "value": "การแจ้งเตือนถูกปิดใช้งานสำหรับ c11 เปิดใช้งานในการตั้งค่าระบบเพื่อดูการแจ้งเตือน"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux için bildirimler devre dışı. Uyarıları görmek için Sistem Ayarları'nda etkinleştirin."
+            "value": "c11 için bildirimler devre dışı. Uyarıları görmek için Sistem Ayarları'nda etkinleştirin."
           }
         }
       }
@@ -30748,97 +30748,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "启用 cmux 通知"
+            "value": "启用 c11 通知"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "為 cmux 啟用通知"
+            "value": "為 c11 啟用通知"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux 알림 활성화"
+            "value": "c11 알림 활성화"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Benachrichtigungen für cmux aktivieren"
+            "value": "Benachrichtigungen für c11 aktivieren"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Activar notificaciones para cmux"
+            "value": "Activar notificaciones para c11"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Activer les notifications pour cmux"
+            "value": "Activer les notifications pour c11"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Abilita notifiche per cmux"
+            "value": "Abilita notifiche per c11"
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aktiver notifikationer for cmux"
+            "value": "Aktiver notifikationer for c11"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Włącz powiadomienia dla cmux"
+            "value": "Włącz powiadomienia dla c11"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Включить уведомления для cmux"
+            "value": "Включить уведомления для c11"
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Omogući obavještenja za cmux"
+            "value": "Omogući obavještenja za c11"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "تفعيل الإشعارات لـ cmux"
+            "value": "تفعيل الإشعارات لـ c11"
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aktiver varsler for cmux"
+            "value": "Aktiver varsler for c11"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ativar Notificações para o cmux"
+            "value": "Ativar Notificações para o c11"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "เปิดใช้งานการแจ้งเตือนสำหรับ cmux"
+            "value": "เปิดใช้งานการแจ้งเตือนสำหรับ c11"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux İçin Bildirimleri Etkinleştir"
+            "value": "c11 İçin Bildirimleri Etkinleştir"
           }
         }
       }
@@ -30849,109 +30849,109 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux could not move this tab to the selected destination."
+            "value": "c11 could not move this tab to the selected destination."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmuxはこのタブを選択した移動先に移動できませんでした。"
+            "value": "c11はこのタブを選択した移動先に移動できませんでした。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux 无法将此标签页移动到所选目标。"
+            "value": "c11 无法将此标签页移动到所选目标。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux 無法將此標籤頁移至所選的目的地。"
+            "value": "c11 無法將此標籤頁移至所選的目的地。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux에서 이 탭을 선택한 대상으로 이동할 수 없습니다."
+            "value": "c11에서 이 탭을 선택한 대상으로 이동할 수 없습니다."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux konnte diesen Tab nicht zum ausgewählten Ziel verschieben."
+            "value": "c11 konnte diesen Tab nicht zum ausgewählten Ziel verschieben."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux no pudo mover esta pestaña al destino seleccionado."
+            "value": "c11 no pudo mover esta pestaña al destino seleccionado."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux n'a pas pu déplacer cet onglet vers la destination sélectionnée."
+            "value": "c11 n'a pas pu déplacer cet onglet vers la destination sélectionnée."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux non è riuscito a spostare questa scheda nella destinazione selezionata."
+            "value": "c11 non è riuscito a spostare questa scheda nella destinazione selezionata."
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux kunne ikke flytte denne fane til den valgte destination."
+            "value": "c11 kunne ikke flytte denne fane til den valgte destination."
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux nie mógł przenieść tej karty do wybranego miejsca docelowego."
+            "value": "c11 nie mógł przenieść tej karty do wybranego miejsca docelowego."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux не удалось переместить эту вкладку в выбранное место назначения."
+            "value": "c11 не удалось переместить эту вкладку в выбранное место назначения."
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux nije mogao premjestiti ovaj tab na odabrano odredište."
+            "value": "c11 nije mogao premjestiti ovaj tab na odabrano odredište."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "لم يتمكن cmux من نقل هذا اللسان إلى الوجهة المحددة."
+            "value": "لم يتمكن c11 من نقل هذا اللسان إلى الوجهة المحددة."
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux kunne ikke flytte denne fanen til den valgte destinasjonen."
+            "value": "c11 kunne ikke flytte denne fanen til den valgte destinasjonen."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "O cmux não conseguiu mover esta aba para o destino selecionado."
+            "value": "O c11 não conseguiu mover esta aba para o destino selecionado."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux ไม่สามารถย้ายแท็บนี้ไปยังปลายทางที่เลือกได้"
+            "value": "c11 ไม่สามารถย้ายแท็บนี้ไปยังปลายทางที่เลือกได้"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux bu sekmeyi seçilen hedefe taşıyamadı."
+            "value": "c11 bu sekmeyi seçilen hedefe taşıyamadı."
           }
         }
       }
@@ -31946,97 +31946,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "退出 cmux？"
+            "value": "退出 c11？"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "要結束 cmux 嗎？"
+            "value": "要結束 c11 嗎？"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux를 종료하시겠습니까?"
+            "value": "c11를 종료하시겠습니까?"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux beenden?"
+            "value": "c11 beenden?"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "¿Salir de cmux?"
+            "value": "¿Salir de c11?"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Quitter cmux ?"
+            "value": "Quitter c11 ?"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Uscire da cmux?"
+            "value": "Uscire da c11?"
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Afslut cmux?"
+            "value": "Afslut c11?"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Zakończyć cmux?"
+            "value": "Zakończyć c11?"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Завершить cmux?"
+            "value": "Завершить c11?"
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Zatvoriti cmux?"
+            "value": "Zatvoriti c11?"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "إنهاء cmux؟"
+            "value": "إنهاء c11؟"
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Avslutte cmux?"
+            "value": "Avslutte c11?"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Encerrar o cmux?"
+            "value": "Encerrar o c11?"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "ออกจาก cmux หรือไม่?"
+            "value": "ออกจาก c11 หรือไม่?"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux'tan çıkılsın mı?"
+            "value": "c11'tan çıkılsın mı?"
           }
         }
       }
@@ -33133,97 +33133,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "关于 cmux"
+            "value": "关于 c11"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "關於 cmux"
+            "value": "關於 c11"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux에 관하여"
+            "value": "c11에 관하여"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Über cmux"
+            "value": "Über c11"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Acerca de cmux"
+            "value": "Acerca de c11"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "À propos de cmux"
+            "value": "À propos de c11"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Informazioni su cmux"
+            "value": "Informazioni su c11"
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Om cmux"
+            "value": "Om c11"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "O cmux"
+            "value": "O c11"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "О программе cmux"
+            "value": "О программе c11"
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "O programu cmux"
+            "value": "O programu c11"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "حول cmux"
+            "value": "حول c11"
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Om cmux"
+            "value": "Om c11"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sobre o cmux"
+            "value": "Sobre o c11"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "เกี่ยวกับ cmux"
+            "value": "เกี่ยวกับ c11"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux Hakkında"
+            "value": "c11 Hakkında"
           }
         }
       }
@@ -38009,97 +38009,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "退出 cmux"
+            "value": "退出 c11"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "結束 cmux"
+            "value": "結束 c11"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux 종료"
+            "value": "c11 종료"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux beenden"
+            "value": "c11 beenden"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Salir de cmux"
+            "value": "Salir de c11"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Quitter cmux"
+            "value": "Quitter c11"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Esci da cmux"
+            "value": "Esci da c11"
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Afslut cmux"
+            "value": "Afslut c11"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Zakończ cmux"
+            "value": "Zakończ c11"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Завершить cmux"
+            "value": "Завершить c11"
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Zatvori cmux"
+            "value": "Zatvori c11"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "إنهاء cmux"
+            "value": "إنهاء c11"
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Avslutt cmux"
+            "value": "Avslutt c11"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Encerrar o cmux"
+            "value": "Encerrar o c11"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "ออกจาก cmux"
+            "value": "ออกจาก c11"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux'tan Çık"
+            "value": "c11'tan Çık"
           }
         }
       }
@@ -43773,97 +43773,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "重启 cmux 以应用"
+            "value": "重启 c11 以应用"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "重新啟動 cmux 以套用"
+            "value": "重新啟動 c11 以套用"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "적용하려면 cmux를 재시작하세요"
+            "value": "적용하려면 c11를 재시작하세요"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux neu starten, um Änderung zu übernehmen"
+            "value": "c11 neu starten, um Änderung zu übernehmen"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reinicia cmux para aplicar"
+            "value": "Reinicia c11 para aplicar"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Redémarrez cmux pour appliquer"
+            "value": "Redémarrez c11 pour appliquer"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Riavvia cmux per applicare"
+            "value": "Riavvia c11 per applicare"
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Genstart cmux for at anvende"
+            "value": "Genstart c11 for at anvende"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Uruchom ponownie cmux, aby zastosować"
+            "value": "Uruchom ponownie c11, aby zastosować"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Перезапустите cmux для применения"
+            "value": "Перезапустите c11 для применения"
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ponovo pokrenite cmux za primjenu"
+            "value": "Ponovo pokrenite c11 za primjenu"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "أعد تشغيل cmux للتطبيق"
+            "value": "أعد تشغيل c11 للتطبيق"
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Start cmux på nytt for å bruke"
+            "value": "Start c11 på nytt for å bruke"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reinicie o cmux para aplicar"
+            "value": "Reinicie o c11 para aplicar"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "รีสตาร์ต cmux เพื่อนำไปใช้"
+            "value": "รีสตาร์ต c11 เพื่อนำไปใช้"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Uygulamak için cmux'u yeniden başlatın"
+            "value": "Uygulamak için c11'u yeniden başlatın"
           }
         }
       }
@@ -44050,97 +44050,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在 cmux 浏览器中打开侧边栏 PR 链接"
+            "value": "在 c11 浏览器中打开侧边栏 PR 链接"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在 cmux 瀏覽器中開啟側邊欄 PR 連結"
+            "value": "在 c11 瀏覽器中開啟側邊欄 PR 連結"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "사이드바 PR 링크를 cmux 브라우저에서 열기"
+            "value": "사이드바 PR 링크를 c11 브라우저에서 열기"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Seitenleisten-PR-Links im cmux-Browser öffnen"
+            "value": "Seitenleisten-PR-Links im c11-Browser öffnen"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Abrir enlaces de PR de la barra lateral en el navegador de cmux"
+            "value": "Abrir enlaces de PR de la barra lateral en el navegador de c11"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ouvrir les liens PR de la barre latérale dans le navigateur cmux"
+            "value": "Ouvrir les liens PR de la barre latérale dans le navigateur c11"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Apri link PR della barra laterale nel browser cmux"
+            "value": "Apri link PR della barra laterale nel browser c11"
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Åbn sidebjælkens PR-links i cmux-browser"
+            "value": "Åbn sidebjælkens PR-links i c11-browser"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Otwieraj linki PR z paska bocznego w przeglądarce cmux"
+            "value": "Otwieraj linki PR z paska bocznego w przeglądarce c11"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Открывать ссылки PR боковой панели в браузере cmux"
+            "value": "Открывать ссылки PR боковой панели в браузере c11"
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Otvori PR linkove iz bočne trake u cmux pregledniku"
+            "value": "Otvori PR linkove iz bočne trake u c11 pregledniku"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "فتح روابط طلبات السحب في متصفح cmux"
+            "value": "فتح روابط طلبات السحب في متصفح c11"
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Åpne sidepanel-PR-lenker i cmux-nettleser"
+            "value": "Åpne sidepanel-PR-lenker i c11-nettleser"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Abrir Links de PR da Barra Lateral no Navegador do cmux"
+            "value": "Abrir Links de PR da Barra Lateral no Navegador do c11"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "เปิดลิงก์ PR ในแถบด้านข้างด้วยเบราว์เซอร์ cmux"
+            "value": "เปิดลิงก์ PR ในแถบด้านข้างด้วยเบราว์เซอร์ c11"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kenar Çubuğu PR Bağlantılarını cmux Tarayıcısında Aç"
+            "value": "Kenar Çubuğu PR Bağlantılarını c11 Tarayıcısında Aç"
           }
         }
       }
@@ -44276,97 +44276,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "点击在 cmux 浏览器中打开。"
+            "value": "点击在 c11 浏览器中打开。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "點擊會在 cmux 瀏覽器中開啟。"
+            "value": "點擊會在 c11 瀏覽器中開啟。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "클릭하면 cmux 브라우저에서 열립니다."
+            "value": "클릭하면 c11 브라우저에서 열립니다."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Klicks öffnen im cmux-Browser."
+            "value": "Klicks öffnen im c11-Browser."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Los clics abren dentro del navegador de cmux."
+            "value": "Los clics abren dentro del navegador de c11."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Les clics ouvrent dans le navigateur cmux."
+            "value": "Les clics ouvrent dans le navigateur c11."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "I clic aprono nel browser cmux."
+            "value": "I clic aprono nel browser c11."
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Klik åbner i cmux-browseren."
+            "value": "Klik åbner i c11-browseren."
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kliknięcia otwierają w przeglądarce cmux."
+            "value": "Kliknięcia otwierają w przeglądarce c11."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ссылки открываются во встроенном браузере cmux."
+            "value": "Ссылки открываются во встроенном браузере c11."
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Klikovi se otvaraju unutar cmux preglednika."
+            "value": "Klikovi se otvaraju unutar c11 preglednika."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "النقرات تفتح داخل متصفح cmux."
+            "value": "النقرات تفتح داخل متصفح c11."
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Klikk åpner i cmux-nettleseren."
+            "value": "Klikk åpner i c11-nettleseren."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cliques abrem dentro do navegador do cmux."
+            "value": "Cliques abrem dentro do navegador do c11."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "คลิกจะเปิดในเบราว์เซอร์ cmux"
+            "value": "คลิกจะเปิดในเบราว์เซอร์ c11"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tıklamalar cmux tarayıcısında açılır."
+            "value": "Tıklamalar c11 tarayıcısında açılır."
           }
         }
       }
@@ -47141,97 +47141,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "分享匿名的崩溃和使用数据，帮助改进 cmux。"
+            "value": "分享匿名的崩溃和使用数据，帮助改进 c11。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "分享匿名的當機與使用資料，以協助改善 cmux。"
+            "value": "分享匿名的當機與使用資料，以協助改善 c11。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux 개선을 위해 익명화된 충돌 및 사용 데이터를 공유합니다."
+            "value": "c11 개선을 위해 익명화된 충돌 및 사용 데이터를 공유합니다."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Anonymisierte Absturz- und Nutzungsdaten teilen, um cmux zu verbessern."
+            "value": "Anonymisierte Absturz- und Nutzungsdaten teilen, um c11 zu verbessern."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Compartir datos anónimos de fallos y uso para ayudar a mejorar cmux."
+            "value": "Compartir datos anónimos de fallos y uso para ayudar a mejorar c11."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Partager des données anonymisées de plantage et d'utilisation pour aider à améliorer cmux."
+            "value": "Partager des données anonymisées de plantage et d'utilisation pour aider à améliorer c11."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Condividi dati anonimi su arresti anomali e utilizzo per migliorare cmux."
+            "value": "Condividi dati anonimi su arresti anomali e utilizzo per migliorare c11."
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Del anonymiserede nedbrud- og brugsdata for at hjælpe med at forbedre cmux."
+            "value": "Del anonymiserede nedbrud- og brugsdata for at hjælpe med at forbedre c11."
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Udostępniaj zanonimizowane dane o awariach i użyciu, aby pomóc ulepszyć cmux."
+            "value": "Udostępniaj zanonimizowane dane o awariach i użyciu, aby pomóc ulepszyć c11."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Делиться анонимными данными о сбоях и использовании для улучшения cmux."
+            "value": "Делиться анонимными данными о сбоях и использовании для улучшения c11."
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Dijelite anonimizirane podatke o padovima i korištenju kako biste pomogli u poboljšanju cmux."
+            "value": "Dijelite anonimizirane podatke o padovima i korištenju kako biste pomogli u poboljšanju c11."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "مشاركة بيانات الأعطال والاستخدام المجهولة للمساعدة في تحسين cmux."
+            "value": "مشاركة بيانات الأعطال والاستخدام المجهولة للمساعدة في تحسين c11."
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Del anonymiserte krasj- og bruksdata for å bidra til å forbedre cmux."
+            "value": "Del anonymiserte krasj- og bruksdata for å bidra til å forbedre c11."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Compartilhar dados anonimizados de falhas e uso para ajudar a melhorar o cmux."
+            "value": "Compartilhar dados anonimizados de falhas e uso para ajudar a melhorar o c11."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "แชร์ข้อมูลการขัดข้องและการใช้งานแบบไม่ระบุตัวตนเพื่อช่วยปรับปรุง cmux"
+            "value": "แชร์ข้อมูลการขัดข้องและการใช้งานแบบไม่ระบุตัวตนเพื่อช่วยปรับปรุง c11"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux'u iyileştirmek için anonimleştirilmiş çökme ve kullanım verilerini paylaş."
+            "value": "c11'u iyileştirmek için anonimleştirilmiş çökme ve kullanım verilerini paylaş."
           }
         }
       }
@@ -47932,97 +47932,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "启用后，cmux 会包装 claude 命令以注入会话跟踪和通知钩子。如果您希望自行管理 Claude Code 钩子，请禁用此选项。"
+            "value": "启用后，c11 会包装 claude 命令以注入会话跟踪和通知钩子。如果您希望自行管理 Claude Code 钩子，请禁用此选项。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "啟用後，cmux 會包裝 claude 指令以注入工作階段追蹤和通知掛鉤。如果您偏好自行管理 Claude Code 掛鉤，請停用此選項。"
+            "value": "啟用後，c11 會包裝 claude 指令以注入工作階段追蹤和通知掛鉤。如果您偏好自行管理 Claude Code 掛鉤，請停用此選項。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "활성화하면 cmux가 claude 명령을 래핑하여 세션 추적 및 알림 훅을 삽입합니다. Claude Code 훅을 직접 관리하려면 비활성화하세요."
+            "value": "활성화하면 c11가 claude 명령을 래핑하여 세션 추적 및 알림 훅을 삽입합니다. Claude Code 훅을 직접 관리하려면 비활성화하세요."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wenn aktiviert, umhüllt cmux den claude-Befehl, um Sitzungsverfolgung und Benachrichtigungs-Hooks einzufügen. Deaktivieren Sie dies, wenn Sie Claude Code-Hooks selbst verwalten möchten."
+            "value": "Wenn aktiviert, umhüllt c11 den claude-Befehl, um Sitzungsverfolgung und Benachrichtigungs-Hooks einzufügen. Deaktivieren Sie dies, wenn Sie Claude Code-Hooks selbst verwalten möchten."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cuando está activado, cmux envuelve el comando claude para inyectar seguimiento de sesión y hooks de notificación. Desactiva si prefieres gestionar los hooks de Claude Code tú mismo."
+            "value": "Cuando está activado, c11 envuelve el comando claude para inyectar seguimiento de sesión y hooks de notificación. Desactiva si prefieres gestionar los hooks de Claude Code tú mismo."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Lorsque cette option est activée, cmux encapsule la commande claude pour injecter le suivi de session et les hooks de notification. Désactivez si vous préférez gérer les hooks Claude Code vous-même."
+            "value": "Lorsque cette option est activée, c11 encapsule la commande claude pour injecter le suivi de session et les hooks de notification. Désactivez si vous préférez gérer les hooks Claude Code vous-même."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Quando abilitato, cmux avvolge il comando claude per iniettare il tracciamento della sessione e gli hook di notifica. Disabilita se preferisci gestire gli hook di Claude Code manualmente."
+            "value": "Quando abilitato, c11 avvolge il comando claude per iniettare il tracciamento della sessione e gli hook di notifica. Disabilita se preferisci gestire gli hook di Claude Code manualmente."
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Når aktiveret, wrapper cmux claude-kommandoen for at injicere sessionssporing og notifikationshooks. Deaktiver, hvis du foretrækker at administrere Claude Code-hooks selv."
+            "value": "Når aktiveret, wrapper c11 claude-kommandoen for at injicere sessionssporing og notifikationshooks. Deaktiver, hvis du foretrækker at administrere Claude Code-hooks selv."
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Po włączeniu cmux opakowuje polecenie claude, aby wstrzyknąć śledzenie sesji i hooki powiadomień. Wyłącz, jeśli wolisz samodzielnie zarządzać hookami Claude Code."
+            "value": "Po włączeniu c11 opakowuje polecenie claude, aby wstrzyknąć śledzenie sesji i hooki powiadomień. Wyłącz, jeśli wolisz samodzielnie zarządzać hookami Claude Code."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "При включении cmux оборачивает команду claude для отслеживания сеансов и уведомлений. Отключите, если предпочитаете управлять хуками Claude Code самостоятельно."
+            "value": "При включении c11 оборачивает команду claude для отслеживания сеансов и уведомлений. Отключите, если предпочитаете управлять хуками Claude Code самостоятельно."
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kada je omogućeno, cmux omotava naredbu claude kako bi ubacio praćenje sesije i zakačke za obavještenja. Onemogućite ako preferirate sami upravljati Claude Code zakačkama."
+            "value": "Kada je omogućeno, c11 omotava naredbu claude kako bi ubacio praćenje sesije i zakačke za obavještenja. Onemogućite ako preferirate sami upravljati Claude Code zakačkama."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "عند التفعيل، يغلّف cmux أمر claude لحقن تتبع الجلسة وخطافات الإشعارات. قم بالتعطيل إذا كنت تفضل إدارة خطافات Claude Code بنفسك."
+            "value": "عند التفعيل، يغلّف c11 أمر claude لحقن تتبع الجلسة وخطافات الإشعارات. قم بالتعطيل إذا كنت تفضل إدارة خطافات Claude Code بنفسك."
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Når aktivert, pakker cmux inn claude-kommandoen for å injisere sesjonssporing og varslingsmekanismer. Deaktiver hvis du foretrekker å håndtere Claude Code-mekanismer selv."
+            "value": "Når aktivert, pakker c11 inn claude-kommandoen for å injisere sesjonssporing og varslingsmekanismer. Deaktiver hvis du foretrekker å håndtere Claude Code-mekanismer selv."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Quando ativado, o cmux encapsula o comando claude para injetar rastreamento de sessão e hooks de notificação. Desative se preferir gerenciar os hooks do Claude Code você mesmo."
+            "value": "Quando ativado, o c11 encapsula o comando claude para injetar rastreamento de sessão e hooks de notificação. Desative se preferir gerenciar os hooks do Claude Code você mesmo."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "เมื่อเปิดใช้งาน cmux จะห่อคำสั่ง claude เพื่อเพิ่มการติดตามเซสชันและตะขอการแจ้งเตือน ปิดใช้งานหากคุณต้องการจัดการตะขอ Claude Code ด้วยตัวเอง"
+            "value": "เมื่อเปิดใช้งาน c11 จะห่อคำสั่ง claude เพื่อเพิ่มการติดตามเซสชันและตะขอการแจ้งเตือน ปิดใช้งานหากคุณต้องการจัดการตะขอ Claude Code ด้วยตัวเอง"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Etkinleştirildiğinde, cmux oturum izleme ve bildirim kancaları eklemek için claude komutunu sarar. Claude Code kancalarını kendiniz yönetmeyi tercih ediyorsanız devre dışı bırakın."
+            "value": "Etkinleştirildiğinde, c11 oturum izleme ve bildirim kancaları eklemek için claude komutunu sarar. Claude Code kancalarını kendiniz yönetmeyi tercih ediyorsanız devre dışı bırakın."
           }
         }
       }
@@ -48045,97 +48045,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code 在没有 cmux 集成的情况下运行。"
+            "value": "Claude Code 在没有 c11 集成的情况下运行。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code 在不使用 cmux 整合的情況下運行。"
+            "value": "Claude Code 在不使用 c11 整合的情況下運行。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code가 cmux 연동 없이 실행됩니다."
+            "value": "Claude Code가 c11 연동 없이 실행됩니다."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code wird ohne cmux-Integration ausgeführt."
+            "value": "Claude Code wird ohne c11-Integration ausgeführt."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code se ejecuta sin integración con cmux."
+            "value": "Claude Code se ejecuta sin integración con c11."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code s'exécute sans intégration cmux."
+            "value": "Claude Code s'exécute sans intégration c11."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code viene eseguito senza integrazione cmux."
+            "value": "Claude Code viene eseguito senza integrazione c11."
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code kører uden cmux-integration."
+            "value": "Claude Code kører uden c11-integration."
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code działa bez integracji z cmux."
+            "value": "Claude Code działa bez integracji z c11."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code работает без интеграции с cmux."
+            "value": "Claude Code работает без интеграции с c11."
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code radi bez cmux integracije."
+            "value": "Claude Code radi bez c11 integracije."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "يعمل Claude Code بدون تكامل cmux."
+            "value": "يعمل Claude Code بدون تكامل c11."
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code kjører uten cmux-integrering."
+            "value": "Claude Code kjører uten c11-integrering."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "O Claude Code é executado sem integração com o cmux."
+            "value": "O Claude Code é executado sem integração com o c11."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code ทำงานโดยไม่มีการผสานรวม cmux"
+            "value": "Claude Code ทำงานโดยไม่มีการผสานรวม c11"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude Code cmux entegrasyonu olmadan çalışır."
+            "value": "Claude Code c11 entegrasyonu olmadan çalışır."
           }
         }
       }
@@ -52712,97 +52712,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "适用于终端中的链接点击和拦截的 `open https://...` 调用。仅这些主机在 cmux 中打开，其他主机在默认浏览器中打开。每行一个主机或通配符（例如：example.com、*.internal.example）。留空则在 cmux 中打开所有主机。"
+            "value": "适用于终端中的链接点击和拦截的 `open https://...` 调用。仅这些主机在 c11 中打开，其他主机在默认浏览器中打开。每行一个主机或通配符（例如：example.com、*.internal.example）。留空则在 c11 中打开所有主机。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "套用於終端機連結點擊和攔截的 `open https://...` 呼叫。僅這些主機會在 cmux 中開啟，其他主機會在您的預設瀏覽器中開啟。每行一個主機或萬用字元（例如：example.com、*.internal.example）。留空則在 cmux 中開啟所有主機。"
+            "value": "套用於終端機連結點擊和攔截的 `open https://...` 呼叫。僅這些主機會在 c11 中開啟，其他主機會在您的預設瀏覽器中開啟。每行一個主機或萬用字元（例如：example.com、*.internal.example）。留空則在 c11 中開啟所有主機。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "터미널 링크 클릭 및 인터셉트된 `open https://...` 호출에 적용됩니다. 이 호스트만 cmux에서 열립니다. 나머지는 기본 브라우저에서 열립니다. 한 줄에 하나의 호스트 또는 와일드카드 (예: example.com, *.internal.example). 비워두면 모든 호스트가 cmux에서 열립니다."
+            "value": "터미널 링크 클릭 및 인터셉트된 `open https://...` 호출에 적용됩니다. 이 호스트만 c11에서 열립니다. 나머지는 기본 브라우저에서 열립니다. 한 줄에 하나의 호스트 또는 와일드카드 (예: example.com, *.internal.example). 비워두면 모든 호스트가 c11에서 열립니다."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Gilt für Klicks auf Terminal-Links und abgefangene `open https://...`-Aufrufe. Nur diese Hosts werden in cmux geöffnet. Andere werden in Ihrem Standardbrowser geöffnet. Ein Host oder Platzhalter pro Zeile (zum Beispiel: example.com, *.internal.example). Leer lassen, um alle Hosts in cmux zu öffnen."
+            "value": "Gilt für Klicks auf Terminal-Links und abgefangene `open https://...`-Aufrufe. Nur diese Hosts werden in c11 geöffnet. Andere werden in Ihrem Standardbrowser geöffnet. Ein Host oder Platzhalter pro Zeile (zum Beispiel: example.com, *.internal.example). Leer lassen, um alle Hosts in c11 zu öffnen."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Se aplica a clics en enlaces del terminal y llamadas interceptadas de `open https://...`. Solo estos hosts se abren en cmux. Los demás se abren en tu navegador predeterminado. Un host o comodín por línea (por ejemplo: example.com, *.internal.example). Déjalo vacío para abrir todos los hosts en cmux."
+            "value": "Se aplica a clics en enlaces del terminal y llamadas interceptadas de `open https://...`. Solo estos hosts se abren en c11. Los demás se abren en tu navegador predeterminado. Un host o comodín por línea (por ejemplo: example.com, *.internal.example). Déjalo vacío para abrir todos los hosts en c11."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "S'applique aux clics sur les liens du terminal et aux appels `open https://...` interceptés. Seuls ces hôtes s'ouvrent dans cmux. Les autres s'ouvrent dans votre navigateur par défaut. Un hôte ou caractère générique par ligne (par exemple : example.com, *.internal.example). Laissez vide pour ouvrir tous les hôtes dans cmux."
+            "value": "S'applique aux clics sur les liens du terminal et aux appels `open https://...` interceptés. Seuls ces hôtes s'ouvrent dans c11. Les autres s'ouvrent dans votre navigateur par défaut. Un hôte ou caractère générique par ligne (par exemple : example.com, *.internal.example). Laissez vide pour ouvrir tous les hôtes dans c11."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Si applica ai clic sui link nel terminale e alle chiamate intercettate `open https://...`. Solo questi host si aprono in cmux. Gli altri si aprono nel browser predefinito. Un host o wildcard per riga (ad esempio: example.com, *.internal.example). Lascia vuoto per aprire tutti gli host in cmux."
+            "value": "Si applica ai clic sui link nel terminale e alle chiamate intercettate `open https://...`. Solo questi host si aprono in c11. Gli altri si aprono nel browser predefinito. Un host o wildcard per riga (ad esempio: example.com, *.internal.example). Lascia vuoto per aprire tutti gli host in c11."
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Gælder for terminallinksklik og opfangede `open https://...`-kald. Kun disse værter åbnes i cmux. Andre åbnes i din standardbrowser. Én vært eller wildcard pr. linje (f.eks.: example.com, *.internal.example). Lad stå tomt for at åbne alle værter i cmux."
+            "value": "Gælder for terminallinksklik og opfangede `open https://...`-kald. Kun disse værter åbnes i c11. Andre åbnes i din standardbrowser. Én vært eller wildcard pr. linje (f.eks.: example.com, *.internal.example). Lad stå tomt for at åbne alle værter i c11."
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Dotyczy kliknięć linków w terminalu i przechwyconych wywołań `open https://...`. Tylko te hosty otwierają się w cmux. Pozostałe otwierają się w domyślnej przeglądarce. Jeden host lub wzorzec na wiersz (na przykład: example.com, *.internal.example). Pozostaw puste, aby otwierać wszystkie hosty w cmux."
+            "value": "Dotyczy kliknięć linków w terminalu i przechwyconych wywołań `open https://...`. Tylko te hosty otwierają się w c11. Pozostałe otwierają się w domyślnej przeglądarce. Jeden host lub wzorzec na wiersz (na przykład: example.com, *.internal.example). Pozostaw puste, aby otwierać wszystkie hosty w c11."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Применяется к нажатиям на ссылки в терминале и перехваченным вызовам `open https://...`. Только эти хосты открываются в cmux. Остальные открываются в браузере по умолчанию. Один хост или шаблон на строку (например: example.com, *.internal.example). Оставьте пустым, чтобы открывать все хосты в cmux."
+            "value": "Применяется к нажатиям на ссылки в терминале и перехваченным вызовам `open https://...`. Только эти хосты открываются в c11. Остальные открываются в браузере по умолчанию. Один хост или шаблон на строку (например: example.com, *.internal.example). Оставьте пустым, чтобы открывать все хосты в c11."
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Primjenjuje se na klikove linkova u terminalu i presretnute `open https://...` pozive. Samo se ovi hostovi otvaraju u cmux. Ostali se otvaraju u podrazumijevanom pregledniku. Jedan host ili zamjenski znak po redu (na primjer: example.com, *.internal.example). Ostavite prazno da otvorite sve hostove u cmux."
+            "value": "Primjenjuje se na klikove linkova u terminalu i presretnute `open https://...` pozive. Samo se ovi hostovi otvaraju u c11. Ostali se otvaraju u podrazumijevanom pregledniku. Jedan host ili zamjenski znak po redu (na primjer: example.com, *.internal.example). Ostavite prazno da otvorite sve hostove u c11."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "ينطبق على نقرات الروابط في الطرفية واستدعاءات `open https://...` المعترضة. فقط هؤلاء المضيفون يفتحون في cmux. البقية تفتح في متصفحك الافتراضي. مضيف واحد أو حرف بدل لكل سطر (مثال: example.com, *.internal.example). اتركه فارغًا لفتح جميع المضيفين في cmux."
+            "value": "ينطبق على نقرات الروابط في الطرفية واستدعاءات `open https://...` المعترضة. فقط هؤلاء المضيفون يفتحون في c11. البقية تفتح في متصفحك الافتراضي. مضيف واحد أو حرف بدل لكل سطر (مثال: example.com, *.internal.example). اتركه فارغًا لفتح جميع المضيفين في c11."
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Gjelder for terminallenkeklikk og avlyttede `open https://...`-kall. Bare disse vertene åpnes i cmux. Andre åpnes i standard nettleser. Én vert eller jokertegn per linje (for eksempel: example.com, *.internal.example). La stå tom for å åpne alle verter i cmux."
+            "value": "Gjelder for terminallenkeklikk og avlyttede `open https://...`-kall. Bare disse vertene åpnes i c11. Andre åpnes i standard nettleser. Én vert eller jokertegn per linje (for eksempel: example.com, *.internal.example). La stå tom for å åpne alle verter i c11."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aplica-se a cliques em links do terminal e chamadas interceptadas de `open https://...`. Apenas estes hosts abrem no cmux. Outros abrem no seu navegador padrão. Um host ou curinga por linha (por exemplo: example.com, *.internal.example). Deixe vazio para abrir todos os hosts no cmux."
+            "value": "Aplica-se a cliques em links do terminal e chamadas interceptadas de `open https://...`. Apenas estes hosts abrem no c11. Outros abrem no seu navegador padrão. Um host ou curinga por linha (por exemplo: example.com, *.internal.example). Deixe vazio para abrir todos os hosts no c11."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "ใช้กับการคลิกลิงก์ในเทอร์มินัลและการดักจับคำสั่ง `open https://...` เฉพาะโฮสต์เหล่านี้เท่านั้นที่จะเปิดใน cmux โฮสต์อื่นจะเปิดในเบราว์เซอร์เริ่มต้นของคุณ โฮสต์หรือ wildcard หนึ่งรายการต่อบรรทัด (ตัวอย่าง: example.com, *.internal.example) เว้นว่างเพื่อเปิดโฮสต์ทั้งหมดใน cmux"
+            "value": "ใช้กับการคลิกลิงก์ในเทอร์มินัลและการดักจับคำสั่ง `open https://...` เฉพาะโฮสต์เหล่านี้เท่านั้นที่จะเปิดใน c11 โฮสต์อื่นจะเปิดในเบราว์เซอร์เริ่มต้นของคุณ โฮสต์หรือ wildcard หนึ่งรายการต่อบรรทัด (ตัวอย่าง: example.com, *.internal.example) เว้นว่างเพื่อเปิดโฮสต์ทั้งหมดใน c11"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Terminal bağlantı tıklamalarına ve yakalanan `open https://...` çağrılarına uygulanır. Yalnızca bu ana bilgisayarlar cmux'ta açılır. Diğerleri varsayılan tarayıcınızda açılır. Satır başına bir ana bilgisayar veya joker karakter (örneğin: example.com, *.internal.example). Tüm ana bilgisayarları cmux'ta açmak için boş bırakın."
+            "value": "Terminal bağlantı tıklamalarına ve yakalanan `open https://...` çağrılarına uygulanır. Yalnızca bu ana bilgisayarlar c11'ta açılır. Diğerleri varsayılan tarayıcınızda açılır. Satır başına bir ana bilgisayar veya joker karakter (örneğin: example.com, *.internal.example). Tüm ana bilgisayarları c11'ta açmak için boş bırakın."
           }
         }
       }
@@ -52938,97 +52938,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "控制哪些 HTTP（非 HTTPS）主机可以在 cmux 中打开而不显示警告提示。默认包括 localhost、127.0.0.1、::1、0.0.0.0 和 *.localtest.me。"
+            "value": "控制哪些 HTTP（非 HTTPS）主机可以在 c11 中打开而不显示警告提示。默认包括 localhost、127.0.0.1、::1、0.0.0.0 和 *.localtest.me。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "控制哪些 HTTP（非 HTTPS）主機可以在 cmux 中開啟而不顯示警告提示。預設包含 localhost、127.0.0.1、::1、0.0.0.0 和 *.localtest.me。"
+            "value": "控制哪些 HTTP（非 HTTPS）主機可以在 c11 中開啟而不顯示警告提示。預設包含 localhost、127.0.0.1、::1、0.0.0.0 和 *.localtest.me。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux에서 경고 없이 열 수 있는 HTTP(비HTTPS) 호스트를 제어합니다. 기본값에는 localhost, 127.0.0.1, ::1, 0.0.0.0 및 *.localtest.me가 포함됩니다."
+            "value": "c11에서 경고 없이 열 수 있는 HTTP(비HTTPS) 호스트를 제어합니다. 기본값에는 localhost, 127.0.0.1, ::1, 0.0.0.0 및 *.localtest.me가 포함됩니다."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Steuert, welche HTTP-Hosts (nicht HTTPS) ohne Warnhinweis in cmux geöffnet werden können. Standardmäßig enthalten: localhost, 127.0.0.1, ::1, 0.0.0.0 und *.localtest.me."
+            "value": "Steuert, welche HTTP-Hosts (nicht HTTPS) ohne Warnhinweis in c11 geöffnet werden können. Standardmäßig enthalten: localhost, 127.0.0.1, ::1, 0.0.0.0 und *.localtest.me."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Controla qué hosts HTTP (no HTTPS) pueden abrirse en cmux sin un mensaje de advertencia. Los valores predeterminados incluyen localhost, 127.0.0.1, ::1, 0.0.0.0 y *.localtest.me."
+            "value": "Controla qué hosts HTTP (no HTTPS) pueden abrirse en c11 sin un mensaje de advertencia. Los valores predeterminados incluyen localhost, 127.0.0.1, ::1, 0.0.0.0 y *.localtest.me."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Contrôle quels hôtes HTTP (non HTTPS) peuvent s'ouvrir dans cmux sans avertissement. Les valeurs par défaut incluent localhost, 127.0.0.1, ::1, 0.0.0.0 et *.localtest.me."
+            "value": "Contrôle quels hôtes HTTP (non HTTPS) peuvent s'ouvrir dans c11 sans avertissement. Les valeurs par défaut incluent localhost, 127.0.0.1, ::1, 0.0.0.0 et *.localtest.me."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Controlla quali host HTTP (non HTTPS) possono aprirsi in cmux senza un avviso. I valori predefiniti includono localhost, 127.0.0.1, ::1, 0.0.0.0 e *.localtest.me."
+            "value": "Controlla quali host HTTP (non HTTPS) possono aprirsi in c11 senza un avviso. I valori predefiniti includono localhost, 127.0.0.1, ::1, 0.0.0.0 e *.localtest.me."
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Styrer hvilke HTTP-værter (ikke-HTTPS) der kan åbnes i cmux uden advarselsmeddelelse. Standardindstillinger inkluderer localhost, 127.0.0.1, ::1, 0.0.0.0 og *.localtest.me."
+            "value": "Styrer hvilke HTTP-værter (ikke-HTTPS) der kan åbnes i c11 uden advarselsmeddelelse. Standardindstillinger inkluderer localhost, 127.0.0.1, ::1, 0.0.0.0 og *.localtest.me."
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Określa, które hosty HTTP (inne niż HTTPS) mogą być otwierane w cmux bez ostrzeżenia. Domyślnie uwzględniono localhost, 127.0.0.1, ::1, 0.0.0.0 i *.localtest.me."
+            "value": "Określa, które hosty HTTP (inne niż HTTPS) mogą być otwierane w c11 bez ostrzeżenia. Domyślnie uwzględniono localhost, 127.0.0.1, ::1, 0.0.0.0 i *.localtest.me."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Определяет, какие HTTP (не HTTPS) хосты могут открываться в cmux без предупреждения. По умолчанию включены localhost, 127.0.0.1, ::1, 0.0.0.0 и *.localtest.me."
+            "value": "Определяет, какие HTTP (не HTTPS) хосты могут открываться в c11 без предупреждения. По умолчанию включены localhost, 127.0.0.1, ::1, 0.0.0.0 и *.localtest.me."
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kontroliše koji HTTP (ne-HTTPS) hostovi mogu biti otvoreni u cmux bez upozorenja. Podrazumijevani uključuju localhost, 127.0.0.1, ::1, 0.0.0.0 i *.localtest.me."
+            "value": "Kontroliše koji HTTP (ne-HTTPS) hostovi mogu biti otvoreni u c11 bez upozorenja. Podrazumijevani uključuju localhost, 127.0.0.1, ::1, 0.0.0.0 i *.localtest.me."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "يتحكم في مضيفي HTTP (غير HTTPS) الذين يمكنهم الفتح في cmux بدون رسالة تحذير. الافتراضيات تشمل localhost و 127.0.0.1 و ::1 و 0.0.0.0 و *.localtest.me."
+            "value": "يتحكم في مضيفي HTTP (غير HTTPS) الذين يمكنهم الفتح في c11 بدون رسالة تحذير. الافتراضيات تشمل localhost و 127.0.0.1 و ::1 و 0.0.0.0 و *.localtest.me."
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Styrer hvilke HTTP-verter (ikke HTTPS) som kan åpnes i cmux uten advarselsmelding. Standardverdier inkluderer localhost, 127.0.0.1, ::1, 0.0.0.0 og *.localtest.me."
+            "value": "Styrer hvilke HTTP-verter (ikke HTTPS) som kan åpnes i c11 uten advarselsmelding. Standardverdier inkluderer localhost, 127.0.0.1, ::1, 0.0.0.0 og *.localtest.me."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Controla quais hosts HTTP (não HTTPS) podem abrir no cmux sem um aviso. Os padrões incluem localhost, 127.0.0.1, ::1, 0.0.0.0 e *.localtest.me."
+            "value": "Controla quais hosts HTTP (não HTTPS) podem abrir no c11 sem um aviso. Os padrões incluem localhost, 127.0.0.1, ::1, 0.0.0.0 e *.localtest.me."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "ควบคุมว่าโฮสต์ HTTP (ไม่ใช่ HTTPS) ใดที่สามารถเปิดใน cmux โดยไม่ต้องแสดงคำเตือน ค่าเริ่มต้นรวมถึง localhost, 127.0.0.1, ::1, 0.0.0.0 และ *.localtest.me"
+            "value": "ควบคุมว่าโฮสต์ HTTP (ไม่ใช่ HTTPS) ใดที่สามารถเปิดใน c11 โดยไม่ต้องแสดงคำเตือน ค่าเริ่มต้นรวมถึง localhost, 127.0.0.1, ::1, 0.0.0.0 และ *.localtest.me"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hangi HTTP (HTTPS olmayan) ana bilgisayarlarının cmux'ta uyarı istemi olmadan açılabileceğini kontrol eder. Varsayılanlar localhost, 127.0.0.1, ::1, 0.0.0.0 ve *.localtest.me içerir."
+            "value": "Hangi HTTP (HTTPS olmayan) ana bilgisayarlarının c11'ta uyarı istemi olmadan açılabileceğini kontrol eder. Varsayılanlar localhost, 127.0.0.1, ::1, 0.0.0.0 ve *.localtest.me içerir."
           }
         }
       }
@@ -53622,97 +53622,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在 cmux 浏览器中打开终端链接"
+            "value": "在 c11 浏览器中打开终端链接"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在 cmux 瀏覽器中開啟終端機連結"
+            "value": "在 c11 瀏覽器中開啟終端機連結"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "터미널 링크를 cmux 브라우저에서 열기"
+            "value": "터미널 링크를 c11 브라우저에서 열기"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Terminal-Links im cmux-Browser öffnen"
+            "value": "Terminal-Links im c11-Browser öffnen"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Abrir enlaces del terminal en el navegador de cmux"
+            "value": "Abrir enlaces del terminal en el navegador de c11"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ouvrir les liens du terminal dans le navigateur cmux"
+            "value": "Ouvrir les liens du terminal dans le navigateur c11"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Apri link del terminale nel browser cmux"
+            "value": "Apri link del terminale nel browser c11"
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Åbn terminallinks i cmux-browser"
+            "value": "Åbn terminallinks i c11-browser"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Otwieraj linki terminala w przeglądarce cmux"
+            "value": "Otwieraj linki terminala w przeglądarce c11"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Открывать ссылки из терминала в браузере cmux"
+            "value": "Открывать ссылки из терминала в браузере c11"
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Otvori linkove terminala u cmux pregledniku"
+            "value": "Otvori linkove terminala u c11 pregledniku"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "فتح روابط الطرفية في متصفح cmux"
+            "value": "فتح روابط الطرفية في متصفح c11"
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Åpne terminallenker i cmux-nettleser"
+            "value": "Åpne terminallenker i c11-nettleser"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Abrir Links do Terminal no Navegador do cmux"
+            "value": "Abrir Links do Terminal no Navegador do c11"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "เปิดลิงก์เทอร์มินัลในเบราว์เซอร์ cmux"
+            "value": "เปิดลิงก์เทอร์มินัลในเบราว์เซอร์ c11"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Terminal Bağlantılarını cmux Tarayıcısında Aç"
+            "value": "Terminal Bağlantılarını c11 Tarayıcısında Aç"
           }
         }
       }
@@ -67750,97 +67750,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "仅允许在 cmux 终端内启动的进程发送命令。"
+            "value": "仅允许在 c11 终端内启动的进程发送命令。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "僅在 cmux 終端機內啟動的程序可以傳送指令。"
+            "value": "僅在 c11 終端機內啟動的程序可以傳送指令。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux 터미널 내에서 시작된 프로세스만 명령을 보낼 수 있습니다."
+            "value": "c11 터미널 내에서 시작된 프로세스만 명령을 보낼 수 있습니다."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nur Prozesse, die in cmux-Terminals gestartet wurden, können Befehle senden."
+            "value": "Nur Prozesse, die in c11-Terminals gestartet wurden, können Befehle senden."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Solo los procesos iniciados dentro de terminales de cmux pueden enviar comandos."
+            "value": "Solo los procesos iniciados dentro de terminales de c11 pueden enviar comandos."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Seuls les processus lancés dans les terminaux cmux peuvent envoyer des commandes."
+            "value": "Seuls les processus lancés dans les terminaux c11 peuvent envoyer des commandes."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Solo i processi avviati nei terminali cmux possono inviare comandi."
+            "value": "Solo i processi avviati nei terminali c11 possono inviare comandi."
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kun processer startet i cmux-terminaler kan sende kommandoer."
+            "value": "Kun processer startet i c11-terminaler kan sende kommandoer."
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tylko procesy uruchomione wewnątrz terminali cmux mogą wysyłać polecenia."
+            "value": "Tylko procesy uruchomione wewnątrz terminali c11 mogą wysyłać polecenia."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Только процессы, запущенные в терминалах cmux, могут отправлять команды."
+            "value": "Только процессы, запущенные в терминалах c11, могут отправлять команды."
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Samo procesi pokrenuti unutar cmux terminala mogu slati naredbe."
+            "value": "Samo procesi pokrenuti unutar c11 terminala mogu slati naredbe."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "فقط العمليات التي بدأت داخل طرفيات cmux يمكنها إرسال الأوامر."
+            "value": "فقط العمليات التي بدأت داخل طرفيات c11 يمكنها إرسال الأوامر."
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Bare prosesser startet innenfor cmux-terminaler kan sende kommandoer."
+            "value": "Bare prosesser startet innenfor c11-terminaler kan sende kommandoer."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Apenas processos iniciados dentro de terminais do cmux podem enviar comandos."
+            "value": "Apenas processos iniciados dentro de terminais do c11 podem enviar comandos."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "เฉพาะกระบวนการที่เริ่มต้นภายในเทอร์มินัล cmux เท่านั้นที่สามารถส่งคำสั่งได้"
+            "value": "เฉพาะกระบวนการที่เริ่มต้นภายในเทอร์มินัล c11 เท่านั้นที่สามารถส่งคำสั่งได้"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Yalnızca cmux terminalleri içinden başlatılan işlemler komut gönderebilir."
+            "value": "Yalnızca c11 terminalleri içinden başlatılan işlemler komut gönderebilir."
           }
         }
       }
@@ -67863,97 +67863,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "仅限 cmux 进程"
+            "value": "仅限 c11 进程"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "僅限 cmux 程序"
+            "value": "僅限 c11 程序"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux 프로세스만"
+            "value": "c11 프로세스만"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nur cmux-Prozesse"
+            "value": "Nur c11-Prozesse"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Solo procesos de cmux"
+            "value": "Solo procesos de c11"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Processus cmux uniquement"
+            "value": "Processus c11 uniquement"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Solo processi cmux"
+            "value": "Solo processi c11"
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kun cmux-processer"
+            "value": "Kun c11-processer"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tylko procesy cmux"
+            "value": "Tylko procesy c11"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Только процессы cmux"
+            "value": "Только процессы c11"
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Samo cmux procesi"
+            "value": "Samo c11 procesi"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "عمليات cmux فقط"
+            "value": "عمليات c11 فقط"
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kun cmux-prosesser"
+            "value": "Kun c11-prosesser"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Apenas processos do cmux"
+            "value": "Apenas processos do c11"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "กระบวนการ cmux เท่านั้น"
+            "value": "กระบวนการ c11 เท่านั้น"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Yalnızca cmux işlemleri"
+            "value": "Yalnızca c11 işlemleri"
           }
         }
       }
@@ -72302,97 +72302,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux 无法下载更新源。请检查网络连接后重试。"
+            "value": "c11 无法下载更新源。请检查网络连接后重试。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux 無法下載更新來源。請檢查您的連線後再試一次。"
+            "value": "c11 無法下載更新來源。請檢查您的連線後再試一次。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux에서 업데이트 피드를 다운로드할 수 없습니다. 연결을 확인하고 다시 시도하세요."
+            "value": "c11에서 업데이트 피드를 다운로드할 수 없습니다. 연결을 확인하고 다시 시도하세요."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux konnte den Update-Feed nicht herunterladen. Überprüfen Sie Ihre Verbindung und versuchen Sie es erneut."
+            "value": "c11 konnte den Update-Feed nicht herunterladen. Überprüfen Sie Ihre Verbindung und versuchen Sie es erneut."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux no pudo descargar la fuente de actualizaciones. Comprueba tu conexión e inténtalo de nuevo."
+            "value": "c11 no pudo descargar la fuente de actualizaciones. Comprueba tu conexión e inténtalo de nuevo."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux n'a pas pu télécharger le flux de mises à jour. Vérifiez votre connexion et réessayez."
+            "value": "c11 n'a pas pu télécharger le flux de mises à jour. Vérifiez votre connexion et réessayez."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux non è riuscito a scaricare il feed degli aggiornamenti. Controlla la connessione e riprova."
+            "value": "c11 non è riuscito a scaricare il feed degli aggiornamenti. Controlla la connessione e riprova."
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux kunne ikke downloade opdateringsfeedet. Kontroller din forbindelse, og prøv igen."
+            "value": "c11 kunne ikke downloade opdateringsfeedet. Kontroller din forbindelse, og prøv igen."
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux nie mógł pobrać kanału aktualizacji. Sprawdź połączenie i spróbuj ponownie."
+            "value": "c11 nie mógł pobrać kanału aktualizacji. Sprawdź połączenie i spróbuj ponownie."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux не удалось загрузить канал обновлений. Проверьте подключение и повторите попытку."
+            "value": "c11 не удалось загрузить канал обновлений. Проверьте подключение и повторите попытку."
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux nije mogao preuzeti feed ažuriranja. Provjerite vezu i pokušajte ponovo."
+            "value": "c11 nije mogao preuzeti feed ažuriranja. Provjerite vezu i pokušajte ponovo."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "تعذر على cmux تنزيل موجز التحديثات. تحقق من اتصالك وحاول مجددًا."
+            "value": "تعذر على c11 تنزيل موجز التحديثات. تحقق من اتصالك وحاول مجددًا."
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux kunne ikke laste ned oppdateringsfeeden. Kontroller tilkoblingen og prøv igjen."
+            "value": "c11 kunne ikke laste ned oppdateringsfeeden. Kontroller tilkoblingen og prøv igjen."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "O cmux não conseguiu baixar o feed de atualização. Verifique sua conexão e tente novamente."
+            "value": "O c11 não conseguiu baixar o feed de atualização. Verifique sua conexão e tente novamente."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux ไม่สามารถดาวน์โหลดฟีดอัปเดตได้ ตรวจสอบการเชื่อมต่อแล้วลองอีกครั้ง"
+            "value": "c11 ไม่สามารถดาวน์โหลดฟีดอัปเดตได้ ตรวจสอบการเชื่อมต่อแล้วลองอีกครั้ง"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux güncelleme akışını indiremedi. Bağlantınızı kontrol edip tekrar deneyin."
+            "value": "c11 güncelleme akışını indiremedi. Bağlantınızı kontrol edip tekrar deneyin."
           }
         }
       }
@@ -73093,97 +73093,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux 无法连接到更新服务器。请检查互联网连接后重试。"
+            "value": "c11 无法连接到更新服务器。请检查互联网连接后重试。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux 無法連線至更新伺服器。請檢查您的網際網路連線後再試一次。"
+            "value": "c11 無法連線至更新伺服器。請檢查您的網際網路連線後再試一次。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux에서 업데이트 서버에 연결할 수 없습니다. 인터넷 연결을 확인하고 다시 시도하세요."
+            "value": "c11에서 업데이트 서버에 연결할 수 없습니다. 인터넷 연결을 확인하고 다시 시도하세요."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux kann den Update-Server nicht erreichen. Überprüfen Sie Ihre Internetverbindung und versuchen Sie es erneut."
+            "value": "c11 kann den Update-Server nicht erreichen. Überprüfen Sie Ihre Internetverbindung und versuchen Sie es erneut."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux no puede acceder al servidor de actualizaciones. Comprueba tu conexión a internet e inténtalo de nuevo."
+            "value": "c11 no puede acceder al servidor de actualizaciones. Comprueba tu conexión a internet e inténtalo de nuevo."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux ne peut pas atteindre le serveur de mises à jour. Vérifiez votre connexion Internet et réessayez."
+            "value": "c11 ne peut pas atteindre le serveur de mises à jour. Vérifiez votre connexion Internet et réessayez."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux non riesce a raggiungere il server degli aggiornamenti. Controlla la connessione a internet e riprova."
+            "value": "c11 non riesce a raggiungere il server degli aggiornamenti. Controlla la connessione a internet e riprova."
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux kan ikke nå opdateringsserveren. Kontroller din internetforbindelse, og prøv igen."
+            "value": "c11 kan ikke nå opdateringsserveren. Kontroller din internetforbindelse, og prøv igen."
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux nie może połączyć się z serwerem aktualizacji. Sprawdź połączenie z internetem i spróbuj ponownie."
+            "value": "c11 nie może połączyć się z serwerem aktualizacji. Sprawdź połączenie z internetem i spróbuj ponownie."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux не может связаться с сервером обновлений. Проверьте подключение к интернету и повторите попытку."
+            "value": "c11 не может связаться с сервером обновлений. Проверьте подключение к интернету и повторите попытку."
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux ne može dosegnuti server za ažuriranje. Provjerite internetsku vezu i pokušajte ponovo."
+            "value": "c11 ne može dosegnuti server za ažuriranje. Provjerite internetsku vezu i pokušajte ponovo."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "لا يمكن لـ cmux الوصول إلى خادم التحديثات. تحقق من اتصال الإنترنت وحاول مجددًا."
+            "value": "لا يمكن لـ c11 الوصول إلى خادم التحديثات. تحقق من اتصال الإنترنت وحاول مجددًا."
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux kan ikke nå oppdateringsserveren. Kontroller internettforbindelsen og prøv igjen."
+            "value": "c11 kan ikke nå oppdateringsserveren. Kontroller internettforbindelsen og prøv igjen."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "O cmux não consegue acessar o servidor de atualização. Verifique sua conexão com a internet e tente novamente."
+            "value": "O c11 não consegue acessar o servidor de atualização. Verifique sua conexão com a internet e tente novamente."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux ไม่สามารถเข้าถึงเซิร์ฟเวอร์อัปเดตได้ ตรวจสอบการเชื่อมต่ออินเทอร์เน็ตแล้วลองอีกครั้ง"
+            "value": "c11 ไม่สามารถเข้าถึงเซิร์ฟเวอร์อัปเดตได้ ตรวจสอบการเชื่อมต่ออินเทอร์เน็ตแล้วลองอีกครั้ง"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux güncelleme sunucusuna ulaşamıyor. İnternet bağlantınızı kontrol edip tekrar deneyin."
+            "value": "c11 güncelleme sunucusuna ulaşamıyor. İnternet bağlantınızı kontrol edip tekrar deneyin."
           }
         }
       }
@@ -73319,97 +73319,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请将 cmux 移到「应用程序」文件夹中，然后重新启动以启用更新。"
+            "value": "请将 c11 移到「应用程序」文件夹中，然后重新启动以启用更新。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "請將 cmux 移至「應用程式」資料夾並重新啟動，以啟用更新。"
+            "value": "請將 c11 移至「應用程式」資料夾並重新啟動，以啟用更新。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux를 응용 프로그램 폴더로 이동하고 재실행하여 업데이트를 활성화하세요."
+            "value": "c11를 응용 프로그램 폴더로 이동하고 재실행하여 업데이트를 활성화하세요."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Verschieben Sie cmux in den Ordner 'Programme' und starten Sie die App neu, um Updates zu aktivieren."
+            "value": "Verschieben Sie c11 in den Ordner 'Programme' und starten Sie die App neu, um Updates zu aktivieren."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mueve cmux a Aplicaciones y vuelve a iniciarlo para activar las actualizaciones."
+            "value": "Mueve c11 a Aplicaciones y vuelve a iniciarlo para activar las actualizaciones."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Déplacez cmux dans Applications et relancez pour activer les mises à jour."
+            "value": "Déplacez c11 dans Applications et relancez pour activer les mises à jour."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sposta cmux nella cartella Applicazioni e riavvia per abilitare gli aggiornamenti."
+            "value": "Sposta c11 nella cartella Applicazioni e riavvia per abilitare gli aggiornamenti."
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Flyt cmux til Programmer, og genstart for at aktivere opdateringer."
+            "value": "Flyt c11 til Programmer, og genstart for at aktivere opdateringer."
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Przenieś cmux do folderu Aplikacje i uruchom ponownie, aby włączyć aktualizacje."
+            "value": "Przenieś c11 do folderu Aplikacje i uruchom ponownie, aby włączyć aktualizacje."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Переместите cmux в папку «Программы» и перезапустите для включения обновлений."
+            "value": "Переместите c11 в папку «Программы» и перезапустите для включения обновлений."
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Premjestite cmux u Applications i ponovo pokrenite da biste omogućili ažuriranja."
+            "value": "Premjestite c11 u Applications i ponovo pokrenite da biste omogućili ažuriranja."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "انقل cmux إلى مجلد التطبيقات وأعد التشغيل لتفعيل التحديثات."
+            "value": "انقل c11 إلى مجلد التطبيقات وأعد التشغيل لتفعيل التحديثات."
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Flytt cmux til Programmer og start på nytt for å aktivere oppdateringer."
+            "value": "Flytt c11 til Programmer og start på nytt for å aktivere oppdateringer."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mova o cmux para Aplicativos e reinicie para ativar as atualizações."
+            "value": "Mova o c11 para Aplicativos e reinicie para ativar as atualizações."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "ย้าย cmux ไปที่โฟลเดอร์ Applications แล้วเปิดใหม่เพื่อเปิดใช้งานการอัปเดต"
+            "value": "ย้าย c11 ไปที่โฟลเดอร์ Applications แล้วเปิดใหม่เพื่อเปิดใช้งานการอัปเดต"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Güncellemeleri etkinleştirmek için cmux'u Uygulamalar klasörüne taşıyıp yeniden başlatın."
+            "value": "Güncellemeleri etkinleştirmek için c11'u Uygulamalar klasörüne taşıyıp yeniden başlatın."
           }
         }
       }
@@ -73997,97 +73997,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux 无法连接到更新服务器。请检查网络连接或稍后重试。"
+            "value": "c11 无法连接到更新服务器。请检查网络连接或稍后重试。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux 無法連線至更新伺服器。請檢查您的連線或稍後再試。"
+            "value": "c11 無法連線至更新伺服器。請檢查您的連線或稍後再試。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux에서 업데이트 서버에 연결할 수 없습니다. 연결을 확인하거나 나중에 다시 시도하세요."
+            "value": "c11에서 업데이트 서버에 연결할 수 없습니다. 연결을 확인하거나 나중에 다시 시도하세요."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux konnte keine Verbindung zum Update-Server herstellen. Überprüfen Sie Ihre Verbindung oder versuchen Sie es später erneut."
+            "value": "c11 konnte keine Verbindung zum Update-Server herstellen. Überprüfen Sie Ihre Verbindung oder versuchen Sie es später erneut."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux no pudo conectar con el servidor de actualizaciones. Comprueba tu conexión o inténtalo de nuevo más tarde."
+            "value": "c11 no pudo conectar con el servidor de actualizaciones. Comprueba tu conexión o inténtalo de nuevo más tarde."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux n'a pas pu se connecter au serveur de mises à jour. Vérifiez votre connexion ou réessayez plus tard."
+            "value": "c11 n'a pas pu se connecter au serveur de mises à jour. Vérifiez votre connexion ou réessayez plus tard."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux non è riuscito a connettersi al server degli aggiornamenti. Controlla la connessione o riprova più tardi."
+            "value": "c11 non è riuscito a connettersi al server degli aggiornamenti. Controlla la connessione o riprova più tardi."
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux kunne ikke oprette forbindelse til opdateringsserveren. Kontroller din forbindelse, eller prøv igen senere."
+            "value": "c11 kunne ikke oprette forbindelse til opdateringsserveren. Kontroller din forbindelse, eller prøv igen senere."
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux nie mógł połączyć się z serwerem aktualizacji. Sprawdź połączenie lub spróbuj ponownie później."
+            "value": "c11 nie mógł połączyć się z serwerem aktualizacji. Sprawdź połączenie lub spróbuj ponownie później."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux не удалось подключиться к серверу обновлений. Проверьте подключение или повторите попытку позже."
+            "value": "c11 не удалось подключиться к серверу обновлений. Проверьте подключение или повторите попытку позже."
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux se nije mogao povezati na server za ažuriranje. Provjerite vezu ili pokušajte ponovo kasnije."
+            "value": "c11 se nije mogao povezati na server za ažuriranje. Provjerite vezu ili pokušajte ponovo kasnije."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "تعذر على cmux الاتصال بخادم التحديثات. تحقق من اتصالك أو حاول لاحقًا."
+            "value": "تعذر على c11 الاتصال بخادم التحديثات. تحقق من اتصالك أو حاول لاحقًا."
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux kunne ikke koble til oppdateringsserveren. Kontroller tilkoblingen eller prøv igjen senere."
+            "value": "c11 kunne ikke koble til oppdateringsserveren. Kontroller tilkoblingen eller prøv igjen senere."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "O cmux não conseguiu se conectar ao servidor de atualização. Verifique sua conexão ou tente novamente mais tarde."
+            "value": "O c11 não conseguiu se conectar ao servidor de atualização. Verifique sua conexão ou tente novamente mais tarde."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์อัปเดตได้ ตรวจสอบการเชื่อมต่อหรือลองอีกครั้งในภายหลัง"
+            "value": "c11 ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์อัปเดตได้ ตรวจสอบการเชื่อมต่อหรือลองอีกครั้งในภายหลัง"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux güncelleme sunucusuna bağlanamadı. Bağlantınızı kontrol edin veya daha sonra tekrar deneyin."
+            "value": "c11 güncelleme sunucusuna bağlanamadı. Bağlantınızı kontrol edin veya daha sonra tekrar deneyin."
           }
         }
       }
@@ -75579,97 +75579,97 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux 可以在后台自动检查更新。"
+            "value": "c11 可以在后台自动检查更新。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux 可以在背景自動檢查更新。"
+            "value": "c11 可以在背景自動檢查更新。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux가 백그라운드에서 자동으로 업데이트를 확인할 수 있습니다."
+            "value": "c11가 백그라운드에서 자동으로 업데이트를 확인할 수 있습니다."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux kann automatisch im Hintergrund nach Updates suchen."
+            "value": "c11 kann automatisch im Hintergrund nach Updates suchen."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux puede buscar actualizaciones automáticamente en segundo plano."
+            "value": "c11 puede buscar actualizaciones automáticamente en segundo plano."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux peut rechercher automatiquement les mises à jour en arrière-plan."
+            "value": "c11 peut rechercher automatiquement les mises à jour en arrière-plan."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux può verificare automaticamente la disponibilità di aggiornamenti in background."
+            "value": "c11 può verificare automaticamente la disponibilità di aggiornamenti in background."
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux kan automatisk søge efter opdateringer i baggrunden."
+            "value": "c11 kan automatisk søge efter opdateringer i baggrunden."
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux może automatycznie sprawdzać aktualizacje w tle."
+            "value": "c11 może automatycznie sprawdzać aktualizacje w tle."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux может автоматически проверять наличие обновлений в фоновом режиме."
+            "value": "c11 может автоматически проверять наличие обновлений в фоновом режиме."
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux može automatski provjeravati ažuriranja u pozadini."
+            "value": "c11 može automatski provjeravati ažuriranja u pozadini."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "يمكن لـ cmux التحقق تلقائيًا من التحديثات في الخلفية."
+            "value": "يمكن لـ c11 التحقق تلقائيًا من التحديثات في الخلفية."
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux kan automatisk se etter oppdateringer i bakgrunnen."
+            "value": "c11 kan automatisk se etter oppdateringer i bakgrunnen."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "O cmux pode verificar automaticamente se há atualizações em segundo plano."
+            "value": "O c11 pode verificar automaticamente se há atualizações em segundo plano."
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux สามารถตรวจหาอัปเดตอัตโนมัติในเบื้องหลังได้"
+            "value": "c11 สามารถตรวจหาอัปเดตอัตโนมัติในเบื้องหลังได้"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux arka planda otomatik olarak güncellemeleri denetleyebilir."
+            "value": "c11 arka planda otomatik olarak güncellemeleri denetleyebilir."
           }
         }
       }

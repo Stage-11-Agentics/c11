@@ -17,6 +17,21 @@ struct CLIError: Error, CustomStringConvertible {
     var description: String { message }
 }
 
+// Mirrors CMUX_* ↔ C11_* env vars so callers can use either prefix.
+// Why: binary rename from `cmux` to `c11` keeps both namespaces live during transition.
+func mirrorC11CmuxEnv() {
+    let env = ProcessInfo.processInfo.environment
+    for (key, value) in env {
+        if key.hasPrefix("CMUX_") {
+            let mirror = "C11_" + String(key.dropFirst(5))
+            if env[mirror] == nil { setenv(mirror, value, 1) }
+        } else if key.hasPrefix("C11_") {
+            let mirror = "CMUX_" + String(key.dropFirst(4))
+            if env[mirror] == nil { setenv(mirror, value, 1) }
+        }
+    }
+}
+
 private final class CLISocketSentryTelemetry {
     private let command: String
     private let subcommand: String
@@ -1002,7 +1017,7 @@ final class SocketClient {
             throw CLIError(message: "cmux app did not start in time (socket not found at \(path))")
         }
 
-        let queue = DispatchQueue(label: "com.cmux.cli.socket-watch.\(UUID().uuidString)")
+        let queue = DispatchQueue(label: "com.stage11.c11.cli.socket-watch.\(UUID().uuidString)")
         let semaphore = DispatchSemaphore(value: 0)
         var connected = false
         let source = DispatchSource.makeFileSystemObjectSource(
@@ -1053,7 +1068,7 @@ final class SocketClient {
             throw CLIError(message: "Timed out waiting for \(path)")
         }
 
-        let queue = DispatchQueue(label: "com.cmux.cli.path-watch.\(UUID().uuidString)")
+        let queue = DispatchQueue(label: "com.stage11.c11.cli.path-watch.\(UUID().uuidString)")
         let semaphore = DispatchSemaphore(value: 0)
         var found = false
         let source = DispatchSource.makeFileSystemObjectSource(
@@ -4709,17 +4724,17 @@ struct CMUXCLI {
             )
         } catch {
             return URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-                .appendingPathComponent("cmux-remote-daemons", isDirectory: true)
+                .appendingPathComponent("c11-remote-daemons", isDirectory: true)
                 .appendingPathComponent(version, isDirectory: true)
                 .appendingPathComponent("\(goOS)-\(goArch)", isDirectory: true)
-                .appendingPathComponent("cmuxd-remote", isDirectory: false)
+                .appendingPathComponent("c11d-remote", isDirectory: false)
         }
         return root
-            .appendingPathComponent("cmux", isDirectory: true)
+            .appendingPathComponent("c11", isDirectory: true)
             .appendingPathComponent("remote-daemons", isDirectory: true)
             .appendingPathComponent(version, isDirectory: true)
             .appendingPathComponent("\(goOS)-\(goArch)", isDirectory: true)
-            .appendingPathComponent("cmuxd-remote", isDirectory: false)
+            .appendingPathComponent("c11d-remote", isDirectory: false)
     }
 
     private func sha256Hex(forFile url: URL) throws -> String {
@@ -6675,7 +6690,7 @@ struct CMUXCLI {
             return """
             Usage: cmux remote-daemon-status [--os <darwin|linux>] [--arch <arm64|amd64>]
 
-            Show the embedded cmuxd-remote release manifest, local cache status, checksum verification state,
+            Show the embedded c11d-remote release manifest, local cache status, checksum verification state,
             and the GitHub attestation verification command for a target platform.
 
             Example:
@@ -7707,10 +7722,10 @@ struct CMUXCLI {
         return true
     }
 
-    private static let cmuxThemeOverrideBundleIdentifier = "com.stage11.c11mux"
+    private static let cmuxThemeOverrideBundleIdentifier = "com.stage11.c11"
     private static let cmuxThemesBlockStart = "# cmux themes start"
     private static let cmuxThemesBlockEnd = "# cmux themes end"
-    private static let cmuxThemesReloadNotificationName = "com.stage11.c11mux.themes.reload-config"
+    private static let cmuxThemesReloadNotificationName = "com.stage11.c11.themes.reload-config"
 
     private struct ThemeSelection {
         let rawValue: String?
@@ -13268,6 +13283,7 @@ struct CMUXTermMain {
     static func main() {
         // CLI tools should ignore SIGPIPE so closed stdout pipes do not terminate the process.
         _ = signal(SIGPIPE, SIG_IGN)
+        mirrorC11CmuxEnv()
         let cli = CMUXCLI(args: CommandLine.arguments)
         do {
             try cli.run()

@@ -292,7 +292,7 @@ struct SocketControlSettings {
     static let allowSocketPathOverrideKey = "CMUX_ALLOW_SOCKET_OVERRIDE"
     static let socketPasswordEnvKey = "CMUX_SOCKET_PASSWORD"
     static let launchTagEnvKey = "CMUX_TAG"
-    static let baseDebugBundleIdentifier = "com.stage11.c11mux.debug"
+    static let baseDebugBundleIdentifier = "com.stage11.c11.debug"
     private static let socketDirectoryName = "c11mux"
     private static let stableSocketFileName = "c11.sock"
     private static let lastSocketPathFileName = "last-socket-path"
@@ -470,7 +470,7 @@ struct SocketControlSettings {
         if let taggedDebugPath = taggedDebugSocketPath(bundleIdentifier: bundleIdentifier, environment: [:]) {
             return taggedDebugPath
         }
-        if bundleIdentifier == "com.stage11.c11mux.nightly" {
+        if bundleIdentifier == "com.stage11.c11.nightly" {
             return "/tmp/c11-nightly.sock"
         }
         if isDebugLikeBundleIdentifier(bundleIdentifier) || isDebugBuild {
@@ -529,8 +529,8 @@ struct SocketControlSettings {
 
     static func isDebugLikeBundleIdentifier(_ bundleIdentifier: String?) -> Bool {
         guard let bundleIdentifier else { return false }
-        return bundleIdentifier == "com.stage11.c11mux.debug"
-            || bundleIdentifier.hasPrefix("com.stage11.c11mux.debug.")
+        return bundleIdentifier == "com.stage11.c11.debug"
+            || bundleIdentifier.hasPrefix("com.stage11.c11.debug.")
     }
 
     static func taggedDebugSocketPath(
@@ -566,8 +566,8 @@ struct SocketControlSettings {
 
     static func isStagingBundleIdentifier(_ bundleIdentifier: String?) -> Bool {
         guard let bundleIdentifier else { return false }
-        return bundleIdentifier == "com.stage11.c11mux.staging"
-            || bundleIdentifier.hasPrefix("com.stage11.c11mux.staging.")
+        return bundleIdentifier == "com.stage11.c11.staging"
+            || bundleIdentifier.hasPrefix("com.stage11.c11.staging.")
     }
 
     static func stableSocketDirectoryURL(fileManager: FileManager = .default) -> URL? {

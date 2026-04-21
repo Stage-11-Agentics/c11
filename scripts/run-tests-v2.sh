@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# This runner is intended for the UTM macOS VM (ssh cmux-vm).
-# It is intentionally guarded so we don't accidentally kill the host user's cmux instances.
-if [ "$(id -un)" != "cmux" ]; then
-  echo "ERROR: This script is intended to be run on the cmux-vm (user: cmux)." >&2
-  echo "Run via: ssh cmux-vm 'cd /Users/cmux/GhosttyTabs && ./scripts/run-tests-v2.sh'" >&2
+# This runner is intended for the UTM macOS VM (ssh c11-vm).
+# It is intentionally guarded so we don't accidentally kill the host user's c11 instances.
+if [ "$(id -un)" != "c11" ] && [ "$(id -un)" != "cmux" ]; then
+  echo "ERROR: This script is intended to be run on the c11-vm (user: c11)." >&2
+  echo "Run via: ssh c11-vm 'cd /Users/c11/GhosttyTabs && ./scripts/run-tests-v2.sh'" >&2
   exit 2
 fi
 
 cd "$(dirname "$0")/.."
 
-DERIVED_DATA_PATH="$HOME/Library/Developer/Xcode/DerivedData/cmux-tests-v2"
-APP="$DERIVED_DATA_PATH/Build/Products/Debug/c11mux DEV.app"
+DERIVED_DATA_PATH="$HOME/Library/Developer/Xcode/DerivedData/c11-tests-v2"
+APP="$DERIVED_DATA_PATH/Build/Products/Debug/c11 DEV.app"
 RUN_TAG="tests-v2"
 
 echo "== build =="
@@ -22,20 +22,21 @@ echo "== build =="
 rm -rf "$DERIVED_DATA_PATH/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules" || true
 xcodebuild \
   -project GhosttyTabs.xcodeproj \
-  -scheme cmux \
+  -scheme c11 \
   -configuration Debug \
   -destination "platform=macOS" \
   -derivedDataPath "$DERIVED_DATA_PATH" \
   build >/dev/null
 
 if [ ! -d "$APP" ]; then
-  echo "ERROR: c11mux DEV.app not found at expected path: $APP" >&2
+  echo "ERROR: c11 DEV.app not found at expected path: $APP" >&2
   exit 1
 fi
 
 cleanup() {
+  pkill -x "c11" || true
   pkill -x "cmux" || true
-  rm -f /tmp/c11mux*.sock || true
+  rm -f /tmp/c11*.sock /tmp/c11mux*.sock || true
 }
 
 launch_and_wait() {
@@ -43,19 +44,19 @@ launch_and_wait() {
   # Wait briefly for the previous instance to fully terminate; LaunchServices can flake if we
   # relaunch too quickly.
   for _ in {1..50}; do
-    pgrep -x "cmux" >/dev/null 2>&1 || break
+    pgrep -x "c11" >/dev/null 2>&1 || pgrep -x "cmux" >/dev/null 2>&1 || break
     sleep 0.1
   done
 
   # Force socket mode for deterministic automation runs, independent of prior user settings.
-  defaults write com.stage11.c11mux.debug socketControlMode -string full >/dev/null 2>&1 || true
+  defaults write com.stage11.c11.debug socketControlMode -string full >/dev/null 2>&1 || true
 
   # Launch directly with UI test mode enabled so startup follows deterministic test codepaths.
-  CMUX_TAG="$RUN_TAG" CMUX_UI_TEST_MODE=1 "$APP/Contents/MacOS/cmux" >/dev/null 2>&1 &
+  C11_TAG="$RUN_TAG" CMUX_TAG="$RUN_TAG" C11_UI_TEST_MODE=1 CMUX_UI_TEST_MODE=1 "$APP/Contents/MacOS/c11" >/dev/null 2>&1 &
 
   SOCK=""
   for _ in {1..120}; do
-    SOCK=$(ls -t /tmp/c11mux-debug*.sock /tmp/c11mux*.sock 2>/dev/null | head -1 || true)
+    SOCK=$(ls -t /tmp/c11-debug*.sock /tmp/c11*.sock /tmp/c11mux-debug*.sock /tmp/c11mux*.sock 2>/dev/null | head -1 || true)
     if [ -n "$SOCK" ] && [ -S "$SOCK" ]; then
       break
     fi
@@ -63,14 +64,16 @@ launch_and_wait() {
   done
 
   if [ -z "$SOCK" ] || [ ! -S "$SOCK" ]; then
-    echo "ERROR: Socket not ready (looked for /tmp/c11mux*.sock)" >&2
+    echo "ERROR: Socket not ready (looked for /tmp/c11*.sock)" >&2
     exit 1
   fi
+  export C11_SOCKET_PATH="$SOCK"
+  export C11_SOCKET="$SOCK"
   export CMUX_SOCKET_PATH="$SOCK"
   export CMUX_SOCKET="$SOCK"
 
   # Ensure LaunchServices has a visible/main window attached for rendering checks.
-  CMUX_TAG="$RUN_TAG" open "$APP" >/dev/null 2>&1 || true
+  C11_TAG="$RUN_TAG" CMUX_TAG="$RUN_TAG" open "$APP" >/dev/null 2>&1 || true
   sleep 0.5
 
   echo "== wait ready =="

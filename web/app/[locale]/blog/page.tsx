@@ -26,7 +26,7 @@ const slugToPath: Record<string, string> = {
   cmdShiftU: "cmd-shift-u",
   zenOfCmux: "zen-of-cmux",
   showHnLaunch: "show-hn-launch",
-  introducingCmux: "introducing-cmux",
+  introducingCmux: "introducing-c11",
 };
 
 export default function BlogPage() {

@@ -2,7 +2,14 @@
 
 All notable changes to c11 (and, before the fork, cmux) are documented here.
 
-## [Unreleased]
+Note: historical entries below pre-date the `c11mux` → `c11` rename and reference the old binary / cask / artifact / bundle-ID names (`cmux`, `c11mux`, `c11mux-macos.dmg`, `stage-11-agentics/c11mux`, `com.stage11.c11mux`). Those entries are preserved as-is for historical accuracy; see the Unreleased section for the rename.
+
+## Unreleased
+
+### Changed
+- Renamed binary/CLI/cask from `cmux`/`c11mux` to `c11`. The `cmux` command remains as a compat alias (in-bundle symlink plus Homebrew binary alias), and env vars `CMUX_*` are still honored alongside the new `C11_*` variants.
+- Release DMG is now `c11-macos.dmg` (was `c11mux-macos.dmg`).
+- Homebrew cask is `stage-11-agentics/c11/c11` (was `stage-11-agentics/c11mux/c11mux`). The new cask `conflicts_with cask: "cmux"`.
 
 ## [0.37.0] - 2026-04-20
 

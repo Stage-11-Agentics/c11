@@ -2,7 +2,7 @@ import Foundation
 import OSLog
 
 public enum ThemeDiagnostics {
-    private static let subsystem = "com.stage11.c11mux"
+    private static let subsystem = "com.stage11.c11"
 
     private static let engineLogger = Logger(subsystem: subsystem, category: "theme.engine")
     private static let loaderLogger = Logger(subsystem: subsystem, category: "theme.loader")

@@ -45,7 +45,7 @@ func captureStdout(t *testing.T, fn func()) string {
 
 func makeShortUnixSocketPath(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "cmuxd-")
+	dir, err := os.MkdirTemp("/tmp", "c11d-")
 	if err != nil {
 		t.Fatalf("mkdtemp: %v", err)
 	}
@@ -647,18 +647,22 @@ func TestCLIV2FlagMapping(t *testing.T) {
 }
 
 func TestBusyboxArgv0Detection(t *testing.T) {
-	// Verify that when argv[0] base is "cmux", we enter CLI mode
-	base := filepath.Base("cmux")
-	if base != "cmux" {
-		t.Fatalf("expected base 'cmux', got %q", base)
+	// Verify that when argv[0] base is "c11" or "cmux", we enter CLI mode
+	base := filepath.Base("c11")
+	if base != "c11" {
+		t.Fatalf("expected base 'c11', got %q", base)
 	}
-	base2 := filepath.Base("/home/user/.cmux/bin/cmux")
-	if base2 != "cmux" {
-		t.Fatalf("expected base 'cmux', got %q", base2)
+	base2 := filepath.Base("/home/user/.cmux/bin/c11")
+	if base2 != "c11" {
+		t.Fatalf("expected base 'c11', got %q", base2)
 	}
-	base3 := filepath.Base("cmuxd-remote")
-	if base3 == "cmux" {
-		t.Fatalf("cmuxd-remote should not match cmux")
+	baseLegacy := filepath.Base("/home/user/.cmux/bin/cmux")
+	if baseLegacy != "cmux" {
+		t.Fatalf("expected base 'cmux', got %q", baseLegacy)
+	}
+	base3 := filepath.Base("c11d-remote")
+	if base3 == "c11" || base3 == "cmux" {
+		t.Fatalf("c11d-remote should not match c11 or cmux")
 	}
 }
 

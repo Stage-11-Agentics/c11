@@ -5,7 +5,7 @@ import { Link } from "../../../../i18n/navigation";
 export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
   const { locale } = await params;
   const t = await getTranslations({ locale, namespace: "blog.introducingCmux" });
-  const url = locale === "en" ? "/blog/introducing-cmux" : `/${locale}/blog/introducing-cmux`;
+  const url = locale === "en" ? "/blog/introducing-c11" : `/${locale}/blog/introducing-c11`;
   return {
     title: t("metaTitle"),
     description: t("metaDescription"),

@@ -3,7 +3,7 @@
 #
 # Each tagged reload leaves ~3.5 GB in DerivedData plus /tmp build dirs, sockets, and
 # logs. Nothing cleans them automatically, so they accumulate (we've seen 200 GB+).
-# This script finds every cmux-* tag directory, skips ones whose app is currently
+# This script finds every c11-* tag directory, skips ones whose app is currently
 # running, and removes the rest.
 #
 # Dry-run by default. Pass --yes to actually delete. Pass --keep <tag> (repeatable)
@@ -41,12 +41,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 DERIVED_ROOT="$HOME/Library/Developer/Xcode/DerivedData"
-CMUXD_SOCK_DIR="$HOME/Library/Application Support/c11mux"
+C11D_SOCK_DIR="$HOME/Library/Application Support/c11"
 
 running_tags() {
-  # Each app lives at .../cmux-<tag>/Build/Products/Debug/c11 DEV <tag>.app/.../cmux
+  # Each app lives at .../c11-<tag>/Build/Products/Debug/c11 DEV <tag>.app/.../c11
   pgrep -afl "c11 DEV " 2>/dev/null \
-    | sed -E 's|.*DerivedData/cmux-([^/]+)/Build/Products/Debug/.*|\1|' \
+    | sed -E 's|.*DerivedData/(c11|cmux)-([^/]+)/Build/Products/Debug/.*|\2|' \
     | grep -vE '^$' \
     | sort -u
 }
@@ -62,18 +62,19 @@ human_bytes() {
 
 is_tag_artifact() {
   # Returns 0 if the given path is a per-tag build artifact we can safely prune.
-  # Criteria: (a) symlink whose target is exactly a DerivedData/cmux-<SAME_TAG> root
-  # (reload.sh compat link — NOT a bin symlink like /tmp/c11mux-cli), or
+  # Criteria: (a) symlink whose target is exactly a DerivedData/c11-<SAME_TAG> root
+  # (reload.sh compat link — NOT a bin symlink like /tmp/c11-cli), or
   # (b) a dir containing Build/ (used as -derivedDataPath).
   local p="$1"
-  local path_tag="${p##*/cmux-}"
+  local path_tag="${p##*/c11-}"
+  path_tag="${path_tag##*/cmux-}"
   path_tag="${path_tag##*/c11mux-}"
   if [[ -L "$p" ]]; then
     local target
     target="$(readlink "$p" 2>/dev/null || true)"
-    # Reject if symlink target has anything after the DerivedData/cmux-<tag>/ component
-    # (e.g. points at Build/Products/Debug/cmux). Those are bin symlinks, not tag roots.
-    if [[ "$target" == */DerivedData/cmux-${path_tag} ]]; then
+    # Reject if symlink target has anything after the DerivedData/c11-<tag>/ component
+    # (e.g. points at Build/Products/Debug/c11). Those are bin symlinks, not tag roots.
+    if [[ "$target" == */DerivedData/c11-${path_tag} || "$target" == */DerivedData/cmux-${path_tag} ]]; then
       return 0
     fi
     return 1
@@ -87,16 +88,18 @@ collect_tags() {
   {
     if [[ -d "$DERIVED_ROOT" ]]; then
       local d
-      for d in "$DERIVED_ROOT"/cmux-*; do
+      for d in "$DERIVED_ROOT"/c11-* "$DERIVED_ROOT"/cmux-*; do
         [[ -d "$d" ]] || continue
-        echo "${d##*/cmux-}"
+        local leaf="${d##*/}"
+        echo "${leaf#*-}"
       done
     fi
     local p tag
     shopt -s nullglob
-    for p in /tmp/cmux-* /tmp/c11mux-*; do
+    for p in /tmp/c11-* /tmp/cmux-* /tmp/c11mux-*; do
       is_tag_artifact "$p" || continue
-      tag="${p##*/cmux-}"
+      tag="${p##*/c11-}"
+      tag="${tag##*/cmux-}"
       tag="${tag##*/c11mux-}"
       echo "$tag"
     done
@@ -105,6 +108,11 @@ collect_tags() {
 }
 
 GENERIC_CACHES=(
+  /tmp/c11-build-cache
+  /tmp/c11-build-module-cache
+  /tmp/c11-build-home
+  /tmp/c11-module-cache
+  /tmp/c11-swift-module-cache
   /tmp/cmux-build-cache
   /tmp/cmux-build-module-cache
   /tmp/cmux-build-home
@@ -115,14 +123,21 @@ GENERIC_CACHES=(
 tag_paths() {
   local tag="$1"
   printf '%s\n' \
+    "$DERIVED_ROOT/c11-$tag" \
     "$DERIVED_ROOT/cmux-$tag" \
+    "/tmp/c11-$tag" \
     "/tmp/cmux-$tag" \
     "/tmp/c11mux-$tag" \
-    "/tmp/c11mux-debug-$tag.sock" \
-    "/tmp/c11mux-debug-$tag.log" \
-    "/tmp/c11mux-debug-$tag-bg.log" \
-    "/tmp/c11mux-xcodebuild-$tag.log" \
-    "$CMUXD_SOCK_DIR/cmuxd-dev-$tag.sock"
+    "/tmp/c11-debug-$tag.sock" \
+    "/tmp/c11-debug-$tag.log" \
+    "/tmp/c11-debug-$tag-bg.log" \
+    "/tmp/c11-xcodebuild-$tag.log" \
+    "/tmp/cmux-debug-$tag.sock" \
+    "/tmp/cmux-debug-$tag.log" \
+    "/tmp/cmux-debug-$tag-bg.log" \
+    "/tmp/cmux-xcodebuild-$tag.log" \
+    "$C11D_SOCK_DIR/c11d-dev-$tag.sock" \
+    "$C11D_SOCK_DIR/cmuxd-dev-$tag.sock"
 }
 
 path_size_bytes() {

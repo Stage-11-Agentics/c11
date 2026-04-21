@@ -9,10 +9,10 @@ Usage: scripts/build_remote_daemon_release_assets.sh \
   --repo <owner/repo> \
   --output-dir <dir>
 
-Builds cmuxd-remote release assets for the supported remote platforms and emits:
-  cmuxd-remote-<goos>-<goarch>
-  cmuxd-remote-checksums.txt
-  cmuxd-remote-manifest.json
+Builds c11d-remote release assets for the supported remote platforms and emits:
+  c11d-remote-<goos>-<goarch>
+  c11d-remote-checksums.txt
+  c11d-remote-manifest.json
 EOF
 }
 
@@ -58,7 +58,7 @@ if [[ -z "$VERSION" || -z "$RELEASE_TAG" || -z "$REPO" || -z "$OUTPUT_DIR" ]]; t
 fi
 
 if ! command -v go >/dev/null 2>&1; then
-  echo "error: go is required to build cmuxd-remote release assets" >&2
+  echo "error: go is required to build c11d-remote release assets" >&2
   exit 1
 fi
 
@@ -67,7 +67,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DAEMON_ROOT="${REPO_ROOT}/daemon/remote"
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
-rm -f "$OUTPUT_DIR"/cmuxd-remote-* "$OUTPUT_DIR"/cmuxd-remote-checksums.txt "$OUTPUT_DIR"/cmuxd-remote-manifest.json
+rm -f "$OUTPUT_DIR"/c11d-remote-* "$OUTPUT_DIR"/c11d-remote-checksums.txt "$OUTPUT_DIR"/c11d-remote-manifest.json
 
 DAEMON_GO_LDFLAGS="-s -w -X main.version=${VERSION}"
 DAEMON_GO_BUILD_ARGS=(
@@ -77,9 +77,9 @@ DAEMON_GO_BUILD_ARGS=(
   -ldflags "$DAEMON_GO_LDFLAGS"
 )
 
-CHECKSUMS_ASSET_NAME="cmuxd-remote-checksums.txt"
+CHECKSUMS_ASSET_NAME="c11d-remote-checksums.txt"
 CHECKSUMS_PATH="${OUTPUT_DIR}/${CHECKSUMS_ASSET_NAME}"
-MANIFEST_PATH="${OUTPUT_DIR}/cmuxd-remote-manifest.json"
+MANIFEST_PATH="${OUTPUT_DIR}/c11d-remote-manifest.json"
 
 TARGETS=(
   "darwin arm64"
@@ -89,13 +89,13 @@ TARGETS=(
 )
 
 : > "$CHECKSUMS_PATH"
-ENTRIES_FILE="$(mktemp "${TMPDIR:-/tmp}/cmuxd-remote-entries.XXXXXX")"
+ENTRIES_FILE="$(mktemp "${TMPDIR:-/tmp}/c11d-remote-entries.XXXXXX")"
 trap 'rm -f "$ENTRIES_FILE"' EXIT
 : > "$ENTRIES_FILE"
 
 for target in "${TARGETS[@]}"; do
   read -r GOOS GOARCH <<<"$target"
-  ASSET_NAME="cmuxd-remote-${GOOS}-${GOARCH}"
+  ASSET_NAME="c11d-remote-${GOOS}-${GOARCH}"
   OUTPUT_PATH="${OUTPUT_DIR}/${ASSET_NAME}"
 
   (
@@ -105,7 +105,7 @@ for target in "${TARGETS[@]}"; do
     CGO_ENABLED=0 \
     go "${DAEMON_GO_BUILD_ARGS[@]}" \
       -o "$OUTPUT_PATH" \
-      ./cmd/cmuxd-remote
+      ./cmd/c11d-remote
   )
   chmod 755 "$OUTPUT_PATH"
 
@@ -151,4 +151,4 @@ manifest = {
 Path(manifest_path).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
 
-echo "Built cmuxd-remote assets in ${OUTPUT_DIR}"
+echo "Built c11d-remote assets in ${OUTPUT_DIR}"

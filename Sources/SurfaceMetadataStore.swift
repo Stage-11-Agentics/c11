@@ -122,7 +122,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
 
     // MARK: - State
 
-    private let queue = DispatchQueue(label: "com.cmux.surface-metadata", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "com.stage11.c11.surface-metadata", qos: .userInitiated)
 
     /// Per-workspace per-surface blob.
     private var metadata: [UUID: [UUID: [String: Any]]] = [:]

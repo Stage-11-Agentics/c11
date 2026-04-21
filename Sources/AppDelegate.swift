@@ -9,6 +9,21 @@ import Combine
 import ObjectiveC.runtime
 import Darwin
 
+// Mirrors CMUX_* ↔ C11_* env vars so callers can use either prefix.
+// Why: binary rename from `cmux` to `c11` keeps both namespaces live during transition.
+func mirrorC11CmuxEnv() {
+    let env = ProcessInfo.processInfo.environment
+    for (key, value) in env {
+        if key.hasPrefix("CMUX_") {
+            let mirror = "C11_" + String(key.dropFirst(5))
+            if env[mirror] == nil { setenv(mirror, value, 1) }
+        } else if key.hasPrefix("C11_") {
+            let mirror = "CMUX_" + String(key.dropFirst(4))
+            if env[mirror] == nil { setenv(mirror, value, 1) }
+        }
+    }
+}
+
 final class MainWindowHostingView<Content: View>: NSHostingView<Content> {
     private let zeroSafeAreaLayoutGuide = NSLayoutGuide()
 
@@ -34,7 +49,7 @@ final class MainWindowHostingView<Content: View>: NSHostingView<Content> {
 }
 
 private enum CmuxThemeNotifications {
-    static let reloadConfig = Notification.Name("com.stage11.c11mux.themes.reload-config")
+    static let reloadConfig = Notification.Name("com.stage11.c11.themes.reload-config")
 }
 
 #if DEBUG
@@ -1361,12 +1376,12 @@ struct CmuxCLIPathInstaller {
     }
 
     private static func defaultBundledCLIURL(bundle: Bundle = .main) -> URL? {
-        bundle.resourceURL?.appendingPathComponent("bin/cmux", isDirectory: false)
+        bundle.resourceURL?.appendingPathComponent("bin/c11", isDirectory: false)
     }
 
     private static func defaultBundledCLIExpectedPath(bundle: Bundle = .main) -> String {
         bundle.bundleURL
-            .appendingPathComponent("Contents/Resources/bin/cmux", isDirectory: false)
+            .appendingPathComponent("Contents/Resources/bin/c11", isDirectory: false)
             .path
     }
 
@@ -2133,11 +2148,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var sessionAutosaveTickInFlight = false
     private var sessionAutosaveDeferredRetryPending = false
     private let sessionPersistenceQueue = DispatchQueue(
-        label: "com.stage11.c11mux.sessionPersistence",
+        label: "com.stage11.c11.sessionPersistence",
         qos: .utility
     )
     private nonisolated static let launchServicesRegistrationQueue = DispatchQueue(
-        label: "com.stage11.c11mux.launchServicesRegistration",
+        label: "com.stage11.c11.launchServicesRegistration",
         qos: .utility
     )
     private nonisolated static func enqueueLaunchServicesRegistrationWork(_ work: @escaping @Sendable () -> Void) {
@@ -2256,6 +2271,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        mirrorC11CmuxEnv()
+
         // Migrate preferences from legacy upstream cmux bundle IDs before anything
         // else touches UserDefaults. One-time, idempotent, guarded by a flag key.
         migrateLegacyPreferencesIfNeeded()
@@ -11172,7 +11189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func observeDuplicateLaunches() {
         guard let bundleId = Bundle.main.bundleIdentifier else { return }
         let embeddedCLIURL = Bundle.main.bundleURL
-            .appendingPathComponent("Contents/Resources/bin/cmux", isDirectory: false)
+            .appendingPathComponent("Contents/Resources/bin/c11", isDirectory: false)
             .standardizedFileURL
             .resolvingSymlinksInPath()
         let currentPid = ProcessInfo.processInfo.processIdentifier

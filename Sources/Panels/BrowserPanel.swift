@@ -881,11 +881,11 @@ enum BrowserUserAgentSettings {
 }
 
 func normalizedBrowserHistoryNamespace(bundleIdentifier: String) -> String {
-    if bundleIdentifier.hasPrefix("com.stage11.c11mux.debug.") {
-        return "com.stage11.c11mux.debug"
+    if bundleIdentifier.hasPrefix("com.stage11.c11.debug.") {
+        return "com.stage11.c11.debug"
     }
-    if bundleIdentifier.hasPrefix("com.stage11.c11mux.staging.") {
-        return "com.stage11.c11mux.staging"
+    if bundleIdentifier.hasPrefix("com.stage11.c11.staging.") {
+        return "com.stage11.c11.staging"
     }
     return bundleIdentifier
 }
@@ -1709,7 +1709,7 @@ final class BrowserPortalAnchorView: NSView {
 
 @MainActor
 final class BrowserPanel: Panel, ObservableObject {
-    private static let remoteLoopbackProxyAliasHost = "cmux-loopback.localtest.me"
+    private static let remoteLoopbackProxyAliasHost = "c11-loopback.localtest.me"
     private static let remoteLoopbackHosts: Set<String> = [
         "localhost",
         "127.0.0.1",

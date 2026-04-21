@@ -443,7 +443,7 @@ class TerminalController {
     }
 
     private final class SocketFastPathState: @unchecked Sendable {
-        private let queue = DispatchQueue(label: "com.cmux.socket-fast-path")
+        private let queue = DispatchQueue(label: "com.stage11.c11.socket-fast-path")
         private var lastReportedDirectories: [SocketSurfaceKey: String] = [:]
         private var lastReportedShellStates: [SocketSurfaceKey: Workspace.PanelShellActivityState] = [:]
         private let maxTrackedDirectories = 4096
@@ -12983,10 +12983,10 @@ class TerminalController {
         switch normalized {
         case "fileurl", "file-url", "public.file-url":
             return .fileURL
-        case "tabtransfer", "tab-transfer", "com.splittabbar.tabtransfer":
+        case "tabtransfer", "tab-transfer", "com.stage11.c11.tabtransfer":
             return DragOverlayRoutingPolicy.bonsplitTabTransferType
         case "sidebarreorder", "sidebar-reorder", "sidebar_tab_reorder",
-            "com.cmux.sidebar-tab-reorder":
+            "com.stage11.c11.sidebar-tab-reorder":
             return DragOverlayRoutingPolicy.sidebarTabReorderType
         default:
             // Allow explicit UTI strings for ad-hoc debug probes.

@@ -2,22 +2,22 @@
 set -euo pipefail
 
 APP_NAME="c11 STAGING"
-BUNDLE_ID="com.stage11.c11mux.staging"
+BUNDLE_ID="com.stage11.c11.staging"
 BASE_APP_NAME="c11"
-BASE_EXECUTABLE_NAME="cmux"
+BASE_EXECUTABLE_NAME="c11"
 DERIVED_DATA=""
 NAME_SET=0
 BUNDLE_SET=0
 DERIVED_SET=0
 TAG=""
-LAST_SOCKET_PATH_DIR="$HOME/Library/Application Support/c11mux"
+LAST_SOCKET_PATH_DIR="$HOME/Library/Application Support/c11"
 LAST_SOCKET_PATH_FILE="${LAST_SOCKET_PATH_DIR}/last-socket-path"
 
 write_last_socket_path() {
   local socket_path="$1"
   mkdir -p "$LAST_SOCKET_PATH_DIR"
   echo "$socket_path" > "$LAST_SOCKET_PATH_FILE" || true
-  echo "$socket_path" > /tmp/c11mux-last-socket-path || true
+  echo "$socket_path" > /tmp/c11-last-socket-path || true
 }
 
 usage() {
@@ -110,19 +110,19 @@ if [[ -n "$TAG" ]]; then
   TAG_ID="$(sanitize_bundle "$TAG")"
   TAG_SLUG="$(sanitize_path "$TAG")"
   if [[ "$NAME_SET" -eq 0 ]]; then
-    APP_NAME="c11mux STAGING ${TAG}"
+    APP_NAME="c11 STAGING ${TAG}"
   fi
   if [[ "$BUNDLE_SET" -eq 0 ]]; then
-    BUNDLE_ID="com.stage11.c11mux.staging.${TAG_ID}"
+    BUNDLE_ID="com.stage11.c11.staging.${TAG_ID}"
   fi
   if [[ "$DERIVED_SET" -eq 0 ]]; then
-    DERIVED_DATA="/tmp/c11mux-staging-${TAG_SLUG}"
+    DERIVED_DATA="/tmp/c11-staging-${TAG_SLUG}"
   fi
 fi
 
 XCODEBUILD_ARGS=(
   -project GhosttyTabs.xcodeproj
-  -scheme cmux
+  -scheme c11
   -configuration Release
   -destination 'platform=macOS'
 )
@@ -198,9 +198,9 @@ if [[ -f "$INFO_PLIST" ]]; then
   # Inject staging socket paths via LSEnvironment so the Release binary
   # (which defaults to the per-user stable socket) uses isolated sockets instead.
   STAGING_SLUG="${TAG_SLUG:-staging}"
-  APP_SUPPORT_DIR="$HOME/Library/Application Support/c11mux"
-  CMUXD_SOCKET="${APP_SUPPORT_DIR}/cmuxd-${STAGING_SLUG}.sock"
-  CMUX_SOCKET="/tmp/c11mux-${STAGING_SLUG}.sock"
+  APP_SUPPORT_DIR="$HOME/Library/Application Support/c11"
+  CMUXD_SOCKET="${APP_SUPPORT_DIR}/c11d-${STAGING_SLUG}.sock"
+  CMUX_SOCKET="/tmp/c11-${STAGING_SLUG}.sock"
   write_last_socket_path "$CMUX_SOCKET"
   /usr/libexec/PlistBuddy -c "Add :LSEnvironment dict" "$INFO_PLIST" 2>/dev/null || true
   /usr/libexec/PlistBuddy -c "Set :LSEnvironment:CMUXD_UNIX_PATH \"${CMUXD_SOCKET}\"" "$INFO_PLIST" 2>/dev/null \
@@ -226,15 +226,16 @@ sleep 0.3
 # Kill any running staging instance; allow side-by-side with the main and dev apps.
 pkill -f "${APP_NAME}.app/Contents/MacOS/${BASE_EXECUTABLE_NAME}" || true
 sleep 0.3
-CMUXD_SRC="$PWD/cmuxd/zig-out/bin/cmuxd"
-if [[ -d "$PWD/cmuxd" ]]; then
-  (cd "$PWD/cmuxd" && zig build -Doptimize=ReleaseFast)
+C11D_SRC="$PWD/c11d/zig-out/bin/c11d"
+if [[ -d "$PWD/c11d" ]]; then
+  (cd "$PWD/c11d" && zig build -Doptimize=ReleaseFast)
 fi
-if [[ -x "$CMUXD_SRC" ]]; then
+if [[ -x "$C11D_SRC" ]]; then
   BIN_DIR="$APP_PATH/Contents/Resources/bin"
   mkdir -p "$BIN_DIR"
-  cp "$CMUXD_SRC" "$BIN_DIR/cmuxd"
-  chmod +x "$BIN_DIR/cmuxd"
+  cp "$C11D_SRC" "$BIN_DIR/c11d"
+  chmod +x "$BIN_DIR/c11d"
+  ln -sfh c11d "$BIN_DIR/cmuxd"
 fi
 # Avoid inheriting cmux/ghostty environment variables from the terminal that
 # runs this script (often inside another cmux instance), which can cause

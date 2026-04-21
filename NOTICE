@@ -16,15 +16,17 @@ Modified by: Stage 11 Agentics
 Fork date:   2026-04-16
 
 Summary of modifications:
-- Rebranded app identity (display name "c11", bundle ID "com.stage11.c11mux").
-- New Homebrew tap (stage-11-agentics/c11mux) and release artifacts
-  (c11mux-macos.dmg) published from the Stage 11 fork.
+- Rebranded app identity (display name "c11", bundle ID "com.stage11.c11").
+- New Homebrew tap (stage-11-agentics/c11) and release artifacts
+  (c11-macos.dmg) published from the Stage 11 fork.
 - Sparkle auto-update feed retargeted to Stage 11 releases.
+- Renamed the primary CLI binary from `cmux` to `c11`; the `cmux`
+  command remains as a compat alias (in-bundle symlink plus Homebrew
+  binary alias). Environment variables `CMUX_*` are still honored
+  alongside the new `C11_*` variants (dual-read).
+- Socket protocol, shell integration files, and source/module names
+  remain identical to upstream cmux for backward compatibility.
 - Diverged development after the fork point.
-
-The CLI binary name, environment variables, socket protocol, shell
-integration files, and source/module names remain identical to upstream
-cmux for backward compatibility.
 
 A complete, ongoing record of modifications is available in the git
 history of the Stage 11 fork.

@@ -9,7 +9,7 @@ namespace/safety gates to Phases 4–5, and split rollout into Tier 1a
 Claude session-resume affordance.
 **Companion plan:** [workspace-level metadata](./c11-workspace-metadata-persistence-plan.md) —
 that plan explicitly parked "Restoring `SurfaceMetadataStore` across restart"; this plan claims it.
-**Non-goal (Tier 2):** resuming live PTYs. Moves PTY ownership into `cmuxd` so shells survive app restart. Separate effort.
+**Non-goal (Tier 2):** resuming live PTYs. Moves PTY ownership into `c11d` so shells survive app restart. Separate effort.
 
 ---
 
@@ -566,7 +566,7 @@ Trigger points:
 Workspaces attached to a `WorkspaceRemoteDaemonManifest` run on a different
 machine, where `~/.claude/projects/` is not on the local Mac. Phase 4
 **explicitly does not support** remote-daemon workspaces in v1 — the scan
-runs locally and returns `[]`. A remote equivalent (ask cmuxd on the remote
+runs locally and returns `[]`. A remote equivalent (ask c11d on the remote
 to run the scan) is deferred. See Appendix.
 
 ### Privacy posture
@@ -780,14 +780,14 @@ Tier 1b prerequisites (must be true before starting Phase 4):
 ## Appendix — what this plan does not do
 
 - **Does not persist running PTYs.** That's Tier 2 — move PTY ownership
-  into `cmuxd`, make the Swift app a reattaching viewer.
+  into `c11d`, make the Swift app a reattaching viewer.
 - **Does not persist `titleBarCollapsed` / `titleBarUserCollapsed`.** Per
   the scoping conversation, title-bar collapse state resets to default on
   restart.
 - **Does not persist remote-daemon connection state.** Transient; Tier 2
   may reopen this.
 - **Does not support remote-daemon workspaces in Phase 4.** The Claude
-  scan is local-only in v1. Remote session indexing (ask cmuxd to run the
+  scan is local-only in v1. Remote session indexing (ask c11d to run the
   scan on the remote) is a deferred addition.
 - **Does not persist `firstUserMessagePreview`.** Reading and storing user
   prompt text crosses a privacy line this plan is not ready to defend.

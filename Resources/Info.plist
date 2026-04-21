@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>c11mux</string>
+	<string>c11</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -28,7 +28,7 @@
 		</dict>
 	</array>
 	<key>CFBundleName</key>
-	<string>c11mux</string>
+	<string>c11</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -42,9 +42,9 @@
 	<key>NSMainStoryboardFile</key>
 	<string></string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>A program running within c11mux would like to use your microphone.</string>
+	<string>A program running within c11 would like to use your microphone.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>A program running within c11mux would like to use your camera.</string>
+	<string>A program running within c11 would like to use your camera.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -66,14 +66,14 @@
 	<key>NSAppleScriptEnabled</key>
 	<true/>
 	<key>OSAScriptingDefinition</key>
-	<string>cmux.sdef</string>
+	<string>c11.sdef</string>
 	<key>NSServices</key>
 	<array>
 		<dict>
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>New c11mux Workspace Here</string>
+				<string>New c11 Workspace Here</string>
 			</dict>
 			<key>NSMessage</key>
 			<string>openTab</string>
@@ -92,7 +92,7 @@
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>New c11mux Window Here</string>
+				<string>New c11 Window Here</string>
 			</dict>
 			<key>NSMessage</key>
 			<string>openWindow</string>
@@ -112,7 +112,7 @@
 	<array>
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>com.splittabbar.tabtransfer</string>
+			<string>com.stage11.c11.tabtransfer</string>
 			<key>UTTypeDescription</key>
 			<string>Bonsplit Tab Transfer</string>
 			<key>UTTypeConformsTo</key>
@@ -122,9 +122,9 @@
 		</dict>
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>com.cmux.sidebar-tab-reorder</string>
+			<string>com.stage11.c11.sidebar-tab-reorder</string>
 			<key>UTTypeDescription</key>
-			<string>cmux Sidebar Tab Reorder</string>
+			<string>c11 Sidebar Tab Reorder</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>
@@ -137,7 +137,7 @@
 		<true/>
 		<key>NSExceptionDomains</key>
 		<dict>
-			<key>cmux-loopback.localtest.me</key>
+			<key>c11-loopback.localtest.me</key>
 			<dict>
 				<key>NSExceptionAllowsInsecureHTTPLoads</key>
 				<true/>
@@ -151,7 +151,7 @@
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://github.com/Stage-11-Agentics/c11mux/releases/latest/download/appcast.xml</string>
+	<string>https://github.com/Stage-11-Agentics/c11/releases/latest/download/appcast.xml</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
 	<key>SUSendProfileInfo</key>

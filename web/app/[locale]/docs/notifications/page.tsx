@@ -81,8 +81,8 @@ echo "$CMUX_NOTIFICATION_TITLE: $CMUX_NOTIFICATION_BODY" >> ~/notifications.log`
       <h2>{t("sending")}</h2>
 
       <h3>{t("cli")}</h3>
-      <CodeBlock lang="bash">{`cmux notify --title "Task Complete" --body "Your build finished"
-cmux notify --title "Claude Code" --subtitle "Waiting" --body "Agent needs input"`}</CodeBlock>
+      <CodeBlock lang="bash">{`c11 notify --title "Task Complete" --body "Your build finished"
+c11 notify --title "Claude Code" --subtitle "Waiting" --body "Agent needs input"`}</CodeBlock>
 
       <h3>{t("osc777Title")}</h3>
       <p>{t("osc777Desc")}</p>
@@ -153,8 +153,8 @@ printf '\\e]99;i=1;e=1;d=1;p=body:All tests passed\\e\\\\'`}</CodeBlock>
       </p>
 
       <h3>{t("createHookScript")}</h3>
-      <CodeBlock title="~/.claude/hooks/cmux-notify.sh" lang="bash">{`#!/bin/bash
-# Skip if not in cmux
+      <CodeBlock title="~/.claude/hooks/c11-notify.sh" lang="bash">{`#!/bin/bash
+# Skip if not in c11
 [ -S /tmp/cmux.sock ] || exit 0
 
 EVENT=$(cat)
@@ -163,13 +163,13 @@ TOOL=$(echo "$EVENT" | jq -r '.tool_name // ""')
 
 case "$EVENT_TYPE" in
     "Stop")
-        cmux notify --title "Claude Code" --body "Session complete"
+        c11 notify --title "Claude Code" --body "Session complete"
         ;;
     "PostToolUse")
-        [ "$TOOL" = "Task" ] && cmux notify --title "Claude Code" --body "Agent finished"
+        [ "$TOOL" = "Task" ] && c11 notify --title "Claude Code" --body "Agent finished"
         ;;
 esac`}</CodeBlock>
-      <CodeBlock lang="bash">{`chmod +x ~/.claude/hooks/cmux-notify.sh`}</CodeBlock>
+      <CodeBlock lang="bash">{`chmod +x ~/.claude/hooks/c11-notify.sh`}</CodeBlock>
 
       <h3>{t("configureClaude")}</h3>
       <CodeBlock title="~/.claude/settings.json" lang="json">{`{
@@ -180,7 +180,7 @@ esac`}</CodeBlock>
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/cmux-notify.sh"
+            "command": "~/.claude/hooks/c11-notify.sh"
           }
         ]
       }
@@ -191,7 +191,7 @@ esac`}</CodeBlock>
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/cmux-notify.sh"
+            "command": "~/.claude/hooks/c11-notify.sh"
           }
         ]
       }
@@ -208,9 +208,9 @@ notify-after() {
   "$@"
   local exit_code=$?
   if [ $exit_code -eq 0 ]; then
-    cmux notify --title "✓ Command Complete" --body "$1"
+    c11 notify --title "✓ Command Complete" --body "$1"
   else
-    cmux notify --title "✗ Command Failed" --body "$1 (exit $exit_code)"
+    c11 notify --title "✗ Command Failed" --body "$1 (exit $exit_code)"
   fi
   return $exit_code
 }

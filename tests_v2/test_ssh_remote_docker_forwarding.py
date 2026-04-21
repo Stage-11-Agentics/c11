@@ -442,10 +442,14 @@ wc -c < "$full"
 
 def _extract_daemon_version_platform(remote_path: str) -> tuple[str, str]:
     parts = [segment for segment in remote_path.strip().split("/") if segment]
-    try:
-        marker_index = parts.index("cmuxd-remote")
-    except ValueError as exc:
-        raise cmuxError(f"remote daemon path missing cmuxd-remote marker: {remote_path!r}") from exc
+    marker_name = None
+    for candidate in ("c11d-remote", "cmuxd-remote"):
+        if candidate in parts:
+            marker_name = candidate
+            break
+    if marker_name is None:
+        raise cmuxError(f"remote daemon path missing c11d-remote/cmuxd-remote marker: {remote_path!r}")
+    marker_index = parts.index(marker_name)
 
     required_len = marker_index + 4
     _must(
@@ -455,14 +459,14 @@ def _extract_daemon_version_platform(remote_path: str) -> tuple[str, str]:
     version = parts[marker_index + 1]
     platform = parts[marker_index + 2]
     binary_name = parts[marker_index + 3]
-    _must(binary_name == "cmuxd-remote", f"unexpected daemon binary name in remote path: {remote_path!r}")
+    _must(binary_name in ("c11d-remote", "cmuxd-remote"), f"unexpected daemon binary name in remote path: {remote_path!r}")
     _must(bool(version), f"daemon version should not be empty in remote path: {remote_path!r}")
     _must(bool(platform), f"daemon platform should not be empty in remote path: {remote_path!r}")
     return version, platform
 
 
 def _local_cached_daemon_binary(version: str, platform: str) -> Path:
-    return Path(tempfile.gettempdir()) / "cmux-remote-daemon-build" / version / platform / "cmuxd-remote"
+    return Path(tempfile.gettempdir()) / "c11-remote-daemon-build" / version / platform / "c11d-remote"
 
 
 def _local_file_sha256(path: Path) -> str:
@@ -571,10 +575,10 @@ def main() -> int:
             host,
             host_ssh_port,
             key_path,
-            "test ! -e \"$HOME/.cmux/bin/cmuxd-remote\" && echo fresh",
+            "test ! -e \"$HOME/.cmux/bin/c11d-remote\" && test ! -e \"$HOME/.cmux/bin/cmuxd-remote\" && echo fresh",
             check=True,
         )
-        _must("fresh" in fresh_check.stdout, "Fresh container should not have preinstalled cmuxd-remote")
+        _must("fresh" in fresh_check.stdout, "Fresh container should not have preinstalled c11d-remote")
 
         with cmux(SOCKET_PATH) as client:
             payload = _run_cli_json(
@@ -714,7 +718,7 @@ def main() -> int:
 
         print(
             "PASS: docker SSH proxy endpoint is reachable, handles HTTP + WebSocket egress over SOCKS and CONNECT through remote host, and is shared across identical transports; "
-            f"uploaded cmuxd-remote size={binary_size_bytes} bytes, version={daemon_version}, platform={daemon_platform}"
+            f"uploaded c11d-remote size={binary_size_bytes} bytes, version={daemon_version}, platform={daemon_platform}"
         )
         return 0
 

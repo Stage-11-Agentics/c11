@@ -333,7 +333,7 @@ enum SidebarResizeInteraction {
 // MARK: - File Drop Overlay
 
 enum DragOverlayRoutingPolicy {
-    static let bonsplitTabTransferType = NSPasteboard.PasteboardType("com.splittabbar.tabtransfer")
+    static let bonsplitTabTransferType = NSPasteboard.PasteboardType("com.stage11.c11.tabtransfer")
     static let sidebarTabReorderType = NSPasteboard.PasteboardType(SidebarTabDragPayload.typeIdentifier)
 
     static func hasBonsplitTabTransfer(_ pasteboardTypes: [NSPasteboard.PasteboardType]?) -> Bool {
@@ -12892,7 +12892,7 @@ private final class SidebarDragAutoScrollController: ObservableObject {
 }
 
 private enum SidebarTabDragPayload {
-    static let typeIdentifier = "com.cmux.sidebar-tab-reorder"
+    static let typeIdentifier = "com.stage11.c11.sidebar-tab-reorder"
     static let dropContentType = UTType(exportedAs: typeIdentifier)
     static let dropContentTypes: [UTType] = [dropContentType]
     private static let prefix = "cmux.sidebar-tab."
@@ -12909,7 +12909,7 @@ private enum SidebarTabDragPayload {
 }
 
 private enum BonsplitTabDragPayload {
-    static let typeIdentifier = "com.splittabbar.tabtransfer"
+    static let typeIdentifier = "com.stage11.c11.tabtransfer"
     static let dropContentType = UTType(exportedAs: typeIdentifier)
     static let dropContentTypes: [UTType] = [dropContentType]
     private static let currentProcessId = Int32(ProcessInfo.processInfo.processIdentifier)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Process-level integration: cmuxd-remote stdio session resize coordinator."""
+"""Process-level integration: c11d-remote stdio session resize coordinator."""
 
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ def _rpc(
                     stderr = proc.stderr.read().strip()
                 except Exception:
                     stderr = ""
-            raise cmuxError(f"cmuxd-remote exited while waiting for {method} response: {stderr}")
+            raise cmuxError(f"c11d-remote exited while waiting for {method} response: {stderr}")
         try:
             resp = json.loads(line)
         except Exception as exc:  # noqa: BLE001
@@ -61,7 +61,7 @@ def _rpc(
         _must(resp.get("id") == req_id, f"Response id mismatch for {method}: {resp}")
         return resp
 
-    raise cmuxError(f"Timed out waiting for cmuxd-remote response: {method}")
+    raise cmuxError(f"Timed out waiting for c11d-remote response: {method}")
 
 
 def _as_int(value: object, field: str) -> int:
@@ -96,7 +96,7 @@ def main() -> int:
     _must(daemon_dir.is_dir(), f"Missing daemon module directory: {daemon_dir}")
 
     proc = subprocess.Popen(
-        ["go", "run", "./cmd/cmuxd-remote", "serve", "--stdio"],
+        ["go", "run", "./cmd/c11d-remote", "serve", "--stdio"],
         cwd=str(daemon_dir),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -168,7 +168,7 @@ def main() -> int:
         attachments = (status.get("result") or {}).get("attachments") or []
         _must(len(attachments) == 1, f"session.status should report one active attachment after reattach: {status}")
 
-        print("PASS: cmuxd-remote stdio session.resize coordinator enforces smallest-screen-wins semantics")
+        print("PASS: c11d-remote stdio session.resize coordinator enforces smallest-screen-wins semantics")
         return 0
     finally:
         try:

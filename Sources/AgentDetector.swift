@@ -18,7 +18,7 @@ import Foundation
 final class AgentDetector: @unchecked Sendable {
     static let shared = AgentDetector()
 
-    private let queue = DispatchQueue(label: "com.cmux.agent-detector", qos: .utility)
+    private let queue = DispatchQueue(label: "com.stage11.c11.agent-detector", qos: .utility)
 
     private struct PanelKey: Hashable {
         let workspaceId: UUID

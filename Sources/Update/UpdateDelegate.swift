@@ -2,7 +2,7 @@ import Sparkle
 import Cocoa
 
 enum UpdateFeedResolver {
-    static let fallbackFeedURL = "https://github.com/manaflow-ai/cmux/releases/latest/download/appcast.xml"
+    static let fallbackFeedURL = "https://github.com/Stage-11-Agentics/c11/releases/latest/download/appcast.xml"
 
     static func resolvedFeedURLString(infoFeedURL: String?) -> (url: String, isNightly: Bool, usedFallback: Bool) {
         guard let infoFeedURL, !infoFeedURL.isEmpty else {
@@ -20,7 +20,7 @@ extension UpdateDriver: SPUUpdaterDelegate {
     func feedURLString(for updater: SPUUpdater) -> String? {
 #if DEBUG
         let env = ProcessInfo.processInfo.environment
-        if let override = env["CMUX_UI_TEST_FEED_URL"], !override.isEmpty {
+        if let override = env["C11_UI_TEST_FEED_URL"] ?? env["CMUX_UI_TEST_FEED_URL"], !override.isEmpty {
             UpdateTestURLProtocol.registerIfNeeded()
             recordFeedURLString(override, usedFallback: false)
             return override
@@ -28,7 +28,7 @@ extension UpdateDriver: SPUUpdaterDelegate {
 #endif
         // The feed URL is baked into Info.plist at build time:
         // - Stable releases use the stable appcast URL
-        // - cmux NIGHTLY has the nightly appcast URL injected by CI
+        // - c11 NIGHTLY has the nightly appcast URL injected by CI
         let infoFeedURL = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String
         let resolved = UpdateFeedResolver.resolvedFeedURLString(infoFeedURL: infoFeedURL)
         UpdateLogStore.shared.append("update channel: \(resolved.isNightly ? "nightly" : "stable")")

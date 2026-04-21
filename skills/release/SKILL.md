@@ -1,11 +1,11 @@
 ---
 name: release
-description: "Prepare and ship a cmux release end-to-end: choose the next version, curate user-facing changelog entries, bump versions, open and monitor a release PR, merge, tag, and verify published artifacts. Use when asked to cut, prepare, publish, or tag a new release."
+description: "Prepare and ship a c11 release end-to-end: choose the next version, curate user-facing changelog entries, bump versions, open and monitor a release PR, merge, tag, and verify published artifacts. Use when asked to cut, prepare, publish, or tag a new release."
 ---
 
 # Release
 
-Run this workflow to prepare and publish a cmux release.
+Run this workflow to prepare and publish a c11 release.
 
 ## Workflow
 
@@ -20,7 +20,7 @@ Run this workflow to prepare and publish a cmux release.
 - `git describe --tags --abbrev=0`
 - `git log --oneline <last-tag>..HEAD --no-merges`
 - Keep only end-user visible changes (features, bug fixes, UX/perf behavior).
-- **Collect contributors:** For each PR, get the author with `gh pr view <N> --repo manaflow-ai/cmux --json author --jq '.author.login'`. Also check linked issue reporters with `gh issue view <N> --json author --jq '.author.login'`.
+- **Collect contributors:** For each PR, get the author with `gh pr view <N> --repo Stage-11-Agentics/c11 --json author --jq '.author.login'`. Also check linked issue reporters with `gh issue view <N> --json author --jq '.author.login'`.
 - Build a deduplicated list of all contributor `@handle`s.
 
 4. Update changelogs:
@@ -58,8 +58,8 @@ Run this workflow to prepare and publish a cmux release.
 - `git push origin vX.Y.Z`
 
 11. Verify release workflow and assets:
-- `gh run watch --repo manaflow-ai/cmux`
-- Confirm release exists in GitHub Releases and includes `cmux-macos.dmg`.
+- `gh run watch --repo Stage-11-Agentics/c11`
+- Confirm release exists in GitHub Releases and includes `c11-macos.dmg`.
 
 ## Changelog Rules
 

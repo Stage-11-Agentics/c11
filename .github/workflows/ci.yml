@@ -23,7 +23,7 @@ jobs:
       - name: Validate create-dmg version pinning
         run: ./tests/test_ci_create_dmg_pinned.sh
 
-      - name: Validate cmux scheme test configuration
+      - name: Validate c11 scheme test configuration
         run: ./tests/test_ci_scheme_testaction_debug.sh
 
       - name: Validate GhosttyKit checksum verification
@@ -158,7 +158,7 @@ jobs:
           set -euo pipefail
           SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
           mkdir -p "$SOURCE_PACKAGES_DIR"
-          xcodebuild -project GhosttyTabs.xcodeproj -scheme cmux -configuration Debug \
+          xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug \
             -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
             -resolvePackageDependencies
 
@@ -166,7 +166,7 @@ jobs:
         run: |
           set -euo pipefail
           SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
-          xcodebuild -project GhosttyTabs.xcodeproj -scheme cmux -configuration Debug \
+          xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug \
             -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
             -disableAutomaticPackageResolution \
             -destination "platform=macOS" \

@@ -7,10 +7,10 @@ CONFIGURATION="${CMUX_CONFIGURATION:-Debug}"
 
 case "$CONFIGURATION" in
   Debug)
-    APP_NAME="c11mux DEV.app"
+    APP_NAME="c11 DEV.app"
     ;;
   Release)
-    APP_NAME="c11mux.app"
+    APP_NAME="c11.app"
     ;;
   *)
     echo "FAIL: unsupported configuration $CONFIGURATION" >&2
@@ -23,7 +23,7 @@ rm -rf "$DERIVED_DATA_PATH"
 
 xcodebuild \
   -project GhosttyTabs.xcodeproj \
-  -scheme cmux \
+  -scheme c11 \
   -configuration "$CONFIGURATION" \
   -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
   -disableAutomaticPackageResolution \

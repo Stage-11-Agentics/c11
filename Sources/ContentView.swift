@@ -2947,6 +2947,7 @@ struct ContentView: View {
                 let tintColor = (NSColor(hex: bgGlassTintHex) ?? .black).withAlphaComponent(bgGlassTintOpacity)
                 WindowGlassEffect.apply(to: window, tintColor: tintColor)
             }
+            AppDelegate.shared?.applyMainWindowSizeConstraints(to: window)
             AppDelegate.shared?.attachUpdateAccessory(to: window)
             AppDelegate.shared?.applyWindowDecorations(to: window)
             AppDelegate.shared?.registerMainWindow(
@@ -11036,43 +11037,42 @@ private struct TabItemView: View, Equatable {
         }()
 
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                if unreadCount > 0 {
-                    ZStack {
-                        Circle()
-                            .fill(activeUnreadBadgeFillColor)
-                        Text("\(unreadCount)")
-                            .font(.system(size: 9, weight: .semibold))
-                            // Badge fill is always gold (`activeUnreadBadgeFillColor`).
-                            // Use black on the gold circle whenever the tab is the
-                            // active selection in .solidFill — including custom-color
-                            // workspaces, where the broader text palette stays primary
-                            // but black-on-gold remains the only legible badge choice.
-                            .foregroundColor(isActive && activeTabIndicatorStyle == .solidFill ? BrandColors.blackSwiftUI : .white)
-                    }
-                    .frame(width: 16, height: 16)
-                }
-
-                if tab.isPinned {
-                    Image(systemName: "pin.fill")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundColor(activeSecondaryColor(0.8))
-                }
-
-                AgentChipBadge(
-                    chip: agentChip,
-                    showsLabel: !isMinimalMode,
-                    foreground: activePrimaryTextColor,
-                    secondary: activeSecondaryColor(0.75)
-                )
-
-                Text(TitleFormatting.sidebarLabel(from: tab.title))
+            HStack(alignment: .top, spacing: 6) {
+                Text(tab.title)
                     .font(.system(size: 12.5, weight: titleFontWeight))
                     .foregroundColor(activePrimaryTextColor)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .truncationMode(.tail)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
 
-                Spacer()
+                Spacer(minLength: 4)
+
+                HStack(spacing: 5) {
+                    if tab.isPinned {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(activeSecondaryColor(0.8))
+                    }
+
+                    if unreadCount > 0 {
+                        ZStack {
+                            Circle()
+                                .fill(activeUnreadBadgeFillColor)
+                            Text("\(unreadCount)")
+                                .font(.system(size: 9, weight: .semibold))
+                                // Badge fill is always gold (`activeUnreadBadgeFillColor`).
+                                // Use black on the gold circle whenever the tab is the
+                                // active selection in .solidFill — including custom-color
+                                // workspaces, where the broader text palette stays primary
+                                // but black-on-gold remains the only legible badge choice.
+                                .foregroundColor(isActive && activeTabIndicatorStyle == .solidFill ? BrandColors.blackSwiftUI : .white)
+                        }
+                        .frame(width: 16, height: 16)
+                    }
+                }
+                .padding(.top, 1)
 
                 ZStack(alignment: .trailing) {
                     Button(action: {
@@ -11110,6 +11110,19 @@ private struct TabItemView: View, Equatable {
                 }
                 .animation(.easeInOut(duration: 0.14), value: showsModifierShortcutHints || alwaysShowShortcutHints)
                 .frame(width: workspaceHintSlotWidth, height: 16, alignment: .trailing)
+            }
+
+            if agentChip != nil {
+                HStack(spacing: 4) {
+                    AgentChipBadge(
+                        chip: agentChip,
+                        showsLabel: !isMinimalMode,
+                        foreground: activeSecondaryColor(0.78),
+                        secondary: activeSecondaryColor(0.68)
+                    )
+                    Spacer(minLength: 0)
+                }
+                .padding(.top, 1)
             }
 
             if let subtitle = effectiveSubtitle {

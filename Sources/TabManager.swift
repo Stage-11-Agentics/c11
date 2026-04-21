@@ -668,6 +668,13 @@ class TabManager: ObservableObject {
         let executionError: String?
     }
 
+    private static func defaultWorkspaceTitle(number: Int) -> String {
+        String.localizedStringWithFormat(
+            String(localized: "workspace.defaultTitle", defaultValue: "Workspace %lld"),
+            Int64(number)
+        )
+    }
+
     private struct WorkspaceGitProbeKey: Hashable {
         let workspaceId: UUID
         let panelId: UUID
@@ -1109,6 +1116,7 @@ class TabManager: ObservableObject {
         // bounce through Combine-backed accessors while we're preparing the new workspace.
         let snapshot = workspaceCreationSnapshot()
         let nextTabCount = snapshot.tabs.count + 1
+        let defaultTitle = Self.defaultWorkspaceTitle(number: nextTabCount)
         sentryBreadcrumb("workspace.create", data: ["tabCount": nextTabCount])
         let explicitWorkingDirectory = normalizedWorkingDirectory(overrideWorkingDirectory)
         let workingDirectory = explicitWorkingDirectory ?? preferredWorkingDirectoryForNewTab(snapshot: snapshot)
@@ -1116,7 +1124,8 @@ class TabManager: ObservableObject {
         let ordinal = Self.nextPortOrdinal
         Self.nextPortOrdinal += 1
         let newWorkspace = Workspace(
-            title: "Terminal \(nextTabCount)",
+            title: defaultTitle,
+            stableDefaultTitle: defaultTitle,
             workingDirectory: workingDirectory,
             portOrdinal: ordinal,
             configTemplate: inheritedConfig,
@@ -5173,7 +5182,8 @@ extension TabManager {
                 : nil
             let workspace = Workspace(
                 id: restoredWorkspaceId,
-                title: workspaceSnapshot.processTitle,
+                title: workspaceSnapshot.stableDefaultTitle ?? workspaceSnapshot.processTitle,
+                stableDefaultTitle: workspaceSnapshot.stableDefaultTitle,
                 workingDirectory: workspaceSnapshot.currentDirectory,
                 portOrdinal: ordinal
             )
@@ -5186,7 +5196,8 @@ extension TabManager {
         if newTabs.isEmpty {
             let ordinal = Self.nextPortOrdinal
             Self.nextPortOrdinal += 1
-            let fallback = Workspace(title: "Terminal 1", portOrdinal: ordinal)
+            let defaultTitle = Self.defaultWorkspaceTitle(number: 1)
+            let fallback = Workspace(title: defaultTitle, stableDefaultTitle: defaultTitle, portOrdinal: ordinal)
             fallback.owningTabManager = self
             wireClosedBrowserTracking(for: fallback)
             newTabs.append(fallback)

@@ -212,6 +212,7 @@ extension Workspace {
             id: id,
             processTitle: processTitle,
             customTitle: customTitle,
+            stableDefaultTitle: stableDefaultTitle,
             customColor: customColor,
             isPinned: isPinned,
             currentDirectory: currentDirectory,
@@ -267,6 +268,8 @@ extension Workspace {
         pruneSurfaceMetadata(validSurfaceIds: Set(panels.keys))
         applySessionDividerPositions(snapshotNode: snapshot.layout, liveNode: bonsplitController.treeSnapshot())
 
+        let restoredStableDefaultTitle = snapshot.stableDefaultTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        stableDefaultTitle = restoredStableDefaultTitle.isEmpty ? nil : restoredStableDefaultTitle
         applyProcessTitle(snapshot.processTitle)
         setCustomTitle(snapshot.customTitle)
         setCustomColor(snapshot.customColor)
@@ -5134,6 +5137,7 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     private var processTitle: String
+    private var stableDefaultTitle: String?
 
     private enum SurfaceKind {
         static let terminal = "terminal"
@@ -5333,6 +5337,7 @@ final class Workspace: Identifiable, ObservableObject {
     init(
         id: UUID? = nil,
         title: String = "Terminal",
+        stableDefaultTitle: String? = nil,
         workingDirectory: String? = nil,
         portOrdinal: Int = 0,
         configTemplate: ghostty_surface_config_s? = nil,
@@ -5346,6 +5351,8 @@ final class Workspace: Identifiable, ObservableObject {
         self.id = id ?? UUID()
         self.portOrdinal = portOrdinal
         self.processTitle = title
+        let trimmedStableDefaultTitle = stableDefaultTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        self.stableDefaultTitle = trimmedStableDefaultTitle.isEmpty ? nil : trimmedStableDefaultTitle
         self.title = title
         self.customTitle = nil
 
@@ -5968,7 +5975,7 @@ final class Workspace: Identifiable, ObservableObject {
 
     func applyProcessTitle(_ title: String) {
         processTitle = title
-        guard customTitle == nil else { return }
+        guard customTitle == nil, stableDefaultTitle == nil else { return }
         self.title = title
     }
 
@@ -5988,7 +5995,7 @@ final class Workspace: Identifiable, ObservableObject {
         let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if trimmed.isEmpty {
             customTitle = nil
-            self.title = processTitle
+            self.title = stableDefaultTitle ?? processTitle
         } else {
             customTitle = trimmed
             self.title = trimmed
@@ -6203,9 +6210,10 @@ final class Workspace: Identifiable, ObservableObject {
             }
         }
 
-        // If this is the only panel and no custom title, update workspace title
+        // If this is the only panel and no custom/default title, update workspace title.
+        // Stable default workspace names keep the process title as secondary surface state.
         if panels.count == 1, customTitle == nil {
-            if self.title != trimmed {
+            if stableDefaultTitle == nil, self.title != trimmed {
                 self.title = trimmed
                 didMutate = true
             }
@@ -6385,7 +6393,10 @@ final class Workspace: Identifiable, ObservableObject {
         }
 
         if panels.count == 1, customTitle == nil {
-            if self.title != trimmed {
+            if processTitle != trimmed {
+                processTitle = trimmed
+            }
+            if stableDefaultTitle == nil, self.title != trimmed {
                 self.title = trimmed
             }
         }

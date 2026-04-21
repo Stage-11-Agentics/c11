@@ -369,6 +369,11 @@ struct cmuxApp: App {
                 }
         }
         .windowStyle(.hiddenTitleBar)
+        .defaultSize(
+            width: CGFloat(SessionPersistencePolicy.defaultWindowWidth),
+            height: CGFloat(SessionPersistencePolicy.defaultWindowHeight)
+        )
+        .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .appSettings) { }
 

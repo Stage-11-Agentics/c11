@@ -514,7 +514,7 @@ final class SessionPersistenceTests: XCTestCase {
     }
 
     func testResolvedWindowFramePrefersSavedDisplayIdentity() {
-        let savedFrame = SessionRectSnapshot(x: 1_200, y: 100, width: 600, height: 400)
+        let savedFrame = SessionRectSnapshot(x: 1_050, y: 100, width: 900, height: 640)
         let savedDisplay = SessionDisplaySnapshot(
             displayID: 2,
             frame: SessionRectSnapshot(x: 1_000, y: 0, width: 1_000, height: 800),
@@ -544,18 +544,18 @@ final class SessionPersistenceTests: XCTestCase {
         guard let restored else { return }
         XCTAssertTrue(display2.visibleFrame.intersects(restored))
         XCTAssertFalse(display1.visibleFrame.intersects(restored))
-        XCTAssertEqual(restored.width, 600, accuracy: 0.001)
-        XCTAssertEqual(restored.height, 400, accuracy: 0.001)
-        XCTAssertEqual(restored.minX, 200, accuracy: 0.001)
+        XCTAssertEqual(restored.width, 900, accuracy: 0.001)
+        XCTAssertEqual(restored.height, 640, accuracy: 0.001)
+        XCTAssertEqual(restored.minX, 50, accuracy: 0.001)
         XCTAssertEqual(restored.minY, 100, accuracy: 0.001)
     }
 
     func testResolvedWindowFrameKeepsIntersectingFrameWithoutDisplayMetadata() {
-        let savedFrame = SessionRectSnapshot(x: 120, y: 80, width: 500, height: 350)
+        let savedFrame = SessionRectSnapshot(x: 120, y: 80, width: 950, height: 650)
         let display = AppDelegate.SessionDisplayGeometry(
             displayID: 1,
-            frame: CGRect(x: 0, y: 0, width: 1_000, height: 800),
-            visibleFrame: CGRect(x: 0, y: 0, width: 1_000, height: 800)
+            frame: CGRect(x: 0, y: 0, width: 1_200, height: 900),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1_200, height: 900)
         )
 
         let restored = AppDelegate.resolvedWindowFrame(
@@ -569,8 +569,55 @@ final class SessionPersistenceTests: XCTestCase {
         guard let restored else { return }
         XCTAssertEqual(restored.minX, 120, accuracy: 0.001)
         XCTAssertEqual(restored.minY, 80, accuracy: 0.001)
-        XCTAssertEqual(restored.width, 500, accuracy: 0.001)
-        XCTAssertEqual(restored.height, 350, accuracy: 0.001)
+        XCTAssertEqual(restored.width, 950, accuracy: 0.001)
+        XCTAssertEqual(restored.height, 650, accuracy: 0.001)
+    }
+
+    func testResolvedWindowFrameExpandsSavedFrameBelowMinimumSize() {
+        let savedFrame = SessionRectSnapshot(x: 120, y: 80, width: 420, height: 900)
+        let display = AppDelegate.SessionDisplayGeometry(
+            displayID: 1,
+            frame: CGRect(x: 0, y: 0, width: 1_440, height: 1_000),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1_440, height: 1_000)
+        )
+
+        let restored = AppDelegate.resolvedWindowFrame(
+            from: savedFrame,
+            display: SessionDisplaySnapshot(
+                displayID: 1,
+                frame: SessionRectSnapshot(x: 0, y: 0, width: 1_440, height: 1_000),
+                visibleFrame: SessionRectSnapshot(x: 0, y: 0, width: 1_440, height: 1_000)
+            ),
+            availableDisplays: [display],
+            fallbackDisplay: display
+        )
+
+        XCTAssertNotNil(restored)
+        guard let restored else { return }
+        XCTAssertEqual(restored.minX, 120, accuracy: 0.001)
+        XCTAssertEqual(restored.minY, 80, accuracy: 0.001)
+        XCTAssertEqual(restored.width, CGFloat(SessionPersistencePolicy.minimumWindowWidth), accuracy: 0.001)
+        XCTAssertEqual(restored.height, 900, accuracy: 0.001)
+    }
+
+    func testFirstLaunchPrimaryWindowFrameUsesCenteredDefaultSize() {
+        let display = AppDelegate.SessionDisplayGeometry(
+            displayID: 1,
+            frame: CGRect(x: 0, y: 0, width: 1_600, height: 1_000),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1_600, height: 1_000)
+        )
+
+        let frame = AppDelegate.firstLaunchPrimaryWindowFrame(
+            window: nil,
+            fallbackDisplay: display
+        )
+
+        XCTAssertNotNil(frame)
+        guard let frame else { return }
+        XCTAssertEqual(frame.width, CGFloat(SessionPersistencePolicy.defaultWindowWidth), accuracy: 0.001)
+        XCTAssertEqual(frame.height, CGFloat(SessionPersistencePolicy.defaultWindowHeight), accuracy: 0.001)
+        XCTAssertEqual(frame.midX, display.visibleFrame.midX, accuracy: 0.001)
+        XCTAssertEqual(frame.midY, display.visibleFrame.midY, accuracy: 0.001)
     }
 
     func testResolvedStartupPrimaryWindowFrameFallsBackToPersistedGeometryWhenPrimaryMissing() {

@@ -3066,7 +3066,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
               visibleFrame.height > 0 else {
             return nil
         }
-        return visibleFrame.integral
+        let minWidth = CGFloat(SessionPersistencePolicy.minimumWindowWidth)
+        let minHeight = CGFloat(SessionPersistencePolicy.minimumWindowHeight)
+        let preferredFrame = CGRect(
+            x: visibleFrame.midX - CGFloat(SessionPersistencePolicy.defaultWindowWidth) / 2,
+            y: visibleFrame.midY - CGFloat(SessionPersistencePolicy.defaultWindowHeight) / 2,
+            width: CGFloat(SessionPersistencePolicy.defaultWindowWidth),
+            height: CGFloat(SessionPersistencePolicy.defaultWindowHeight)
+        )
+        return clampFrame(
+            preferredFrame,
+            within: visibleFrame,
+            minWidth: minWidth,
+            minHeight: minHeight
+        ).integral
     }
 
     nonisolated static func resolvedStartupPrimaryWindowFrame(
@@ -3110,18 +3123,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         let minWidth = CGFloat(SessionPersistencePolicy.minimumWindowWidth)
         let minHeight = CGFloat(SessionPersistencePolicy.minimumWindowHeight)
-        guard frame.width >= minWidth,
-              frame.height >= minHeight else {
+        guard frame.width > 0,
+              frame.height > 0 else {
             return nil
         }
 
-        guard !availableDisplays.isEmpty else { return frame }
+        guard !availableDisplays.isEmpty else {
+            return frameWithMinimumSize(frame, minWidth: minWidth, minHeight: minHeight)
+        }
 
         if let targetDisplay = display(for: displaySnapshot, in: availableDisplays) {
             if shouldPreserveExactFrame(
                 frame: frame,
                 displaySnapshot: displaySnapshot,
-                targetDisplay: targetDisplay
+                targetDisplay: targetDisplay,
+                minWidth: minWidth,
+                minHeight: minHeight
             ) {
                 return frame
             }
@@ -3302,6 +3319,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return CGRect(x: x, y: y, width: width, height: height)
     }
 
+    private nonisolated static func frameWithMinimumSize(
+        _ frame: CGRect,
+        minWidth: CGFloat,
+        minHeight: CGFloat
+    ) -> CGRect {
+        CGRect(
+            x: frame.minX,
+            y: frame.minY,
+            width: max(frame.width, minWidth),
+            height: max(frame.height, minHeight)
+        )
+    }
+
     private nonisolated static func intersectionArea(_ lhs: CGRect, _ rhs: CGRect) -> CGFloat {
         let intersection = lhs.intersection(rhs)
         guard !intersection.isNull else { return 0 }
@@ -3317,7 +3347,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private nonisolated static func shouldPreserveExactFrame(
         frame: CGRect,
         displaySnapshot: SessionDisplaySnapshot?,
-        targetDisplay: SessionDisplayGeometry
+        targetDisplay: SessionDisplayGeometry,
+        minWidth: CGFloat,
+        minHeight: CGFloat
     ) -> Bool {
         guard let displaySnapshot else { return false }
         guard let snapshotDisplayID = displaySnapshot.displayID,
@@ -3338,6 +3370,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             && frame.height.isFinite
             && frame.origin.x.isFinite
             && frame.origin.y.isFinite
+            && frame.width >= minWidth
+            && frame.height >= minHeight
     }
 
     private nonisolated static func rectApproximatelyEqual(
@@ -6058,7 +6092,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             .environmentObject(sidebarSelectionState)
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 360),
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: CGFloat(SessionPersistencePolicy.defaultWindowWidth),
+                height: CGFloat(SessionPersistencePolicy.defaultWindowHeight)
+            ),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -6068,9 +6107,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = false
         window.isMovable = false
+        applyMainWindowSizeConstraints(to: window)
         let restoredFrame = resolvedWindowFrame(from: sessionWindowSnapshot)
         if let restoredFrame {
             window.setFrame(restoredFrame, display: false)
+        } else if let defaultFrame = Self.firstLaunchPrimaryWindowFrame(
+            window: window,
+            fallbackDisplay: currentDisplayGeometries().fallback
+        ) {
+            window.setFrame(defaultFrame, display: false)
         } else {
             window.center()
         }
@@ -6117,6 +6162,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #endif
         }
         return windowId
+    }
+
+    func applyMainWindowSizeConstraints(to window: NSWindow) {
+        let minContentSize = NSSize(
+            width: CGFloat(SessionPersistencePolicy.minimumWindowWidth),
+            height: CGFloat(SessionPersistencePolicy.minimumWindowHeight)
+        )
+        window.contentMinSize = minContentSize
+        window.minSize = window.frameRect(forContentRect: NSRect(origin: .zero, size: minContentSize)).size
     }
 
     @objc func checkForUpdates(_ sender: Any?) {

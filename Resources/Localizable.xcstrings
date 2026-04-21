@@ -77708,6 +77708,23 @@
         }
       }
     },
+    "workspace.defaultTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Workspace %lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークスペース %lld"
+          }
+        }
+      }
+    },
     "workspace.placement.afterCurrent": {
       "extractionState": "manual",
       "localizations": {

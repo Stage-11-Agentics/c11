@@ -10,8 +10,10 @@ enum SessionPersistencePolicy {
     static let defaultSidebarWidth: Double = 200
     static let minimumSidebarWidth: Double = 180
     static let maximumSidebarWidth: Double = 600
-    static let minimumWindowWidth: Double = 300
-    static let minimumWindowHeight: Double = 200
+    static let defaultWindowWidth: Double = 1120
+    static let defaultWindowHeight: Double = 840
+    static let minimumWindowWidth: Double = 900
+    static let minimumWindowHeight: Double = 640
     static let autosaveInterval: TimeInterval = 8.0
     static let maxWindowsPerSnapshot: Int = 12
     static let maxWorkspacesPerWindow: Int = 128
@@ -429,6 +431,7 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     var id: UUID
     var processTitle: String
     var customTitle: String?
+    var stableDefaultTitle: String? = nil
     var customColor: String?
     var isPinned: Bool
     var currentDirectory: String

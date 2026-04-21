@@ -212,6 +212,62 @@ final class WorkspaceShortcutMapperTests: XCTestCase {
 }
 
 
+@MainActor
+final class WorkspaceDefaultTitleTests: XCTestCase {
+    private func expectedDefaultWorkspaceTitle(_ number: Int) -> String {
+        String.localizedStringWithFormat(
+            String(localized: "workspace.defaultTitle", defaultValue: "Workspace %lld"),
+            Int64(number)
+        )
+    }
+
+    func testNewManagerWorkspacesUseStableWorkspaceDefaultTitles() {
+        let manager = TabManager()
+        let first = manager.tabs[0]
+        let second = manager.addWorkspace()
+
+        XCTAssertEqual(first.title, expectedDefaultWorkspaceTitle(1))
+        XCTAssertEqual(second.title, expectedDefaultWorkspaceTitle(2))
+
+        second.applyProcessTitle("codex-agent-title")
+        XCTAssertEqual(second.title, expectedDefaultWorkspaceTitle(2))
+
+        second.setCustomTitle("Research")
+        XCTAssertEqual(second.title, "Research")
+
+        second.setCustomTitle(nil)
+        XCTAssertEqual(second.title, expectedDefaultWorkspaceTitle(2))
+    }
+
+    func testLegacyProcessDrivenWorkspaceTitlesStillUpdate() {
+        let workspace = Workspace(title: "Terminal 1")
+
+        workspace.applyProcessTitle("zsh")
+
+        XCTAssertEqual(workspace.title, "zsh")
+    }
+
+    func testStableDefaultTitleRoundTripsThroughSessionSnapshot() throws {
+        let manager = TabManager()
+        let second = manager.addWorkspace()
+        second.applyProcessTitle("agent-title")
+
+        let snapshot = manager.sessionSnapshot(includeScrollback: false)
+        let secondSnapshot = try XCTUnwrap(snapshot.workspaces.first { $0.id == second.id })
+        XCTAssertEqual(secondSnapshot.processTitle, "agent-title")
+        XCTAssertEqual(secondSnapshot.stableDefaultTitle, expectedDefaultWorkspaceTitle(2))
+
+        let restored = TabManager()
+        restored.restoreSessionSnapshot(snapshot)
+        let restoredSecond = try XCTUnwrap(restored.tabs.first { $0.id == second.id })
+        XCTAssertEqual(restoredSecond.title, expectedDefaultWorkspaceTitle(2))
+
+        restoredSecond.applyProcessTitle("later-agent-title")
+        XCTAssertEqual(restoredSecond.title, expectedDefaultWorkspaceTitle(2))
+    }
+}
+
+
 final class WorkspacePlacementSettingsTests: XCTestCase {
     func testCurrentPlacementDefaultsToAfterCurrentWhenUnset() {
         let suiteName = "WorkspacePlacementSettingsTests.Default.\(UUID().uuidString)"

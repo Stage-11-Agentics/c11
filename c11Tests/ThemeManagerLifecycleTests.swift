@@ -5,6 +5,35 @@ import Combine
 
 @MainActor
 final class ThemeManagerLifecycleTests: XCTestCase {
+    func testBundledThemesLoadFromC11ThemesDirectory() {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let bundledThemesDirectory = repoRoot
+            .appendingPathComponent("Resources", isDirectory: true)
+            .appendingPathComponent(ThemeManager.bundledThemesDirectoryName, isDirectory: true)
+        let userThemesDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-theme-test-\(UUID().uuidString)", isDirectory: true)
+
+        let manager = ThemeManager(
+            notificationCenter: NotificationCenter(),
+            pathsOverride: .init(
+                userThemesDirectory: userThemesDirectory,
+                builtinDirectory: bundledThemesDirectory
+            )
+        )
+
+        let names = Set(manager.availableThemes.map(\.identity.name))
+        XCTAssertTrue(names.isSuperset(of: ["stage11", "phosphor", "radical"]))
+    }
+
+    func testDefaultThemeUserDirectoryUsesC11ApplicationSupportName() {
+        let userThemesDirectory = ThemeManager.userThemesDirectory()
+
+        XCTAssertEqual(userThemesDirectory.lastPathComponent, "themes")
+        XCTAssertEqual(userThemesDirectory.deletingLastPathComponent().lastPathComponent, "c11")
+    }
+
     func testManagerLoadsActiveThemeAndIncrementsVersionOnReload() {
         let center = NotificationCenter()
         let manager = ThemeManager(notificationCenter: center)

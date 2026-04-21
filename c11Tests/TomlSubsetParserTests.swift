@@ -25,7 +25,7 @@ final class TomlSubsetParserTests: XCTestCase {
     func testParsesNestedTables() throws {
         let source = """
         [chrome]
-       
+
         [chrome.titleBar]
         background = "#121519"
 
@@ -68,7 +68,7 @@ final class TomlSubsetParserTests: XCTestCase {
             .deletingLastPathComponent()
         let stage11URL = repoRoot
             .appendingPathComponent("Resources")
-            .appendingPathComponent("c11mux-themes")
+            .appendingPathComponent("c11-themes")
             .appendingPathComponent("stage11.toml")
 
         guard FileManager.default.fileExists(atPath: stage11URL.path) else {

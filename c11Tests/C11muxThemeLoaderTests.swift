@@ -35,7 +35,7 @@ final class C11muxThemeLoaderTests: XCTestCase {
             .deletingLastPathComponent()
         let url = repoRoot
             .appendingPathComponent("Resources")
-            .appendingPathComponent("c11mux-themes")
+            .appendingPathComponent("c11-themes")
             .appendingPathComponent("stage11.toml")
 
         guard FileManager.default.fileExists(atPath: url.path) else {

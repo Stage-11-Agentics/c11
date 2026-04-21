@@ -6,6 +6,8 @@ import SwiftUI
 @MainActor
 public final class ThemeManager: ObservableObject {
     public static let shared = ThemeManager()
+    public nonisolated static let bundledThemesDirectoryName = "c11-themes"
+    public nonisolated static let userThemesApplicationSupportDirectoryName = "c11"
 
     public struct ThemeDescriptor: Equatable, Sendable {
         public enum Source: String, Equatable, Sendable {
@@ -393,7 +395,7 @@ public final class ThemeManager: ObservableObject {
         var malformed: [String: String] = [:]
 
         let builtinDir = pathsOverride?.builtinDirectory ?? Bundle.main.resourceURL?
-            .appendingPathComponent("c11mux-themes", isDirectory: true)
+            .appendingPathComponent(Self.bundledThemesDirectoryName, isDirectory: true)
 
         if let builtinDir {
             scan(
@@ -540,7 +542,7 @@ public final class ThemeManager: ObservableObject {
             let readmePath = url.appendingPathComponent("README.md").path
             if !fm.fileExists(atPath: readmePath),
                let seedURL = Bundle.main.resourceURL?
-                   .appendingPathComponent("c11mux-themes", isDirectory: true)
+                   .appendingPathComponent(Self.bundledThemesDirectoryName, isDirectory: true)
                    .appendingPathComponent("README.md"),
                let data = try? Data(contentsOf: seedURL) {
                 try? data.write(to: URL(fileURLWithPath: readmePath))
@@ -557,7 +559,7 @@ public final class ThemeManager: ObservableObject {
             ?? URL(fileURLWithPath: NSHomeDirectory())
                 .appendingPathComponent("Library", isDirectory: true)
                 .appendingPathComponent("Application Support", isDirectory: true)
-        return base.appendingPathComponent("c11mux", isDirectory: true)
+        return base.appendingPathComponent(Self.userThemesApplicationSupportDirectoryName, isDirectory: true)
             .appendingPathComponent("themes", isDirectory: true)
     }
 
@@ -598,7 +600,7 @@ public final class ThemeManager: ObservableObject {
             resourceURL = dir
         } else {
             resourceURL = Bundle.main.resourceURL?
-                .appendingPathComponent("c11mux-themes", isDirectory: true)
+                .appendingPathComponent(Self.bundledThemesDirectoryName, isDirectory: true)
         }
 
         guard let resourceURL else {

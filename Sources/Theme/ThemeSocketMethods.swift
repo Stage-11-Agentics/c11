@@ -81,7 +81,7 @@ public enum ThemeSocketMethods {
     public static func paths(pathsOverride: ThemeManager.PathsOverride? = nil) -> [String: Any] {
         let userDir = ThemeManager.userThemesDirectory(override: pathsOverride)
         let bundled = Bundle.main.resourceURL?
-            .appendingPathComponent("c11mux-themes", isDirectory: true)
+            .appendingPathComponent(ThemeManager.bundledThemesDirectoryName, isDirectory: true)
             .path ?? "<bundled>"
         return [
             "user_themes_directory": userDir.path,

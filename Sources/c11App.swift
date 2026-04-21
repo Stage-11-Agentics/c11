@@ -1434,7 +1434,7 @@ struct cmuxApp: App {
 
     private func revealBundledThemeFileInFinder() {
         guard let fileURL = Bundle.main.resourceURL?
-            .appendingPathComponent("c11mux-themes", isDirectory: true)
+            .appendingPathComponent(ThemeManager.bundledThemesDirectoryName, isDirectory: true)
             .appendingPathComponent("stage11.toml") else {
             ThemeDiagnostics.engine("debug show theme folder skipped: bundle resources unavailable")
             return

@@ -57,7 +57,11 @@ c11 skill install                # → ~/.claude/skills/
 c11 skill install --tool codex   # → ~/.codex/skills/ (explicit opt-in)
 ```
 
-or grab the [DMG directly](https://github.com/Stage-11-Agentics/c11/releases/latest/download/c11-macos.dmg). auto-updates via Sparkle. the c11 cask conflicts with the upstream `cmux` cask — Homebrew will ask you to pick one.
+or grab the [DMG directly](https://github.com/Stage-11-Agentics/c11/releases/latest/download/c11-macos.dmg). auto-updates via Sparkle.
+
+**If you installed from the DMG (not Homebrew),** run **Command Palette → "Shell Command: Install 'c11' in PATH"** once after the first launch so `/usr/local/bin/c11` is available in Terminal. The Homebrew cask wires that symlink for you.
+
+c11 coexists with upstream [`cmux`](https://github.com/manaflow-ai/cmux) on the same machine: it never claims the `cmux` name on your `PATH`, so both can be installed side-by-side.
 
 that's it. now your agent spawns its own terminals, opens a markdown surface for its plan, splits a browser pane for the dev server it just started, and reports status to the sidebar while it works.
 

@@ -1,0 +1,2157 @@
+diff --git a/CLI/cmux.swift b/CLI/cmux.swift
+index 1ee27df6..20646a0c 100644
+--- a/CLI/cmux.swift
++++ b/CLI/cmux.swift
+@@ -1463,6 +1463,11 @@ struct CMUXCLI {
+             return
+         }
+ 
++        if command == "skill" {
++            try runSkillCommand(commandArgs: commandArgs, jsonOutput: jsonOutput)
++            return
++        }
++
+         if command == "install" || command == "uninstall" {
+             // Integration installers (Module 4) are filesystem-local; they do
+             // not connect to the running cmux socket. Exit codes are carried
+@@ -15256,3 +15261,266 @@ fileprivate func opencodeShimStatusSnapshot(
+         note: nil
+     )
+ }
++
++// MARK: - `cmux skill` subcommand
++//
++// Active install is scoped to Claude Code — matching the grandfathered
++// `Resources/bin/claude` precedent. For every other TUI the CLI reports
++// detection and prints a copy-paste snippet; c11mux does not write into
++// `~/.codex/`, `~/.kimi/`, or `~/.opencode/` unless the operator explicitly
++// passes `--tool <name>` (a deliberate operator-directed act).
++
++extension CMUXCLI {
++    fileprivate func runSkillCommand(commandArgs: [String], jsonOutput: Bool) throws {
++        guard let sub = commandArgs.first else {
++            print(skillCommandUsage())
++            return
++        }
++        let rest = Array(commandArgs.dropFirst())
++        switch sub {
++        case "help", "-h", "--help":
++            print(skillCommandUsage())
++        case "path":
++            try runSkillPath(args: rest, jsonOutput: jsonOutput)
++        case "status", "list":
++            try runSkillStatus(args: rest, jsonOutput: jsonOutput)
++        case "install":
++            try runSkillInstall(args: rest, jsonOutput: jsonOutput)
++        case "remove", "uninstall":
++            try runSkillRemove(args: rest, jsonOutput: jsonOutput)
++        default:
++            throw CLIError(message: "Unknown skill subcommand: \(sub). Try `cmux skill help`.")
++        }
++    }
++
++    private func skillCommandUsage() -> String {
++        return """
++        cmux skill — manage the c11mux skill file for detected agent tools.
++
++        Subcommands:
++          path                           Print the bundled skill source directory.
++          status [--tool NAME] [--json]  Show detection + install status per tool.
++          install [--tool NAME]          Install (default: claude only).
++                  [--dry-run] [--force]  Dry-run, or force re-copy even if hash matches.
++                  [--home PATH]          Override $HOME (useful for tests).
++          remove  [--tool NAME]          Remove c11mux-installed skills from the tool.
++                  [--home PATH]
++
++        Tools: claude, codex, kimi, opencode.
++
++        Principle:
++          Claude Code is the default active install (grandfathered exception).
++          For every other tool, c11mux prints the manual command and only writes
++          to disk when --tool is passed explicitly — the operator stays in charge.
++        """
++    }
++
++    private func parseSkillHomeOverride(_ args: [String]) throws -> URL {
++        if let override = optionValue(args, name: "--home") {
++            let expanded = (override as NSString).expandingTildeInPath
++            return URL(fileURLWithPath: expanded, isDirectory: true).standardizedFileURL
++        }
++        let envHome = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
++        return URL(fileURLWithPath: envHome, isDirectory: true).standardizedFileURL
++    }
++
++    private func parseSkillTarget(_ args: [String], defaultTarget: SkillInstallerTarget) throws -> SkillInstallerTarget {
++        guard let raw = optionValue(args, name: "--tool") else {
++            return defaultTarget
++        }
++        guard let tool = SkillInstallerTarget(rawValue: raw.lowercased()) else {
++            throw CLIError(message: "Unknown tool '\(raw)'. Supported: \(SkillInstallerTarget.allCases.map { $0.rawValue }.joined(separator: ", "))")
++        }
++        return tool
++    }
++
++    private func resolveSkillSource(jsonOutput: Bool) throws -> URL {
++        let exec = resolvedExecutableURL()
++        guard let source = SkillInstaller.defaultSourceURL(executableURL: exec) else {
++            throw CLIError(message: "Could not locate the bundled skills directory. Set CMUX_SKILLS_SOURCE to override.")
++        }
++        return source
++    }
++
++    private func runSkillPath(args: [String], jsonOutput: Bool) throws {
++        let source = try resolveSkillSource(jsonOutput: jsonOutput)
++        if jsonOutput || hasFlag(args, name: "--json") {
++            print(jsonString(["path": source.path]))
++        } else {
++            print(source.path)
++        }
++    }
++
++    private func runSkillStatus(args: [String], jsonOutput: Bool) throws {
++        let source = try resolveSkillSource(jsonOutput: jsonOutput)
++        let home = try parseSkillHomeOverride(args)
++        let emitJSON = jsonOutput || hasFlag(args, name: "--json")
++
++        var targets = SkillInstallerTarget.allCases
++        if let raw = optionValue(args, name: "--tool") {
++            guard let target = SkillInstallerTarget(rawValue: raw.lowercased()) else {
++                throw CLIError(message: "Unknown tool '\(raw)'.")
++            }
++            targets = [target]
++        }
++
++        var rows: [[String: Any]] = []
++        for target in targets {
++            let detected = target.isDetected(home: home)
++            let statuses = detected
++                ? (try? SkillInstaller.status(for: target, home: home, sourceDir: source)) ?? []
++                : []
++            let packageRows: [[String: Any]] = statuses.map { st in
++                var row: [String: Any] = [
++                    "package": st.package.name,
++                    "state": st.state.rawValue,
++                    "dest": st.destinationDir.path,
++                    "source_sha256": st.sourceContentHash,
++                ]
++                if let record = st.record {
++                    row["installed_sha256"] = record.sourceContentHash
++                    row["installed_at"] = record.installedAt
++                    row["app_version"] = record.appVersion
++                }
++                return row
++            }
++            rows.append([
++                "tool": target.rawValue,
++                "display_name": target.displayName,
++                "detected": detected,
++                "skills_dir": target.skillsDir(home: home).path,
++                "packages": packageRows,
++            ])
++        }
++
++        if emitJSON {
++            print(jsonString(["targets": rows, "source": source.path]))
++            return
++        }
++        print("Bundled skills: \(source.path)")
++        print("")
++        for row in rows {
++            let tool = (row["tool"] as? String) ?? "?"
++            let display = (row["display_name"] as? String) ?? tool
++            let detected = (row["detected"] as? Bool) ?? false
++            let dir = (row["skills_dir"] as? String) ?? ""
++            let detectTag = detected ? "detected" : "not detected"
++            print("\(display) [\(tool)] — \(detectTag)")
++            print("  skills dir: \(dir)")
++            let packageRows = (row["packages"] as? [[String: Any]]) ?? []
++            if !detected {
++                print("  (\(display) config dir not present; install skipped)")
++                continue
++            }
++            if packageRows.isEmpty {
++                print("  (no bundled packages found)")
++                continue
++            }
++            for pkg in packageRows {
++                let name = (pkg["package"] as? String) ?? "?"
++                let state = (pkg["state"] as? String) ?? "?"
++                let version = (pkg["app_version"] as? String).map { " v\($0)" } ?? ""
++                let installed = (pkg["installed_at"] as? String).map { " @ \($0)" } ?? ""
++                print("  - \(name): \(state)\(version)\(installed)")
++            }
++        }
++    }
++
++    private func runSkillInstall(args: [String], jsonOutput: Bool) throws {
++        let source = try resolveSkillSource(jsonOutput: jsonOutput)
++        let home = try parseSkillHomeOverride(args)
++        let target = try parseSkillTarget(args, defaultTarget: .claude)
++        let dryRun = hasFlag(args, name: "--dry-run")
++        let force = hasFlag(args, name: "--force")
++        let emitJSON = jsonOutput || hasFlag(args, name: "--json")
++
++        if !target.isDetected(home: home) {
++            let msg = "Tool '\(target.rawValue)' config dir \(target.configRoot(home: home).path) not found. Install \(target.displayName) first, or pass --tool <other> if you meant a different target."
++            if emitJSON {
++                print(jsonString(["error": "target_not_detected", "tool": target.rawValue, "message": msg]))
++                exit(2)
++            }
++            throw CLIError(message: msg)
++        }
++
++        if dryRun {
++            let statuses = try SkillInstaller.status(for: target, home: home, sourceDir: source)
++            let planned = statuses.filter { force || $0.state != .installedCurrent }.map { $0.package.name }
++            let skipped = statuses.filter { !force && $0.state == .installedCurrent }.map { $0.package.name }
++            if emitJSON {
++                print(jsonString([
++                    "dry_run": true,
++                    "tool": target.rawValue,
++                    "planned": planned,
++                    "skipped": skipped,
++                    "dest": target.skillsDir(home: home).path,
++                ]))
++            } else {
++                print("Dry run — \(target.displayName) (\(target.skillsDir(home: home).path))")
++                if planned.isEmpty {
++                    print("  nothing to do; all packages current")
++                } else {
++                    print("  would write: \(planned.joined(separator: ", "))")
++                }
++                if !skipped.isEmpty {
++                    print("  would skip (up-to-date): \(skipped.joined(separator: ", "))")
++                }
++            }
++            return
++        }
++
++        let result = try SkillInstaller.install(
++            target: target,
++            home: home,
++            sourceDir: source,
++            force: force
++        )
++
++        if emitJSON {
++            print(jsonString([
++                "tool": target.rawValue,
++                "dest": result.destDir.path,
++                "installed": result.installed,
++                "refreshed": result.refreshed,
++                "skipped": result.skipped,
++            ]))
++            return
++        }
++        print("Installed skill for \(target.displayName) at \(result.destDir.path)")
++        if !result.installed.isEmpty {
++            print("  installed: \(result.installed.joined(separator: ", "))")
++        }
++        if !result.refreshed.isEmpty {
++            print("  refreshed: \(result.refreshed.joined(separator: ", "))")
++        }
++        if !result.skipped.isEmpty {
++            print("  skipped (up-to-date): \(result.skipped.joined(separator: ", "))")
++        }
++    }
++
++    private func runSkillRemove(args: [String], jsonOutput: Bool) throws {
++        let source = try resolveSkillSource(jsonOutput: jsonOutput)
++        let home = try parseSkillHomeOverride(args)
++        let target = try parseSkillTarget(args, defaultTarget: .claude)
++        let emitJSON = jsonOutput || hasFlag(args, name: "--json")
++
++        let result = try SkillInstaller.remove(target: target, home: home, sourceDir: source)
++        if emitJSON {
++            print(jsonString([
++                "tool": target.rawValue,
++                "dest": result.destDir.path,
++                "removed": result.removed,
++                "skipped": result.skipped,
++            ]))
++            return
++        }
++        print("Removed skill for \(target.displayName) from \(result.destDir.path)")
++        if !result.removed.isEmpty {
++            print("  removed: \(result.removed.joined(separator: ", "))")
++        }
++        if !result.skipped.isEmpty {
++            print("  skipped: \(result.skipped.joined(separator: ", "))")
++        }
++    }
++}
++
+diff --git a/GhosttyTabs.xcodeproj/project.pbxproj b/GhosttyTabs.xcodeproj/project.pbxproj
+index 8f43d60a..0ccd7edf 100644
+--- a/GhosttyTabs.xcodeproj/project.pbxproj
++++ b/GhosttyTabs.xcodeproj/project.pbxproj
+@@ -108,6 +108,9 @@
+ 		A5001100 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A5001101 /* Assets.xcassets */; };
+ 		A5001230 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A5001231 /* Sparkle */; };
+ 		B9000002A1B2C3D4E5F60719 /* cmux.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9000001A1B2C3D4E5F60719 /* cmux.swift */; };
++		CC401002A1B2C3D4E5F60719 /* SkillInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC401001A1B2C3D4E5F60719 /* SkillInstaller.swift */; };
++		CC401003A1B2C3D4E5F60719 /* SkillInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC401001A1B2C3D4E5F60719 /* SkillInstaller.swift */; };
++		CC401005A1B2C3D4E5F60719 /* AgentSkillsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC401004A1B2C3D4E5F60719 /* AgentSkillsView.swift */; };
+ 		B900000BA1B2C3D4E5F60719 /* cmux in Copy CLI */ = {isa = PBXBuildFile; fileRef = B9000004A1B2C3D4E5F60719 /* cmux */; };
+ 		C1ADE00002A1B2C3D4E5F719 /* claude in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1ADE00001A1B2C3D4E5F719 /* claude */; };
+ 		D1BEF00002A1B2C3D4E5F719 /* open in Copy CLI */ = {isa = PBXBuildFile; fileRef = D1BEF00001A1B2C3D4E5F719 /* open */; };
+@@ -356,6 +359,8 @@
+ 		D1BEF00001A1B2C3D4E5F719 /* open */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "Resources/bin/open"; sourceTree = SOURCE_ROOT; };
+ 		A5002001 /* THIRD_PARTY_LICENSES.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = THIRD_PARTY_LICENSES.md; sourceTree = SOURCE_ROOT; };
+ 		B9000001A1B2C3D4E5F60719 /* cmux.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = cmux.swift; sourceTree = "<group>"; };
++		CC401001A1B2C3D4E5F60719 /* SkillInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillInstaller.swift; sourceTree = "<group>"; };
++		CC401004A1B2C3D4E5F60719 /* AgentSkillsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillsView.swift; sourceTree = "<group>"; };
+ 		B9000004A1B2C3D4E5F60719 /* cmux */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = cmux; sourceTree = BUILT_PRODUCTS_DIR; };
+ 				B9000011A1B2C3D4E5F60719 /* AutomationSocketUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationSocketUITests.swift; sourceTree = "<group>"; };
+ 					B9000013A1B2C3D4E5F60719 /* JumpToUnreadUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JumpToUnreadUITests.swift; sourceTree = "<group>"; };
+@@ -490,7 +495,7 @@
+ 			);
+ 			runOnlyForDeploymentPostprocessing = 0;
+ 			shellPath = /bin/sh;
+-			shellScript = "set -euo pipefail\nDEST=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\nGHOSTTY_DEST=\"${DEST}/ghostty\"\nTERMINFO_DEST=\"${DEST}/terminfo\"\nCMUX_SHELL_DEST=\"${DEST}/shell-integration\"\nBIN_DEST=\"${DEST}/bin\"\nSRC_SHARE=\"${SRCROOT}/ghostty/zig-out/share\"\nGHOSTTY_SRC=\"${SRC_SHARE}/ghostty\"\nTERMINFO_SRC=\"${SRC_SHARE}/terminfo\"\nFALLBACK_GHOSTTY=\"${SRCROOT}/Resources/ghostty\"\nFALLBACK_TERMINFO=\"${SRCROOT}/Resources/ghostty/terminfo\"\nTERMINFO_OVERLAY=\"${SRCROOT}/Resources/terminfo-overlay\"\nCMUX_SHELL_SRC=\"${SRCROOT}/Resources/shell-integration\"\nCMUX_GHOSTTY_ZSH_SRC=\"${SRCROOT}/ghostty/src/shell-integration/zsh/ghostty-integration\"\nBUILD_GHOSTTY_HELPER=\"${SRCROOT}/scripts/build-ghostty-cli-helper.sh\"\nGHOSTTY_HELPER_DEST=\"${BIN_DEST}/ghostty\"\nif [ -d \"$GHOSTTY_SRC\" ]; then\n  mkdir -p \"$GHOSTTY_DEST\"\n  rsync -a --delete \"$GHOSTTY_SRC/\" \"$GHOSTTY_DEST/\"\nelif [ -d \"$FALLBACK_GHOSTTY\" ]; then\n  mkdir -p \"$GHOSTTY_DEST\"\n  rsync -a --delete \"$FALLBACK_GHOSTTY/\" \"$GHOSTTY_DEST/\"\nfi\nif [ -f \"${SRCROOT}/Resources/ghostty/c11mux-default.conf\" ]; then\n  mkdir -p \"$GHOSTTY_DEST\"\n  rsync -a \"${SRCROOT}/Resources/ghostty/c11mux-default.conf\" \"$GHOSTTY_DEST/c11mux-default.conf\"\nfi\nif [ -d \"$TERMINFO_SRC\" ]; then\n  mkdir -p \"$TERMINFO_DEST\"\n  rsync -a --delete \"$TERMINFO_SRC/\" \"$TERMINFO_DEST/\"\nelif [ -d \"$FALLBACK_TERMINFO\" ]; then\n  mkdir -p \"$TERMINFO_DEST\"\n  rsync -a --delete \"$FALLBACK_TERMINFO/\" \"$TERMINFO_DEST/\"\nfi\n# Overlay any cmux-specific terminfo adjustments.\n# This intentionally does not use --delete so we only patch specific entries.\nif [ -d \"$TERMINFO_OVERLAY\" ]; then\n  mkdir -p \"$TERMINFO_DEST\"\n  rsync -a \"$TERMINFO_OVERLAY/\" \"$TERMINFO_DEST/\"\nfi\nif [ -d \"$CMUX_SHELL_SRC\" ]; then\n  mkdir -p \"$CMUX_SHELL_DEST\"\n  # Use '/.' so dotfiles like .zshenv/.zprofile are copied too.\n  rsync -a \"$CMUX_SHELL_SRC/.\" \"$CMUX_SHELL_DEST/\"\nfi\nif [ -f \"$CMUX_GHOSTTY_ZSH_SRC\" ]; then\n  mkdir -p \"$CMUX_SHELL_DEST\"\n  rsync -a \"$CMUX_GHOSTTY_ZSH_SRC\" \"$CMUX_SHELL_DEST/ghostty-integration.zsh\"\nfi\nif [ ! -x \"$BUILD_GHOSTTY_HELPER\" ]; then\n  echo \"error: missing Ghostty CLI helper build script at $BUILD_GHOSTTY_HELPER\" >&2\n  exit 1\nfi\nARCHS_LIST=\" ${ARCHS:-} \"\nHAS_ARM64=0\nHAS_X86_64=0\nGHOSTTY_HELPER_TARGET=\"\"\ncase \"$ARCHS_LIST\" in\n  *\" arm64 \"*) HAS_ARM64=1 ;;\nesac\ncase \"$ARCHS_LIST\" in\n  *\" x86_64 \"*) HAS_X86_64=1 ;;\nesac\nif [ \"$HAS_ARM64\" -eq 1 ] && [ \"$HAS_X86_64\" -eq 1 ]; then\n  \"$BUILD_GHOSTTY_HELPER\" --universal --output \"$GHOSTTY_HELPER_DEST\"\nelif [ \"$HAS_ARM64\" -eq 1 ]; then\n  GHOSTTY_HELPER_TARGET=\"aarch64-macos\"\nelif [ \"$HAS_X86_64\" -eq 1 ]; then\n  GHOSTTY_HELPER_TARGET=\"x86_64-macos\"\nfi\nif [ -n \"$GHOSTTY_HELPER_TARGET\" ]; then\n  \"$BUILD_GHOSTTY_HELPER\" --target \"$GHOSTTY_HELPER_TARGET\" --output \"$GHOSTTY_HELPER_DEST\"\nelif [ \"$HAS_ARM64\" -eq 0 ] || [ \"$HAS_X86_64\" -eq 0 ]; then\n  \"$BUILD_GHOSTTY_HELPER\" --output \"$GHOSTTY_HELPER_DEST\"\nfi\nif [ ! -x \"$GHOSTTY_HELPER_DEST\" ]; then\n  echo \"error: Ghostty CLI helper was not created at $GHOSTTY_HELPER_DEST\" >&2\n  exit 1\nfi\nINFO_PLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\nCOMMIT=\"$(git -C \"${SRCROOT}\" rev-parse --short=9 HEAD 2>/dev/null || true)\"\nif [ -n \"$COMMIT\" ] && [ -f \"$INFO_PLIST\" ]; then\n  /usr/libexec/PlistBuddy -c \"Set :CMUXCommit $COMMIT\" \"$INFO_PLIST\" >/dev/null 2>&1 || /usr/libexec/PlistBuddy -c \"Add :CMUXCommit string $COMMIT\" \"$INFO_PLIST\" >/dev/null 2>&1 || true\nfi\n";
++			shellScript = "set -euo pipefail\nDEST=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\nGHOSTTY_DEST=\"${DEST}/ghostty\"\nTERMINFO_DEST=\"${DEST}/terminfo\"\nCMUX_SHELL_DEST=\"${DEST}/shell-integration\"\nBIN_DEST=\"${DEST}/bin\"\nSRC_SHARE=\"${SRCROOT}/ghostty/zig-out/share\"\nGHOSTTY_SRC=\"${SRC_SHARE}/ghostty\"\nTERMINFO_SRC=\"${SRC_SHARE}/terminfo\"\nFALLBACK_GHOSTTY=\"${SRCROOT}/Resources/ghostty\"\nFALLBACK_TERMINFO=\"${SRCROOT}/Resources/ghostty/terminfo\"\nTERMINFO_OVERLAY=\"${SRCROOT}/Resources/terminfo-overlay\"\nCMUX_SHELL_SRC=\"${SRCROOT}/Resources/shell-integration\"\nCMUX_GHOSTTY_ZSH_SRC=\"${SRCROOT}/ghostty/src/shell-integration/zsh/ghostty-integration\"\nBUILD_GHOSTTY_HELPER=\"${SRCROOT}/scripts/build-ghostty-cli-helper.sh\"\nGHOSTTY_HELPER_DEST=\"${BIN_DEST}/ghostty\"\nif [ -d \"$GHOSTTY_SRC\" ]; then\n  mkdir -p \"$GHOSTTY_DEST\"\n  rsync -a --delete \"$GHOSTTY_SRC/\" \"$GHOSTTY_DEST/\"\nelif [ -d \"$FALLBACK_GHOSTTY\" ]; then\n  mkdir -p \"$GHOSTTY_DEST\"\n  rsync -a --delete \"$FALLBACK_GHOSTTY/\" \"$GHOSTTY_DEST/\"\nfi\nif [ -f \"${SRCROOT}/Resources/ghostty/c11mux-default.conf\" ]; then\n  mkdir -p \"$GHOSTTY_DEST\"\n  rsync -a \"${SRCROOT}/Resources/ghostty/c11mux-default.conf\" \"$GHOSTTY_DEST/c11mux-default.conf\"\nfi\nif [ -d \"$TERMINFO_SRC\" ]; then\n  mkdir -p \"$TERMINFO_DEST\"\n  rsync -a --delete \"$TERMINFO_SRC/\" \"$TERMINFO_DEST/\"\nelif [ -d \"$FALLBACK_TERMINFO\" ]; then\n  mkdir -p \"$TERMINFO_DEST\"\n  rsync -a --delete \"$FALLBACK_TERMINFO/\" \"$TERMINFO_DEST/\"\nfi\n# Overlay any cmux-specific terminfo adjustments.\n# This intentionally does not use --delete so we only patch specific entries.\nif [ -d \"$TERMINFO_OVERLAY\" ]; then\n  mkdir -p \"$TERMINFO_DEST\"\n  rsync -a \"$TERMINFO_OVERLAY/\" \"$TERMINFO_DEST/\"\nfi\nif [ -d \"$CMUX_SHELL_SRC\" ]; then\n  mkdir -p \"$CMUX_SHELL_DEST\"\n  # Use '/.' so dotfiles like .zshenv/.zprofile are copied too.\n  rsync -a \"$CMUX_SHELL_SRC/.\" \"$CMUX_SHELL_DEST/\"\nfi\nif [ -f \"$CMUX_GHOSTTY_ZSH_SRC\" ]; then\n  mkdir -p \"$CMUX_SHELL_DEST\"\n  rsync -a \"$CMUX_GHOSTTY_ZSH_SRC\" \"$CMUX_SHELL_DEST/ghostty-integration.zsh\"\nfi\nSKILLS_SRC=\"${SRCROOT}/skills\"\nSKILLS_DEST=\"${DEST}/skills\"\nif [ -d \"$SKILLS_SRC\" ]; then\n  mkdir -p \"$SKILLS_DEST\"\n  rsync -a --delete \"$SKILLS_SRC/\" \"$SKILLS_DEST/\"\nfi\nif [ ! -x \"$BUILD_GHOSTTY_HELPER\" ]; then\n  echo \"error: missing Ghostty CLI helper build script at $BUILD_GHOSTTY_HELPER\" >&2\n  exit 1\nfi\nARCHS_LIST=\" ${ARCHS:-} \"\nHAS_ARM64=0\nHAS_X86_64=0\nGHOSTTY_HELPER_TARGET=\"\"\ncase \"$ARCHS_LIST\" in\n  *\" arm64 \"*) HAS_ARM64=1 ;;\nesac\ncase \"$ARCHS_LIST\" in\n  *\" x86_64 \"*) HAS_X86_64=1 ;;\nesac\nif [ \"$HAS_ARM64\" -eq 1 ] && [ \"$HAS_X86_64\" -eq 1 ]; then\n  \"$BUILD_GHOSTTY_HELPER\" --universal --output \"$GHOSTTY_HELPER_DEST\"\nelif [ \"$HAS_ARM64\" -eq 1 ]; then\n  GHOSTTY_HELPER_TARGET=\"aarch64-macos\"\nelif [ \"$HAS_X86_64\" -eq 1 ]; then\n  GHOSTTY_HELPER_TARGET=\"x86_64-macos\"\nfi\nif [ -n \"$GHOSTTY_HELPER_TARGET\" ]; then\n  \"$BUILD_GHOSTTY_HELPER\" --target \"$GHOSTTY_HELPER_TARGET\" --output \"$GHOSTTY_HELPER_DEST\"\nelif [ \"$HAS_ARM64\" -eq 0 ] || [ \"$HAS_X86_64\" -eq 0 ]; then\n  \"$BUILD_GHOSTTY_HELPER\" --output \"$GHOSTTY_HELPER_DEST\"\nfi\nif [ ! -x \"$GHOSTTY_HELPER_DEST\" ]; then\n  echo \"error: Ghostty CLI helper was not created at $GHOSTTY_HELPER_DEST\" >&2\n  exit 1\nfi\nINFO_PLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\nCOMMIT=\"$(git -C \"${SRCROOT}\" rev-parse --short=9 HEAD 2>/dev/null || true)\"\nif [ -n \"$COMMIT\" ] && [ -f \"$INFO_PLIST\" ]; then\n  /usr/libexec/PlistBuddy -c \"Set :CMUXCommit $COMMIT\" \"$INFO_PLIST\" >/dev/null 2>&1 || /usr/libexec/PlistBuddy -c \"Add :CMUXCommit string $COMMIT\" \"$INFO_PLIST\" >/dev/null 2>&1 || true\nfi\n";
+ 		};
+ /* End PBXShellScriptBuildPhase section */
+ 
+@@ -597,6 +602,8 @@
+ 				A5001222 /* WindowAccessor.swift */,
+ 				A5001611 /* SessionPersistence.swift */,
+ 				A5005B01 /* BrandColors.swift */,
++				CC401001A1B2C3D4E5F60719 /* SkillInstaller.swift */,
++				CC401004A1B2C3D4E5F60719 /* AgentSkillsView.swift */,
+ 			);
+ 			path = Sources;
+ 			sourceTree = "<group>";
+@@ -948,6 +955,8 @@
+ 				A500120C /* WindowAccessor.swift in Sources */,
+ 				A5001610 /* SessionPersistence.swift in Sources */,
+ 				A5005B02 /* BrandColors.swift in Sources */,
++				CC401002A1B2C3D4E5F60719 /* SkillInstaller.swift in Sources */,
++				CC401005A1B2C3D4E5F60719 /* AgentSkillsView.swift in Sources */,
+ 			);
+ 			runOnlyForDeploymentPostprocessing = 0;
+ 		};
+@@ -1041,6 +1050,7 @@
+ 			buildActionMask = 2147483647;
+ 			files = (
+ 				B9000002A1B2C3D4E5F60719 /* cmux.swift in Sources */,
++				CC401003A1B2C3D4E5F60719 /* SkillInstaller.swift in Sources */,
+ 			);
+ 			runOnlyForDeploymentPostprocessing = 0;
+ 		};
+diff --git a/README.md b/README.md
+index 9d25abf3..3f8e1687 100644
+--- a/README.md
++++ b/README.md
+@@ -50,8 +50,9 @@ brew install --cask c11mux
+ # 2. launch
+ open -a c11mux
+ 
+-# 3. teach your agent the protocol (Claude Code example)
+-cp -r skills/cmux ~/.claude/skills/
++# 3. teach your agents the protocol (first-launch wizard will offer this too)
++cmux skill install                # → ~/.claude/skills/
++cmux skill install --tool codex   # → ~/.codex/skills/ (explicit opt-in)
+ ```
+ 
+ or grab the [DMG directly](https://github.com/Stage-11-Agentics/c11mux/releases/latest/download/c11mux-macos.dmg). auto-updates via Sparkle. the c11mux cask conflicts with the upstream `cmux` cask — Homebrew will ask you to pick one.
+@@ -60,6 +61,26 @@ that's it. now your agent spawns its own terminals, opens a markdown surface for
+ 
+ ---
+ 
++## teach your agents about c11mux
++
++**agents only know about c11mux's splits, sidebar metadata, and embedded browser once they've read the c11mux skill.** without it, they don't know the CLI exists; with it, the patterns in this README become their default.
++
++on first launch, c11mux detects Claude Code and offers to install the skill through a consent sheet — one click, no hidden writes. for Codex, Kimi, and OpenCode, the operator stays in charge (c11mux copies a ready-to-paste command; you run it, or you flip the explicit `--tool` switch below).
++
++re-run the same flow any time from **Settings → Agent Skills**, or from the CLI:
++
++```bash
++cmux skill status                 # see what's detected and installed
++cmux skill install                # install for Claude Code (idempotent)
++cmux skill install --tool codex   # explicit opt-in for another agent
++cmux skill remove                 # remove the installed copies (Claude Code)
++cmux skill path                   # print the bundled skill path
++```
++
++the skill is [`skills/cmux/SKILL.md`](./skills/cmux/SKILL.md) plus peer skills for the embedded browser, markdown surfaces, and debug windows. updating c11mux re-bundles fresh copies; the Settings pane flags when your installed copy is out of date.
++
++---
++
+ ## what's in the workspace
+ 
+ - **surfaces, composed.** terminals, browsers, markdown panes — split, tabbed, arranged by you or by the agent. the sidebar tracks git branch, PR status, working directory, listening ports, and the latest status line per workspace. one screen. whole orchestra.
+diff --git a/Resources/Localizable.xcstrings b/Resources/Localizable.xcstrings
+index 5afc81d8..c0c1e7fa 100644
+--- a/Resources/Localizable.xcstrings
++++ b/Resources/Localizable.xcstrings
+@@ -1245,6 +1245,374 @@
+         }
+       }
+     },
++    "agentSkills.action.copied": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "Copied install command to clipboard."
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "インストールコマンドをクリップボードにコピーしました。"
++          }
++        }
++      }
++    },
++    "agentSkills.button.copyCommand": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "Copy Command"
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "コマンドをコピー"
++          }
++        }
++      }
++    },
++    "agentSkills.button.install": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "Install"
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "インストール"
++          }
++        }
++      }
++    },
++    "agentSkills.button.refresh": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "Refresh"
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "更新"
++          }
++        }
++      }
++    },
++    "agentSkills.button.remove": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "Remove"
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "削除"
++          }
++        }
++      }
++    },
++    "agentSkills.button.revealSource": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "Reveal Skill"
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "スキルを表示"
++          }
++        }
++      }
++    },
++    "agentSkills.button.runWizard": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "Run Onboarding Wizard…"
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "オンボーディングを開く…"
++          }
++        }
++      }
++    },
++    "agentSkills.button.update": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "Update"
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "アップデート"
++          }
++        }
++      }
++    },
++    "agentSkills.error.sourceNotFound": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "Could not locate the bundled skills directory."
++          }
++        }
++      }
++    },
++    "agentSkills.onboarding.alreadyInstalled": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "Already installed and up to date."
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "インストール済み・最新の状態です。"
++          }
++        }
++      }
++    },
++    "agentSkills.onboarding.body": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "Agents only know about c11mux's CLI and sidebar metadata when they've read the c11mux skill file. Pick which agents should get it — you can change this any time in Settings → Agent Skills."
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "c11mux の CLI やサイドバー情報は、c11mux スキルファイルを読み込んだエージェントだけが理解します。スキルを入れるエージェントを選んでください。設定 → エージェントスキル からいつでも変更できます。"
++          }
++        }
++      }
++    },
++    "agentSkills.onboarding.dontAsk": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "Don't ask again"
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "次回から表示しない"
++          }
++        }
++      }
++    },
++    "agentSkills.onboarding.install": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "Install"
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "インストール"
++          }
++        }
++      }
++    },
++    "agentSkills.onboarding.later": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "Later"
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "あとで"
++          }
++        }
++      }
++    },
++    "agentSkills.onboarding.notDetected": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "Not detected — install the agent tool first, or enable from Settings later."
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "未検出です — まずエージェントツールをインストールするか、設定から後で有効にしてください。"
++          }
++        }
++      }
++    },
++    "agentSkills.onboarding.title": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "Teach your agents about c11mux"
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "エージェントに c11mux を伝える"
++          }
++        }
++      }
++    },
++    "agentSkills.onboarding.windowTitle": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "c11mux Agent Skills"
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "c11mux エージェントスキル"
++          }
++        }
++      }
++    },
++    "agentSkills.status.installed": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "installed"
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "インストール済み"
++          }
++        }
++      }
++    },
++    "agentSkills.status.notDetected": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "not detected"
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "未検出"
++          }
++        }
++      }
++    },
++    "agentSkills.status.notInstalled": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "not installed"
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "未インストール"
++          }
++        }
++      }
++    },
++    "agentSkills.status.partial": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "partial"
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "一部インストール"
++          }
++        }
++      }
++    },
++    "agentSkills.status.updateAvailable": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "update available"
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "更新があります"
++          }
++        }
++      }
++    },
+     "alert.customColor.apply": {
+       "extractionState": "manual",
+       "localizations": {
+@@ -42018,6 +42386,23 @@
+         }
+       }
+     },
++    "settings.agentSkills.note": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "c11mux installs its skill file into Claude Code (~/.claude/skills) on request. For other agents, c11mux copies a ready-to-paste command — the operator runs it."
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "c11mux は Claude Code (~/.claude/skills) にのみスキルファイルを書き込みます。他のエージェントには、そのままペーストできるコマンドをクリップボードにコピーします — 実行はオペレーター側で行います。"
++          }
++        }
++      }
++    },
+     "settings.app.appIcon": {
+       "extractionState": "manual",
+       "localizations": {
+@@ -56445,6 +56830,23 @@
+         }
+       }
+     },
++    "settings.section.agentSkills": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "Agent Skills"
++          }
++        },
++        "ja": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "エージェントスキル"
++          }
++        }
++      }
++    },
+     "settings.section.app": {
+       "extractionState": "manual",
+       "localizations": {
+@@ -78210,4 +78612,4 @@
+       }
+     }
+   }
+-}
++}
+\ No newline at end of file
+diff --git a/Sources/AgentSkillsView.swift b/Sources/AgentSkillsView.swift
+new file mode 100644
+index 00000000..98e0f651
+--- /dev/null
++++ b/Sources/AgentSkillsView.swift
+@@ -0,0 +1,509 @@
++import SwiftUI
++import Foundation
++import AppKit
++
++// MARK: - Shared state
++
++/// Observable wrapper around `SkillInstaller` for SwiftUI views. The model
++/// refreshes on demand and whenever the app is foregrounded.
++@MainActor
++final class AgentSkillsModel: ObservableObject {
++    struct TargetRow: Identifiable {
++        let id: String
++        let target: SkillInstallerTarget
++        let detected: Bool
++        let destinationDir: URL
++        let packages: [SkillInstallerPackageStatus]
++        var hasOutdated: Bool {
++            packages.contains { $0.state == .installedOutdated || $0.state == .installedNoManifest || $0.state == .schemaMismatch }
++        }
++        var anyInstalled: Bool {
++            packages.contains { $0.state != .notInstalled }
++        }
++        var allCurrent: Bool {
++            !packages.isEmpty && packages.allSatisfy { $0.state == .installedCurrent }
++        }
++    }
++
++    @Published private(set) var sourceDir: URL?
++    @Published private(set) var sourceError: String?
++    @Published private(set) var rows: [TargetRow] = []
++    @Published private(set) var loading: Bool = false
++    @Published private(set) var lastActionMessage: String?
++
++    private let home: URL
++    private let fileManager: FileManager
++
++    init(
++        home: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true),
++        fileManager: FileManager = .default
++    ) {
++        self.home = home
++        self.fileManager = fileManager
++    }
++
++    func refresh() {
++        loading = true
++        defer { loading = false }
++
++        let executableURL = Bundle.main.executableURL
++        guard let source = SkillInstaller.defaultSourceURL(executableURL: executableURL) else {
++            sourceError = String(localized: "agentSkills.error.sourceNotFound", defaultValue: "Could not locate the bundled skills directory.")
++            sourceDir = nil
++            rows = []
++            return
++        }
++        sourceError = nil
++        sourceDir = source
++
++        var newRows: [TargetRow] = []
++        for target in SkillInstallerTarget.allCases {
++            let detected = target.isDetected(home: home, fileManager: fileManager)
++            var packages: [SkillInstallerPackageStatus] = []
++            if detected {
++                do {
++                    packages = try SkillInstaller.status(
++                        for: target,
++                        home: home,
++                        sourceDir: source,
++                        fileManager: fileManager
++                    )
++                } catch {
++                    packages = []
++                }
++            }
++            newRows.append(TargetRow(
++                id: target.rawValue,
++                target: target,
++                detected: detected,
++                destinationDir: target.skillsDir(home: home),
++                packages: packages
++            ))
++        }
++        rows = newRows
++    }
++
++    func install(target: SkillInstallerTarget, force: Bool) {
++        guard let source = sourceDir else { return }
++        do {
++            let result = try SkillInstaller.install(
++                target: target,
++                home: home,
++                sourceDir: source,
++                force: force,
++                fileManager: fileManager
++            )
++            lastActionMessage = formatInstallMessage(result: result)
++        } catch let err as SkillInstallerError {
++            lastActionMessage = err.message
++        } catch {
++            lastActionMessage = error.localizedDescription
++        }
++        refresh()
++    }
++
++    func remove(target: SkillInstallerTarget) {
++        guard let source = sourceDir else { return }
++        do {
++            let result = try SkillInstaller.remove(
++                target: target,
++                home: home,
++                sourceDir: source,
++                fileManager: fileManager
++            )
++            lastActionMessage = formatRemoveMessage(result: result)
++        } catch let err as SkillInstallerError {
++            lastActionMessage = err.message
++        } catch {
++            lastActionMessage = error.localizedDescription
++        }
++        refresh()
++    }
++
++    func revealInFinder(url: URL) {
++        NSWorkspace.shared.activateFileViewerSelecting([url])
++    }
++
++    func copyManualCommandToPasteboard(target: SkillInstallerTarget) {
++        guard let source = sourceDir else { return }
++        let destRoot = target.skillsDir(home: home).path
++        let snippet = "mkdir -p \"\(destRoot)\" && rsync -a \"\(source.path)/\" \"\(destRoot)/\""
++        let pb = NSPasteboard.general
++        pb.clearContents()
++        pb.setString(snippet, forType: .string)
++        lastActionMessage = String(
++            localized: "agentSkills.action.copied",
++            defaultValue: "Copied install command to clipboard."
++        )
++    }
++
++    private func formatInstallMessage(result: SkillInstallerApplyResult) -> String {
++        var parts: [String] = []
++        if !result.installed.isEmpty { parts.append("installed: \(result.installed.joined(separator: ", "))") }
++        if !result.refreshed.isEmpty { parts.append("refreshed: \(result.refreshed.joined(separator: ", "))") }
++        if !result.skipped.isEmpty { parts.append("skipped: \(result.skipped.joined(separator: ", "))") }
++        if parts.isEmpty { parts.append("no-op") }
++        return "\(result.target.displayName) — \(parts.joined(separator: "; "))"
++    }
++
++    private func formatRemoveMessage(result: SkillInstallerRemoveResult) -> String {
++        if result.removed.isEmpty && result.skipped.isEmpty {
++            return "\(result.target.displayName) — nothing to remove"
++        }
++        var parts: [String] = []
++        if !result.removed.isEmpty { parts.append("removed: \(result.removed.joined(separator: ", "))") }
++        if !result.skipped.isEmpty { parts.append("skipped: \(result.skipped.joined(separator: ", "))") }
++        return "\(result.target.displayName) — \(parts.joined(separator: "; "))"
++    }
++}
++
++// MARK: - Settings pane
++
++struct AgentSkillsSettingsSection: View {
++    @StateObject private var model = AgentSkillsModel()
++    @State private var showingOnboardingSheet: Bool = false
++
++    var body: some View {
++        VStack(alignment: .leading, spacing: 8) {
++            if let err = model.sourceError {
++                Text(err)
++                    .font(.caption)
++                    .foregroundColor(.secondary)
++                    .padding(.horizontal, 14)
++                    .padding(.vertical, 8)
++            } else {
++                rows
++            }
++            if let msg = model.lastActionMessage {
++                Text(msg)
++                    .font(.caption)
++                    .foregroundColor(.secondary)
++                    .padding(.horizontal, 14)
++                    .padding(.bottom, 8)
++            }
++            HStack {
++                Button(String(localized: "agentSkills.button.runWizard", defaultValue: "Run Onboarding Wizard…")) {
++                    showingOnboardingSheet = true
++                }
++                .buttonStyle(.bordered)
++                .controlSize(.small)
++                Spacer(minLength: 0)
++            }
++            .padding(.horizontal, 14)
++            .padding(.bottom, 10)
++        }
++        .onAppear { model.refresh() }
++        .sheet(isPresented: $showingOnboardingSheet) {
++            AgentSkillsOnboardingSheet(onDismiss: {
++                showingOnboardingSheet = false
++                model.refresh()
++            })
++        }
++    }
++
++    @ViewBuilder
++    private var rows: some View {
++        ForEach(Array(model.rows.enumerated()), id: \.element.id) { index, row in
++            AgentSkillsRow(row: row, model: model)
++            if index < model.rows.count - 1 {
++                Rectangle()
++                    .fill(Color(nsColor: NSColor.separatorColor).opacity(0.5))
++                    .frame(height: 1)
++            }
++        }
++    }
++}
++
++private struct AgentSkillsRow: View {
++    let row: AgentSkillsModel.TargetRow
++    @ObservedObject var model: AgentSkillsModel
++
++    var body: some View {
++        HStack(alignment: .top, spacing: 12) {
++            VStack(alignment: .leading, spacing: 4) {
++                HStack(spacing: 6) {
++                    Text(row.target.displayName)
++                        .font(.system(size: 13, weight: .medium))
++                    statusChip
++                }
++                Text(row.destinationDir.path)
++                    .font(.caption)
++                    .foregroundColor(.secondary)
++                    .lineLimit(1)
++                    .truncationMode(.middle)
++            }
++            .frame(maxWidth: .infinity, alignment: .leading)
++
++            trailingButtons
++        }
++        .padding(.horizontal, 14)
++        .padding(.vertical, 10)
++    }
++
++    @ViewBuilder
++    private var statusChip: some View {
++        let (label, color) = statusLabel()
++        Text(label)
++            .font(.system(size: 11, weight: .medium))
++            .foregroundColor(color)
++            .padding(.horizontal, 7)
++            .padding(.vertical, 2)
++            .background(
++                Capsule(style: .continuous)
++                    .fill(color.opacity(0.13))
++            )
++    }
++
++    private func statusLabel() -> (String, Color) {
++        if !row.detected {
++            return (String(localized: "agentSkills.status.notDetected", defaultValue: "not detected"), .secondary)
++        }
++        if row.hasOutdated {
++            return (String(localized: "agentSkills.status.updateAvailable", defaultValue: "update available"), .orange)
++        }
++        if row.allCurrent {
++            return (String(localized: "agentSkills.status.installed", defaultValue: "installed"), .green)
++        }
++        if row.anyInstalled {
++            return (String(localized: "agentSkills.status.partial", defaultValue: "partial"), .orange)
++        }
++        return (String(localized: "agentSkills.status.notInstalled", defaultValue: "not installed"), .secondary)
++    }
++
++    @ViewBuilder
++    private var trailingButtons: some View {
++        HStack(spacing: 6) {
++            if !row.detected {
++                // Nothing to do; surface a minor affordance to reveal the bundled source.
++                Button(String(localized: "agentSkills.button.revealSource", defaultValue: "Reveal Skill")) {
++                    if let src = model.sourceDir {
++                        model.revealInFinder(url: src)
++                    }
++                }
++                .buttonStyle(.bordered)
++                .controlSize(.small)
++            } else if row.target == .claude {
++                claudeButtons
++            } else {
++                operatorDirectedButtons
++            }
++        }
++    }
++
++    @ViewBuilder
++    private var claudeButtons: some View {
++        if row.allCurrent {
++            Button(String(localized: "agentSkills.button.refresh", defaultValue: "Refresh")) {
++                model.install(target: row.target, force: true)
++            }
++            .buttonStyle(.bordered)
++            .controlSize(.small)
++            Button(String(localized: "agentSkills.button.remove", defaultValue: "Remove")) {
++                model.remove(target: row.target)
++            }
++            .buttonStyle(.bordered)
++            .controlSize(.small)
++        } else if row.anyInstalled {
++            Button(String(localized: "agentSkills.button.update", defaultValue: "Update")) {
++                model.install(target: row.target, force: true)
++            }
++            .buttonStyle(.borderedProminent)
++            .controlSize(.small)
++            Button(String(localized: "agentSkills.button.remove", defaultValue: "Remove")) {
++                model.remove(target: row.target)
++            }
++            .buttonStyle(.bordered)
++            .controlSize(.small)
++        } else {
++            Button(String(localized: "agentSkills.button.install", defaultValue: "Install")) {
++                model.install(target: row.target, force: false)
++            }
++            .buttonStyle(.borderedProminent)
++            .controlSize(.small)
++        }
++    }
++
++    @ViewBuilder
++    private var operatorDirectedButtons: some View {
++        // For non-Claude tools, prefer operator-driven installation (clipboard
++        // snippet + Finder reveal). The user can still use the Install/Refresh
++        // buttons if they explicitly want c11mux to copy into that tool's dir.
++        Button(String(localized: "agentSkills.button.copyCommand", defaultValue: "Copy Command")) {
++            model.copyManualCommandToPasteboard(target: row.target)
++        }
++        .buttonStyle(.bordered)
++        .controlSize(.small)
++        if row.anyInstalled {
++            Button(String(localized: "agentSkills.button.update", defaultValue: "Update")) {
++                model.install(target: row.target, force: true)
++            }
++            .buttonStyle(.bordered)
++            .controlSize(.small)
++            Button(String(localized: "agentSkills.button.remove", defaultValue: "Remove")) {
++                model.remove(target: row.target)
++            }
++            .buttonStyle(.bordered)
++            .controlSize(.small)
++        } else {
++            Button(String(localized: "agentSkills.button.install", defaultValue: "Install")) {
++                model.install(target: row.target, force: false)
++            }
++            .buttonStyle(.bordered)
++            .controlSize(.small)
++        }
++    }
++}
++
++// MARK: - First-run onboarding sheet
++
++/// Sheet shown once, after the welcome flow, when c11mux detects Claude Code
++/// but has never offered a skill install. User can consent, skip (this run),
++/// or defer forever (don't ask again). Settings exposes the same controls, so
++/// "don't ask again" is not a dead-end.
++struct AgentSkillsOnboardingSheet: View {
++    let onDismiss: () -> Void
++    @StateObject private var model = AgentSkillsModel()
++
++    @State private var claudeOptIn: Bool = true
++    @State private var codexOptIn: Bool = false
++    @State private var kimiOptIn: Bool = false
++    @State private var opencodeOptIn: Bool = false
++
++    init(onDismiss: @escaping () -> Void = {}) {
++        self.onDismiss = onDismiss
++    }
++
++    var body: some View {
++        VStack(alignment: .leading, spacing: 14) {
++            Text(String(localized: "agentSkills.onboarding.title", defaultValue: "Teach your agents about c11mux"))
++                .font(.system(size: 18, weight: .semibold))
++            Text(String(localized: "agentSkills.onboarding.body", defaultValue: "Agents only know about c11mux's CLI and sidebar metadata when they've read the c11mux skill file. Pick which agents should get it — you can change this any time in Settings → Agent Skills."))
++                .font(.system(size: 12))
++                .foregroundColor(.secondary)
++                .fixedSize(horizontal: false, vertical: true)
++
++            VStack(alignment: .leading, spacing: 6) {
++                ForEach(model.rows) { row in
++                    onboardingRow(row: row)
++                }
++            }
++            .padding(.vertical, 2)
++
++            if let msg = model.lastActionMessage {
++                Text(msg)
++                    .font(.caption)
++                    .foregroundColor(.secondary)
++            }
++
++            HStack(spacing: 8) {
++                Button(String(localized: "agentSkills.onboarding.dontAsk", defaultValue: "Don't ask again")) {
++                    UserDefaults.standard.set(true, forKey: AgentSkillsOnboarding.sheetShownKey)
++                    onDismiss()
++                }
++                .buttonStyle(.bordered)
++
++                Spacer()
++
++                Button(String(localized: "agentSkills.onboarding.later", defaultValue: "Later")) {
++                    onDismiss()
++                }
++                .buttonStyle(.bordered)
++
++                Button(String(localized: "agentSkills.onboarding.install", defaultValue: "Install")) {
++                    applySelection()
++                }
++                .keyboardShortcut(.defaultAction)
++                .buttonStyle(.borderedProminent)
++                .disabled(!anySelected)
++            }
++        }
++        .padding(20)
++        .frame(width: 520)
++        .onAppear { model.refresh() }
++    }
++
++    private var anySelected: Bool {
++        claudeOptIn || codexOptIn || kimiOptIn || opencodeOptIn
++    }
++
++    @ViewBuilder
++    private func onboardingRow(row: AgentSkillsModel.TargetRow) -> some View {
++        HStack(alignment: .firstTextBaseline, spacing: 10) {
++            Toggle(isOn: optInBinding(for: row.target)) {
++                VStack(alignment: .leading, spacing: 2) {
++                    Text(row.target.displayName)
++                        .font(.system(size: 13, weight: .medium))
++                    Text(detectionLabel(for: row))
++                        .font(.caption)
++                        .foregroundColor(.secondary)
++                }
++            }
++            .toggleStyle(.checkbox)
++            .disabled(!row.detected)
++        }
++    }
++
++    private func detectionLabel(for row: AgentSkillsModel.TargetRow) -> String {
++        if !row.detected {
++            return String(
++                localized: "agentSkills.onboarding.notDetected",
++                defaultValue: "Not detected — install the agent tool first, or enable from Settings later."
++            )
++        }
++        if row.allCurrent {
++            return String(
++                localized: "agentSkills.onboarding.alreadyInstalled",
++                defaultValue: "Already installed and up to date."
++            )
++        }
++        return row.destinationDir.path
++    }
++
++    private func optInBinding(for target: SkillInstallerTarget) -> Binding<Bool> {
++        switch target {
++        case .claude: return $claudeOptIn
++        case .codex: return $codexOptIn
++        case .kimi: return $kimiOptIn
++        case .opencode: return $opencodeOptIn
++        }
++    }
++
++    private func applySelection() {
++        let selections: [(SkillInstallerTarget, Bool)] = [
++            (.claude, claudeOptIn),
++            (.codex, codexOptIn),
++            (.kimi, kimiOptIn),
++            (.opencode, opencodeOptIn),
++        ]
++        for (target, selected) in selections where selected {
++            guard let row = model.rows.first(where: { $0.target == target }), row.detected else { continue }
++            model.install(target: target, force: false)
++        }
++        UserDefaults.standard.set(true, forKey: AgentSkillsOnboarding.sheetShownKey)
++        onDismiss()
++    }
++}
++
++// MARK: - Onboarding plumbing
++
++enum AgentSkillsOnboarding {
++    static let sheetShownKey = "cmuxAgentSkillsOnboardingShown"
++
++    /// Should the onboarding sheet be offered on this launch? True iff a
++    /// claude config dir exists AND at least one bundled package is not yet
++    /// installed in it AND the user hasn't already dismissed the sheet.
++    static func shouldPresent(
++        home: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true),
++        defaults: UserDefaults = .standard,
++        fileManager: FileManager = .default
++    ) -> Bool {
++        if defaults.bool(forKey: sheetShownKey) { return false }
++        let target = SkillInstallerTarget.claude
++        guard target.isDetected(home: home, fileManager: fileManager) else { return false }
++        guard let source = SkillInstaller.defaultSourceURL(executableURL: Bundle.main.executableURL) else { return false }
++        guard let statuses = try? SkillInstaller.status(for: target, home: home, sourceDir: source, fileManager: fileManager) else {
++            return false
++        }
++        return statuses.contains { $0.state == .notInstalled || $0.state == .installedOutdated }
++    }
++}
+diff --git a/Sources/AppDelegate.swift b/Sources/AppDelegate.swift
+index 076b4e73..b97dcc6a 100644
+--- a/Sources/AppDelegate.swift
++++ b/Sources/AppDelegate.swift
+@@ -6052,14 +6052,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
+     }
+ 
+     func sendWelcomeCommandWhenReady(to workspace: Workspace, markShownOnSend: Bool = false) {
+-        runWhenInitialTerminalReady(in: workspace) { initialPanel in
++        runWhenInitialTerminalReady(in: workspace) { [weak self] initialPanel in
+             if markShownOnSend {
+                 UserDefaults.standard.set(true, forKey: WelcomeSettings.shownKey)
+             }
+             WelcomeSettings.performQuadLayout(on: workspace, initialPanel: initialPanel)
++            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
++                self?.presentAgentSkillsOnboardingIfNeeded()
++            }
+         }
+     }
+ 
++    // MARK: - Agent skill onboarding
++
++    private weak var agentSkillsOnboardingWindow: NSWindow?
++
++    /// If the user has Claude Code installed and hasn't already seen the skill
++    /// onboarding sheet, show it over the frontmost window. Consent-gated; the
++    /// sheet never writes without an explicit click.
++    func presentAgentSkillsOnboardingIfNeeded() {
++        guard AgentSkillsOnboarding.shouldPresent() else { return }
++        presentAgentSkillsOnboarding()
++    }
++
++    func presentAgentSkillsOnboarding() {
++        if let existing = agentSkillsOnboardingWindow {
++            existing.makeKeyAndOrderFront(nil)
++            NSApp.activate(ignoringOtherApps: true)
++            return
++        }
++        let window = NSWindow(
++            contentRect: NSRect(x: 0, y: 0, width: 520, height: 320),
++            styleMask: [.titled, .closable],
++            backing: .buffered,
++            defer: false
++        )
++        window.title = String(localized: "agentSkills.onboarding.windowTitle", defaultValue: "c11mux Agent Skills")
++        window.isReleasedWhenClosed = false
++        window.level = .modalPanel
++        let rootView = AgentSkillsOnboardingSheet(onDismiss: { [weak window] in
++            window?.close()
++        })
++        window.contentView = NSHostingView(rootView: rootView)
++        window.center()
++        window.makeKeyAndOrderFront(nil)
++        agentSkillsOnboardingWindow = window
++    }
++
+     func spawnDefaultGridWhenReady(to workspace: Workspace) {
+         let workspaceId = workspace.id
+         runWhenInitialTerminalReady(in: workspace) { [weak self] initialPanel in
+diff --git a/Sources/SkillInstaller.swift b/Sources/SkillInstaller.swift
+new file mode 100644
+index 00000000..3f8b73dd
+--- /dev/null
++++ b/Sources/SkillInstaller.swift
+@@ -0,0 +1,494 @@
++import Foundation
++import CryptoKit
++
++// MARK: - Public types
++
++enum SkillInstallerTarget: String, CaseIterable {
++    case claude
++    case codex
++    case kimi
++    case opencode
++
++    var displayName: String {
++        switch self {
++        case .claude: return "Claude Code"
++        case .codex: return "Codex"
++        case .kimi: return "Kimi"
++        case .opencode: return "OpenCode"
++        }
++    }
++
++    /// Root config dir conventionally used by each TUI (`~/.claude`, `~/.codex`, …).
++    func configRoot(home: URL) -> URL {
++        home.appendingPathComponent(".\(rawValue)", isDirectory: true)
++    }
++
++    /// Destination skills dir (`~/.claude/skills`, `~/.codex/skills`, …).
++    func skillsDir(home: URL) -> URL {
++        configRoot(home: home).appendingPathComponent("skills", isDirectory: true)
++    }
++
++    /// True when the TUI's config root exists — the only signal c11mux uses
++    /// to infer that a user cares about a given tool.
++    func isDetected(home: URL, fileManager: FileManager = .default) -> Bool {
++        var isDir: ObjCBool = false
++        let exists = fileManager.fileExists(atPath: configRoot(home: home).path, isDirectory: &isDir)
++        return exists && isDir.boolValue
++    }
++}
++
++struct SkillInstallerPackage: Equatable {
++    let name: String
++    let sourceDir: URL
++}
++
++struct SkillInstallerRecord: Codable, Equatable {
++    /// Bumped when the on-disk manifest schema changes in a backwards-incompatible way.
++    static let schemaVersion = 1
++
++    let schema: Int
++    let packageName: String
++    let installedAt: String
++    let appVersion: String
++    let appBuild: String
++    let commitShort: String
++    let sourceContentHash: String
++
++    enum CodingKeys: String, CodingKey {
++        case schema = "c11mux_skill_schema"
++        case packageName = "package"
++        case installedAt = "installed_at"
++        case appVersion = "app_version"
++        case appBuild = "app_build"
++        case commitShort = "commit"
++        case sourceContentHash = "source_sha256"
++    }
++}
++
++enum SkillInstallerState: String, Equatable {
++    case notInstalled
++    case installedCurrent
++    case installedOutdated
++    case installedNoManifest
++    case schemaMismatch
++}
++
++struct SkillInstallerPackageStatus: Equatable {
++    let package: SkillInstallerPackage
++    let target: SkillInstallerTarget
++    let destinationDir: URL
++    let state: SkillInstallerState
++    let record: SkillInstallerRecord?
++    let sourceContentHash: String
++}
++
++struct SkillInstallerApplyResult: Equatable {
++    let target: SkillInstallerTarget
++    let installed: [String]
++    let refreshed: [String]
++    let skipped: [String]
++    let destDir: URL
++}
++
++struct SkillInstallerRemoveResult: Equatable {
++    let target: SkillInstallerTarget
++    let removed: [String]
++    let skipped: [String]
++    let destDir: URL
++}
++
++struct SkillInstallerError: Error {
++    enum Code: String {
++        case noSourceFound
++        case sourceNotReadable
++        case targetNotDetected
++        case destUnwritable
++        case copyFailed
++        case manifestMalformed
++    }
++    let code: Code
++    let message: String
++}
++
++// MARK: - SkillInstaller namespace
++
++enum SkillInstaller {
++    static let manifestFilename = ".c11mux-skill.json"
++
++    // MARK: Source discovery
++
++    /// Locate the bundled `skills/` directory. Tries (in order):
++    ///   1) adjacent to the executable's `Contents/Resources/skills/` (shipped .app)
++    ///   2) walking up from the executable to find `<repo>/skills/` (dev)
++    ///   3) `CMUX_SKILLS_SOURCE` env var as an explicit override
++    static func defaultSourceURL(
++        executableURL: URL?,
++        env: [String: String] = ProcessInfo.processInfo.environment,
++        fileManager: FileManager = .default
++    ) -> URL? {
++        if let override = env["CMUX_SKILLS_SOURCE"], !override.isEmpty {
++            let url = URL(fileURLWithPath: (override as NSString).expandingTildeInPath, isDirectory: true)
++            if fileManager.fileExists(atPath: url.path) {
++                return url.standardizedFileURL
++            }
++        }
++
++        guard let executableURL else { return nil }
++        var current = executableURL.deletingLastPathComponent().standardizedFileURL
++        while true {
++            if current.lastPathComponent == "Contents" {
++                let bundled = current
++                    .appendingPathComponent("Resources", isDirectory: true)
++                    .appendingPathComponent("skills", isDirectory: true)
++                if fileManager.fileExists(atPath: bundled.path) {
++                    return bundled.standardizedFileURL
++                }
++            }
++
++            let projectMarker = current.appendingPathComponent("GhosttyTabs.xcodeproj/project.pbxproj", isDirectory: false)
++            let repoSkills = current.appendingPathComponent("skills", isDirectory: true)
++            if fileManager.fileExists(atPath: projectMarker.path),
++               fileManager.fileExists(atPath: repoSkills.path) {
++                return repoSkills.standardizedFileURL
++            }
++
++            let parent = current.deletingLastPathComponent().standardizedFileURL
++            if parent.path == current.path { break }
++            current = parent
++        }
++        return nil
++    }
++
++    /// Each direct child of `sourceDir` that contains a `SKILL.md` is a skill
++    /// candidate. If `sourceDir/MANIFEST.json` declares an `installable` list,
++    /// that list filters the candidates (so maintainer-only skills like
++    /// `release` are not pushed to user machines). Packages are returned in
++    /// stable alphabetical order.
++    static func discoverPackages(
++        sourceDir: URL,
++        fileManager: FileManager = .default
++    ) throws -> [SkillInstallerPackage] {
++        var isDir: ObjCBool = false
++        guard fileManager.fileExists(atPath: sourceDir.path, isDirectory: &isDir), isDir.boolValue else {
++            throw SkillInstallerError(
++                code: .noSourceFound,
++                message: "Bundled skills directory not found at \(sourceDir.path)."
++            )
++        }
++        let children: [URL]
++        do {
++            children = try fileManager.contentsOfDirectory(
++                at: sourceDir,
++                includingPropertiesForKeys: [.isDirectoryKey],
++                options: [.skipsHiddenFiles]
++            )
++        } catch {
++            throw SkillInstallerError(
++                code: .sourceNotReadable,
++                message: "Cannot enumerate skills source: \(error.localizedDescription)"
++            )
++        }
++
++        let allowlist: Set<String>? = readInstallableAllowlist(sourceDir: sourceDir, fileManager: fileManager)
++
++        let packages: [SkillInstallerPackage] = children.compactMap { url in
++            var childIsDir: ObjCBool = false
++            guard fileManager.fileExists(atPath: url.path, isDirectory: &childIsDir), childIsDir.boolValue else {
++                return nil
++            }
++            let skillMd = url.appendingPathComponent("SKILL.md", isDirectory: false)
++            guard fileManager.fileExists(atPath: skillMd.path) else { return nil }
++            let name = url.lastPathComponent
++            if let allowlist, !allowlist.contains(name) { return nil }
++            return SkillInstallerPackage(name: name, sourceDir: url.standardizedFileURL)
++        }
++        return packages.sorted { $0.name < $1.name }
++    }
++
++    private static func readInstallableAllowlist(
++        sourceDir: URL,
++        fileManager: FileManager
++    ) -> Set<String>? {
++        let manifest = sourceDir.appendingPathComponent("MANIFEST.json", isDirectory: false)
++        guard fileManager.fileExists(atPath: manifest.path),
++              let data = try? Data(contentsOf: manifest),
++              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
++              let list = obj["installable"] as? [String] else {
++            return nil
++        }
++        return Set(list)
++    }
++
++    // MARK: Hashing
++
++    /// Deterministic SHA-256 over a directory: hashes the sorted list of
++    /// (relative path + `\0` + file bytes + `\0`) for every file under `dir`.
++    /// Skips dotfiles so the installer's own manifest file doesn't perturb the hash.
++    static func contentHash(
++        of dir: URL,
++        fileManager: FileManager = .default
++    ) throws -> String {
++        let base = dir.standardizedFileURL
++        let basePath = base.path
++        guard let enumerator = fileManager.enumerator(
++            at: base,
++            includingPropertiesForKeys: [.isRegularFileKey],
++            options: []
++        ) else {
++            throw SkillInstallerError(
++                code: .sourceNotReadable,
++                message: "Cannot enumerate directory: \(base.path)"
++            )
++        }
++        var entries: [(rel: String, absolute: URL)] = []
++        for case let fileURL as URL in enumerator {
++            let resolved = fileURL.standardizedFileURL
++            let rel = String(resolved.path.dropFirst(basePath.count).drop(while: { $0 == "/" }))
++            if rel.hasPrefix(".") || rel.contains("/.") { continue }
++            let values = try resolved.resourceValues(forKeys: [.isRegularFileKey])
++            guard values.isRegularFile == true else { continue }
++            entries.append((rel, resolved))
++        }
++        entries.sort { $0.rel < $1.rel }
++
++        var hasher = SHA256()
++        for entry in entries {
++            if let relData = entry.rel.data(using: .utf8) {
++                hasher.update(data: relData)
++            }
++            hasher.update(data: Data([0]))
++            let data = try Data(contentsOf: entry.absolute)
++            hasher.update(data: data)
++            hasher.update(data: Data([0]))
++        }
++        let digest = hasher.finalize()
++        return "sha256:" + digest.map { String(format: "%02x", $0) }.joined()
++    }
++
++    // MARK: Status
++
++    static func status(
++        for target: SkillInstallerTarget,
++        home: URL,
++        sourceDir: URL,
++        fileManager: FileManager = .default
++    ) throws -> [SkillInstallerPackageStatus] {
++        let packages = try discoverPackages(sourceDir: sourceDir, fileManager: fileManager)
++        let destRoot = target.skillsDir(home: home)
++        return try packages.map { package in
++            let destDir = destRoot.appendingPathComponent(package.name, isDirectory: true)
++            let sourceHash = try contentHash(of: package.sourceDir, fileManager: fileManager)
++            let manifest = destDir.appendingPathComponent(manifestFilename, isDirectory: false)
++            var destExists: ObjCBool = false
++            let destPresent = fileManager.fileExists(atPath: destDir.path, isDirectory: &destExists) && destExists.boolValue
++            let manifestPresent = fileManager.fileExists(atPath: manifest.path)
++
++            if !destPresent {
++                return SkillInstallerPackageStatus(
++                    package: package,
++                    target: target,
++                    destinationDir: destDir,
++                    state: .notInstalled,
++                    record: nil,
++                    sourceContentHash: sourceHash
++                )
++            }
++            if !manifestPresent {
++                return SkillInstallerPackageStatus(
++                    package: package,
++                    target: target,
++                    destinationDir: destDir,
++                    state: .installedNoManifest,
++                    record: nil,
++                    sourceContentHash: sourceHash
++                )
++            }
++            let record: SkillInstallerRecord
++            do {
++                let data = try Data(contentsOf: manifest)
++                record = try JSONDecoder().decode(SkillInstallerRecord.self, from: data)
++            } catch {
++                return SkillInstallerPackageStatus(
++                    package: package,
++                    target: target,
++                    destinationDir: destDir,
++                    state: .installedNoManifest,
++                    record: nil,
++                    sourceContentHash: sourceHash
++                )
++            }
++            if record.schema != SkillInstallerRecord.schemaVersion {
++                return SkillInstallerPackageStatus(
++                    package: package,
++                    target: target,
++                    destinationDir: destDir,
++                    state: .schemaMismatch,
++                    record: record,
++                    sourceContentHash: sourceHash
++                )
++            }
++            let state: SkillInstallerState = (record.sourceContentHash == sourceHash)
++                ? .installedCurrent : .installedOutdated
++            return SkillInstallerPackageStatus(
++                package: package,
++                target: target,
++                destinationDir: destDir,
++                state: state,
++                record: record,
++                sourceContentHash: sourceHash
++            )
++        }
++    }
++
++    // MARK: Install
++
++    struct AppIdentity {
++        let version: String
++        let build: String
++        let commitShort: String
++
++        static var current: AppIdentity {
++            let info = Bundle.main.infoDictionary ?? [:]
++            let version = (info["CFBundleShortVersionString"] as? String) ?? "0.0.0"
++            let build = (info["CFBundleVersion"] as? String) ?? "0"
++            let commit = (info["CMUXCommit"] as? String) ?? ""
++            return AppIdentity(version: version, build: build, commitShort: commit)
++        }
++    }
++
++    /// Copy every bundled package into `<home>/.<target>/skills/<package>/`, writing
++    /// a manifest per package. Idempotent: packages whose source hash matches the
++    /// manifest are skipped unless `force` is true.
++    static func install(
++        target: SkillInstallerTarget,
++        home: URL,
++        sourceDir: URL,
++        force: Bool,
++        appIdentity: AppIdentity = .current,
++        now: () -> Date = Date.init,
++        fileManager: FileManager = .default
++    ) throws -> SkillInstallerApplyResult {
++        let statuses = try status(for: target, home: home, sourceDir: sourceDir, fileManager: fileManager)
++        let destRoot = target.skillsDir(home: home)
++        do {
++            try fileManager.createDirectory(at: destRoot, withIntermediateDirectories: true)
++        } catch {
++            throw SkillInstallerError(
++                code: .destUnwritable,
++                message: "Cannot create \(destRoot.path): \(error.localizedDescription)"
++            )
++        }
++
++        let isoFormatter = ISO8601DateFormatter()
++        isoFormatter.formatOptions = [.withInternetDateTime]
++        let timestamp = isoFormatter.string(from: now())
++
++        var installed: [String] = []
++        var refreshed: [String] = []
++        var skipped: [String] = []
++
++        for st in statuses {
++            let dest = st.destinationDir
++            let isUpToDate = (st.state == .installedCurrent)
++            if isUpToDate && !force {
++                skipped.append(st.package.name)
++                continue
++            }
++
++            // Remove any prior copy to avoid leaving orphaned files behind.
++            if fileManager.fileExists(atPath: dest.path) {
++                do {
++                    try fileManager.removeItem(at: dest)
++                } catch {
++                    throw SkillInstallerError(
++                        code: .copyFailed,
++                        message: "Cannot remove existing \(dest.path): \(error.localizedDescription)"
++                    )
++                }
++            }
++            do {
++                try fileManager.copyItem(at: st.package.sourceDir, to: dest)
++            } catch {
++                throw SkillInstallerError(
++                    code: .copyFailed,
++                    message: "Cannot copy \(st.package.name) to \(dest.path): \(error.localizedDescription)"
++                )
++            }
++
++            let record = SkillInstallerRecord(
++                schema: SkillInstallerRecord.schemaVersion,
++                packageName: st.package.name,
++                installedAt: timestamp,
++                appVersion: appIdentity.version,
++                appBuild: appIdentity.build,
++                commitShort: appIdentity.commitShort,
++                sourceContentHash: st.sourceContentHash
++            )
++            let encoder = JSONEncoder()
++            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
++            let data = try encoder.encode(record)
++            try data.write(to: dest.appendingPathComponent(manifestFilename, isDirectory: false), options: .atomic)
++
++            switch st.state {
++            case .notInstalled:
++                installed.append(st.package.name)
++            case .installedCurrent, .installedOutdated, .installedNoManifest, .schemaMismatch:
++                refreshed.append(st.package.name)
++            }
++        }
++
++        return SkillInstallerApplyResult(
++            target: target,
++            installed: installed,
++            refreshed: refreshed,
++            skipped: skipped,
++            destDir: destRoot
++        )
++    }
++
++    // MARK: Remove
++
++    /// Remove c11mux-installed skill packages from a target. Only removes a
++    /// package dir if its `.c11mux-skill.json` manifest is present — protects
++    /// directories the user created themselves.
++    static func remove(
++        target: SkillInstallerTarget,
++        home: URL,
++        sourceDir: URL,
++        fileManager: FileManager = .default
++    ) throws -> SkillInstallerRemoveResult {
++        let packages = try discoverPackages(sourceDir: sourceDir, fileManager: fileManager)
++        let destRoot = target.skillsDir(home: home)
++        var removed: [String] = []
++        var skipped: [String] = []
++
++        for pkg in packages {
++            let dest = destRoot.appendingPathComponent(pkg.name, isDirectory: true)
++            let manifest = dest.appendingPathComponent(manifestFilename, isDirectory: false)
++            guard fileManager.fileExists(atPath: dest.path) else {
++                skipped.append(pkg.name)
++                continue
++            }
++            guard fileManager.fileExists(atPath: manifest.path) else {
++                // User-owned; don't touch.
++                skipped.append(pkg.name)
++                continue
++            }
++            do {
++                try fileManager.removeItem(at: dest)
++            } catch {
++                throw SkillInstallerError(
++                    code: .copyFailed,
++                    message: "Cannot remove \(dest.path): \(error.localizedDescription)"
++                )
++            }
++            removed.append(pkg.name)
++        }
++        return SkillInstallerRemoveResult(
++            target: target,
++            removed: removed,
++            skipped: skipped,
++            destDir: destRoot
++        )
++    }
++}
+diff --git a/Sources/cmuxApp.swift b/Sources/cmuxApp.swift
+index ecb02251..70cd82e9 100644
+--- a/Sources/cmuxApp.swift
++++ b/Sources/cmuxApp.swift
+@@ -5825,6 +5825,15 @@ struct SettingsView: View {
+                         .padding(.leading, 2)
+                         .accessibilityIdentifier("ShortcutRecordingHint")
+ 
++                    SettingsSectionHeader(title: String(localized: "settings.section.agentSkills", defaultValue: "Agent Skills"))
++                    SettingsCard {
++                        AgentSkillsSettingsSection()
++                    }
++                    SettingsCardNote(String(
++                        localized: "settings.agentSkills.note",
++                        defaultValue: "c11mux installs its skill file into Claude Code (~/.claude/skills) on request. For other agents, c11mux copies a ready-to-paste command — the operator runs it."
++                    ))
++
+                     SettingsSectionHeader(title: String(localized: "settings.section.reset", defaultValue: "Reset"))
+                     SettingsCard {
+                         HStack {
+diff --git a/docs/c11mux-snapshot-restore-plan.md b/docs/c11mux-snapshot-restore-plan.md
+new file mode 100644
+index 00000000..d8986dd7
+--- /dev/null
++++ b/docs/c11mux-snapshot-restore-plan.md
+@@ -0,0 +1,224 @@
++# c11mux snapshot & restore
++
++**Status:** plan
++**Ticket:** CMUX-37
++**Author:** @atin
++**Date:** 2026-04-20
++
++## Goal
++
++Capture a c11mux workspace's full spatial layout and per-surface state to a JSON file, and rebuild it later — including **bit-exact resume of Claude Code sessions** via `cc --resume <session-id>`.
++
++The killer capability is the Claude piece: `claude --resume <id>` rehydrates an entire session with full context and history. Nobody uses it because nobody keeps track of the IDs. Pairing it with a layout snapshot turns "I'll come back to this tomorrow" into `cmux restore morning-work`.
++
++## Prior art
++
++Third-party `sanghun0724/cmux-claude-skills` ships `cmux-snapshot` / `cmux-restore` Python scripts (~450 LOC). We're not adopting them directly. Three fragilities to avoid:
++
++1. Reads c11mux's private session file (`~/Library/Application Support/cmux/...json`) — undocumented, drift-prone. We use `cmux tree --all --json`.
++2. Detects Claude surfaces by spinner chars (`✳⠂⠐`) in the title. We use the manifest (`terminal_type == claude-code`).
++3. Matches session IDs via fuzzy title scoring over `~/.claude/projects/*/sessions-index.json`. We use a SessionStart hook that writes the ID directly to the surface manifest.
++
++Their idea is right; the implementation is heuristic-heavy. Ours is manifest-driven.
++
++## Principle check
++
++Fits **"unopinionated about the terminal"** as sharpened on 2026-04-20:
++
++- Reads only c11mux's own data (`cmux tree`, manifests) and writes only to its own data dir (`~/.cmux-snapshots/`).
++- The only outbound action is `cmux send "cc --resume <id>\n"` — indistinguishable from sending any other string into a terminal. No touching `~/.claude/settings.json`, no hook installation.
++- The SessionStart hook that writes `claude.session_id` is **operator-installed, skill-documented**. c11mux does not install the hook. Matches the "skill-driven self-reporting is the standard pattern" rule.
++
++## Verified preconditions
++
++- **`cc --resume <id>` works.** `cc` is a shell alias expanding to `claude --model opus --dangerously-skip-permissions`; extra flags pass straight through. `claude -r, --resume [value]` takes an optional session ID.
++- **SessionStart hook receives `session_id` on stdin JSON** (along with `source`, `cwd`, `model`). Mechanism confirmed via Claude Code hooks docs.
++- **`terminal_type` is already being written to the surface manifest** for live Claude sessions inside c11mux. Half the plumbing exists today.
++
++## Architecture
++
++### New `cmux` subcommands
++
++```
++cmux snapshot [name]             # default: "latest"
++cmux restore  [name]             # default: "latest"
++cmux list-snapshots
++```
++
++Scope is **single workspace by default** (the caller's). Flags:
++
++- `--workspace <ref>` — snapshot a different workspace.
++- `--all` — snapshot every workspace in every window. Heavy; explicit opt-in.
++- `--out <path>` — override default snapshot directory.
++
++### Snapshot JSON schema (v1)
++
++`cmux tree --json` flattens panes into an array; each pane carries a `split_path` breadcrumb (e.g. `["H:left", "H:left"]`) plus pixel/percent rects. **No nested split tree.** The snapshot mirrors this shape:
++
++```json
++{
++  "version": 1,
++  "captured_at": "2026-04-20T14:30:00Z",
++  "name": "morning-work",
++  "workspaces": [
++    {
++      "title": "cmux-41",
++      "cwd": "/Users/atin/Projects/Stage11/code/cmux",
++      "content_area": { "pixels": { "width": 2808, "height": 1629 } },
++      "panes": [
++        {
++          "ref_at_capture": "pane:7",
++          "split_path": ["H:left", "H:left"],
++          "percent": { "H": [0, 0.275], "V": [0, 1] },
++          "surfaces": [
++            {
++              "type": "terminal",
++              "index_in_pane": 0,
++              "title": "Claude :: CMUX-41 impl",
++              "description": "Implementing snapshot/restore...",
++              "cwd": "/Users/atin/Projects/Stage11/code/cmux",
++              "terminal_type": "claude-code",
++              "model": "claude-opus-4-7",
++              "manifest": { "claude.session_id": "abc123...", ... }
++            }
++          ]
++        }
++      ]
++    }
++  ]
++}
++```
++
++- `split_path` drives reconstruction. `H:left` / `H:right` = horizontal split, take left/right child. `V:top` / `V:bottom` = vertical split.
++- `percent` is captured for post-rebuild `resize-pane` correction.
++- `manifest` is fetched per-surface via `cmux get-metadata --surface <ref>` at snapshot time (not present in `cmux tree` output).
++- `ref_at_capture` is informational only — refs are regenerated on restore.
++
++### Known-type restart registry
++
++A small table inside the `cmux restore` implementation decides what command to send per `terminal_type`:
++
++| terminal_type | With session ID                  | Without           |
++|---------------|----------------------------------|-------------------|
++| `claude-code` | `cc --resume <claude.session_id>` | `cc`              |
++| `codex`       | (TBD — pending codex resume API) | `codex`           |
++| `kimi`        | (TBD)                            | `kimi`            |
++| *unknown*     | —                                | leave empty       |
++
++Extensible: new agent types add a row. No c11mux-side code change needed to **capture** a new agent's session ID — the manifest is free-form. Code change needed only to **restore** it.
++
++### The SessionStart hook (skill-side, opt-in)
++
++Operator installs this in `~/.claude/settings.json`:
++
++```json
++{
++  "hooks": {
++    "SessionStart": [{
++      "hooks": [{
++        "type": "command",
++        "command": "[ \"$CMUX_SHELL_INTEGRATION\" = \"1\" ] && jq -r '.session_id' | xargs -I{} cmux set-metadata --key claude.session_id --value {} 2>/dev/null || true"
++      }]
++    }]
++  }
++}
++```
++
++- Fires on every session boot (`source` = `startup | resume | clear | compact`).
++- Reads `session_id` from Claude Code's stdin JSON payload.
++- `CMUX_SURFACE_ID` is inherited from the parent c11mux shell, so `cmux set-metadata` without flags targets the right surface.
++- `|| true` — hook failures never break sessions.
++- The `$CMUX_SHELL_INTEGRATION` guard makes it a no-op outside c11mux.
++
++Documented in the `cmux` skill under a new "Session resume" section.
++
++## Restore algorithm
++
++### Tree reconstruction from split_path breadcrumbs
++
++Given a flat list of panes with paths like `["H:left", "H:left"]`, `["H:left", "H:right"]`, `["H:right"]`:
++
++```
++build_tree(panes):
++    root = {}
++    for p in panes:
++        node = root
++        for segment in p.split_path:
++            kind, side = segment.split(":")   # "H", "left"
++            node.setdefault("kind", kind)
++            child_key = side                  # "left"|"right"|"top"|"bottom"
++            node = node.setdefault(child_key, {})
++        node["leaf"] = p
++    return root
++
++restore_tree(node, ws_ref, parent_pane_ref, parent_surf_ref):
++    if "leaf" in node:
++        configure(parent_surf_ref, node["leaf"].surfaces[0])
++        for extra in node["leaf"].surfaces[1:]:
++            new_surf = cmux new-surface --pane parent_pane_ref
++            configure(new_surf, extra)
++        return
++
++    direction = "right" if node["kind"] == "H" else "down"
++    first_key, second_key = ("left","right") if node["kind"]=="H" else ("top","bottom")
++
++    before = list-panes(ws_ref)
++    cmux new-split direction --surface parent_surf_ref
++    after = list-panes(ws_ref)
++    new_pane = (after - before).single()
++    new_surf = first_surface_of(new_pane)
++
++    restore_tree(node[first_key],  ws_ref, parent_pane_ref, parent_surf_ref)
++    restore_tree(node[second_key], ws_ref, new_pane,        new_surf)
++
++configure(surf_ref, surface_data):
++    cmux set-metadata --surface surf_ref --json <manifest>
++    cmux set-title       --surface surf_ref <title>
++    cmux set-description --surface surf_ref <description>
++    cmux send --surface surf_ref "cd <cwd>\n"
++    cmd = restart_command(terminal_type, manifest)
++    if cmd: cmux send --surface surf_ref "<cmd>\n"
++```
++
++After full rebuild, walk the pane list once more and `resize-pane` any pane whose actual `percent` rect diverges from the snapshot by more than ~2%.
++
++### Edge cases
++
++- **`new-split` doesn't return the new pane ref.** Use the list-diff trick (documented in the cmux skill).
++- **Split ratios drift.** Apply `resize-pane` corrections after the tree is fully rebuilt, not during recursion.
++- **Session file missing.** If `~/.claude/projects/<key>/<session-id>.jsonl` no longer exists, `cc --resume <id>` fails. Detect by checking the file before sending the command; fall back to `cc` (fresh session) and emit a warning.
++- **Multi-cc in one workspace.** Each surface gets its own restart command dispatched directly — no ready-state polling, so the existing multi-cc gotcha doesn't apply.
++- **Browser / markdown surfaces.** Restore as `cmux new-pane --type browser --url ...` / `--type markdown --file ...`. No session-resume concept, just recreate.
++- **Non-cc agents without a session ID.** Launch the bare binary (`codex`, `kimi`). Fresh session, CWD preserved.
++
++## Open questions
++
++1. **Surface CWD exposure.** `cmux tree --json` does **not** include per-surface working directory. Options:
++   - (a) Add `working_directory` to `cmux tree` surface output.
++   - (b) Have the SessionStart hook write `$PWD` as `cwd` in the manifest (two `set-metadata` calls, trivial).
++   - (c) Add a small socket command `cmux get-cwd --surface <ref>`.
++   
++   Lean: **(b)**. Keeps c11mux's surface of concern narrow; operator-controlled via the same hook that's already opt-in.
++
++2. **Pane-layer manifests.** The pane layer carries its own metadata (CMUX-11). Snapshot schema should include `pane.manifest` per pane entry for symmetry. Add in Phase 1.
++
++3. **Snapshot versioning.** Start with `version: 1`. First schema change gets a migration function in `cmux restore`.
++
++4. **Auto-snapshot cadence.** Periodic snapshots via c11mux itself? Probably not — that's operator policy, best done via a cron or a `Stop` hook the operator installs.
++
++## Implementation phases
++
++**Phase 1 — primitives.** `cmux snapshot`, `cmux restore`, `cmux list-snapshots` subcommands. Terminal-only surfaces. Claude resume via session ID. Single workspace. Resolve open question (1) by going with option (b).
++
++**Phase 2 — full surface coverage.** Browser and markdown surfaces. `--all` flag for multi-workspace snapshots.
++
++**Phase 3 — skill docs + hook.** Add "Session resume" section to `~/.claude/skills/cmux/SKILL.md` with the SessionStart hook snippet (both `claude.session_id` and `cwd`). Update `references/metadata.md` to document `claude.session_id` as a non-canonical convention.
++
++**Phase 4 — resume registry.** Add codex / kimi / opencode rows when their resume APIs stabilize. Driven by user demand.
++
++## Related tickets
++
++- **CMUX-4** — Claude session index (opt-in). Overlaps; this plan supersedes the "manual index" idea with a SessionStart-hook-driven manifest write.
++- **CMUX-5** — Recovery UI. Natural follow-on: surface snapshots in a picker instead of requiring CLI invocation.
++- **CMUX-11** — Nameable panes + pane metadata. Snapshot schema should preserve pane-layer metadata.
++- **CMUX-14** — Lineage primitive on the surface manifest. Restore preserves `::` chains verbatim via the manifest blob.
+diff --git a/skills/MANIFEST.json b/skills/MANIFEST.json
+new file mode 100644
+index 00000000..7c66a0b6
+--- /dev/null
++++ b/skills/MANIFEST.json
+@@ -0,0 +1,9 @@
++{
++  "c11mux_skill_manifest_schema": 1,
++  "installable": [
++    "cmux",
++    "cmux-browser",
++    "cmux-markdown",
++    "cmux-debug-windows"
++  ]
++}

@@ -1010,11 +1010,11 @@ final class SocketClient {
         }
 
         guard let watchDirectory = existingWatchDirectory(forPath: path) else {
-            throw CLIError(message: "cmux app did not start in time (socket not found at \(path))")
+            throw CLIError(message: "c11 app did not start in time (socket not found at \(path))")
         }
         let watchFD = open(watchDirectory, O_EVTONLY)
         guard watchFD >= 0 else {
-            throw CLIError(message: "cmux app did not start in time (socket not found at \(path))")
+            throw CLIError(message: "c11 app did not start in time (socket not found at \(path))")
         }
 
         let queue = DispatchQueue(label: "com.stage11.c11.cli.socket-watch.\(UUID().uuidString)")
@@ -1048,7 +1048,7 @@ final class SocketClient {
         guard semaphore.wait(timeout: .now() + timeout) == .success else {
             source.cancel()
             client.close()
-            throw CLIError(message: "cmux app did not start in time (socket not found at \(path))")
+            throw CLIError(message: "c11 app did not start in time (socket not found at \(path))")
         }
 
         source.cancel()
@@ -1432,7 +1432,7 @@ struct CMUXCLI {
             if dispatchSubcommandHelp(command: command, commandArgs: commandArgs) {
                 return
             }
-            print("Unknown command '\(command)'. Run 'cmux help' to see available commands.")
+            print("Unknown command '\(command)'. Run 'c11 help' to see available commands.")
             return
         }
 
@@ -2596,31 +2596,31 @@ struct CMUXCLI {
             if let first = args.first, first.hasPrefix("-") {
                 throw CLIError(
                     message:
-                        "markdown open: unknown flag '\(first)'. Usage: cmux markdown open <path> [--workspace <id|ref|index>] [--surface <id|ref|index>] [--window <id|ref|index>]"
+                        "markdown open: unknown flag '\(first)'. Usage: c11 markdown open <path> [--workspace <id|ref|index>] [--surface <id|ref|index>] [--window <id|ref|index>]"
                 )
             } else if let first = args.first, looksLikePath(first) || first.contains(".") {
                 subArgs = args
             } else if let first = args.first {
-                throw CLIError(message: "Unknown markdown subcommand: \(first). Usage: cmux markdown open <path>")
+                throw CLIError(message: "Unknown markdown subcommand: \(first). Usage: c11 markdown open <path>")
             } else {
                 subArgs = []
             }
         }
 
         guard let rawPath = subArgs.first, !rawPath.isEmpty else {
-            throw CLIError(message: "markdown open requires a file path. Usage: cmux markdown open <path>")
+            throw CLIError(message: "markdown open requires a file path. Usage: c11 markdown open <path>")
         }
         let trailingArgs = Array(subArgs.dropFirst())
         if let unknownFlag = trailingArgs.first(where: { $0.hasPrefix("-") }) {
             throw CLIError(
                 message:
-                    "markdown open: unknown flag '\(unknownFlag)'. Usage: cmux markdown open <path> [--workspace <id|ref|index>] [--surface <id|ref|index>] [--window <id|ref|index>]"
+                    "markdown open: unknown flag '\(unknownFlag)'. Usage: c11 markdown open <path> [--workspace <id|ref|index>] [--surface <id|ref|index>] [--window <id|ref|index>]"
             )
         }
         if let extraArg = trailingArgs.first {
             throw CLIError(
                 message:
-                    "markdown open: unexpected argument '\(extraArg)'. Usage: cmux markdown open <path> [--workspace <id|ref|index>] [--surface <id|ref|index>] [--window <id|ref|index>]"
+                    "markdown open: unexpected argument '\(extraArg)'. Usage: c11 markdown open <path> [--workspace <id|ref|index>] [--surface <id|ref|index>] [--window <id|ref|index>]"
             )
         }
 
@@ -2887,7 +2887,7 @@ struct CMUXCLI {
     private func launchApp() throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        process.arguments = ["-a", "cmux"]
+        process.arguments = ["-a", "c11"]
         try process.run()
         process.waitUntilExit()
     }
@@ -2895,7 +2895,7 @@ struct CMUXCLI {
     private func activateApp() throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        process.arguments = ["-a", "cmux"]
+        process.arguments = ["-a", "c11"]
         try process.run()
         process.waitUntilExit()
     }
@@ -3799,7 +3799,7 @@ struct CMUXCLI {
         }
 
         if key == "title" && value.isEmpty {
-            throw CLIError(message: "missing_title: \(commandName) requires a non-empty title (or --from-file <path>). To clear: cmux clear-metadata --key title")
+            throw CLIError(message: "missing_title: \(commandName) requires a non-empty title (or --from-file <path>). To clear: c11 clear-metadata --key title")
         }
 
         let surfaceRaw = surfaceOpt ?? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
@@ -4187,7 +4187,7 @@ struct CMUXCLI {
         }
 
         guard let destination else {
-            throw CLIError(message: "ssh requires a destination (example: cmux ssh user@host)")
+            throw CLIError(message: "ssh requires a destination (example: c11 ssh user@host)")
         }
         return SSHCommandOptions(
             destination: destination,
@@ -4545,6 +4545,10 @@ struct CMUXCLI {
             "&& [ -n \"${CMUX_WORKSPACE_ID:-}\" ]",
             "&& [ -n \"${CMUX_SURFACE_ID:-}\" ]; then",
             "\"${CMUX_BUNDLED_CLI_PATH}\" --socket \"${CMUX_SOCKET_PATH}\" ssh-session-end --relay-port \(remoteRelayPort) --workspace \"${CMUX_WORKSPACE_ID}\" --surface \"${CMUX_SURFACE_ID}\" >/dev/null 2>&1 || true;",
+            "elif command -v c11 >/dev/null 2>&1",
+            "&& [ -n \"${CMUX_WORKSPACE_ID:-}\" ]",
+            "&& [ -n \"${CMUX_SURFACE_ID:-}\" ]; then",
+            "c11 ssh-session-end --relay-port \(remoteRelayPort) --workspace \"${CMUX_WORKSPACE_ID}\" --surface \"${CMUX_SURFACE_ID}\" >/dev/null 2>&1 || true;",
             "elif command -v cmux >/dev/null 2>&1",
             "&& [ -n \"${CMUX_WORKSPACE_ID:-}\" ]",
             "&& [ -n \"${CMUX_SURFACE_ID:-}\" ]; then",
@@ -4939,7 +4943,7 @@ struct CMUXCLI {
                 lines.append("ready_state: \(readyState)")
             }
             if url.isEmpty || url == "about:blank" {
-                lines.append("hint: run 'cmux browser <surface> get url' to verify navigation")
+                lines.append("hint: run 'c11 browser <surface> get url' to verify navigation")
             }
 
             return lines.joined(separator: "\n")
@@ -6278,39 +6282,39 @@ struct CMUXCLI {
         switch command {
         case "ping":
             return """
-            Usage: cmux ping
+            Usage: c11 ping
 
-            Check connectivity to the cmux socket server.
+            Check connectivity to the c11 socket server.
             """
         case "capabilities":
             return """
-            Usage: cmux capabilities
+            Usage: c11 capabilities
 
             Print server capabilities as JSON.
             """
         case "help":
             return """
-            Usage: cmux help
+            Usage: c11 help
 
             Show top-level CLI usage and command list.
             """
         case "welcome":
             return """
-            Usage: cmux welcome
+            Usage: c11 welcome
 
-            Show a welcome screen with the cmux logo and useful shortcuts.
+            Show a welcome screen with the c11 logo and useful shortcuts.
             Auto-runs once on first launch.
             """
         case "shortcuts":
             return """
-            Usage: cmux shortcuts
+            Usage: c11 shortcuts
 
             Open the Settings window to Keyboard Shortcuts.
             """
         case "feedback":
             return """
-            Usage: cmux feedback
-                   cmux feedback --email <email> --body <text> [--image <path> ...]
+            Usage: c11 feedback
+                   c11 feedback --email <email> --body <text> [--image <path> ...]
 
             Without args, open the Send Feedback modal in the running app.
 
@@ -6327,17 +6331,17 @@ struct CMUXCLI {
             """
         case "themes":
             return """
-            Usage: cmux themes
-                   cmux themes list
-                   cmux themes set <theme>
-                   cmux themes set --light <theme> [--dark <theme>]
-                   cmux themes set --dark <theme> [--light <theme>]
-                   cmux themes clear
+            Usage: c11 themes
+                   c11 themes list
+                   c11 themes set <theme>
+                   c11 themes set --light <theme> [--dark <theme>]
+                   c11 themes set --dark <theme> [--light <theme>]
+                   c11 themes clear
 
-            When run in a TTY, `cmux themes` opens an interactive theme picker with
-            live app preview. Use `cmux themes list` for a plain listing.
+            When run in a TTY, `c11 themes` opens an interactive theme picker with
+            live app preview. Use `c11 themes list` for a plain listing.
 
-            The picker previews the selected theme across the running cmux app and
+            The picker previews the selected theme across the running c11 app and
             lets you apply it to the light theme, dark theme, or both defaults.
 
             Commands:
@@ -6345,39 +6349,39 @@ struct CMUXCLI {
               set <theme>               Set the same theme for both light and dark appearance
               set --light <theme>       Set the light appearance theme
               set --dark <theme>        Set the dark appearance theme
-              clear                     Remove the cmux theme override and fall back to other config
+              clear                     Remove the c11 theme override and fall back to other config
 
             Examples:
-              cmux themes
-              cmux themes list
-              cmux themes set "Catppuccin Mocha"
-              cmux themes set --light "Catppuccin Latte" --dark "Catppuccin Mocha"
-              cmux themes clear
+              c11 themes
+              c11 themes list
+              c11 themes set "Catppuccin Mocha"
+              c11 themes set --light "Catppuccin Latte" --dark "Catppuccin Mocha"
+              c11 themes clear
             """
         case "claude-teams":
             return String(localized: "cli.claude-teams.usage", defaultValue: """
-            Usage: cmux claude-teams [claude-args...]
+            Usage: c11 claude-teams [claude-args...]
 
             Launch Claude Code with agent teams enabled.
 
             This command:
               - defaults Claude teammate mode to auto
-              - sets a tmux-like environment so Claude auto mode uses cmux splits
+              - sets a tmux-like environment so Claude auto mode uses c11 splits
               - sets CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
               - prepends a private tmux shim to PATH
               - forwards all remaining arguments to claude
 
-            The tmux shim translates supported tmux window/pane commands into cmux
-            workspace and split operations in the current cmux session.
+            The tmux shim translates supported tmux window/pane commands into c11
+            workspace and split operations in the current c11 session.
 
             Examples:
-              cmux claude-teams
-              cmux claude-teams --continue
-              cmux claude-teams --model sonnet
+              c11 claude-teams
+              c11 claude-teams --continue
+              c11 claude-teams --model sonnet
             """)
         case "identify":
             return """
-            Usage: cmux identify [--workspace <id|ref|index>] [--surface <id|ref|index>] [--no-caller]
+            Usage: c11 identify [--workspace <id|ref|index>] [--surface <id|ref|index>] [--no-caller]
 
             Print server identity and caller context details.
 
@@ -6388,28 +6392,28 @@ struct CMUXCLI {
             """
         case "list-windows":
             return """
-            Usage: cmux list-windows
+            Usage: c11 list-windows
 
             List open windows.
             """
         case "current-window":
             return """
-            Usage: cmux current-window
+            Usage: c11 current-window
 
             Print the currently selected window ID.
             """
         case "new-window":
             return """
-            Usage: cmux new-window
+            Usage: c11 new-window
 
             Create a new window.
 
             Example:
-              cmux new-window
+              c11 new-window
             """
         case "focus-window":
             return """
-            Usage: cmux focus-window --window <id|ref|index>
+            Usage: c11 focus-window --window <id|ref|index>
 
             Focus (bring to front) the specified window.
 
@@ -6417,12 +6421,12 @@ struct CMUXCLI {
               --window <id|ref|index>   Window to focus (required)
 
             Example:
-              cmux focus-window --window 0
-              cmux focus-window --window window:1
+              c11 focus-window --window 0
+              c11 focus-window --window window:1
             """
         case "close-window":
             return """
-            Usage: cmux close-window --window <id|ref|index>
+            Usage: c11 close-window --window <id|ref|index>
 
             Close the specified window.
 
@@ -6430,12 +6434,12 @@ struct CMUXCLI {
               --window <id|ref|index>   Window to close (required)
 
             Example:
-              cmux close-window --window 0
-              cmux close-window --window window:1
+              c11 close-window --window 0
+              c11 close-window --window window:1
             """
         case "move-workspace-to-window":
             return """
-            Usage: cmux move-workspace-to-window --workspace <id|ref|index> --window <id|ref|index>
+            Usage: c11 move-workspace-to-window --workspace <id|ref|index> --window <id|ref|index>
 
             Move a workspace to a different window.
 
@@ -6444,11 +6448,11 @@ struct CMUXCLI {
               --window <id|ref|index>      Target window (required)
 
             Example:
-              cmux move-workspace-to-window --workspace workspace:2 --window window:1
+              c11 move-workspace-to-window --workspace workspace:2 --window window:1
             """
         case "move-surface":
             return """
-            Usage: cmux move-surface [--surface <id|ref|index> | <id|ref|index>] [flags]
+            Usage: c11 move-surface [--surface <id|ref|index> | <id|ref|index>] [flags]
 
             Move a surface to a different pane, workspace, or window.
 
@@ -6467,12 +6471,12 @@ struct CMUXCLI {
               --focus <true|false>       Focus the surface after moving
 
             Example:
-              cmux move-surface --surface surface:1 --workspace workspace:2
-              cmux move-surface surface:1 --pane pane:2 --index 0
+              c11 move-surface --surface surface:1 --workspace workspace:2
+              c11 move-surface surface:1 --pane pane:2 --index 0
             """
         case "reorder-surface":
             return """
-            Usage: cmux reorder-surface [--surface <id|ref|index> | <id|ref|index>] [flags]
+            Usage: c11 reorder-surface [--surface <id|ref|index> | <id|ref|index>] [flags]
 
             Reorder a surface within its pane.
 
@@ -6488,12 +6492,12 @@ struct CMUXCLI {
               --index <n>                Place at this index
 
             Example:
-              cmux reorder-surface --surface surface:1 --index 0
-              cmux reorder-surface --surface surface:3 --after surface:1
+              c11 reorder-surface --surface surface:1 --index 0
+              c11 reorder-surface --surface surface:3 --after surface:1
             """
         case "reorder-workspace":
             return """
-            Usage: cmux reorder-workspace [--workspace <id|ref|index> | <id|ref|index>] [flags]
+            Usage: c11 reorder-workspace [--workspace <id|ref|index> | <id|ref|index>] [flags]
 
             Reorder a workspace within its window.
 
@@ -6509,12 +6513,12 @@ struct CMUXCLI {
               --window <id|ref|index>      Window context
 
             Example:
-              cmux reorder-workspace --workspace workspace:2 --index 0
-              cmux reorder-workspace --workspace workspace:3 --after workspace:1
+              c11 reorder-workspace --workspace workspace:2 --index 0
+              c11 reorder-workspace --workspace workspace:3 --after workspace:1
             """
         case "workspace-action":
             return """
-            Usage: cmux workspace-action --action <name> [flags]
+            Usage: c11 workspace-action --action <name> [flags]
 
             Perform workspace context-menu actions from CLI/socket.
 
@@ -6531,13 +6535,13 @@ struct CMUXCLI {
               --title <text>               Title for rename (or pass trailing title text)
 
             Example:
-              cmux workspace-action --workspace workspace:2 --action pin
-              cmux workspace-action --action rename --title "infra"
-              cmux workspace-action close-others
+              c11 workspace-action --workspace workspace:2 --action pin
+              c11 workspace-action --action rename --title "infra"
+              c11 workspace-action close-others
             """
         case "tab-action":
             return """
-            Usage: cmux tab-action --action <name> [flags]
+            Usage: c11 tab-action --action <name> [flags]
 
             Perform horizontal tab context-menu actions from CLI/socket.
 
@@ -6558,13 +6562,13 @@ struct CMUXCLI {
               --url <url>                  Optional URL for new-browser-right
 
             Example:
-              cmux tab-action --tab tab:3 --action pin
-              cmux tab-action --action close-right
-              cmux tab-action --tab tab:2 --action rename --title "build logs"
+              c11 tab-action --tab tab:3 --action pin
+              c11 tab-action --action close-right
+              c11 tab-action --tab tab:2 --action rename --title "build logs"
             """
         case "rename-tab":
             return """
-            Usage: cmux rename-tab [--workspace <id|ref>] [--tab <id|ref>] [--surface <id|ref>] [--] <title>
+            Usage: c11 rename-tab [--workspace <id|ref>] [--tab <id|ref>] [--surface <id|ref>] [--] <title>
 
             Compatibility alias for tab-action rename.
 
@@ -6581,15 +6585,15 @@ struct CMUXCLI {
               --title <text>         Explicit title (or use trailing positional title)
 
             Examples:
-              cmux rename-tab "build logs"
-              cmux rename-tab --tab tab:3 "staging server"
-              cmux rename-tab --workspace workspace:2 --surface surface:5 --title "agent run"
+              c11 rename-tab "build logs"
+              c11 rename-tab --tab tab:3 "staging server"
+              c11 rename-tab --workspace workspace:2 --surface surface:5 --title "agent run"
             """
         case "set-title":
             return """
-            Usage: cmux set-title [--surface <ref>] [--workspace <ref>] [--source <src>] <title-text>
-                   cmux set-title [--surface <ref>] [--workspace <ref>] [--source <src>] --from-file <path>
-                   cmux set-title [--surface <ref>] --json
+            Usage: c11 set-title [--surface <ref>] [--workspace <ref>] [--source <src>] <title-text>
+                   c11 set-title [--surface <ref>] [--workspace <ref>] [--source <src>] --from-file <path>
+                   c11 set-title [--surface <ref>] --json
 
             Set the surface's canonical `title` metadata key (M7 + M2).
 
@@ -6603,14 +6607,14 @@ struct CMUXCLI {
             Exit non-zero when precedence gate blocks the write (applied=false).
 
             Examples:
-              cmux set-title "Running smoke tests"
-              cmux set-title --surface surface:3 "build logs"
-              echo "Agent: gemini" | cmux set-title --source declare --from-file -
+              c11 set-title "Running smoke tests"
+              c11 set-title --surface surface:3 "build logs"
+              echo "Agent: gemini" | c11 set-title --source declare --from-file -
             """
         case "set-description":
             return """
-            Usage: cmux set-description [--surface <ref>] [--workspace <ref>] [--source <src>] [--auto-expand=false] <description-text>
-                   cmux set-description [--surface <ref>] [--workspace <ref>] [--source <src>] --from-file <path>
+            Usage: c11 set-description [--surface <ref>] [--workspace <ref>] [--source <src>] [--auto-expand=false] <description-text>
+                   c11 set-description [--surface <ref>] [--workspace <ref>] [--source <src>] --from-file <path>
 
             Set the surface's canonical `description` metadata key (M7 + M2).
 
@@ -6626,12 +6630,12 @@ struct CMUXCLI {
               --json                Emit raw v2 socket result as JSON
 
             Examples:
-              cmux set-description "Running **10 shards** in parallel"
-              cmux set-description --auto-expand=false --from-file ./notes.md
+              c11 set-description "Running **10 shards** in parallel"
+              c11 set-description --auto-expand=false --from-file ./notes.md
             """
         case "get-titlebar-state":
             return """
-            Usage: cmux get-titlebar-state [--surface <ref>] [--workspace <ref>] [--json]
+            Usage: c11 get-titlebar-state [--surface <ref>] [--workspace <ref>] [--json]
 
             Read the title bar's current state for a surface: title, description, sources,
             collapsed flag, visibility flag, and the truncated `sidebar_label` projection.
@@ -6642,11 +6646,11 @@ struct CMUXCLI {
               --json              Emit raw v2 socket result as JSON
 
             Example:
-              cmux get-titlebar-state --json
+              c11 get-titlebar-state --json
             """
         case "new-workspace":
             return """
-            Usage: cmux new-workspace [--cwd <path>] [--command <text>]
+            Usage: c11 new-workspace [--cwd <path>] [--command <text>]
 
             Create a new workspace in the current window.
 
@@ -6655,25 +6659,25 @@ struct CMUXCLI {
               --command <text>   Send text+Enter to the new workspace after creation
 
             Example:
-              cmux new-workspace
-              cmux new-workspace --cwd ~/projects/myapp
-              cmux new-workspace --cwd . --command "npm test"
+              c11 new-workspace
+              c11 new-workspace --cwd ~/projects/myapp
+              c11 new-workspace --cwd . --command "npm test"
             """
         case "list-workspaces":
             return """
-            Usage: cmux list-workspaces
+            Usage: c11 list-workspaces
 
             List workspaces in the current window.
 
             Example:
-              cmux list-workspaces
+              c11 list-workspaces
             """
         case "ssh":
             return """
-            Usage: cmux ssh <destination> [flags] [-- <remote-command-args>]
+            Usage: c11 ssh <destination> [flags] [-- <remote-command-args>]
 
             Create a new workspace, mark it as remote-SSH, and start an SSH session in that workspace.
-            cmux will also establish a local SSH proxy endpoint so browser traffic can egress from the remote host.
+            c11 will also establish a local SSH proxy endpoint so browser traffic can egress from the remote host.
 
             Flags:
               --name <title>          Optional workspace title
@@ -6682,24 +6686,24 @@ struct CMUXCLI {
               --ssh-option <opt>      Extra SSH -o option (repeatable)
 
             Example:
-              cmux ssh dev@my-host
-              cmux ssh dev@my-host --name "gpu-box" --port 2222 --identity ~/.ssh/id_ed25519
-              cmux ssh dev@my-host --ssh-option UserKnownHostsFile=/dev/null --ssh-option StrictHostKeyChecking=no
+              c11 ssh dev@my-host
+              c11 ssh dev@my-host --name "gpu-box" --port 2222 --identity ~/.ssh/id_ed25519
+              c11 ssh dev@my-host --ssh-option UserKnownHostsFile=/dev/null --ssh-option StrictHostKeyChecking=no
             """
         case "remote-daemon-status":
             return """
-            Usage: cmux remote-daemon-status [--os <darwin|linux>] [--arch <arm64|amd64>]
+            Usage: c11 remote-daemon-status [--os <darwin|linux>] [--arch <arm64|amd64>]
 
             Show the embedded c11d-remote release manifest, local cache status, checksum verification state,
             and the GitHub attestation verification command for a target platform.
 
             Example:
-              cmux remote-daemon-status
-              cmux remote-daemon-status --os linux --arch arm64
+              c11 remote-daemon-status
+              c11 remote-daemon-status --os linux --arch arm64
             """
         case "new-split":
             return """
-            Usage: cmux new-split <left|right|up|down> [flags]
+            Usage: c11 new-split <left|right|up|down> [flags]
 
             Split the current pane in the given direction.
 
@@ -6710,13 +6714,13 @@ struct CMUXCLI {
               --title <text>         Seed the new pane's title metadata atomically with creation
 
             Example:
-              cmux new-split right
-              cmux new-split down --workspace workspace:1
-              cmux new-split right --title "Parent :: Code Review"
+              c11 new-split right
+              c11 new-split down --workspace workspace:1
+              c11 new-split right --title "Parent :: Code Review"
             """
         case "list-panes":
             return """
-            Usage: cmux list-panes [--workspace <id|ref>]
+            Usage: c11 list-panes [--workspace <id|ref>]
 
             List panes in a workspace.
 
@@ -6724,12 +6728,12 @@ struct CMUXCLI {
               --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              cmux list-panes
-              cmux list-panes --workspace workspace:2
+              c11 list-panes
+              c11 list-panes --workspace workspace:2
             """
         case "list-pane-surfaces":
             return """
-            Usage: cmux list-pane-surfaces [--workspace <id|ref>] [--pane <id|ref>]
+            Usage: c11 list-pane-surfaces [--workspace <id|ref>] [--pane <id|ref>]
 
             List surfaces in a pane.
 
@@ -6738,12 +6742,12 @@ struct CMUXCLI {
               --pane <id|ref>        Restrict to a specific pane (default: focused pane)
 
             Example:
-              cmux list-pane-surfaces
-              cmux list-pane-surfaces --workspace workspace:2 --pane pane:1
+              c11 list-pane-surfaces
+              c11 list-pane-surfaces --workspace workspace:2 --pane pane:1
             """
         case "tree":
             return """
-            Usage: cmux tree [flags]
+            Usage: c11 tree [flags]
 
             Print the hierarchy of windows, workspaces, panes, and surfaces, with
             spatial coordinates and an ASCII floor plan of the current workspace.
@@ -6769,22 +6773,22 @@ struct CMUXCLI {
               Text mode prints the floor plan (single-workspace scope) followed
               by a box-drawing tree with markers:
               - ◀ active (true focused window/workspace/pane/surface path)
-              - ◀ here (caller surface where `cmux tree` was invoked)
+              - ◀ here (caller surface where `c11 tree` was invoked)
               - workspace [selected]
               - pane [focused] size=W%×H% px=W×H split=H:left|...
               - surface [selected]
               Browser surfaces also include their current URL.
 
             Example:
-              cmux tree
-              cmux tree --window
-              cmux tree --all
-              cmux tree --workspace workspace:2
-              cmux --json tree --all
+              c11 tree
+              c11 tree --window
+              c11 tree --all
+              c11 tree --workspace workspace:2
+              c11 --json tree --all
             """
         case "focus-pane":
             return """
-            Usage: cmux focus-pane [--pane <id|ref> | <id|ref>] [flags]
+            Usage: c11 focus-pane [--pane <id|ref> | <id|ref>] [flags]
 
             Focus the specified pane.
 
@@ -6793,13 +6797,13 @@ struct CMUXCLI {
               --workspace <id|ref>     Workspace context (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              cmux focus-pane --pane pane:2
-              cmux focus-pane pane:1
-              cmux focus-pane --pane pane:1 --workspace workspace:2
+              c11 focus-pane --pane pane:2
+              c11 focus-pane pane:1
+              c11 focus-pane --pane pane:1 --workspace workspace:2
             """
         case "new-pane":
             return """
-            Usage: cmux new-pane [flags]
+            Usage: c11 new-pane [flags]
 
             Create a new pane in the workspace.
 
@@ -6812,14 +6816,14 @@ struct CMUXCLI {
               --title <text>                      Seed the new pane's title metadata atomically with creation
 
             Example:
-              cmux new-pane
-              cmux new-pane --type browser --direction down --url https://example.com
-              cmux new-pane --type markdown --file ~/docs/README.md
-              cmux new-pane --title "Parent :: Code Review"
+              c11 new-pane
+              c11 new-pane --type browser --direction down --url https://example.com
+              c11 new-pane --type markdown --file ~/docs/README.md
+              c11 new-pane --title "Parent :: Code Review"
             """
         case "new-surface":
             return """
-            Usage: cmux new-surface [flags]
+            Usage: c11 new-surface [flags]
 
             Create a new surface (tab) in a pane.
 
@@ -6831,13 +6835,13 @@ struct CMUXCLI {
               --file <path>                       File path for markdown surfaces
 
             Example:
-              cmux new-surface
-              cmux new-surface --type browser --pane pane:1 --url https://example.com
-              cmux new-surface --type markdown --file ~/docs/notes.md
+              c11 new-surface
+              c11 new-surface --type browser --pane pane:1 --url https://example.com
+              c11 new-surface --type markdown --file ~/docs/notes.md
             """
         case "close-surface":
             return """
-            Usage: cmux close-surface [flags]
+            Usage: c11 close-surface [flags]
 
             Close a surface. Defaults to the focused surface if none specified.
 
@@ -6847,12 +6851,12 @@ struct CMUXCLI {
               --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              cmux close-surface
-              cmux close-surface --surface surface:3
+              c11 close-surface
+              c11 close-surface --surface surface:3
             """
         case "drag-surface-to-split":
             return """
-            Usage: cmux drag-surface-to-split --surface <id|ref> <left|right|up|down>
+            Usage: c11 drag-surface-to-split --surface <id|ref> <left|right|up|down>
 
             Drag a surface into a new split in the given direction.
 
@@ -6861,18 +6865,18 @@ struct CMUXCLI {
               --panel <id|ref>     Alias for --surface
 
             Example:
-              cmux drag-surface-to-split --surface surface:1 right
-              cmux drag-surface-to-split --panel surface:2 down
+              c11 drag-surface-to-split --surface surface:1 right
+              c11 drag-surface-to-split --panel surface:2 down
             """
         case "refresh-surfaces":
             return """
-            Usage: cmux refresh-surfaces
+            Usage: c11 refresh-surfaces
 
             Refresh surface snapshots for the focused workspace.
             """
         case "surface-health":
             return """
-            Usage: cmux surface-health [--workspace <id|ref>]
+            Usage: c11 surface-health [--workspace <id|ref>]
 
             List health details for surfaces in a workspace.
 
@@ -6880,19 +6884,19 @@ struct CMUXCLI {
               --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              cmux surface-health
-              cmux surface-health --workspace workspace:2
+              c11 surface-health
+              c11 surface-health --workspace workspace:2
             """
         case "debug-terminals":
             return """
-            Usage: cmux debug-terminals
+            Usage: c11 debug-terminals
 
             Print live Ghostty terminal runtime metadata across all windows and workspaces.
             Intended for debugging stray or detached terminal views.
             """
         case "trigger-flash":
             return """
-            Usage: cmux trigger-flash [--workspace <id|ref>] [--surface <id|ref>] [--panel <id|ref>]
+            Usage: c11 trigger-flash [--workspace <id|ref>] [--surface <id|ref>] [--panel <id|ref>]
 
             Trigger the unread flash indicator for a surface.
 
@@ -6902,12 +6906,12 @@ struct CMUXCLI {
               --panel <id|ref>       Alias for --surface
 
             Example:
-              cmux trigger-flash
-              cmux trigger-flash --workspace workspace:2 --surface surface:3
+              c11 trigger-flash
+              c11 trigger-flash --workspace workspace:2 --surface surface:3
             """
         case "list-panels":
             return """
-            Usage: cmux list-panels [--workspace <id|ref>]
+            Usage: c11 list-panels [--workspace <id|ref>]
 
             List surfaces (panels) in a workspace.
 
@@ -6915,12 +6919,12 @@ struct CMUXCLI {
               --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              cmux list-panels
-              cmux list-panels --workspace workspace:2
+              c11 list-panels
+              c11 list-panels --workspace workspace:2
             """
         case "focus-panel":
             return """
-            Usage: cmux focus-panel --panel <id|ref> [--workspace <id|ref>]
+            Usage: c11 focus-panel --panel <id|ref> [--workspace <id|ref>]
 
             Focus a specific panel (surface).
 
@@ -6929,12 +6933,12 @@ struct CMUXCLI {
               --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              cmux focus-panel --panel surface:2
-              cmux focus-panel --panel surface:5 --workspace workspace:2
+              c11 focus-panel --panel surface:2
+              c11 focus-panel --panel surface:5 --workspace workspace:2
             """
         case "close-workspace":
             return """
-            Usage: cmux close-workspace --workspace <id|ref|index>
+            Usage: c11 close-workspace --workspace <id|ref|index>
 
             Close the specified workspace.
 
@@ -6942,11 +6946,11 @@ struct CMUXCLI {
               --workspace <id|ref|index>   Workspace to close (required)
 
             Example:
-              cmux close-workspace --workspace workspace:2
+              c11 close-workspace --workspace workspace:2
             """
         case "select-workspace":
             return """
-            Usage: cmux select-workspace --workspace <id|ref|index>
+            Usage: c11 select-workspace --workspace <id|ref|index>
 
             Select (switch to) the specified workspace.
 
@@ -6954,12 +6958,12 @@ struct CMUXCLI {
               --workspace <id|ref|index>   Workspace to select (required)
 
             Example:
-              cmux select-workspace --workspace workspace:2
-              cmux select-workspace --workspace 0
+              c11 select-workspace --workspace workspace:2
+              c11 select-workspace --workspace 0
             """
         case "rename-workspace", "rename-window":
             return """
-            Usage: cmux rename-workspace [--workspace <id|ref|index>] [--] <title>
+            Usage: c11 rename-workspace [--workspace <id|ref|index>] [--] <title>
 
             Rename a workspace. Defaults to the current workspace.
             tmux-compatible alias: rename-window
@@ -6968,18 +6972,18 @@ struct CMUXCLI {
               --workspace <id|ref|index>   Workspace to rename (default: current/$CMUX_WORKSPACE_ID)
 
             Example:
-              cmux rename-workspace "backend logs"
-              cmux rename-window --workspace workspace:2 "agent run"
+              c11 rename-workspace "backend logs"
+              c11 rename-window --workspace workspace:2 "agent run"
             """
         case "current-workspace":
             return """
-            Usage: cmux current-workspace
+            Usage: c11 current-workspace
 
             Print the currently selected workspace ID.
             """
         case "capture-pane":
             return """
-            Usage: cmux capture-pane [--workspace <id|ref>] [--surface <id|ref>] [--scrollback] [--lines <n>]
+            Usage: c11 capture-pane [--workspace <id|ref>] [--surface <id|ref>] [--scrollback] [--lines <n>]
 
             tmux-compatible alias for reading terminal text from a pane.
 
@@ -6990,11 +6994,11 @@ struct CMUXCLI {
               --lines <n>            Return only the last N lines (implies --scrollback)
 
             Example:
-              cmux capture-pane --workspace workspace:2 --surface surface:1 --scrollback --lines 200
+              c11 capture-pane --workspace workspace:2 --surface surface:1 --scrollback --lines 200
             """
         case "resize-pane":
             return """
-            Usage: cmux resize-pane [--pane <id|ref>] [--workspace <id|ref>] [-L|-R|-U|-D] [--amount <n>]
+            Usage: c11 resize-pane [--pane <id|ref>] [--workspace <id|ref>] [-L|-R|-U|-D] [--amount <n>]
 
             tmux-compatible pane resize command.
 
@@ -7006,7 +7010,7 @@ struct CMUXCLI {
             """
         case "pipe-pane":
             return """
-            Usage: cmux pipe-pane [--workspace <id|ref>] [--surface <id|ref>] [--command <shell-command> | <shell-command>]
+            Usage: c11 pipe-pane [--workspace <id|ref>] [--surface <id|ref>] [--command <shell-command> | <shell-command>]
 
             Capture pane text and pipe it to a shell command via stdin.
 
@@ -7017,7 +7021,7 @@ struct CMUXCLI {
             """
         case "wait-for":
             return """
-            Usage: cmux wait-for [-S|--signal] <name> [--timeout <seconds>]
+            Usage: c11 wait-for [-S|--signal] <name> [--timeout <seconds>]
 
             Wait for or signal a named synchronization token.
 
@@ -7027,7 +7031,7 @@ struct CMUXCLI {
             """
         case "swap-pane":
             return """
-            Usage: cmux swap-pane --pane <id|ref> --target-pane <id|ref> [--workspace <id|ref>]
+            Usage: c11 swap-pane --pane <id|ref> --target-pane <id|ref> [--workspace <id|ref>]
 
             Swap two panes.
 
@@ -7038,7 +7042,7 @@ struct CMUXCLI {
             """
         case "break-pane":
             return """
-            Usage: cmux break-pane [--workspace <id|ref>] [--pane <id|ref>] [--surface <id|ref>] [--no-focus]
+            Usage: c11 break-pane [--workspace <id|ref>] [--pane <id|ref>] [--surface <id|ref>] [--no-focus]
 
             Move a pane/surface out into its own pane context.
 
@@ -7050,7 +7054,7 @@ struct CMUXCLI {
             """
         case "join-pane":
             return """
-            Usage: cmux join-pane --target-pane <id|ref> [--workspace <id|ref>] [--pane <id|ref>] [--surface <id|ref>] [--no-focus]
+            Usage: c11 join-pane --target-pane <id|ref> [--workspace <id|ref>] [--pane <id|ref>] [--surface <id|ref>] [--no-focus]
 
             Join a pane/surface into another pane.
 
@@ -7063,13 +7067,13 @@ struct CMUXCLI {
             """
         case "next-window", "previous-window", "last-window":
             return """
-            Usage: cmux \(command)
+            Usage: c11\(command)
 
             Switch workspace selection (next/previous/last) in the current window.
             """
         case "last-pane":
             return """
-            Usage: cmux last-pane [--workspace <id|ref>]
+            Usage: c11 last-pane [--workspace <id|ref>]
 
             Focus the previously focused pane in a workspace.
 
@@ -7078,7 +7082,7 @@ struct CMUXCLI {
             """
         case "find-window":
             return """
-            Usage: cmux find-window [--content] [--select] [query]
+            Usage: c11 find-window [--content] [--select] [query]
 
             Find workspaces by title (and optionally terminal content).
 
@@ -7088,7 +7092,7 @@ struct CMUXCLI {
             """
         case "clear-history":
             return """
-            Usage: cmux clear-history [--workspace <id|ref>] [--surface <id|ref>]
+            Usage: c11 clear-history [--workspace <id|ref>] [--surface <id|ref>]
 
             Clear terminal scrollback history.
 
@@ -7098,7 +7102,7 @@ struct CMUXCLI {
             """
         case "set-hook":
             return """
-            Usage: cmux set-hook [--list] [--unset <event>] | <event> <command>
+            Usage: c11 set-hook [--list] [--unset <event>] | <event> <command>
 
             Manage tmux-compat hook definitions.
 
@@ -7108,19 +7112,19 @@ struct CMUXCLI {
             """
         case "popup":
             return """
-            Usage: cmux popup
+            Usage: c11 popup
 
             tmux compatibility placeholder. This command is currently not supported.
             """
         case "bind-key", "unbind-key", "copy-mode":
             return """
-            Usage: cmux \(command)
+            Usage: c11\(command)
 
             tmux compatibility placeholder. This command is currently not supported.
             """
         case "set-buffer":
             return """
-            Usage: cmux set-buffer [--name <name>] [--] <text>
+            Usage: c11 set-buffer [--name <name>] [--] <text>
 
             Save text into a named tmux-compat buffer.
 
@@ -7129,7 +7133,7 @@ struct CMUXCLI {
             """
         case "paste-buffer":
             return """
-            Usage: cmux paste-buffer [--name <name>] [--workspace <id|ref>] [--surface <id|ref>]
+            Usage: c11 paste-buffer [--name <name>] [--workspace <id|ref>] [--surface <id|ref>]
 
             Paste a named tmux-compat buffer into a surface.
 
@@ -7140,13 +7144,13 @@ struct CMUXCLI {
             """
         case "list-buffers":
             return """
-            Usage: cmux list-buffers
+            Usage: c11 list-buffers
 
             List tmux-compat buffers.
             """
         case "respawn-pane":
             return """
-            Usage: cmux respawn-pane [--workspace <id|ref>] [--surface <id|ref>] [--command <cmd> | <cmd>]
+            Usage: c11 respawn-pane [--workspace <id|ref>] [--surface <id|ref>] [--command <cmd> | <cmd>]
 
             Send a command (or default shell restart command) to a surface.
 
@@ -7157,7 +7161,7 @@ struct CMUXCLI {
             """
         case "display-message":
             return """
-            Usage: cmux display-message [-p|--print] <text>
+            Usage: c11 display-message [-p|--print] <text>
 
             Print text (or show it via notification bridge in parity mode).
 
@@ -7166,7 +7170,7 @@ struct CMUXCLI {
             """
         case "read-screen":
             return """
-            Usage: cmux read-screen [flags]
+            Usage: c11 read-screen [flags]
 
             Read terminal text from a surface as plain text.
 
@@ -7177,12 +7181,12 @@ struct CMUXCLI {
               --lines <n>            Limit to the last n lines (implies --scrollback)
 
             Example:
-              cmux read-screen
-              cmux read-screen --surface surface:2 --scrollback --lines 200
+              c11 read-screen
+              c11 read-screen --surface surface:2 --scrollback --lines 200
             """
         case "send":
             return """
-            Usage: cmux send [flags] [--] <text>
+            Usage: c11 send [flags] [--] <text>
 
             Send text to a terminal surface. Escape sequences: \\n and \\r send Enter, \\t sends Tab.
 
@@ -7191,12 +7195,12 @@ struct CMUXCLI {
               --surface <id|ref>     Target surface (default: $CMUX_SURFACE_ID)
 
             Example:
-              cmux send "echo hello"
-              cmux send --surface surface:2 "ls -la\\n"
+              c11 send "echo hello"
+              c11 send --surface surface:2 "ls -la\\n"
             """
         case "send-key":
             return """
-            Usage: cmux send-key [flags] [--] <key>
+            Usage: c11 send-key [flags] [--] <key>
 
             Send a key event to a terminal surface.
 
@@ -7205,12 +7209,12 @@ struct CMUXCLI {
               --surface <id|ref>     Target surface (default: $CMUX_SURFACE_ID)
 
             Example:
-              cmux send-key enter
-              cmux send-key --surface surface:2 ctrl+c
+              c11 send-key enter
+              c11 send-key --surface surface:2 ctrl+c
             """
         case "send-panel":
             return """
-            Usage: cmux send-panel --panel <id|ref> [flags] [--] <text>
+            Usage: c11 send-panel --panel <id|ref> [flags] [--] <text>
 
             Send text to a specific panel (surface). Escape sequences: \\n and \\r send Enter, \\t sends Tab.
 
@@ -7219,11 +7223,11 @@ struct CMUXCLI {
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              cmux send-panel --panel surface:2 "echo hello\\n"
+              c11 send-panel --panel surface:2 "echo hello\\n"
             """
         case "send-key-panel":
             return """
-            Usage: cmux send-key-panel --panel <id|ref> [flags] [--] <key>
+            Usage: c11 send-key-panel --panel <id|ref> [flags] [--] <key>
 
             Send a key event to a specific panel (surface).
 
@@ -7232,12 +7236,12 @@ struct CMUXCLI {
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              cmux send-key-panel --panel surface:2 enter
-              cmux send-key-panel --panel surface:2 ctrl+c
+              c11 send-key-panel --panel surface:2 enter
+              c11 send-key-panel --panel surface:2 ctrl+c
             """
         case "notify":
             return """
-            Usage: cmux notify [flags]
+            Usage: c11 notify [flags]
 
             Send a notification to a workspace/surface.
 
@@ -7249,12 +7253,12 @@ struct CMUXCLI {
               --surface <id|ref>     Target surface (default: $CMUX_SURFACE_ID)
 
             Example:
-              cmux notify --title "Build done" --body "All tests passed"
-              cmux notify --title "Error" --subtitle "test.swift" --body "Line 42: syntax error"
+              c11 notify --title "Build done" --body "All tests passed"
+              c11 notify --title "Error" --subtitle "test.swift" --body "Line 42: syntax error"
             """
         case "pane-confirm":
             return """
-            Usage: cmux pane-confirm --panel <id|ref> --title <text> [flags]
+            Usage: c11 pane-confirm --panel <id|ref> --title <text> [flags]
 
             Present a modal confirmation dialog anchored on a specific panel and
             wait for the user's decision. Card is scrim-bounded to the panel,
@@ -7277,24 +7281,24 @@ struct CMUXCLI {
               1  error
 
             Example:
-              cmux pane-confirm --panel surface:1 --title "Deploy to prod?" --destructive
-              cmux pane-confirm --panel $CMUX_SURFACE_ID --title "Continue?" --timeout 60
+              c11 pane-confirm --panel surface:1 --title "Deploy to prod?" --destructive
+              c11 pane-confirm --panel $CMUX_SURFACE_ID --title "Continue?" --timeout 60
             """
         case "list-notifications":
             return """
-            Usage: cmux list-notifications
+            Usage: c11 list-notifications
 
             List queued notifications.
             """
         case "clear-notifications":
             return """
-            Usage: cmux clear-notifications
+            Usage: c11 clear-notifications
 
             Clear all queued notifications.
             """
         case "set-status":
             return """
-            Usage: cmux set-status <key> <value> [flags]
+            Usage: c11 set-status <key> <value> [flags]
 
             Set a sidebar status entry for a workspace. Status entries appear as
             pills in the sidebar tab row. Use a unique key so different tools
@@ -7306,12 +7310,12 @@ struct CMUXCLI {
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              cmux set-status build "compiling" --icon hammer --color "#ff9500"
-              cmux set-status deploy "v1.2.3" --workspace workspace:2
+              c11 set-status build "compiling" --icon hammer --color "#ff9500"
+              c11 set-status deploy "v1.2.3" --workspace workspace:2
             """
         case "clear-status":
             return """
-            Usage: cmux clear-status <key> [flags]
+            Usage: c11 clear-status <key> [flags]
 
             Remove a sidebar status entry by key.
 
@@ -7319,11 +7323,11 @@ struct CMUXCLI {
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              cmux clear-status build
+              c11 clear-status build
             """
         case "list-status":
             return """
-            Usage: cmux list-status [flags]
+            Usage: c11 list-status [flags]
 
             List all sidebar status entries for a workspace.
 
@@ -7331,12 +7335,12 @@ struct CMUXCLI {
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              cmux list-status
-              cmux list-status --workspace workspace:2
+              c11 list-status
+              c11 list-status --workspace workspace:2
             """
         case "set-progress":
             return """
-            Usage: cmux set-progress <0.0-1.0> [flags]
+            Usage: c11 set-progress <0.0-1.0> [flags]
 
             Set a progress bar in the sidebar for a workspace.
 
@@ -7345,12 +7349,12 @@ struct CMUXCLI {
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              cmux set-progress 0.5 --label "Building..."
-              cmux set-progress 1.0 --label "Done"
+              c11 set-progress 0.5 --label "Building..."
+              c11 set-progress 1.0 --label "Done"
             """
         case "clear-progress":
             return """
-            Usage: cmux clear-progress [flags]
+            Usage: c11 clear-progress [flags]
 
             Clear the sidebar progress bar for a workspace.
 
@@ -7358,11 +7362,11 @@ struct CMUXCLI {
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              cmux clear-progress
+              c11 clear-progress
             """
         case "log":
             return """
-            Usage: cmux log [flags] [--] <message>
+            Usage: c11 log [flags] [--] <message>
 
             Append a log entry to the sidebar for a workspace.
 
@@ -7372,13 +7376,13 @@ struct CMUXCLI {
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              cmux log "Build started"
-              cmux log --level error --source build "Compilation failed"
-              cmux log --level success -- "All 42 tests passed"
+              c11 log "Build started"
+              c11 log --level error --source build "Compilation failed"
+              c11 log --level success -- "All 42 tests passed"
             """
         case "clear-log":
             return """
-            Usage: cmux clear-log [flags]
+            Usage: c11 clear-log [flags]
 
             Clear all sidebar log entries for a workspace.
 
@@ -7386,11 +7390,11 @@ struct CMUXCLI {
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              cmux clear-log
+              c11 clear-log
             """
         case "list-log":
             return """
-            Usage: cmux list-log [flags]
+            Usage: c11 list-log [flags]
 
             List sidebar log entries for a workspace.
 
@@ -7399,12 +7403,12 @@ struct CMUXCLI {
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              cmux list-log
-              cmux list-log --limit 5
+              c11 list-log
+              c11 list-log --limit 5
             """
         case "sidebar-state":
             return """
-            Usage: cmux sidebar-state [flags]
+            Usage: c11 sidebar-state [flags]
 
             Dump all sidebar metadata for a workspace (cwd, git branch, ports,
             status entries, progress, log entries).
@@ -7413,12 +7417,12 @@ struct CMUXCLI {
               --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
 
             Example:
-              cmux sidebar-state
-              cmux sidebar-state --workspace workspace:2
+              c11 sidebar-state
+              c11 sidebar-state --workspace workspace:2
             """
         case "set-agent":
             return """
-            Usage: cmux set-agent --type <terminal_type>
+            Usage: c11 set-agent --type <terminal_type>
                                   [--model <id>] [--task <id>] [--role <id>]
                                   [--surface <id|ref>] [--workspace <id|ref>]
                                   [--json]
@@ -7439,12 +7443,12 @@ struct CMUXCLI {
               --json                   Emit raw JSON-RPC result
 
             Examples:
-              cmux set-agent --type claude-code --model claude-opus-4-7
-              cmux set-agent --type opencode --task task-42 --surface surface:1
+              c11 set-agent --type claude-code --model claude-opus-4-7
+              c11 set-agent --type opencode --task task-42 --surface surface:1
             """
         case "set-metadata":
             return """
-            Usage: cmux set-metadata [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
+            Usage: c11 set-metadata [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
                                      (--json '{...}' | --key <K> --value <V> [--type string|number|bool|json])
                                      [--mode merge|replace] [--source explicit|declare|osc|heuristic]
                                      [--json]
@@ -7464,14 +7468,14 @@ struct CMUXCLI {
               --workspace <id|ref>     Target workspace (default: $CMUX_WORKSPACE_ID)
 
             Examples:
-              cmux set-metadata --key title --value "My Surface"
-              cmux set-metadata --json '{"title":"x","role":"review"}'
-              cmux set-metadata --key progress --value 0.5 --type number
-              cmux set-metadata --pane pane:2 --key title --value "Pane :: Child"
+              c11 set-metadata --key title --value "My Surface"
+              c11 set-metadata --json '{"title":"x","role":"review"}'
+              c11 set-metadata --key progress --value 0.5 --type number
+              c11 set-metadata --pane pane:2 --key title --value "Pane :: Child"
             """
         case "get-metadata":
             return """
-            Usage: cmux get-metadata [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
+            Usage: c11 get-metadata [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
                                      [--key <K> ...] [--sources] [--json]
 
             Read metadata (and optional per-key sidecar) for a surface
@@ -7487,13 +7491,13 @@ struct CMUXCLI {
               --json                   Emit raw JSON result
 
             Examples:
-              cmux get-metadata
-              cmux get-metadata --key terminal_type --sources
-              cmux get-metadata --pane pane:2
+              c11 get-metadata
+              c11 get-metadata --key terminal_type --sources
+              c11 get-metadata --pane pane:2
             """
         case "clear-metadata":
             return """
-            Usage: cmux clear-metadata [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
+            Usage: c11 clear-metadata [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
                                        [--key <K> ...] [--source explicit|declare|osc|heuristic]
                                        [--json]
 
@@ -7510,15 +7514,15 @@ struct CMUXCLI {
               --json                   Emit raw JSON result
 
             Examples:
-              cmux clear-metadata --key terminal_type
-              cmux clear-metadata --surface surface:2
-              cmux clear-metadata --pane pane:2 --key title
+              c11 clear-metadata --key terminal_type
+              c11 clear-metadata --surface surface:2
+              c11 clear-metadata --pane pane:2 --key title
             """
         case "set-workspace-metadata":
             return """
-            Usage: cmux set-workspace-metadata <key> <value> [flags]
-                   cmux set-workspace-metadata --key <K> --value <V> [flags]
-                   cmux set-workspace-metadata --json '{"description":"..."}' [flags]
+            Usage: c11 set-workspace-metadata <key> <value> [flags]
+                   c11 set-workspace-metadata --key <K> --value <V> [flags]
+                   c11 set-workspace-metadata --json '{"description":"..."}' [flags]
 
             Write one or more operator-authored metadata keys on a workspace via
             workspace.set_metadata. Values are strings; canonical keys are
@@ -7531,63 +7535,63 @@ struct CMUXCLI {
               --json                   Emit raw JSON result
 
             Examples:
-              cmux set-workspace-metadata description "Backend API refactor"
-              cmux set-workspace-metadata icon 🦊
+              c11 set-workspace-metadata description "Backend API refactor"
+              c11 set-workspace-metadata icon 🦊
             """
         case "get-workspace-metadata":
             return """
-            Usage: cmux get-workspace-metadata [<key>] [--workspace <id|ref>] [--json]
+            Usage: c11 get-workspace-metadata [<key>] [--workspace <id|ref>] [--json]
 
             Read workspace metadata via workspace.get_metadata. With a key, prints
             just that value. Without a key, prints all keys/values.
 
             Examples:
-              cmux get-workspace-metadata
-              cmux get-workspace-metadata description
+              c11 get-workspace-metadata
+              c11 get-workspace-metadata description
             """
         case "clear-workspace-metadata":
             return """
-            Usage: cmux clear-workspace-metadata [<key>] [--key <K> ...] [--workspace <id|ref>] [--json]
+            Usage: c11 clear-workspace-metadata [<key>] [--key <K> ...] [--workspace <id|ref>] [--json]
 
             Clear workspace metadata keys via workspace.clear_metadata. With no
             key, clears the entire workspace metadata dictionary.
 
             Examples:
-              cmux clear-workspace-metadata description
-              cmux clear-workspace-metadata
+              c11 clear-workspace-metadata description
+              c11 clear-workspace-metadata
             """
         case "set-workspace-description":
             return """
-            Usage: cmux set-workspace-description <text> [--workspace <id|ref>]
+            Usage: c11 set-workspace-description <text> [--workspace <id|ref>]
 
-            Sugar for `cmux set-workspace-metadata description <text>`.
+            Sugar for `c11 set-workspace-metadata description <text>`.
             """
         case "set-workspace-icon":
             return """
-            Usage: cmux set-workspace-icon <glyph> [--workspace <id|ref>]
+            Usage: c11 set-workspace-icon <glyph> [--workspace <id|ref>]
 
-            Sugar for `cmux set-workspace-metadata icon <glyph>`. Supports emoji
+            Sugar for `c11 set-workspace-metadata icon <glyph>`. Supports emoji
             or the prefix "sf:" + SF Symbol name (e.g. "sf:star.fill").
             """
         case "set-app-focus":
             return """
-            Usage: cmux set-app-focus <active|inactive|clear>
+            Usage: c11 set-app-focus <active|inactive|clear>
 
             Override app focus state for notification routing tests.
 
             Example:
-              cmux set-app-focus inactive
-              cmux set-app-focus clear
+              c11 set-app-focus inactive
+              c11 set-app-focus clear
             """
         case "simulate-app-active":
             return """
-            Usage: cmux simulate-app-active
+            Usage: c11 simulate-app-active
 
             Trigger the app-active handler used by notification focus tests.
             """
         case "claude-hook":
             return """
-            Usage: cmux claude-hook <session-start|active|stop|idle|notification|notify|prompt-submit> [flags]
+            Usage: c11 claude-hook <session-start|active|stop|idle|notification|notify|prompt-submit> [flags]
 
             Hook for Claude Code integration. Reads JSON from stdin.
 
@@ -7605,12 +7609,12 @@ struct CMUXCLI {
               --surface <id|ref>     Target surface (default: $CMUX_SURFACE_ID)
 
             Example:
-              echo '{"session_id":"abc"}' | cmux claude-hook session-start
-              echo '{}' | cmux claude-hook stop
+              echo '{"session_id":"abc"}' | c11 claude-hook session-start
+              echo '{}' | c11 claude-hook stop
             """
         case "browser":
             return """
-            Usage: cmux browser [--surface <id|ref|index> | <surface>] <subcommand> [args]
+            Usage: c11 browser [--surface <id|ref|index> | <surface>] <subcommand> [args]
 
             Browser automation commands. Most subcommands require a surface handle.
             A surface can be passed as `--surface <handle>` or as the first positional token.
@@ -7667,31 +7671,31 @@ struct CMUXCLI {
               identify [--surface <id|ref|index>]
 
             Example:
-              cmux browser open https://example.com
-              cmux browser surface:1 navigate https://google.com
-              cmux browser --surface surface:1 snapshot --interactive
+              c11 browser open https://example.com
+              c11 browser surface:1 navigate https://google.com
+              c11 browser --surface surface:1 snapshot --interactive
             """
-        // Legacy browser aliases — point users to `cmux browser --help`
+        // Legacy browser aliases — point users to `c11 browser --help`
         case "open-browser":
-            return "Legacy alias for 'cmux browser open'. Run 'cmux browser --help' for details."
+            return "Legacy alias for 'c11 browser open'. Run 'c11 browser --help' for details."
         case "navigate":
-            return "Legacy alias for 'cmux browser navigate'. Run 'cmux browser --help' for details."
+            return "Legacy alias for 'c11 browser navigate'. Run 'c11 browser --help' for details."
         case "browser-back":
-            return "Legacy alias for 'cmux browser back'. Run 'cmux browser --help' for details."
+            return "Legacy alias for 'c11 browser back'. Run 'c11 browser --help' for details."
         case "browser-forward":
-            return "Legacy alias for 'cmux browser forward'. Run 'cmux browser --help' for details."
+            return "Legacy alias for 'c11 browser forward'. Run 'c11 browser --help' for details."
         case "browser-reload":
-            return "Legacy alias for 'cmux browser reload'. Run 'cmux browser --help' for details."
+            return "Legacy alias for 'c11 browser reload'. Run 'c11 browser --help' for details."
         case "get-url":
-            return "Legacy alias for 'cmux browser get-url'. Run 'cmux browser --help' for details."
+            return "Legacy alias for 'c11 browser get-url'. Run 'c11 browser --help' for details."
         case "focus-webview":
-            return "Legacy alias for 'cmux browser focus-webview'. Run 'cmux browser --help' for details."
+            return "Legacy alias for 'c11 browser focus-webview'. Run 'c11 browser --help' for details."
         case "is-webview-focused":
-            return "Legacy alias for 'cmux browser is-webview-focused'. Run 'cmux browser --help' for details."
+            return "Legacy alias for 'c11 browser is-webview-focused'. Run 'c11 browser --help' for details."
         case "markdown":
             return """
-            Usage: cmux markdown open <path> [options]
-                   cmux markdown <path>       (shorthand for 'open')
+            Usage: c11 markdown open <path> [options]
+                   c11 markdown <path>       (shorthand for 'open')
 
             Open a markdown file in a formatted viewer panel with live file watching.
             The file is rendered with rich formatting (headings, code blocks, tables,
@@ -7703,9 +7707,9 @@ struct CMUXCLI {
               --window <id|ref|index>      Target window
 
             Examples:
-              cmux markdown open plan.md
-              cmux markdown ~/project/CHANGELOG.md
-              cmux markdown open ./docs/design.md --workspace 0
+              c11 markdown open plan.md
+              c11 markdown ~/project/CHANGELOG.md
+              c11 markdown open ./docs/design.md --workspace 0
             """
         default:
             return nil
@@ -7716,7 +7720,7 @@ struct CMUXCLI {
     private func dispatchSubcommandHelp(command: String, commandArgs: [String]) -> Bool {
         guard commandArgs.contains("--help") || commandArgs.contains("-h") else { return false }
         guard let text = subcommandUsage(command) else { return false }
-        print("cmux \(command)")
+        print("c11 \(command)")
         print("")
         print(text)
         return true
@@ -7922,7 +7926,7 @@ struct CMUXCLI {
             try runThemesClear(jsonOutput: jsonOutput)
         default:
             if subcommand.hasPrefix("-") {
-                throw CLIError(message: "Unknown themes subcommand '\(subcommand)'. Run 'cmux themes --help'.")
+                throw CLIError(message: "Unknown themes subcommand '\(subcommand)'. Run 'c11 themes --help'.")
             }
 
             try runThemesSet(
@@ -8138,11 +8142,11 @@ struct CMUXCLI {
         }
     }
 
-    // MARK: - `cmux ui themes` + `cmux workspace-color` (CMUX-35)
+    // MARK: - `c11 ui themes` + `c11 workspace-color` (CMUX-35)
 
     private func runUi(commandArgs: [String], client: SocketClient, jsonOutput: Bool) throws {
         guard let first = commandArgs.first else {
-            throw CLIError(message: "ui requires a subcommand. Try: cmux ui themes list")
+            throw CLIError(message: "ui requires a subcommand. Try: c11 ui themes list")
         }
         let sub = first.lowercased()
         let rest = Array(commandArgs.dropFirst())
@@ -8245,7 +8249,7 @@ struct CMUXCLI {
         let (slotOpt, rest) = parseOption(args, name: "--slot")
         let positional = rest.filter { !$0.hasPrefix("-") }
         guard let name = positional.first else {
-            throw CLIError(message: "ui themes set requires a theme name. Example: cmux ui themes set phosphor [--slot light|dark|both]")
+            throw CLIError(message: "ui themes set requires a theme name. Example: c11 ui themes set phosphor [--slot light|dark|both]")
         }
         if positional.count > 1 {
             throw CLIError(message: "ui themes set: unexpected extra argument '\(positional[1])'")
@@ -8363,7 +8367,7 @@ struct CMUXCLI {
     private func runUiThemesInherit(args: [String], client: SocketClient, jsonOutput: Bool) throws {
         let (asOpt, rest) = parseOption(args, name: "--as")
         guard let parent = rest.first, let child = asOpt else {
-            throw CLIError(message: "ui themes inherit requires a parent theme and --as <new-name>. Example: cmux ui themes inherit stage11 --as my-theme")
+            throw CLIError(message: "ui themes inherit requires a parent theme and --as <new-name>. Example: c11 ui themes inherit stage11 --as my-theme")
         }
         let response = try client.sendV2(
             method: "theme.inherit",
@@ -8383,7 +8387,7 @@ struct CMUXCLI {
 
     private func runWorkspaceColor(commandArgs: [String], client: SocketClient, jsonOutput: Bool) throws {
         guard let first = commandArgs.first else {
-            throw CLIError(message: "workspace-color requires a subcommand. Try: cmux workspace-color get")
+            throw CLIError(message: "workspace-color requires a subcommand. Try: c11 workspace-color get")
         }
         let sub = first.lowercased()
         let rest = Array(commandArgs.dropFirst())
@@ -8599,7 +8603,7 @@ struct CMUXCLI {
         if availableThemes.isEmpty {
             return trimmed
         }
-        throw CLIError(message: "Unknown theme '\(trimmed)'. Run 'cmux themes' to list available themes.")
+        throw CLIError(message: "Unknown theme '\(trimmed)'. Run 'c11 themes' to list available themes.")
     }
 
     private func themeConfigSearchURLs() -> [URL] {
@@ -11348,7 +11352,7 @@ struct CMUXCLI {
                 boolFlags: ["-A", "-d", "-P"]
             )
             if parsed.hasFlag("-A") {
-                throw CLIError(message: "new-session -A is not supported in cmux claude-teams mode")
+                throw CLIError(message: "new-session -A is not supported in c11 claude-teams mode")
             }
             var params: [String: Any] = ["focus": false]
             if let cwd = parsed.value("-c") {
@@ -11385,7 +11389,7 @@ struct CMUXCLI {
                 boolFlags: ["-d", "-P"]
             )
             if parsed.value("-t") != nil {
-                throw CLIError(message: "new-window -t is not supported in cmux claude-teams mode")
+                throw CLIError(message: "new-window -t is not supported in c11 claude-teams mode")
             }
             var params: [String: Any] = ["focus": false]
             if let cwd = parsed.value("-c") {
@@ -12016,10 +12020,10 @@ struct CMUXCLI {
             print("OK")
 
         case "popup":
-            throw CLIError(message: "popup is not supported yet in cmux CLI parity mode")
+            throw CLIError(message: "popup is not supported yet in c11 CLI parity mode")
 
         case "bind-key", "unbind-key", "copy-mode":
-            throw CLIError(message: "\(command) is not supported yet in cmux CLI parity mode")
+            throw CLIError(message: "\(command) is not supported yet in c11 CLI parity mode")
 
         case "set-buffer":
             let (nameArg, rem0) = parseOption(commandArgs, name: "--name")
@@ -12090,7 +12094,7 @@ struct CMUXCLI {
                 print(message)
                 return
             }
-            let payload = try client.sendV2(method: "notification.create", params: ["title": "cmux", "body": message])
+            let payload = try client.sendV2(method: "notification.create", params: ["title": "c11", "body": message])
             if jsonOutput {
                 print(jsonString(payload))
             } else {
@@ -12365,7 +12369,7 @@ struct CMUXCLI {
             telemetry.breadcrumb("claude-hook.help")
             print(
                 """
-                cmux claude-hook <session-start|stop|session-end|notification|prompt-submit|pre-tool-use> [--workspace <id|index>] [--surface <id|index>]
+                c11 claude-hook <session-start|stop|session-end|notification|prompt-submit|pre-tool-use> [--workspace <id|index>] [--surface <id|index>]
                 """
             )
 
@@ -12741,13 +12745,13 @@ struct CMUXCLI {
         let commit = info["CMUXCommit"].flatMap { normalizedCommitHash($0) }
         let baseSummary: String
         if let version = info["CFBundleShortVersionString"], let build = info["CFBundleVersion"] {
-            baseSummary = "cmux \(version) (\(build))"
+            baseSummary = "c11 \(version) (\(build))"
         } else if let version = info["CFBundleShortVersionString"] {
-            baseSummary = "cmux \(version)"
+            baseSummary = "c11 \(version)"
         } else if let build = info["CFBundleVersion"] {
-            baseSummary = "cmux build \(build)"
+            baseSummary = "c11 build \(build)"
         } else {
-            baseSummary = "cmux version unknown"
+            baseSummary = "c11 version unknown"
         }
         guard let commit else { return baseSummary }
         return "\(baseSummary) [\(commit)]"
@@ -12818,9 +12822,9 @@ struct CMUXCLI {
         print("  \(bold)The Spike\(reset)\(subdued)           https://stage11.ai/spike\(reset)")
         print("  \(bold)Upstream\(reset)\(subdued)            https://github.com/manaflow-ai/cmux (cmux — the project we forked)\(reset)")
         print()
-        print("  \(subdued)Run \(reset)\(bold)cmux --help\(reset)\(subdued) for all commands.\(reset)")
-        print("  \(subdued)Run \(reset)\(bold)cmux shortcuts\(reset)\(subdued) to edit shortcuts.\(reset)")
-        print("  \(subdued)Run \(reset)\(bold)cmux feedback\(reset)\(subdued) to report a bug.\(reset)")
+        print("  \(subdued)Run \(reset)\(bold)c11 --help\(reset)\(subdued) for all commands.\(reset)")
+        print("  \(subdued)Run \(reset)\(bold)c11 shortcuts\(reset)\(subdued) to edit shortcuts.\(reset)")
+        print("  \(subdued)Run \(reset)\(bold)c11 feedback\(reset)\(subdued) to report a bug.\(reset)")
         print()
     }
 
@@ -13101,11 +13105,11 @@ struct CMUXCLI {
 
     private func usage() -> String {
         return """
-        cmux - control cmux via Unix socket
+        c11 - control c11 via Unix socket
 
         Usage:
-          cmux <path>                Open a directory in a new workspace (launches cmux if needed)
-          cmux [global-options] <command> [options]
+          c11 <path>                 Open a directory in a new workspace (launches c11 if needed)
+          c11 [global-options] <command> [options]
 
         Handle Inputs:
           Use UUIDs, short refs (window:1/workspace:2/pane:3/surface:4), or indexes where commands accept window, workspace, pane, or surface inputs.
@@ -13245,10 +13249,10 @@ struct CMUXCLI {
           help
 
         Environment:
-          CMUX_WORKSPACE_ID   Auto-set in cmux terminals. Used as default --workspace for
+          CMUX_WORKSPACE_ID   Auto-set in c11 terminals. Used as default --workspace for
                               ALL commands (send, list-panels, new-split, notify, etc.).
           CMUX_TAB_ID         Optional alias used by `tab-action`/`rename-tab` as default --tab.
-          CMUX_SURFACE_ID     Auto-set in cmux terminals. Used as default --surface.
+          CMUX_SURFACE_ID     Auto-set in c11 terminals. Used as default --surface.
           CMUX_SOCKET_PATH    Override the Unix socket path. Without this, the CLI defaults
                               to ~/Library/Application Support/cmux/cmux.sock and auto-discovers tagged/debug sockets.
         """
@@ -15652,7 +15656,7 @@ extension CMUXCLI {
         case "remove", "uninstall":
             try runSkillRemove(args: rest, jsonOutput: jsonOutput)
         default:
-            throw CLIError(message: "Unknown skill subcommand: \(sub). Try `cmux skill help`.")
+            throw CLIError(message: "Unknown skill subcommand: \(sub). Try `c11 skill help`.")
         }
     }
 
@@ -15745,7 +15749,7 @@ extension CMUXCLI {
 
     private func skillCommandUsage() -> String {
         return """
-        cmux skill — manage the c11 skill file for detected agent tools.
+        c11 skill — manage the c11 skill file for detected agent tools.
 
         Subcommands:
           path                           Print the bundled skill source directory.
@@ -15788,7 +15792,7 @@ extension CMUXCLI {
     private func resolveSkillSource(jsonOutput: Bool) throws -> URL {
         let exec = resolvedExecutableURL()
         guard let source = SkillInstaller.defaultSourceURL(executableURL: exec) else {
-            throw CLIError(message: "Could not locate the bundled skills directory. Set CMUX_SKILLS_SOURCE to override.")
+            throw CLIError(message: "Could not locate the bundled skills directory. Set C11_SKILLS_SOURCE to override.")
         }
         return source
     }

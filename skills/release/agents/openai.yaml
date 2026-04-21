@@ -1,4 +1,4 @@
 interface:
-  display_name: "cmux Release"
-  short_description: "Prepare and publish cmux releases from version bump to tag."
-  default_prompt: "Use this skill to run the cmux release workflow: choose version, generate user-facing changelog updates, bump versions, open and monitor release PRs, merge, tag, and verify release artifacts."
+  display_name: "c11 Release"
+  short_description: "Prepare and publish c11 releases from version bump to tag."
+  default_prompt: "Use this skill to run the c11 release workflow: choose version, generate user-facing changelog updates, bump versions, open and monitor release PRs, merge, tag, and verify release artifacts."

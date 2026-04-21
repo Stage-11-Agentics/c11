@@ -5,7 +5,7 @@ description: Browser automation for c11 browser surfaces (WKWebView-backed). Use
 
 # c11 Browser Automation
 
-Use this skill for browser tasks inside c11 webviews. c11 browser surfaces are a native surface type — scriptable alongside terminals and markdown viewers in the same workspace, from the same `c11` CLI. The binary is `c11` (a `cmux` compat alias dispatches to the same binary).
+Use this skill for browser tasks inside c11 webviews. c11 browser surfaces are a native surface type — scriptable alongside terminals and markdown viewers in the same workspace, from the same `c11` CLI. The binary is `c11`.
 
 Prefer this over Chrome MCP when running inside c11: lighter, integrated into the workspace, no stray Chrome windows.
 

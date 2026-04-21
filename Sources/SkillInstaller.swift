@@ -131,13 +131,13 @@ enum SkillInstaller {
     /// Locate the bundled `skills/` directory. Tries (in order):
     ///   1) adjacent to the executable's `Contents/Resources/skills/` (shipped .app)
     ///   2) walking up from the executable to find `<repo>/skills/` (dev)
-    ///   3) `CMUX_SKILLS_SOURCE` env var as an explicit override
+    ///   3) `C11_SKILLS_SOURCE` (or `CMUX_SKILLS_SOURCE`) env var as an explicit override
     static func defaultSourceURL(
         executableURL: URL?,
         env: [String: String] = ProcessInfo.processInfo.environment,
         fileManager: FileManager = .default
     ) -> URL? {
-        if let override = env["CMUX_SKILLS_SOURCE"], !override.isEmpty {
+        if let override = env["C11_SKILLS_SOURCE"] ?? env["CMUX_SKILLS_SOURCE"], !override.isEmpty {
             let url = URL(fileURLWithPath: (override as NSString).expandingTildeInPath, isDirectory: true)
             if fileManager.fileExists(atPath: url.path) {
                 return url.standardizedFileURL

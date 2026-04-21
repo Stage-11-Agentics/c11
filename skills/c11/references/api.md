@@ -1,6 +1,6 @@
 # c11 API Reference
 
-Full command surface for c11. The main `SKILL.md` covers what you reach for most often; this file is the fallback when you need something outside the core path. The binary is `c11` (a `cmux` compat alias dispatches to the same binary).
+Full command surface for c11. The main `SKILL.md` covers what you reach for most often; this file is the fallback when you need something outside the core path. The binary is `c11`.
 
 ## Contents
 

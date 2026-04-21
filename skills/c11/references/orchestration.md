@@ -1,6 +1,6 @@
 # c11 Orchestration
 
-Patterns for running multiple agents in parallel panes: layout, tab naming, launching sub-agents, agent-to-agent communication, sidebar reporting. The binary is `c11` (a `cmux` compat alias dispatches to the same binary).
+Patterns for running multiple agents in parallel panes: layout, tab naming, launching sub-agents, agent-to-agent communication, sidebar reporting. The binary is `c11`.
 
 ## Contents
 

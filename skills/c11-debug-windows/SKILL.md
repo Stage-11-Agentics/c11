@@ -1,6 +1,6 @@
 ---
 name: c11-debug-windows
-description: Manage c11 debug windows and related debug menu wiring for Sidebar Debug, Background Debug, and Menu Bar Extra Debug. Use this when the user asks to open/tune these debug controls, add or adjust Debug menu entries, or capture/copy a combined debug config snapshot. Applies to the c11 macOS app (binary `c11`; a `cmux` compat alias dispatches to the same binary).
+description: Manage c11 debug windows and related debug menu wiring for Sidebar Debug, Background Debug, and Menu Bar Extra Debug. Use this when the user asks to open/tune these debug controls, add or adjust Debug menu entries, or capture/copy a combined debug config snapshot. Applies to the c11 macOS app (binary `c11`).
 ---
 
 # c11 Debug Windows

@@ -1,4 +1,4 @@
 interface:
-  display_name: "cmux Core"
-  short_description: "Control windows/workspaces/panes/surfaces and routing with cmux CLI."
-  default_prompt: "Use this skill to inspect and manipulate cmux topology: identify context, target handles, create/focus/move/reorder windows/workspaces/panes/surfaces, and use trigger-flash for visual confirmation."
+  display_name: "c11 Core"
+  short_description: "Control windows/workspaces/panes/surfaces and routing with c11 CLI."
+  default_prompt: "Use this skill to inspect and manipulate c11 topology: identify context, target handles, create/focus/move/reorder windows/workspaces/panes/surfaces, and use trigger-flash for visual confirmation."

@@ -242,22 +242,36 @@ final class SocketControlPasswordStoreTests: XCTestCase {
 }
 
 final class CmuxCLIPathInstallerTests: XCTestCase {
+    private func makeBundledCLI(in root: URL) throws -> URL {
+        let fileManager = FileManager.default
+        let url = root
+            .appendingPathComponent("c11.app/Contents/Resources/bin/c11", isDirectory: false)
+        try fileManager.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try "#!/bin/sh\necho c11\n".write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
+    private func makeDestination(in root: URL) -> URL {
+        let destinationURL = root.appendingPathComponent("usr/local/bin/c11", isDirectory: false)
+        try? FileManager.default.createDirectory(
+            at: destinationURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        return destinationURL
+    }
+
     func testInstallAndUninstallRoundTripWithoutAdministratorPrivileges() throws {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory
-            .appendingPathComponent("cmux-cli-installer-tests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("c11-cli-installer-tests-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: root) }
 
-        let bundledCLIURL = root
-            .appendingPathComponent("cmux.app/Contents/Resources/bin/cmux", isDirectory: false)
-        try fileManager.createDirectory(
-            at: bundledCLIURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try "#!/bin/sh\necho cmux\n".write(to: bundledCLIURL, atomically: true, encoding: .utf8)
-
-        let destinationURL = root.appendingPathComponent("usr/local/bin/cmux", isDirectory: false)
+        let bundledCLIURL = try makeBundledCLI(in: root)
+        let destinationURL = makeDestination(in: root)
 
         var privilegedInstallCallCount = 0
         var privilegedUninstallCallCount = 0
@@ -290,21 +304,13 @@ final class CmuxCLIPathInstallerTests: XCTestCase {
     func testInstallFallsBackToAdministratorFlowWhenDestinationIsNotWritable() throws {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory
-            .appendingPathComponent("cmux-cli-installer-tests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("c11-cli-installer-tests-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: root) }
 
-        let bundledCLIURL = root
-            .appendingPathComponent("cmux.app/Contents/Resources/bin/cmux", isDirectory: false)
-        try fileManager.createDirectory(
-            at: bundledCLIURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try "#!/bin/sh\necho cmux\n".write(to: bundledCLIURL, atomically: true, encoding: .utf8)
-
-        let destinationURL = root.appendingPathComponent("usr/local/bin/cmux", isDirectory: false)
+        let bundledCLIURL = try makeBundledCLI(in: root)
+        let destinationURL = makeDestination(in: root)
         let destinationDir = destinationURL.deletingLastPathComponent()
-        try fileManager.createDirectory(at: destinationDir, withIntermediateDirectories: true)
         try fileManager.setAttributes([.posixPermissions: 0o555], ofItemAtPath: destinationDir.path)
         defer {
             try? fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destinationDir.path)
@@ -329,5 +335,262 @@ final class CmuxCLIPathInstallerTests: XCTestCase {
         XCTAssertTrue(installOutcome.usedAdministratorPrivileges)
         XCTAssertEqual(privilegedInstallCallCount, 1)
         XCTAssertTrue(installer.isInstalled())
+    }
+
+    func testInstallRefusesWhenDestinationIsUnrelatedSymlink() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("c11-cli-installer-tests-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: root) }
+
+        let bundledCLIURL = try makeBundledCLI(in: root)
+        let destinationURL = makeDestination(in: root)
+        let unrelatedTarget = URL(fileURLWithPath: "/bin/ls")
+        try fileManager.createSymbolicLink(at: destinationURL, withDestinationURL: unrelatedTarget)
+
+        var privilegedInstallCallCount = 0
+        let installer = CmuxCLIPathInstaller(
+            fileManager: fileManager,
+            destinationURL: destinationURL,
+            bundledCLIURLProvider: { bundledCLIURL },
+            expectedBundledCLIPath: bundledCLIURL.path,
+            privilegedInstaller: { _, _ in privilegedInstallCallCount += 1 }
+        )
+
+        XCTAssertThrowsError(try installer.install()) { error in
+            guard case CmuxCLIPathInstaller.InstallerError.destinationNotOwnedByC11 = error else {
+                XCTFail("expected destinationNotOwnedByC11 error, got \(error)")
+                return
+            }
+        }
+        XCTAssertEqual(privilegedInstallCallCount, 0)
+        XCTAssertEqual(
+            try fileManager.destinationOfSymbolicLink(atPath: destinationURL.path),
+            "/bin/ls",
+            "destination must not be overwritten"
+        )
+    }
+
+    func testInstallRefusesWhenDestinationIsRegularFile() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("c11-cli-installer-tests-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: root) }
+
+        let bundledCLIURL = try makeBundledCLI(in: root)
+        let destinationURL = makeDestination(in: root)
+        try "user-owned script".write(to: destinationURL, atomically: true, encoding: .utf8)
+
+        var privilegedInstallCallCount = 0
+        let installer = CmuxCLIPathInstaller(
+            fileManager: fileManager,
+            destinationURL: destinationURL,
+            bundledCLIURLProvider: { bundledCLIURL },
+            expectedBundledCLIPath: bundledCLIURL.path,
+            privilegedInstaller: { _, _ in privilegedInstallCallCount += 1 }
+        )
+
+        XCTAssertThrowsError(try installer.install()) { error in
+            guard case CmuxCLIPathInstaller.InstallerError.destinationNotOwnedByC11 = error else {
+                XCTFail("expected destinationNotOwnedByC11 error, got \(error)")
+                return
+            }
+        }
+        XCTAssertEqual(privilegedInstallCallCount, 0)
+    }
+
+    func testInstallReplacesExistingC11Symlink() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("c11-cli-installer-tests-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: root) }
+
+        let bundledCLIURL = try makeBundledCLI(in: root)
+        let destinationURL = makeDestination(in: root)
+        // Pre-existing symlink pointing at the same bundled CLI — re-install should succeed.
+        try fileManager.createSymbolicLink(at: destinationURL, withDestinationURL: bundledCLIURL)
+
+        let installer = CmuxCLIPathInstaller(
+            fileManager: fileManager,
+            destinationURL: destinationURL,
+            bundledCLIURLProvider: { bundledCLIURL },
+            expectedBundledCLIPath: bundledCLIURL.path,
+            privilegedInstaller: { _, _ in XCTFail("should not escalate") }
+        )
+
+        let outcome = try installer.install()
+        XCTAssertFalse(outcome.usedAdministratorPrivileges)
+        XCTAssertTrue(installer.isInstalled())
+    }
+
+    func testInstallAcceptsDanglingC11SymlinkFromMovedBundle() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("c11-cli-installer-tests-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: root) }
+
+        let bundledCLIURL = try makeBundledCLI(in: root)
+        let destinationURL = makeDestination(in: root)
+        // Simulate a prior c11.app at a different location that no longer exists.
+        let staleTarget = root
+            .appendingPathComponent("old-location/c11.app/Contents/Resources/bin/c11", isDirectory: false)
+        try fileManager.createSymbolicLink(at: destinationURL, withDestinationURL: staleTarget)
+
+        let installer = CmuxCLIPathInstaller(
+            fileManager: fileManager,
+            destinationURL: destinationURL,
+            bundledCLIURLProvider: { bundledCLIURL },
+            expectedBundledCLIPath: bundledCLIURL.path,
+            privilegedInstaller: { _, _ in XCTFail("should not escalate") }
+        )
+
+        let outcome = try installer.install()
+        XCTAssertFalse(outcome.usedAdministratorPrivileges)
+        XCTAssertTrue(installer.isInstalled())
+        XCTAssertEqual(
+            try fileManager.destinationOfSymbolicLink(atPath: destinationURL.path),
+            bundledCLIURL.path
+        )
+    }
+
+    func testUninstallRefusesWhenDestinationIsUnrelatedSymlink() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("c11-cli-installer-tests-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: root) }
+
+        let bundledCLIURL = try makeBundledCLI(in: root)
+        let destinationURL = makeDestination(in: root)
+        let unrelatedTarget = URL(fileURLWithPath: "/bin/ls")
+        try fileManager.createSymbolicLink(at: destinationURL, withDestinationURL: unrelatedTarget)
+
+        var privilegedUninstallCallCount = 0
+        let installer = CmuxCLIPathInstaller(
+            fileManager: fileManager,
+            destinationURL: destinationURL,
+            bundledCLIURLProvider: { bundledCLIURL },
+            expectedBundledCLIPath: bundledCLIURL.path,
+            privilegedInstaller: { _, _ in },
+            privilegedUninstaller: { _ in privilegedUninstallCallCount += 1 }
+        )
+
+        XCTAssertThrowsError(try installer.uninstall()) { error in
+            guard case CmuxCLIPathInstaller.InstallerError.destinationNotOwnedByC11 = error else {
+                XCTFail("expected destinationNotOwnedByC11 error, got \(error)")
+                return
+            }
+        }
+        XCTAssertEqual(privilegedUninstallCallCount, 0, "privileged path must also be guarded")
+        XCTAssertEqual(
+            try fileManager.destinationOfSymbolicLink(atPath: destinationURL.path),
+            "/bin/ls",
+            "destination must not be removed"
+        )
+    }
+
+    func testUninstallRemovesDanglingC11SymlinkFromMovedBundle() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("c11-cli-installer-tests-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: root) }
+
+        let bundledCLIURL = try makeBundledCLI(in: root)
+        let destinationURL = makeDestination(in: root)
+        let staleTarget = root
+            .appendingPathComponent("old-location/c11.app/Contents/Resources/bin/c11", isDirectory: false)
+        try fileManager.createSymbolicLink(at: destinationURL, withDestinationURL: staleTarget)
+
+        let installer = CmuxCLIPathInstaller(
+            fileManager: fileManager,
+            destinationURL: destinationURL,
+            bundledCLIURLProvider: { bundledCLIURL },
+            expectedBundledCLIPath: bundledCLIURL.path
+        )
+
+        let outcome = try installer.uninstall()
+        XCTAssertFalse(outcome.usedAdministratorPrivileges)
+        XCTAssertTrue(outcome.removedExistingEntry)
+        XCTAssertFalse(fileManager.fileExists(atPath: destinationURL.path))
+    }
+
+    func testPrivilegedInstallIsGuardedBySafetyCheck() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("c11-cli-installer-tests-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: root) }
+
+        let bundledCLIURL = try makeBundledCLI(in: root)
+        let destinationURL = makeDestination(in: root)
+        let destinationDir = destinationURL.deletingLastPathComponent()
+        // Put an unrelated symlink AND lock the parent so non-privileged install hits EACCES.
+        let unrelatedTarget = URL(fileURLWithPath: "/bin/ls")
+        try fileManager.createSymbolicLink(at: destinationURL, withDestinationURL: unrelatedTarget)
+        try fileManager.setAttributes([.posixPermissions: 0o555], ofItemAtPath: destinationDir.path)
+        defer {
+            try? fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destinationDir.path)
+        }
+
+        var privilegedInstallCallCount = 0
+        let installer = CmuxCLIPathInstaller(
+            fileManager: fileManager,
+            destinationURL: destinationURL,
+            bundledCLIURLProvider: { bundledCLIURL },
+            expectedBundledCLIPath: bundledCLIURL.path,
+            privilegedInstaller: { _, _ in privilegedInstallCallCount += 1 }
+        )
+
+        XCTAssertThrowsError(try installer.install()) { error in
+            guard case CmuxCLIPathInstaller.InstallerError.destinationNotOwnedByC11 = error else {
+                XCTFail("expected destinationNotOwnedByC11 before privileged handoff, got \(error)")
+                return
+            }
+        }
+        XCTAssertEqual(
+            privilegedInstallCallCount,
+            0,
+            "safety check must fire before privileged handoff"
+        )
+    }
+}
+
+final class AgentSkillsManualInstallCommandTests: XCTestCase {
+    func testSnippetUsesC11BinaryAndTargetRawValue() {
+        XCTAssertEqual(
+            AgentSkillsModel.manualInstallCommandSnippet(target: .claude),
+            "c11 skill install --tool claude"
+        )
+        XCTAssertEqual(
+            AgentSkillsModel.manualInstallCommandSnippet(target: .codex),
+            "c11 skill install --tool codex"
+        )
+        XCTAssertEqual(
+            AgentSkillsModel.manualInstallCommandSnippet(target: .kimi),
+            "c11 skill install --tool kimi"
+        )
+        XCTAssertEqual(
+            AgentSkillsModel.manualInstallCommandSnippet(target: .opencode),
+            "c11 skill install --tool opencode"
+        )
+    }
+
+    func testSnippetNeverUsesLegacyCmuxBinary() {
+        for target in SkillInstallerTarget.allCases {
+            let snippet = AgentSkillsModel.manualInstallCommandSnippet(target: target)
+            XCTAssertFalse(
+                snippet.hasPrefix("cmux "),
+                "snippet for \(target.rawValue) still starts with cmux: \(snippet)"
+            )
+            XCTAssertTrue(
+                snippet.hasPrefix("c11 "),
+                "snippet for \(target.rawValue) must start with c11: \(snippet)"
+            )
+        }
     }
 }

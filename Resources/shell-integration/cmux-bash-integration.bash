@@ -551,8 +551,10 @@ _cmux_install_prompt_command() {
     fi
 }
 
-# Ensure Resources/bin is at the front of PATH, and remove the app's
-# Contents/MacOS entry so the GUI cmux binary cannot shadow the CLI cmux.
+# Ensure Resources/bin (where the bundled `c11` CLI lives) is at the front
+# of PATH, and remove the app's Contents/MacOS entry so the GUI binary cannot
+# shadow CLI commands. The bundled bin no longer ships a `cmux` symlink; an
+# upstream cmux install on the user's PATH stays visible.
 # Shell init (.bashrc/.bash_profile) may prepend other dirs after launch.
 _cmux_fix_path() {
     if [[ -n "${GHOSTTY_BIN_DIR:-}" ]]; then

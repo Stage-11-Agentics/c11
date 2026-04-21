@@ -47,3 +47,7 @@ tests/visual_report.html
 # Local scratch (screenshots, etc.)
 tmp/
 tmp-*/
+
+# Claude Code per-session state and agent scratch worktrees
+.claude/scheduled_tasks.lock
+.claude/worktrees/

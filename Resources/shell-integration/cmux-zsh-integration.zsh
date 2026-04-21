@@ -704,8 +704,10 @@ _cmux_precmd() {
     _cmux_agent_kick
 }
 
-# Ensure Resources/bin is at the front of PATH, and remove the app's
-# Contents/MacOS entry so the GUI cmux binary cannot shadow the CLI cmux.
+# Ensure Resources/bin (where the bundled `c11` CLI lives) is at the front
+# of PATH, and remove the app's Contents/MacOS entry so the GUI binary cannot
+# shadow CLI commands. The bundled bin no longer ships a `cmux` symlink; an
+# upstream cmux install on the user's PATH stays visible.
 # Shell init (.zprofile/.zshrc) may prepend other dirs after launch.
 # We fix this once on first prompt (after all init files have run).
 _cmux_fix_path() {

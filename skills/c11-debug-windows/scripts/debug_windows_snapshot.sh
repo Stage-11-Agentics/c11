@@ -11,7 +11,7 @@ from macOS defaults and print a combined payload. Use --copy to also copy the pa
 Examples:
   debug_windows_snapshot.sh
   debug_windows_snapshot.sh --copy
-  debug_windows_snapshot.sh --domain dev.manaflow.cmux --copy
+  debug_windows_snapshot.sh --domain com.stage11.c11 --copy
 USAGE
 }
 
@@ -45,7 +45,7 @@ discover_domain() {
   defaults domains 2>/dev/null \
     | tr ',' '\n' \
     | tr -d ' ' \
-    | grep -E 'cmux' \
+    | grep -E 'c11|cmux' \
     | head -n1 || true
 }
 
@@ -76,7 +76,7 @@ if [[ -z "$domain" ]]; then
 fi
 
 if [[ -z "$domain" ]]; then
-  echo "Could not auto-detect a cmux defaults domain. Pass --domain <bundle-id>." >&2
+  echo "Could not auto-detect a c11 defaults domain. Pass --domain <bundle-id>." >&2
   exit 1
 fi
 

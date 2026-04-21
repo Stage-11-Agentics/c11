@@ -239,7 +239,7 @@ jobs:
             exit 1
           fi
           APP_PATH="build/Build/Products/Release/c11.app"
-          ENTITLEMENTS="cmux.entitlements"
+          ENTITLEMENTS="c11.entitlements"
           CLI_PATH="$APP_PATH/Contents/Resources/bin/c11"
           HELPER_PATH="$APP_PATH/Contents/Resources/bin/ghostty"
           if [ -f "$CLI_PATH" ]; then

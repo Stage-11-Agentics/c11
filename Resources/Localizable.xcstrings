@@ -28463,26 +28463,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "カスタムワークスペース名を削除"
+            "state": "translated",
+            "value": "ワークスペース名をリセット"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "移除自定义工作区名称"
+            "state": "translated",
+            "value": "重置工作区名称"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "移除自訂工作區名稱"
+            "state": "translated",
+            "value": "重設工作區名稱"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "사용자 지정 작업 공간 이름 제거"
+            "state": "translated",
+            "value": "작업 공간 이름 재설정"
           }
         },
         "de": {
@@ -28523,8 +28523,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Удалить пользовательское имя рабочего пространства"
+            "state": "translated",
+            "value": "Сбросить имя рабочего пространства"
           }
         },
         "bs": {
@@ -28561,6 +28561,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Özel Çalışma Alanı Adını Kaldır"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скинути назву робочого простору"
           }
         }
       }
@@ -29024,6 +29030,42 @@
           "stringUnit": {
             "state": "translated",
             "value": "Per-workspace accent. c11 theme (Light/Dark) lives in Settings → Theme."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークスペースごとのアクセント。c11 テーマ（ライト／ダーク）は「設定」→「テーマ」にあります。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 공간별 강조색. c11 테마(라이트/다크)는 설정 → 테마에 있습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个工作区的强调色。c11 主题（浅色/深色）位于设置 → 主题。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各工作區強調色。c11 主題（淺色／深色）位於「設定 → 主題」。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Акцент для рабочего пространства. Тема c11 (светлая/тёмная) — в Настройки → Тема."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Акцент для кожного робочого простору. Тема c11 (світла/темна) — Налаштування → Тема."
           }
         }
       }

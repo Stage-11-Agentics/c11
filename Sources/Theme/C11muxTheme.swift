@@ -276,7 +276,7 @@ public struct C11muxTheme: Codable, Equatable, Sendable {
                     unfocusedOpacity: 0.6
                 ),
                 sidebar: .init(
-                    tintOverlay: "$workspaceColor.opacity(0.08)",
+                    tintOverlay: "#00000000",
                     tintBase: "$background",
                     tintBaseOpacity: 0.18,
                     activeTabFill: "$workspaceColor",

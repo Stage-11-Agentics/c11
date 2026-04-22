@@ -26,7 +26,7 @@
       "inactiveTabMultiSelectOpacity" : 0.35,
       "tintBase" : "$background",
       "tintBaseOpacity" : 0.18,
-      "tintOverlay" : "$workspaceColor.opacity(0.08)"
+      "tintOverlay" : "#00000000"
     },
     "tabBar" : {
       "activeFill" : "$ghosttyBackground.lighten(0.04)",

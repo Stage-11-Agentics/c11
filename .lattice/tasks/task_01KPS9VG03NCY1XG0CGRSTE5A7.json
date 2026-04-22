@@ -1,7 +1,7 @@
 {
   "assigned_to": null,
   "branch_links": [],
-  "comment_count": 0,
+  "comment_count": 1,
   "complexity": "medium",
   "created_at": "2026-04-22T00:36:16Z",
   "created_by": "agent:codex",
@@ -10,8 +10,8 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KPS9VG03NCY1XG0CGRSTE5A7",
-  "last_event_id": "ev_01KPSA4VXBE8YF5KH5ESCZ72D0",
-  "last_status_changed_at": "2026-04-22T00:41:23Z",
+  "last_event_id": "ev_01KPSECVYED2X61P2J2CAEM9K0",
+  "last_status_changed_at": "2026-04-22T01:55:39Z",
   "linked_files": [],
   "priority": "high",
   "relationships_out": [
@@ -26,7 +26,7 @@
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-8",
-  "status": "planned",
+  "status": "review",
   "tags": [
     "ui",
     "workspace-color",
@@ -36,6 +36,6 @@
   ],
   "title": "Fix custom workspace color chrome refresh and frame coverage",
   "type": "bug",
-  "updated_at": "2026-04-22T00:41:23Z",
+  "updated_at": "2026-04-22T01:55:39Z",
   "urgency": "normal"
 }

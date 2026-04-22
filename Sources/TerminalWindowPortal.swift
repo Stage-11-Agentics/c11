@@ -432,11 +432,174 @@ final class WindowTerminalHostView: NSView {
 #endif
 }
 
-private final class SplitDividerOverlayView: NSView {
+struct PortalChromeOverlaySegment {
+    let rect: NSRect
+    let color: NSColor
+}
+
+struct PortalChromeOverlayDividerSegment {
+    let rect: NSRect
+    let isVertical: Bool
+}
+
+struct PortalWorkspaceFrameEdges: Equatable {
+    let leading: Bool
+    let trailing: Bool
+    let bottom: Bool
+    let top: Bool
+
+    init(
+        leading: Bool = true,
+        trailing: Bool = true,
+        bottom: Bool = true,
+        top: Bool = true
+    ) {
+        self.leading = leading
+        self.trailing = trailing
+        self.bottom = bottom
+        self.top = top
+    }
+
+    static let all = PortalWorkspaceFrameEdges()
+}
+
+struct PortalWorkspaceFrameStyle: Equatable {
+    let colorHex: String
+    let thicknessPt: CGFloat
+    let opacity: Double
+    let edges: PortalWorkspaceFrameEdges
+
+    init(
+        colorHex: String,
+        thicknessPt: CGFloat,
+        opacity: Double,
+        edges: PortalWorkspaceFrameEdges = .all
+    ) {
+        self.colorHex = colorHex
+        self.thicknessPt = thicknessPt
+        self.opacity = opacity
+        self.edges = edges
+    }
+}
+
+enum PortalWorkspaceFrameOverlay {
+    static func color(from style: PortalWorkspaceFrameStyle) -> NSColor? {
+        guard let base = NSColor(hex: style.colorHex) else { return nil }
+        let alpha = base.alphaComponent * CGFloat(max(0, min(1, style.opacity)))
+        return base.withAlphaComponent(alpha)
+    }
+
+    static func appendWorkspaceFrameSegments(
+        for frame: NSRect,
+        hostBounds: NSRect,
+        style: PortalWorkspaceFrameStyle,
+        color: NSColor,
+        dividerSegments: [PortalChromeOverlayDividerSegment],
+        into segments: inout [PortalChromeOverlaySegment]
+    ) {
+        let visibleFrame = frame.intersection(hostBounds)
+        guard !visibleFrame.isNull,
+              visibleFrame.width > 1,
+              visibleFrame.height > 1 else {
+            return
+        }
+
+        let thickness = max(1, style.thicknessPt)
+
+        func appendClipped(_ rect: NSRect) {
+            let clipped = rect.intersection(hostBounds)
+            guard !clipped.isNull, clipped.width > 0, clipped.height > 0 else { return }
+            segments.append(PortalChromeOverlaySegment(rect: clipped, color: color))
+        }
+
+        if style.edges.leading && !edgeTouchesDivider(.leading, frame: frame, dividerSegments: dividerSegments) {
+            appendClipped(NSRect(x: frame.minX, y: frame.minY, width: thickness, height: frame.height))
+        }
+        if style.edges.trailing && !edgeTouchesDivider(.trailing, frame: frame, dividerSegments: dividerSegments) {
+            appendClipped(NSRect(x: frame.maxX - thickness, y: frame.minY, width: thickness, height: frame.height))
+        }
+        if style.edges.bottom && !edgeTouchesDivider(.bottom, frame: frame, dividerSegments: dividerSegments) {
+            appendClipped(NSRect(x: frame.minX, y: frame.minY, width: frame.width, height: thickness))
+        }
+        if style.edges.top && !edgeTouchesDivider(.top, frame: frame, dividerSegments: dividerSegments) {
+            appendClipped(NSRect(x: frame.minX, y: frame.maxY - thickness, width: frame.width, height: thickness))
+        }
+    }
+
+    private enum Edge {
+        case leading
+        case trailing
+        case bottom
+        case top
+    }
+
+    private static func edgeTouchesDivider(
+        _ edge: Edge,
+        frame: NSRect,
+        dividerSegments: [PortalChromeOverlayDividerSegment],
+        epsilon: CGFloat = 1.5
+    ) -> Bool {
+        switch edge {
+        case .leading, .trailing:
+            let x = edge == .leading ? frame.minX : frame.maxX
+            return dividerSegments.contains { segment in
+                guard segment.isVertical else { return false }
+                guard rangesOverlap(
+                    frame.minY...frame.maxY,
+                    segment.rect.minY...segment.rect.maxY,
+                    epsilon: epsilon
+                ) else { return false }
+                return x >= segment.rect.minX - epsilon && x <= segment.rect.maxX + epsilon
+            }
+        case .bottom, .top:
+            let y = edge == .bottom ? frame.minY : frame.maxY
+            return dividerSegments.contains { segment in
+                guard !segment.isVertical else { return false }
+                guard rangesOverlap(
+                    frame.minX...frame.maxX,
+                    segment.rect.minX...segment.rect.maxX,
+                    epsilon: epsilon
+                ) else { return false }
+                return y >= segment.rect.minY - epsilon && y <= segment.rect.maxY + epsilon
+            }
+        }
+    }
+
+    private static func rangesOverlap(
+        _ lhs: ClosedRange<CGFloat>,
+        _ rhs: ClosedRange<CGFloat>,
+        epsilon: CGFloat
+    ) -> Bool {
+        lhs.upperBound >= rhs.lowerBound - epsilon &&
+            lhs.lowerBound <= rhs.upperBound + epsilon
+    }
+}
+
+final class PortalSplitDividerOverlayView: NSView {
+    enum OcclusionPolicy {
+        case crossingCenterline
+        case touchingSegment
+    }
+
     private struct DividerSegment {
         let rect: NSRect
         let color: NSColor
         let isVertical: Bool
+    }
+
+    var hostedFrameProvider: ((NSView) -> [NSRect])?
+    var chromeSegmentProvider: ((NSView, [PortalChromeOverlayDividerSegment]) -> [PortalChromeOverlaySegment])?
+
+    private let occlusionPolicy: OcclusionPolicy
+
+    init(frame frameRect: NSRect, occlusionPolicy: OcclusionPolicy = .crossingCenterline) {
+        self.occlusionPolicy = occlusionPolicy
+        super.init(frame: frameRect)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
     }
 
     override var isOpaque: Bool { false }
@@ -450,10 +613,20 @@ private final class SplitDividerOverlayView: NSView {
 
         var dividerSegments: [DividerSegment] = []
         collectDividerSegments(in: rootView, into: &dividerSegments)
-        guard !dividerSegments.isEmpty else { return }
-        let hostedFrames = hostedFramesLikelyToOccludeDividers()
-        let visibleSegments = dividerSegments.filter { shouldRenderOverlay(for: $0, hostedFrames: hostedFrames) }
-        guard !visibleSegments.isEmpty else { return }
+        let chromeDividerSegments = dividerSegments.map {
+            PortalChromeOverlayDividerSegment(rect: $0.rect, isVertical: $0.isVertical)
+        }
+        let chromeSegments = superview.map {
+            chromeSegmentProvider?($0, chromeDividerSegments) ?? []
+        } ?? []
+        let visibleSegments: [DividerSegment]
+        if dividerSegments.isEmpty {
+            visibleSegments = []
+        } else {
+            let hostedFrames = hostedFramesLikelyToOccludeDividers()
+            visibleSegments = dividerSegments.filter { shouldRenderOverlay(for: $0, hostedFrames: hostedFrames) }
+        }
+        guard !visibleSegments.isEmpty || !chromeSegments.isEmpty else { return }
 
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
@@ -462,14 +635,12 @@ private final class SplitDividerOverlayView: NSView {
         // native divider color (avoids visible color shifts at tiny pane sizes).
         for segment in visibleSegments where segment.rect.intersects(dirtyRect) {
             segment.color.setFill()
-            let rect = segment.rect
-            let pixelAligned = NSRect(
-                x: floor(rect.origin.x),
-                y: floor(rect.origin.y),
-                width: max(1, round(rect.size.width)),
-                height: max(1, round(rect.size.height))
-            )
-            NSBezierPath(rect: pixelAligned).fill()
+            NSBezierPath(rect: Self.pixelAligned(segment.rect)).fill()
+        }
+
+        for segment in chromeSegments where segment.rect.intersects(dirtyRect) {
+            segment.color.setFill()
+            NSBezierPath(rect: Self.pixelAligned(segment.rect)).fill()
         }
     }
 
@@ -520,6 +691,9 @@ private final class SplitDividerOverlayView: NSView {
 
     private func hostedFramesLikelyToOccludeDividers() -> [NSRect] {
         guard let hostView = superview else { return [] }
+        if let hostedFrameProvider {
+            return hostedFrameProvider(hostView)
+        }
         return hostView.subviews.compactMap { subview -> NSRect? in
             guard let hosted = subview as? GhosttySurfaceScrollView else { return nil }
             guard !hosted.isHidden, hosted.window != nil else { return nil }
@@ -528,6 +702,19 @@ private final class SplitDividerOverlayView: NSView {
     }
 
     private func shouldRenderOverlay(for segment: DividerSegment, hostedFrames: [NSRect]) -> Bool {
+        switch occlusionPolicy {
+        case .crossingCenterline:
+            return hostedFrames.contains { hostedFrameCrossesDividerCenterline($0, segment: segment) }
+        case .touchingSegment:
+            let expanded = segment.rect.insetBy(
+                dx: segment.isVertical ? -1 : 0,
+                dy: segment.isVertical ? 0 : -1
+            )
+            return hostedFrames.contains { Self.rect($0, touches: expanded) }
+        }
+    }
+
+    private func hostedFrameCrossesDividerCenterline(_ frame: NSRect, segment: DividerSegment) -> Bool {
         // Draw only when a hosted surface actually intrudes across the divider centerline.
         // This preserves tiny-pane visibility fixes without darkening regular dividers.
         let axisEpsilon: CGFloat = 0.01
@@ -537,14 +724,13 @@ private final class SplitDividerOverlayView: NSView {
             dy: segment.isVertical ? -1 : 0
         )
 
-        for frame in hostedFrames where frame.intersects(extentRect) {
-            if segment.isVertical {
-                if frame.minX < axis - axisEpsilon && frame.maxX > axis + axisEpsilon {
-                    return true
-                }
-            } else if frame.minY < axis - axisEpsilon && frame.maxY > axis + axisEpsilon {
+        guard frame.intersects(extentRect) else { return false }
+        if segment.isVertical {
+            if frame.minX < axis - axisEpsilon && frame.maxX > axis + axisEpsilon {
                 return true
             }
+        } else if frame.minY < axis - axisEpsilon && frame.maxY > axis + axisEpsilon {
+            return true
         }
         return false
     }
@@ -562,6 +748,22 @@ private final class SplitDividerOverlayView: NSView {
         let opaqueBG = bgRGB.withAlphaComponent(1)
         let opaqueDivider = divider.withAlphaComponent(1)
         return opaqueBG.blended(withFraction: alpha, of: opaqueDivider) ?? divider
+    }
+
+    private static func pixelAligned(_ rect: NSRect) -> NSRect {
+        NSRect(
+            x: floor(rect.origin.x),
+            y: floor(rect.origin.y),
+            width: max(1, round(rect.size.width)),
+            height: max(1, round(rect.size.height))
+        )
+    }
+
+    private static func rect(_ lhs: NSRect, touches rhs: NSRect, epsilon: CGFloat = 0.5) -> Bool {
+        lhs.maxX >= rhs.minX - epsilon &&
+            lhs.minX <= rhs.maxX + epsilon &&
+            lhs.maxY >= rhs.minY - epsilon &&
+            lhs.minY <= rhs.maxY + epsilon
     }
 }
 
@@ -582,7 +784,7 @@ final class WindowTerminalPortal: NSObject {
 
     private weak var window: NSWindow?
     private let hostView = WindowTerminalHostView(frame: .zero)
-    private let dividerOverlayView = SplitDividerOverlayView(frame: .zero)
+    private let dividerOverlayView = PortalSplitDividerOverlayView(frame: .zero)
     private weak var installedContainerView: NSView?
     private weak var installedReferenceView: NSView?
     private var installConstraints: [NSLayoutConstraint] = []
@@ -598,6 +800,7 @@ final class WindowTerminalPortal: NSObject {
         weak var anchorView: NSView?
         var visibleInUI: Bool
         var zPriority: Int
+        var workspaceFrameStyle: PortalWorkspaceFrameStyle?
         var transientRecoveryRetriesRemaining: Int
     }
 
@@ -614,6 +817,15 @@ final class WindowTerminalPortal: NSObject {
         hostView.translatesAutoresizingMaskIntoConstraints = false
         dividerOverlayView.translatesAutoresizingMaskIntoConstraints = true
         dividerOverlayView.autoresizingMask = [.width, .height]
+        dividerOverlayView.hostedFrameProvider = { [weak self] hostView in
+            self?.hostedFramesForChromeOverlay(in: hostView) ?? []
+        }
+        dividerOverlayView.chromeSegmentProvider = { [weak self] hostView, dividerSegments in
+            self?.workspaceFrameSegmentsForChromeOverlay(
+                in: hostView,
+                dividerSegments: dividerSegments
+            ) ?? []
+        }
         installGeometryObservers(for: window)
         _ = ensureInstalled()
     }
@@ -764,6 +976,48 @@ final class WindowTerminalPortal: NSObject {
             dividerOverlayView.frame = hostView.bounds
         }
         dividerOverlayView.needsDisplay = true
+    }
+
+    private func hostedFramesForChromeOverlay(in hostView: NSView) -> [NSRect] {
+        entriesByHostedId.values.compactMap { entry in
+            guard entry.visibleInUI,
+                  let hostedView = entry.hostedView,
+                  !hostedView.isHidden,
+                  hostedView.superview === hostView else {
+                return nil
+            }
+            return hostedView.frame
+        }
+    }
+
+    private func workspaceFrameSegmentsForChromeOverlay(
+        in hostView: NSView,
+        dividerSegments: [PortalChromeOverlayDividerSegment]
+    ) -> [PortalChromeOverlaySegment] {
+        let hostBounds = hostView.bounds
+        guard hostBounds.width > 1, hostBounds.height > 1 else { return [] }
+
+        var segments: [PortalChromeOverlaySegment] = []
+        for entry in entriesByHostedId.values {
+            guard entry.visibleInUI,
+                  let style = entry.workspaceFrameStyle,
+                  let hostedView = entry.hostedView,
+                  !hostedView.isHidden,
+                  hostedView.superview === hostView,
+                  let color = PortalWorkspaceFrameOverlay.color(from: style) else {
+                continue
+            }
+
+            PortalWorkspaceFrameOverlay.appendWorkspaceFrameSegments(
+                for: hostedView.frame,
+                hostBounds: hostBounds,
+                style: style,
+                color: color,
+                dividerSegments: dividerSegments,
+                into: &segments
+            )
+        }
+        return segments
     }
 
     @discardableResult
@@ -1003,6 +1257,7 @@ final class WindowTerminalPortal: NSObject {
         entry.transientRecoveryRetriesRemaining = 0
         entriesByHostedId[hostedId] = entry
         entry.hostedView?.isHidden = true
+        dividerOverlayView.needsDisplay = true
 #if DEBUG
         dlog("portal.hideEntry hosted=\(portalDebugToken(entry.hostedView)) reason=workspaceUnmount")
 #endif
@@ -1018,6 +1273,7 @@ final class WindowTerminalPortal: NSObject {
             entry.transientRecoveryRetriesRemaining = 0
         }
         entriesByHostedId[hostedId] = entry
+        dividerOverlayView.needsDisplay = true
     }
 
     func isHostedViewBoundToAnchor(withId hostedId: ObjectIdentifier, anchorView: NSView) -> Bool {
@@ -1026,7 +1282,13 @@ final class WindowTerminalPortal: NSObject {
         return boundAnchor === anchorView
     }
 
-    func bind(hostedView: GhosttySurfaceScrollView, to anchorView: NSView, visibleInUI: Bool, zPriority: Int = 0) {
+    func bind(
+        hostedView: GhosttySurfaceScrollView,
+        to anchorView: NSView,
+        visibleInUI: Bool,
+        zPriority: Int = 0,
+        workspaceFrameStyle: PortalWorkspaceFrameStyle? = nil
+    ) {
         guard ensureInstalled() else { return }
 
         let hostedId = ObjectIdentifier(hostedView)
@@ -1058,6 +1320,7 @@ final class WindowTerminalPortal: NSObject {
             anchorView: anchorView,
             visibleInUI: visibleInUI,
             zPriority: zPriority,
+            workspaceFrameStyle: workspaceFrameStyle,
             transientRecoveryRetriesRemaining: 0
         )
 
@@ -1148,6 +1411,17 @@ final class WindowTerminalPortal: NSObject {
         // frame remains "stuck" onscreen until the next interaction.
         synchronizeAllHostedViews(excluding: primaryHostedId)
         scheduleDeferredFullSynchronizeAll()
+    }
+
+    func updateWorkspaceFrameStyle(
+        forHostedId hostedId: ObjectIdentifier,
+        style: PortalWorkspaceFrameStyle?
+    ) {
+        guard var entry = entriesByHostedId[hostedId] else { return }
+        guard entry.workspaceFrameStyle != style else { return }
+        entry.workspaceFrameStyle = style
+        entriesByHostedId[hostedId] = entry
+        dividerOverlayView.needsDisplay = true
     }
 
     private func scheduleDeferredFullSynchronizeAll() {
@@ -1761,6 +2035,7 @@ enum TerminalWindowPortalRegistry {
         to anchorView: NSView,
         visibleInUI: Bool,
         zPriority: Int = 0,
+        workspaceFrameStyle: PortalWorkspaceFrameStyle? = nil,
         expectedSurfaceId: UUID? = nil,
         expectedGeneration: UInt64? = nil
     ) {
@@ -1803,7 +2078,13 @@ enum TerminalWindowPortalRegistry {
             portalsByWindowId[oldWindowId]?.detachHostedView(withId: hostedId)
         }
 
-        nextPortal.bind(hostedView: hostedView, to: anchorView, visibleInUI: visibleInUI, zPriority: zPriority)
+        nextPortal.bind(
+            hostedView: hostedView,
+            to: anchorView,
+            visibleInUI: visibleInUI,
+            zPriority: zPriority,
+            workspaceFrameStyle: workspaceFrameStyle
+        )
         hostedToWindowId[hostedId] = windowId
         pruneHostedMappings(for: windowId, validHostedIds: nextPortal.hostedIds())
     }
@@ -1868,6 +2149,16 @@ enum TerminalWindowPortalRegistry {
         guard let windowId = hostedToWindowId[hostedId],
               let portal = portalsByWindowId[windowId] else { return }
         portal.updateEntryVisibility(forHostedId: hostedId, visibleInUI: visibleInUI)
+    }
+
+    static func updateWorkspaceFrameStyle(
+        for hostedView: GhosttySurfaceScrollView,
+        style: PortalWorkspaceFrameStyle?
+    ) {
+        let hostedId = ObjectIdentifier(hostedView)
+        guard let windowId = hostedToWindowId[hostedId],
+              let portal = portalsByWindowId[windowId] else { return }
+        portal.updateWorkspaceFrameStyle(forHostedId: hostedId, style: style)
     }
 
     static func isHostedView(_ hostedView: GhosttySurfaceScrollView, boundTo anchorView: NSView) -> Bool {

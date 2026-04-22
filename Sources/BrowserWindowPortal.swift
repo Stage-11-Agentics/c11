@@ -2078,6 +2078,10 @@ final class WindowBrowserPortal: NSObject {
 
     private weak var window: NSWindow?
     private let hostView = WindowBrowserHostView(frame: .zero)
+    private let chromeOverlayView = PortalSplitDividerOverlayView(
+        frame: .zero,
+        occlusionPolicy: .touchingSegment
+    )
     private weak var installedContainerView: NSView?
     private weak var installedReferenceView: NSView?
     private var hasDeferredFullSyncScheduled = false
@@ -2094,6 +2098,7 @@ final class WindowBrowserPortal: NSObject {
         var paneDropContext: BrowserPaneDropContext?
         var searchOverlay: BrowserPortalSearchOverlayConfiguration?
         var paneInteraction: BrowserPortalPaneInteractionConfiguration?
+        var workspaceFrameStyle: PortalWorkspaceFrameStyle?
         var paneTopChromeHeight: CGFloat
         var transientRecoveryReason: String?
         var transientRecoveryRetriesRemaining: Int
@@ -2109,6 +2114,17 @@ final class WindowBrowserPortal: NSObject {
         hostView.layer?.masksToBounds = true
         hostView.translatesAutoresizingMaskIntoConstraints = true
         hostView.autoresizingMask = []
+        chromeOverlayView.translatesAutoresizingMaskIntoConstraints = true
+        chromeOverlayView.autoresizingMask = [.width, .height]
+        chromeOverlayView.hostedFrameProvider = { [weak self] hostView in
+            self?.hostedFramesForChromeOverlay(in: hostView) ?? []
+        }
+        chromeOverlayView.chromeSegmentProvider = { [weak self] hostView, dividerSegments in
+            self?.workspaceFrameSegmentsForChromeOverlay(
+                in: hostView,
+                dividerSegments: dividerSegments
+            ) ?? []
+        }
         installGeometryObservers(for: window)
         _ = ensureInstalled()
     }
@@ -2202,6 +2218,63 @@ final class WindowBrowserPortal: NSObject {
                 reason: "externalGeometry"
             )
         }
+        chromeOverlayView.needsDisplay = true
+    }
+
+    private func ensureChromeOverlayOnTop() {
+        if chromeOverlayView.superview !== hostView {
+            chromeOverlayView.frame = hostView.bounds
+            hostView.addSubview(chromeOverlayView, positioned: .above, relativeTo: nil)
+        } else if hostView.subviews.last !== chromeOverlayView {
+            hostView.addSubview(chromeOverlayView, positioned: .above, relativeTo: nil)
+        }
+
+        if !Self.rectApproximatelyEqual(chromeOverlayView.frame, hostView.bounds) {
+            chromeOverlayView.frame = hostView.bounds
+        }
+        chromeOverlayView.needsDisplay = true
+    }
+
+    private func hostedFramesForChromeOverlay(in hostView: NSView) -> [NSRect] {
+        entriesByWebViewId.values.compactMap { entry in
+            guard entry.visibleInUI,
+                  let containerView = entry.containerView,
+                  !containerView.isHidden,
+                  containerView.superview === hostView else {
+                return nil
+            }
+            return containerView.frame
+        }
+    }
+
+    private func workspaceFrameSegmentsForChromeOverlay(
+        in hostView: NSView,
+        dividerSegments: [PortalChromeOverlayDividerSegment]
+    ) -> [PortalChromeOverlaySegment] {
+        let hostBounds = hostView.bounds
+        guard hostBounds.width > 1, hostBounds.height > 1 else { return [] }
+
+        var segments: [PortalChromeOverlaySegment] = []
+        for entry in entriesByWebViewId.values {
+            guard entry.visibleInUI,
+                  let style = entry.workspaceFrameStyle,
+                  let containerView = entry.containerView,
+                  !containerView.isHidden,
+                  containerView.superview === hostView,
+                  let color = PortalWorkspaceFrameOverlay.color(from: style) else {
+                continue
+            }
+
+            PortalWorkspaceFrameOverlay.appendWorkspaceFrameSegments(
+                for: containerView.frame,
+                hostBounds: hostBounds,
+                style: style,
+                color: color,
+                dividerSegments: dividerSegments,
+                into: &segments
+            )
+        }
+        return segments
     }
 
     @discardableResult
@@ -2227,6 +2300,7 @@ final class WindowBrowserPortal: NSObject {
         }
 
         synchronizeHostFrameToReference()
+        ensureChromeOverlayOnTop()
         return true
     }
 
@@ -2687,6 +2761,7 @@ final class WindowBrowserPortal: NSObject {
         entry.visibleInUI = visibleInUI
         entry.zPriority = zPriority
         entriesByWebViewId[webViewId] = entry
+        chromeOverlayView.needsDisplay = true
     }
 
     func isWebViewBoundToAnchor(withId webViewId: ObjectIdentifier, anchorView: NSView) -> Bool {
@@ -2700,7 +2775,19 @@ final class WindowBrowserPortal: NSObject {
         entry.visibleInUI = false
         entry.zPriority = 0
         entriesByWebViewId[webViewId] = entry
+        chromeOverlayView.needsDisplay = true
         synchronizeWebView(withId: webViewId, source: source)
+    }
+
+    func updateWorkspaceFrameStyle(
+        forWebViewId webViewId: ObjectIdentifier,
+        style: PortalWorkspaceFrameStyle?
+    ) {
+        guard var entry = entriesByWebViewId[webViewId] else { return }
+        guard entry.workspaceFrameStyle != style else { return }
+        entry.workspaceFrameStyle = style
+        entriesByWebViewId[webViewId] = entry
+        chromeOverlayView.needsDisplay = true
     }
 
     func updateDropZoneOverlay(forWebViewId webViewId: ObjectIdentifier, zone: DropZone?) {
@@ -2808,6 +2895,7 @@ final class WindowBrowserPortal: NSObject {
                 paneDropContext: nil,
                 searchOverlay: nil,
                 paneInteraction: nil,
+                workspaceFrameStyle: nil,
                 paneTopChromeHeight: 0,
                 transientRecoveryReason: nil,
                 transientRecoveryRetriesRemaining: 0
@@ -2845,6 +2933,7 @@ final class WindowBrowserPortal: NSObject {
             paneDropContext: previousEntry?.paneDropContext,
             searchOverlay: previousEntry?.searchOverlay,
             paneInteraction: previousEntry?.paneInteraction,
+            workspaceFrameStyle: previousEntry?.workspaceFrameStyle,
             paneTopChromeHeight: previousEntry?.paneTopChromeHeight ?? 0,
             transientRecoveryReason: previousEntry?.transientRecoveryReason,
             transientRecoveryRetriesRemaining: previousEntry?.transientRecoveryRetriesRemaining ?? 0
@@ -3490,6 +3579,7 @@ final class WindowBrowserPortal: NSObject {
             // appears only after WebKit settles, but avoid a second apply when sync already clamped it.
             _ = hostView.reapplyHostedInspectorDividerIfNeeded(in: containerView, reason: "portal.sync.postRefresh")
         }
+        ensureChromeOverlayOnTop()
 #if DEBUG
         dlog(
             "browser.portal.sync.result web=\(browserPortalDebugToken(webView)) source=\(source) " +
@@ -3764,6 +3854,13 @@ enum BrowserWindowPortalRegistry {
         guard let windowId = webViewToWindowId[webViewId],
               let portal = portalsByWindowId[windowId] else { return }
         portal.updatePaneInteraction(forWebViewId: webViewId, configuration: configuration)
+    }
+
+    static func updateWorkspaceFrameStyle(for webView: WKWebView, style: PortalWorkspaceFrameStyle?) {
+        let webViewId = ObjectIdentifier(webView)
+        guard let windowId = webViewToWindowId[webViewId],
+              let portal = portalsByWindowId[windowId] else { return }
+        portal.updateWorkspaceFrameStyle(forWebViewId: webViewId, style: style)
     }
 
     static func searchOverlayPanelId(for responder: NSResponder, in window: NSWindow) -> UUID? {

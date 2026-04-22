@@ -8954,6 +8954,7 @@ struct GhosttyTerminalView: NSViewRepresentable {
     var inactiveOverlayOpacity: Double = 0
     var searchState: TerminalSurface.SearchState? = nil
     var reattachToken: UInt64 = 0
+    var workspaceFrameStyle: PortalWorkspaceFrameStyle? = nil
     var onFocus: ((UUID) -> Void)? = nil
     var onTriggerFlash: (() -> Void)? = nil
     /// Workspace-scoped runtime for the pane-interaction overlay (close-confirm,
@@ -9026,6 +9027,7 @@ struct GhosttyTerminalView: NSViewRepresentable {
         var desiredIsVisibleInUI: Bool = true
         var desiredShowsUnreadNotificationRing: Bool = false
         var desiredPortalZPriority: Int = 0
+        var desiredWorkspaceFrameStyle: PortalWorkspaceFrameStyle?
         var lastBoundHostId: ObjectIdentifier?
         var lastPaneDropZone: DropZone?
         var lastSynchronizedHostGeometryRevision: UInt64 = 0
@@ -9094,14 +9096,18 @@ struct GhosttyTerminalView: NSViewRepresentable {
         let previousDesiredIsVisibleInUI = coordinator.desiredIsVisibleInUI
         let previousDesiredShowsUnreadNotificationRing = coordinator.desiredShowsUnreadNotificationRing
         let previousDesiredPortalZPriority = coordinator.desiredPortalZPriority
+        let activeWorkspaceFrameStyle = isVisibleInUI ? workspaceFrameStyle : nil
+        let previousDesiredWorkspaceFrameStyle = coordinator.desiredWorkspaceFrameStyle
         let desiredStateChanged =
             previousDesiredIsActive != isActive ||
             previousDesiredIsVisibleInUI != isVisibleInUI ||
-            previousDesiredPortalZPriority != portalZPriority
+            previousDesiredPortalZPriority != portalZPriority ||
+            previousDesiredWorkspaceFrameStyle != activeWorkspaceFrameStyle
         coordinator.desiredIsActive = isActive
         coordinator.desiredIsVisibleInUI = isVisibleInUI
         coordinator.desiredShowsUnreadNotificationRing = showsUnreadNotificationRing
         coordinator.desiredPortalZPriority = portalZPriority
+        coordinator.desiredWorkspaceFrameStyle = activeWorkspaceFrameStyle
         coordinator.hostedView = hostedView
 #if DEBUG
         if desiredStateChanged {
@@ -9205,6 +9211,7 @@ struct GhosttyTerminalView: NSViewRepresentable {
                     to: host,
                     visibleInUI: coordinator.desiredIsVisibleInUI,
                     zPriority: coordinator.desiredPortalZPriority,
+                    workspaceFrameStyle: coordinator.desiredWorkspaceFrameStyle,
                     expectedSurfaceId: portalExpectedSurfaceId,
                     expectedGeneration: portalExpectedGeneration
                 )
@@ -9240,6 +9247,7 @@ struct GhosttyTerminalView: NSViewRepresentable {
                         to: host,
                         visibleInUI: coordinator.desiredIsVisibleInUI,
                         zPriority: coordinator.desiredPortalZPriority,
+                        workspaceFrameStyle: coordinator.desiredWorkspaceFrameStyle,
                         expectedSurfaceId: portalExpectedSurfaceId,
                         expectedGeneration: portalExpectedGeneration
                     )
@@ -9265,7 +9273,8 @@ struct GhosttyTerminalView: NSViewRepresentable {
                     portalEntryMissing ||
                     previousDesiredIsVisibleInUI != isVisibleInUI ||
                     previousDesiredShowsUnreadNotificationRing != showsUnreadNotificationRing ||
-                    previousDesiredPortalZPriority != portalZPriority
+                    previousDesiredPortalZPriority != portalZPriority ||
+                    previousDesiredWorkspaceFrameStyle != activeWorkspaceFrameStyle
                 if portalBindingLive && shouldBindNow {
 #if DEBUG
                     if portalEntryMissing {
@@ -9281,12 +9290,19 @@ struct GhosttyTerminalView: NSViewRepresentable {
                         to: host,
                         visibleInUI: coordinator.desiredIsVisibleInUI,
                         zPriority: coordinator.desiredPortalZPriority,
+                        workspaceFrameStyle: coordinator.desiredWorkspaceFrameStyle,
                         expectedSurfaceId: portalExpectedSurfaceId,
                         expectedGeneration: portalExpectedGeneration
                     )
                     coordinator.lastBoundHostId = hostId
                     coordinator.lastSynchronizedHostGeometryRevision = geometryRevision
-                } else if portalBindingLive && coordinator.lastSynchronizedHostGeometryRevision != geometryRevision {
+                } else if portalBindingLive {
+                    TerminalWindowPortalRegistry.updateWorkspaceFrameStyle(
+                        for: hostedView,
+                        style: coordinator.desiredWorkspaceFrameStyle
+                    )
+                }
+                if portalBindingLive && coordinator.lastSynchronizedHostGeometryRevision != geometryRevision {
                     Self.synchronizePortalGeometry(
                         for: host,
                         coordinator: coordinator
@@ -9309,6 +9325,10 @@ struct GhosttyTerminalView: NSViewRepresentable {
                 TerminalWindowPortalRegistry.updateEntryVisibility(
                     for: hostedView,
                     visibleInUI: coordinator.desiredIsVisibleInUI
+                )
+                TerminalWindowPortalRegistry.updateWorkspaceFrameStyle(
+                    for: hostedView,
+                    style: coordinator.desiredWorkspaceFrameStyle
                 )
             }
         }
@@ -9348,6 +9368,7 @@ struct GhosttyTerminalView: NSViewRepresentable {
         coordinator.desiredIsVisibleInUI = false
         coordinator.desiredShowsUnreadNotificationRing = false
         coordinator.desiredPortalZPriority = 0
+        coordinator.desiredWorkspaceFrameStyle = nil
         coordinator.lastBoundHostId = nil
         let hostedView = coordinator.hostedView
 #if DEBUG

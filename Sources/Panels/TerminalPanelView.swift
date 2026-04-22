@@ -6,13 +6,18 @@ import AppKit
 struct TerminalPanelView: View {
     @ObservedObject var panel: TerminalPanel
     @ObservedObject var paneInteractionRuntime: PaneInteractionRuntime
+    @ObservedObject private var themeManager = ThemeManager.shared
     @AppStorage(NotificationPaneRingSettings.enabledKey)
     private var notificationPaneRingEnabled = NotificationPaneRingSettings.defaultEnabled
+    @AppStorage(ThemeAppStorage.Keys.workspaceFrameEnabled, store: ThemeAppStorage.defaults)
+    private var workspaceFrameEnabled = true
+    @Environment(\.colorScheme) private var colorScheme
     // [TextBox] TextBox Input settings (plan §4.3)
     @AppStorage(TextBoxInputSettings.enterToSendKey)
     private var textBoxEnterToSend = TextBoxInputSettings.defaultEnterToSend
     @AppStorage(TextBoxInputSettings.shortcutBehaviorKey)
     private var textBoxShortcutBehavior = TextBoxInputSettings.defaultShortcutBehavior.rawValue
+    let drawsPortalTopFrameEdge: Bool
     let isFocused: Bool
     let isVisibleInUI: Bool
     let portalPriority: Int
@@ -26,6 +31,48 @@ struct TerminalPanelView: View {
     /// Per-panel toggle is the only gate; Cmd+Option+B flips it.
     private var showTextBox: Bool {
         panel.isTextBoxActive
+    }
+
+    private var owningWorkspace: Workspace? {
+        guard let app = AppDelegate.shared,
+              let manager = app.tabManagerFor(tabId: panel.workspaceId) else {
+            return nil
+        }
+        return manager.tabs.first(where: { $0.id == panel.workspaceId })
+    }
+
+    private var portalWorkspaceFrameStyle: PortalWorkspaceFrameStyle? {
+        guard workspaceFrameEnabled && themeManager.isEnabled else { return nil }
+
+        let isWindowFocused = NSApp.keyWindow?.isKeyWindow ?? true
+        let context = themeManager.makeContext(
+            workspaceColor: owningWorkspace?.customColor,
+            colorScheme: colorScheme,
+            isWindowFocused: isWindowFocused
+        )
+
+        let strokeColor: NSColor = themeManager.resolve(.windowFrame_color, context: context) ?? .secondaryLabelColor
+        let thickness: CGFloat = themeManager.resolve(.windowFrame_thicknessPt, context: context) ?? 1.5
+        let inactiveOpacity: Double = themeManager.resolve(.windowFrame_inactiveOpacity, context: context) ?? 0.25
+        let unfocusedOpacity: Double = themeManager.resolve(.windowFrame_unfocusedOpacity, context: context) ?? 0.6
+        let opacity: Double
+        if portalPriority < 2 {
+            opacity = inactiveOpacity
+        } else if !isWindowFocused {
+            opacity = unfocusedOpacity
+        } else {
+            opacity = 1.0
+        }
+
+        return PortalWorkspaceFrameStyle(
+            colorHex: strokeColor.hexString(includeAlpha: strokeColor.alphaComponent < 0.999),
+            thicknessPt: thickness,
+            opacity: opacity,
+            edges: PortalWorkspaceFrameEdges(
+                bottom: !showTextBox,
+                top: drawsPortalTopFrameEdge
+            )
+        )
     }
 
     /// Resolve the terminal type from SurfaceMetadataStore (set by
@@ -67,6 +114,7 @@ struct TerminalPanelView: View {
                 inactiveOverlayOpacity: appearance.unfocusedOverlayOpacity,
                 searchState: panel.searchState,
                 reattachToken: panel.viewReattachToken,
+                workspaceFrameStyle: portalWorkspaceFrameStyle,
                 onFocus: { _ in onFocus() },
                 onTriggerFlash: onTriggerFlash,
                 paneInteractionRuntime: paneInteractionRuntime,

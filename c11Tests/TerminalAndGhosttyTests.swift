@@ -1732,6 +1732,102 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
 }
 
 
+final class PortalWorkspaceFrameOverlayTests: XCTestCase {
+    func testWorkspaceFrameSegmentsIncludeNonHostLeadingEdge() {
+        let style = PortalWorkspaceFrameStyle(colorHex: "#00ff00", thicknessPt: 2, opacity: 1)
+        let color = NSColor.green
+        var segments: [PortalChromeOverlaySegment] = []
+
+        PortalWorkspaceFrameOverlay.appendWorkspaceFrameSegments(
+            for: NSRect(x: 180, y: 20, width: 300, height: 200),
+            hostBounds: NSRect(x: 0, y: 0, width: 800, height: 600),
+            style: style,
+            color: color,
+            dividerSegments: [],
+            into: &segments
+        )
+
+        XCTAssertTrue(
+            segments.contains { segment in
+                abs(segment.rect.minX - 180) <= 0.001 &&
+                    abs(segment.rect.width - 2) <= 0.001 &&
+                    abs(segment.rect.height - 200) <= 0.001
+            },
+            "Portal workspace frame should render the workspace/content leading edge even when the portal host begins before it."
+        )
+    }
+
+    func testWorkspaceFrameSegmentsSkipEdgesOwnedBySplitDividers() {
+        let style = PortalWorkspaceFrameStyle(colorHex: "#00ff00", thicknessPt: 2, opacity: 1)
+        let color = NSColor.green
+        var segments: [PortalChromeOverlaySegment] = []
+
+        PortalWorkspaceFrameOverlay.appendWorkspaceFrameSegments(
+            for: NSRect(x: 482, y: 20, width: 300, height: 200),
+            hostBounds: NSRect(x: 0, y: 0, width: 800, height: 600),
+            style: style,
+            color: color,
+            dividerSegments: [
+                PortalChromeOverlayDividerSegment(
+                    rect: NSRect(x: 480, y: 0, width: 2, height: 260),
+                    isVertical: true
+                ),
+            ],
+            into: &segments
+        )
+
+        XCTAssertFalse(
+            segments.contains { segment in
+                abs(segment.rect.minX - 482) <= 0.001 &&
+                    abs(segment.rect.width - 2) <= 0.001 &&
+                    abs(segment.rect.height - 200) <= 0.001
+            },
+            "Portal workspace frame should not paint over a real split divider edge."
+        )
+    }
+
+    func testWorkspaceFrameSegmentsRespectDisabledPanelChromeEdges() {
+        let style = PortalWorkspaceFrameStyle(
+            colorHex: "#00ff00",
+            thicknessPt: 2,
+            opacity: 1,
+            edges: PortalWorkspaceFrameEdges(top: false)
+        )
+        let color = NSColor.green
+        var segments: [PortalChromeOverlaySegment] = []
+
+        PortalWorkspaceFrameOverlay.appendWorkspaceFrameSegments(
+            for: NSRect(x: 180, y: 20, width: 300, height: 200),
+            hostBounds: NSRect(x: 0, y: 0, width: 800, height: 600),
+            style: style,
+            color: color,
+            dividerSegments: [],
+            into: &segments
+        )
+
+        XCTAssertFalse(
+            segments.contains { segment in
+                abs(segment.rect.minY - 218) <= 0.001 &&
+                    abs(segment.rect.height - 2) <= 0.001
+            },
+            "Portal workspace frame should not draw internal edges covered by SwiftUI panel chrome."
+        )
+    }
+
+    func testWorkspaceFrameColorPreservesThemeAlpha() throws {
+        let style = PortalWorkspaceFrameStyle(colorHex: "#33669980", thicknessPt: 2, opacity: 0.5)
+
+        let color = try XCTUnwrap(PortalWorkspaceFrameOverlay.color(from: style))
+        let srgb = try XCTUnwrap(color.usingColorSpace(.sRGB))
+
+        XCTAssertEqual(srgb.redComponent, CGFloat(0x33) / 255.0, accuracy: 0.001)
+        XCTAssertEqual(srgb.greenComponent, CGFloat(0x66) / 255.0, accuracy: 0.001)
+        XCTAssertEqual(srgb.blueComponent, CGFloat(0x99) / 255.0, accuracy: 0.001)
+        XCTAssertEqual(srgb.alphaComponent, (CGFloat(0x80) / 255.0) * 0.5, accuracy: 0.001)
+    }
+}
+
+
 @MainActor
 final class TerminalWindowPortalLifecycleTests: XCTestCase {
     private final class ContentViewCountingWindow: NSWindow {

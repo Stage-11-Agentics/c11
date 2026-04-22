@@ -5875,108 +5875,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The site refused to connect. Check that a server is running on this address."
+            "value": "The site refused the connection. Check that a server is running on this address."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "サイトに接続できませんでした。このアドレスでサーバーが実行されていることを確認してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "网站拒绝了连接。请检查此地址上是否有服务器正在运行。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "網站拒絕連線。請確認此位址上有伺服器正在運行。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "사이트에서 연결을 거부했습니다. 이 주소에서 서버가 실행 중인지 확인하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Die Website hat die Verbindung verweigert. Überprüfen Sie, ob ein Server unter dieser Adresse läuft."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "El sitio rechazó la conexión. Comprueba que haya un servidor en ejecución en esta dirección."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Le site a refusé la connexion. Vérifiez qu'un serveur est bien en cours d'exécution à cette adresse."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Il sito ha rifiutato la connessione. Verifica che un server sia in esecuzione su questo indirizzo."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Siden nægtede forbindelsen. Kontroller at en server kører på denne adresse."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Serwer odmówił połączenia. Sprawdź, czy pod tym adresem działa serwer."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Сайт отклонил подключение. Убедитесь, что сервер запущен по этому адресу."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Stranica je odbila vezu. Provjerite da li je server pokrenut na ovoj adresi."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "رفض الموقع الاتصال. تأكد من تشغيل خادم على هذا العنوان."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nettstedet nektet tilkobling. Kontroller at en server kjører på denne adressen."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "O site recusou a conexão. Verifique se há um servidor em execução neste endereço."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "เว็บไซต์ปฏิเสธการเชื่อมต่อ ตรวจสอบว่ามีเซิร์ฟเวอร์ทำงานบนที่อยู่นี้"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Site bağlantıyı reddetti. Bu adreste bir sunucunun çalışıp çalışmadığını kontrol edin."
           }
         }
@@ -5988,108 +5988,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ refused to connect. Check that a server is running on this address."
+            "value": "%@ refused the connection. Check that a server is running on this address."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ に接続できませんでした。このアドレスでサーバーが実行されていることを確認してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ 拒绝了连接。请检查此地址上是否有服务器正在运行。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ 拒絕連線。請確認此位址上有伺服器正在運行。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@에서 연결을 거부했습니다. 이 주소에서 서버가 실행 중인지 확인하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ hat die Verbindung verweigert. Überprüfen Sie, ob ein Server unter dieser Adresse läuft."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ rechazó la conexión. Comprueba que haya un servidor en ejecución en esta dirección."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ a refusé la connexion. Vérifiez qu'un serveur est bien en cours d'exécution à cette adresse."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ ha rifiutato la connessione. Verifica che un server sia in esecuzione su questo indirizzo."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ nægtede forbindelsen. Kontroller at en server kører på denne adresse."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ odmówił połączenia. Sprawdź, czy pod tym adresem działa serwer."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ отклонил подключение. Убедитесь, что сервер запущен по этому адресу."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ je odbio vezu. Provjerite da li je server pokrenut na ovoj adresi."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "رفض %@ الاتصال. تأكد من تشغيل خادم على هذا العنوان."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ nektet tilkobling. Kontroller at en server kjører på denne adressen."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ recusou a conexão. Verifique se há um servidor em execução neste endereço."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ ปฏิเสธการเชื่อมต่อ ตรวจสอบว่ามีเซิร์ฟเวอร์ทำงานบนที่อยู่นี้"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ bağlantıyı reddetti. Bu adreste bir sunucunun çalışıp çalışmadığını kontrol edin."
           }
         }
@@ -7361,12 +7361,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Bookmarks, settings, and extensions are not available yet."
+            "value": "Bookmarks, settings, and extensions aren't available yet."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ブックマーク、設定、拡張機能はまだ利用できません。"
           }
         }
@@ -7752,12 +7752,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Missing c11 profiles are created on import."
+            "value": "c11 creates any missing profiles on import."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "不足している c11 プロファイルは、インポート時に作成されます。"
           }
         }
@@ -7894,12 +7894,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The selected c11 browser profile no longer exists. Pick a destination profile again."
+            "value": "The selected c11 browser profile is gone. Pick another destination."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "選択した c11 ブラウザープロファイルが見つかりません。保存先プロファイルを選び直してください。"
           }
         }
@@ -8110,12 +8110,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No importable browsers found"
+            "value": "No browsers to import from"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "インポートできるブラウザーが見つかりません"
           }
         }
@@ -8314,12 +8314,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Select one or more profiles."
+            "value": "Pick one or more profiles."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "1つ以上のプロファイルを選択してください。"
           }
         }
@@ -8416,12 +8416,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Select Cookies, History, or both before starting import."
+            "value": "Pick Cookies, History, or both before starting import."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "インポートを始める前に、Cookie、履歴、またはその両方を選択してください。"
           }
         }
@@ -8433,12 +8433,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Choose at least one source profile to import."
+            "value": "Pick at least one source profile."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "インポートする元プロファイルを少なくとも1つ選択してください。"
           }
         }
@@ -8473,12 +8473,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Failed reading %@ cookies at %@: %@"
+            "value": "Couldn't read %@ cookies at %@: %@"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ のCookieを %@ から読み込めませんでした: %@"
           }
         }
@@ -8490,12 +8490,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Failed reading %@ history at %@: %@"
+            "value": "Couldn't read %@ history at %@: %@"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ の履歴を %@ から読み込めませんでした: %@"
           }
         }
@@ -8507,12 +8507,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ cookie import is not implemented yet."
+            "value": "%@ cookie import isn't supported yet."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ のCookieインポートにはまだ対応していません。"
           }
         }
@@ -8541,12 +8541,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Failed reading Firefox cookies at %@: %@"
+            "value": "Couldn't read Firefox cookies at %@: %@"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Firefox のCookieを %@ から読み込めませんでした: %@"
           }
         }
@@ -8558,12 +8558,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Failed reading Firefox history at %@: %@"
+            "value": "Couldn't read Firefox history at %@: %@"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Firefox の履歴を %@ から読み込めませんでした: %@"
           }
         }
@@ -8615,12 +8615,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Safari cookies are stored in Cookies.binarycookies and are not yet supported by this importer."
+            "value": "Safari cookies live in Cookies.binarycookies, which this importer doesn't support yet."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Safari のCookieは Cookies.binarycookies に保存されており、このインポーターではまだ対応していません。"
           }
         }
@@ -9118,12 +9118,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Rename Current Profile..."
+            "value": "Rename This Profile..."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "現在のプロファイル名を変更..."
           }
         }
@@ -9135,12 +9135,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Choose a new name for this browser profile."
+            "value": "Pick a new name for this browser profile."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "このブラウザープロファイルの新しい名前を入力します。"
           }
         }

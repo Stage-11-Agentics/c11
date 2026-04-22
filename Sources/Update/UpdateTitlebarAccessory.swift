@@ -1038,9 +1038,9 @@ private struct NotificationsPopoverView: View {
                     Image(systemName: "bell.slash")
                         .font(.system(size: 28))
                         .foregroundColor(.secondary)
-                    Text(String(localized: "notifications.empty.title", defaultValue: "No notifications yet"))
+                    Text(String(localized: "notifications.empty.title", defaultValue: "No alerts yet."))
                         .font(.headline)
-                    Text(String(localized: "notifications.empty.subtitle", defaultValue: "Desktop notifications will appear here."))
+                    Text(String(localized: "notifications.empty.subtitle", defaultValue: "When a pane needs you, it rings here."))
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }

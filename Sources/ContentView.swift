@@ -5286,7 +5286,7 @@ struct ContentView: View {
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.triggerFlash",
-                title: constant(String(localized: "command.triggerFlash.title", defaultValue: "Flash Focused Panel")),
+                title: constant(String(localized: "command.triggerFlash.title", defaultValue: "Flash Focused Pane")),
                 subtitle: constant(String(localized: "command.triggerFlash.subtitle", defaultValue: "View")),
                 keywords: ["flash", "highlight", "focus", "panel"]
             )
@@ -12406,7 +12406,7 @@ private struct TabItemView: View, Equatable {
 
         let alert = NSAlert()
         alert.messageText = String(localized: "alert.renameWorkspace.title", defaultValue: "Rename Workspace")
-        alert.informativeText = String(localized: "alert.renameWorkspace.message", defaultValue: "Enter a custom name for this workspace.")
+        alert.informativeText = String(localized: "alert.renameWorkspace.message", defaultValue: "Any text works. Workspace names show in the sidebar.")
         let input = NSTextField(string: currentTitle)
         input.placeholderString = String(localized: "alert.renameWorkspace.placeholder", defaultValue: "Workspace name")
         input.frame = NSRect(x: 0, y: 0, width: 240, height: 22)

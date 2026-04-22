@@ -9325,7 +9325,7 @@ final class Workspace: Identifiable, ObservableObject {
                     ),
                     message: String(
                         localized: "dialog.renameTab.message",
-                        defaultValue: "Enter a custom name for this tab."
+                        defaultValue: "Any text works. Longer titles are easier to find when many tabs are open."
                     ),
                     defaultValue: currentTitle,
                     placeholder: String(
@@ -9354,7 +9354,7 @@ final class Workspace: Identifiable, ObservableObject {
         )
         alert.informativeText = String(
             localized: "dialog.renameTab.message",
-            defaultValue: "Enter a custom name for this tab."
+            defaultValue: "Any text works. Longer titles are easier to find when many tabs are open."
         )
         let input = NSTextField(string: currentTitle)
         input.placeholderString = String(

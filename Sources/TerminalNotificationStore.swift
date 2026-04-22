@@ -1151,7 +1151,7 @@ final class TerminalNotificationStore: ObservableObject {
 
         let alert = notificationSettingsAlertFactory()
         alert.messageText = String(localized: "dialog.enableNotifications.title", defaultValue: "Enable Notifications for c11")
-        alert.informativeText = String(localized: "dialog.enableNotifications.message", defaultValue: "Notifications are disabled for c11. Enable them in System Settings to see alerts.")
+        alert.informativeText = String(localized: "dialog.enableNotifications.message", defaultValue: "Notifications are off for c11. Enable them in System Settings so c11 can ring you when a pane needs attention.")
         alert.addButton(withTitle: String(localized: "dialog.enableNotifications.openSettings", defaultValue: "Open Settings"))
         alert.addButton(withTitle: String(localized: "dialog.enableNotifications.notNow", defaultValue: "Not Now"))
         alert.beginSheetModal(for: window) { [weak self] response in

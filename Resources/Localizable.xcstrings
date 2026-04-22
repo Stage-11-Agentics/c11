@@ -3084,108 +3084,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enter a custom name for this workspace."
+            "value": "Any text works. Workspace names show in the sidebar."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "このワークスペースのカスタム名を入力してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "请为此工作区输入自定义名称。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "為此工作區輸入自訂名稱。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "이 작업 공간의 사용자 지정 이름을 입력하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geben Sie einen benutzerdefinierten Namen für diesen Arbeitsbereich ein."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Introduce un nombre personalizado para este espacio de trabajo."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Saisissez un nom personnalisé pour cet espace de travail."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Inserisci un nome personalizzato per questa area di lavoro."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Indtast et brugerdefineret navn til dette arbejdsområde."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Wprowadź własną nazwę dla tej przestrzeni roboczej."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Введите пользовательское имя для этого рабочего пространства."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Unesite prilagođeni naziv za ovaj radni prostor."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "أدخل اسمًا مخصصًا لمساحة العمل هذه."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Skriv inn et egendefinert navn for dette arbeidsområdet."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Insira um nome personalizado para esta área de trabalho."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ป้อนชื่อที่กำหนดเองสำหรับเวิร์กสเปซนี้"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Bu çalışma alanı için özel bir ad girin."
           }
         }
@@ -20864,108 +20864,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Flash Focused Panel"
+            "value": "Flash Focused Pane"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "フォーカスペインを強調"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "闪烁聚焦面板"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "閃爍聚焦面板"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "포커스된 패널 깜빡이기"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Fokussierten Bereich hervorheben"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Resaltar panel enfocado"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Flasher le panneau actif"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Evidenzia pannello attivo"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Fremhæv fokuseret panel"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Podświetl aktywny panel"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Подсветить активную панель"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Označi fokusirani panel"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "وميض اللوحة المركّزة"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Blink fokusert panel"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Piscar Painel em Foco"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "กะพริบแผงที่โฟกัส"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Odaklanılan Paneli Yanıp Söndür"
           }
         }
@@ -29256,108 +29256,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This will close the last tab and close the window."
+            "value": "This is the last tab. Closing it closes the window."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "最後のタブを閉じ、ウインドウを閉じます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "这将关闭最后一个标签页并关闭窗口。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "這將關閉最後一個標籤頁並關閉視窗。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "마지막 탭이 닫히면 윈도우도 닫힙니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Dadurch wird der letzte Tab geschlossen und das Fenster geschlossen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Esto cerrará la última pestaña y cerrará la ventana."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cela fermera le dernier onglet et fermera la fenêtre."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Questa operazione chiuderà l'ultima scheda e la finestra."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Dette lukker den sidste fane og lukker vinduet."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Spowoduje to zamknięcie ostatniej karty i zamknięcie okna."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Это закроет последнюю вкладку и окно."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ovo će zatvoriti posljednji tab i zatvoriti prozor."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "سيؤدي هذا إلى إغلاق آخر لسان وإغلاق النافذة."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Dette vil lukke den siste fanen og lukke vinduet."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Isto fechará a última aba e fechará a janela."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "การดำเนินการนี้จะปิดแท็บสุดท้ายและปิดหน้าต่าง"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Bu, son sekmeyi kapatacak ve pencereyi kapatacak."
           }
         }
@@ -29369,108 +29369,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This will close the last tab and close its workspace."
+            "value": "This is the last tab. Closing it closes the workspace."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "最後のタブを閉じ、ワークスペースを閉じます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "这将关闭最后一个标签页并关闭其工作区。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "這將關閉最後一個標籤頁並關閉其工作區。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "마지막 탭이 닫히면 해당 작업 공간도 닫힙니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Dadurch wird der letzte Tab geschlossen und der Arbeitsbereich geschlossen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Esto cerrará la última pestaña y cerrará su espacio de trabajo."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cela fermera le dernier onglet et fermera son espace de travail."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Questa operazione chiuderà l'ultima scheda e la sua area di lavoro."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Dette lukker den sidste fane og lukker dets arbejdsområde."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Spowoduje to zamknięcie ostatniej karty i zamknięcie jej przestrzeni roboczej."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Это закроет последнюю вкладку и её рабочее пространство."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ovo će zatvoriti posljednji tab i zatvoriti njegov radni prostor."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "سيؤدي هذا إلى إغلاق آخر لسان وإغلاق مساحة العمل."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Dette vil lukke den siste fanen og lukke arbeidsområdet."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Isto fechará a última aba e fechará sua área de trabalho."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "การดำเนินการนี้จะปิดแท็บสุดท้ายและปิดเวิร์กสเปซ"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Bu, son sekmeyi kapatacak ve çalışma alanını kapatacak."
           }
         }
@@ -30211,108 +30211,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This will close the workspace and all of its panels."
+            "value": "This will close the workspace and all of its panes."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ワークスペースとそのすべてのパネルを閉じます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "这将关闭工作区及其所有面板。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "這將關閉工作區及其所有面板。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "작업 공간과 모든 패널을 닫습니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Dadurch werden der Arbeitsbereich und alle zugehörigen Bereiche geschlossen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Esto cerrará el espacio de trabajo y todos sus paneles."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cela fermera l'espace de travail et tous ses panneaux."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Questa operazione chiuderà l'area di lavoro e tutti i suoi pannelli."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Dette lukker arbejdsområdet og alle dets paneler."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Spowoduje to zamknięcie przestrzeni roboczej i wszystkich jej paneli."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Рабочее пространство и все его панели будут закрыты."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ovo će zatvoriti radni prostor i sve njegove panele."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "سيؤدي هذا إلى إغلاق مساحة العمل وجميع لوحاتها."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Dette vil lukke arbeidsområdet og alle panelene."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Isto fechará a área de trabalho e todos os seus painéis."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "การดำเนินการนี้จะปิดเวิร์กสเปซและแผงทั้งหมด"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Bu, çalışma alanını ve tüm panellerini kapatacak."
           }
         }
@@ -30437,12 +30437,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This will close %1$lld workspaces and all of their panels:\n%2$@"
+            "value": "This will close %1$lld workspaces and all of their panes:\n%2$@"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%1$lld 個のワークスペースと、それぞれのすべてのパネルを閉じます:\n%2$@"
           }
         }
@@ -30471,12 +30471,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This will close the current window, its %1$lld workspaces, and all of their panels:\n%2$@"
+            "value": "This will close the current window, its %1$lld workspaces, and all of their panes:\n%2$@"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "現在のウィンドウと、その %1$lld 個のワークスペースと、それぞれのすべてのパネルを閉じます:\n%2$@"
           }
         }
@@ -30601,108 +30601,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Notifications are disabled for c11. Enable them in System Settings to see alerts."
+            "value": "Notifications are off for c11. Enable them in System Settings so c11 can ring you when a pane needs attention."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11の通知が無効になっています。アラートを表示するにはシステム設定で有効にしてください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 的通知已被禁用。请在系统设置中启用通知以接收提醒。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 的通知已停用。請在「系統設定」中啟用，以接收提示。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11에 대한 알림이 비활성화되어 있습니다. 알림을 보려면 시스템 설정에서 활성화하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Benachrichtigungen sind für c11 deaktiviert. Aktivieren Sie sie in den Systemeinstellungen, um Hinweise zu sehen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Las notificaciones están desactivadas para c11. Actívalas en Ajustes del Sistema para ver alertas."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Les notifications sont désactivées pour c11. Activez-les dans les Réglages Système pour voir les alertes."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Le notifiche sono disabilitate per c11. Abilitale nelle Impostazioni di Sistema per visualizzare gli avvisi."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Notifikationer er deaktiveret for c11. Aktiver dem i Systemindstillinger for at se advarsler."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Powiadomienia są wyłączone dla c11. Włącz je w Ustawieniach systemowych, aby widzieć alerty."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Уведомления для c11 отключены. Включите их в Системных настройках, чтобы видеть оповещения."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Obavještenja su onemogućena za c11. Omogućite ih u Postavkama sistema da biste vidjeli upozorenja."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "الإشعارات معطلة لـ c11. قم بتفعيلها في إعدادات النظام لرؤية التنبيهات."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Varsler er deaktivert for c11. Aktiver dem i Systeminnstillinger for å se varsler."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "As notificações estão desativadas para o c11. Ative-as nos Ajustes do Sistema para ver os alertas."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "การแจ้งเตือนถูกปิดใช้งานสำหรับ c11 เปิดใช้งานในการตั้งค่าระบบเพื่อดูการแจ้งเตือน"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 için bildirimler devre dışı. Uyarıları görmek için Sistem Ayarları'nda etkinleştirin."
           }
         }
@@ -31053,108 +31053,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11 could not move this tab to the selected destination."
+            "value": "c11 couldn't move this tab where you asked."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11はこのタブを選択した移動先に移動できませんでした。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 无法将此标签页移动到所选目标。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 無法將此標籤頁移至所選的目的地。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11에서 이 탭을 선택한 대상으로 이동할 수 없습니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 konnte diesen Tab nicht zum ausgewählten Ziel verschieben."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 no pudo mover esta pestaña al destino seleccionado."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 n'a pas pu déplacer cet onglet vers la destination sélectionnée."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 non è riuscito a spostare questa scheda nella destinazione selezionata."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 kunne ikke flytte denne fane til den valgte destination."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 nie mógł przenieść tej karty do wybranego miejsca docelowego."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 не удалось переместить эту вкладку в выбранное место назначения."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 nije mogao premjestiti ovaj tab na odabrano odredište."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "لم يتمكن c11 من نقل هذا اللسان إلى الوجهة المحددة."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 kunne ikke flytte denne fanen til den valgte destinasjonen."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "O c11 não conseguiu mover esta aba para o destino selecionado."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 ไม่สามารถย้ายแท็บนี้ไปยังปลายทางที่เลือกได้"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 bu sekmeyi seçilen hedefe taşıyamadı."
           }
         }
@@ -32251,108 +32251,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Any text works. Longer titles make it easier to spot this tab when many are open."
+            "value": "Any text works. Longer titles are easier to find when many tabs are open."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "どんな文字列でも設定できます。タブが多いときは長めのタイトルのほうが見分けやすくなります。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "请为此标签页输入自定义名称。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "為此標籤頁輸入自訂名稱。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "이 탭의 사용자 지정 이름을 입력하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geben Sie einen benutzerdefinierten Namen für diesen Tab ein."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Introduce un nombre personalizado para esta pestaña."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Saisissez un nom personnalisé pour cet onglet."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Inserisci un nome personalizzato per questa scheda."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Indtast et brugerdefineret navn til denne fane."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Wprowadź własną nazwę dla tej karty."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Введите пользовательское имя для этой вкладки."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Unesite prilagođeni naziv za ovaj tab."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "أدخل اسمًا مخصصًا لهذا اللسان."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Skriv inn et egendefinert navn for denne fanen."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Insira um nome personalizado para esta aba."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ป้อนชื่อที่กำหนดเองสำหรับแท็บนี้"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Bu sekme için özel bir ad girin."
           }
         }
@@ -32477,108 +32477,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Set Tab Title"
+            "value": "Rename Tab"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "タブタイトルを設定"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "重命名标签页"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "重新命名標籤頁"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "탭 이름 변경"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Tab umbenennen"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Renombrar pestaña"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Renommer l'onglet"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Rinomina scheda"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Omdøb fane"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Zmień nazwę karty"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Переименовать вкладку"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Preimenuj tab"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "إعادة تسمية اللسان"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Gi fanen nytt navn"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Renomear Aba"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "เปลี่ยนชื่อแท็บ"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Sekmeyi Yeniden Adlandır"
           }
         }
@@ -32590,108 +32590,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enter a custom name for this workspace."
+            "value": "Any text works. Workspace names show in the sidebar."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "このワークスペースのカスタム名を入力してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "请为此工作区输入自定义名称。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "為此工作區輸入自訂名稱。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "이 작업 공간의 사용자 지정 이름을 입력하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geben Sie einen benutzerdefinierten Namen für diesen Arbeitsbereich ein."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Introduce un nombre personalizado para este espacio de trabajo."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Saisissez un nom personnalisé pour cet espace de travail."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Inserisci un nome personalizzato per questa area di lavoro."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Indtast et brugerdefineret navn til dette arbejdsområde."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Wprowadź własną nazwę dla tej przestrzeni roboczej."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Введите пользовательское имя для этого рабочего пространства."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Unesite prilagođeni naziv za ovaj radni prostor."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "أدخل اسمًا مخصصًا لمساحة العمل هذه."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Skriv inn et egendefinert navn for dette arbeidsområdet."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Insira um nome personalizado para esta área de trabalho."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ป้อนชื่อที่กำหนดเองสำหรับเวิร์กสเปซนี้"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Bu çalışma alanı için özel bir ad girin."
           }
         }
@@ -35246,108 +35246,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reopen Closed Browser Panel"
+            "value": "Reopen Closed Browser Pane"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "閉じたブラウザパネルを再度開く"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "重新打开已关闭的浏览器面板"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "重新開啟已關閉的瀏覽器面板"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "닫은 브라우저 패널 다시 열기"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geschlossenes Browserfenster erneut öffnen"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Reabrir panel del navegador cerrado"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Rouvrir le panneau de navigateur fermé"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Riapri pannello browser chiuso"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Genåbn lukket browserpanel"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otwórz ponownie zamknięty panel przeglądarki"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Открыть закрытую панель браузера"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ponovo otvori zatvoreni panel preglednika"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "إعادة فتح لوحة المتصفح المغلقة"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åpne lukket nettleserpanel på nytt"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Reabrir Painel do Navegador Fechado"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "เปิดแผงเบราว์เซอร์ที่ปิดไปอีกครั้ง"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Kapatılan Tarayıcı Panelini Yeniden Aç"
           }
         }
@@ -41399,108 +41399,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Desktop notifications will appear here for quick review."
+            "value": "When a pane needs you, it rings here. Tap one to jump to its pane."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "デスクトップ通知がここに表示されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "桌面通知将在此处显示，方便快速查看。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "桌面通知將在這裡顯示，方便您快速查看。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "데스크톱 알림이 여기에 표시되어 빠르게 확인할 수 있습니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Desktop-Benachrichtigungen werden hier zur schnellen Überprüfung angezeigt."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Las notificaciones de escritorio aparecerán aquí para su revisión rápida."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Les notifications de bureau apparaîtront ici pour une consultation rapide."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Le notifiche desktop appariranno qui per una rapida consultazione."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Skrivebordsnotifikationer vises her til hurtig gennemgang."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Powiadomienia pulpitu będą się tu pojawiać do szybkiego przeglądu."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Уведомления рабочего стола будут отображаться здесь для быстрого просмотра."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Obavještenja na radnoj površini će se pojavljivati ovdje radi brzog pregleda."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ستظهر إشعارات سطح المكتب هنا للمراجعة السريعة."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Skrivebordsvarsler vises her for rask gjennomgang."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "As notificações da área de trabalho aparecerão aqui para revisão rápida."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "การแจ้งเตือนเดสก์ท็อปจะปรากฏที่นี่เพื่อตรวจสอบอย่างรวดเร็ว"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Masaüstü bildirimleri hızlı inceleme için burada görünecek."
           }
         }
@@ -41512,108 +41512,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Desktop notifications will appear here."
+            "value": "When a pane needs you, it rings here."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "デスクトップ通知がここに表示されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "桌面通知将在此处显示。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "桌面通知將在這裡顯示。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "데스크톱 알림이 여기에 표시됩니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Desktop-Benachrichtigungen werden hier angezeigt."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Las notificaciones de escritorio aparecerán aquí."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Les notifications de bureau apparaîtront ici."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Le notifiche desktop appariranno qui."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Skrivebordsnotifikationer vises her."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Powiadomienia pulpitu będą się tu pojawiać."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Уведомления рабочего стола будут отображаться здесь."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Obavještenja na radnoj površini će se pojavljivati ovdje."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ستظهر إشعارات سطح المكتب هنا."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Skrivebordsvarsler vises her."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "As notificações da área de trabalho aparecerão aqui."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "การแจ้งเตือนเดสก์ท็อปจะปรากฏที่นี่"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Masaüstü bildirimleri burada görünecek."
           }
         }
@@ -41625,108 +41625,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No notifications yet"
+            "value": "No alerts yet."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "まだ通知はありません"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "暂无通知"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "尚無通知"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "아직 알림이 없습니다"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Noch keine Benachrichtigungen"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aún no hay notificaciones"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aucune notification pour le moment"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nessuna notifica"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ingen notifikationer endnu"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Brak powiadomień"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Уведомлений пока нет"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Još nema obavještenja"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "لا توجد إشعارات بعد"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ingen varsler ennå"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nenhuma notificação ainda"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ยังไม่มีการแจ้งเตือน"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Henüz bildirim yok"
           }
         }
@@ -63045,108 +63045,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Flash Focused Panel"
+            "value": "Flash Focused Pane"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "フォーカスペインを強調"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "闪烁聚焦面板"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "閃爍聚焦面板"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "포커스된 패널 깜빡이기"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Fokussierten Bereich hervorheben"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Resaltar panel enfocado"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Flasher le panneau actif"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Evidenzia pannello attivo"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Fremhæv fokuseret panel"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Podświetl aktywny panel"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Подсветить активную панель"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Označi fokusirani panel"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "وميض اللوحة المركّزة"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Blink fokusert panel"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Piscar Painel em Foco"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "กะพริบแผงที่โฟกัส"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Odaklanılan Paneli Yanıp Söndür"
           }
         }

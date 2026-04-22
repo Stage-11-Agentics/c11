@@ -2521,11 +2521,11 @@ class TabManager: ObservableObject {
         let format = willCloseWindow
             ? String(
                 localized: "dialog.closeWorkspacesWindow.message",
-                defaultValue: "This will close the current window, its %1$lld workspaces, and all of their panels:\n%2$@"
+                defaultValue: "This will close the current window, its %1$lld workspaces, and all of their panes:\n%2$@"
             )
             : String(
                 localized: "dialog.closeWorkspaces.message",
-                defaultValue: "This will close %1$lld workspaces and all of their panels:\n%2$@"
+                defaultValue: "This will close %1$lld workspaces and all of their panes:\n%2$@"
             )
         let message = String(format: format, locale: .current, Int64(workspaces.count), titleLines)
         return CloseWorkspacesPlan(
@@ -2562,7 +2562,7 @@ class TabManager: ObservableObject {
                     let accepted = await workspace.presentConfirmClose(
                         panelId: panelId,
                         title: String(localized: "dialog.closeWorkspace.title", defaultValue: "Close workspace?"),
-                        message: String(localized: "dialog.closeWorkspace.message", defaultValue: "This will close the workspace and all of its panels."),
+                        message: String(localized: "dialog.closeWorkspace.message", defaultValue: "This will close the workspace and all of its panes."),
                         source: .local
                     )
                     guard accepted else { return }
@@ -2577,7 +2577,7 @@ class TabManager: ObservableObject {
             // NSAlert fallback — no focused panel to anchor on.
             let accepted = confirmClose(
                 title: String(localized: "dialog.closeWorkspace.title", defaultValue: "Close workspace?"),
-                message: String(localized: "dialog.closeWorkspace.message", defaultValue: "This will close the workspace and all of its panels."),
+                message: String(localized: "dialog.closeWorkspace.message", defaultValue: "This will close the workspace and all of its panes."),
                 acceptCmdD: willCloseWindow
             )
             guard accepted else { return }

@@ -9336,7 +9336,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         let alert = NSAlert()
         alert.messageText = String(localized: "dialog.renameWorkspace.title", defaultValue: "Rename Workspace")
-        alert.informativeText = String(localized: "dialog.renameWorkspace.message", defaultValue: "Enter a custom name for this workspace.")
+        alert.informativeText = String(localized: "dialog.renameWorkspace.message", defaultValue: "Any text works. Workspace names show in the sidebar.")
         let input = NSTextField(string: tab.customTitle ?? tab.title)
         input.placeholderString = String(localized: "dialog.renameWorkspace.placeholder", defaultValue: "Workspace name")
         input.frame = NSRect(x: 0, y: 0, width: 240, height: 22)

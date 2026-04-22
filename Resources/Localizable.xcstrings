@@ -412,8 +412,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Терминал на базе Ghostty с вертикальными вкладками\nи панелью уведомлений для macOS."
+            "state": "translated",
+            "value": "терминальный командный центр для пары оператор–агент.\nмного поверхностей. одно рабочее пространство. одно поле зрения."
           }
         },
         "bs": {
@@ -450,6 +450,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "macOS için dikey sekmeli ve bildirim panelli\nGhostty tabanlı terminal."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "термінальний командний центр для пари оператор–агент.\nбагато поверхонь. один робочий простір. одне поле зору."
           }
         }
       }
@@ -1497,6 +1503,12 @@
             "state": "translated",
             "value": "スキルを %@ にコピーできませんでした。"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося скопіювати навичку до %@."
+          }
         }
       }
     },
@@ -1530,6 +1542,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ に書き込めません。権限を確認してください。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдається записати до %@. Перевірте дозволи."
           }
         }
       }
@@ -1582,6 +1600,12 @@
             "state": "translated",
             "value": "同梱スキルのディレクトリが見つかりませんでした。"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося знайти теку з вбудованими навичками."
+          }
         }
       }
     },
@@ -1598,6 +1622,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ の同梱スキルディレクトリを読み込めません。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдається прочитати теку вбудованих навичок за шляхом %@."
           }
         }
       }
@@ -1650,6 +1680,12 @@
             "state": "translated",
             "value": "このままで"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Готово"
+          }
         }
       }
     },
@@ -1667,6 +1703,12 @@
             "state": "translated",
             "value": "スキルが、エージェントの学び方です。%@ にひとつのファイル。そのあと、エージェントはペインを分割し、ブラウザを操作し、Markdown サーフェスを開き、サイドバーに進捗を報告します — 定型の動きに、あなたは要りません。"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Навичка — це як він вчиться. Один файл у %@. Далі ваш агент ділить панелі, керує браузером, відкриває Markdown-поверхні та звітує про прогрес у бічну панель — без вашої участі в рутинних діях."
+          }
         }
       }
     },
@@ -1683,6 +1725,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "スキルが、エージェントの学び方です。ファイルはひとつ。そのあと、エージェントはペインを分割し、ブラウザを操作し、Markdown サーフェスを開き、サイドバーに進捗を報告します — 定型の動きに、あなたは要りません。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Навичка — це як він вчиться. Один файл. Далі ваш агент ділить панелі, керує браузером, відкриває Markdown-поверхні та звітує про прогрес у бічну панель — без вашої участі в рутинних діях."
           }
         }
       }
@@ -1718,6 +1766,12 @@
             "state": "translated",
             "value": "教える"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вчити його"
+          }
         }
       }
     },
@@ -1751,6 +1805,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "あとで"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пізніше"
           }
         }
       }
@@ -1786,6 +1846,12 @@
             "state": "translated",
             "value": "まだ何も検出されていません。Claude Code、Codex、または対応する他のエージェントをインストールしてから、設定 → エージェントスキル から再度開いてください。"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Поки що нічого не знайдено. Встановіть Claude Code, Codex або іншого підтримуваного агента, потім знову відкрийте це з Налаштування → Навички агента."
+          }
         }
       }
     },
@@ -1802,6 +1868,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "未検出 — まずエージェントをインストールするか、あとで設定から有効にしてください。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не виявлено — спочатку встановіть агента або ввімкніть у Налаштуваннях пізніше."
           }
         }
       }
@@ -1837,6 +1909,12 @@
             "state": "translated",
             "value": "不足しているスキルをインストールします"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Встановить відсутні навички"
+          }
         }
       }
     },
@@ -1871,6 +1949,12 @@
             "state": "translated",
             "value": "エージェントはまだ c11 を知りません。"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ваш агент ще не знає c11."
+          }
         }
       }
     },
@@ -1904,6 +1988,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "検証できるように作られています。スキルはプレーンテキスト — Finder で読むか、モデルに渡してレビューしてもらえます。c11 は、あなたの許可なくエージェント設定に手を加えません。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Створено прозорим. Навичка — звичайний текст: відкрийте у Finder або передайте моделі на перевірку. c11 не зачепить конфігурацію агента без вашого дозволу."
           }
         }
       }
@@ -3149,8 +3239,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Введите пользовательское имя для этого рабочего пространства."
+            "state": "translated",
+            "value": "Любой текст подойдёт. Имена рабочих пространств видны в боковой панели."
           }
         },
         "bs": {
@@ -3187,6 +3277,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Bu çalışma alanı için özel bir ad girin."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Будь-який текст підходить. Назви робочих просторів видно в бічній панелі."
           }
         }
       }
@@ -7761,6 +7857,12 @@
             "state": "translated",
             "value": "c11 は保存先プロファイル「%@」を作成できませんでした。"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 не зміг створити профіль призначення «%@»."
+          }
         }
       }
     },
@@ -7794,6 +7896,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "インポートを開始できませんでした"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося почати імпорт"
           }
         }
       }
@@ -7964,6 +8072,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "この Mac でインポートできるブラウザプロファイルが見つかりませんでした。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 не знайшов жодного профілю браузера для імпорту на цьому Mac."
           }
         }
       }
@@ -8322,6 +8436,12 @@
             "state": "translated",
             "value": "ブックマーク、設定、拡張機能のインポートにはまだ対応していません。Cookie と履歴のみを取り込みました。"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закладки, налаштування та розширення поки не підтримуються — імпортовано лише cookie та історію."
+          }
         }
       }
     },
@@ -8440,6 +8560,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Keychain から %3$@ を開けなかったため、暗号化された %2$@ の Cookie を %1$ld 件スキップしました。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пропущено %1$ld зашифрованих cookie %2$@ — %3$@ не вдалося розблокувати в Keychain."
           }
         }
       }
@@ -20929,8 +21055,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Подсветить активную панель"
+            "state": "translated",
+            "value": "Мигнуть активной панелью"
           }
         },
         "bs": {
@@ -20967,6 +21093,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Odaklanılan Paneli Yanıp Söndür"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Блимнути фокусованою панеллю"
           }
         }
       }
@@ -29321,8 +29453,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Это закроет последнюю вкладку и окно."
+            "state": "translated",
+            "value": "Это последняя вкладка. Закроете её — закроется и окно."
           }
         },
         "bs": {
@@ -29359,6 +29491,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Bu, son sekmeyi kapatacak ve pencereyi kapatacak."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Це остання вкладка. Її закриття закриє вікно."
           }
         }
       }
@@ -29434,8 +29572,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Это закроет последнюю вкладку и её рабочее пространство."
+            "state": "translated",
+            "value": "Это последняя вкладка. Закроете её — закроется и рабочее пространство."
           }
         },
         "bs": {
@@ -29472,6 +29610,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Bu, son sekmeyi kapatacak ve çalışma alanını kapatacak."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Це остання вкладка. Її закриття закриє робочий простір."
           }
         }
       }
@@ -30276,8 +30420,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Рабочее пространство и все его панели будут закрыты."
+            "state": "translated",
+            "value": "Закроется рабочее пространство и все его панели."
           }
         },
         "bs": {
@@ -30314,6 +30458,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Bu, çalışma alanını ve tüm panellerini kapatacak."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Це закриє робочий простір та всі його панелі."
           }
         }
       }
@@ -30445,6 +30595,12 @@
             "state": "translated",
             "value": "%1$lld 個のワークスペースと、それぞれのすべてのペインを閉じます:\n%2$@"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Це закриє %1$lld робочих просторів та всі їхні панелі:\n%2$@"
+          }
         }
       }
     },
@@ -30478,6 +30634,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "現在のウインドウと、その %1$lld 個のワークスペースと、それぞれのすべてのペインを閉じます:\n%2$@"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Це закриє поточне вікно, його %1$lld робочих просторів та всі їхні панелі:\n%2$@"
           }
         }
       }
@@ -30666,8 +30828,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Уведомления для c11 отключены. Включите их в Системных настройках, чтобы видеть оповещения."
+            "state": "translated",
+            "value": "Уведомления для c11 выключены. Включите их в Системных настройках, чтобы c11 мог звенеть, когда панели нужно внимание."
           }
         },
         "bs": {
@@ -30704,6 +30866,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "c11 için bildirimler devre dışı. Uyarıları görmek için Sistem Ayarları'nda etkinleştirin."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сповіщення для c11 вимкнені. Увімкніть їх у Системних налаштуваннях, щоб c11 міг гукати вас, коли панель потребує уваги."
           }
         }
       }
@@ -31118,8 +31286,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11 не удалось переместить эту вкладку в выбранное место назначения."
+            "state": "translated",
+            "value": "c11 не удалось переместить эту вкладку туда, куда вы просили."
           }
         },
         "bs": {
@@ -31156,6 +31324,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "c11 bu sekmeyi seçilen hedefe taşıyamadı."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 не зміг перемістити вкладку туди, куди ви просили."
           }
         }
       }
@@ -32316,8 +32490,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Введите пользовательское имя для этой вкладки."
+            "state": "translated",
+            "value": "Любой текст подойдёт. Длинные названия проще найти, когда открыто много вкладок."
           }
         },
         "bs": {
@@ -32354,6 +32528,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Bu sekme için özel bir ad girin."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Будь-який текст підходить. Довші назви легше знайти, коли відкрито багато вкладок."
           }
         }
       }
@@ -32542,7 +32722,7 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Переименовать вкладку"
           }
         },
@@ -32580,6 +32760,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Sekmeyi Yeniden Adlandır"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перейменувати вкладку"
           }
         }
       }
@@ -32655,8 +32841,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Введите пользовательское имя для этого рабочего пространства."
+            "state": "translated",
+            "value": "Любой текст подойдёт. Имена рабочих пространств видны в боковой панели."
           }
         },
         "bs": {
@@ -32693,6 +32879,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Bu çalışma alanı için özel bir ad girin."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Будь-який текст підходить. Назви робочих просторів видно в бічній панелі."
           }
         }
       }
@@ -35311,8 +35503,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Открыть закрытую панель браузера"
+            "state": "translated",
+            "value": "Открыть последнюю закрытую панель браузера"
           }
         },
         "bs": {
@@ -35349,6 +35541,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Kapatılan Tarayıcı Panelini Yeniden Aç"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Знову відкрити закриту панель браузера"
           }
         }
       }
@@ -41464,8 +41662,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Уведомления рабочего стола будут отображаться здесь для быстрого просмотра."
+            "state": "translated",
+            "value": "Когда панели нужно ваше внимание, она звенит здесь. Нажмите, чтобы перейти к ней."
           }
         },
         "bs": {
@@ -41502,6 +41700,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Masaüstü bildirimleri hızlı inceleme için burada görünecek."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Коли панель потребує вас, вона гукає сюди. Натисніть, щоб перейти до неї."
           }
         }
       }
@@ -41577,8 +41781,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Уведомления рабочего стола будут отображаться здесь."
+            "state": "translated",
+            "value": "Когда панели нужно ваше внимание, она звенит здесь."
           }
         },
         "bs": {
@@ -41615,6 +41819,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Masaüstü bildirimleri burada görünecek."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Коли панель потребує вас, вона гукає сюди."
           }
         }
       }
@@ -41690,8 +41900,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Уведомлений пока нет"
+            "state": "translated",
+            "value": "Тишина."
           }
         },
         "bs": {
@@ -41728,6 +41938,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Henüz bildirim yok"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Тихо."
           }
         }
       }
@@ -43414,6 +43630,12 @@
             "state": "translated",
             "value": "フォーカス中のサーフェスがそのワークスペースの最後の1つなら、サーフェスを閉じるショートカットはワークスペースも閉じます。"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Якщо фокусована поверхня — остання, скорочення «закрити поверхню» також закриває робочий простір."
+          }
         }
       }
     },
@@ -43430,6 +43652,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "フォーカス中のサーフェスがそのワークスペースの最後の1つでも、サーフェスを閉じるショートカットはサーフェスだけを閉じ、ワークスペースは残します。ワークスペースを閉じるショートカットを使うと明示的に閉じられます。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Якщо фокусована поверхня — остання, скорочення «закрити поверхню» все одно закриває тільки поверхню. Закрийте робочий простір явно скороченням «закрити робочий простір»."
           }
         }
       }
@@ -44223,8 +44451,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Перезапустить для применения языка?"
+            "state": "translated",
+            "value": "Перезапустить c11 для смены языка?"
           }
         },
         "bs": {
@@ -44261,6 +44489,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Dil değişikliğini uygulamak için yeniden başlatılsın mı?"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перезапустити c11, щоб змінити мову?"
           }
         }
       }
@@ -45630,8 +45864,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Отображать встроенную строку ветки git и рабочего каталога."
+            "state": "translated",
+            "value": "Показывать строку с git-веткой и рабочим каталогом."
           }
         },
         "bs": {
@@ -45668,6 +45902,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Yerleşik git dalı ve çalışma dizini satırını göster."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показувати рядок з git-гілкою та робочою текою."
           }
         }
       }
@@ -46602,8 +46842,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Отображать встроенный индикатор прогресса из set_progress."
+            "state": "translated",
+            "value": "Показывать индикатор прогресса, заданный через set_progress."
           }
         },
         "bs": {
@@ -46640,6 +46880,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "set_progress'ten yerleşik ilerleme çubuğunu göster."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показувати індикатор прогресу, заданий через set_progress."
           }
         }
       }
@@ -53817,6 +54063,12 @@
             "state": "translated",
             "value": "空タブのインポート案内は非表示です。ここでいつでも再表示できます。"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Підказку про імпорт на порожній вкладці приховано. Увімкніть її знову в будь-який момент."
+          }
         }
       }
     },
@@ -56721,6 +56973,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "このファイルを準備できませんでした。WAV、AIFF、または CAF を試してください。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося підготувати цей файл. Спробуйте WAV, AIFF або CAF."
           }
         }
       }
@@ -63076,8 +63334,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Подсветить активную панель"
+            "state": "translated",
+            "value": "Мигнуть активной панелью"
           }
         },
         "bs": {
@@ -63114,6 +63372,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Odaklanılan Paneli Yanıp Söndür"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Блимнути фокусованою панеллю"
           }
         }
       }
@@ -66681,6 +66945,12 @@
             "state": "translated",
             "value": "フィードバックを送信できませんでした。もう一度試してください。"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося надіслати відгук. Спробуйте знову."
+          }
         }
       }
     },
@@ -66731,6 +67001,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "選択したファイルのうち1つを添付できませんでした。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося прикріпити один із вибраних файлів."
           }
         }
       }
@@ -66816,6 +67092,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "フィードバックの送信回数が多すぎます。しばらく経ってからもう一度試してください。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Забагато спроб надіслати відгук. Спробуйте пізніше."
           }
         }
       }
@@ -66986,6 +67268,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "c11 へようこそ。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вітаємо у c11."
           }
         }
       }
@@ -73252,8 +73540,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Проблема с расположением приложения"
+            "state": "translated",
+            "value": "c11 не в папке «Программы»"
           }
         },
         "bs": {
@@ -73290,6 +73578,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Uygulama Konumu Sorunu"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 не в теці «Програми»"
           }
         }
       }
@@ -73365,8 +73659,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Сетевое подключение было потеряно во время проверки обновлений. Повторите попытку."
+            "state": "translated",
+            "value": "Сеть оборвалась во время проверки обновлений. Попробуйте снова."
           }
         },
         "bs": {
@@ -73403,6 +73697,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Güncellemeler denetlenirken ağ bağlantısı kesildi. Tekrar deneyin."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "З'єднання обірвалося під час перевірки оновлень. Спробуйте знову."
           }
         }
       }
@@ -73817,8 +74117,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11 не удалось загрузить канал обновлений. Проверьте подключение и повторите попытку."
+            "state": "translated",
+            "value": "c11 не удалось загрузить список обновлений. Проверьте подключение и попробуйте снова."
           }
         },
         "bs": {
@@ -73855,6 +74155,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "c11 güncelleme akışını indiremedi. Bağlantınızı kontrol edip tekrar deneyin."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 не зміг отримати список оновлень. Перевірте з'єднання і спробуйте знову."
           }
         }
       }
@@ -73930,8 +74236,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Ошибка канала обновлений"
+            "state": "translated",
+            "value": "Не удалось прочитать обновления"
           }
         },
         "bs": {
@@ -73968,6 +74274,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Güncelleme Akışı Hatası"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося прочитати оновлення"
           }
         }
       }
@@ -74043,8 +74355,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Не удалось прочитать канал обновлений. Повторите попытку позже."
+            "state": "translated",
+            "value": "Список обновлений не удалось прочитать. Попробуйте позже."
           }
         },
         "bs": {
@@ -74081,6 +74393,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Güncelleme akışı okunamadı. Lütfen daha sonra tekrar deneyin."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Список оновлень не вдалося прочитати. Спробуйте пізніше."
           }
         }
       }
@@ -74156,8 +74474,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Канал обновлений не защищен. Обратитесь в службу поддержки."
+            "state": "translated",
+            "value": "Список обновлений идёт по незащищённому соединению. Свяжитесь со службой поддержки."
           }
         },
         "bs": {
@@ -74194,6 +74512,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Güncelleme akışı güvensiz. Lütfen destekle iletişime geçin."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Список оновлень використовує незахищене з'єднання. Зверніться до підтримки."
           }
         }
       }
@@ -74269,8 +74593,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Незащищенный канал обновлений"
+            "state": "translated",
+            "value": "Незащищённый источник обновлений"
           }
         },
         "bs": {
@@ -74307,6 +74631,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Güvensiz Güncelleme Akışı"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Незахищене джерело оновлень"
           }
         }
       }
@@ -74382,8 +74712,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "URL канала обновлений недействителен. Обратитесь в службу поддержки."
+            "state": "translated",
+            "value": "URL источника обновлений недействителен. Свяжитесь со службой поддержки."
           }
         },
         "bs": {
@@ -74420,6 +74750,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Güncelleme akışı URL'si geçersiz. Lütfen destekle iletişime geçin."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "URL-адреса джерела оновлень недійсна. Зверніться до підтримки."
           }
         }
       }
@@ -74495,8 +74831,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Недействительный канал обновлений"
+            "state": "translated",
+            "value": "Недействительный источник обновлений"
           }
         },
         "bs": {
@@ -74533,6 +74869,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Geçersiz Güncelleme Akışı"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Недійсне джерело оновлень"
           }
         }
       }
@@ -74608,8 +74950,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11 не может связаться с сервером обновлений. Проверьте подключение к интернету и повторите попытку."
+            "state": "translated",
+            "value": "c11 не может связаться с сервером обновлений. Проверьте подключение и попробуйте снова."
           }
         },
         "bs": {
@@ -74646,6 +74988,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "c11 güncelleme sunucusuna ulaşamıyor. İnternet bağlantınızı kontrol edip tekrar deneyin."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 не може з'єднатися з сервером оновлень. Перевірте з'єднання і спробуйте знову."
           }
         }
       }
@@ -74947,8 +75295,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Ошибка прав доступа программы обновления"
+            "state": "translated",
+            "value": "c11 должен жить в папке «Программы»"
           }
         },
         "bs": {
@@ -74985,6 +75333,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Güncelleyici İzin Hatası"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 має жити в теці «Програми»"
           }
         }
       }
@@ -75060,8 +75414,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Не удалось установить защищенное подключение к серверу обновлений. Повторите попытку позже."
+            "state": "translated",
+            "value": "Не удалось установить защищённое соединение с сервером обновлений. Попробуйте позже."
           }
         },
         "bs": {
@@ -75098,6 +75452,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Güncelleme sunucusuyla güvenli bir bağlantı kurulamadı. Daha sonra tekrar deneyin."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося встановити захищене з'єднання із сервером оновлень. Спробуйте пізніше."
           }
         }
       }
@@ -75286,8 +75646,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Сервер обновлений не найден. Проверьте подключение или повторите попытку позже."
+            "state": "translated",
+            "value": "Сервер обновлений не найден. Проверьте подключение или попробуйте позже."
           }
         },
         "bs": {
@@ -75324,6 +75684,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Güncelleme sunucusu bulunamıyor. Bağlantınızı kontrol edin veya daha sonra tekrar deneyin."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдається знайти сервер оновлень. Перевірте з'єднання або спробуйте пізніше."
           }
         }
       }
@@ -75738,8 +76104,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Не удалось проверить подпись обновления. Повторите попытку позже."
+            "state": "translated",
+            "value": "Подпись обновления не прошла проверку. Попробуйте позже."
           }
         },
         "bs": {
@@ -75776,6 +76142,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Güncellemenin imzası doğrulanamadı. Lütfen daha sonra tekrar deneyin."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Підпис оновлення не пройшов перевірку. Спробуйте пізніше."
           }
         }
       }
@@ -75851,8 +76223,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Ошибка подписи обновления"
+            "state": "translated",
+            "value": "Подпись не прошла проверку"
           }
         },
         "bs": {
@@ -75889,6 +76261,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Güncelleme İmza Hatası"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Підпис не пройшов перевірку"
           }
         }
       }
@@ -76529,8 +76907,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Установка обновления и подготовка к перезапуску"
+            "state": "translated",
+            "value": "Устанавливается обновление, затем перезапуск."
           }
         },
         "bs": {
@@ -76567,6 +76945,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Güncelleme yükleniyor ve yeniden başlatmaya hazırlanıyor"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Встановлюю оновлення, далі перезапущу."
           }
         }
       }
@@ -76642,8 +77026,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "У вас установлена последняя версия"
+            "state": "translated",
+            "value": "У вас последняя версия."
           }
         },
         "bs": {
@@ -76680,6 +77064,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "En son sürümü kullanıyorsunuz"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "У вас найновіша версія."
           }
         }
       }
@@ -76981,8 +77371,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Подождите, пока мы проверяем наличие обновлений"
+            "state": "translated",
+            "value": "Проверяю наличие обновлений."
           }
         },
         "bs": {
@@ -77019,6 +77409,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Mevcut güncellemeler denetlenirken lütfen bekleyin"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перевіряю наявні оновлення."
           }
         }
       }
@@ -77094,8 +77490,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11 может автоматически проверять наличие обновлений в фоновом режиме."
+            "state": "translated",
+            "value": "c11 может проверять обновления в фоне."
           }
         },
         "bs": {
@@ -77132,6 +77528,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "c11 arka planda otomatik olarak güncellemeleri denetleyebilir."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 може перевіряти оновлення у фоні."
           }
         }
       }
@@ -77772,8 +78174,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "У вас уже установлена последняя версия."
+            "state": "translated",
+            "value": "У вас последняя версия."
           }
         },
         "bs": {
@@ -77810,6 +78212,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Zaten en son sürümü kullanıyorsunuz."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "У вас найновіша версія."
           }
         }
       }
@@ -78224,8 +78632,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Обновление готово. Перезапустите приложение для завершения установки."
+            "state": "translated",
+            "value": "Обновление готово. Перезапустите c11, чтобы установить его."
           }
         },
         "bs": {
@@ -78262,6 +78670,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Güncelleme hazır. Yüklemeyi tamamlamak için lütfen uygulamayı yeniden başlatın."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Оновлення готове. Перезапустіть c11, щоб його встановити."
           }
         }
       }
@@ -78676,8 +79090,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Извлечение и подготовка обновления"
+            "state": "translated",
+            "value": "Готовлю обновление."
           }
         },
         "bs": {
@@ -78714,6 +79128,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Güncelleme çıkarılıyor ve hazırlanıyor"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Готую оновлення."
           }
         }
       }
@@ -79371,8 +79791,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Вставлять новые рабочие пространства сразу после активного."
+            "state": "translated",
+            "value": "Новые рабочие пространства встают сразу после активного."
           }
         },
         "bs": {
@@ -79409,6 +79829,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Yeni çalışma alanlarını etkin çalışma alanının hemen sonrasına ekle."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нові робочі простори з'являються одразу за активним."
           }
         }
       }
@@ -79597,8 +80023,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Добавлять новые рабочие пространства в конец списка."
+            "state": "translated",
+            "value": "Новые рабочие пространства встают в конец."
           }
         },
         "bs": {
@@ -79635,6 +80061,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Yeni çalışma alanlarını listenin sonuna ekle."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нові робочі простори з'являються внизу."
           }
         }
       }
@@ -79823,8 +80255,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Вставлять новые рабочие пространства в начало списка."
+            "state": "translated",
+            "value": "Новые рабочие пространства встают в начало."
           }
         },
         "bs": {
@@ -79861,6 +80293,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Yeni çalışma alanlarını listenin en üstüne ekle."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нові робочі простори з'являються вгорі."
           }
         }
       }

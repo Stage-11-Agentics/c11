@@ -1535,7 +1535,7 @@ private enum SettingsAboutWindowKind: String, CaseIterable, Identifiable {
     var minimumSize: NSSize {
         switch self {
         case .settings:
-            return NSSize(width: 420, height: 360)
+            return NSSize(width: 860, height: 520)
         case .about:
             return NSSize(width: 360, height: 520)
         }
@@ -2825,7 +2825,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 520),
+            contentRect: NSRect(x: 0, y: 0, width: 920, height: 640),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -4802,13 +4802,20 @@ struct SettingsView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            SettingsSidebar(selectedPage: $selectedPage)
-
-            Rectangle()
-                .fill(Color(nsColor: .separatorColor).opacity(0.55))
-                .frame(width: 1)
-
             ScrollViewReader { proxy in
+                SettingsSidebar(selectedPage: selectedPage) { page in
+                    selectedPage = page
+                    DispatchQueue.main.async {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            proxy.scrollTo(SettingsScrollAnchor.pageTop, anchor: .top)
+                        }
+                    }
+                }
+
+                Rectangle()
+                    .fill(Color(nsColor: .separatorColor).opacity(0.55))
+                    .frame(width: 1)
+
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -4820,6 +4827,7 @@ struct SettingsView: View {
                                 .foregroundColor(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
+                        .id(SettingsScrollAnchor.pageTop)
                         .padding(.bottom, 4)
 
                         selectedPageContent
@@ -4831,7 +4839,7 @@ struct SettingsView: View {
                 .onReceive(NotificationCenter.default.publisher(for: SettingsNavigationRequest.notificationName)) { notification in
                     guard let target = SettingsNavigationRequest.target(from: notification) else { return }
                     selectedPage = SettingsPage.page(for: target)
-                    DispatchQueue.main.async {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             proxy.scrollTo(target, anchor: .top)
                         }
@@ -6484,8 +6492,13 @@ private struct SettingsCardNote: View {
     }
 }
 
+private enum SettingsScrollAnchor {
+    static let pageTop = "settings.page.top"
+}
+
 private struct SettingsSidebar: View {
-    @Binding var selectedPage: SettingsPage
+    let selectedPage: SettingsPage
+    let onSelect: (SettingsPage) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -6497,7 +6510,7 @@ private struct SettingsSidebar: View {
 
             ForEach(SettingsPage.allCases) { page in
                 Button {
-                    selectedPage = page
+                    onSelect(page)
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: page.iconName)
@@ -6520,6 +6533,7 @@ private struct SettingsSidebar: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(page.title)
+                .accessibilityIdentifier("settings.sidebar.\(page.rawValue)")
             }
 
             Spacer(minLength: 0)

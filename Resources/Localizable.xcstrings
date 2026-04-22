@@ -57788,40 +57788,6 @@
         }
       }
     },
-    "settings.page.inputShortcuts": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Input & Shortcuts"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "入力とショートカット"
-          }
-        }
-      }
-    },
-    "settings.page.inputShortcuts.helper": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "shape the keys that move through the room."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "部屋を動き回るキーを整えます。"
-          }
-        }
-      }
-    },
     "settings.page.input": {
       "extractionState": "manual",
       "localizations": {

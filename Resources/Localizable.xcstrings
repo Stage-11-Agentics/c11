@@ -61655,109 +61655,109 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Settings"
+            "value": "c11 Settings"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "設定"
+            "value": "c11 設定"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "设置"
+            "value": "c11 设置"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "設定"
+            "value": "c11 設定"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "설정"
+            "value": "c11 설정"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Einstellungen"
+            "value": "c11 Einstellungen"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ajustes"
+            "value": "Ajustes de c11"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Réglages"
+            "value": "Réglages c11"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Impostazioni"
+            "value": "Impostazioni c11"
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "Indstillinger"
+            "value": "c11-indstillinger"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ustawienia"
+            "value": "Ustawienia c11"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Настройки"
+            "value": "Настройки c11"
           }
         },
         "bs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Postavke"
+            "value": "Postavke c11"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "الإعدادات"
+            "value": "إعدادات c11"
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Innstillinger"
+            "value": "c11-innstillinger"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ajustes"
+            "value": "Ajustes do c11"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "การตั้งค่า"
+            "value": "การตั้งค่า c11"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ayarlar"
+            "value": "c11 Ayarları"
           }
         }
       }

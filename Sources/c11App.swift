@@ -1526,7 +1526,7 @@ private enum SettingsAboutWindowKind: String, CaseIterable, Identifiable {
     var fallbackTitle: String {
         switch self {
         case .settings:
-            return "Settings"
+            return String(localized: "settings.title", defaultValue: "c11 Settings")
         case .about:
             return "About c11"
         }
@@ -1626,7 +1626,7 @@ private struct SettingsAboutTitlebarDebugOptions: Equatable {
         case .settings:
             return SettingsAboutTitlebarDebugOptions(
                 overridesEnabled: false,
-                windowTitle: "Settings",
+                windowTitle: String(localized: "settings.title", defaultValue: "c11 Settings"),
                 titleVisibility: .hidden,
                 titlebarAppearsTransparent: true,
                 movableByWindowBackground: true,
@@ -6498,7 +6498,7 @@ private struct SettingsSidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(String(localized: "settings.title", defaultValue: "Settings"))
+            Text(String(localized: "settings.title", defaultValue: "c11 Settings"))
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.primary.opacity(0.92))
                 .padding(.horizontal, 8)

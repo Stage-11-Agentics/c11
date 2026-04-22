@@ -29761,26 +29761,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "このペインの 1 個のタブを閉じます:\n%@"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "这将关闭此面板中的 1 个标签页：\n%@"
+            "state": "translated",
+            "value": "这会关闭此面板中的 1 个标签页：\n%@"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "這將關閉此面板中的 1 個標籤頁：\n%@"
+            "state": "translated",
+            "value": "此舉關閉此窗格中 1 個標籤頁：\n%@"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "이 패널에서 탭 1개를 닫습니다:\n%@"
+            "state": "translated",
+            "value": "이 페인에서 탭 1개를 닫습니다:\n%@"
           }
         },
         "de": {
@@ -29821,8 +29821,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Будет закрыта 1 вкладка в этой панели:\n%@"
+            "state": "translated",
+            "value": "Закроется 1 вкладка в этой панели:\n%@"
           }
         },
         "bs": {
@@ -29860,6 +29860,12 @@
             "state": "needs_review",
             "value": "Bu bölmedeki 1 sekme kapatılacak:\n%@"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Це закриє 1 вкладку у цій панелі:\n%@"
+          }
         }
       }
     },
@@ -29874,26 +29880,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "このペインの %1$lld 個のタブを閉じます:\n%2$@"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "这将关闭此面板中的 %1$lld 个标签页：\n%2$@"
+            "state": "translated",
+            "value": "这会关闭此面板中的 %1$lld 个标签页：\n%2$@"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "這將關閉此面板中的 %1$lld 個標籤頁：\n%2$@"
+            "state": "translated",
+            "value": "此舉關閉此窗格中 %1$lld 個標籤頁：\n%2$@"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "이 패널에서 탭 %1$lld개를 닫습니다:\n%2$@"
+            "state": "translated",
+            "value": "이 페인에서 탭 %1$lld개를 닫습니다:\n%2$@"
           }
         },
         "de": {
@@ -29934,8 +29940,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Будет закрыто вкладок в этой панели: %1$lld\n%2$@"
+            "state": "translated",
+            "value": "Закроется вкладок в этой панели: %1$lld\n%2$@"
           }
         },
         "bs": {
@@ -29972,6 +29978,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Bu bölmedeki %1$lld sekme kapatılacak:\n%2$@"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Це закриє %1$lld вкладок у цій панелі:\n%2$@"
           }
         }
       }
@@ -30230,26 +30242,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "現在のタブを閉じます。"
+            "state": "translated",
+            "value": "タブを閉じます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "这将关闭当前标签页。"
+            "state": "translated",
+            "value": "这会关闭该标签页。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "這將關閉目前的標籤頁。"
+            "state": "translated",
+            "value": "此舉關閉此標籤頁。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "현재 탭을 닫습니다."
+            "state": "translated",
+            "value": "탭을 닫습니다."
           }
         },
         "de": {
@@ -30290,8 +30302,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Текущая вкладка будет закрыта."
+            "state": "translated",
+            "value": "Вкладка закроется."
           }
         },
         "bs": {
@@ -30328,6 +30340,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Bu, geçerli sekmeyi kapatacak."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Це закриє вкладку."
           }
         }
       }
@@ -30456,8 +30474,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "現在のウィンドウとそのすべてのワークスペースを閉じます。"
+            "state": "translated",
+            "value": "ウインドウと、その中のワークスペースをすべて閉じます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 윈도우와 그 안의 모든 작업 공간을 닫습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这会关闭此窗口以及其中的每一个工作区。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此舉關閉此視窗,連同其中每一個工作區。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закроется окно и все рабочие пространства в нём."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Це закриє вікно та всі робочі простори в ньому."
           }
         }
       }
@@ -30785,26 +30833,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Cmd+Q の警告を表示しない"
+            "state": "translated",
+            "value": "Cmd+Q で次回から確認しない"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "不再提示 Cmd+Q 警告"
+            "state": "translated",
+            "value": "Cmd+Q 时不再询问"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "不再顯示 Cmd+Q 警告"
+            "state": "translated",
+            "value": "按 Cmd+Q 時不再詢問"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Cmd+Q에 대해 다시 경고하지 않기"
+            "state": "translated",
+            "value": "Cmd+Q에 대해 다시 묻지 않기"
           }
         },
         "de": {
@@ -30845,8 +30893,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Больше не предупреждать при Cmd+Q"
+            "state": "translated",
+            "value": "Больше не спрашивать при Cmd+Q"
           }
         },
         "bs": {
@@ -30883,6 +30931,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Cmd+Q için bir daha uyarma"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Більше не питати про Cmd+Q"
           }
         }
       }
@@ -31243,26 +31297,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11の通知を有効にする"
+            "state": "translated",
+            "value": "c11 の通知をオンにする"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "启用 c11 通知"
+            "state": "translated",
+            "value": "为 c11 开启通知"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "為 c11 啟用通知"
+            "state": "translated",
+            "value": "為 c11 打開通知"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11 알림 활성화"
+            "state": "translated",
+            "value": "c11 알림 켜기"
           }
         },
         "de": {
@@ -31303,7 +31357,7 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Включить уведомления для c11"
           }
         },
@@ -31341,6 +31395,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "c11 İçin Bildirimleri Etkinleştir"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Увімкнути сповіщення для c11"
           }
         }
       }
@@ -31588,26 +31648,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "このタブの移動先を選択してください。"
+            "state": "translated",
+            "value": "移動先を選んでください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "请为此标签页选择目标位置。"
+            "state": "translated",
+            "value": "选择目标位置。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "選擇此標籤頁的目的地。"
+            "state": "translated",
+            "value": "挑個去處。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "이 탭의 대상을 선택하세요."
+            "state": "translated",
+            "value": "대상을 고르세요."
           }
         },
         "de": {
@@ -31648,8 +31708,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Выберите место назначения для этой вкладки."
+            "state": "translated",
+            "value": "Выберите место."
           }
         },
         "bs": {
@@ -31686,6 +31746,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Bu sekme için bir hedef seçin."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Оберіть, куди перемістити."
           }
         }
       }
@@ -31814,26 +31880,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "現在のウインドウの新規ワークスペース"
+            "state": "translated",
+            "value": "このウインドウに新規ワークスペース"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "当前窗口的新工作区"
+            "state": "translated",
+            "value": "此窗口中的新工作区"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "目前視窗的新工作區"
+            "state": "translated",
+            "value": "此視窗的新工作區"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "현재 윈도우의 새 작업 공간"
+            "state": "translated",
+            "value": "이 윈도우의 새 작업 공간"
           }
         },
         "de": {
@@ -31874,8 +31940,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Новое рабочее пространство в текущем окне"
+            "state": "translated",
+            "value": "Новое рабочее пространство в этом окне"
           }
         },
         "bs": {
@@ -31913,6 +31979,12 @@
             "state": "needs_review",
             "value": "Geçerli Pencerede Yeni Çalışma Alanı"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новий робочий простір у цьому вікні"
+          }
         }
       }
     },
@@ -31927,26 +31999,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "選択したワークスペースを新規ウインドウに"
+            "state": "translated",
+            "value": "新規ウインドウ"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "新窗口中的所选工作区"
+            "state": "translated",
+            "value": "新窗口"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "所選工作區至新視窗"
+            "state": "translated",
+            "value": "新視窗"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "선택한 작업 공간을 새 윈도우로"
+            "state": "translated",
+            "value": "새 윈도우"
           }
         },
         "de": {
@@ -31987,8 +32059,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Выбранное рабочее пространство в новом окне"
+            "state": "translated",
+            "value": "Новое окно"
           }
         },
         "bs": {
@@ -32025,6 +32097,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Yeni Pencerede Seçili Çalışma Alanı"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нове вікно"
           }
         }
       }
@@ -32187,8 +32265,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "OK"
+            "state": "translated",
+            "value": "確認"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "확인"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подтвердить"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Підтвердити"
           }
         }
       }
@@ -32204,8 +32312,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "OK"
+            "state": "translated",
+            "value": "送信"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제출"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提交"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送出"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправить"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Надіслати"
           }
         }
       }
@@ -32221,25 +32359,25 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "すべてのウインドウとワークスペースを閉じます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "这将关闭所有窗口和工作区。"
+            "state": "translated",
+            "value": "这会关闭每一个窗口和工作区。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "這將關閉所有視窗和工作區。"
+            "state": "translated",
+            "value": "此舉關閉每一個視窗與工作區。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "모든 윈도우와 작업 공간을 닫습니다."
           }
         },
@@ -32281,8 +32419,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Все окна и рабочие пространства будут закрыты."
+            "state": "translated",
+            "value": "Закроются все окна и рабочие пространства."
           }
         },
         "bs": {
@@ -32319,6 +32457,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Bu, tüm pencereleri ve çalışma alanlarını kapatacak."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Це закриє всі вікна та робочі простори."
           }
         }
       }

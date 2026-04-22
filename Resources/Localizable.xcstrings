@@ -28458,108 +28458,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Remove Custom Workspace Name"
+            "value": "Reset Workspace Name"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "カスタムワークスペース名を削除"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "移除自定义工作区名称"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "移除自訂工作區名稱"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "사용자 지정 작업 공간 이름 제거"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Benutzerdefinierten Arbeitsbereichsnamen entfernen"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Eliminar nombre personalizado del espacio de trabajo"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Supprimer le nom personnalisé de l'espace de travail"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Rimuovi nome personalizzato area di lavoro"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Fjern brugerdefineret arbejdsområdenavn"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Usuń własną nazwę przestrzeni roboczej"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Удалить пользовательское имя рабочего пространства"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ukloni prilagođeni naziv radnog prostora"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "إزالة اسم مساحة العمل المخصص"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Fjern egendefinert arbeidsområdenavn"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Remover Nome Personalizado da Área de Trabalho"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ลบชื่อเวิร์กสเปซที่กำหนดเอง"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Özel Çalışma Alanı Adını Kaldır"
           }
         }
@@ -29023,7 +29023,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Per-workspace accent. Chrome theme (Light/Dark) lives in Settings → Theme."
+            "value": "Per-workspace accent. c11 theme (Light/Dark) lives in Settings → Theme."
           }
         }
       }

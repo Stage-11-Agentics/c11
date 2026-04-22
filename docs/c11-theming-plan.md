@@ -789,26 +789,25 @@ Reserved: the `Workspace` model can gain `themeOverride: String?` in M5 if asked
 ### 9.3 Socket / CLI surface (M4)
 
 ```
-cmux ui themes list               # built-in + user, one per line, built-ins first                   [read]
-cmux ui themes get [--light|--dark]   # print active theme's name; optional slot per §12 #12         [read]
-cmux ui themes set <name> [--light|--dark|--both]   # switch a slot (or both); operator-only per §12 #13  [write]
-cmux ui themes clear [--light|--dark|--both]   # revert slot(s) to built-in default; operator-only   [write]
-cmux ui themes reload             # force-rescan user themes dir                                      [read]
-cmux ui themes path               # print the absolute path of the user themes dir                   [read]
-cmux ui themes dump --json        # dump the resolved theme as JSON for debugging                    [read]
-cmux workspace-color set --workspace <ref> <hex>      # see §5.6                                      [write]
-cmux workspace-color clear --workspace <ref>                                                          [write]
-cmux workspace-color get --workspace <ref>                                                            [read]
+c11 themes list                         # c11 chrome themes, built-in + user                         [read]
+c11 themes get [--slot light|dark]      # print active c11 chrome theme slot(s)                      [read]
+c11 themes set <name> [--slot light|dark|both]   # switch c11 chrome theme slot(s)                    [write]
+c11 themes clear                        # revert c11 chrome theme slots to default                   [write]
+c11 themes reload                       # force-rescan user c11 chrome themes dir                    [read]
+c11 themes path                         # print user and bundled c11 chrome theme dirs                [read]
+c11 themes dump --json                  # dump the resolved c11 chrome theme as JSON                 [read]
+c11 terminal-theme list                 # Ghostty terminal themes                                    [read]
+c11 terminal-theme set <name>           # Ghostty terminal theme for both appearances                [write]
+c11 workspace-color set --workspace <ref> <hex>       # see §5.6                                     [write]
+c11 workspace-color clear --workspace <ref>                                                           [write]
+c11 workspace-color get --workspace <ref>                                                             [read]
 ```
 
-**Socket access policy** (per §12 #13): the `set` and `clear` verbs on `cmux ui themes` are operator-only — the CLI exposes them on the local operator's path, but the socket surface does NOT expose them to agent connections. Agents that need to signal workspace mode use `cmux set-workspace-metadata state.<key> <value>` (§12 #10); the active theme renders that state via `[when.workspaceState.*]` blocks. Read verbs (`list`, `get`, `dump`, `path`, `reload`) are safe for agent use.
+**Socket access policy** (per §12 #13): the `set` and `clear` verbs on c11 chrome themes are operator-only. The CLI exposes them on the local operator's path, but the socket surface does NOT expose them to agent connections. Agents that need to signal workspace mode use `c11 set-workspace-metadata state.<key> <value>` (§12 #10); the active theme renders that state via `[when.workspaceState.*]` blocks. Read verbs (`list`, `get`, `dump`, `path`, `reload`) are safe for agent use.
 
-**CLI namespace** (locked 2026-04-18): `cmux themes` stays Ghostty — Ghostty is the king theme of the main user interface and keeps the short verb. c11 chrome themes live under `cmux ui themes …`. The top-level `cmux help` should educate:
+**CLI namespace** (superseded 2026-04-22): the 2026-04-18 decision in this section is obsolete. See `docs/c11-theme-namespace-plan.md`.
 
-> `cmux themes` — Ghostty terminal themes (terminal cells, cursor, prompt colors).
-> `cmux ui themes` — c11 chrome themes (sidebar, title bars, dividers, workspace frame around the terminal).
-
-Alternatives considered and rejected: (a) renaming Ghostty to `cmux themes-ghostty` — inverts the principle that Ghostty is the king theme; (b) nesting chrome under `cmux appearance themes` — "appearance" implies a broader namespace we'd need to fill; (c) flag-based routing (`cmux themes --chrome`) — same verb, different semantics via flag is confusing.
+New locked language: `c11 themes` is c11 chrome themes. Ghostty-rendered terminal themes move to the explicit `c11 terminal-theme` namespace. `c11 ui themes` may remain as a temporary compatibility alias, but is not the canonical namespace.
 
 ### 9.4 Debug menu entries
 

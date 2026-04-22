@@ -68116,8 +68116,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "送信する前にメッセージを入力してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보내기 전에 메시지를 작성해 주세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送前先写一条消息。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "傳送前請先加入訊息。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавьте сообщение перед отправкой."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Додайте повідомлення перед надсиланням."
           }
         }
       }
@@ -68133,8 +68163,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "現在フィードバックを送信できません。代わりに founders@manaflow.com までメールしてください。"
+            "state": "translated",
+            "value": "フィードバックは現在停止中です。代わりに founders@manaflow.com へメールしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금은 피드백을 보낼 수 없어요. founders@manaflow.com으로 이메일을 보내 주세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "反馈暂时不通。请改发邮件至 founders@manaflow.com。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "意見回饋目前中斷。請改寄 founders@manaflow.com。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Обратная связь сейчас не работает. Напишите на founders@manaflow.com."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Відгуки зараз не працюють. Напишіть на founders@manaflow.com."
           }
         }
       }
@@ -68264,8 +68324,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "メッセージが長すぎます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메시지가 너무 길어요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "消息过长。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "訊息過長。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сообщение слишком длинное."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Повідомлення задовге."
           }
         }
       }
@@ -68281,8 +68371,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "founders@manaflow.com 宛てに直接ご連絡いただくこともできます。"
+            "state": "translated",
+            "value": "または founders@manaflow.com までどうぞ。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "또는 founders@manaflow.com으로 연락해 주세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "或联系 founders@manaflow.com。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "或來信 founders@manaflow.com。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Или напишите нам на founders@manaflow.com."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Або напишіть нам на founders@manaflow.com."
           }
         }
       }
@@ -68355,8 +68475,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "founders@manaflow.com 宛てに直接ご連絡いただくこともできます。"
+            "state": "translated",
+            "value": "または founders@manaflow.com までどうぞ。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "또는 founders@manaflow.com으로 연락해 주세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "或联系 founders@manaflow.com。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "或來信 founders@manaflow.com。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Или напишите нам на founders@manaflow.com."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Або напишіть нам на founders@manaflow.com."
           }
         }
       }
@@ -68406,8 +68556,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "画像は最大10枚まで添付できます。"
+            "state": "translated",
+            "value": "画像は最大10枚まで。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지 최대 10장."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多 10 张图片。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多 10 張圖片。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "До 10 изображений."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "До 10 зображень."
           }
         }
       }
@@ -68723,25 +68903,25 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "表示を減らす"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "收起"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "顯示較少"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "간략히 보기"
           }
         },
@@ -68783,7 +68963,7 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Показать меньше"
           }
         },
@@ -68822,6 +69002,12 @@
             "state": "needs_review",
             "value": "Daha az göster"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показати менше"
+          }
         }
       }
     },
@@ -68836,25 +69022,25 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "詳細を折りたたむ"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "收起详细信息"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "顯示較少詳細資訊"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "세부 정보 접기"
           }
         },
@@ -68896,7 +69082,7 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Показать меньше подробностей"
           }
         },
@@ -68935,6 +69121,12 @@
             "state": "needs_review",
             "value": "Daha az ayrıntı göster"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показати менше деталей"
+          }
         }
       }
     },
@@ -68949,25 +69141,25 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "さらに表示"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "展开"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "顯示更多"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "더 보기"
           }
         },
@@ -69009,7 +69201,7 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Показать больше"
           }
         },
@@ -69048,6 +69240,12 @@
             "state": "needs_review",
             "value": "Daha fazla göster"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показати більше"
+          }
         }
       }
     },
@@ -69062,25 +69260,25 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "詳細を展開"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "展开详细信息"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "顯示更多詳細資訊"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "세부 정보 펼치기"
           }
         },
@@ -69122,7 +69320,7 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Показать больше подробностей"
           }
         },
@@ -69160,6 +69358,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Daha fazla ayrıntı göster"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показати більше деталей"
           }
         }
       }
@@ -69893,26 +70097,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "アクティブにしてこのワークスペースにフォーカスします。ドラッグで並べ替え、または「上に移動」「下に移動」アクションを使用します。"
+            "state": "translated",
+            "value": "アクティブにしてこのワークスペースにフォーカスします。ドラッグで並べ替え、または「上に移動」「下に移動」を使用します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "激活以聚焦此工作区。拖拽以重新排序，或使用上移和下移操作。"
+            "state": "translated",
+            "value": "激活以聚焦此工作区。拖拽以重新排序，或使用上移和下移。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "啟用以聚焦此工作區。拖曳以重新排序，或使用上移和下移動作。"
+            "state": "translated",
+            "value": "啟用以聚焦此工作區。拖曳以重新排序，或使用「上移」和「下移」。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "이 작업 공간에 포커스하려면 활성화하세요. 드래그하여 순서를 변경하거나 위로 이동 및 아래로 이동 동작을 사용하세요."
+            "state": "translated",
+            "value": "이 작업 공간에 포커스하려면 활성화하세요. 드래그하여 순서를 변경하거나 위로 이동 및 아래로 이동을 사용하세요."
           }
         },
         "de": {
@@ -69953,8 +70157,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Активируйте для перехода к этому рабочему пространству. Перетащите для изменения порядка или используйте действия «Переместить вверх» и «Переместить вниз»."
+            "state": "translated",
+            "value": "Активируйте для перехода к этому рабочему пространству. Перетащите для изменения порядка или используйте «Переместить вверх» и «Переместить вниз»."
           }
         },
         "bs": {
@@ -69991,6 +70195,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Bu çalışma alanına odaklanmak için etkinleştirin. Yeniden sıralamak için sürükleyin veya Yukarı Taşı ve Aşağı Taşı eylemlerini kullanın."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Активуйте, щоб сфокусувати цей робочий простір. Перетягніть, щоб змінити порядок, або скористайтеся «Перемістити вгору» та «Перемістити вниз»."
           }
         }
       }

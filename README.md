@@ -42,19 +42,15 @@ cmux is the upstream parent — credit where it's due. we stay in conversation w
 
 ---
 
-## workspaces.
-
-a workspace is a project. a sidebar tab. a pane tree. a git branch. a cwd. a set of open ports. a notification stream. the full context of one stream of work, held together and addressable as one thing.
-
-workspaces are custom collections of terminals and surfaces — powerful, highly configurable, shaped the way the work wants them. one workspace per project. `⌘1` through `⌘9` to switch. cmd-tab roulette, retired. return to a workspace an hour later and it is exactly where it was left. the same agents in the same panes, still reporting.
-
-tmux stopped at terminals. c11 doesn't. a workspace holds terminals, embedded browsers, and markdown viewers — every surface first-class, every surface addressable. the multiplexer is no longer terminal-only. it is the multiplexer for everything happening in the room.
-
 ## agents drive c11.
+
+c11 is **agent-native terminal multiplexing**. agents are not visitors to the workspace — they live here, reshape it, compose and decompose surfaces as the work demands.
+
+every surface has a handle. every handle is scriptable from outside the process.
 
 this is the move.
 
-every surface has a handle. every handle is scriptable from outside the process. agents don't just run inside c11 — they reshape it as they work:
+agents don't just run inside c11 — they reshape it as they work:
 
 - split a pane and spawn a sub-agent into the new one
 - open an embedded browser to validate a feature they just shipped
@@ -65,6 +61,14 @@ every surface has a handle. every handle is scriptable from outside the process.
 - report status, progress, role, and model to the sidebar — visible without a context switch
 
 the operator isn't managing a layout. the agents aren't waiting for instructions. both are first-class. both carve out the space they need and announce themselves. c11 is unopinionated about which side originates which move — splits, resizes, spawns, metadata writes are peers.
+
+## workspaces.
+
+a workspace is a project. a sidebar tab. a pane tree. a git branch. a cwd. a set of open ports. a notification stream. the full context of one stream of work, held together and addressable as one thing.
+
+workspaces are custom collections of terminals and surfaces — powerful, highly configurable, shaped the way the work wants them. one workspace per project. `⌘1` through `⌘9` to switch. cmd-tab roulette, retired. return to a workspace an hour later and it is exactly where it was left. the same agents in the same panes, still reporting.
+
+tmux stopped at terminals. c11 doesn't. a workspace holds terminals, embedded browsers, and markdown viewers — every surface first-class, every surface addressable. the multiplexer is no longer terminal-only. it is the multiplexer for everything happening in the room.
 
 ## in-app browser. driveable and displayable.
 

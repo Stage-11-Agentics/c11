@@ -1,0 +1,13 @@
+{
+  "agent_type": "orchestrate",
+  "base_name": "c11-8-orchestrator",
+  "framework": "codex",
+  "last_active": "2026-04-22T00:55:25Z",
+  "model": "gpt-5",
+  "name": "c11-8-orchestrator-1",
+  "parent": "human:atin",
+  "serial": 1,
+  "session": "sess_01KPSAYDRVB77G448AGWP0212M",
+  "started_at": "2026-04-22T00:55:20Z",
+  "status": "active"
+}

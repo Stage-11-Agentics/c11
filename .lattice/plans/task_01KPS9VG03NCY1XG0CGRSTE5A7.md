@@ -88,7 +88,9 @@ Relevant paths:
 
 1. Make the workspace sidebar background neutral.
 
-   Remove workspace-color participation from `SidebarBackdrop`. The simplest behaviorally correct fix is to stop passing selected workspace color into the sidebar backdrop and make `chrome.sidebar.tintOverlay` neutral/disabled by default. Keep selected workspace card/rail coloring in `SidebarView.themedSidebarTabColors(...)`.
+   Remove workspace-color participation from `SidebarBackdrop` at the source level. The simplest behaviorally correct fix is to make `SidebarBackdrop` independent of `selectedWorkspace`, `customColor`, and `customColorDidChange`, and make `chrome.sidebar.tintOverlay` neutral/disabled by default. Keep selected workspace card/rail coloring only in the workspace tab/card path (`VerticalTabsSidebar.themedSidebarTabColors(...)` / `TabItemView`).
+
+   Do not rely only on theme defaults for this behavior. If `SidebarBackdrop` keeps resolving `chrome.sidebar.tintOverlay` with a selected workspace color, custom themes can continue to bleed workspace color into neutral sidebar chrome.
 
    Update:
 
@@ -104,7 +106,13 @@ Relevant paths:
 
    In c11, resolve `.tabBar_activeIndicator` in `Workspace.applyGhosttyChrome(...)` using the same `ThemeContext(workspaceColor: customColor, ...)` path and include it in the no-op guard so live color edits propagate.
 
-   Update tests in `vendor/bonsplit/Tests/BonsplitTests` for the generic seam and add/adjust c11 tests around appearance resolution if there is a pure seam available.
+   Update tests in `vendor/bonsplit/Tests/BonsplitTests` for the generic seam and add/adjust c11 tests around live appearance resolution if there is a pure seam available. The c11-side regression guard should specifically cover green -> yellow custom color changes reaching the resolved Bonsplit appearance so the observed stale-inner-color bug cannot regress silently.
+
+   Because `vendor/bonsplit` is a git submodule, any Bonsplit edit must follow submodule safety:
+
+   - Commit the Bonsplit change inside `vendor/bonsplit`.
+   - Push the submodule commit to the Bonsplit remote before committing the parent pointer.
+   - Verify the parent repo records only the intended reachable submodule SHA.
 
 3. Audit divider refresh and force visible refresh only where needed.
 
@@ -117,16 +125,18 @@ Relevant paths:
    - divider thickness
    - active tab indicator
 
-4. Fix portal chrome coverage.
+4. Fix portal chrome coverage with a narrow passive overlay.
 
    Do not solve this by drawing inside Ghostty cells or browser page content. The likely durable fix is a window-level chrome overlay above all portal-hosted content, or a shared divider/frame overlay used by both terminal and browser portals.
+
+   Keep this focused for C11-8. Terminal dividers already have `SplitDividerOverlayView`; browser portals are the missing case visible in the screenshots. Prefer extracting/reusing a passive AppKit chrome overlay and installing it where it demonstrably fixes browser/scrollbar coverage before expanding into a broader window-level chrome system.
 
    Candidate implementation direction:
 
    - Extract/reuse the terminal `SplitDividerOverlayView` logic into shared AppKit chrome overlay code.
    - Install it in both terminal and browser portal host layers, or in a single window-level overlay that sits above both.
    - Include workspace-frame stroke rendering in that same above-portal layer, or reserve a content inset so the SwiftUI `WorkspaceFrame` stroke is never under WKWebView/Ghostty portal frames.
-   - Ensure the overlay remains `hitTest == nil` and does not enter typing-latency-sensitive paths.
+   - Ensure the overlay remains `hitTest == nil` and stays outside typing-latency-sensitive paths.
 
 5. Validate with a tagged build and visual dogfood.
 

@@ -1483,12 +1483,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Run Onboarding Wizard…"
+            "value": "Open Onboarding…"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "オンボーディングを開く…"
           }
         }
@@ -1540,12 +1540,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ already exists but is not a c11-managed skill. Use Update/Refresh to replace it."
+            "value": "%@ exists, but c11 didn't put it there. Use Update or Refresh to replace it."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ は既に存在しますが、c11 が管理するスキルではありません。「アップデート／更新」で置き換えてください。"
           }
         }
@@ -1580,12 +1580,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No installable skill packages were found. Reinstall c11."
+            "value": "No skills found in the bundle. Reinstall c11."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "インストール可能なスキルパッケージが見つかりませんでした。c11 を再インストールしてください。"
           }
         }
@@ -1597,12 +1597,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The bundled skills manifest at %@ is malformed."
+            "value": "The skills manifest at %@ is malformed."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ のスキルマニフェストの形式が正しくありません。"
           }
         }
@@ -1660,12 +1660,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ is not installed — create its config directory first."
+            "value": "%@ isn't installed — create its config directory first."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ はインストールされていません。先に設定ディレクトリを作成してください。"
           }
         }

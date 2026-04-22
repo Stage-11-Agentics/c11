@@ -180,7 +180,7 @@ public final class ThemeManager: ObservableObject {
 
     /// Invalidates cached resolutions that depend on `$workspaceColor`. Called by
     /// `WorkspaceContentView` when the active workspace's `customColor` changes so
-    /// divider, frame, sidebar-overlay, and tab-indicator colors re-resolve without
+    /// divider, frame, and tab-indicator colors re-resolve without
     /// a Ghostty event or theme swap. Bumps `version` so `@ObservedObject`
     /// dependents re-render; per-section publishers fire for narrower subscribers.
     public func invalidateForWorkspaceColorChange() {

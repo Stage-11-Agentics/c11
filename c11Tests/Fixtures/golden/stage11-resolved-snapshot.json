@@ -14,7 +14,7 @@
   "chrome.sidebar.inactiveTabMultiSelectOpacity" : "0.350000",
   "chrome.sidebar.tintBase" : "#0A0C0F",
   "chrome.sidebar.tintBaseOpacity" : "0.180000",
-  "chrome.sidebar.tintOverlay" : "#C0392B14",
+  "chrome.sidebar.tintOverlay" : "#00000000",
   "chrome.titleBar.background" : "#121519",
   "chrome.titleBar.backgroundOpacity" : "0.850000",
   "chrome.titleBar.borderBottom" : "#2A2F36",

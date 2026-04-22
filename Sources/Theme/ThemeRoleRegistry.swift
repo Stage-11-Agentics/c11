@@ -243,7 +243,7 @@ public enum ThemeRoleRegistry {
                 expectedType: .color,
                 owningSurface: "ContentView.sidebar",
                 section: .sidebar,
-                defaultValue: .colorExpression("$workspaceColor.opacity(0.08)")
+                defaultValue: .colorExpression("#00000000")
             )
         case .sidebar_activeTabFillFallback:
             return .init(

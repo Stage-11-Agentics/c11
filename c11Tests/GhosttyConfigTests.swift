@@ -720,6 +720,64 @@ final class WorkspaceChromeColorTests: XCTestCase {
         let hex = Workspace.bonsplitChromeHex(backgroundColor: color, backgroundOpacity: 1.0)
         XCTAssertEqual(hex, "#112233")
     }
+
+    func testApplyGhosttyChromeRefreshesActiveIndicatorForCustomColorChanges() throws {
+        let defaults = ThemeAppStorage.defaults
+        let disabledKey = ThemeAppStorage.Keys.engineDisabledRuntime
+        let hadDisabledValue = defaults.object(forKey: disabledKey) != nil
+        let previousDisabledValue = defaults.bool(forKey: disabledKey)
+        defer {
+            if hadDisabledValue {
+                defaults.set(previousDisabledValue, forKey: disabledKey)
+            } else {
+                defaults.removeObject(forKey: disabledKey)
+            }
+        }
+
+        ThemeAppStorage.set(false, forKey: disabledKey)
+        guard ThemeManager.shared.isEnabled else {
+            throw XCTSkip("Theme engine disabled by environment")
+        }
+
+        let workspace = Workspace()
+        let background = try XCTUnwrap(NSColor(hex: "#101010"))
+
+        workspace.setCustomColor("#00FF00")
+        workspace.applyGhosttyChrome(
+            backgroundColor: background,
+            backgroundOpacity: 1.0,
+            reason: "unit.green"
+        )
+        let greenContext = ThemeManager.shared.makeContext(
+            workspaceColor: workspace.customColor,
+            colorScheme: ThemeManager.currentColorScheme()
+        )
+        let expectedGreen: NSColor = try XCTUnwrap(ThemeManager.shared.resolve(.tabBar_activeIndicator, context: greenContext))
+        XCTAssertEqual(
+            workspace.bonsplitController.configuration.appearance.chromeColors.activeIndicatorHex,
+            expectedGreen.hexString(includeAlpha: expectedGreen.alphaComponent < 0.999)
+        )
+
+        workspace.setCustomColor("#FFFF00")
+        workspace.applyGhosttyChrome(
+            backgroundColor: background,
+            backgroundOpacity: 1.0,
+            reason: "unit.yellow"
+        )
+        let yellowContext = ThemeManager.shared.makeContext(
+            workspaceColor: workspace.customColor,
+            colorScheme: ThemeManager.currentColorScheme()
+        )
+        let expectedYellow: NSColor = try XCTUnwrap(ThemeManager.shared.resolve(.tabBar_activeIndicator, context: yellowContext))
+        XCTAssertEqual(
+            workspace.bonsplitController.configuration.appearance.chromeColors.activeIndicatorHex,
+            expectedYellow.hexString(includeAlpha: expectedYellow.alphaComponent < 0.999)
+        )
+        XCTAssertNotEqual(
+            expectedGreen.hexString(includeAlpha: expectedGreen.alphaComponent < 0.999),
+            expectedYellow.hexString(includeAlpha: expectedYellow.alphaComponent < 0.999)
+        )
+    }
 }
 
 final class WindowTransparencyDecisionTests: XCTestCase {

@@ -1488,8 +1488,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "オンボーディングを開く…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "온보딩 열기…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开引导…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開啟新手引導…"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть онбординг…"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Відкрити онбординг…"
           }
         }
       }
@@ -1545,8 +1575,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "%@ は既に存在しますが、c11 が管理するスキルではありません。「アップデート／更新」で置き換えてください。"
+            "state": "translated",
+            "value": "%@ は存在しますが、c11 が配置したものではありません。「アップデート」または「更新」で置き換えてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@이(가) 있지만 c11이 만든 게 아니에요. 바꾸려면 업데이트나 새로고침을 사용하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 已存在，但不是 c11 放置的。使用“更新”或“刷新”来替换。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 已存在，但不是 c11 放置的。請使用「更新」或「重新整理」來取代。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ существует, но создан не c11. Используйте «Обновить» или «Перечитать» для замены."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ існує, але не c11 його туди розмістив. Скористайтеся «Оновити» або «Перевстановити», щоб замінити."
           }
         }
       }
@@ -1585,8 +1645,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "インストール可能なスキルパッケージが見つかりませんでした。c11 を再インストールしてください。"
+            "state": "translated",
+            "value": "バンドル内にスキルが見つかりません。c11 を再インストールしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "번들에 스킬이 없어요. c11을 다시 설치하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安装包中未找到技能。请重新安装 c11。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在套件中找不到任何技能。請重新安裝 c11。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В бандле не найдено навыков. Переустановите c11."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "У пакеті не знайдено навичок. Перевстановіть c11."
           }
         }
       }
@@ -1602,8 +1692,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "%@ のスキルマニフェストの形式が正しくありません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@의 스킬 매니페스트 형식이 잘못됐어요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 处的技能清单格式错误。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 的技能清單格式錯誤。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Манифест навыков по пути %@ повреждён."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Маніфест навичок у %@ пошкоджений."
           }
         }
       }
@@ -1665,8 +1785,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "%@ はインストールされていません。先に設定ディレクトリを作成してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@이(가) 설치되어 있지 않아요 — 먼저 설정 디렉토리를 만드세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 未安装 — 请先创建其配置目录。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 尚未安裝 — 請先建立其設定目錄。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ не установлен — сначала создайте его папку конфигурации."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ не встановлено — спершу створіть його теку конфігурації."
           }
         }
       }

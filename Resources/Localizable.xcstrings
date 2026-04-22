@@ -347,108 +347,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A Ghostty-based terminal with vertical tabs\nand a notification panel for macOS."
+            "value": "terminal command center for the operator:agent pair.\nmany surfaces. one workspace. one field of view."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ghosttyベースの縦タブ付きターミナルと\nmacOS用通知パネル。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "基于 Ghostty 的 macOS 终端，\n支持垂直标签页和通知面板。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "基於 Ghostty 的 macOS 終端機，\n具備垂直標籤頁與通知面板。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "세로 탭과 알림 패널을 갖춘\nGhostty 기반 macOS 터미널."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ein Ghostty-basiertes Terminal mit vertikalen Tabs\nund einem Benachrichtigungsfeld für macOS."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Un terminal basado en Ghostty con pestañas verticales\ny un panel de notificaciones para macOS."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Un terminal basé sur Ghostty avec des onglets verticaux\net un panneau de notifications pour macOS."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Un terminale basato su Ghostty con schede verticali\ne un pannello notifiche per macOS."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "En Ghostty-baseret terminal med lodrette faner\nog et notifikationspanel til macOS."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Terminal oparty na Ghostty z pionowymi kartami\ni panelem powiadomień dla macOS."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Терминал на базе Ghostty с вертикальными вкладками\nи панелью уведомлений для macOS."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Terminal zasnovan na Ghostty sa vertikalnim tabovima\ni panelom za obavještenja za macOS."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "طرفية مبنية على Ghostty مع ألسنة عمودية\nولوحة إشعارات لنظام macOS."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "En Ghostty-basert terminal med vertikale faner\nog et varselpanel for macOS."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Um terminal baseado no Ghostty com abas verticais\ne um painel de notificações para macOS."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "เทอร์มินัลบน Ghostty พร้อมแท็บแนวตั้ง\nและแผงการแจ้งเตือนสำหรับ macOS"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "macOS için dikey sekmeli ve bildirim panelli\nGhostty tabanlı terminal."
           }
         }
@@ -1642,12 +1642,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "You're Good"
+            "value": "All Set"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "準備完了"
           }
         }
@@ -1659,12 +1659,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11 is designed to be great for agents, but they need the skill to know what to ask for. Install it in %@ so they can use panes, the browser, markdown files, statuses, and the rest of the c11 workspace."
+            "value": "Your agent doesn't know c11 exists until you teach it. Install the skill in %@ and your agent can split panes, drive the browser, open markdown surfaces, and report progress to the sidebar."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 はエージェントにとって使いやすいように設計されていますが、何を頼めるかを知るにはスキルが必要です。%@ にインストールすると、ペイン、ブラウザ、Markdown ファイル、ステータス、c11 ワークスペースのその他の機能を使えるようになります。"
           }
         }
@@ -1676,12 +1676,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11 is designed to be great for agents, but they need the skill to know what to ask for. Install it so they can use panes, the browser, markdown files, statuses, and the rest of the c11 workspace."
+            "value": "Your agent doesn't know c11 exists until you teach it. Install the skill and your agent can split panes, drive the browser, open markdown surfaces, and report progress to the sidebar."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 はエージェントにとって使いやすいように設計されていますが、何を頼めるかを知るにはスキルが必要です。インストールすると、ペイン、ブラウザ、Markdown ファイル、ステータス、c11 ワークスペースのその他の機能を使えるようになります。"
           }
         }
@@ -1710,12 +1710,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Skillify Your Agent"
+            "value": "Teach My Agent"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "エージェントをスキル化"
           }
         }
@@ -1778,12 +1778,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No supported agent config folders were detected yet. You can run this later from Settings → Agent Skills."
+            "value": "Nothing detected yet. Install Claude Code, Codex, or another supported agent, then re-open this from Settings → Agent Skills."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "対応しているエージェント設定フォルダはまだ検出されていません。後で 設定 → エージェントスキル から実行できます。"
           }
         }
@@ -1795,12 +1795,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Not detected — install the agent tool first, or enable from Settings later."
+            "value": "Not detected — install the agent first, or enable from Settings later."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "未検出です — まずエージェントツールをインストールするか、設定から後で有効にしてください。"
           }
         }
@@ -1829,12 +1829,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Will complete the skill set"
+            "value": "Will install the missing skills"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "スキルセットを補完します"
           }
         }
@@ -1863,12 +1863,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Agentically use c11"
+            "value": "Teach your agent c11"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 をエージェント的に使う"
           }
         }
@@ -1897,12 +1897,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "We take developer trust seriously. The skill is plain text: inspect the exact files in Finder or hand them to your preferred model for a security review. c11 will never change your agent configuration without your permission."
+            "value": "The skill is plain text. Inspect the files in Finder, or hand them to a model for review. c11 won't touch your agent configuration without your permission."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "開発者の信頼を真剣に扱っています。スキルはプレーンテキストです。Finder で実際のファイルを確認するか、好みのモデルに渡してセキュリティレビューできます。c11 は許可なくエージェント設定を変更しません。"
           }
         }

@@ -3049,7 +3049,7 @@ private struct AboutPanelView: View {
                         .font(.caption)
                         .tint(.secondary)
                         .opacity(0.85)
-                    Text(String(localized: "about.description", defaultValue: "A Ghostty-based terminal with vertical tabs\nand a notification panel for macOS."))
+                    Text(String(localized: "about.description", defaultValue: "terminal command center for the operator:agent pair.\nmany surfaces. one workspace. one field of view."))
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .font(.caption)

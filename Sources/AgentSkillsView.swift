@@ -607,9 +607,9 @@ struct AgentSkillsOnboardingSheet: View {
 
     private var primaryActionTitle: String {
         if !detectedRows.isEmpty && !hasActionNeeded {
-            return String(localized: "agentSkills.onboarding.allSet", defaultValue: "You're Good")
+            return String(localized: "agentSkills.onboarding.allSet", defaultValue: "All Set")
         }
-        return String(localized: "agentSkills.onboarding.install", defaultValue: "Skillify Your Agent")
+        return String(localized: "agentSkills.onboarding.install", defaultValue: "Teach My Agent")
     }
 
     private var detectedRows: [AgentSkillsModel.TargetRow] {
@@ -627,7 +627,7 @@ struct AgentSkillsOnboardingSheet: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(String(localized: "agentSkills.onboarding.title", defaultValue: "Agentically use c11"))
+            Text(String(localized: "agentSkills.onboarding.title", defaultValue: "Teach your agent c11"))
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(BrandColors.whiteSwiftUI)
 
@@ -643,12 +643,12 @@ struct AgentSkillsOnboardingSheet: View {
         if detectedRows.isEmpty {
             return String(
                 localized: "agentSkills.onboarding.body.detecting",
-                defaultValue: "c11 is designed to be great for agents, but they need the skill to know what to ask for. Install it so they can use panes, the browser, markdown files, statuses, and the rest of the c11 workspace."
+                defaultValue: "Your agent doesn't know c11 exists until you teach it. Install the skill and your agent can split panes, drive the browser, open markdown surfaces, and report progress to the sidebar."
             )
         }
         let format = String(
             localized: "agentSkills.onboarding.body.detected",
-            defaultValue: "c11 is designed to be great for agents, but they need the skill to know what to ask for. Install it in %@ so they can use panes, the browser, markdown files, statuses, and the rest of the c11 workspace."
+            defaultValue: "Your agent doesn't know c11 exists until you teach it. Install the skill in %@ and your agent can split panes, drive the browser, open markdown surfaces, and report progress to the sidebar."
         )
         return String(format: format, detectedTargetList)
     }
@@ -660,7 +660,7 @@ struct AgentSkillsOnboardingSheet: View {
                 .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.62))
 
             if detectedRows.isEmpty {
-                Text(String(localized: "agentSkills.onboarding.noDetectedTools", defaultValue: "No supported agent config folders were detected yet. You can run this later from Settings → Agent Skills."))
+                Text(String(localized: "agentSkills.onboarding.noDetectedTools", defaultValue: "Nothing detected yet. Install Claude Code, Codex, or another supported agent, then re-open this from Settings → Agent Skills."))
                     .font(.system(size: 12))
                     .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.68))
                     .padding(.vertical, 6)
@@ -728,7 +728,7 @@ struct AgentSkillsOnboardingSheet: View {
         if !row.detected {
             return String(
                 localized: "agentSkills.onboarding.notDetected",
-                defaultValue: "Not detected — install the agent tool first, or enable from Settings later."
+                defaultValue: "Not detected — install the agent first, or enable from Settings later."
             )
         }
         if row.allCurrent {
@@ -746,7 +746,7 @@ struct AgentSkillsOnboardingSheet: View {
         if row.anyInstalled {
             return String(
                 localized: "agentSkills.onboarding.partialInstalled",
-                defaultValue: "Will complete the skill set"
+                defaultValue: "Will install the missing skills"
             )
         }
         return String(
@@ -775,7 +775,7 @@ struct AgentSkillsOnboardingSheet: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.62))
 
-                Text(String(localized: "agentSkills.onboarding.transparency", defaultValue: "We take developer trust seriously. The skill is plain text: inspect the exact files in Finder or hand them to your preferred model for a security review. c11 will never change your agent configuration without your permission."))
+                Text(String(localized: "agentSkills.onboarding.transparency", defaultValue: "The skill is plain text. Inspect the files in Finder, or hand them to a model for review. c11 won't touch your agent configuration without your permission."))
                     .font(.system(size: 12))
                     .lineSpacing(2)
                     .foregroundColor(BrandColors.whiteSwiftUI.opacity(0.66))

@@ -8,20 +8,32 @@
   </a>
 </p>
 
+<p align="center">
+  <code>brew tap stage-11-agentics/c11 && brew install --cask c11</code>
+</p>
+
 ---
 
 listen.
 
-the old atom of work was a terminal. one shell running Claude Code or similar. one process. one cursor. a human's attention narrowed to a single point. that was the shape of the work because that was the shape of the mind doing it.
+you started with one coding agent. one shell, one cursor, your attention narrowed to a single point. that was the shape of the work because that was the shape of the mind doing it.
 
-you run eight of them now. ten. soon thirty. each on its own context, its own task, its own small story and theater. they need terminals. they need browsers to validate what they built. they need markdown surfaces for the plans you handed them three sessions ago. they need to see each other, occasionally talk to each other, **and you need to hold the whole thing in one field of view** without losing the shape when the laptop closes and reopens.
+then you had three. then five. maybe ten by now, if you're leaning in. each on its own context, its own task, its own small story and theater. they need terminals. they need browsers to validate what they built. they need markdown surfaces for the plans you handed them three sessions ago. they need to see each other, occasionally talk to each other, **and you need to hold the whole thing in one field of view** without losing the shape when the laptop closes and reopens.
 
-**c11 makes the workspace the atom.** terminals, browsers, and markdown surfaces — composed, addressable, scriptable — held in one window that the agents themselves can drive. every surface has a handle. every handle is scriptable. agents spawn the structures they need. they dissolve them when the work is done.
+`cmd-tab` roulette across a screen full of terminal windows is not the shape that holds. you already know.
+
+**c11 makes the workspace the atom.** terminals, browsers, and markdown surfaces — composed, addressable, scriptable — held in one window that the agents themselves can drive.
+
+**the shape is simple.** a workspace holds panes. a pane holds surfaces (as tabs). a surface is a terminal, a markdown viewer, or a browser. a window holds workspaces; you hold the window. every box has a handle; every handle is scriptable. agents spawn the structures they need. they dissolve them when the work is done.
 
 
 tmux was for humans driving shells. cmux was for humans driving agents. c11 is for the operator:agent pair working in the pocket ahead of where most tools still think the frontier is.
 
 **first-class substrates:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex), and any agent that reads the [c11 skill](./skills/c11/SKILL.md) or speaks the CLI. the agents drive their own workspaces. you watch. steer. decide.
+
+**we ship an advanced skill that teaches any coding agent — Claude Code, Codex, OpenCode, Kimi, or any other — how to use c11.** we give you an unopinionated, beautiful, highly functional primitive for your terminal coding sessions. the rest is up to you.
+
+go deeper if you want: individual surfaces can talk to each other through the metadata manifest — arbitrary JSON blobs declaring their own state, addressable from anywhere. not required. available when you reach for it.
 
 this tool was built by the shape it describes.
 
@@ -89,10 +101,10 @@ the skill is [`skills/c11/SKILL.md`](./skills/c11/SKILL.md) plus peer skills for
 
 ## what's in the workspace
 
-- **surfaces, composed.** terminals, browsers, markdown panes — split, tabbed, arranged by you or by the agent. the sidebar tracks git branch, PR status, working directory, listening ports, and the latest status line per workspace. one screen. whole orchestra.
 - **the agent is first-class.** load the c11 skill and your agent learns to compose surfaces on your behalf: split a pane for the test runner, open a browser next to it, drop a markdown pane with the plan, report via the sidebar when it's stuck. this is not hooks bolted onto a multiplexer. it is infrastructure that assumes the agent is already there.
-- **notifications that respect your attention.** when a pane needs you, it rings gold. the tab lights up in the sidebar. `⌘⇧U` jumps to the most recent. interruption is a signal, not a stream.
-- **in-app browser the agent can drive.** a WKWebView next to your terminal. snapshot the accessibility tree, click elements, fill forms, evaluate JS. the agent drives your dev server. you watch it work, or you don't.
+- **surfaces, composed.** terminals, browsers, markdown panes — split, tabbed, arranged by you or by the agent. the sidebar tracks git branch, PR status, working directory, listening ports, and the latest status line per workspace. one screen. whole orchestra.
+- **notifications that respect your attention.** when a pane needs you, it rings gold. the tab lights up in the sidebar. interruption is a signal, not a stream.
+- **in-app browser, driveable and displayable.** a WKWebView next to your terminal. the agent drives it — snapshot the accessibility tree, click elements, fill forms, evaluate JS, watch it run your dev server. or *you* pin it: a task board, a Grafana dashboard, a Linear view, a Notion page, any web UI, right inside your composition. terminals and live dashboards sharing one field of view. a lot of power there.
 - **scriptable end to end.** a CLI, a JSON socket, a Python client. spawn workspaces, send keys, split panes, open markdown surfaces, drive the browser — from an agent, from a script, from another agent. if it exists inside c11, something outside can address it.
 
 ---
@@ -112,6 +124,17 @@ tmux is the ancestor. [cmux](https://github.com/manaflow-ai/cmux) by [manaflow-a
 if you're deciding between the two: start upstream. come here if you want more primitives for your agents to compose with, and you're fine with features that may or may not land back in cmux.
 
 what your agent gets here that it doesn't get upstream: a growing set of fundamental primitives — markdown surfaces, addressable handles on every surface, a skill system, agent-written sidebar telemetry. small pieces. composable. we ship the primitives. the orchestration is yours to build. more examples will show up in the [skills directory](./skills/) as the patterns compound.
+
+---
+
+## install
+
+```bash
+brew tap stage-11-agentics/c11
+brew install --cask c11
+```
+
+or grab the [DMG](https://github.com/Stage-11-Agentics/c11/releases/latest/download/c11-macos.dmg). auto-updates via Sparkle. full setup notes in [three minutes to working](#three-minutes-to-working) above.
 
 ---
 

@@ -52,7 +52,7 @@ fileprivate struct PermissionRequestView: View {
                 Text(String(localized: "update.popover.enableAutoUpdates", defaultValue: "Enable automatic updates?"))
                     .font(.system(size: 13, weight: .semibold))
 
-                Text(String(localized: "update.popover.autoUpdatesDescription", defaultValue: "c11 can automatically check for updates in the background."))
+                Text(String(localized: "update.popover.autoUpdatesDescription", defaultValue: "c11 can check for updates in the background."))
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -274,7 +274,7 @@ fileprivate struct InstallingView: View {
                 Text(String(localized: "update.popover.restartRequired", defaultValue: "Restart Required"))
                     .font(.system(size: 13, weight: .semibold))
 
-                Text(String(localized: "update.popover.restartRequired.message", defaultValue: "The update is ready. Please restart the application to complete the installation."))
+                Text(String(localized: "update.popover.restartRequired.message", defaultValue: "The update is ready. Restart c11 to install it."))
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -313,7 +313,7 @@ fileprivate struct NotFoundView: View {
                 Text(String(localized: "update.popover.noUpdatesFound", defaultValue: "No Updates Found"))
                     .font(.system(size: 13, weight: .semibold))
 
-                Text(String(localized: "update.popover.noUpdatesFound.message", defaultValue: "You're already running the latest version."))
+                Text(String(localized: "update.popover.noUpdatesFound.message", defaultValue: "You're on the latest version."))
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -117,17 +117,17 @@ class UpdateViewModel: ObservableObject {
         case .permissionRequest:
             return String(localized: "update.configureAutoUpdates", defaultValue: "Configure automatic update preferences")
         case .checking:
-            return String(localized: "update.pleaseWait", defaultValue: "Please wait while we check for available updates")
+            return String(localized: "update.pleaseWait", defaultValue: "Checking for available updates.")
         case .updateAvailable(let update):
             return update.releaseNotes?.label ?? String(localized: "update.downloadAndInstall", defaultValue: "Download and install the latest version")
         case .downloading:
             return String(localized: "update.downloadingPackage", defaultValue: "Downloading the update package")
         case .extracting:
-            return String(localized: "update.preparingUpdate", defaultValue: "Extracting and preparing the update")
+            return String(localized: "update.preparingUpdate", defaultValue: "Preparing the update.")
         case let .installing(install):
-            return install.isAutoUpdate ? String(localized: "update.restartToComplete", defaultValue: "Restart to Complete Update") : String(localized: "update.installingAndRestarting", defaultValue: "Installing update and preparing to restart")
+            return install.isAutoUpdate ? String(localized: "update.restartToComplete", defaultValue: "Restart to Complete Update") : String(localized: "update.installingAndRestarting", defaultValue: "Installing the update, then restarting.")
         case .notFound:
-            return String(localized: "update.noUpdates.message", defaultValue: "You are running the latest version")
+            return String(localized: "update.noUpdates.message", defaultValue: "You're on the latest version.")
         case .error(let err):
             return Self.userFacingErrorMessage(for: err.error)
         }
@@ -236,19 +236,19 @@ class UpdateViewModel: ObservableObject {
         if nsError.domain == SUSparkleErrorDomain {
             switch nsError.code {
             case 4005:
-                return String(localized: "update.error.permissionError.title", defaultValue: "Updater Permission Error")
+                return String(localized: "update.error.permissionError.title", defaultValue: "c11 needs to live in Applications")
             case 2001:
                 return String(localized: "update.error.downloadFailed.title", defaultValue: "Couldn't Download Update")
             case 1000, 1002:
-                return String(localized: "update.error.feedError.title", defaultValue: "Update Feed Error")
+                return String(localized: "update.error.feedError.title", defaultValue: "Couldn't Read Updates")
             case 4:
-                return String(localized: "update.error.invalidFeed.title", defaultValue: "Invalid Update Feed")
+                return String(localized: "update.error.invalidFeed.title", defaultValue: "Invalid Update Source")
             case 3:
-                return String(localized: "update.error.insecureFeed.title", defaultValue: "Insecure Update Feed")
+                return String(localized: "update.error.insecureFeed.title", defaultValue: "Insecure Update Source")
             case 1, 2, 3001, 3002:
-                return String(localized: "update.error.signatureError.title", defaultValue: "Update Signature Error")
+                return String(localized: "update.error.signatureError.title", defaultValue: "Signature Didn't Verify")
             case 1003, 1005:
-                return String(localized: "update.error.appLocation.title", defaultValue: "App Location Issue")
+                return String(localized: "update.error.appLocation.title", defaultValue: "c11 isn't in Applications")
             default:
                 break
             }
@@ -261,21 +261,21 @@ class UpdateViewModel: ObservableObject {
         if let networkError = networkError(from: nsError) {
             switch networkError.code {
             case NSURLErrorNotConnectedToInternet:
-                return String(localized: "update.error.noInternet.message", defaultValue: "c11 can’t reach the update server. Check your internet connection and try again.")
+                return String(localized: "update.error.noInternet.message", defaultValue: "c11 can't reach the update server. Check your connection and try again.")
             case NSURLErrorTimedOut:
                 return String(localized: "update.error.timedOut.message", defaultValue: "The update server took too long to respond. Try again in a moment.")
             case NSURLErrorCannotFindHost:
-                return String(localized: "update.error.serverNotFound.message", defaultValue: "The update server can’t be found. Check your connection or try again later.")
+                return String(localized: "update.error.serverNotFound.message", defaultValue: "Can't find the update server. Check your connection or try again later.")
             case NSURLErrorCannotConnectToHost:
                 return String(localized: "update.error.serverUnreachable.message", defaultValue: "c11 couldn’t connect to the update server. Check your connection or try again later.")
             case NSURLErrorNetworkConnectionLost:
-                return String(localized: "update.error.connectionLost.message", defaultValue: "The network connection was lost while checking for updates. Try again.")
+                return String(localized: "update.error.connectionLost.message", defaultValue: "The network dropped while checking for updates. Try again.")
             case NSURLErrorSecureConnectionFailed,
                  NSURLErrorServerCertificateUntrusted,
                  NSURLErrorServerCertificateHasBadDate,
                  NSURLErrorServerCertificateHasUnknownRoot,
                  NSURLErrorServerCertificateNotYetValid:
-                return String(localized: "update.error.secureConnectionFailed.message", defaultValue: "A secure connection to the update server couldn’t be established. Try again later.")
+                return String(localized: "update.error.secureConnectionFailed.message", defaultValue: "Couldn't open a secure connection to the update server. Try again later.")
             default:
                 break
             }
@@ -283,15 +283,15 @@ class UpdateViewModel: ObservableObject {
         if nsError.domain == SUSparkleErrorDomain {
             switch nsError.code {
             case 2001:
-                return String(localized: "update.error.feedDownload.message", defaultValue: "c11 couldn't download the update feed. Check your connection and try again.")
+                return String(localized: "update.error.feedDownload.message", defaultValue: "c11 couldn't fetch the update list. Check your connection and try again.")
             case 1000, 1002:
-                return String(localized: "update.error.feedRead.message", defaultValue: "The update feed could not be read. Please try again later.")
+                return String(localized: "update.error.feedRead.message", defaultValue: "The update list couldn't be read. Try again later.")
             case 4:
-                return String(localized: "update.error.invalidFeed.message", defaultValue: "The update feed URL is invalid. Please contact support.")
+                return String(localized: "update.error.invalidFeed.message", defaultValue: "The update source URL is invalid. Contact support.")
             case 3:
-                return String(localized: "update.error.insecureFeed.message", defaultValue: "The update feed is insecure. Please contact support.")
+                return String(localized: "update.error.insecureFeed.message", defaultValue: "The update list isn't using a secure connection. Contact support.")
             case 1, 2, 3001, 3002:
-                return String(localized: "update.error.signatureError.message", defaultValue: "The update's signature could not be verified. Please try again later.")
+                return String(localized: "update.error.signatureError.message", defaultValue: "The update's signature didn't verify. Try again later.")
             case 1003, 1005, 4005:
                 return String(localized: "update.error.permissionError.message", defaultValue: "Move c11 into Applications and relaunch to enable updates.")
             default:

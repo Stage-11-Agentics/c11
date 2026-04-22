@@ -73221,108 +73221,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "App Location Issue"
+            "value": "c11 isn't in Applications"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "アプリの場所の問題"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "应用位置问题"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "App 位置問題"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "앱 위치 문제"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Problem mit dem App-Speicherort"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Problema con la ubicación de la app"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Problème d'emplacement de l'app"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Problema posizione app"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Problem med appplacering"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Problem z lokalizacją aplikacji"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Проблема с расположением приложения"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Problem s lokacijom aplikacije"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "مشكلة في موقع التطبيق"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Problem med appplassering"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Problema com Local do App"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ปัญหาตำแหน่งแอป"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Uygulama Konumu Sorunu"
           }
         }
@@ -73334,108 +73334,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The network connection was lost while checking for updates. Try again."
+            "value": "The network dropped while checking for updates. Try again."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "アップデートの確認中にネットワーク接続が切れました。もう一度お試しください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "检查更新时网络连接中断。请重试。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "檢查更新時網路連線中斷。請再試一次。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "업데이트 확인 중 네트워크 연결이 끊어졌습니다. 다시 시도하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Die Netzwerkverbindung wurde beim Suchen nach Updates unterbrochen. Versuchen Sie es erneut."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Se perdió la conexión de red al buscar actualizaciones. Inténtalo de nuevo."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "La connexion réseau a été perdue lors de la recherche de mises à jour. Réessayez."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "La connessione di rete è stata persa durante la verifica degli aggiornamenti. Riprova."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Netværksforbindelsen gik tabt under søgning efter opdateringer. Prøv igen."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Połączenie sieciowe zostało utracone podczas sprawdzania aktualizacji. Spróbuj ponownie."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Сетевое подключение было потеряно во время проверки обновлений. Повторите попытку."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Mrežna veza je prekinuta tokom provjere ažuriranja. Pokušajte ponovo."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "انقطع اتصال الشبكة أثناء التحقق من التحديثات. حاول مجددًا."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nettverkstilkoblingen ble mistet under søk etter oppdateringer. Prøv igjen."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "A conexão de rede foi perdida ao verificar atualizações. Tente novamente."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "การเชื่อมต่อเครือข่ายขาดหายขณะตรวจหาอัปเดต ลองอีกครั้ง"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Güncellemeler denetlenirken ağ bağlantısı kesildi. Tekrar deneyin."
           }
         }
@@ -73786,108 +73786,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11 couldn't download the update feed. Check your connection and try again."
+            "value": "c11 couldn't fetch the update list. Check your connection and try again."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 はアップデートフィードをダウンロードできませんでした。接続を確認してもう一度お試しください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 无法下载更新源。请检查网络连接后重试。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 無法下載更新來源。請檢查您的連線後再試一次。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11에서 업데이트 피드를 다운로드할 수 없습니다. 연결을 확인하고 다시 시도하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 konnte den Update-Feed nicht herunterladen. Überprüfen Sie Ihre Verbindung und versuchen Sie es erneut."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 no pudo descargar la fuente de actualizaciones. Comprueba tu conexión e inténtalo de nuevo."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 n'a pas pu télécharger le flux de mises à jour. Vérifiez votre connexion et réessayez."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 non è riuscito a scaricare il feed degli aggiornamenti. Controlla la connessione e riprova."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 kunne ikke downloade opdateringsfeedet. Kontroller din forbindelse, og prøv igen."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 nie mógł pobrać kanału aktualizacji. Sprawdź połączenie i spróbuj ponownie."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 не удалось загрузить канал обновлений. Проверьте подключение и повторите попытку."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 nije mogao preuzeti feed ažuriranja. Provjerite vezu i pokušajte ponovo."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "تعذر على c11 تنزيل موجز التحديثات. تحقق من اتصالك وحاول مجددًا."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 kunne ikke laste ned oppdateringsfeeden. Kontroller tilkoblingen og prøv igjen."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "O c11 não conseguiu baixar o feed de atualização. Verifique sua conexão e tente novamente."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 ไม่สามารถดาวน์โหลดฟีดอัปเดตได้ ตรวจสอบการเชื่อมต่อแล้วลองอีกครั้ง"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 güncelleme akışını indiremedi. Bağlantınızı kontrol edip tekrar deneyin."
           }
         }
@@ -73899,108 +73899,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Update Feed Error"
+            "value": "Couldn't Read Updates"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "アップデートフィードエラー"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "更新源错误"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "更新來源錯誤"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "업데이트 피드 오류"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Fehler im Update-Feed"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Error en la fuente de actualizaciones"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Erreur du flux de mises à jour"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Errore feed aggiornamento"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Fejl i opdateringsfeed"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Błąd kanału aktualizacji"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ошибка канала обновлений"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Greška feeda ažuriranja"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "خطأ في موجز التحديثات"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Feil i oppdateringsfeed"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Erro no Feed de Atualização"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ข้อผิดพลาดฟีดอัปเดต"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Güncelleme Akışı Hatası"
           }
         }
@@ -74012,108 +74012,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The update feed could not be read. Please try again later."
+            "value": "The update list couldn't be read. Try again later."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "アップデートフィードを読み取れませんでした。後でもう一度お試しください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "无法读取更新源。请稍后重试。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "無法讀取更新來源。請稍後再試。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "업데이트 피드를 읽을 수 없습니다. 나중에 다시 시도하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Der Update-Feed konnte nicht gelesen werden. Bitte versuchen Sie es später erneut."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "No se pudo leer la fuente de actualizaciones. Inténtalo de nuevo más tarde."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Le flux de mises à jour n'a pas pu être lu. Veuillez réessayer plus tard."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Impossibile leggere il feed degli aggiornamenti. Riprova più tardi."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Opdateringsfeedet kunne ikke læses. Prøv igen senere."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nie można odczytać kanału aktualizacji. Spróbuj ponownie później."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Не удалось прочитать канал обновлений. Повторите попытку позже."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Feed ažuriranja nije moguće pročitati. Pokušajte ponovo kasnije."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "تعذر قراءة موجز التحديثات. يرجى المحاولة لاحقًا."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Oppdateringsfeeden kunne ikke leses. Prøv igjen senere."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "O feed de atualização não pôde ser lido. Tente novamente mais tarde."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ไม่สามารถอ่านฟีดอัปเดตได้ กรุณาลองอีกครั้งในภายหลัง"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Güncelleme akışı okunamadı. Lütfen daha sonra tekrar deneyin."
           }
         }
@@ -74125,108 +74125,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The update feed is insecure. Please contact support."
+            "value": "The update list isn't using a secure connection. Contact support."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "アップデートフィードが安全ではありません。サポートにお問い合わせください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "更新源不安全。请联系支持团队。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "更新來源不安全。請聯絡支援團隊。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "업데이트 피드가 안전하지 않습니다. 지원팀에 문의하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Der Update-Feed ist unsicher. Bitte kontaktieren Sie den Support."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "La fuente de actualizaciones no es segura. Contacta con soporte."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Le flux de mises à jour n'est pas sécurisé. Veuillez contacter le support."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Il feed degli aggiornamenti non è sicuro. Contatta il supporto."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Opdateringsfeedet er usikkert. Kontakt venligst supporten."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Kanał aktualizacji nie jest bezpieczny. Skontaktuj się ze wsparciem."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Канал обновлений не защищен. Обратитесь в службу поддержки."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Feed ažuriranja nije siguran. Kontaktirajte podršku."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "موجز التحديثات غير آمن. يرجى الاتصال بالدعم."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Oppdateringsfeeden er usikker. Kontakt brukerstøtte."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "O feed de atualização é inseguro. Entre em contato com o suporte."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ฟีดอัปเดตไม่ปลอดภัย กรุณาติดต่อฝ่ายสนับสนุน"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Güncelleme akışı güvensiz. Lütfen destekle iletişime geçin."
           }
         }
@@ -74238,108 +74238,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Insecure Update Feed"
+            "value": "Insecure Update Source"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "安全でないアップデートフィード"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "不安全的更新源"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "不安全的更新來源"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "안전하지 않은 업데이트 피드"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Unsicherer Update-Feed"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Fuente de actualizaciones insegura"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Flux de mises à jour non sécurisé"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Feed aggiornamento non sicuro"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Usikkert opdateringsfeed"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Niezabezpieczony kanał aktualizacji"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Незащищенный канал обновлений"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nesiguran feed ažuriranja"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "موجز تحديثات غير آمن"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Usikker oppdateringsfeed"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Feed de Atualização Inseguro"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ฟีดอัปเดตไม่ปลอดภัย"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Güvensiz Güncelleme Akışı"
           }
         }
@@ -74351,108 +74351,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The update feed URL is invalid. Please contact support."
+            "value": "The update source URL is invalid. Contact support."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "アップデートフィードのURLが無効です。サポートにお問い合わせください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "更新源 URL 无效。请联系支持团队。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "更新來源 URL 無效。請聯絡支援團隊。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "업데이트 피드 URL이 유효하지 않습니다. 지원팀에 문의하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Die URL des Update-Feeds ist ungültig. Bitte kontaktieren Sie den Support."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "La URL de la fuente de actualizaciones no es válida. Contacta con soporte."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "L'URL du flux de mises à jour n'est pas valide. Veuillez contacter le support."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "L'URL del feed degli aggiornamenti non è valido. Contatta il supporto."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "URL'en til opdateringsfeedet er ugyldig. Kontakt venligst supporten."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Adres URL kanału aktualizacji jest nieprawidłowy. Skontaktuj się ze wsparciem."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "URL канала обновлений недействителен. Обратитесь в службу поддержки."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "URL feeda ažuriranja je nevažeći. Kontaktirajte podršku."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "عنوان URL لموجز التحديثات غير صالح. يرجى الاتصال بالدعم."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "URL-en for oppdateringsfeeden er ugyldig. Kontakt brukerstøtte."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "A URL do feed de atualização é inválida. Entre em contato com o suporte."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "URL ฟีดอัปเดตไม่ถูกต้อง กรุณาติดต่อฝ่ายสนับสนุน"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Güncelleme akışı URL'si geçersiz. Lütfen destekle iletişime geçin."
           }
         }
@@ -74464,108 +74464,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Invalid Update Feed"
+            "value": "Invalid Update Source"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "無効なアップデートフィード"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "无效的更新源"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "無效的更新來源"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "유효하지 않은 업데이트 피드"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ungültiger Update-Feed"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Fuente de actualizaciones no válida"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Flux de mises à jour non valide"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Feed aggiornamento non valido"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ugyldigt opdateringsfeed"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nieprawidłowy kanał aktualizacji"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Недействительный канал обновлений"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nevažeći feed ažuriranja"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "موجز تحديثات غير صالح"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ugyldig oppdateringsfeed"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Feed de Atualização Inválido"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ฟีดอัปเดตไม่ถูกต้อง"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geçersiz Güncelleme Akışı"
           }
         }
@@ -74577,108 +74577,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11 can't reach the update server. Check your internet connection and try again."
+            "value": "c11 can't reach the update server. Check your connection and try again."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 はアップデートサーバーに接続できません。インターネット接続を確認してもう一度お試しください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 无法连接到更新服务器。请检查互联网连接后重试。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 無法連線至更新伺服器。請檢查您的網際網路連線後再試一次。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11에서 업데이트 서버에 연결할 수 없습니다. 인터넷 연결을 확인하고 다시 시도하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 kann den Update-Server nicht erreichen. Überprüfen Sie Ihre Internetverbindung und versuchen Sie es erneut."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 no puede acceder al servidor de actualizaciones. Comprueba tu conexión a internet e inténtalo de nuevo."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 ne peut pas atteindre le serveur de mises à jour. Vérifiez votre connexion Internet et réessayez."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 non riesce a raggiungere il server degli aggiornamenti. Controlla la connessione a internet e riprova."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 kan ikke nå opdateringsserveren. Kontroller din internetforbindelse, og prøv igen."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 nie może połączyć się z serwerem aktualizacji. Sprawdź połączenie z internetem i spróbuj ponownie."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 не может связаться с сервером обновлений. Проверьте подключение к интернету и повторите попытку."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 ne može dosegnuti server za ažuriranje. Provjerite internetsku vezu i pokušajte ponovo."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "لا يمكن لـ c11 الوصول إلى خادم التحديثات. تحقق من اتصال الإنترنت وحاول مجددًا."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 kan ikke nå oppdateringsserveren. Kontroller internettforbindelsen og prøv igjen."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "O c11 não consegue acessar o servidor de atualização. Verifique sua conexão com a internet e tente novamente."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 ไม่สามารถเข้าถึงเซิร์ฟเวอร์อัปเดตได้ ตรวจสอบการเชื่อมต่ออินเทอร์เน็ตแล้วลองอีกครั้ง"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 güncelleme sunucusuna ulaşamıyor. İnternet bağlantınızı kontrol edip tekrar deneyin."
           }
         }
@@ -74916,108 +74916,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Updater Permission Error"
+            "value": "c11 needs to live in Applications"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "アップデーター権限エラー"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "更新程序权限错误"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "更新程式權限錯誤"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "업데이터 권한 오류"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Berechtigungsfehler des Updaters"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Error de permisos del actualizador"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Erreur de permissions du programme de mise à jour"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Errore di autorizzazione dell'aggiornamento"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Fejl i opdateringstilladelse"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Błąd uprawnień aktualizatora"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ошибка прав доступа программы обновления"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Greška dozvole za ažuriranje"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "خطأ في صلاحيات المحدّث"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Tillatelsessfeil for oppdatering"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Erro de Permissão do Atualizador"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ข้อผิดพลาดสิทธิ์ตัวอัปเดต"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Güncelleyici İzin Hatası"
           }
         }
@@ -75029,108 +75029,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A secure connection to the update server couldn't be established. Try again later."
+            "value": "Couldn't open a secure connection to the update server. Try again later."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "アップデートサーバーへのセキュア接続を確立できませんでした。後でもう一度お試しください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "无法与更新服务器建立安全连接。请稍后重试。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "無法建立與更新伺服器的安全連線。請稍後再試。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "업데이트 서버에 대한 보안 연결을 설정할 수 없습니다. 나중에 다시 시도하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Es konnte keine sichere Verbindung zum Update-Server hergestellt werden. Versuchen Sie es später erneut."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "No se pudo establecer una conexión segura con el servidor de actualizaciones. Inténtalo de nuevo más tarde."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Impossible d'établir une connexion sécurisée avec le serveur de mises à jour. Réessayez plus tard."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Impossibile stabilire una connessione sicura al server degli aggiornamenti. Riprova più tardi."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "En sikker forbindelse til opdateringsserveren kunne ikke oprettes. Prøv igen senere."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nie udało się nawiązać bezpiecznego połączenia z serwerem aktualizacji. Spróbuj ponownie później."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Не удалось установить защищенное подключение к серверу обновлений. Повторите попытку позже."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nije moguće uspostaviti sigurnu vezu sa serverom za ažuriranje. Pokušajte ponovo kasnije."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "تعذر إنشاء اتصال آمن بخادم التحديثات. حاول لاحقًا."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "En sikker tilkobling til oppdateringsserveren kunne ikke opprettes. Prøv igjen senere."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Não foi possível estabelecer uma conexão segura com o servidor de atualização. Tente novamente mais tarde."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ไม่สามารถสร้างการเชื่อมต่อที่ปลอดภัยกับเซิร์ฟเวอร์อัปเดตได้ ลองอีกครั้งในภายหลัง"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Güncelleme sunucusuyla güvenli bir bağlantı kurulamadı. Daha sonra tekrar deneyin."
           }
         }
@@ -75255,108 +75255,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The update server can't be found. Check your connection or try again later."
+            "value": "Can't find the update server. Check your connection or try again later."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "アップデートサーバーが見つかりません。接続を確認するか、後でもう一度お試しください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "找不到更新服务器。请检查网络连接或稍后重试。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "找不到更新伺服器。請檢查您的連線或稍後再試。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "업데이트 서버를 찾을 수 없습니다. 연결을 확인하거나 나중에 다시 시도하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Der Update-Server kann nicht gefunden werden. Überprüfen Sie Ihre Verbindung oder versuchen Sie es später erneut."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "No se encuentra el servidor de actualizaciones. Comprueba tu conexión o inténtalo de nuevo más tarde."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Le serveur de mises à jour est introuvable. Vérifiez votre connexion ou réessayez plus tard."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Impossibile trovare il server degli aggiornamenti. Controlla la connessione o riprova più tardi."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Opdateringsserveren kan ikke findes. Kontroller din forbindelse, eller prøv igen senere."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nie można znaleźć serwera aktualizacji. Sprawdź połączenie lub spróbuj ponownie później."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Сервер обновлений не найден. Проверьте подключение или повторите попытку позже."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Server za ažuriranje nije pronađen. Provjerite vezu ili pokušajte ponovo kasnije."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "تعذر العثور على خادم التحديثات. تحقق من اتصالك أو حاول لاحقًا."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Oppdateringsserveren ble ikke funnet. Kontroller tilkoblingen eller prøv igjen senere."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "O servidor de atualização não foi encontrado. Verifique sua conexão ou tente novamente mais tarde."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ไม่พบเซิร์ฟเวอร์อัปเดต ตรวจสอบการเชื่อมต่อหรือลองอีกครั้งในภายหลัง"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Güncelleme sunucusu bulunamıyor. Bağlantınızı kontrol edin veya daha sonra tekrar deneyin."
           }
         }
@@ -75707,108 +75707,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The update's signature could not be verified. Please try again later."
+            "value": "The update's signature didn't verify. Try again later."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "アップデートの署名を検証できませんでした。後でもう一度お試しください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "无法验证更新的签名。请稍后重试。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "無法驗證更新的簽章。請稍後再試。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "업데이트 서명을 확인할 수 없습니다. 나중에 다시 시도하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Die Signatur des Updates konnte nicht überprüft werden. Bitte versuchen Sie es später erneut."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "No se pudo verificar la firma de la actualización. Inténtalo de nuevo más tarde."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "La signature de la mise à jour n'a pas pu être vérifiée. Veuillez réessayer plus tard."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Impossibile verificare la firma dell'aggiornamento. Riprova più tardi."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Opdateringens signatur kunne ikke verificeres. Prøv igen senere."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nie udało się zweryfikować podpisu aktualizacji. Spróbuj ponownie później."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Не удалось проверить подпись обновления. Повторите попытку позже."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Potpis ažuriranja nije mogao biti verificiran. Pokušajte ponovo kasnije."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "تعذر التحقق من توقيع التحديث. يرجى المحاولة لاحقًا."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Oppdateringens signatur kunne ikke verifiseres. Prøv igjen senere."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "A assinatura da atualização não pôde ser verificada. Tente novamente mais tarde."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ไม่สามารถยืนยันลายเซ็นของอัปเดตได้ กรุณาลองอีกครั้งในภายหลัง"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Güncellemenin imzası doğrulanamadı. Lütfen daha sonra tekrar deneyin."
           }
         }
@@ -75820,108 +75820,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Update Signature Error"
+            "value": "Signature Didn't Verify"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "アップデート署名エラー"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "更新签名错误"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "更新簽章錯誤"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "업데이트 서명 오류"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Fehler bei der Update-Signatur"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Error de firma de actualización"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Erreur de signature de la mise à jour"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Errore firma aggiornamento"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Fejl i opdateringssignatur"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Błąd podpisu aktualizacji"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ошибка подписи обновления"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Greška potpisa ažuriranja"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "خطأ في توقيع التحديث"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Feil i oppdateringssignatur"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Erro de Assinatura da Atualização"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ข้อผิดพลาดลายเซ็นอัปเดต"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Güncelleme İmza Hatası"
           }
         }
@@ -76498,108 +76498,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Installing update and preparing to restart"
+            "value": "Installing the update, then restarting."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "アップデートをインストールして再起動を準備中"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "正在安装更新并准备重启"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "正在安裝更新並準備重新啟動"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "업데이트 설치 및 재시작 준비 중"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Update wird installiert und Neustart wird vorbereitet"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Instalando la actualización y preparando el reinicio"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Installation de la mise à jour et préparation du redémarrage"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Installazione dell'aggiornamento e preparazione al riavvio"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Installerer opdatering og forbereder genstart"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Instalowanie aktualizacji i przygotowywanie do ponownego uruchomienia"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Установка обновления и подготовка к перезапуску"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Instaliranje ažuriranja i priprema za ponovni start"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "جارٍ تثبيت التحديث والتحضير لإعادة التشغيل"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Installerer oppdatering og forbereder omstart"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Instalando a atualização e preparando para reiniciar"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "กำลังติดตั้งอัปเดตและเตรียมรีสตาร์ต"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Güncelleme yükleniyor ve yeniden başlatmaya hazırlanıyor"
           }
         }
@@ -76611,108 +76611,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "You are running the latest version"
+            "value": "You're on the latest version."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "最新バージョンを使用しています"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "您正在运行最新版本"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "您正在執行最新版本"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "최신 버전을 사용 중입니다"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Sie verwenden die neueste Version"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Estás ejecutando la última versión"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vous utilisez la dernière version"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Stai utilizzando l'ultima versione"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Du kører den seneste version"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Używasz najnowszej wersji"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "У вас установлена последняя версия"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Koristite najnoviju verziju"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "أنت تستخدم أحدث إصدار"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Du kjører den nyeste versjonen"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Você está usando a versão mais recente"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "คุณใช้เวอร์ชันล่าสุดแล้ว"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "En son sürümü kullanıyorsunuz"
           }
         }
@@ -76950,108 +76950,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Please wait while we check for available updates"
+            "value": "Checking for available updates."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "アップデートを確認しています。しばらくお待ちください"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "正在检查可用更新，请稍候"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "請稍候，正在檢查可用的更新"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "사용 가능한 업데이트를 확인하는 동안 잠시 기다려주세요"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Bitte warten Sie, während nach verfügbaren Updates gesucht wird"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Espera mientras buscamos actualizaciones disponibles"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Veuillez patienter pendant la recherche de mises à jour disponibles"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Attendi mentre verifichiamo gli aggiornamenti disponibili"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vent venligst, mens vi søger efter tilgængelige opdateringer"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Proszę czekać, sprawdzamy dostępne aktualizacje"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Подождите, пока мы проверяем наличие обновлений"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Pričekajte dok provjeravamo dostupna ažuriranja"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "يرجى الانتظار أثناء التحقق من التحديثات المتوفرة"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vennligst vent mens vi ser etter tilgjengelige oppdateringer"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aguarde enquanto verificamos as atualizações disponíveis"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "กรุณารอขณะตรวจหาอัปเดตที่มีอยู่"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Mevcut güncellemeler denetlenirken lütfen bekleyin"
           }
         }
@@ -77063,108 +77063,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11 can automatically check for updates in the background."
+            "value": "c11 can check for updates in the background."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 はバックグラウンドで自動的にアップデートを確認できます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 可以在后台自动检查更新。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 可以在背景自動檢查更新。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11가 백그라운드에서 자동으로 업데이트를 확인할 수 있습니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 kann automatisch im Hintergrund nach Updates suchen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 puede buscar actualizaciones automáticamente en segundo plano."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 peut rechercher automatiquement les mises à jour en arrière-plan."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 può verificare automaticamente la disponibilità di aggiornamenti in background."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 kan automatisk søge efter opdateringer i baggrunden."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 może automatycznie sprawdzać aktualizacje w tle."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 может автоматически проверять наличие обновлений в фоновом режиме."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 može automatski provjeravati ažuriranja u pozadini."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "يمكن لـ c11 التحقق تلقائيًا من التحديثات في الخلفية."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 kan automatisk se etter oppdateringer i bakgrunnen."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "O c11 pode verificar automaticamente se há atualizações em segundo plano."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 สามารถตรวจหาอัปเดตอัตโนมัติในเบื้องหลังได้"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 arka planda otomatik olarak güncellemeleri denetleyebilir."
           }
         }
@@ -77741,108 +77741,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "You're already running the latest version."
+            "value": "You're on the latest version."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "すでに最新バージョンを使用しています。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "您已经在运行最新版本。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "您已經在使用最新版本。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "이미 최신 버전을 사용 중입니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Sie verwenden bereits die neueste Version."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ya estás ejecutando la última versión."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vous utilisez déjà la dernière version."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Stai già utilizzando l'ultima versione."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Du kører allerede den seneste version."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Używasz już najnowszej wersji."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "У вас уже установлена последняя версия."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Već koristite najnoviju verziju."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "أنت تستخدم أحدث إصدار بالفعل."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Du kjører allerede den nyeste versjonen."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Você já está usando a versão mais recente."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "คุณใช้เวอร์ชันล่าสุดอยู่แล้ว"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Zaten en son sürümü kullanıyorsunuz."
           }
         }
@@ -78193,108 +78193,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The update is ready. Please restart the application to complete the installation."
+            "value": "The update is ready. Restart c11 to install it."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "アップデートの準備ができました。インストールを完了するにはアプリケーションを再起動してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "更新已就绪。请重启应用程序以完成安装。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "更新已就緒。請重新啟動應用程式以完成安裝。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "업데이트가 준비되었습니다. 설치를 완료하려면 앱을 재시작하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Das Update ist bereit. Bitte starten Sie die Anwendung neu, um die Installation abzuschließen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "La actualización está lista. Reinicia la aplicación para completar la instalación."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "La mise à jour est prête. Veuillez redémarrer l'application pour terminer l'installation."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "L'aggiornamento è pronto. Riavvia l'applicazione per completare l'installazione."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Opdateringen er klar. Genstart programmet for at fuldføre installationen."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aktualizacja jest gotowa. Uruchom ponownie aplikację, aby zakończyć instalację."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Обновление готово. Перезапустите приложение для завершения установки."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ažuriranje je spremno. Ponovo pokrenite aplikaciju da završite instalaciju."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "التحديث جاهز. يرجى إعادة تشغيل التطبيق لإكمال التثبيت."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Oppdateringen er klar. Start programmet på nytt for å fullføre installasjonen."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "A atualização está pronta. Reinicie o aplicativo para concluir a instalação."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "อัปเดตพร้อมแล้ว กรุณารีสตาร์ตแอปพลิเคชันเพื่อเสร็จสิ้นการติดตั้ง"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Güncelleme hazır. Yüklemeyi tamamlamak için lütfen uygulamayı yeniden başlatın."
           }
         }
@@ -78645,108 +78645,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Extracting and preparing the update"
+            "value": "Preparing the update."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "アップデートを展開して準備中"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "正在解压和准备更新"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "正在解壓並準備更新"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "업데이트 추출 및 준비 중"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Update wird entpackt und vorbereitet"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Extrayendo y preparando la actualización"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Extraction et préparation de la mise à jour"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Estrazione e preparazione dell'aggiornamento"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Udpakker og forbereder opdateringen"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Rozpakowywanie i przygotowywanie aktualizacji"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Извлечение и подготовка обновления"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Izdvajanje i priprema ažuriranja"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "جارٍ استخراج التحديث وتحضيره"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Pakker ut og forbereder oppdateringen"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Extraindo e preparando a atualização"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "กำลังแตกไฟล์และเตรียมอัปเดต"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Güncelleme çıkarılıyor ve hazırlanıyor"
           }
         }

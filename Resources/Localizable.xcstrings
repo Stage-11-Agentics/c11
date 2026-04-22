@@ -44210,8 +44210,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "リンクのインターセプトはターミナルのURL操作の行き先を変えます。サイドバーのPRリンクは「ワークスペースとサイドバー」で制御します。"
+            "state": "translated",
+            "value": "リンクのインターセプトはターミナルのURL操作の行き先を決めます。サイドバーのPRリンクは「ワークスペースとサイドバー」にあります。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "링크 인터셉션이 터미널 URL 동작의 목적지를 결정합니다. 사이드바 PR 링크는 Workspace & Sidebar에서 관리됩니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "链接拦截决定终端 URL 操作的去向。侧边栏 PR 链接在「工作区与侧边栏」中设置。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連結攔截決定終端機 URL 動作的開啟位置。側邊欄 PR 連結設定在「工作區與側邊欄」。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перехват ссылок решает, куда направлять URL из терминала. Ссылки на PR в боковой панели настраиваются в «Рабочее пространство и боковая панель»."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перехоплення посилань визначає, куди потрапляють URL-дії терміналу. Посилання PR у бічній панелі — у розділі «Робочі простори та бічна панель»."
           }
         }
       }
@@ -44227,8 +44257,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "これがオンのときだけ、匿名のクラッシュデータと使用状況データがこのMacから送信されます。"
+            "state": "translated",
+            "value": "オンのときだけ、匿名のクラッシュデータと使用状況データがこのMacから送信されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "켜져 있을 때만 익명 충돌 및 사용 데이터가 이 Mac을 떠납니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅在开启时，匿名崩溃和使用数据才会离开本 Mac。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開啟後，匿名當機和使用資料才會傳出此 Mac。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Анонимные данные о сбоях и использовании покидают этот Mac только при включении."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Анонімні дані про збої й використання залишають цей Mac лише коли ввімкнено."
           }
         }
       }
@@ -50309,26 +50369,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "有効にすると、c11はclaudeコマンドをラップしてセッション追跡と通知フックを挿入します。Claude Codeのフックを自分で管理する場合は無効にしてください。"
+            "state": "translated",
+            "value": "claudeコマンドをラップしてセッション追跡と通知フックを挿入します。Claude Codeのフックを自分で管理するにはオフにしてください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "启用后，c11 会包装 claude 命令以注入会话跟踪和通知钩子。如果您希望自行管理 Claude Code 钩子，请禁用此选项。"
+            "state": "translated",
+            "value": "包装 claude 命令以注入会话跟踪和通知钩子。关闭后可自行管理 Claude Code 钩子。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "啟用後，c11 會包裝 claude 指令以注入工作階段追蹤和通知掛鉤。如果您偏好自行管理 Claude Code 掛鉤，請停用此選項。"
+            "state": "translated",
+            "value": "包裝 claude 指令以注入工作階段追蹤和通知掛鉤。關閉即可自行管理 Claude Code 掛鉤。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "활성화하면 c11가 claude 명령을 래핑하여 세션 추적 및 알림 훅을 삽입합니다. Claude Code 훅을 직접 관리하려면 비활성화하세요."
+            "state": "translated",
+            "value": "claude 명령을 래핑하여 세션 추적 및 알림 훅을 삽입합니다. Claude Code 훅을 직접 관리하려면 끄세요."
           }
         },
         "de": {
@@ -50369,8 +50429,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "При включении c11 оборачивает команду claude для отслеживания сеансов и уведомлений. Отключите, если предпочитаете управлять хуками Claude Code самостоятельно."
+            "state": "translated",
+            "value": "Оборачивает команду claude для внедрения хуков отслеживания сеансов и уведомлений. Отключите, чтобы управлять хуками Claude Code самостоятельно."
           }
         },
         "bs": {
@@ -50407,6 +50467,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Etkinleştirildiğinde, c11 oturum izleme ve bildirim kancaları eklemek için claude komutunu sarar. Claude Code kancalarını kendiniz yönetmeyi tercih ediyorsanız devre dışı bırakın."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Обгортає команду claude, щоб додати відстеження сесій і хуки сповіщень. Вимкніть, щоб керувати хуками Claude Code самостійно."
           }
         }
       }
@@ -50874,26 +50940,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "これにより、祖先プロセスチェックとパスワードチェックが無効になり、すべてのローカルユーザーにソケットが公開されます。リスクを理解した上で有効にしてください。"
+            "state": "translated",
+            "value": "祖先プロセスチェックとパスワードチェックを無効にします。このMac上のすべてのローカルユーザーにソケットを公開します。リスクを理解した場合のみ有効にしてください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "这将禁用祖先和密码检查，并向所有本地用户开放套接字。请确保您了解其中的风险后再启用。"
+            "state": "translated",
+            "value": "禁用祖先和密码检查。向本 Mac 上每个本地用户开放套接字。仅在了解风险后启用。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "這將停用來源驗證和密碼檢查，並將 Socket 開放給所有本機使用者。請確認您了解風險後再啟用。"
+            "state": "translated",
+            "value": "停用來源驗證和密碼檢查，將 Socket 開放給此 Mac 上的所有本機使用者。了解風險後再啟用。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "이 설정은 출처 확인 및 비밀번호 검사를 비활성화하고 모든 로컬 사용자에게 소켓을 개방합니다. 위험을 이해한 경우에만 활성화하세요."
+            "state": "translated",
+            "value": "출처 및 비밀번호 검사를 비활성화합니다. 이 Mac의 모든 로컬 사용자에게 소켓을 개방합니다. 위험을 이해한 경우에만 활성화하세요."
           }
         },
         "de": {
@@ -50934,8 +51000,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Это отключает проверку происхождения и пароля и открывает сокет для всех локальных пользователей. Включайте только если понимаете риски."
+            "state": "translated",
+            "value": "Отключает проверку происхождения и пароля. Открывает сокет всем локальным пользователям этого Mac. Включайте, только если понимаете риски."
           }
         },
         "bs": {
@@ -50972,6 +51038,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Bu, soy ve parola denetimlerini devre dışı bırakır ve soketi tüm yerel kullanıcılara açar. Yalnızca riski anladığınızda etkinleştirin."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вимикає перевірки походження та пароля. Відкриває сокет для всіх локальних користувачів цього Mac. Вмикайте, лише якщо розумієте ризик."
           }
         }
       }
@@ -51100,26 +51172,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "警告: フルオープンアクセスにすると、このMac上の制御ソケットが誰でも読み書き可能になり、認証チェックが無効になります。ローカルデバッグ用途にのみ使用してください。"
+            "state": "translated",
+            "value": "警告: フルオープンアクセスにすると、このMac上の制御ソケットが誰でも読み書き可能になり、認証チェックが無効になります。ローカルデバッグ専用。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "警告：完全开放访问将使控制套接字在此 Mac 上对所有用户可读/可写，并禁用身份验证检查。仅用于本地调试。"
+            "state": "translated",
+            "value": "警告：完全开放访问会使控制套接字在本 Mac 上对所有用户可读/可写，并禁用身份验证检查。仅用于本地调试。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "警告：完全開放存取會讓控制 Socket 在此 Mac 上可被所有人讀寫，並停用驗證檢查。僅供本機除錯使用。"
+            "state": "translated",
+            "value": "警告：完全開放存取會讓控制 Socket 在此 Mac 上可被所有人讀寫，並停用驗證檢查。僅限本機除錯使用。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "경고: 전체 개방 접근은 이 Mac에서 제어 소켓을 누구나 읽고 쓸 수 있게 하며 인증 검사를 비활성화합니다. 로컬 디버깅 전용으로만 사용하세요."
+            "state": "translated",
+            "value": "경고: 전체 개방 접근은 이 Mac에서 제어 소켓을 누구나 읽고 쓸 수 있게 하며 인증 검사를 비활성화합니다. 로컬 디버깅 전용."
           }
         },
         "de": {
@@ -51160,8 +51232,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Внимание: полный открытый доступ делает управляющий сокет доступным для чтения и записи всем пользователям на этом Mac и отключает проверку авторизации. Используйте только для локальной отладки."
+            "state": "translated",
+            "value": "Внимание: полный открытый доступ делает управляющий сокет доступным для чтения и записи всем на этом Mac и отключает проверку авторизации. Только для локальной отладки."
           }
         },
         "bs": {
@@ -51199,6 +51271,12 @@
             "state": "needs_review",
             "value": "Uyarı: Tam açık erişim, kontrol soketini bu Mac'te herkes tarafından okunabilir/yazılabilir yapar ve kimlik doğrulama denetimlerini devre dışı bırakır. Yalnızca yerel hata ayıklama için kullanın."
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Попередження: повний відкритий доступ робить керуючий сокет читальним і записувальним для всіх на цьому Mac та вимикає перевірки авторизації. Лише для локального зневадження."
+          }
         }
       }
     },
@@ -51213,26 +51291,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "各ワークスペースにはCMUX_PORTとCMUX_PORT_END環境変数で専用のポート範囲が割り当てられます。新しいターミナルはこれらの値を継承します。"
+            "state": "translated",
+            "value": "各ワークスペースにはCMUX_PORTとCMUX_PORT_ENDで専用のポート範囲が割り当てられます。新しいターミナルはこれを継承します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "每个工作区会获得 CMUX_PORT 和 CMUX_PORT_END 环境变量，包含专用的端口范围。新终端会继承这些值。"
+            "state": "translated",
+            "value": "每个工作区通过 CMUX_PORT 和 CMUX_PORT_END 获得专用端口范围。新终端将继承这些值。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "每個工作區都會取得包含專用連接埠範圍的 CMUX_PORT 和 CMUX_PORT_END 環境變數。新終端機會繼承這些值。"
+            "state": "translated",
+            "value": "每個工作區透過 CMUX_PORT 和 CMUX_PORT_END 取得專用連接埠範圍。新終端機會繼承這些值。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "각 작업 공간에 전용 포트 범위가 있는 CMUX_PORT 및 CMUX_PORT_END 환경 변수가 할당됩니다. 새 터미널은 이 값을 상속합니다."
+            "state": "translated",
+            "value": "각 작업 공간은 CMUX_PORT 및 CMUX_PORT_END를 통해 전용 포트 범위를 받습니다. 새 터미널은 이 값을 상속합니다."
           }
         },
         "de": {
@@ -51273,8 +51351,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Каждое рабочее пространство получает переменные окружения CMUX_PORT и CMUX_PORT_END с выделенным диапазоном портов. Новые терминалы наследуют эти значения."
+            "state": "translated",
+            "value": "Каждое рабочее пространство получает выделенный диапазон портов через CMUX_PORT и CMUX_PORT_END. Новые терминалы наследуют их."
           }
         },
         "bs": {
@@ -51311,6 +51389,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Her çalışma alanı ayrılmış bir port aralığıyla CMUX_PORT ve CMUX_PORT_END ortam değişkenlerini alır. Yeni terminaller bu değerleri devralır."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Кожен робочий простір отримує виділений діапазон портів через CMUX_PORT і CMUX_PORT_END. Нові термінали успадковують їх."
           }
         }
       }
@@ -51439,26 +51523,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "CMUX_PORT環境変数の開始ポート。"
+            "state": "translated",
+            "value": "CMUX_PORTの開始ポート。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "CMUX_PORT 环境变量的起始端口。"
+            "state": "translated",
+            "value": "CMUX_PORT 的起始端口。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "CMUX_PORT 環境變數的起始連接埠。"
+            "state": "translated",
+            "value": "CMUX_PORT 的起始連接埠。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "CMUX_PORT 환경 변수의 시작 포트."
+            "state": "translated",
+            "value": "CMUX_PORT의 시작 포트."
           }
         },
         "de": {
@@ -51499,8 +51583,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Начальный порт для переменной окружения CMUX_PORT."
+            "state": "translated",
+            "value": "Начальный порт для CMUX_PORT."
           }
         },
         "bs": {
@@ -51537,6 +51621,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "CMUX_PORT ortam değişkeni için başlangıç portu."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Початковий порт для CMUX_PORT."
           }
         }
       }
@@ -51665,25 +51755,25 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "ワークスペースあたりのポート数。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "每个工作区的端口数量。"
+            "state": "translated",
+            "value": "每个工作区的端口数。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "每個工作區的連接埠數量。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "작업 공간당 포트 수."
           }
         },
@@ -51725,8 +51815,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Количество портов на рабочее пространство."
+            "state": "translated",
+            "value": "Портов на рабочее пространство."
           }
         },
         "bs": {
@@ -51763,6 +51853,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Çalışma alanı başına port sayısı."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Портів на робочий простір."
           }
         }
       }
@@ -51891,26 +51987,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "ソケットモードは、どのローカルプロセスがc11を操作できるかを決めます。オートメーションモードとパスワードモードは、c11から起動したプロセス以外にもアクセスを広げます。"
+            "state": "translated",
+            "value": "ソケットモードは、どのローカルプロセスがc11を操作できるかを決めます。オートメーションとパスワードは、c11から起動したプロセス以外にもアクセスを広げます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "控制本地 Unix 套接字的访问权限，用于程序化控制。请选择与您的安全需求匹配的模式。"
+            "state": "translated",
+            "value": "套接字模式决定哪些本地进程可以驱动 c11。自动化和密码模式会将访问范围扩展至 c11 启动的进程之外。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "控制本機 Unix Socket 的程式化控制存取。選擇符合您安全需求的模式。"
+            "state": "translated",
+            "value": "Socket 模式決定哪些本機程序可以驅動 c11。自動化和密碼模式讓 c11 啟動以外的程序也能存取。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "프로그래밍 방식 제어를 위한 로컬 Unix 소켓 접근을 제어합니다. 보안 모델에 맞는 모드를 선택하세요."
+            "state": "translated",
+            "value": "소켓 모드가 c11을 제어할 수 있는 로컬 프로세스를 결정합니다. 자동화 및 비밀번호 모드는 c11이 시작한 프로세스 이상으로 접근을 넓힙니다."
           }
         },
         "de": {
@@ -51951,8 +52047,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Управляет доступом к локальному Unix-сокету для программного управления. Выберите режим, соответствующий вашей модели угроз."
+            "state": "translated",
+            "value": "Режимы сокета определяют, какие локальные процессы могут управлять c11. Режимы автоматизации и пароля расширяют доступ за пределы процессов, запущенных из c11."
           }
         },
         "bs": {
@@ -51989,6 +52085,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Programatik kontrol için yerel Unix soketine erişimi kontrol eder. Tehdit modelinize uyan bir mod seçin."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Режими сокета визначають, які локальні процеси можуть керувати c11. Режими автоматизації та пароля розширюють доступ за межі процесів, запущених c11."
           }
         }
       }
@@ -53360,26 +53462,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "パスワードが設定されていません。設定するまで外部クライアントはブロックされます。"
+            "state": "translated",
+            "value": "パスワードが設定されていません。設定するまで外部クライアントはブロックされたままです。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "未设置密码。外部客户端将被阻止，直到配置密码为止。"
+            "state": "translated",
+            "value": "未设置密码。外部客户端将被阻止，直到配置密码。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "尚未設定密碼。外部用戶端將被封鎖，直到設定密碼為止。"
+            "state": "translated",
+            "value": "尚未設定密碼。外部用戶端會持續封鎖，直到設定密碼為止。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "비밀번호가 설정되지 않았습니다. 비밀번호를 구성하기 전까지 외부 클라이언트가 차단됩니다."
+            "state": "translated",
+            "value": "비밀번호가 설정되지 않았습니다. 비밀번호를 설정하기 전까지 외부 클라이언트는 차단됩니다."
           }
         },
         "de": {
@@ -53420,8 +53522,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Пароль не установлен. Внешние клиенты будут заблокированы, пока он не будет настроен."
+            "state": "translated",
+            "value": "Пароль не установлен. Внешние клиенты остаются заблокированными до его настройки."
           }
         },
         "bs": {
@@ -53458,6 +53560,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Parola ayarlanmadı. Bir parola yapılandırılana kadar harici istemciler engellenecek."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пароль не встановлено. Зовнішні клієнти лишаються заблокованими, доки його не налаштовано."
           }
         }
       }
@@ -53846,26 +53954,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "ターミナルのリンククリックおよびインターセプトされた`open https://...`呼び出しに適用されます。1行に1ルール。プレーンテキストはURL部分文字列に一致し、`re:`プレフィックスで正規表現を使用できます（例: openai.com/usage, re:^https?://[^/]*\\\\.example\\\\.com/(billing|usage)）。"
+            "state": "translated",
+            "value": "ターミナルのリンククリックおよびインターセプトされた`open https://...`呼び出しに適用されます。1行に1ルール。プレーンテキストはURLの部分文字列に一致。`re:`プレフィックスで正規表現（例: openai.com/usage, re:^https?://[^/]*\\\\.example\\\\.com/(billing|usage)）。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "适用于终端中的链接点击和拦截的 `open https://...` 调用。每行一条规则。纯文本匹配任意 URL 子串，或使用 `re:` 前缀表示正则表达式（例如：openai.com/usage、re:^https?://[^/]*\\\\.example\\\\.com/(billing|usage)）。"
+            "state": "translated",
+            "value": "适用于终端链接点击和拦截的 `open https://...` 调用。每行一条规则。纯文本匹配任意 URL 子串；使用 `re:` 前缀表示正则表达式（例如：openai.com/usage、re:^https?://[^/]*\\\\.example\\\\.com/(billing|usage)）。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "套用於終端機連結點擊和攔截的 `open https://...` 呼叫。每行一條規則。純文字會比對 URL 的任何子字串，或加上 `re:` 前綴使用正規表示式（例如：openai.com/usage、re:^https?://[^/]*\\\\.example\\\\.com/(billing|usage)）。"
+            "state": "translated",
+            "value": "套用於終端機連結點擊和攔截的 `open https://...` 呼叫。每行一條規則。純文字比對 URL 的任何子字串；加上 `re:` 前綴使用正規表示式（例如：openai.com/usage、re:^https?://[^/]*\\\\.example\\\\.com/(billing|usage)）。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "터미널 링크 클릭 및 인터셉트된 `open https://...` 호출에 적용됩니다. 한 줄에 하나의 규칙. 일반 텍스트는 URL의 하위 문자열을 일치시키며, `re:` 접두사로 정규식을 사용할 수 있습니다 (예: openai.com/usage, re:^https?://[^/]*\\\\.example\\\\.com/(billing|usage))."
+            "state": "translated",
+            "value": "터미널 링크 클릭 및 인터셉트된 `open https://...` 호출에 적용됩니다. 한 줄에 하나의 규칙. 일반 텍스트는 URL 하위 문자열을 일치시키며, 정규식은 `re:` 접두사를 사용합니다 (예: openai.com/usage, re:^https?://[^/]*\\\\.example\\\\.com/(billing|usage))."
           }
         },
         "de": {
@@ -53906,8 +54014,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Применяется к нажатиям на ссылки в терминале и перехваченным вызовам `open https://...`. Одно правило на строку. Обычный текст совпадает с любой подстрокой URL, или используйте префикс `re:` для регулярных выражений (например: openai.com/usage, re:^https?://[^/]*\\\\.example\\\\.com/(billing|usage))."
+            "state": "translated",
+            "value": "Применяется к нажатиям ссылок в терминале и перехваченным вызовам `open https://...`. Одно правило на строку. Обычный текст совпадает с любой подстрокой URL; префикс `re:` — регулярное выражение (например: openai.com/usage, re:^https?://[^/]*\\\\.example\\\\.com/(billing|usage))."
           }
         },
         "bs": {
@@ -53944,6 +54052,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Terminal bağlantı tıklamalarına ve yakalanan `open https://...` çağrılarına uygulanır. Satır başına bir kural. Düz metin herhangi bir URL alt dizesiyle eşleşir veya regex için `re:` ön ekini kullanın (örneğin: openai.com/usage, re:^https?://[^/]*\\\\.example\\\\.com/(billing|usage))."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Застосовується до кліків на посилання в терміналі й перехоплених викликів `open https://...`. Одне правило на рядок. Звичайний текст збігається з будь-яким підрядком URL; префікс `re:` для регулярного виразу (приклад: openai.com/usage, re:^https?://[^/]*\\\\.example\\\\.com/(billing|usage))."
           }
         }
       }
@@ -54411,26 +54525,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "ブラウザのオムニバーから訪問済みページの候補が削除されます。"
+            "state": "translated",
+            "value": "オムニバーから訪問済みページの候補を削除します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "这将从浏览器地址栏中移除已访问页面的建议。"
+            "state": "translated",
+            "value": "从地址栏中移除已访问页面的建议。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "這會移除瀏覽器網址列中已造訪頁面的建議。"
+            "state": "translated",
+            "value": "移除網址列中已造訪頁面的建議。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "브라우저 옴니바에서 방문 페이지 제안을 제거합니다."
+            "state": "translated",
+            "value": "옴니바에서 방문 페이지 제안을 제거합니다."
           }
         },
         "de": {
@@ -54471,8 +54585,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Это удалит подсказки посещенных страниц из адресной строки браузера."
+            "state": "translated",
+            "value": "Удаляет подсказки посещённых страниц из адресной строки."
           }
         },
         "bs": {
@@ -54509,6 +54623,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Bu, tarayıcı çok amaçlı çubuğundan ziyaret edilen sayfa önerilerini kaldırır."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Прибирає пропозиції відвіданих сторінок з омнібара."
           }
         }
       }
@@ -55089,26 +55209,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "ターミナルのリンククリックおよびインターセプトされた`open https://...`呼び出しに適用されます。これらのホストのみc11で開きます。その他はデフォルトブラウザで開きます。1行に1つのホストまたはワイルドカード（例: example.com, *.internal.example）。空欄にするとすべてのホストをc11で開きます。"
+            "state": "translated",
+            "value": "ターミナルのリンククリックおよびインターセプトされた`open https://...`呼び出しに適用されます。c11で開くのはこれらのホストのみ。その他はデフォルトブラウザへ。1行に1つのホストまたはワイルドカード（例: example.com, *.internal.example）。空欄にするとすべてのホストをc11で開きます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "适用于终端中的链接点击和拦截的 `open https://...` 调用。仅这些主机在 c11 中打开，其他主机在默认浏览器中打开。每行一个主机或通配符（例如：example.com、*.internal.example）。留空则在 c11 中打开所有主机。"
+            "state": "translated",
+            "value": "适用于终端链接点击和拦截的 `open https://...` 调用。仅这些主机在 c11 中打开，其余交由默认浏览器处理。每行一个主机或通配符（例如：example.com、*.internal.example）。留空则所有主机均在 c11 中打开。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "套用於終端機連結點擊和攔截的 `open https://...` 呼叫。僅這些主機會在 c11 中開啟，其他主機會在您的預設瀏覽器中開啟。每行一個主機或萬用字元（例如：example.com、*.internal.example）。留空則在 c11 中開啟所有主機。"
+            "state": "translated",
+            "value": "套用於終端機連結點擊和攔截的 `open https://...` 呼叫。僅這些主機會在 c11 中開啟，其餘會交給預設瀏覽器。每行一個主機或萬用字元（例如：example.com、*.internal.example）。留空則所有主機都在 c11 中開啟。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "터미널 링크 클릭 및 인터셉트된 `open https://...` 호출에 적용됩니다. 이 호스트만 c11에서 열립니다. 나머지는 기본 브라우저에서 열립니다. 한 줄에 하나의 호스트 또는 와일드카드 (예: example.com, *.internal.example). 비워두면 모든 호스트가 c11에서 열립니다."
+            "state": "translated",
+            "value": "터미널 링크 클릭 및 인터셉트된 `open https://...` 호출에 적용됩니다. 이 호스트만 c11에서 열리고, 나머지는 기본 브라우저로 갑니다. 한 줄에 하나의 호스트 또는 와일드카드 (예: example.com, *.internal.example). 비워두면 모든 호스트가 c11에서 열립니다."
           }
         },
         "de": {
@@ -55149,8 +55269,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Применяется к нажатиям на ссылки в терминале и перехваченным вызовам `open https://...`. Только эти хосты открываются в c11. Остальные открываются в браузере по умолчанию. Один хост или шаблон на строку (например: example.com, *.internal.example). Оставьте пустым, чтобы открывать все хосты в c11."
+            "state": "translated",
+            "value": "Применяется к нажатиям ссылок в терминале и перехваченным вызовам `open https://...`. Только эти хосты открываются в c11; остальные — в браузере по умолчанию. Один хост или шаблон на строку (например: example.com, *.internal.example). Оставьте пустым, чтобы открывать все хосты в c11."
           }
         },
         "bs": {
@@ -55187,6 +55307,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Terminal bağlantı tıklamalarına ve yakalanan `open https://...` çağrılarına uygulanır. Yalnızca bu ana bilgisayarlar c11'ta açılır. Diğerleri varsayılan tarayıcınızda açılır. Satır başına bir ana bilgisayar veya joker karakter (örneğin: example.com, *.internal.example). Tüm ana bilgisayarları c11'ta açmak için boş bırakın."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Застосовується до кліків на посилання в терміналі й перехоплених викликів `open https://...`. Лише ці хости відкриваються в c11; решта — у стандартному браузері. Один хост або шаблон на рядок (приклад: example.com, *.internal.example). Залиште порожнім, щоб усі хости відкривались у c11."
           }
         }
       }
@@ -55315,26 +55441,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "警告プロンプトなしでc11で開けるHTTP（非HTTPS）ホストを制御します。デフォルトにはlocalhost、127.0.0.1、::1、0.0.0.0、*.localtest.meが含まれます。"
+            "state": "translated",
+            "value": "警告なしでc11で開くHTTP（非HTTPS）ホスト。デフォルト: localhost、127.0.0.1、::1、0.0.0.0、*.localtest.me。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "控制哪些 HTTP（非 HTTPS）主机可以在 c11 中打开而不显示警告提示。默认包括 localhost、127.0.0.1、::1、0.0.0.0 和 *.localtest.me。"
+            "state": "translated",
+            "value": "哪些 HTTP（非 HTTPS）主机在 c11 中打开时不显示警告。默认：localhost、127.0.0.1、::1、0.0.0.0、*.localtest.me。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "控制哪些 HTTP（非 HTTPS）主機可以在 c11 中開啟而不顯示警告提示。預設包含 localhost、127.0.0.1、::1、0.0.0.0 和 *.localtest.me。"
+            "state": "translated",
+            "value": "哪些 HTTP（非 HTTPS）主機在 c11 中開啟而不顯示警告。預設：localhost、127.0.0.1、::1、0.0.0.0、*.localtest.me。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11에서 경고 없이 열 수 있는 HTTP(비HTTPS) 호스트를 제어합니다. 기본값에는 localhost, 127.0.0.1, ::1, 0.0.0.0 및 *.localtest.me가 포함됩니다."
+            "state": "translated",
+            "value": "c11에서 경고 없이 열리는 HTTP(비HTTPS) 호스트. 기본값: localhost, 127.0.0.1, ::1, 0.0.0.0, *.localtest.me."
           }
         },
         "de": {
@@ -55375,8 +55501,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Определяет, какие HTTP (не HTTPS) хосты могут открываться в c11 без предупреждения. По умолчанию включены localhost, 127.0.0.1, ::1, 0.0.0.0 и *.localtest.me."
+            "state": "translated",
+            "value": "Какие HTTP (не HTTPS) хосты открываются в c11 без предупреждения. По умолчанию: localhost, 127.0.0.1, ::1, 0.0.0.0, *.localtest.me."
           }
         },
         "bs": {
@@ -55414,6 +55540,12 @@
             "state": "needs_review",
             "value": "Hangi HTTP (HTTPS olmayan) ana bilgisayarlarının c11'ta uyarı istemi olmadan açılabileceğini kontrol eder. Varsayılanlar localhost, 127.0.0.1, ::1, 0.0.0.0 ve *.localtest.me içerir."
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Які HTTP-хости (не HTTPS) відкриваються в c11 без попередження. Типово: localhost, 127.0.0.1, ::1, 0.0.0.0, *.localtest.me."
+          }
         }
       }
     },
@@ -55428,25 +55560,25 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "1行に1つのホストまたはワイルドカード（例: localhost, 127.0.0.1, ::1, 0.0.0.0, *.localtest.me）。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "每行一个主机或通配符（例如：localhost、127.0.0.1、::1、0.0.0.0、*.localtest.me）。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "每行一個主機或萬用字元（例如：localhost、127.0.0.1、::1、0.0.0.0、*.localtest.me）。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "한 줄에 하나의 호스트 또는 와일드카드 (예: localhost, 127.0.0.1, ::1, 0.0.0.0, *.localtest.me)."
           }
         },
@@ -55488,7 +55620,7 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Один хост или шаблон на строку (например: localhost, 127.0.0.1, ::1, 0.0.0.0, *.localtest.me)."
           }
         },
@@ -55526,6 +55658,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Satır başına bir ana bilgisayar veya joker karakter (örneğin: localhost, 127.0.0.1, ::1, 0.0.0.0, *.localtest.me)."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Один хост або шаблон на рядок (приклад: localhost, 127.0.0.1, ::1, 0.0.0.0, *.localtest.me)."
           }
         }
       }
@@ -55711,8 +55849,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "現在、空タブはデバッグウィンドウの「設定のみ」モードになっています。"
+            "state": "translated",
+            "value": "空タブはデバッグウィンドウの「設定のみ」モードです。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "빈 탭이 디버그 창의 설정 전용 모드로 설정되어 있습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空白标签页通过调试窗口处于「仅设置」模式。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空白分頁目前使用來自除錯視窗的「僅設定」模式。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пустые вкладки работают в режиме «Только настройки» из окна отладки."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Порожні вкладки працюють у режимі «лише налаштування», заданому з вікна зневадження."
           }
         }
       }
@@ -55892,26 +56060,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "オフの場合、`open https://...`および`open http://...`は常にデフォルトブラウザを使用します。"
+            "state": "translated",
+            "value": "オフ時: `open https://...`と`open http://...`はデフォルトブラウザへ。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "关闭后，`open https://...` 和 `open http://...` 始终使用默认浏览器。"
+            "state": "translated",
+            "value": "关闭时：`open https://...` 和 `open http://...` 交由默认浏览器处理。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "關閉時，`open https://...` 和 `open http://...` 一律使用您的預設瀏覽器。"
+            "state": "translated",
+            "value": "關閉時：`open https://...` 和 `open http://...` 會交給預設瀏覽器。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "비활성화하면 `open https://...` 및 `open http://...`가 항상 기본 브라우저를 사용합니다."
+            "state": "translated",
+            "value": "끄면 `open https://...` 및 `open http://...`가 기본 브라우저로 갑니다."
           }
         },
         "de": {
@@ -55952,8 +56120,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "При отключении `open https://...` и `open http://...` всегда используют браузер по умолчанию."
+            "state": "translated",
+            "value": "Отключено: `open https://...` и `open http://...` открываются в браузере по умолчанию."
           }
         },
         "bs": {
@@ -55990,6 +56158,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Kapalıyken, `open https://...` ve `open http://...` her zaman varsayılan tarayıcınızı kullanır."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вимкнено: `open https://...` та `open http://...` ідуть у стандартний браузер."
           }
         }
       }
@@ -56118,26 +56292,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "オフの場合、ターミナル出力のリンクはデフォルトブラウザで開きます。"
+            "state": "translated",
+            "value": "オフ時: ターミナル出力のリンクはデフォルトブラウザで開きます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "关闭后，终端输出中点击的链接在默认浏览器中打开。"
+            "state": "translated",
+            "value": "关闭时：终端输出中的链接在默认浏览器中打开。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "關閉時，終端機輸出中點擊的連結會在您的預設瀏覽器中開啟。"
+            "state": "translated",
+            "value": "關閉時：終端機輸出中的連結會在預設瀏覽器中開啟。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "비활성화하면 터미널 출력에서 클릭한 링크가 기본 브라우저에서 열립니다."
+            "state": "translated",
+            "value": "끄면 터미널 출력의 링크가 기본 브라우저에서 열립니다."
           }
         },
         "de": {
@@ -56178,8 +56352,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "При отключении ссылки из терминала открываются в браузере по умолчанию."
+            "state": "translated",
+            "value": "Отключено: ссылки из терминала открываются в браузере по умолчанию."
           }
         },
         "bs": {
@@ -56216,6 +56390,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Kapalıyken, terminal çıktısında tıklanan bağlantılar varsayılan tarayıcınızda açılır."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вимкнено: посилання з виводу терміналу відкриваються у стандартному браузері."
           }
         }
       }
@@ -56344,26 +56524,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "ブラウザのアドレスバーで入力がURLでない場合に使用されます。"
+            "state": "translated",
+            "value": "アドレスバーの入力がURLでないときに使用されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "浏览器地址栏中输入非 URL 内容时使用。"
+            "state": "translated",
+            "value": "地址栏输入不是 URL 时使用。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "當瀏覽器網址列的輸入不是 URL 時使用。"
+            "state": "translated",
+            "value": "網址列輸入不是 URL 時使用。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "입력이 URL이 아닌 경우 브라우저 주소 표시줄에서 사용됩니다."
+            "state": "translated",
+            "value": "주소 표시줄 입력이 URL이 아닐 때 사용됩니다."
           }
         },
         "de": {
@@ -56404,8 +56584,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Используется адресной строкой браузера, когда ввод не является URL."
+            "state": "translated",
+            "value": "Используется, когда в адресной строке не URL."
           }
         },
         "bs": {
@@ -56442,6 +56622,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Giriş bir URL olmadığında tarayıcı adres çubuğu tarafından kullanılır."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Використовується, коли введене в адресний рядок не є URL."
           }
         }
       }
@@ -56683,25 +56869,25 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "%@は対応ページにそのカラースキームを強制します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "%@ 为兼容页面强制使用该配色方案。"
+            "state": "translated",
+            "value": "%@ 在兼容页面上强制使用该配色方案。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "%@ 會為相容的頁面強制套用該色彩配置。"
+            "state": "translated",
+            "value": "%@ 會在相容的頁面強制套用該色彩配置。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "%@은(는) 호환 페이지에 해당 색상 구성표를 강제 적용합니다."
           }
         },
@@ -56743,8 +56929,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "%@ принудительно применяет эту цветовую схему для совместимых страниц."
+            "state": "translated",
+            "value": "%@ принудительно применяет цветовую схему на совместимых страницах."
           }
         },
         "bs": {
@@ -56782,6 +56968,12 @@
             "state": "needs_review",
             "value": "%@ uyumlu sayfalar için bu renk şemasını zorlar."
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ примушує цю колірну схему на сумісних сторінках."
+          }
         }
       }
     },
@@ -56796,25 +56988,25 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "システムはアプリとmacOSの外観に従います。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "系统跟随应用和 macOS 外观。"
+            "state": "translated",
+            "value": "系统跟随应用和 macOS 的外观。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "「系統」會跟隨 App 和 macOS 外觀。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "시스템은 앱 및 macOS 외관을 따릅니다."
           }
         },
@@ -56856,8 +57048,8 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Системная тема следует за оформлением приложения и macOS."
+            "state": "translated",
+            "value": "Системная тема следует оформлению приложения и macOS."
           }
         },
         "bs": {
@@ -56894,6 +57086,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Sistem, uygulama ve macOS görünümünü takip eder."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«Системна» стежить за виглядом застосунку та macOS."
           }
         }
       }
@@ -59971,8 +60169,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "言語、アプリ動作、ブラウザのルーティングとインポートヒント、通知設定、サイドバー詳細と色合い、ショートカット、TextBox入力、ワークスペースカラーをリセットします。"
+            "state": "translated",
+            "value": "言語、アプリ動作、ブラウザのルーティング、インポートヒント、通知、サイドバー詳細と色合い、ショートカット、TextBox入力、ワークスペースカラーをリセットします。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "언어, 앱 동작, 브라우저 라우팅, 가져오기 힌트, 알림, 사이드바 세부 정보 및 색조, 단축키, TextBox 입력, 작업 공간 색상을 재설정합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重置语言、应用行为、浏览器路由、导入提示、通知、侧边栏详情和色调、快捷键、TextBox 输入以及工作区颜色。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重設語言、App 行為、瀏覽器路由、匯入提示、通知、側邊欄詳細資訊和色調、快速鍵、TextBox 輸入以及工作區顏色。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сбрасывает язык, поведение приложения, маршрутизацию браузера, подсказки импорта, уведомления, детали и оттенок боковой панели, сочетания клавиш, ввод TextBox и цвета рабочих пространств."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скидає мову, поведінку застосунку, маршрутизацію браузера, підказки імпорту, сповіщення, деталі й відтінок бічної панелі, клавіатурні скорочення, введення в TextBox і кольори робочих просторів."
           }
         }
       }
@@ -59988,8 +60216,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "「設定をリセット」は、c11テーマスロット、ポート範囲、ブラウザ履歴、ソケットパスワードファイル、エージェントスキルのインストール状態、macOS通知権限を消去しません。ブラウザ履歴は上で消去し、それ以外はそれぞれの場所で変更してください。"
+            "state": "translated",
+            "value": "「設定をリセット」は、c11テーマスロット、ポート範囲、ブラウザ履歴、ソケットパスワードファイル、エージェントスキルのインストール状態、macOS通知権限をそのまま残します。ブラウザ履歴は上で消去し、それ以外はそれぞれの場所で変更してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정 재설정은 c11 테마 슬롯, 포트 범위, 브라우저 기록, 소켓 비밀번호 파일, 에이전트 스킬 설치 상태, macOS 알림 권한을 그대로 둡니다. 브라우저 기록은 위에서 지우고, 나머지는 해당 위치에서 변경하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重置设置不会改动 c11 主题槽、端口范围、浏览器历史记录、套接字密码文件、代理技能安装状态和 macOS 通知权限。浏览器历史记录请在上方清除；其余项请在各自位置更改。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「重設設定」不會變更 c11 主題配置、連接埠範圍、瀏覽器歷史記錄、Socket 密碼檔案、代理人技能安裝狀態以及 macOS 通知權限。在上方清除瀏覽器歷史記錄；其餘請到各自所在位置變更。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сброс настроек не затрагивает слоты тем c11, диапазоны портов, историю браузера, файлы паролей сокета, состояние установки навыков агентов и разрешение уведомлений macOS. Историю браузера очистите выше; остальное меняйте там, где оно находится."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«Скинути налаштування» не чіпає слоти тем c11, діапазони портів, історію браузера, файли паролів сокета, стан встановлення навичок агентів і дозвіл на сповіщення macOS. Очистіть історію браузера вище; решту змінюйте там, де вона зберігається."
           }
         }
       }
@@ -61289,26 +61547,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "ショートカット値をクリックして新しいショートカットを記録します。"
+            "state": "translated",
+            "value": "ショートカット値をクリックして新しく記録します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "点击快捷键值以录制新快捷键。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "按一下快速鍵值以錄製新的快速鍵。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "단축키 값을 클릭하여 새 단축키를 기록하세요."
+            "state": "translated",
+            "value": "단축키 값을 클릭하여 새 단축키를 기록합니다."
           }
         },
         "de": {
@@ -61349,7 +61607,7 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Нажмите на значение сочетания, чтобы записать новое."
           }
         },
@@ -61387,6 +61645,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Yeni bir kısayol kaydetmek için bir kısayol değerine tıklayın."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Клацніть значення скорочення, щоб записати нове."
           }
         }
       }
@@ -61651,26 +61915,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "CmdまたはCtrlを長押ししてもショートカットヒントピルは非表示のままです。"
+            "state": "translated",
+            "value": "CmdまたはCtrlを長押ししてもショートカットヒントは非表示のままです。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "长按 Cmd 或 Ctrl 时隐藏快捷键提示标签。"
+            "state": "translated",
+            "value": "按住 Cmd 或 Ctrl 时保持隐藏快捷键提示。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "按住 Cmd 或 Ctrl 時不顯示快速鍵提示標籤。"
+            "state": "translated",
+            "value": "按住 Cmd 或 Ctrl 時快速鍵提示保持隱藏。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Cmd 또는 Ctrl을 누르고 있어도 단축키 힌트 표시가 숨겨집니다."
+            "state": "translated",
+            "value": "Cmd 또는 Ctrl을 눌러도 단축키 힌트가 숨겨진 상태로 유지됩니다."
           }
         },
         "de": {
@@ -61711,7 +61975,7 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Удержание Cmd или Ctrl не показывает подсказки сочетаний."
           }
         },
@@ -61750,6 +62014,12 @@
             "state": "needs_review",
             "value": "Cmd veya Ctrl basılı tutulduğunda kısayol ipucu rozetleri gizli kalır."
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Утримання Cmd або Ctrl не показує підказки скорочень."
+          }
         }
       }
     },
@@ -61764,26 +62034,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Cmd（サイドバー/タイトルバー）またはCtrl/Cmd（ペインタブ）を長押しするとショートカットヒントピルが表示されます。"
+            "state": "translated",
+            "value": "Cmd（サイドバー/タイトルバー）またはCtrl/Cmd（ペインタブ）を長押しするとショートカットヒントが表示されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "长按 Cmd（侧边栏/标题栏）或 Ctrl/Cmd（面板标签页）时显示快捷键提示标签。"
+            "state": "translated",
+            "value": "按住 Cmd（侧边栏/标题栏）或 Ctrl/Cmd（面板标签页）显示快捷键提示。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "按住 Cmd（側邊欄/標題列）或 Ctrl/Cmd（面板標籤頁）時顯示快速鍵提示標籤。"
+            "state": "translated",
+            "value": "按住 Cmd（側邊欄/標題列）或 Ctrl/Cmd（面板標籤頁）顯示快速鍵提示。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Cmd(사이드바/제목 표시줄) 또는 Ctrl/Cmd(패널 탭)를 누르고 있으면 단축키 힌트가 표시됩니다."
+            "state": "translated",
+            "value": "Cmd(사이드바/제목 표시줄) 또는 Ctrl/Cmd(패널 탭)를 누르면 단축키 힌트가 표시됩니다."
           }
         },
         "de": {
@@ -61824,7 +62094,7 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Удержание Cmd (боковая панель/заголовок) или Ctrl/Cmd (вкладки панели) показывает подсказки сочетаний."
           }
         },
@@ -61862,6 +62132,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Cmd (kenar çubuğu/başlık çubuğu) veya Ctrl/Cmd (bölme sekmeleri) basılı tutulduğunda kısayol ipucu rozetleri gösterilir."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Утримання Cmd (бічна панель/смуга заголовка) або Ctrl/Cmd (вкладки панелей) показує підказки скорочень."
           }
         }
       }
@@ -63613,8 +63889,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "テキストボックスでEscapeキーを押したときの動作"
+            "state": "translated",
+            "value": "テキストボックス内でのEscapeの動作。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TextBox에서 Escape의 동작."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escape 在 TextBox 中的行为。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escape 在 TextBox 中的行為。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Действие клавиши Escape в TextBox."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Що робить Escape у TextBox."
           }
         }
       }
@@ -63669,8 +63975,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Shift+Enterで改行"
+            "state": "translated",
+            "value": "Shift+Returnで改行を挿入します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shift+Return은 새 줄을 삽입합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shift+Return 插入换行符。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shift+Return 插入換行。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shift+Return вставляет перевод строки."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shift+Return вставляє новий рядок."
           }
         }
       }
@@ -63703,8 +64039,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "ショートカット設定からキーを変更可能"
+            "state": "translated",
+            "value": "「キーボードショートカット」でショートカットキーを変更。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키보드 단축키에서 단축키를 변경하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在「键盘快捷键」中更改快捷键。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在「鍵盤快速鍵」中變更快速鍵。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Измените сочетание клавиш в разделе «Сочетания клавиш»."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Клавішу скорочення можна змінити в «Клавіатурні скорочення»."
           }
         }
       }

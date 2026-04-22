@@ -1,0 +1,59 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": "medium",
+  "created_at": "2026-04-22T05:20:34Z",
+  "created_by": {
+    "agent_type": "orchestrate",
+    "base_name": "c11-8-orchestrator",
+    "framework": "codex",
+    "model": "gpt-5",
+    "name": "c11-8-orchestrator-1",
+    "serial": 1,
+    "session": "sess_01KPSAYDRVB77G448AGWP0212M"
+  },
+  "custom_fields": {},
+  "description": "## Problem\n\nThe public Settings window is still organized as a long implementation-shaped scroll. App behavior, appearance, workspace/sidebar behavior, notifications, browser routing, input, shortcuts, automation, agent skills, data, and reset behavior sit beside each other with weak conceptual boundaries. That makes Settings harder to scan and harder to extend as c11 grows.\n\n## Source of truth\n\n- Inventory: `docs/settings-reorganization-research.md`\n- IA/copy proposal: `docs/settings-reorganization-proposal.md`\n\n## Desired direction\n\nRebuild Settings around a sidebar page model:\n\n1. General\n2. Appearance\n3. Workspace & Sidebar\n4. Browser\n5. Notifications\n6. Input & Shortcuts\n7. Agents & Automation\n8. Data & Privacy\n9. Advanced\n\nGroup controls by the operator-facing conceptual model, not by `UserDefaults` keys or current implementation sections. The sidebar is the map. Risk and consequence copy live inside the relevant page, close to the control they affect.\n\n## Voice and copy\n\n- Use the hybrid c11 register: sidebar page titles in conventional Title Case; section headers short and concrete; helper text terse, c11-native, and consequence-oriented.\n- Target the hyperengineer: use operator, agent, workspace, pane, surface, socket, skill, room.\n- Avoid SaaS copy: user, AI assistant, manage, configure, streamline, empower.\n- Theme slot labels should not be \"Light Theme\" / \"Dark Theme\". Use \"When the system says day\" and \"When the system says night\"; compact fallback: \"system day\" / \"system night\".\n\n## Scope\n\n- Replace the single-scroll Settings layout with sidebar navigation and the nine target pages.\n- Move every currently visible public Settings control into the target page model from the proposal.\n- Add page-local grouping: common, behavior, details, actions, advanced/risky where useful; avoid empty structure.\n- Group the keyboard shortcut matrix by task area: Window, Navigation, Panes, Browser, Notifications, Terminal, TextBox, Help.\n- Add local helper/consequence text only where it reduces uncertainty: socket modes, full open access, browser exceptions/HTTP allowlists, link interception, notification command, reset coverage, and external state not reset.\n- Rename/reset copy so Reset All does not overpromise; prefer \"Reset Settings\" plus clear coverage and exceptions.\n- Localize all user-facing strings per c11 policy.\n\n## Out of scope\n\n- Changing behavioral defaults unless explicitly approved in a follow-up.\n- Debug-only Settings or hidden developer controls, except where reset/data boundaries make them user-visible.\n- New Settings features beyond the IA/copy work, aside from small seams needed to render the reorganized pages cleanly.\n\n## Acceptance criteria\n\n- All current public Settings controls remain reachable.\n- The Settings sidebar shows the nine pages in the proposed order.\n- Theme slots use the day/night system-state copy.\n- Appearance uses \"c11 theme\" for app chrome themes and does not imply Ghostty terminal themes are being changed.\n- Browser routing and exception controls stay on Browser, with consequence text near link interception and HTTP/host exceptions.\n- Agents & Automation clearly separates skill installation from socket access and keeps full open access behind confirmation.\n- Data & Privacy distinguishes data leaving the machine, local browser data, reset settings, and external state not reset.\n- Reset copy accurately describes what is reset and what is not, including browser history, socket password files, agent skill install state, and macOS notification permission where applicable.\n- Shortcut remapping is grouped by task area and remains easy to scan.\n- All new UI strings are localized.\n- Tests, if added, exercise observable behavior or view/model seams. Do not add source-text or grep-style tests.\n\n## Validation\n\nUse a tagged c11 build for visual validation. Check that the Settings window is scannable at normal and narrow widths, helper text does not wrap into clutter, no control text clips, and every moved setting still reads/writes its existing preference or action.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KPST42GAZSK5BYXFMFR2KG72",
+  "last_event_id": "ev_01KPST42MBMZ0RT4FM920FKGRC",
+  "last_status_changed_at": "2026-04-22T05:20:34Z",
+  "linked_files": [
+    "docs/settings-reorganization-research.md",
+    "docs/settings-reorganization-proposal.md"
+  ],
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-04-22T05:20:34Z",
+      "created_by": {
+        "agent_type": "orchestrate",
+        "base_name": "c11-8-orchestrator",
+        "framework": "codex",
+        "model": "gpt-5",
+        "name": "c11-8-orchestrator-1",
+        "serial": 1,
+        "session": "sess_01KPSAYDRVB77G448AGWP0212M"
+      },
+      "note": "Settings IA should leave a clear home for the App Chrome UI Scale control.",
+      "target_task_id": "task_01KPS3M21AEJVKD4V1NRFJ173Z",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-9",
+  "status": "backlog",
+  "tags": [
+    "settings",
+    "ui",
+    "ia",
+    "hci"
+  ],
+  "title": "Reorganize Settings into sidebar pages",
+  "type": "task",
+  "updated_at": "2026-04-22T05:20:34Z",
+  "urgency": "normal"
+}

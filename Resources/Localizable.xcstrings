@@ -5880,25 +5880,25 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "サイトに接続できませんでした。このアドレスでサーバーが実行されていることを確認してください。"
+            "state": "translated",
+            "value": "サイトが接続を拒否しました。このアドレスでサーバーが実行されていることを確認してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "网站拒绝了连接。请检查此地址上是否有服务器正在运行。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "網站拒絕連線。請確認此位址上有伺服器正在運行。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "사이트에서 연결을 거부했습니다. 이 주소에서 서버가 실행 중인지 확인하세요."
           }
         },
@@ -5940,7 +5940,7 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Сайт отклонил подключение. Убедитесь, что сервер запущен по этому адресу."
           }
         },
@@ -5979,6 +5979,12 @@
             "state": "needs_review",
             "value": "Site bağlantıyı reddetti. Bu adreste bir sunucunun çalışıp çalışmadığını kontrol edin."
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сайт відхилив з'єднання. Переконайтеся, що за цією адресою запущено сервер."
+          }
         }
       }
     },
@@ -5993,25 +5999,25 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "%@ に接続できませんでした。このアドレスでサーバーが実行されていることを確認してください。"
+            "state": "translated",
+            "value": "%@ が接続を拒否しました。このアドレスでサーバーが実行されていることを確認してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "%@ 拒绝了连接。请检查此地址上是否有服务器正在运行。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "%@ 拒絕連線。請確認此位址上有伺服器正在運行。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "%@에서 연결을 거부했습니다. 이 주소에서 서버가 실행 중인지 확인하세요."
           }
         },
@@ -6053,7 +6059,7 @@
         },
         "ru": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "%@ отклонил подключение. Убедитесь, что сервер запущен по этому адресу."
           }
         },
@@ -6091,6 +6097,12 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "%@ bağlantıyı reddetti. Bu adreste bir sunucunun çalışıp çalışmadığını kontrol edin."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ відхилив з'єднання. Переконайтеся, що за цією адресою запущено сервер."
           }
         }
       }
@@ -7366,8 +7378,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "ブックマーク、設定、拡張機能はまだ利用できません。"
+            "state": "translated",
+            "value": "ブックマーク、設定、拡張機能にはまだ対応していません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "북마크, 설정, 확장 프로그램은 아직 지원되지 않습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "书签、设置和扩展程序暂不可用。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "書籤、設定與擴充功能還沒支援。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закладки, настройки и расширения пока недоступны."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закладки, налаштування та розширення поки недоступні."
           }
         }
       }
@@ -7757,8 +7799,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "不足している c11 プロファイルは、インポート時に作成されます。"
+            "state": "translated",
+            "value": "c11 は不足しているプロファイルをインポート時に作成します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11은 가져올 때 없는 프로필을 만듭니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 会在导入时创建缺失的个人资料。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 會在匯入時建立缺少的設定檔。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 создаст недостающие профили при импорте."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 створює відсутні профілі під час імпорту."
           }
         }
       }
@@ -7899,8 +7971,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "選択した c11 ブラウザープロファイルが見つかりません。保存先プロファイルを選び直してください。"
+            "state": "translated",
+            "value": "選択した c11 ブラウザープロファイルが見つかりません。別の保存先を選んでください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택한 c11 브라우저 프로필이 사라졌습니다. 다른 대상을 고르세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所选的 c11 浏览器个人资料已不存在。请另选一个目标。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選取的 c11 瀏覽器設定檔不見了。挑個別的目的地。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выбранный профиль c11 browser исчез. Выберите другое назначение."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Обраного профілю c11 browser більше немає. Оберіть інше призначення."
           }
         }
       }
@@ -8115,8 +8217,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "インポートできるブラウザーが見つかりません"
+            "state": "translated",
+            "value": "インポート元のブラウザーがありません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "가져올 브라우저 없음"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可导入的浏览器"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沒有可匯入的瀏覽器"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нет браузеров для импорта"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Немає браузерів для імпорту"
           }
         }
       }
@@ -8319,8 +8451,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "1つ以上のプロファイルを選択してください。"
+            "state": "translated",
+            "value": "プロファイルを1つ以上選んでください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프로필을 하나 이상 고르세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请选择一个或多个个人资料。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "挑一個或多個設定檔。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите один или несколько профилей."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Оберіть один або кілька профілів."
           }
         }
       }
@@ -8421,8 +8583,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "インポートを始める前に、Cookie、履歴、またはその両方を選択してください。"
+            "state": "translated",
+            "value": "インポートを始める前に、Cookie、履歴、またはその両方を選んでください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "가져오기를 시작하기 전에 쿠키, 기록 또는 둘 다 고르세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始导入前，请选择 Cookie、历史记录或两者。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開始匯入前,先挑 Cookies、歷史紀錄,或兩者都挑。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите Cookies, Историю или оба варианта перед началом импорта."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перед початком імпорту оберіть Cookies, Історію або те й інше."
           }
         }
       }
@@ -8438,8 +8630,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "インポートする元プロファイルを少なくとも1つ選択してください。"
+            "state": "translated",
+            "value": "元プロファイルを少なくとも1つ選んでください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원본 프로필을 하나 이상 고르세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请至少选择一个源个人资料。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "至少挑一個來源設定檔。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите хотя бы один исходный профиль."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Оберіть принаймні один вихідний профіль."
           }
         }
       }
@@ -8478,8 +8700,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "%@ のCookieを %@ から読み込めませんでした: %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 쿠키를 %@에서 읽지 못했습니다: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取 %@ 位于 %@ 的 Cookie：%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "讀不了 %@ 在 %@ 的 cookies：%@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось прочитать cookies %@ по пути %@: %@"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося прочитати cookie %1$@ у %2$@: %3$@"
           }
         }
       }
@@ -8495,8 +8747,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "%@ の履歴を %@ から読み込めませんでした: %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 기록을 %@에서 읽지 못했습니다: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取 %@ 位于 %@ 的历史记录：%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "讀不了 %@ 在 %@ 的歷史紀錄：%@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось прочитать историю %@ по пути %@: %@"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося прочитати історію %1$@ у %2$@: %3$@"
           }
         }
       }
@@ -8512,8 +8794,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "%@ のCookieインポートにはまだ対応していません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 쿠키 가져오기는 아직 지원되지 않습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂不支持 %@ 的 Cookie 导入。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 的 cookie 匯入還沒支援。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Импорт cookies %@ пока не поддерживается."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Імпорт cookie %@ поки не підтримується."
           }
         }
       }
@@ -8546,8 +8858,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Firefox のCookieを %@ から読み込めませんでした: %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Firefox 쿠키를 %@에서 읽지 못했습니다: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取 Firefox 位于 %@ 的 Cookie：%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "讀不了 Firefox 在 %@ 的 cookies：%@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось прочитать cookies Firefox по пути %@: %@"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося прочитати cookie Firefox у %1$@: %2$@"
           }
         }
       }
@@ -8563,8 +8905,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Firefox の履歴を %@ から読み込めませんでした: %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Firefox 기록을 %@에서 읽지 못했습니다: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取 Firefox 位于 %@ 的历史记录：%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "讀不了 Firefox 在 %@ 的歷史紀錄：%@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось прочитать историю Firefox по пути %@: %@"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося прочитати історію Firefox у %1$@: %2$@"
           }
         }
       }
@@ -8620,8 +8992,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Safari のCookieは Cookies.binarycookies に保存されており、このインポーターではまだ対応していません。"
+            "state": "translated",
+            "value": "Safari のCookieは Cookies.binarycookies にありますが、このインポーターはまだ対応していません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Safari 쿠키는 Cookies.binarycookies에 있는데, 이 가져오기는 아직 이 파일을 지원하지 않습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Safari 的 Cookie 存放在 Cookies.binarycookies 中，此导入器暂不支持该文件。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Safari 的 cookies 放在 Cookies.binarycookies 裡,這個匯入工具還沒支援。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cookies Safari находятся в файле Cookies.binarycookies, который этот импортер пока не поддерживает."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cookie Safari зберігаються у Cookies.binarycookies — цей імпортер їх поки не підтримує."
           }
         }
       }
@@ -9123,8 +9525,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "現在のプロファイル名を変更..."
+            "state": "translated",
+            "value": "このプロファイル名を変更..."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 프로필 이름 변경..."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名此个人资料..."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新命名此設定檔..."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Переименовать этот профиль..."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перейменувати цей профіль…"
           }
         }
       }
@@ -9140,8 +9572,38 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "このブラウザープロファイルの新しい名前を入力します。"
+            "state": "translated",
+            "value": "このブラウザープロファイルの新しい名前を付けてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 브라우저 프로필의 새 이름을 고르세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为此浏览器个人资料选择一个新名称。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "為此瀏覽器設定檔挑個新名字。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите новое имя для этого профиля браузера."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Оберіть нове ім'я для цього профілю браузера."
           }
         }
       }

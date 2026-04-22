@@ -787,7 +787,7 @@ struct BrowserPanelView: View {
 
             omnibarField
                 .accessibilityIdentifier("BrowserOmnibarPill")
-                .accessibilityLabel("Browser omnibar")
+                .accessibilityLabel(String(localized: "browser.omnibar.accessibilityLabel", defaultValue: "Browser omnibar"))
 
             HStack(spacing: browserToolbarAccessorySpacing) {
                 if shouldShowToolbarImportHintChip {

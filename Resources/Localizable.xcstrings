@@ -573,6 +573,17 @@
         }
       }
     },
+    "about.forkAttribution": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Stage 11 Agentics fork of cmux by manaflow-ai"
+          }
+        }
+      }
+    },
     "about.github": {
       "extractionState": "manual",
       "localizations": {
@@ -1021,6 +1032,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Üçüncü Taraf Lisansları"
+          }
+        }
+      }
+    },
+    "about.upstream": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upstream"
           }
         }
       }
@@ -8713,6 +8735,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Yeni sekme"
+          }
+        }
+      }
+    },
+    "browser.omnibar.accessibilityLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Browser omnibar"
           }
         }
       }
@@ -27019,6 +27052,28 @@
         }
       }
     },
+    "contextMenu.disconnectWorkspace": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect Workspace"
+          }
+        }
+      }
+    },
+    "contextMenu.disconnectWorkspaces": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect Workspaces"
+          }
+        }
+      }
+    },
     "contextMenu.markWorkspaceRead": {
       "extractionState": "manual",
       "localizations": {
@@ -28375,6 +28430,28 @@
         }
       }
     },
+    "contextMenu.reconnectWorkspace": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnect Workspace"
+          }
+        }
+      }
+    },
+    "contextMenu.reconnectWorkspaces": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnect Workspaces"
+          }
+        }
+      }
+    },
     "contextMenu.removeCustomWorkspaceName": {
       "extractionState": "manual",
       "localizations": {
@@ -28936,6 +29013,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "Çalışma Alanı Rengi"
+          }
+        }
+      }
+    },
+    "contextMenu.workspaceColor.tooltip": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Per-workspace accent. Chrome theme (Light/Dark) lives in Settings → Theme."
           }
         }
       }
@@ -33228,6 +33316,39 @@
         }
       }
     },
+    "ghostty.copy-mode.indicator": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "vim"
+          }
+        }
+      }
+    },
+    "ghostty.key-table.icon.accessibility": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Key table"
+          }
+        }
+      }
+    },
+    "ghostty.key-table.indicator": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "key table"
+          }
+        }
+      }
+    },
     "language.system": {
       "extractionState": "manual",
       "localizations": {
@@ -36225,6 +36346,39 @@
           "stringUnit": {
             "state": "translated",
             "value": "Seçimi Bulmak İçin Kullan"
+          }
+        }
+      }
+    },
+    "menu.integrations": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Integrations"
+          }
+        }
+      }
+    },
+    "menu.integrations.install": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opens a new terminal tab and runs c11 install"
+          }
+        }
+      }
+    },
+    "menu.integrations.installed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Already installed — running again will re-apply or update"
           }
         }
       }
@@ -43063,6 +43217,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "c11 は承認がある場合にのみ、検出したエージェントのスキルフォルダへスキルファイルをインストールします。リンクされたスキルフォルダは共有として表示され、1つの削除操作が別のエージェントに暗黙に影響しないようにします。"
+          }
+        }
+      }
+    },
+    "settings.app.theme.openFolder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open themes folder"
+          }
+        }
+      }
+    },
+    "settings.app.theme.reload": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reload themes"
           }
         }
       }
@@ -79603,6 +79779,39 @@
           "stringUnit": {
             "state": "translated",
             "value": "ワークスペース %lld"
+          }
+        }
+      }
+    },
+    "workspace.emptyPane.browser": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Browser"
+          }
+        }
+      }
+    },
+    "workspace.emptyPane.terminal": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminal"
+          }
+        }
+      }
+    },
+    "workspace.emptyPane.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Empty Panel"
           }
         }
       }

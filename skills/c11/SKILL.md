@@ -1,5 +1,6 @@
 ---
 name: c11
+version: 1
 description: c11 — Stage 11's native macOS terminal multiplexer built as infrastructure for the Spike. Use when (1) session starts inside c11 (env var CMUX_SHELL_INTEGRATION=1), (2) creating pane splits, surfaces, or workspaces, (3) sending text or commands to another surface, (4) launching or orchestrating sub-agents in sibling panes, (5) declaring agent identity or writing the surface manifest, (6) reading surface contents or spatial layout via `c11 tree`, (7) setting surface title or description, (8) reporting progress via sidebar status/log/progress, (9) using the embedded browser for web validation (preferred over Chrome MCP when inside c11), (10) any c11-specific command or troubleshooting question. Auto-load whenever c11 is detected in the environment.
 ---
 

@@ -6216,9 +6216,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var agentSkillsOnboardingWindow: NSWindow?
     private var agentSkillsOnboardingCloseObserver: NSObjectProtocol?
 
-    /// If the user has Claude Code installed and hasn't already seen the skill
-    /// onboarding sheet, show it over the frontmost window. Consent-gated; the
-    /// sheet never writes without an explicit click.
+    /// If the user has a detected agent environment missing the current skill
+    /// set and hasn't already seen the onboarding sheet, show it over the
+    /// frontmost window. Consent-gated; the sheet never writes without an
+    /// explicit click.
     func presentAgentSkillsOnboardingIfNeeded() {
         guard AgentSkillsOnboarding.shouldPresent() else { return }
         presentAgentSkillsOnboarding()
@@ -6231,7 +6232,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 320),
+            contentRect: NSRect(x: 0, y: 0, width: 540, height: 390),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false

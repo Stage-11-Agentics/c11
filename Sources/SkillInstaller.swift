@@ -39,6 +39,7 @@ enum SkillInstallerTarget: String, CaseIterable {
 
 struct SkillInstallerPackage: Equatable {
     let name: String
+    let version: String
     let sourceDir: URL
 }
 
@@ -48,6 +49,7 @@ struct SkillInstallerRecord: Codable, Equatable {
 
     let schema: Int
     let packageName: String
+    let skillVersion: String?
     let installedAt: String
     let appVersion: String
     let appBuild: String
@@ -57,6 +59,7 @@ struct SkillInstallerRecord: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case schema = "c11_skill_schema"
         case packageName = "package"
+        case skillVersion = "skill_version"
         case installedAt = "installed_at"
         case appVersion = "app_version"
         case appBuild = "app_build"
@@ -211,9 +214,36 @@ enum SkillInstaller {
             guard fileManager.fileExists(atPath: skillMd.path) else { return nil }
             let name = url.lastPathComponent
             if let allowlist, !allowlist.contains(name) { return nil }
-            return SkillInstallerPackage(name: name, sourceDir: url.standardizedFileURL)
+            return SkillInstallerPackage(
+                name: name,
+                version: readSkillVersion(from: skillMd, fileManager: fileManager) ?? "0",
+                sourceDir: url.standardizedFileURL
+            )
         }
         return packages.sorted { $0.name < $1.name }
+    }
+
+    private static func readSkillVersion(from skillFile: URL, fileManager: FileManager) -> String? {
+        guard let data = fileManager.contents(atPath: skillFile.path),
+              let text = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        var lines = text.components(separatedBy: .newlines)
+        guard lines.first?.trimmingCharacters(in: .whitespacesAndNewlines) == "---" else {
+            return nil
+        }
+        lines.removeFirst()
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed == "---" { break }
+            guard trimmed.hasPrefix("version:") else { continue }
+            let rawValue = String(trimmed.dropFirst("version:".count))
+            let value = rawValue
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            return value.isEmpty ? nil : value
+        }
+        return nil
     }
 
     /// Returns the `installable` allowlist from `MANIFEST.json`, or nil if the
@@ -542,6 +572,7 @@ enum SkillInstaller {
             let record = SkillInstallerRecord(
                 schema: SkillInstallerRecord.schemaVersion,
                 packageName: st.package.name,
+                skillVersion: st.package.version,
                 installedAt: timestamp,
                 appVersion: appIdentity.version,
                 appBuild: appIdentity.build,

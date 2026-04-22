@@ -4007,7 +4007,7 @@ enum WelcomeSettings {
 
 enum DefaultGridSettings {
     static let enabledKey = "cmuxDefaultGridEnabled"
-    static let defaultEnabled = true
+    static let defaultEnabled = false
 
     // Pixel-dimension thresholds (width × height) that classify the host screen
     // into a default grid shape. Chosen on width primarily, matching typical
@@ -5762,7 +5762,7 @@ struct SettingsView: View {
                     }
                     SettingsCardNote(String(
                         localized: "settings.agentSkills.note",
-                        defaultValue: "c11 installs its skill file into Claude Code (~/.claude/skills) on request. For other agents, c11 copies a ready-to-paste command — the operator runs it."
+                        defaultValue: "c11 installs its skill files into detected agent skill folders only with your approval. Linked skill folders are shown as shared so one remove action cannot silently affect another agent."
                     ))
 
                     SettingsSectionHeader(title: String(localized: "settings.section.reset", defaultValue: "Reset"))

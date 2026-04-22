@@ -1,5 +1,6 @@
 ---
 name: c11-browser
+version: 1
 description: Browser automation for c11 browser surfaces (WKWebView-backed). Use to open sites, interact with pages, wait for state changes, extract data, save/load auth state, and validate UI changes without leaving c11. Prefer this over Chrome MCP whenever c11 is running.
 ---
 

@@ -1245,23 +1245,6 @@
         }
       }
     },
-    "agentSkills.action.copied": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Copied install command to clipboard."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "インストールコマンドをクリップボードにコピーしました。"
-          }
-        }
-      }
-    },
     "agentSkills.action.envelope": {
       "extractionState": "manual",
       "localizations": {
@@ -1381,23 +1364,6 @@
         }
       }
     },
-    "agentSkills.button.copyCommand": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Copy Command"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "コマンドをコピー"
-          }
-        }
-      }
-    },
     "agentSkills.button.install": {
       "extractionState": "manual",
       "localizations": {
@@ -1462,6 +1428,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "スキルを表示"
+          }
+        }
+      }
+    },
+    "agentSkills.button.revealFolder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reveal Folder"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダを表示"
           }
         }
       }
@@ -1642,30 +1625,64 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Already installed and up to date."
+            "value": "Already current"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "インストール済み・最新の状態です。"
+            "value": "最新です"
           }
         }
       }
     },
-    "agentSkills.onboarding.body": {
+    "agentSkills.onboarding.allSet": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Agents only know about c11's CLI and sidebar metadata when they've read the c11 skill file. Pick which agents should get it — you can change this any time in Settings → Agent Skills."
+            "value": "You're Good"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11 の CLI やサイドバー情報は、c11 スキルファイルを読み込んだエージェントだけが理解します。スキルを入れるエージェントを選んでください。設定 → エージェントスキル からいつでも変更できます。"
+            "value": "準備完了"
+          }
+        }
+      }
+    },
+    "agentSkills.onboarding.body.detected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 is designed to be great for agents, but they need the skill to know what to ask for. Install it in %@ so they can use panes, the browser, markdown files, statuses, and the rest of the c11 workspace."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 はエージェントにとって使いやすいように設計されていますが、何を頼めるかを知るにはスキルが必要です。%@ にインストールすると、ペイン、ブラウザ、Markdown ファイル、ステータス、c11 ワークスペースのその他の機能を使えるようになります。"
+          }
+        }
+      }
+    },
+    "agentSkills.onboarding.body.detecting": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 is designed to be great for agents, but they need the skill to know what to ask for. Install it so they can use panes, the browser, markdown files, statuses, and the rest of the c11 workspace."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 はエージェントにとって使いやすいように設計されていますが、何を頼めるかを知るにはスキルが必要です。インストールすると、ペイン、ブラウザ、Markdown ファイル、ステータス、c11 ワークスペースのその他の機能を使えるようになります。"
           }
         }
       }
@@ -1693,13 +1710,30 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Install"
+            "value": "Skillify Your Agent"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "インストール"
+            "value": "エージェントをスキル化"
+          }
+        }
+      }
+    },
+    "agentSkills.onboarding.installSection": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install into"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インストール先"
           }
         }
       }
@@ -1710,13 +1744,47 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Later"
+            "value": "Install Later"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "あとで"
+            "value": "あとでインストール"
+          }
+        }
+      }
+    },
+    "agentSkills.onboarding.learnMoreTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What gets installed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インストールされるもの"
+          }
+        }
+      }
+    },
+    "agentSkills.onboarding.noDetectedTools": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No supported agent config folders were detected yet. You can run this later from Settings → Agent Skills."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "対応しているエージェント設定フォルダはまだ検出されていません。後で 設定 → エージェントスキル から実行できます。"
           }
         }
       }
@@ -1738,19 +1806,121 @@
         }
       }
     },
+    "agentSkills.onboarding.notDetectedSummary": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not detected: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未検出: %@"
+          }
+        }
+      }
+    },
+    "agentSkills.onboarding.partialInstalled": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Will complete the skill set"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スキルセットを補完します"
+          }
+        }
+      }
+    },
+    "agentSkills.onboarding.showSkill": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Skill Files in Finder"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finderでスキルファイルを表示"
+          }
+        }
+      }
+    },
     "agentSkills.onboarding.title": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Teach your agents about c11"
+            "value": "Agentically use c11"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "エージェントに c11 を伝える"
+            "value": "c11 をエージェント的に使う"
+          }
+        }
+      }
+    },
+    "agentSkills.onboarding.updateAvailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Will update the installed skill"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インストール済みのスキルを更新します"
+          }
+        }
+      }
+    },
+    "agentSkills.onboarding.transparency": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "We take developer trust seriously. The skill is plain text: inspect the exact files in Finder or hand them to your preferred model for a security review. c11 will never change your agent configuration without your permission."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開発者の信頼を真剣に扱っています。スキルはプレーンテキストです。Finder で実際のファイルを確認するか、好みのモデルに渡してセキュリティレビューできます。c11 は許可なくエージェント設定を変更しません。"
+          }
+        }
+      }
+    },
+    "agentSkills.onboarding.willInstall": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Will install the skill"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スキルをインストールします"
           }
         }
       }
@@ -1836,6 +2006,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "一部インストール"
+          }
+        }
+      }
+    },
+    "agentSkills.status.shared": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "shared"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有"
+          }
+        }
+      }
+    },
+    "agentSkills.status.sharedWith": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uses the %@ skill files"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ のスキルファイルを使用します"
           }
         }
       }
@@ -42636,13 +42840,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11 installs its skill file into Claude Code (~/.claude/skills) on request. For other agents, c11 copies a ready-to-paste command — the operator runs it."
+            "value": "c11 installs its skill files into detected agent skill folders only with your approval. Linked skill folders are shown as shared so one remove action cannot silently affect another agent."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11 は Claude Code (~/.claude/skills) にのみスキルファイルを書き込みます。他のエージェントには、そのままペーストできるコマンドをクリップボードにコピーします — 実行はオペレーター側で行います。"
+            "value": "c11 は承認がある場合にのみ、検出したエージェントのスキルフォルダへスキルファイルをインストールします。リンクされたスキルフォルダは共有として表示され、1つの削除操作が別のエージェントに暗黙に影響しないようにします。"
           }
         }
       }

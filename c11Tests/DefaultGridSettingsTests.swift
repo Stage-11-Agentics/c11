@@ -188,10 +188,10 @@ final class DefaultGridSettingsTests: XCTestCase {
 
     // MARK: - isEnabled()
 
-    func testIsEnabledDefaultsTrueWhenKeyUnset() {
+    func testIsEnabledDefaultsFalseWhenKeyUnset() {
         let defaults = UserDefaults(suiteName: "DefaultGridSettingsTests.\(UUID().uuidString)")!
         defaults.removeObject(forKey: DefaultGridSettings.enabledKey)
-        XCTAssertTrue(DefaultGridSettings.isEnabled(defaults: defaults))
+        XCTAssertFalse(DefaultGridSettings.isEnabled(defaults: defaults))
     }
 
     func testIsEnabledReturnsFalseWhenKeyFalse() {

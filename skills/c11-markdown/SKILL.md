@@ -1,5 +1,6 @@
 ---
 name: c11-markdown
+version: 1
 description: Open markdown files in a c11 markdown surface with live reload. Use when you need to display plans, documentation, or notes alongside terminals and browser surfaces with rich rendering (headings, code blocks, tables, lists, Mermaid diagrams). Prefer this over external viewers when c11 is running.
 ---
 

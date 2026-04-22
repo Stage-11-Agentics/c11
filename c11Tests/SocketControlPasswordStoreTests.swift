@@ -560,37 +560,124 @@ final class CmuxCLIPathInstallerTests: XCTestCase {
     }
 }
 
-final class AgentSkillsManualInstallCommandTests: XCTestCase {
-    func testSnippetUsesC11BinaryAndTargetRawValue() {
-        XCTAssertEqual(
-            AgentSkillsModel.manualInstallCommandSnippet(target: .claude),
-            "c11 skill install --tool claude"
-        )
-        XCTAssertEqual(
-            AgentSkillsModel.manualInstallCommandSnippet(target: .codex),
-            "c11 skill install --tool codex"
-        )
-        XCTAssertEqual(
-            AgentSkillsModel.manualInstallCommandSnippet(target: .kimi),
-            "c11 skill install --tool kimi"
-        )
-        XCTAssertEqual(
-            AgentSkillsModel.manualInstallCommandSnippet(target: .opencode),
-            "c11 skill install --tool opencode"
+final class AgentSkillsOnboardingDefaultOptInTests: XCTestCase {
+    func testDefaultsSelectEveryDetectedTarget() {
+        let rows = SkillInstallerTarget.allCases.map { target in
+            makeRow(target: target, detected: target != .kimi)
+        }
+
+        let defaults = AgentSkillsOnboarding.defaultOptIns(for: rows)
+
+        XCTAssertEqual(defaults[.claude], true)
+        XCTAssertEqual(defaults[.codex], true)
+        XCTAssertEqual(defaults[.kimi], false)
+        XCTAssertEqual(defaults[.opencode], true)
+    }
+
+    func testMissingTargetsDefaultToFalse() {
+        let defaults = AgentSkillsOnboarding.defaultOptIns(for: [
+            makeRow(target: .claude, detected: true),
+        ])
+
+        XCTAssertEqual(defaults[.claude], true)
+        XCTAssertEqual(defaults[.codex], false)
+        XCTAssertEqual(defaults[.kimi], false)
+        XCTAssertEqual(defaults[.opencode], false)
+    }
+
+    func testOfferAppearsOnlyWhenDetectedTargetNeedsInstallOrUpdate() {
+        let rows = [
+            makeRow(target: .claude, detected: true, states: [.installedCurrent]),
+            makeRow(target: .codex, detected: true, states: [.installedOutdated]),
+            makeRow(target: .kimi, detected: false, states: [.notInstalled]),
+        ]
+
+        XCTAssertTrue(AgentSkillsOnboarding.shouldOffer(for: rows))
+    }
+
+    func testOfferIsSuppressedWhenDetectedTargetsAreCurrent() {
+        let rows = [
+            makeRow(target: .claude, detected: true, states: [.installedCurrent]),
+            makeRow(target: .codex, detected: true, states: [.installedCurrent]),
+            makeRow(target: .kimi, detected: false, states: [.notInstalled]),
+        ]
+
+        XCTAssertFalse(AgentSkillsOnboarding.shouldOffer(for: rows))
+    }
+
+    func testSharedDestinationRowsAreNotActionable() {
+        let rows = [
+            makeRow(target: .claude, detected: true, states: [.installedCurrent]),
+            makeRow(target: .codex, detected: true, states: [.installedOutdated], sharedWith: .claude),
+        ]
+
+        XCTAssertFalse(AgentSkillsOnboarding.shouldOffer(for: rows))
+    }
+
+    private func makeRow(
+        target: SkillInstallerTarget,
+        detected: Bool,
+        states: [SkillInstallerState] = [],
+        sharedWith: SkillInstallerTarget? = nil
+    ) -> AgentSkillsModel.TargetRow {
+        AgentSkillsModel.TargetRow(
+            id: target.rawValue,
+            target: target,
+            detected: detected,
+            destinationDir: URL(fileURLWithPath: "/tmp/\(target.rawValue)", isDirectory: true),
+            packages: states.map { makeStatus(target: target, state: $0) },
+            statusError: nil,
+            sharedWithTarget: sharedWith
         )
     }
 
-    func testSnippetNeverUsesLegacyCmuxBinary() {
-        for target in SkillInstallerTarget.allCases {
-            let snippet = AgentSkillsModel.manualInstallCommandSnippet(target: target)
-            XCTAssertFalse(
-                snippet.hasPrefix("cmux "),
-                "snippet for \(target.rawValue) still starts with cmux: \(snippet)"
-            )
-            XCTAssertTrue(
-                snippet.hasPrefix("c11 "),
-                "snippet for \(target.rawValue) must start with c11: \(snippet)"
-            )
-        }
+    private func makeStatus(
+        target: SkillInstallerTarget,
+        state: SkillInstallerState
+    ) -> SkillInstallerPackageStatus {
+        let packageDir = URL(fileURLWithPath: "/tmp/source/c11", isDirectory: true)
+        let destinationDir = URL(fileURLWithPath: "/tmp/\(target.rawValue)/skills/c11", isDirectory: true)
+        return SkillInstallerPackageStatus(
+            package: SkillInstallerPackage(name: "c11", version: "1", sourceDir: packageDir),
+            target: target,
+            destinationDir: destinationDir,
+            state: state,
+            record: nil,
+            sourceContentHash: "sha256:test"
+        )
+    }
+}
+
+final class SkillInstallerPackageVersionTests: XCTestCase {
+    func testDiscoverPackagesReadsSkillFrontmatterVersion() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-skill-version-tests-\(UUID().uuidString)", isDirectory: true)
+        let packageDir = root.appendingPathComponent("c11", isDirectory: true)
+        try FileManager.default.createDirectory(at: packageDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try """
+        {"installable":["c11"]}
+        """.write(
+            to: root.appendingPathComponent("MANIFEST.json", isDirectory: false),
+            atomically: true,
+            encoding: .utf8
+        )
+        try """
+        ---
+        name: c11
+        version: 7
+        description: test
+        ---
+        """.write(
+            to: packageDir.appendingPathComponent("SKILL.md", isDirectory: false),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let packages = try SkillInstaller.discoverPackages(sourceDir: root)
+
+        XCTAssertEqual(packages.map(\.name), ["c11"])
+        XCTAssertEqual(packages.first?.version, "7")
     }
 }

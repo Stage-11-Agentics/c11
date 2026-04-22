@@ -43210,12 +43210,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11 installs its skill files into detected agent skill folders only with your approval. Linked skill folders are shown as shared so one remove action cannot silently affect another agent."
+            "value": "c11 writes skill files into detected agent folders only after you approve. Linked folders show as shared — one remove can't silently touch another agent."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 は承認がある場合にのみ、検出したエージェントのスキルフォルダへスキルファイルをインストールします。リンクされたスキルフォルダは共有として表示され、1つの削除操作が別のエージェントに暗黙に影響しないようにします。"
           }
         }
@@ -43249,12 +43249,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11 theme"
+            "value": "c11 Theme"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11テーマ"
           }
         }
@@ -43266,12 +43266,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "c11 theme changes app chrome only; Ghostty terminal themes stay untouched."
+            "value": "c11 theme changes app chrome only. Ghostty terminal themes are separate."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11テーマはアプリのクロームだけを変更します。Ghosttyのターミナルテーマは変更しません。"
           }
         }
@@ -43368,12 +43368,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Runs with /bin/sh -c when notifications fire. Notification title, subtitle, and body are exposed as CMUX_NOTIFICATION_* env vars."
+            "value": "Runs with /bin/sh -c when a notification fires. Title, subtitle, and body land in CMUX_NOTIFICATION_* env vars."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "通知発火時に/bin/sh -cで実行します。通知のタイトル、サブタイトル、本文はCMUX_NOTIFICATION_*環境変数として渡されます。"
           }
         }
@@ -43453,12 +43453,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Desktop notifications are disabled in System Settings."
+            "value": "Disabled in System Settings."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "デスクトップ通知はシステム設定で無効になっています。"
           }
         }
@@ -43470,12 +43470,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Desktop notifications are enabled."
+            "value": "Enabled."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "デスクトップ通知は有効です。"
           }
         }
@@ -43487,12 +43487,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Desktop notifications are temporarily enabled."
+            "value": "Temporarily enabled."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "デスクトップ通知は一時的に有効です。"
           }
         }
@@ -43504,12 +43504,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Desktop notifications are not enabled yet."
+            "value": "Not enabled yet."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "デスクトップ通知はまだ有効になっていません。"
           }
         }
@@ -43521,12 +43521,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Desktop notifications are enabled with quiet delivery."
+            "value": "Enabled, quiet delivery."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "デスクトップ通知は静かな配信で有効です。"
           }
         }
@@ -43781,12 +43781,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Keep Workspace Open When Closing Last Surface"
+            "value": "Keep Workspace When Last Surface Closes"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "最後のサーフェスを閉じてもワークスペースを残す"
           }
         }
@@ -44008,108 +44008,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Show unread count on app icon (Dock and Cmd+Tab)."
+            "value": "Unread count on the app icon (Dock and Cmd+Tab)."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "アプリアイコン（DockおよびCmd+Tab）に未読数を表示します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在应用图标上显示未读计数（程序坞和 Cmd+Tab）。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 App 圖示上顯示未讀數量（Dock 和 Cmd+Tab）。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "앱 아이콘(Dock 및 Cmd+Tab)에 읽지 않은 수를 표시합니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ungelesene Anzahl auf dem App-Symbol anzeigen (Dock und Cmd+Tab)."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Mostrar el recuento de no leídos en el ícono de la app (Dock y Cmd+Tab)."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Afficher le nombre de messages non lus sur l'icône de l'app (Dock et Cmd+Tab)."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Mostra il conteggio non letti sull'icona dell'app (Dock e Cmd+Tab)."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vis antal ulæste på appikonet (Dock og Cmd+Tab)."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Pokaż liczbę nieprzeczytanych na ikonie aplikacji (Dock i Cmd+Tab)."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Показывать количество непрочитанных на значке приложения (Dock и Cmd+Tab)."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Prikaži broj nepročitanih na ikoni aplikacije (Dock i Cmd+Tab)."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "عرض عدد غير المقروء على أيقونة التطبيق (Dock و Cmd+Tab)."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vis antall uleste på appikonet (Dock og Cmd+Tab)."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Mostrar contagem de não lidos no ícone do app (Dock e Cmd+Tab)."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "แสดงจำนวนยังไม่อ่านบนไอคอนแอป (Dock และ Cmd+Tab)"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Uygulama simgesinde (Dock ve Cmd+Tab) okunmamış sayısını göster."
           }
         }
@@ -44138,12 +44138,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Keep action buttons always visible."
+            "value": "Action buttons stay visible."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "操作ボタンを常に表示します。"
           }
         }
@@ -44155,12 +44155,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Show action buttons only on hover."
+            "value": "Action buttons appear on hover."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "操作ボタンはホバー時のみ表示します。"
           }
         }
@@ -44189,12 +44189,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Show secondary workspace details as controlled by the toggles below."
+            "value": "Secondary workspace details follow the toggles below."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "下のトグル設定に従って、ワークスペースの補助情報を表示します。"
           }
         }
@@ -44206,12 +44206,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Show only the workspace title row. Overrides the detail toggles below."
+            "value": "Only the workspace title row shows. Overrides the toggles below."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ワークスペースのタイトル行だけを表示します。下の詳細トグルより優先されます。"
           }
         }
@@ -44811,12 +44811,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use the standard workspace title bar and controls."
+            "value": "Standard workspace title bar and controls."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "標準のワークスペースタイトルバーと操作を使います。"
           }
         }
@@ -44828,12 +44828,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hide the workspace title bar and move workspace controls into the sidebar."
+            "value": "Hides the workspace title bar; workspace controls move into the sidebar."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ワークスペースのタイトルバーを隠し、ワークスペース操作をサイドバーに移動します。"
           }
         }
@@ -45184,108 +45184,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Clicks open inside c11 browser."
+            "value": "Clicks open inside the c11 browser."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "クリックするとc11ブラウザ内で開きます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "点击在 c11 浏览器中打开。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "點擊會在 c11 瀏覽器中開啟。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "클릭하면 c11 브라우저에서 열립니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Klicks öffnen im c11-Browser."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Los clics abren dentro del navegador de c11."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Les clics ouvrent dans le navigateur c11."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "I clic aprono nel browser c11."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Klik åbner i c11-browseren."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Kliknięcia otwierają w przeglądarce c11."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ссылки открываются во встроенном браузере c11."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Klikovi se otvaraju unutar c11 preglednika."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "النقرات تفتح داخل متصفح c11."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Klikk åpner i c11-nettleseren."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cliques abrem dentro do navegador do c11."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "คลิกจะเปิดในเบราว์เซอร์ c11"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Tıklamalar c11 tarayıcısında açılır."
           }
         }
@@ -45749,108 +45749,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Move workspaces to the top when they receive a notification. Disable for stable shortcut positions."
+            "value": "Workspaces jump to the top when they ring. Disable for stable shortcut positions."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "通知を受け取ったワークスペースを一番上に移動します。ショートカット位置を固定するには無効にしてください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "收到通知时将工作区移至顶部。禁用以保持快捷键位置稳定。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "收到通知時將工作區移至最上方。停用此選項可維持穩定的快捷鍵位置。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "알림을 받은 작업 공간을 맨 위로 이동합니다. 단축키 위치를 고정하려면 비활성화하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Arbeitsbereiche nach oben verschieben, wenn sie eine Benachrichtigung erhalten. Deaktivieren Sie dies für stabile Tastenkürzel-Positionen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Mover espacios de trabajo al inicio cuando reciben una notificación. Desactiva para posiciones de atajo estables."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Déplacer les espaces de travail en haut lorsqu'ils reçoivent une notification. Désactivez pour des positions de raccourcis stables."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Sposta le aree di lavoro in cima quando ricevono una notifica. Disabilita per posizioni di scorciatoia stabili."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Flyt arbejdsområder til toppen, når de modtager en notifikation. Deaktiver for stabile genvejspositioner."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Przenoś przestrzenie robocze na górę, gdy otrzymają powiadomienie. Wyłącz, aby zachować stałe pozycje skrótów."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Перемещать рабочие пространства наверх при получении уведомления. Отключите для стабильных позиций сочетаний клавиш."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Pomjeri radne prostore na vrh kada prime obavještenje. Onemogućite za stabilne pozicije prečica."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "نقل مساحات العمل إلى الأعلى عند تلقي إشعار. قم بالتعطيل للحفاظ على مواضع الاختصارات الثابتة."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Flytt arbeidsområder til toppen når de mottar et varsel. Deaktiver for stabile snarveiposisjoner."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Move áreas de trabalho para o topo ao receber uma notificação. Desative para posições de atalho estáveis."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ย้ายเวิร์กสเปซไปด้านบนเมื่อได้รับการแจ้งเตือน ปิดใช้งานเพื่อให้ตำแหน่งทางลัดคงที่"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Bildirim aldıklarında çalışma alanlarını en üste taşı. Sabit kısayol konumları için devre dışı bırakın."
           }
         }
@@ -46111,12 +46111,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Keep c11 in the menu bar for unread notifications and quick actions."
+            "value": "Keeps c11 in the menu bar for unread counts and quick actions."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "未読通知の確認やクイック操作のために、c11をメニューバーに表示します。"
           }
         }
@@ -46241,108 +46241,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Display the latest imperative log/status message."
+            "value": "Shows the latest log or status message."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "最新の命令型ログ/ステータスメッセージを表示します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "显示最新的命令式日志/状态消息。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "顯示最新的命令式記錄或狀態訊息。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "최신 명령형 로그/상태 메시지를 표시합니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Die letzte imperative Protokoll-/Statusmeldung anzeigen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Mostrar el último mensaje imperativo de registro/estado."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Afficher le dernier message de journal/statut impératif."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Visualizza l'ultimo messaggio di log/stato imperativo."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vis den seneste imperative log/statusmeddelelse."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Wyświetlaj najnowszy komunikat dziennika/statusu."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Отображать последнее служебное сообщение журнала/статуса."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Prikaži najnoviju imperativnu log/statusnu poruku."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "عرض أحدث رسالة سجل/حالة."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vis den siste imperative logg-/statusmeldingen."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Exibir a última mensagem imperativa de log/status."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "แสดงข้อความบันทึก/สถานะล่าสุด"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Son zorunlu günlük/durum mesajını göster."
           }
         }
@@ -46467,108 +46467,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Display custom metadata from report_meta/set_status and report_meta_block."
+            "value": "Shows custom metadata from report_meta, set_status, and report_meta_block."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "report_meta/set_statusおよびreport_meta_blockからのカスタムメタデータを表示します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "显示来自 report_meta/set_status 和 report_meta_block 的自定义元数据。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "顯示來自 report_meta/set_status 和 report_meta_block 的自訂中繼資料。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "report_meta/set_status 및 report_meta_block의 사용자 지정 메타데이터를 표시합니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Benutzerdefinierte Metadaten von report_meta/set_status und report_meta_block anzeigen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Mostrar metadatos personalizados de report_meta/set_status y report_meta_block."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Afficher les métadonnées personnalisées de report_meta/set_status et report_meta_block."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Visualizza metadati personalizzati da report_meta/set_status e report_meta_block."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vis brugerdefinerede metadata fra report_meta/set_status og report_meta_block."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Wyświetlaj własne metadane z report_meta/set_status i report_meta_block."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Отображать пользовательские метаданные из report_meta/set_status и report_meta_block."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Prikaži prilagođene metapodatke iz report_meta/set_status i report_meta_block."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "عرض البيانات الوصفية المخصصة من report_meta/set_status و report_meta_block."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vis egendefinerte metadata fra report_meta/set_status og report_meta_block."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Exibir metadados personalizados de report_meta/set_status e report_meta_block."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "แสดงข้อมูลเมตาที่กำหนดเองจาก report_meta/set_status และ report_meta_block"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "report_meta/set_status ve report_meta_block'tan özel üst veriyi göster."
           }
         }
@@ -46597,12 +46597,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Display the latest notification message below the workspace title."
+            "value": "Shows the latest notification under the workspace title."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ワークスペース名の下に最新の通知メッセージを表示します。"
           }
         }
@@ -46614,108 +46614,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Show Listening Ports in Sidebar"
+            "value": "Show Open Ports in Sidebar"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "サイドバーにリスニングポートを表示"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在侧边栏显示监听端口"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在側邊欄顯示監聽連接埠"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "사이드바에 수신 대기 포트 표시"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Lauschende Ports in Seitenleiste anzeigen"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Mostrar puertos en escucha en la barra lateral"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Afficher les ports en écoute dans la barre latérale"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Mostra porte in ascolto nella barra laterale"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vis lyttende porte i sidebjælke"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Pokaż nasłuchujące porty na pasku bocznym"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Показывать прослушиваемые порты в боковой панели"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Prikaži osluškivane portove u bočnoj traci"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "عرض المنافذ النشطة في الشريط الجانبي"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vis lyttende porter i sidepanelet"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Mostrar Portas em Escuta na Barra Lateral"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "แสดงพอร์ตที่กำลังรับฟังในแถบด้านข้าง"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Kenar Çubuğunda Dinlenen Portları Göster"
           }
         }
@@ -46727,108 +46727,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Display detected listening ports for the active workspace."
+            "value": "Shows open ports for this workspace."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "アクティブなワークスペースで検出されたリスニングポートを表示します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "显示活动工作区检测到的监听端口。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "顯示使用中工作區偵測到的監聽連接埠。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "활성 작업 공간에서 감지된 수신 대기 포트를 표시합니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Erkannte lauschende Ports für den aktiven Arbeitsbereich anzeigen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Mostrar los puertos en escucha detectados para el espacio de trabajo activo."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Afficher les ports en écoute détectés pour l'espace de travail actif."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Visualizza le porte in ascolto rilevate per l'area di lavoro attiva."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vis registrerede lyttende porte for det aktive arbejdsområde."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Wyświetlaj wykryte nasłuchujące porty dla aktywnej przestrzeni roboczej."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Отображать обнаруженные прослушиваемые порты для активного рабочего пространства."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Prikaži otkrivene osluškivane portove za aktivni radni prostor."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "عرض المنافذ المكتشفة لمساحة العمل النشطة."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vis oppdagede lyttende porter for det aktive arbeidsområdet."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Exibir portas em escuta detectadas para a área de trabalho ativa."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "แสดงพอร์ตที่ตรวจพบสำหรับเวิร์กสเปซที่ใช้งานอยู่"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Etkin çalışma alanı için algılanan dinlenen portları göster."
           }
         }
@@ -47185,108 +47185,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Display review items (PR/MR/etc.) with status, number, and clickable link."
+            "value": "Shows review items (PR, MR, etc.) with status, number, and link."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ステータス、番号、クリック可能なリンク付きのレビュー項目（PR/MRなど）を表示します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "显示包含状态、编号和可点击链接的审查项（PR/MR 等）。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "顯示審查項目（PR/MR 等），包含狀態、編號和可點擊的連結。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "상태, 번호 및 클릭 가능한 링크가 있는 리뷰 항목(PR/MR 등)을 표시합니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Review-Elemente (PR/MR/etc.) mit Status, Nummer und anklickbarem Link anzeigen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Mostrar elementos de revisión (PR/MR/etc.) con estado, número y enlace interactivo."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Afficher les éléments de revue (PR/MR/etc.) avec le statut, le numéro et un lien cliquable."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Visualizza elementi di revisione (PR/MR/ecc.) con stato, numero e link cliccabile."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vis gennemgangselementer (PR/MR osv.) med status, nummer og klikbart link."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Wyświetlaj elementy przeglądu (PR/MR/itp.) ze statusem, numerem i klikalnym linkiem."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Отображать элементы проверки (PR/MR и т.д.) со статусом, номером и ссылкой."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Prikaži stavke za pregled (PR/MR/itd.) sa statusom, brojem i linkom."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "عرض عناصر المراجعة (طلبات السحب/الدمج/إلخ.) مع الحالة والرقم والرابط القابل للنقر."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vis gjennomgangselementer (PR/MR/osv.) med status, nummer og klikkbar lenke."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Exibir itens de revisão (PR/MR/etc.) com status, número e link clicável."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "แสดงรายการตรวจสอบ (PR/MR/อื่นๆ) พร้อมสถานะ หมายเลข และลิงก์ที่คลิกได้"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Durum, numara ve tıklanabilir bağlantıyla inceleme öğelerini (PR/MR/vb.) göster."
           }
         }
@@ -47315,12 +47315,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Display the SSH target for remote workspaces in its own row."
+            "value": "Shows the SSH target for remote workspaces on its own row."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "リモートワークスペースのSSHターゲットを専用の行に表示します。"
           }
         }
@@ -47722,108 +47722,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Vertical: each branch appears on its own line."
+            "value": "Vertical: each branch on its own line."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "縦: 各ブランチがそれぞれの行に表示されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "垂直：每个分支独占一行。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "垂直：每個分支獨立一行。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "세로: 각 브랜치가 별도의 줄에 표시됩니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vertikal: Jeder Branch erscheint in einer eigenen Zeile."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vertical: cada rama aparece en su propia línea."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vertical : chaque branche apparaît sur sa propre ligne."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Verticale: ogni branch appare sulla propria riga."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Lodret: hver gren vises på sin egen linje."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Pionowo: każda gałąź w osobnym wierszu."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Вертикально: каждая ветка на отдельной строке."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vertikalno: svaka grana se pojavljuje u svom redu."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "عمودي: كل فرع يظهر في سطر خاص به."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vertikal: hver gren vises på sin egen linje."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vertical: cada branch aparece em sua própria linha."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "แบบแนวตั้ง: แต่ละสาขาแสดงในบรรทัดของตัวเอง"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Dikey: her dal kendi satırında görünür."
           }
         }
@@ -47948,108 +47948,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Send anonymous telemetry"
+            "value": "Anonymous Telemetry"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "匿名のテレメトリを送信"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "发送匿名遥测数据"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "傳送匿名遙測資料"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "익명 원격 측정 전송"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Anonyme Telemetriedaten senden"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Enviar telemetría anónima"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Envoyer des données de télémétrie anonymes"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Invia telemetria anonima"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Send anonym telemetri"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Wysyłaj anonimową telemetrię"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Отправлять анонимную телеметрию"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Šalji anonimnu telemetriju"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "إرسال بيانات تحليلية مجهولة"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Send anonym telemetri"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Enviar telemetria anônima"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ส่งข้อมูลการวิเคราะห์แบบไม่ระบุตัวตน"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Anonim telemetri gönder"
           }
         }
@@ -48061,108 +48061,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Share anonymized crash and usage data to help improve c11."
+            "value": "Shares anonymized crash and usage data to improve c11."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11の改善に役立てるため、匿名化されたクラッシュおよび使用状況データを共有します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "分享匿名的崩溃和使用数据，帮助改进 c11。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "分享匿名的當機與使用資料，以協助改善 c11。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 개선을 위해 익명화된 충돌 및 사용 데이터를 공유합니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Anonymisierte Absturz- und Nutzungsdaten teilen, um c11 zu verbessern."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Compartir datos anónimos de fallos y uso para ayudar a mejorar c11."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Partager des données anonymisées de plantage et d'utilisation pour aider à améliorer c11."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Condividi dati anonimi su arresti anomali e utilizzo per migliorare c11."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Del anonymiserede nedbrud- og brugsdata for at hjælpe med at forbedre c11."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Udostępniaj zanonimizowane dane o awariach i użyciu, aby pomóc ulepszyć c11."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Делиться анонимными данными о сбоях и использовании для улучшения c11."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Dijelite anonimizirane podatke o padovima i korištenju kako biste pomogli u poboljšanju c11."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "مشاركة بيانات الأعطال والاستخدام المجهولة للمساعدة في تحسين c11."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Del anonymiserte krasj- og bruksdata for å bidra til å forbedre c11."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Compartilhar dados anonimizados de falhas e uso para ajudar a melhorar o c11."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "แชร์ข้อมูลการขัดข้องและการใช้งานแบบไม่ระบุตัวตนเพื่อช่วยปรับปรุง c11"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11'u iyileştirmek için anonimleştirilmiş çökme ve kullanım verilerini paylaş."
           }
         }
@@ -48174,108 +48174,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Change takes effect on next launch."
+            "value": "Takes effect on next launch."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "変更は次回起動時に反映されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "更改将在下次启动时生效。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "變更將在下次啟動時生效。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "변경 사항은 다음 실행 시 적용됩니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Änderung wird beim nächsten Start wirksam."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "El cambio se aplicará en el próximo inicio."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "La modification prendra effet au prochain lancement."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "La modifica avrà effetto al prossimo avvio."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ændringen træder i kraft ved næste start."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Zmiana zacznie obowiązywać po ponownym uruchomieniu."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Изменение вступит в силу при следующем запуске."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Promjena stupa na snagu pri sljedećem pokretanju."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "يسري التغيير عند التشغيل التالي."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Endringen trer i kraft ved neste oppstart."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "A alteração terá efeito na próxima inicialização."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "การเปลี่ยนแปลงจะมีผลเมื่อเปิดใหม่ครั้งถัดไป"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Değişiklik bir sonraki başlatmada geçerli olur."
           }
         }
@@ -48513,108 +48513,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cmd+Q quits immediately without confirmation."
+            "value": "Cmd+Q quits immediately."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cmd+Qで確認なしにすぐ終了します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cmd+Q 直接退出，无需确认。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cmd+Q 會立即結束，不顯示確認提示。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cmd+Q를 누르면 확인 없이 즉시 종료됩니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cmd+Q beendet sofort ohne Bestätigung."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cmd+Q sale inmediatamente sin confirmación."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cmd+Q quitte immédiatement sans confirmation."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cmd+Q esce immediatamente senza conferma."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cmd+Q afslutter øjeblikkeligt uden bekræftelse."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cmd+Q zamyka natychmiast bez potwierdzenia."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cmd+Q завершает приложение немедленно без подтверждения."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cmd+Q odmah zatvara bez potvrde."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cmd+Q ينهي فورًا بدون تأكيد."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cmd+Q avslutter umiddelbart uten bekreftelse."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cmd+Q encerra imediatamente sem confirmação."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cmd+Q ออกทันทีโดยไม่มีการยืนยัน"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cmd+Q onay olmadan hemen çıkar."
           }
         }
@@ -48626,108 +48626,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Show a confirmation before quitting with Cmd+Q."
+            "value": "Cmd+Q asks before quitting."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cmd+Qで終了する前に確認を表示します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "使用 Cmd+Q 退出前显示确认对话框。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "使用 Cmd+Q 結束前顯示確認提示。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cmd+Q로 종료하기 전에 확인 대화상자를 표시합니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vor dem Beenden mit Cmd+Q eine Bestätigung anzeigen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Mostrar una confirmación antes de salir con Cmd+Q."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Afficher une confirmation avant de quitter avec Cmd+Q."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Mostra una conferma prima di uscire con Cmd+Q."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vis en bekræftelse, før du afslutter med Cmd+Q."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Pokaż potwierdzenie przed zamknięciem za pomocą Cmd+Q."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Показывать подтверждение перед выходом по Cmd+Q."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Prikaži potvrdu prije zatvaranja sa Cmd+Q."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "عرض تأكيد قبل الإنهاء بـ Cmd+Q."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vis en bekreftelse før avslutning med Cmd+Q."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Mostrar uma confirmação antes de encerrar com Cmd+Q."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "แสดงการยืนยันก่อนออกด้วย Cmd+Q"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cmd+Q ile çıkmadan önce onay göster."
           }
         }
@@ -56921,12 +56921,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Briefly flash a blue outline when c11 highlights a pane."
+            "value": "Flashes a blue outline when c11 highlights a pane."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "c11 がペインを強調表示するときに短い青いアウトラインを表示します。"
           }
         }
@@ -56955,12 +56955,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Show a blue ring around panes with unread notifications."
+            "value": "Rings unread panes in blue."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "未読の通知があるペインの周囲に青いリングを表示します。"
           }
         }
@@ -57165,12 +57165,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ready for notifications."
+            "value": "Ready."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "通知用の準備ができました。"
           }
         }
@@ -57182,12 +57182,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Prepared for notifications (converted to CAF)."
+            "value": "Ready (converted to CAF)."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "通知用に準備しました（CAFに変換）。"
           }
         }
@@ -57199,12 +57199,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sound played when a notification arrives."
+            "value": "Plays when a notification rings."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "通知を受信したときに再生するサウンドです。"
           }
         }
@@ -60609,108 +60609,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Restore default sidebar appearance."
+            "value": "Restores default sidebar appearance."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "サイドバーの外観をデフォルトに戻す。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "恢复默认侧边栏外观。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "恢復預設側邊欄外觀。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "사이드바 모양을 기본값으로 복원합니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Standard-Seitenleisten-Erscheinungsbild wiederherstellen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Restaurar la apariencia predeterminada de la barra lateral."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Restaurer l'apparence par défaut de la barre latérale."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ripristina l'aspetto predefinito della barra laterale."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Gendan standardudseendet for sidebjælken."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Przywróć domyślny wygląd paska bocznego."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Восстановить внешний вид боковой панели по умолчанию."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vrati zadani izgled bočne trake."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "استعادة مظهر الشريط الجانبي الافتراضي."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Gjenopprett standard sidefelts utseende."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Restaurar aparência padrão da barra lateral."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "คืนค่ารูปลักษณ์แถบด้านข้างเป็นค่าเริ่มต้น"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Varsayılan kenar çubuğu görünümünü geri yükle."
           }
         }
@@ -60948,108 +60948,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sidebar tint color when using dark appearance."
+            "value": "Sidebar tint in dark mode."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ダーク表示時のサイドバーのティントカラー。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "使用深色外观时侧边栏的色调颜色。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "使用深色外觀時側邊欄的色調顏色。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "다크 모양 사용 시 사이드바 색조 색상."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Seitenleisten-Farbton bei dunklem Erscheinungsbild."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Color de tinte de la barra lateral en apariencia oscura."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Couleur de teinte de la barre latérale en apparence sombre."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Colore tinta della barra laterale in modalità scura."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Sidebjælkens farvetone ved mørkt udseende."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Kolor odcienia paska bocznego w ciemnym wyglądzie."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Цвет оттенка боковой панели в тёмном режиме."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Boja nijanse bočne trake pri tamnom izgledu."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "لون تلوين الشريط الجانبي عند استخدام المظهر الداكن."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Fargetone for sidefeltet med mørkt utseende."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cor de tonalidade da barra lateral na aparência escura."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "สีโทนของแถบด้านข้างเมื่อใช้รูปลักษณ์มืด"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Koyu görünüm kullanılırken kenar çubuğu renk tonu."
           }
         }
@@ -61287,108 +61287,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sidebar tint color when using light appearance."
+            "value": "Sidebar tint in light mode."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ライト表示時のサイドバーのティントカラー。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "使用浅色外观时侧边栏的色调颜色。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "使用淺色外觀時側邊欄的色調顏色。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "라이트 모양 사용 시 사이드바 색조 색상."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Seitenleisten-Farbton bei hellem Erscheinungsbild."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Color de tinte de la barra lateral en apariencia clara."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Couleur de teinte de la barre latérale en apparence claire."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Colore tinta della barra laterale in modalità chiara."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Sidebjælkens farvetone ved lyst udseende."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Kolor odcienia paska bocznego w jasnym wyglądzie."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Цвет оттенка боковой панели в светлом режиме."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Boja nijanse bočne trake pri svijetlom izgledu."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "لون تلوين الشريط الجانبي عند استخدام المظهر الفاتح."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Fargetone for sidefeltet med lyst utseende."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cor de tonalidade da barra lateral na aparência clara."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "สีโทนของแถบด้านข้างเมื่อใช้รูปลักษณ์สว่าง"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Açık görünüm kullanılırken kenar çubuğu renk tonu."
           }
         }
@@ -61513,108 +61513,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "How strongly the tint color shows over the sidebar material."
+            "value": "How strongly the tint shows through the sidebar material."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "サイドバーの素材上にティントカラーがどの程度表示されるか。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "色调颜色在侧边栏材质上的显示强度。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "色調顏色在側邊欄材質上的顯示強度。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "사이드바 재질 위에 색조 색상이 표시되는 강도."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Wie stark der Farbton über dem Seitenleisten-Material sichtbar ist."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Intensidad del color de tinte sobre el material de la barra lateral."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Intensité de la teinte sur le matériau de la barre latérale."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Intensità della tinta sul materiale della barra laterale."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Hvor stærkt farvetonen vises over sidebjælkens materiale."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Jak silnie kolor odcienia jest widoczny na materiale paska bocznego."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Насколько сильно оттенок виден на материале боковой панели."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Koliko jako se boja nijanse prikazuje preko materijala bočne trake."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "مدى قوة ظهور لون التلوين فوق مادة الشريط الجانبي."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Hvor sterkt fargetonen vises over sidefelts materiale."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Intensidade da cor de tonalidade sobre o material da barra lateral."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ความเข้มของสีโทนที่แสดงบนวัสดุแถบด้านข้าง"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Renk tonunun kenar çubuğu materyali üzerinde ne kadar güçlü göründüğü."
           }
         }
@@ -62541,108 +62541,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Custom colors: none yet. Use \"Choose Custom Color...\" from a workspace context menu."
+            "value": "No custom colors yet. Pick one from a workspace context menu → \"Choose Custom Color...\""
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "カスタムカラー: まだありません。ワークスペースのコンテキストメニューから「カスタムカラーを選択…」を使用してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "自定义颜色：暂无。请从工作区右键菜单中使用「选取自定义颜色...」。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "自訂顏色：尚無。請從工作區右鍵選單中使用「選擇自訂顏色...」。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "사용자 지정 색상: 아직 없습니다. 작업 공간 컨텍스트 메뉴에서 \"사용자 지정 색상 선택...\"을 사용하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Benutzerdefinierte Farben: noch keine. Verwenden Sie 'Eigene Farbe wählen ...' im Kontextmenü eines Arbeitsbereichs."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Colores personalizados: ninguno aún. Usa \"Elegir color personalizado…\" desde el menú contextual de un espacio de trabajo."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Couleurs personnalisées : aucune pour le moment. Utilisez « Choisir une couleur personnalisée... » depuis le menu contextuel d'un espace de travail."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Colori personalizzati: nessuno. Usa \"Scegli colore personalizzato...\" dal menu contestuale di un'area di lavoro."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Brugerdefinerede farver: ingen endnu. Brug \"Vælg brugerdefineret farve...\" fra en arbejdsområdekontekstmenu."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Własne kolory: jeszcze żadnych. Użyj „Wybierz własny kolor…” z menu kontekstowego przestrzeni roboczej."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Пользовательские цвета: пока нет. Используйте «Выбрать пользовательский цвет...» из контекстного меню рабочего пространства."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Prilagođene boje: još nema. Koristite \"Odaberi prilagođenu boju...\" iz kontekstnog menija radnog prostora."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ألوان مخصصة: لا يوجد بعد. استخدم \"اختيار لون مخصص...\" من قائمة سياق مساحة العمل."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Egendefinerte farger: ingen ennå. Bruk «Velg egendefinert farge ...» fra en arbeidsområde-kontekstmeny."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Cores personalizadas: nenhuma ainda. Use \"Escolher Cor Personalizada...\" no menu de contexto de uma área de trabalho."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "สีที่กำหนดเอง: ยังไม่มี ใช้ \"เลือกสีที่กำหนดเอง...\" จากเมนูบริบทเวิร์กสเปซ"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Özel renkler: henüz yok. Bir çalışma alanı bağlam menüsünden \"Özel Renk Seç...\" seçeneğini kullanın."
           }
         }
@@ -62654,108 +62654,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Customize the workspace color palette used by Sidebar > Workspace Color. \"Choose Custom Color...\" entries are persisted below."
+            "value": "Customize the palette shown under Sidebar > Workspace Color. \"Choose Custom Color...\" entries are kept below."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "サイドバー > ワークスペースカラーで使用するカラーパレットをカスタマイズできます。「カスタムカラーを選択…」のエントリは以下に保存されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "自定义「侧边栏 > 工作区颜色」中使用的工作区调色板。「选取自定义颜色...」的条目将保存在下方。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "自訂側邊欄 > 工作區顏色使用的色板。「選擇自訂顏色...」的項目會保存在下方。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "사이드바 > 작업 공간 색상에서 사용하는 작업 공간 색상 팔레트를 사용자 지정합니다. \"사용자 지정 색상 선택...\" 항목은 아래에 저장됩니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Passen Sie die Arbeitsbereichs-Farbpalette an, die unter Seitenleiste > Arbeitsbereichsfarbe verwendet wird. Einträge unter 'Eigene Farbe wählen ...' werden unten gespeichert."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Personaliza la paleta de colores de espacios de trabajo usada en Barra lateral > Color del espacio de trabajo. Las entradas de \"Elegir color personalizado…\" se guardan a continuación."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Personnalisez la palette de couleurs utilisée par Barre latérale > Couleur de l'espace de travail. Les entrées « Choisir une couleur personnalisée... » sont enregistrées ci-dessous."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Personalizza la palette di colori utilizzata da Barra laterale > Colore area di lavoro. Le voci \"Scegli colore personalizzato...\" vengono salvate qui sotto."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Tilpas arbejdsområdets farvepalette, der bruges af Sidebjælke > Arbejdsområdefarve. \"Vælg brugerdefineret farve...\"-poster gemmes nedenfor."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Dostosuj paletę kolorów przestrzeni roboczej używaną przez Pasek boczny > Kolor przestrzeni roboczej. Wpisy „Wybierz własny kolor…” są zapisywane poniżej."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Настройте палитру цветов рабочих пространств, используемую в Боковая панель > Цвет рабочего пространства. Записи «Выбрать пользовательский цвет...» сохраняются ниже."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Prilagodite paletu boja radnog prostora koju koristi Bočna traka > Boja radnog prostora. Unosi \"Odaberi prilagođenu boju...\" su trajno sačuvani ispod."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "تخصيص لوحة ألوان مساحة العمل المستخدمة بواسطة الشريط الجانبي > لون مساحة العمل. إدخالات \"اختيار لون مخصص...\" تُحفظ أدناه."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Tilpass arbeidsområdefargepaletten som brukes av Sidepanel > Arbeidsområdefarge. «Velg egendefinert farge ...»-oppføringer lagres nedenfor."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Personalize a paleta de cores usada em Barra Lateral > Cor da Área de Trabalho. Entradas de \"Escolher Cor Personalizada...\" são salvas abaixo."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ปรับแต่งจานสีเวิร์กสเปซที่ใช้ใน แถบด้านข้าง > สีเวิร์กสเปซ รายการ \"เลือกสีที่กำหนดเอง...\" จะถูกบันทึกด้านล่าง"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Kenar Çubuğu > Çalışma Alanı Rengi tarafından kullanılan çalışma alanı renk paletini özelleştirin. \"Özel Renk Seç...\" girişleri aşağıda saklanır."
           }
         }
@@ -63106,108 +63106,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Restore built-in defaults and clear all custom colors."
+            "value": "Restores defaults and clears custom colors."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "組み込みのデフォルトに戻し、すべてのカスタムカラーをクリアします。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "恢复内置默认值并清除所有自定义颜色。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "恢復內建預設值並清除所有自訂顏色。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "기본 제공 값을 복원하고 모든 사용자 지정 색상을 지웁니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Integrierte Standardeinstellungen wiederherstellen und alle benutzerdefinierten Farben löschen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Restaurar los valores predeterminados y borrar todos los colores personalizados."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Restaurer les valeurs par défaut et effacer toutes les couleurs personnalisées."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ripristina i valori predefiniti e cancella tutti i colori personalizzati."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Gendan indbyggede standardindstillinger og ryd alle brugerdefinerede farver."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Przywróć wbudowane wartości domyślne i wyczyść wszystkie własne kolory."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Восстановить встроенные значения по умолчанию и удалить все пользовательские цвета."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vrati ugrađene podrazumijevane vrijednosti i obriši sve prilagođene boje."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "استعادة الإعدادات الافتراضية المدمجة ومسح جميع الألوان المخصصة."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Gjenopprett innebygde standardverdier og fjern alle egendefinerte farger."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Restaurar padrões integrados e limpar todas as cores personalizadas."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "คืนค่าเริ่มต้นในตัวและล้างสีที่กำหนดเองทั้งหมด"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Yerleşik varsayılanları geri yükle ve tüm özel renkleri temizle."
           }
         }

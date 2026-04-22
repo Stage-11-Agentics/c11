@@ -6413,22 +6413,39 @@ private struct ThemePickerRow: View {
     @AppStorage(ThemeManager.defaultLightSlotKey) private var activeLight: String = "stage11"
     @AppStorage(ThemeManager.defaultDarkSlotKey) private var activeDark: String = "stage11"
 
-    private let thumbWidth: CGFloat = 76
-    private let thumbHeight: CGFloat = 50
+    private let thumbWidth: CGFloat = 58
+    private let thumbHeight: CGFloat = 38
+    private let slotLabelWidth: CGFloat = 38
+    private let pickerWidth: CGFloat = 166
 
-    private var selection: Binding<String> {
+    private var lightSelection: Binding<String> {
         Binding(
             get: { activeLight },
             set: { newValue in
-                activeLight = newValue
-                activeDark = newValue
+                _ = themeManager.setActiveTheme(name: newValue, for: .light)
             }
         )
     }
 
-    private var previewTokens: ChromeThemeTokens {
+    private var darkSelection: Binding<String> {
+        Binding(
+            get: { activeDark },
+            set: { newValue in
+                _ = themeManager.setActiveTheme(name: newValue, for: .dark)
+            }
+        )
+    }
+
+    private var lightPreviewTokens: ChromeThemeTokens {
         ChromeThemeTokens.resolve(
             for: themeManager.theme(named: activeLight) ?? themeManager.activeLight,
+            scheme: .light
+        )
+    }
+
+    private var darkPreviewTokens: ChromeThemeTokens {
+        ChromeThemeTokens.resolve(
+            for: themeManager.theme(named: activeDark) ?? themeManager.activeDark,
             scheme: .dark
         )
     }
@@ -6439,7 +6456,58 @@ private struct ThemePickerRow: View {
                 .font(.system(size: 13, weight: .medium))
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            ThemeWindowThumbnail(isDark: true, tokens: previewTokens)
+            VStack(alignment: .trailing, spacing: 6) {
+                themeSlotRow(
+                    title: String(localized: "theme.light", defaultValue: "Light"),
+                    isDark: false,
+                    tokens: lightPreviewTokens,
+                    selection: lightSelection
+                )
+                themeSlotRow(
+                    title: String(localized: "theme.dark", defaultValue: "Dark"),
+                    isDark: true,
+                    tokens: darkPreviewTokens,
+                    selection: darkSelection
+                )
+            }
+
+            VStack(spacing: 6) {
+                Button {
+                    openThemesFolder()
+                } label: {
+                    Image(systemName: "folder")
+                }
+                .buttonStyle(.borderless)
+                .help(String(localized: "settings.app.theme.openFolder", defaultValue: "Open themes folder"))
+
+                Button {
+                    themeManager.forceReloadUserThemes()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .help(String(localized: "settings.app.theme.reload", defaultValue: "Reload themes"))
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func themeSlotRow(
+        title: String,
+        isDark: Bool,
+        tokens: ChromeThemeTokens,
+        selection: Binding<String>
+    ) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .frame(width: slotLabelWidth, alignment: .trailing)
+
+            ThemeWindowThumbnail(isDark: isDark, tokens: tokens)
                 .frame(width: thumbWidth, height: thumbHeight)
 
             Picker(selection: selection, label: EmptyView()) {
@@ -6456,28 +6524,8 @@ private struct ThemePickerRow: View {
             }
             .labelsHidden()
             .pickerStyle(.menu)
-            .frame(minWidth: 160)
-
-            Button {
-                openThemesFolder()
-            } label: {
-                Image(systemName: "folder")
-            }
-            .buttonStyle(.borderless)
-            .help(String(localized: "settings.app.theme.openFolder", defaultValue: "Open themes folder"))
-
-            Button {
-                themeManager.forceReloadUserThemes()
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .buttonStyle(.borderless)
-            .help(String(localized: "settings.app.theme.reload", defaultValue: "Reload themes"))
+            .frame(width: pickerWidth)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .onChange(of: activeLight) { _ in themeManager.forceReloadUserThemes() }
     }
 
     private func openThemesFolder() {

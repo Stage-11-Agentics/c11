@@ -432,11 +432,36 @@ final class WindowTerminalHostView: NSView {
 #endif
 }
 
-private final class SplitDividerOverlayView: NSView {
+struct PortalChromeOverlaySegment {
+    let rect: NSRect
+    let color: NSColor
+}
+
+final class PortalSplitDividerOverlayView: NSView {
+    enum OcclusionPolicy {
+        case crossingCenterline
+        case touchingSegment
+    }
+
     private struct DividerSegment {
         let rect: NSRect
         let color: NSColor
         let isVertical: Bool
+    }
+
+    var hostedFrameProvider: ((NSView) -> [NSRect])?
+    var chromeSegmentProvider: ((NSView) -> [PortalChromeOverlaySegment])?
+
+    private let occlusionPolicy: OcclusionPolicy
+
+    init(frame frameRect: NSRect, occlusionPolicy: OcclusionPolicy = .crossingCenterline) {
+        self.occlusionPolicy = occlusionPolicy
+        super.init(frame: frameRect)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
     }
 
     override var isOpaque: Bool { false }
@@ -448,12 +473,17 @@ private final class SplitDividerOverlayView: NSView {
         super.draw(dirtyRect)
         guard let window, let rootView = window.contentView else { return }
 
+        let chromeSegments = superview.map { chromeSegmentProvider?($0) ?? [] } ?? []
         var dividerSegments: [DividerSegment] = []
         collectDividerSegments(in: rootView, into: &dividerSegments)
-        guard !dividerSegments.isEmpty else { return }
-        let hostedFrames = hostedFramesLikelyToOccludeDividers()
-        let visibleSegments = dividerSegments.filter { shouldRenderOverlay(for: $0, hostedFrames: hostedFrames) }
-        guard !visibleSegments.isEmpty else { return }
+        let visibleSegments: [DividerSegment]
+        if dividerSegments.isEmpty {
+            visibleSegments = []
+        } else {
+            let hostedFrames = hostedFramesLikelyToOccludeDividers()
+            visibleSegments = dividerSegments.filter { shouldRenderOverlay(for: $0, hostedFrames: hostedFrames) }
+        }
+        guard !visibleSegments.isEmpty || !chromeSegments.isEmpty else { return }
 
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
@@ -462,14 +492,12 @@ private final class SplitDividerOverlayView: NSView {
         // native divider color (avoids visible color shifts at tiny pane sizes).
         for segment in visibleSegments where segment.rect.intersects(dirtyRect) {
             segment.color.setFill()
-            let rect = segment.rect
-            let pixelAligned = NSRect(
-                x: floor(rect.origin.x),
-                y: floor(rect.origin.y),
-                width: max(1, round(rect.size.width)),
-                height: max(1, round(rect.size.height))
-            )
-            NSBezierPath(rect: pixelAligned).fill()
+            NSBezierPath(rect: Self.pixelAligned(segment.rect)).fill()
+        }
+
+        for segment in chromeSegments where segment.rect.intersects(dirtyRect) {
+            segment.color.setFill()
+            NSBezierPath(rect: Self.pixelAligned(segment.rect)).fill()
         }
     }
 
@@ -520,6 +548,9 @@ private final class SplitDividerOverlayView: NSView {
 
     private func hostedFramesLikelyToOccludeDividers() -> [NSRect] {
         guard let hostView = superview else { return [] }
+        if let hostedFrameProvider {
+            return hostedFrameProvider(hostView)
+        }
         return hostView.subviews.compactMap { subview -> NSRect? in
             guard let hosted = subview as? GhosttySurfaceScrollView else { return nil }
             guard !hosted.isHidden, hosted.window != nil else { return nil }
@@ -528,6 +559,19 @@ private final class SplitDividerOverlayView: NSView {
     }
 
     private func shouldRenderOverlay(for segment: DividerSegment, hostedFrames: [NSRect]) -> Bool {
+        switch occlusionPolicy {
+        case .crossingCenterline:
+            return hostedFrames.contains { hostedFrameCrossesDividerCenterline($0, segment: segment) }
+        case .touchingSegment:
+            let expanded = segment.rect.insetBy(
+                dx: segment.isVertical ? -1 : 0,
+                dy: segment.isVertical ? 0 : -1
+            )
+            return hostedFrames.contains { Self.rect($0, touches: expanded) }
+        }
+    }
+
+    private func hostedFrameCrossesDividerCenterline(_ frame: NSRect, segment: DividerSegment) -> Bool {
         // Draw only when a hosted surface actually intrudes across the divider centerline.
         // This preserves tiny-pane visibility fixes without darkening regular dividers.
         let axisEpsilon: CGFloat = 0.01
@@ -537,14 +581,13 @@ private final class SplitDividerOverlayView: NSView {
             dy: segment.isVertical ? -1 : 0
         )
 
-        for frame in hostedFrames where frame.intersects(extentRect) {
-            if segment.isVertical {
-                if frame.minX < axis - axisEpsilon && frame.maxX > axis + axisEpsilon {
-                    return true
-                }
-            } else if frame.minY < axis - axisEpsilon && frame.maxY > axis + axisEpsilon {
+        guard frame.intersects(extentRect) else { return false }
+        if segment.isVertical {
+            if frame.minX < axis - axisEpsilon && frame.maxX > axis + axisEpsilon {
                 return true
             }
+        } else if frame.minY < axis - axisEpsilon && frame.maxY > axis + axisEpsilon {
+            return true
         }
         return false
     }
@@ -562,6 +605,22 @@ private final class SplitDividerOverlayView: NSView {
         let opaqueBG = bgRGB.withAlphaComponent(1)
         let opaqueDivider = divider.withAlphaComponent(1)
         return opaqueBG.blended(withFraction: alpha, of: opaqueDivider) ?? divider
+    }
+
+    private static func pixelAligned(_ rect: NSRect) -> NSRect {
+        NSRect(
+            x: floor(rect.origin.x),
+            y: floor(rect.origin.y),
+            width: max(1, round(rect.size.width)),
+            height: max(1, round(rect.size.height))
+        )
+    }
+
+    private static func rect(_ lhs: NSRect, touches rhs: NSRect, epsilon: CGFloat = 0.5) -> Bool {
+        lhs.maxX >= rhs.minX - epsilon &&
+            lhs.minX <= rhs.maxX + epsilon &&
+            lhs.maxY >= rhs.minY - epsilon &&
+            lhs.minY <= rhs.maxY + epsilon
     }
 }
 
@@ -582,7 +641,7 @@ final class WindowTerminalPortal: NSObject {
 
     private weak var window: NSWindow?
     private let hostView = WindowTerminalHostView(frame: .zero)
-    private let dividerOverlayView = SplitDividerOverlayView(frame: .zero)
+    private let dividerOverlayView = PortalSplitDividerOverlayView(frame: .zero)
     private weak var installedContainerView: NSView?
     private weak var installedReferenceView: NSView?
     private var installConstraints: [NSLayoutConstraint] = []

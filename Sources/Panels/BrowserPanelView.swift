@@ -286,6 +286,8 @@ struct BrowserPanelView: View {
     @Environment(\.paneDropZone) private var paneDropZone
     @AppStorage(ThemeAppStorage.Keys.m1bBrowserChromeMigrated, store: ThemeAppStorage.defaults)
     private var m1bBrowserChromeMigrated = false
+    @AppStorage(ThemeAppStorage.Keys.workspaceFrameEnabled, store: ThemeAppStorage.defaults)
+    private var workspaceFrameEnabled = true
     @State private var omnibarState = OmnibarState()
     @State private var addressBarFocused: Bool = false
     @AppStorage(BrowserSearchSettings.searchEngineKey) private var searchEngineRaw = BrowserSearchSettings.defaultSearchEngine.rawValue
@@ -446,6 +448,36 @@ struct BrowserPanelView: View {
         themeManager.makeContext(
             workspaceColor: owningWorkspace?.customColor,
             colorScheme: colorScheme
+        )
+    }
+
+    private var portalWorkspaceFrameStyle: BrowserPortalWorkspaceFrameStyle? {
+        guard workspaceFrameEnabled && themeManager.isEnabled else { return nil }
+
+        let isWindowFocused = NSApp.keyWindow?.isKeyWindow ?? true
+        let context = themeManager.makeContext(
+            workspaceColor: owningWorkspace?.customColor,
+            colorScheme: colorScheme,
+            isWindowFocused: isWindowFocused
+        )
+
+        let strokeColor: NSColor = themeManager.resolve(.windowFrame_color, context: context) ?? .secondaryLabelColor
+        let thickness: CGFloat = themeManager.resolve(.windowFrame_thicknessPt, context: context) ?? 1.5
+        let inactiveOpacity: Double = themeManager.resolve(.windowFrame_inactiveOpacity, context: context) ?? 0.25
+        let unfocusedOpacity: Double = themeManager.resolve(.windowFrame_unfocusedOpacity, context: context) ?? 0.6
+        let opacity: Double
+        if portalPriority < 2 {
+            opacity = inactiveOpacity
+        } else if !isWindowFocused {
+            opacity = unfocusedOpacity
+        } else {
+            opacity = 1.0
+        }
+
+        return BrowserPortalWorkspaceFrameStyle(
+            colorHex: strokeColor.hexString(includeAlpha: strokeColor.alphaComponent < 0.999),
+            thicknessPt: thickness,
+            opacity: opacity
         )
     }
 
@@ -1154,6 +1186,7 @@ struct BrowserPanelView: View {
                     shouldFocusWebView: isFocused && !addressBarFocused,
                     isPanelFocused: isFocused,
                     portalZPriority: portalPriority,
+                    workspaceFrameStyle: portalWorkspaceFrameStyle,
                     paneDropZone: paneDropZone,
                     searchOverlay: panel.searchState.map { searchState in
                         BrowserPortalSearchOverlayConfiguration(
@@ -4318,6 +4351,7 @@ struct WebViewRepresentable: NSViewRepresentable {
     let shouldFocusWebView: Bool
     let isPanelFocused: Bool
     let portalZPriority: Int
+    let workspaceFrameStyle: BrowserPortalWorkspaceFrameStyle?
     let paneDropZone: DropZone?
     let searchOverlay: BrowserPortalSearchOverlayConfiguration?
     let paneInteractionRuntime: PaneInteractionRuntime
@@ -6062,6 +6096,7 @@ struct WebViewRepresentable: NSViewRepresentable {
                     runtime: paneInteractionRuntime
                 )
                 : nil
+        let activeWorkspaceFrameStyle = coordinator.desiredPortalVisibleInUI ? workspaceFrameStyle : nil
         let portalAnchorView = panel.portalAnchorView
         let portalHideReason = !isCurrentPaneOwner ? "lostPaneOwnership" : "hidden"
         let didReleasePortalHost: Bool
@@ -6132,6 +6167,7 @@ struct WebViewRepresentable: NSViewRepresentable {
             BrowserWindowPortalRegistry.updatePaneDropContext(for: webView, context: activePaneDropContext)
             BrowserWindowPortalRegistry.updateSearchOverlay(for: webView, configuration: activeSearchOverlay)
             BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activePaneInteraction)
+            BrowserWindowPortalRegistry.updateWorkspaceFrameStyle(for: webView, style: activeWorkspaceFrameStyle)
             coordinator.lastPortalHostId = ObjectIdentifier(host)
             coordinator.lastSynchronizedHostGeometryRevision = host.geometryRevision
         }
@@ -6164,6 +6200,7 @@ struct WebViewRepresentable: NSViewRepresentable {
                 BrowserWindowPortalRegistry.updatePaneDropContext(for: webView, context: activePaneDropContext)
                 BrowserWindowPortalRegistry.updateSearchOverlay(for: webView, configuration: activeSearchOverlay)
                 BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activePaneInteraction)
+                BrowserWindowPortalRegistry.updateWorkspaceFrameStyle(for: webView, style: activeWorkspaceFrameStyle)
                 coordinator.lastPortalHostId = hostId
             }
             BrowserWindowPortalRegistry.synchronizeForAnchor(portalAnchorView)
@@ -6204,6 +6241,7 @@ struct WebViewRepresentable: NSViewRepresentable {
             )
             BrowserWindowPortalRegistry.updateSearchOverlay(for: webView, configuration: activeSearchOverlay)
             BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activePaneInteraction)
+            BrowserWindowPortalRegistry.updateWorkspaceFrameStyle(for: webView, style: activeWorkspaceFrameStyle)
             if !shouldBindNow,
                coordinator.lastSynchronizedHostGeometryRevision != geometryRevision {
                 BrowserWindowPortalRegistry.synchronizeForAnchor(portalAnchorView)
@@ -6235,6 +6273,7 @@ struct WebViewRepresentable: NSViewRepresentable {
             )
             BrowserWindowPortalRegistry.updateSearchOverlay(for: webView, configuration: activeSearchOverlay)
             BrowserWindowPortalRegistry.updatePaneInteraction(for: webView, configuration: activePaneInteraction)
+            BrowserWindowPortalRegistry.updateWorkspaceFrameStyle(for: webView, style: activeWorkspaceFrameStyle)
         }
 
         panel.restoreDeveloperToolsAfterAttachIfNeeded()

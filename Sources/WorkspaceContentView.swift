@@ -155,7 +155,7 @@ struct WorkspaceContentView: View {
         .onReceive(workspace.customColorDidChange) { _ in
             // Workspace color edits (sidebar color picker, CLI `workspace-color set`, theme
             // refresh) don't go through the Ghostty background pipeline, so without this
-            // subscription the `$workspaceColor`-derived divider/frame/sidebar-tint colors
+            // subscription the `$workspaceColor`-derived divider/frame/tab-indicator colors
             // would go stale until the next background-related event. The no-op guard in
             // `applyGhosttyChrome` keeps rapid color changes cheap.
             themeManager.invalidateForWorkspaceColorChange()

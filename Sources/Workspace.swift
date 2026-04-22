@@ -5232,12 +5232,23 @@ final class Workspace: Identifiable, ObservableObject {
         )
     }
 
+    private static func resolvedActiveIndicatorHex(context: ThemeContext?) -> String? {
+        guard let context else { return nil }
+        let manager = ThemeManager.shared
+        guard manager.isEnabled else { return nil }
+        guard let color: NSColor = manager.resolve(.tabBar_activeIndicator, context: context) else {
+            return nil
+        }
+        return color.hexString(includeAlpha: color.alphaComponent < 0.999)
+    }
+
     private static func bonsplitAppearance(
         from backgroundColor: NSColor,
         backgroundOpacity: Double,
         context: ThemeContext?
     ) -> BonsplitConfiguration.Appearance {
         let divider = resolvedDividerPresentation(context: context)
+        let activeIndicatorHex = resolvedActiveIndicatorHex(context: context)
         return BonsplitConfiguration.Appearance(
             splitButtonTooltips: Self.currentSplitButtonTooltips(),
             enableAnimations: false,
@@ -5246,7 +5257,8 @@ final class Workspace: Identifiable, ObservableObject {
                     backgroundColor: backgroundColor,
                     backgroundOpacity: backgroundOpacity
                 ),
-                borderHex: divider.borderHex
+                borderHex: divider.borderHex,
+                activeIndicatorHex: activeIndicatorHex
             ),
             dividerStyle: .init(thicknessPt: divider.thicknessPt)
         )
@@ -5275,6 +5287,7 @@ final class Workspace: Identifiable, ObservableObject {
         // so `$workspaceColor.mix($background, 0.65)` picks up the live tint.
         var nextBorderHex: String? = nil
         var nextThicknessPt: CGFloat? = nil
+        var nextActiveIndicatorHex: String? = nil
         if ThemeManager.shared.isEnabled {
             let context = ThemeManager.shared.makeContext(
                 workspaceColor: customColor,
@@ -5288,28 +5301,34 @@ final class Workspace: Identifiable, ObservableObject {
                 nextBorderHex = dividerColor.hexString(includeAlpha: dividerColor.alphaComponent < 0.999)
             }
             nextThicknessPt = ThemeManager.shared.resolve(.dividers_thicknessPt, context: context)
+            if let activeIndicatorColor: NSColor = ThemeManager.shared.resolve(.tabBar_activeIndicator, context: context) {
+                nextActiveIndicatorHex = activeIndicatorColor.hexString(includeAlpha: activeIndicatorColor.alphaComponent < 0.999)
+            }
         }
 
         let currentAppearance = bonsplitController.configuration.appearance
         let currentChromeColors = currentAppearance.chromeColors
         let currentThickness = currentAppearance.dividerStyle.thicknessPt
 
-        // No-op guard spans background + divider color + divider thickness + custom color so
+        // No-op guard spans background, divider color, divider thickness, and
+        // active tab indicator so
         // rapid `customColorDidChange` / `ghosttyDefaultBackgroundDidChange` fires don't cause
         // redundant chrome mutations. Each axis is compared independently — any drift on any
         // axis triggers the update.
         let backgroundMatches = currentChromeColors.backgroundHex == nextHex
         let borderMatches = currentChromeColors.borderHex == nextBorderHex
         let thicknessMatches = currentThickness == nextThicknessPt
-        let isNoOp = backgroundMatches && borderMatches && thicknessMatches
+        let activeIndicatorMatches = currentChromeColors.activeIndicatorHex == nextActiveIndicatorHex
+        let isNoOp = backgroundMatches && borderMatches && thicknessMatches && activeIndicatorMatches
 
         if GhosttyApp.shared.backgroundLogEnabled {
             let currentBackgroundHex = currentChromeColors.backgroundHex ?? "nil"
             let currentBorderHex = currentChromeColors.borderHex ?? "nil"
+            let currentActiveIndicatorHex = currentChromeColors.activeIndicatorHex ?? "nil"
             let currentThicknessLog = currentThickness.map { String(format: "%.2f", $0) } ?? "nil"
             let nextThicknessLog = nextThicknessPt.map { String(format: "%.2f", $0) } ?? "nil"
             GhosttyApp.shared.logBackground(
-                "theme apply workspace=\(id.uuidString) reason=\(reason) m1b=\(useThemeM1bPath) customColor=\(customColor ?? "nil") currentBg=\(currentBackgroundHex) nextBg=\(nextHex) currentBorder=\(currentBorderHex) nextBorder=\(nextBorderHex ?? "nil") currentThickness=\(currentThicknessLog) nextThickness=\(nextThicknessLog) noop=\(isNoOp)"
+                "theme apply workspace=\(id.uuidString) reason=\(reason) m1b=\(useThemeM1bPath) customColor=\(customColor ?? "nil") currentBg=\(currentBackgroundHex) nextBg=\(nextHex) currentBorder=\(currentBorderHex) nextBorder=\(nextBorderHex ?? "nil") currentActiveIndicator=\(currentActiveIndicatorHex) nextActiveIndicator=\(nextActiveIndicatorHex ?? "nil") currentThickness=\(currentThicknessLog) nextThickness=\(nextThicknessLog) noop=\(isNoOp)"
             )
         }
 
@@ -5317,19 +5336,19 @@ final class Workspace: Identifiable, ObservableObject {
             return
         }
 
-        if !backgroundMatches {
-            bonsplitController.configuration.appearance.chromeColors.backgroundHex = nextHex
-        }
-        if !borderMatches {
-            bonsplitController.configuration.appearance.chromeColors.borderHex = nextBorderHex
-        }
-        if !thicknessMatches {
-            bonsplitController.configuration.appearance.dividerStyle.thicknessPt = nextThicknessPt
-        }
+        var nextAppearance = currentAppearance
+        nextAppearance.chromeColors.backgroundHex = nextHex
+        nextAppearance.chromeColors.borderHex = nextBorderHex
+        nextAppearance.chromeColors.activeIndicatorHex = nextActiveIndicatorHex
+        nextAppearance.dividerStyle.thicknessPt = nextThicknessPt
+
+        var nextConfiguration = bonsplitController.configuration
+        nextConfiguration.appearance = nextAppearance
+        bonsplitController.configuration = nextConfiguration
 
         if GhosttyApp.shared.backgroundLogEnabled {
             GhosttyApp.shared.logBackground(
-                "theme applied workspace=\(id.uuidString) reason=\(reason) resultingBg=\(bonsplitController.configuration.appearance.chromeColors.backgroundHex ?? "nil") resultingBorder=\(bonsplitController.configuration.appearance.chromeColors.borderHex ?? "nil") resultingThickness=\(bonsplitController.configuration.appearance.dividerStyle.thicknessPt.map { String(format: "%.2f", $0) } ?? "nil")"
+                "theme applied workspace=\(id.uuidString) reason=\(reason) resultingBg=\(bonsplitController.configuration.appearance.chromeColors.backgroundHex ?? "nil") resultingBorder=\(bonsplitController.configuration.appearance.chromeColors.borderHex ?? "nil") resultingActiveIndicator=\(bonsplitController.configuration.appearance.chromeColors.activeIndicatorHex ?? "nil") resultingThickness=\(bonsplitController.configuration.appearance.dividerStyle.thicknessPt.map { String(format: "%.2f", $0) } ?? "nil")"
             )
         }
     }

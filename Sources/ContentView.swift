@@ -8420,7 +8420,7 @@ struct VerticalTabsSidebar: View {
         }
         .accessibilityIdentifier("Sidebar")
         .ignoresSafeArea()
-        .background(SidebarBackdrop(selectedWorkspace: tabManager.selectedWorkspace).ignoresSafeArea())
+        .background(SidebarBackdrop().ignoresSafeArea())
         .background(
             WindowAccessor { window in
                 modifierKeyMonitor.setHostWindow(window)
@@ -13608,14 +13608,6 @@ private struct TitlebarLeadingInsetReader: NSViewRepresentable {
 }
 
 private struct SidebarBackdrop: View {
-    /// Selected workspace — used so the sidebar tint overlay can react to `customColor`
-    /// edits even though `TabManager` does not republish when a nested workspace's
-    /// `@Published` property changes. SidebarBackdrop subscribes to
-    /// `Workspace.customColorDidChange` directly and keeps the rendered hex in `@State`.
-    let selectedWorkspace: Workspace?
-
-    @State private var workspaceColorHex: String?
-
     @AppStorage("sidebarTintOpacity") private var sidebarTintOpacity = SidebarTintDefaults.opacity
     @AppStorage("sidebarTintHex") private var sidebarTintHex = SidebarTintDefaults.hex
     @AppStorage("sidebarTintHexLight") private var sidebarTintHexLight: String?
@@ -13666,38 +13658,22 @@ private struct SidebarBackdrop: View {
                     }
                 }
             }
-            // Theme-resolved workspace-color tint layered atop the existing tint.
-            // Default formula is `$workspaceColor.opacity(0.08)` — subtle peripheral
-            // grounding, not loud (plan §2 #2). Alpha already encoded in the color.
+            // Theme-resolved tint layered atop the existing tint. Sidebar backdrop
+            // is neutral workspace chrome, so it intentionally resolves without
+            // the selected workspace color; workspace identity stays on tab/card chrome.
             if let themeTintOverlay {
                 Color(nsColor: themeTintOverlay)
             }
             // When material is none or useWindowLevelGlass, render nothing
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .onAppear { syncWorkspaceColorFromSelection() }
-        .onChange(of: selectedWorkspace?.id) { _, _ in syncWorkspaceColorFromSelection() }
-        .onReceive(workspaceColorPublisher) { hex in workspaceColorHex = hex }
-    }
-
-    private func syncWorkspaceColorFromSelection() {
-        workspaceColorHex = selectedWorkspace?.customColor
-    }
-
-    /// When a workspace is selected, forward its `customColorDidChange`. When none is
-    /// selected, emit an `Empty` publisher so `onReceive` is well-typed and inert.
-    private var workspaceColorPublisher: AnyPublisher<String?, Never> {
-        if let publisher = selectedWorkspace?.customColorDidChange {
-            return publisher.eraseToAnyPublisher()
-        }
-        return Empty<String?, Never>(completeImmediately: false).eraseToAnyPublisher()
     }
 
     private func resolveThemeTintOverlay() -> NSColor? {
         guard themeManager.isEnabled else { return nil }
         let themeColorScheme: ThemeContext.ColorScheme = colorScheme == .dark ? .dark : .light
         let context = themeManager.makeContext(
-            workspaceColor: workspaceColorHex,
+            workspaceColor: nil,
             colorScheme: themeColorScheme
         )
         return themeManager.resolve(.sidebar_tintOverlay, context: context)

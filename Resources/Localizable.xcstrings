@@ -43406,12 +43406,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "When the focused surface is the last one in its workspace, the close-surface shortcut also closes the workspace."
+            "value": "If the focused surface is the last one, the close-surface shortcut also closes the workspace."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "フォーカス中のサーフェスがそのワークスペースの最後の1つなら、サーフェスを閉じるショートカットはワークスペースも閉じます。"
           }
         }
@@ -43423,12 +43423,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "When the focused surface is the last one in its workspace, the close-surface shortcut closes only the surface and keeps the workspace open. Use the close-workspace shortcut to close the workspace explicitly."
+            "value": "If the focused surface is the last one, the close-surface shortcut still closes only the surface. Close the workspace explicitly with the close-workspace shortcut."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "フォーカス中のサーフェスがそのワークスペースの最後の1つでも、サーフェスを閉じるショートカットはサーフェスだけを閉じ、ワークスペースは残します。ワークスペースを閉じるショートカットを使うと明示的に閉じられます。"
           }
         }
@@ -44158,108 +44158,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Restart to apply language change?"
+            "value": "Restart c11 to switch language?"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "言語変更を適用するために再起動しますか？"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "重启以应用语言更改？"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "要重新啟動以套用語言變更嗎？"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "언어 변경을 적용하려면 재시작하시겠습니까?"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Neu starten, um Sprachänderung zu übernehmen?"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "¿Reiniciar para aplicar el cambio de idioma?"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Redémarrer pour appliquer le changement de langue ?"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Riavviare per applicare il cambio di lingua?"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Genstart for at anvende sprogændring?"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Uruchomić ponownie, aby zastosować zmianę języka?"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Перезапустить для применения языка?"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ponovo pokrenuti za primjenu promjene jezika?"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "إعادة التشغيل لتطبيق تغيير اللغة؟"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Starte på nytt for å endre språk?"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Reiniciar para aplicar a mudança de idioma?"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "รีสตาร์ตเพื่อเปลี่ยนภาษาหรือไม่?"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Dil değişikliğini uygulamak için yeniden başlatılsın mı?"
           }
         }
@@ -45565,108 +45565,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Display the built-in git branch and working-directory row."
+            "value": "Show the git branch and working directory row."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "組み込みのgitブランチと作業ディレクトリの行を表示します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "显示内置的 Git 分支和工作目录行。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "顯示內建的 git 分支及工作目錄列。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "기본 제공 git 브랜치 및 작업 디렉토리 행을 표시합니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Die integrierte Git-Branch- und Arbeitsverzeichniszeile anzeigen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Mostrar la fila integrada de rama git y directorio de trabajo."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Afficher la ligne de branche git et de répertoire de travail intégrée."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Visualizza la riga integrata con il branch git e la directory di lavoro."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vis den indbyggede git-gren og arbejdsmapperækken."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Wyświetlaj wbudowany wiersz gałęzi git i katalogu roboczego."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Отображать встроенную строку ветки git и рабочего каталога."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Prikaži ugrađeni red za git granu i radni direktorij."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "عرض صف فرع git المدمج ودليل العمل."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vis den innebygde git-grenen og arbeidskatalograden."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Exibir a linha integrada de branch git e diretório de trabalho."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "แสดงแถวสาขา git และไดเรกทอรีทำงานในตัว"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Yerleşik git dalı ve çalışma dizini satırını göster."
           }
         }
@@ -46537,108 +46537,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Display the built-in progress bar from set_progress."
+            "value": "Show the progress bar set by set_progress."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "set_progressによる組み込みプログレスバーを表示します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "显示来自 set_progress 的内置进度条。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "顯示來自 set_progress 的內建進度列。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "set_progress의 기본 제공 진행 표시줄을 표시합니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Den integrierten Fortschrittsbalken von set_progress anzeigen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Mostrar la barra de progreso integrada de set_progress."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Afficher la barre de progression intégrée de set_progress."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Visualizza la barra di progresso integrata da set_progress."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vis den indbyggede fremskridtslinje fra set_progress."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Wyświetlaj wbudowany pasek postępu z set_progress."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Отображать встроенный индикатор прогресса из set_progress."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Prikaži ugrađenu traku napretka iz set_progress."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "عرض شريط التقدم المدمج من set_progress."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vis den innebygde fremdriftsindikatoren fra set_progress."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Exibir a barra de progresso integrada de set_progress."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "แสดงแถบความคืบหน้าในตัวจาก set_progress"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "set_progress'ten yerleşik ilerleme çubuğunu göster."
           }
         }
@@ -53809,12 +53809,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The blank-tab import hint is hidden. Turn it back on here any time."
+            "value": "The blank-tab import hint is hidden. Turn it back on any time."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "空タブのインポート案内は非表示です。ここでいつでも再表示できます。"
           }
         }
@@ -56714,12 +56714,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Could not prepare this file for notifications. Try WAV, AIFF, or CAF."
+            "value": "Couldn't prepare this file. Try WAV, AIFF, or CAF."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "通知用にこのファイルを準備できませんでした。WAV、AIFF、またはCAFを試してください。"
           }
         }

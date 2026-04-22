@@ -4424,12 +4424,12 @@ struct SettingsView: View {
         if keepWorkspaceOpenOnLastSurfaceShortcut {
             return String(
                 localized: "settings.app.closeWorkspaceOnLastSurfaceShortcut.subtitleOn",
-                defaultValue: "When the focused surface is the last one in its workspace, the close-surface shortcut closes only the surface and keeps the workspace open. Use the close-workspace shortcut to close the workspace explicitly."
+                defaultValue: "If the focused surface is the last one, the close-surface shortcut still closes only the surface. Close the workspace explicitly with the close-workspace shortcut."
             )
         }
         return String(
             localized: "settings.app.closeWorkspaceOnLastSurfaceShortcut.subtitleOff",
-            defaultValue: "When the focused surface is the last one in its workspace, the close-surface shortcut also closes the workspace."
+            defaultValue: "If the focused surface is the last one, the close-surface shortcut also closes the workspace."
         )
     }
 
@@ -4564,7 +4564,7 @@ struct SettingsView: View {
         case .visible:
             return String(localized: "settings.browser.import.hint.note.visible", defaultValue: "Blank browser tabs can show this import suggestion. Hide or re-enable it here.")
         case .hidden:
-            return String(localized: "settings.browser.import.hint.note.hidden", defaultValue: "The blank-tab import hint is hidden. Turn it back on here any time.")
+            return String(localized: "settings.browser.import.hint.note.hidden", defaultValue: "The blank-tab import hint is hidden. Turn it back on any time.")
         case .settingsOnly:
             return String(localized: "settings.browser.import.hint.note.settingsOnly", defaultValue: "Blank tabs are currently using Settings only mode from the debug window.")
         }
@@ -4668,7 +4668,7 @@ struct SettingsView: View {
         case .stagingFailed(_, let details):
             let prefix = String(
                 localized: "settings.notifications.sound.custom.status.prepareFailed",
-                defaultValue: "Could not prepare this file for notifications. Try WAV, AIFF, or CAF."
+                defaultValue: "Couldn't prepare this file. Try WAV, AIFF, or CAF."
             )
             return "\(prefix) (\(details))"
         }
@@ -4898,7 +4898,7 @@ struct SettingsView: View {
             Text(String(localized: "settings.automation.openAccess.dialog.message", defaultValue: "This disables ancestry and password checks and opens the socket to all local users. Only enable when you understand the risk."))
         }
         .confirmationDialog(
-            String(localized: "settings.app.language.restartDialog.title", defaultValue: "Restart to apply language change?"),
+            String(localized: "settings.app.language.restartDialog.title", defaultValue: "Restart c11 to switch language?"),
             isPresented: $showLanguageRestartAlert,
             titleVisibility: .visible
         ) {
@@ -5268,7 +5268,7 @@ struct SettingsView: View {
 
             SettingsCardRow(
                 String(localized: "settings.app.showBranchDirectory", defaultValue: "Show Branch + Directory in Sidebar"),
-                subtitle: String(localized: "settings.app.showBranchDirectory.subtitle", defaultValue: "Display the built-in git branch and working-directory row.")
+                subtitle: String(localized: "settings.app.showBranchDirectory.subtitle", defaultValue: "Show the git branch and working directory row.")
             ) {
                 Toggle("", isOn: $sidebarShowBranchDirectory)
                     .labelsHidden()
@@ -5342,7 +5342,7 @@ struct SettingsView: View {
 
             SettingsCardRow(
                 String(localized: "settings.app.showProgress", defaultValue: "Show Progress in Sidebar"),
-                subtitle: String(localized: "settings.app.showProgress.subtitle", defaultValue: "Display the built-in progress bar from set_progress.")
+                subtitle: String(localized: "settings.app.showProgress.subtitle", defaultValue: "Show the progress bar set by set_progress.")
             ) {
                 Toggle("", isOn: $sidebarShowProgress)
                     .labelsHidden()

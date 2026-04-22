@@ -609,7 +609,7 @@ struct AgentSkillsOnboardingSheet: View {
         if !detectedRows.isEmpty && !hasActionNeeded {
             return String(localized: "agentSkills.onboarding.allSet", defaultValue: "All Set")
         }
-        return String(localized: "agentSkills.onboarding.install", defaultValue: "Teach My Agent")
+        return String(localized: "agentSkills.onboarding.install", defaultValue: "Teach it")
     }
 
     private var detectedRows: [AgentSkillsModel.TargetRow] {
@@ -627,7 +627,7 @@ struct AgentSkillsOnboardingSheet: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(String(localized: "agentSkills.onboarding.title", defaultValue: "Teach your agent c11"))
+            Text(String(localized: "agentSkills.onboarding.title", defaultValue: "Your agent doesn't know c11 yet."))
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(BrandColors.whiteSwiftUI)
 
@@ -643,12 +643,12 @@ struct AgentSkillsOnboardingSheet: View {
         if detectedRows.isEmpty {
             return String(
                 localized: "agentSkills.onboarding.body.detecting",
-                defaultValue: "Your agent doesn't know c11 exists until you teach it. Install the skill and your agent can split panes, drive the browser, open markdown surfaces, and report progress to the sidebar."
+                defaultValue: "The skill is how it learns. One file. After that, your agent splits panes, drives the browser, opens markdown surfaces, and reports progress to the sidebar — without you in the loop for routine moves."
             )
         }
         let format = String(
             localized: "agentSkills.onboarding.body.detected",
-            defaultValue: "Your agent doesn't know c11 exists until you teach it. Install the skill in %@ and your agent can split panes, drive the browser, open markdown surfaces, and report progress to the sidebar."
+            defaultValue: "The skill is how it learns. One file in %@. After that, your agent splits panes, drives the browser, opens markdown surfaces, and reports progress to the sidebar — without you in the loop for routine moves."
         )
         return String(format: format, detectedTargetList)
     }
@@ -775,7 +775,7 @@ struct AgentSkillsOnboardingSheet: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.62))
 
-                Text(String(localized: "agentSkills.onboarding.transparency", defaultValue: "The skill is plain text. Inspect the files in Finder, or hand them to a model for review. c11 won't touch your agent configuration without your permission."))
+                Text(String(localized: "agentSkills.onboarding.transparency", defaultValue: "Built to be inspectable. The skill is plain text — read it in Finder, or hand it to a model for review. c11 won't touch your agent configuration without your permission."))
                     .font(.system(size: 12))
                     .lineSpacing(2)
                     .foregroundColor(BrandColors.whiteSwiftUI.opacity(0.66))
@@ -805,7 +805,7 @@ struct AgentSkillsOnboardingSheet: View {
             )
 
             OnboardingActionButton(
-                title: String(localized: "agentSkills.onboarding.later", defaultValue: "Install Later"),
+                title: String(localized: "agentSkills.onboarding.later", defaultValue: "Later"),
                 kind: .secondary,
                 isSelected: selectedAction == .later,
                 action: installLater

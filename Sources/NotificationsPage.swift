@@ -92,7 +92,7 @@ struct NotificationsPage: View {
             Image(systemName: "bell.slash")
                 .font(.system(size: 32))
                 .foregroundColor(.secondary)
-            Text(String(localized: "notifications.empty.title", defaultValue: "No alerts yet."))
+            Text(String(localized: "notifications.empty.title", defaultValue: "It's quiet."))
                 .font(.headline)
             Text(String(localized: "notifications.empty.description", defaultValue: "When a pane needs you, it rings here. Tap one to jump to its pane."))
                 .font(.subheadline)

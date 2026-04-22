@@ -1659,7 +1659,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Your agent doesn't know c11 exists until you teach it. Install the skill in %@ and your agent can split panes, drive the browser, open markdown surfaces, and report progress to the sidebar."
+            "value": "The skill is how it learns. One file in %@. After that, your agent splits panes, drives the browser, opens markdown surfaces, and reports progress to the sidebar — without you in the loop for routine moves."
           }
         },
         "ja": {
@@ -1676,7 +1676,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Your agent doesn't know c11 exists until you teach it. Install the skill and your agent can split panes, drive the browser, open markdown surfaces, and report progress to the sidebar."
+            "value": "The skill is how it learns. One file. After that, your agent splits panes, drives the browser, opens markdown surfaces, and reports progress to the sidebar — without you in the loop for routine moves."
           }
         },
         "ja": {
@@ -1710,7 +1710,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Teach My Agent"
+            "value": "Teach it"
           }
         },
         "ja": {
@@ -1744,12 +1744,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Install Later"
+            "value": "Later"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "あとでインストール"
           }
         }
@@ -1863,7 +1863,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Teach your agent c11"
+            "value": "Your agent doesn't know c11 yet."
           }
         },
         "ja": {
@@ -1897,7 +1897,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The skill is plain text. Inspect the files in Finder, or hand them to a model for review. c11 won't touch your agent configuration without your permission."
+            "value": "Built to be inspectable. The skill is plain text — read it in Finder, or hand it to a model for review. c11 won't touch your agent configuration without your permission."
           }
         },
         "ja": {
@@ -41625,7 +41625,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No alerts yet."
+            "value": "It's quiet."
           }
         },
         "ja": {

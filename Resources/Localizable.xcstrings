@@ -11544,108 +11544,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Apply Update (If Available)"
+            "value": "Apply Update If Available"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "アップデートを適用（利用可能な場合）"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "应用更新（如果可用）"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "套用更新（如果有的話）"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "업데이트 적용 (사용 가능한 경우)"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Update anwenden (falls verfügbar)"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aplicar actualización (si está disponible)"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Appliquer la mise à jour (si disponible)"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Applica aggiornamento (se disponibile)"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Anvend opdatering (hvis tilgængelig)"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Zastosuj aktualizację (jeśli dostępna)"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Применить обновление (если доступно)"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Primijeni ažuriranje (ako je dostupno)"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "تطبيق التحديث (إن توفر)"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Installer oppdatering (hvis tilgjengelig)"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aplicar Atualização (Se Disponível)"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ติดตั้งอัปเดต (ถ้ามี)"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Güncellemeyi Uygula (Varsa)"
           }
         }
@@ -12448,108 +12448,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Duplicate Browser to the Right"
+            "value": "Duplicate Browser Right"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ブラウザを右に複製"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "向右复制浏览器"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "將瀏覽器複製到右側"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "브라우저를 오른쪽으로 복제"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Browser nach rechts duplizieren"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Duplicar navegador a la derecha"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Dupliquer le navigateur à droite"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Duplica browser a destra"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Dupliker browser til højre"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Duplikuj przeglądarkę na prawo"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Дублировать браузер вправо"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Dupliciraj preglednik desno"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "نسخ المتصفح إلى اليمين"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Dupliser nettleser til høyre"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Duplicar Navegador à Direita"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ทำซ้ำเบราว์เซอร์ไปทางขวา"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Tarayıcıyı Sağa Çoğalt"
           }
         }
@@ -12787,108 +12787,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Current Page in Default Browser"
+            "value": "Open Page in Default Browser"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "現在のページをデフォルトブラウザで開く"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在默认浏览器中打开当前页面"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在預設瀏覽器中開啟目前頁面"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "현재 페이지를 기본 브라우저에서 열기"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aktuelle Seite im Standardbrowser öffnen"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir página actual en el navegador predeterminado"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ouvrir la page dans le navigateur par défaut"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Apri la pagina corrente nel browser predefinito"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åbn aktuel side i standardbrowser"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otwórz bieżącą stronę w domyślnej przeglądarce"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Открыть текущую страницу в браузере по умолчанию"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otvori trenutnu stranicu u podrazumijevanom pregledniku"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "فتح الصفحة الحالية في المتصفح الافتراضي"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åpne gjeldende side i standard nettleser"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir Página Atual no Navegador Padrão"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "เปิดหน้าปัจจุบันในเบราว์เซอร์เริ่มต้น"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geçerli Sayfayı Varsayılan Tarayıcıda Aç"
           }
         }
@@ -15985,108 +15985,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "New Tab (Browser)"
+            "value": "New Browser Tab"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "新規タブ（ブラウザ）"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "新建标签页（浏览器）"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "新增標籤頁（瀏覽器）"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "새 탭 (브라우저)"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Neuer Tab (Browser)"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nueva pestaña (Navegador)"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nouvel onglet (navigateur)"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nuova scheda (browser)"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ny fane (browser)"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nowa karta (Przeglądarka)"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Новая вкладка (Браузер)"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Novi tab (Preglednik)"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "لسان جديد (متصفح)"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ny fane (nettleser)"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nova Aba (Navegador)"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "แท็บใหม่ (เบราว์เซอร์)"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Yeni Sekme (Tarayıcı)"
           }
         }
@@ -16211,108 +16211,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "New Tab (Terminal)"
+            "value": "New Terminal Tab"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "新規タブ（ターミナル）"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "新建标签页（终端）"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "新增標籤頁（終端機）"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "새 탭 (터미널)"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Neuer Tab (Terminal)"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nueva pestaña (Terminal)"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nouvel onglet (terminal)"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nuova scheda (terminale)"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ny fane (terminal)"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nowa karta (Terminal)"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Новая вкладка (Терминал)"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Novi tab (Terminal)"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "لسان جديد (طرفية)"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ny fane (terminal)"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nova Aba (Terminal)"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "แท็บใหม่ (เทอร์มินัล)"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Yeni Sekme (Terminal)"
           }
         }
@@ -22709,108 +22709,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Press Enter to apply this tab name, or Escape to cancel."
+            "value": "Press Enter to rename the tab. Press Escape to cancel."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Enterキーでタブ名を適用、Escapeキーでキャンセルします。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "按 Enter 应用此标签页名称，或按 Escape 取消。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "按 Enter 套用此標籤頁名稱，或按 Escape 取消。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Enter를 눌러 탭 이름을 적용하거나, Escape를 눌러 취소하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Drücken Sie die Eingabetaste, um den Tab-Namen zu übernehmen, oder Escape zum Abbrechen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Pulsa Intro para aplicar este nombre de pestaña, o Escape para cancelar."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Appuyez sur Entrée pour appliquer ce nom d'onglet, ou sur Échap pour annuler."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Premi Invio per applicare il nome della scheda, oppure Esc per annullare."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Tryk Enter for at anvende dette fanenavn, eller Escape for at annullere."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Naciśnij Enter, aby zastosować nazwę karty, lub Escape, aby anulować."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Нажмите Enter, чтобы применить имя вкладки, или Escape для отмены."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Pritisnite Enter za primjenu naziva taba, ili Escape za otkazivanje."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "اضغط Enter لتطبيق اسم اللسان، أو Escape للإلغاء."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Trykk Enter for å bruke dette fanenavnet, eller Escape for å avbryte."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Pressione Enter para aplicar este nome de aba ou Escape para cancelar."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "กด Enter เพื่อใช้ชื่อแท็บนี้ หรือ Escape เพื่อยกเลิก"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Bu sekme adını uygulamak için Enter tuşuna basın veya iptal etmek için Escape tuşuna basın."
           }
         }
@@ -22822,108 +22822,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Choose a custom tab name."
+            "value": "Pick a custom tab name."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "タブのカスタム名を選択してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "选择自定义标签页名称。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "選擇自訂標籤頁名稱。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "사용자 지정 탭 이름을 선택하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Wählen Sie einen benutzerdefinierten Tab-Namen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Elige un nombre personalizado para la pestaña."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Choisissez un nom personnalisé pour l'onglet."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Scegli un nome personalizzato per la scheda."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vælg et brugerdefineret fanenavn."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Wybierz własną nazwę karty."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Выберите пользовательское имя вкладки."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Odaberite prilagođeni naziv taba."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "اختر اسمًا مخصصًا للسان."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Velg et egendefinert fanenavn."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Escolha um nome personalizado para a aba."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "เลือกชื่อแท็บที่กำหนดเอง"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Özel bir sekme adı seçin."
           }
         }
@@ -22935,108 +22935,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enter a tab name. Press Enter to rename, Escape to cancel."
+            "value": "Type a tab name. Press Enter to rename, Escape to cancel."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "タブ名を入力してください。Enterで名称変更、Escapeでキャンセルします。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "输入标签页名称。按 Enter 重命名，按 Escape 取消。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "輸入標籤頁名稱。按 Enter 重新命名，按 Escape 取消。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "탭 이름을 입력하세요. Enter로 이름 변경, Escape로 취소."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geben Sie einen Tab-Namen ein. Eingabetaste zum Umbenennen, Escape zum Abbrechen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Introduce un nombre de pestaña. Pulsa Intro para renombrar, Escape para cancelar."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Saisissez un nom d'onglet. Appuyez sur Entrée pour renommer, Échap pour annuler."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Inserisci un nome per la scheda. Premi Invio per rinominare, Esc per annullare."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Indtast et fanenavn. Tryk Enter for at omdøbe, Escape for at annullere."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Wprowadź nazwę karty. Naciśnij Enter, aby zmienić nazwę, Escape, aby anulować."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Введите имя вкладки. Нажмите Enter для переименования, Escape для отмены."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Unesite naziv taba. Pritisnite Enter za preimenovanje, Escape za otkazivanje."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "أدخل اسم اللسان. اضغط Enter لإعادة التسمية، Escape للإلغاء."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Skriv inn et fanenavn. Trykk Enter for å gi nytt navn, Escape for å avbryte."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Insira um nome para a aba. Pressione Enter para renomear, Escape para cancelar."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ป้อนชื่อแท็บ กด Enter เพื่อเปลี่ยนชื่อ, Escape เพื่อยกเลิก"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Bir sekme adı girin. Yeniden adlandırmak için Enter, iptal etmek için Escape tuşuna basın."
           }
         }
@@ -23274,108 +23274,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Press Enter to apply this workspace name, or Escape to cancel."
+            "value": "Press Enter to rename the workspace. Press Escape to cancel."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Enterキーでワークスペース名を適用、Escapeキーでキャンセルします。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "按 Enter 应用此工作区名称，或按 Escape 取消。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "按 Enter 套用此工作區名稱，或按 Escape 取消。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Enter를 눌러 작업 공간 이름을 적용하거나, Escape를 눌러 취소하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Drücken Sie die Eingabetaste, um den Arbeitsbereichsnamen zu übernehmen, oder Escape zum Abbrechen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Pulsa Intro para aplicar este nombre de espacio de trabajo, o Escape para cancelar."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Appuyez sur Entrée pour appliquer ce nom d'espace de travail, ou sur Échap pour annuler."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Premi Invio per applicare il nome dell'area di lavoro, oppure Esc per annullare."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Tryk Enter for at anvende dette arbejdsområdenavn, eller Escape for at annullere."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Naciśnij Enter, aby zastosować nazwę przestrzeni roboczej, lub Escape, aby anulować."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Нажмите Enter, чтобы применить имя рабочего пространства, или Escape для отмены."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Pritisnite Enter za primjenu naziva radnog prostora, ili Escape za otkazivanje."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "اضغط Enter لتطبيق اسم مساحة العمل، أو Escape للإلغاء."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Trykk Enter for å bruke dette arbeidsområdenavnet, eller Escape for å avbryte."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Pressione Enter para aplicar este nome de área de trabalho ou Escape para cancelar."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "กด Enter เพื่อใช้ชื่อเวิร์กสเปซนี้ หรือ Escape เพื่อยกเลิก"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Bu çalışma alanı adını uygulamak için Enter tuşuna basın veya iptal etmek için Escape tuşuna basın."
           }
         }
@@ -23387,108 +23387,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Choose a custom workspace name."
+            "value": "Pick a custom workspace name."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ワークスペースのカスタム名を選択してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "选择自定义工作区名称。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "選擇自訂工作區名稱。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "사용자 지정 작업 공간 이름을 선택하세요."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Wählen Sie einen benutzerdefinierten Arbeitsbereichsnamen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Elige un nombre personalizado para el espacio de trabajo."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Choisissez un nom personnalisé pour l'espace de travail."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Scegli un nome personalizzato per l'area di lavoro."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Vælg et brugerdefineret arbejdsområdenavn."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Wybierz własną nazwę przestrzeni roboczej."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Выберите пользовательское имя рабочего пространства."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Odaberite prilagođeni naziv radnog prostora."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "اختر اسمًا مخصصًا لمساحة العمل."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Velg et egendefinert arbeidsområdenavn."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Escolha um nome personalizado para a área de trabalho."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "เลือกชื่อเวิร์กสเปซที่กำหนดเอง"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Özel bir çalışma alanı adı seçin."
           }
         }
@@ -23500,108 +23500,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enter a workspace name. Press Enter to rename, Escape to cancel."
+            "value": "Type a workspace name. Press Enter to rename, Escape to cancel."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ワークスペース名を入力してください。Enterで名称変更、Escapeでキャンセルします。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "输入工作区名称。按 Enter 重命名，按 Escape 取消。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "輸入工作區名稱。按 Enter 重新命名，按 Escape 取消。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "작업 공간 이름을 입력하세요. Enter로 이름 변경, Escape로 취소."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geben Sie einen Arbeitsbereichsnamen ein. Eingabetaste zum Umbenennen, Escape zum Abbrechen."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Introduce un nombre de espacio de trabajo. Pulsa Intro para renombrar, Escape para cancelar."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Saisissez un nom d'espace de travail. Appuyez sur Entrée pour renommer, Échap pour annuler."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Inserisci un nome per l'area di lavoro. Premi Invio per rinominare, Esc per annullare."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Indtast et arbejdsområdenavn. Tryk Enter for at omdøbe, Escape for at annullere."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Wprowadź nazwę przestrzeni roboczej. Naciśnij Enter, aby zmienić nazwę, Escape, aby anulować."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Введите имя рабочего пространства. Нажмите Enter для переименования, Escape для отмены."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Unesite naziv radnog prostora. Pritisnite Enter za preimenovanje, Escape za otkazivanje."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "أدخل اسم مساحة العمل. اضغط Enter لإعادة التسمية، Escape للإلغاء."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Skriv inn et arbeidsområdenavn. Trykk Enter for å gi nytt navn, Escape for å avbryte."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Insira um nome para a área de trabalho. Pressione Enter para renomear, Escape para cancelar."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ป้อนชื่อเวิร์กสเปซ กด Enter เพื่อเปลี่ยนชื่อ, Escape เพื่อยกเลิก"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Bir çalışma alanı adı girin. Yeniden adlandırmak için Enter, iptal etmek için Escape tuşuna basın."
           }
         }
@@ -23839,108 +23839,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No commands match your search."
+            "value": "No commands match."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "検索に一致するコマンドがありません。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "没有匹配的命令。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "沒有符合搜尋的指令。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "검색과 일치하는 명령어가 없습니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Keine Befehle entsprechen Ihrer Suche."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ningún comando coincide con tu búsqueda."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aucune commande ne correspond à votre recherche."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nessun comando corrisponde alla ricerca."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ingen kommandoer matcher din søgning."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Brak poleceń pasujących do wyszukiwania."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Нет команд, соответствующих запросу."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nijedna naredba ne odgovara vašoj pretrazi."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "لا توجد أوامر تطابق بحثك."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ingen kommandoer samsvarer med søket ditt."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nenhum comando corresponde à sua pesquisa."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ไม่มีคำสั่งที่ตรงกับการค้นหาของคุณ"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aramanızla eşleşen komut yok."
           }
         }
@@ -24065,108 +24065,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No workspaces match your search."
+            "value": "No workspaces match."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "検索に一致するワークスペースがありません。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "没有匹配的工作区。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "沒有符合搜尋的工作區。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "검색과 일치하는 작업 공간이 없습니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Keine Arbeitsbereiche entsprechen Ihrer Suche."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ningún espacio de trabajo coincide con tu búsqueda."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aucun espace de travail ne correspond à votre recherche."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nessuna area di lavoro corrisponde alla ricerca."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ingen arbejdsområder matcher din søgning."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Brak przestrzeni roboczych pasujących do wyszukiwania."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Нет рабочих пространств, соответствующих запросу."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nijedan radni prostor ne odgovara vašoj pretrazi."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "لا توجد مساحات عمل تطابق بحثك."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ingen arbeidsområder samsvarer med søket ditt."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nenhuma área de trabalho corresponde à sua pesquisa."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ไม่มีเวิร์กสเปซที่ตรงกับการค้นหาของคุณ"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aramanızla eşleşen çalışma alanı yok."
           }
         }
@@ -24178,12 +24178,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No workspaces or surfaces match your search."
+            "value": "No workspaces or surfaces match."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "検索に一致するワークスペースまたはサーフェスはありません。"
           }
         }
@@ -37165,7 +37165,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Opens a new terminal tab and runs c11 install"
+            "value": "Opens a terminal tab and runs c11 install."
           }
         }
       }
@@ -37176,7 +37176,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Already installed — running again will re-apply or update"
+            "value": "Already installed. Running again re-applies or updates."
           }
         }
       }
@@ -37752,108 +37752,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Current Directory in Android Studio"
+            "value": "Open in Android Studio"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "現在のディレクトリを Android Studio で開く"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 Android Studio 中打开当前目录"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 Android Studio 中開啟目前目錄"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "현재 디렉토리를 Android Studio에서 열기"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aktuelles Verzeichnis in Android Studio öffnen"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir directorio actual en Android Studio"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ouvrir le répertoire courant dans Android Studio"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Apri la directory corrente in Android Studio"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åbn nuværende mappe i Android Studio"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otwórz bieżący katalog w Android Studio"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Открыть текущий каталог в Android Studio"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otvori trenutni direktorij u Android Studio"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "فتح الدليل الحالي في Android Studio"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åpne gjeldende katalog i Android Studio"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir Diretório Atual no Android Studio"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "เปิดไดเรกทอรีปัจจุบันใน Android Studio"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geçerli Dizini Android Studio'da Aç"
           }
         }
@@ -37865,108 +37865,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Current Directory in Antigravity"
+            "value": "Open in Antigravity"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "現在のディレクトリを Antigravity で開く"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 Antigravity 中打开当前目录"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 Antigravity 中開啟目前目錄"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "현재 디렉토리를 Antigravity에서 열기"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aktuelles Verzeichnis in Antigravity öffnen"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir directorio actual en Antigravity"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ouvrir le répertoire courant dans Antigravity"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Apri la directory corrente in Antigravity"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åbn nuværende mappe i Antigravity"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otwórz bieżący katalog w Antigravity"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Открыть текущий каталог в Antigravity"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otvori trenutni direktorij u Antigravity"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "فتح الدليل الحالي في Antigravity"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åpne gjeldende katalog i Antigravity"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir Diretório Atual no Antigravity"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "เปิดไดเรกทอรีปัจจุบันใน Antigravity"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geçerli Dizini Antigravity'de Aç"
           }
         }
@@ -37978,108 +37978,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Current Directory in Cursor"
+            "value": "Open in Cursor"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "現在のディレクトリを Cursor で開く"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 Cursor 中打开当前目录"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 Cursor 中開啟目前目錄"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "현재 디렉토리를 Cursor에서 열기"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aktuelles Verzeichnis in Cursor öffnen"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir directorio actual en Cursor"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ouvrir le répertoire courant dans Cursor"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Apri la directory corrente in Cursor"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åbn nuværende mappe i Cursor"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otwórz bieżący katalog w Cursor"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Открыть текущий каталог в Cursor"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otvori trenutni direktorij u Cursor"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "فتح الدليل الحالي في Cursor"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åpne gjeldende katalog i Cursor"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir Diretório Atual no Cursor"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "เปิดไดเรกทอรีปัจจุบันใน Cursor"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geçerli Dizini Cursor'da Aç"
           }
         }
@@ -38091,108 +38091,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Current Directory in Finder"
+            "value": "Open in Finder"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "現在のディレクトリを Finder で開く"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在访达中打开当前目录"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 Finder 中開啟目前目錄"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "현재 디렉토리를 Finder에서 열기"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aktuelles Verzeichnis im Finder öffnen"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir directorio actual en Finder"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ouvrir le répertoire courant dans le Finder"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Apri la directory corrente nel Finder"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åbn nuværende mappe i Finder"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otwórz bieżący katalog w Finderze"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Открыть текущий каталог в Finder"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otvori trenutni direktorij u Finder"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "فتح الدليل الحالي في Finder"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åpne gjeldende katalog i Finder"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir Diretório Atual no Finder"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "เปิดไดเรกทอรีปัจจุบันใน Finder"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geçerli Dizini Finder'da Aç"
           }
         }
@@ -38204,108 +38204,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Current Directory in Ghostty"
+            "value": "Open in Ghostty"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "現在のディレクトリを Ghostty で開く"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 Ghostty 中打开当前目录"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 Ghostty 中開啟目前目錄"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "현재 디렉토리를 Ghostty에서 열기"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aktuelles Verzeichnis in Ghostty öffnen"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir directorio actual en Ghostty"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ouvrir le répertoire courant dans Ghostty"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Apri la directory corrente in Ghostty"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åbn nuværende mappe i Ghostty"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otwórz bieżący katalog w Ghostty"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Открыть текущий каталог в Ghostty"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otvori trenutni direktorij u Ghostty"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "فتح الدليل الحالي في Ghostty"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åpne gjeldende katalog i Ghostty"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir Diretório Atual no Ghostty"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "เปิดไดเรกทอรีปัจจุบันใน Ghostty"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geçerli Dizini Ghostty'de Aç"
           }
         }
@@ -38317,108 +38317,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Current Directory in iTerm2"
+            "value": "Open in iTerm2"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "現在のディレクトリを iTerm2 で開く"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 iTerm2 中打开当前目录"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 iTerm2 中開啟目前目錄"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "현재 디렉토리를 iTerm2에서 열기"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aktuelles Verzeichnis in iTerm2 öffnen"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir directorio actual en iTerm2"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ouvrir le répertoire courant dans iTerm2"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Apri la directory corrente in iTerm2"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åbn nuværende mappe i iTerm2"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otwórz bieżący katalog w iTerm2"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Открыть текущий каталог в iTerm2"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otvori trenutni direktorij u iTerm2"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "فتح الدليل الحالي في iTerm2"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åpne gjeldende katalog i iTerm2"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir Diretório Atual no iTerm2"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "เปิดไดเรกทอรีปัจจุบันใน iTerm2"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geçerli Dizini iTerm2'de Aç"
           }
         }
@@ -38430,108 +38430,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Current Directory in Terminal"
+            "value": "Open in Terminal"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "現在のディレクトリをターミナルで開く"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在终端中打开当前目录"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在「終端機」中開啟目前目錄"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "현재 디렉토리를 터미널에서 열기"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aktuelles Verzeichnis in Terminal öffnen"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir directorio actual en Terminal"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ouvrir le répertoire courant dans Terminal"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Apri la directory corrente in Terminale"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åbn nuværende mappe i Terminal"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otwórz bieżący katalog w Terminalu"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Открыть текущий каталог в Терминале"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otvori trenutni direktorij u Terminal"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "فتح الدليل الحالي في Terminal"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åpne gjeldende katalog i Terminal"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir Diretório Atual no Terminal"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "เปิดไดเรกทอรีปัจจุบันใน Terminal"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geçerli Dizini Terminal'de Aç"
           }
         }
@@ -38543,108 +38543,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Current Directory in Tower"
+            "value": "Open in Tower"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "現在のディレクトリを Tower で開く"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 Tower 中打开当前目录"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 Tower 中開啟目前目錄"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "현재 디렉토리를 Tower에서 열기"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aktuelles Verzeichnis in Tower öffnen"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir directorio actual en Tower"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ouvrir le répertoire courant dans Tower"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Apri la directory corrente in Tower"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åbn nuværende mappe i Tower"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otwórz bieżący katalog w Tower"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Открыть текущий каталог в Tower"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otvori trenutni direktorij u Tower"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "فتح الدليل الحالي في Tower"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åpne gjeldende katalog i Tower"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir Diretório Atual no Tower"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "เปิดไดเรกทอรีปัจจุบันใน Tower"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geçerli Dizini Tower'da Aç"
           }
         }
@@ -38656,108 +38656,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Current Directory in VS Code (Inline)"
+            "value": "Open in VS Code (Inline)"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "現在のディレクトリを VS Code で開く（インライン）"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 VS Code（内联）中打开当前目录"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 VS Code（內嵌）中開啟目前目錄"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "현재 디렉토리를 VS Code (인라인)에서 열기"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aktuelles Verzeichnis in VS Code (Inline) öffnen"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir directorio actual en VS Code (en línea)"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ouvrir le répertoire courant dans VS Code (intégré)"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Apri la directory corrente in VS Code (Inline)"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åbn nuværende mappe i VS Code (Inline)"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otwórz bieżący katalog w VS Code (wbudowany)"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Открыть текущий каталог в VS Code (встроенный)"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otvori trenutni direktorij u VS Code (Inline)"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "فتح الدليل الحالي في VS Code (مضمّن)"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åpne gjeldende katalog i VS Code (innebygd)"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir Diretório Atual no VS Code (Inline)"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "เปิดไดเรกทอรีปัจจุบันใน VS Code (แบบอินไลน์)"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geçerli Dizini VS Code'da Aç (Satır İçi)"
           }
         }
@@ -38769,12 +38769,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Current Directory in VS Code"
+            "value": "Open in VS Code"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "現在のディレクトリを VS Code で開く"
           }
         }
@@ -38786,108 +38786,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Current Directory in Warp"
+            "value": "Open in Warp"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "現在のディレクトリを Warp で開く"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 Warp 中打开当前目录"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 Warp 中開啟目前目錄"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "현재 디렉토리를 Warp에서 열기"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aktuelles Verzeichnis in Warp öffnen"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir directorio actual en Warp"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ouvrir le répertoire courant dans Warp"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Apri la directory corrente in Warp"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åbn nuværende mappe i Warp"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otwórz bieżący katalog w Warp"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Открыть текущий каталог в Warp"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otvori trenutni direktorij u Warp"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "فتح الدليل الحالي في Warp"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åpne gjeldende katalog i Warp"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir Diretório Atual no Warp"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "เปิดไดเรกทอรีปัจจุบันใน Warp"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geçerli Dizini Warp'ta Aç"
           }
         }
@@ -38899,108 +38899,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Current Directory in Windsurf"
+            "value": "Open in Windsurf"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "現在のディレクトリを Windsurf で開く"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 Windsurf 中打开当前目录"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 Windsurf 中開啟目前目錄"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "현재 디렉토리를 Windsurf에서 열기"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aktuelles Verzeichnis in Windsurf öffnen"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir directorio actual en Windsurf"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ouvrir le répertoire courant dans Windsurf"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Apri la directory corrente in Windsurf"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åbn nuværende mappe i Windsurf"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otwórz bieżący katalog w Windsurf"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Открыть текущий каталог в Windsurf"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otvori trenutni direktorij u Windsurf"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "فتح الدليل الحالي في Windsurf"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åpne gjeldende katalog i Windsurf"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir Diretório Atual no Windsurf"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "เปิดไดเรกทอรีปัจจุบันใน Windsurf"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geçerli Dizini Windsurf'te Aç"
           }
         }
@@ -39012,108 +39012,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Current Directory in Xcode"
+            "value": "Open in Xcode"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "現在のディレクトリを Xcode で開く"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 Xcode 中打开当前目录"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 Xcode 中開啟目前目錄"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "현재 디렉토리를 Xcode에서 열기"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aktuelles Verzeichnis in Xcode öffnen"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir directorio actual en Xcode"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ouvrir le répertoire courant dans Xcode"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Apri la directory corrente in Xcode"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åbn nuværende mappe i Xcode"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otwórz bieżący katalog w Xcode"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Открыть текущий каталог в Xcode"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otvori trenutni direktorij u Xcode"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "فتح الدليل الحالي في Xcode"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åpne gjeldende katalog i Xcode"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir Diretório Atual no Xcode"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "เปิดไดเรกทอรีปัจจุบันใน Xcode"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geçerli Dizini Xcode'da Aç"
           }
         }
@@ -39125,108 +39125,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Current Directory in Zed"
+            "value": "Open in Zed"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "現在のディレクトリを Zed で開く"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 Zed 中打开当前目录"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 Zed 中開啟目前目錄"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "현재 디렉토리를 Zed에서 열기"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aktuelles Verzeichnis in Zed öffnen"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir directorio actual en Zed"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ouvrir le répertoire courant dans Zed"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Apri la directory corrente in Zed"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åbn nuværende mappe i Zed"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otwórz bieżący katalog w Zed"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Открыть текущий каталог в Zed"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otvori trenutni direktorij u Zed"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "فتح الدليل الحالي في Zed"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Åpne gjeldende katalog i Zed"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Abrir Diretório Atual no Zed"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "เปิดไดเรกทอรีปัจจุบันใน Zed"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geçerli Dizini Zed'de Aç"
           }
         }

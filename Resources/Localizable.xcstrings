@@ -352,26 +352,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Ghosttyベースの縦タブ付きターミナルと\nmacOS用通知パネル。"
+            "state": "translated",
+            "value": "操作者・エージェントのためのターミナル司令室。\n多くのサーフェス。ひとつのワークスペース。ひとつの視界。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "基于 Ghostty 的 macOS 终端，\n支持垂直标签页和通知面板。"
+            "state": "translated",
+            "value": "为「操作员·代理」一体而设的终端指挥中枢。\n多个界面。一个工作区。一视同观。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "基於 Ghostty 的 macOS 終端機，\n具備垂直標籤頁與通知面板。"
+            "state": "translated",
+            "value": "為「操作員·代理」一體而設的終端指揮中樞。\n面面有界,事事一區,同視一處。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "세로 탭과 알림 패널을 갖춘\nGhostty 기반 macOS 터미널."
+            "state": "translated",
+            "value": "오퍼레이터·에이전트 페어를 위한 터미널 커맨드 센터.\n여러 서피스. 하나의 워크스페이스. 하나의 시야."
           }
         },
         "de": {
@@ -1494,7 +1494,7 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "スキルを %@ にコピーできませんでした。"
           }
         }
@@ -1528,7 +1528,7 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "%@ に書き込めません。権限を確認してください。"
           }
         }
@@ -1579,7 +1579,7 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "同梱スキルのディレクトリが見つかりませんでした。"
           }
         }
@@ -1596,7 +1596,7 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "%@ の同梱スキルディレクトリを読み込めません。"
           }
         }
@@ -1647,8 +1647,8 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "準備完了"
+            "state": "translated",
+            "value": "このままで"
           }
         }
       }
@@ -1664,8 +1664,8 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11 はエージェントにとって使いやすいように設計されていますが、何を頼めるかを知るにはスキルが必要です。%@ にインストールすると、ペイン、ブラウザ、Markdown ファイル、ステータス、c11 ワークスペースのその他の機能を使えるようになります。"
+            "state": "translated",
+            "value": "スキルが、エージェントの学び方です。%@ にひとつのファイル。そのあと、エージェントはペインを分割し、ブラウザを操作し、Markdown サーフェスを開き、サイドバーに進捗を報告します — 定型の動きに、あなたは要りません。"
           }
         }
       }
@@ -1681,8 +1681,8 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11 はエージェントにとって使いやすいように設計されていますが、何を頼めるかを知るにはスキルが必要です。インストールすると、ペイン、ブラウザ、Markdown ファイル、ステータス、c11 ワークスペースのその他の機能を使えるようになります。"
+            "state": "translated",
+            "value": "スキルが、エージェントの学び方です。ファイルはひとつ。そのあと、エージェントはペインを分割し、ブラウザを操作し、Markdown サーフェスを開き、サイドバーに進捗を報告します — 定型の動きに、あなたは要りません。"
           }
         }
       }
@@ -1715,8 +1715,8 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "エージェントをスキル化"
+            "state": "translated",
+            "value": "教える"
           }
         }
       }
@@ -1749,8 +1749,8 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "あとでインストール"
+            "state": "translated",
+            "value": "あとで"
           }
         }
       }
@@ -1783,8 +1783,8 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "対応しているエージェント設定フォルダはまだ検出されていません。後で 設定 → エージェントスキル から実行できます。"
+            "state": "translated",
+            "value": "まだ何も検出されていません。Claude Code、Codex、または対応する他のエージェントをインストールしてから、設定 → エージェントスキル から再度開いてください。"
           }
         }
       }
@@ -1800,8 +1800,8 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "未検出です — まずエージェントツールをインストールするか、設定から後で有効にしてください。"
+            "state": "translated",
+            "value": "未検出 — まずエージェントをインストールするか、あとで設定から有効にしてください。"
           }
         }
       }
@@ -1834,8 +1834,8 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "スキルセットを補完します"
+            "state": "translated",
+            "value": "不足しているスキルをインストールします"
           }
         }
       }
@@ -1868,8 +1868,8 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11 をエージェント的に使う"
+            "state": "translated",
+            "value": "エージェントはまだ c11 を知りません。"
           }
         }
       }
@@ -1902,8 +1902,8 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "開発者の信頼を真剣に扱っています。スキルはプレーンテキストです。Finder で実際のファイルを確認するか、好みのモデルに渡してセキュリティレビューできます。c11 は許可なくエージェント設定を変更しません。"
+            "state": "translated",
+            "value": "検証できるように作られています。スキルはプレーンテキスト — Finder で読むか、モデルに渡してレビューしてもらえます。c11 は、あなたの許可なくエージェント設定に手を加えません。"
           }
         }
       }
@@ -3089,26 +3089,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "このワークスペースのカスタム名を入力してください。"
+            "state": "translated",
+            "value": "どんな文字列でも使えます。ワークスペース名はサイドバーに表示されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "请为此工作区输入自定义名称。"
+            "state": "translated",
+            "value": "随便起。工作区名字会出现在侧边栏。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "為此工作區輸入自訂名稱。"
+            "state": "translated",
+            "value": "隨便取。工作區名稱會出現在側邊欄。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "이 작업 공간의 사용자 지정 이름을 입력하세요."
+            "state": "translated",
+            "value": "아무 텍스트나 가능해요. 워크스페이스 이름은 사이드바에 표시돼요."
           }
         },
         "de": {
@@ -7758,7 +7758,7 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "c11 は保存先プロファイル「%@」を作成できませんでした。"
           }
         }
@@ -7792,7 +7792,7 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "インポートを開始できませんでした"
           }
         }
@@ -7962,8 +7962,8 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "このMacでインポート元にできるブラウザープロファイルが見つかりませんでした。"
+            "state": "translated",
+            "value": "この Mac でインポートできるブラウザプロファイルが見つかりませんでした。"
           }
         }
       }
@@ -8319,8 +8319,8 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "ブックマーク、設定、拡張機能のインポートにはまだ対応していません。Cookieと履歴のみを取り込みました。"
+            "state": "translated",
+            "value": "ブックマーク、設定、拡張機能のインポートにはまだ対応していません。Cookie と履歴のみを取り込みました。"
           }
         }
       }
@@ -8438,8 +8438,8 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Keychain から %3$@ を開けなかったため、暗号化された %2$@ のCookieを%1$ld件スキップしました。"
+            "state": "translated",
+            "value": "Keychain から %3$@ を開けなかったため、暗号化された %2$@ の Cookie を %1$ld 件スキップしました。"
           }
         }
       }
@@ -20869,26 +20869,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "フォーカスペインを強調"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "闪烁聚焦面板"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "閃爍聚焦面板"
+            "state": "translated",
+            "value": "閃爍聚焦窗格"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "포커스된 패널 깜빡이기"
+            "state": "translated",
+            "value": "포커스된 페인 깜빡이기"
           }
         },
         "de": {
@@ -29261,26 +29261,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "最後のタブを閉じ、ウインドウを閉じます。"
+            "state": "translated",
+            "value": "これが最後のタブです。閉じるとウインドウも閉じます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "这将关闭最后一个标签页并关闭窗口。"
+            "state": "translated",
+            "value": "仅剩此一页。关了它,窗口也关。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "這將關閉最後一個標籤頁並關閉視窗。"
+            "state": "translated",
+            "value": "僅剩此一頁。關了它,視窗也關。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "마지막 탭이 닫히면 윈도우도 닫힙니다."
+            "state": "translated",
+            "value": "마지막 탭이에요. 닫으면 윈도우도 닫혀요."
           }
         },
         "de": {
@@ -29374,26 +29374,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "最後のタブを閉じ、ワークスペースを閉じます。"
+            "state": "translated",
+            "value": "これが最後のタブです。閉じるとワークスペースも閉じます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "这将关闭最后一个标签页并关闭其工作区。"
+            "state": "translated",
+            "value": "仅剩此一页。关了它,工作区也关。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "這將關閉最後一個標籤頁並關閉其工作區。"
+            "state": "translated",
+            "value": "僅剩此一頁。關了它,工作區也關。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "마지막 탭이 닫히면 해당 작업 공간도 닫힙니다."
+            "state": "translated",
+            "value": "마지막 탭이에요. 닫으면 워크스페이스도 닫혀요."
           }
         },
         "de": {
@@ -30216,26 +30216,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "ワークスペースとそのすべてのパネルを閉じます。"
+            "state": "translated",
+            "value": "ワークスペースと、そのすべてのペインを閉じます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "这将关闭工作区及其所有面板。"
+            "state": "translated",
+            "value": "此举关闭整个工作区,连同所有面板。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "這將關閉工作區及其所有面板。"
+            "state": "translated",
+            "value": "此舉關閉整個工作區,連同所有窗格。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "작업 공간과 모든 패널을 닫습니다."
+            "state": "translated",
+            "value": "워크스페이스와 모든 페인을 닫아요."
           }
         },
         "de": {
@@ -30442,8 +30442,8 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "%1$lld 個のワークスペースと、それぞれのすべてのパネルを閉じます:\n%2$@"
+            "state": "translated",
+            "value": "%1$lld 個のワークスペースと、それぞれのすべてのペインを閉じます:\n%2$@"
           }
         }
       }
@@ -30476,8 +30476,8 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "現在のウィンドウと、その %1$lld 個のワークスペースと、それぞれのすべてのパネルを閉じます:\n%2$@"
+            "state": "translated",
+            "value": "現在のウインドウと、その %1$lld 個のワークスペースと、それぞれのすべてのペインを閉じます:\n%2$@"
           }
         }
       }
@@ -30606,26 +30606,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11の通知が無効になっています。アラートを表示するにはシステム設定で有効にしてください。"
+            "state": "translated",
+            "value": "c11 の通知がオフです。システム設定で有効にすれば、ペインがあなたを必要とするときに c11 が呼びかけます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11 的通知已被禁用。请在系统设置中启用通知以接收提醒。"
+            "state": "translated",
+            "value": "c11 的通知已关。到「系统设置」里开启,面板有事时,c11 才叩得到你。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11 的通知已停用。請在「系統設定」中啟用，以接收提示。"
+            "state": "translated",
+            "value": "c11 的通知已關。到「系統設定」裡開啟,窗格有事時,c11 才叩得到你。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11에 대한 알림이 비활성화되어 있습니다. 알림을 보려면 시스템 설정에서 활성화하세요."
+            "state": "translated",
+            "value": "c11의 알림이 꺼져 있어요. 시스템 설정에서 켜면 페인에 주의가 필요할 때 c11이 울려요."
           }
         },
         "de": {
@@ -31058,26 +31058,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11はこのタブを選択した移動先に移動できませんでした。"
+            "state": "translated",
+            "value": "c11 はこのタブを指定の場所に移動できませんでした。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11 无法将此标签页移动到所选目标。"
+            "state": "translated",
+            "value": "c11 没能把这标签页挪到你要的位置。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11 無法將此標籤頁移至所選的目的地。"
+            "state": "translated",
+            "value": "c11 沒能把這標籤頁挪到你要的位置。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11에서 이 탭을 선택한 대상으로 이동할 수 없습니다."
+            "state": "translated",
+            "value": "c11이 이 탭을 원하는 위치로 옮기지 못했어요."
           }
         },
         "de": {
@@ -32256,26 +32256,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "どんな文字列でも設定できます。タブが多いときは長めのタイトルのほうが見分けやすくなります。"
+            "state": "translated",
+            "value": "どんな文字列でも使えます。タブが多いときは長めのタイトルのほうが見分けやすくなります。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "请为此标签页输入自定义名称。"
+            "state": "translated",
+            "value": "随便起。标签多的时候,名字长一点更好找。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "為此標籤頁輸入自訂名稱。"
+            "state": "translated",
+            "value": "隨便取。標籤多的時候,名字長一點更好找。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "이 탭의 사용자 지정 이름을 입력하세요."
+            "state": "translated",
+            "value": "아무 텍스트나 가능해요. 탭이 많을 때는 긴 제목이 찾기 쉬워요."
           }
         },
         "de": {
@@ -32482,25 +32482,25 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "タブタイトルを設定"
+            "state": "translated",
+            "value": "タブ名を変更"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "重命名标签页"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "重新命名標籤頁"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "탭 이름 변경"
           }
         },
@@ -32595,26 +32595,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "このワークスペースのカスタム名を入力してください。"
+            "state": "translated",
+            "value": "どんな文字列でも使えます。ワークスペース名はサイドバーに表示されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "请为此工作区输入自定义名称。"
+            "state": "translated",
+            "value": "随便起。工作区名字会出现在侧边栏。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "為此工作區輸入自訂名稱。"
+            "state": "translated",
+            "value": "隨便取。工作區名稱會出現在側邊欄。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "이 작업 공간의 사용자 지정 이름을 입력하세요."
+            "state": "translated",
+            "value": "아무 텍스트나 가능해요. 워크스페이스 이름은 사이드바에 표시돼요."
           }
         },
         "de": {
@@ -35251,26 +35251,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "閉じたブラウザパネルを再度開く"
+            "state": "translated",
+            "value": "閉じたブラウザペインを再度開く"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "重新打开已关闭的浏览器面板"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "重新開啟已關閉的瀏覽器面板"
+            "state": "translated",
+            "value": "重新開啟已關閉的瀏覽器窗格"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "닫은 브라우저 패널 다시 열기"
+            "state": "translated",
+            "value": "닫은 브라우저 페인 다시 열기"
           }
         },
         "de": {
@@ -41404,26 +41404,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "デスクトップ通知がここに表示されます。"
+            "state": "translated",
+            "value": "ペインがあなたを必要とするとき、ここで呼びかけます。クリックするとそのペインに移動します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "桌面通知将在此处显示，方便快速查看。"
+            "state": "translated",
+            "value": "面板有事,便在此叩你。点一下即刻跳过去。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "桌面通知將在這裡顯示，方便您快速查看。"
+            "state": "translated",
+            "value": "窗格有事,便在此叩你。點一下即刻跳過去。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "데스크톱 알림이 여기에 표시되어 빠르게 확인할 수 있습니다."
+            "state": "translated",
+            "value": "페인이 당신을 필요로 할 때 여기서 울려요. 알림을 클릭하면 해당 페인으로 이동해요."
           }
         },
         "de": {
@@ -41517,26 +41517,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "デスクトップ通知がここに表示されます。"
+            "state": "translated",
+            "value": "ペインがあなたを必要とするとき、ここで呼びかけます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "桌面通知将在此处显示。"
+            "state": "translated",
+            "value": "面板有事,便在此叩你。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "桌面通知將在這裡顯示。"
+            "state": "translated",
+            "value": "窗格有事,便在此叩你。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "데스크톱 알림이 여기에 표시됩니다."
+            "state": "translated",
+            "value": "페인이 당신을 필요로 할 때 여기서 울려요."
           }
         },
         "de": {
@@ -41630,26 +41630,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "まだ通知はありません"
+            "state": "translated",
+            "value": "静かです。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "暂无通知"
+            "state": "translated",
+            "value": "静。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "尚無通知"
+            "state": "translated",
+            "value": "靜。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "아직 알림이 없습니다"
+            "state": "translated",
+            "value": "조용해요."
           }
         },
         "de": {
@@ -43411,7 +43411,7 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "フォーカス中のサーフェスがそのワークスペースの最後の1つなら、サーフェスを閉じるショートカットはワークスペースも閉じます。"
           }
         }
@@ -43428,7 +43428,7 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "フォーカス中のサーフェスがそのワークスペースの最後の1つでも、サーフェスを閉じるショートカットはサーフェスだけを閉じ、ワークスペースは残します。ワークスペースを閉じるショートカットを使うと明示的に閉じられます。"
           }
         }
@@ -44163,26 +44163,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "言語変更を適用するために再起動しますか？"
+            "state": "translated",
+            "value": "c11 を再起動して言語を切り替えますか？"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "重启以应用语言更改？"
+            "state": "translated",
+            "value": "重启 c11 换语言?"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "要重新啟動以套用語言變更嗎？"
+            "state": "translated",
+            "value": "重啟 c11 換語言?"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "언어 변경을 적용하려면 재시작하시겠습니까?"
+            "state": "translated",
+            "value": "언어를 바꾸려면 c11을 다시 시작할까요?"
           }
         },
         "de": {
@@ -45570,26 +45570,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "組み込みのgitブランチと作業ディレクトリの行を表示します。"
+            "state": "translated",
+            "value": "git ブランチと作業ディレクトリの行を表示します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "显示内置的 Git 分支和工作目录行。"
+            "state": "translated",
+            "value": "显示 git 分支与工作目录那一行。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "顯示內建的 git 分支及工作目錄列。"
+            "state": "translated",
+            "value": "顯示 git 分支與工作目錄那一列。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "기본 제공 git 브랜치 및 작업 디렉토리 행을 표시합니다."
+            "state": "translated",
+            "value": "git 브랜치와 작업 디렉토리 행을 표시해요."
           }
         },
         "de": {
@@ -46542,26 +46542,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "set_progressによる組み込みプログレスバーを表示します。"
+            "state": "translated",
+            "value": "set_progress で設定されるプログレスバーを表示します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "显示来自 set_progress 的内置进度条。"
+            "state": "translated",
+            "value": "显示由 set_progress 设置的进度条。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "顯示來自 set_progress 的內建進度列。"
+            "state": "translated",
+            "value": "顯示由 set_progress 設定的進度條。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "set_progress의 기본 제공 진행 표시줄을 표시합니다."
+            "state": "translated",
+            "value": "set_progress로 설정된 진행 표시줄을 표시해요."
           }
         },
         "de": {
@@ -53814,7 +53814,7 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "空タブのインポート案内は非表示です。ここでいつでも再表示できます。"
           }
         }
@@ -56719,8 +56719,8 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "通知用にこのファイルを準備できませんでした。WAV、AIFF、またはCAFを試してください。"
+            "state": "translated",
+            "value": "このファイルを準備できませんでした。WAV、AIFF、または CAF を試してください。"
           }
         }
       }
@@ -63016,26 +63016,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "フォーカスペインを強調"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "闪烁聚焦面板"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "閃爍聚焦面板"
+            "state": "translated",
+            "value": "閃爍聚焦窗格"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "포커스된 패널 깜빡이기"
+            "state": "translated",
+            "value": "포커스된 페인 깜빡이기"
           }
         },
         "de": {
@@ -66678,8 +66678,8 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "フィードバックを送信できませんでした。もう一度お試しください。"
+            "state": "translated",
+            "value": "フィードバックを送信できませんでした。もう一度試してください。"
           }
         }
       }
@@ -66729,7 +66729,7 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "選択したファイルのうち1つを添付できませんでした。"
           }
         }
@@ -66814,8 +66814,8 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "フィードバックの送信回数が多すぎます。しばらくしてからもう一度お試しください。"
+            "state": "translated",
+            "value": "フィードバックの送信回数が多すぎます。しばらく経ってからもう一度試してください。"
           }
         }
       }
@@ -66984,8 +66984,8 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11へようこそ！"
+            "state": "translated",
+            "value": "c11 へようこそ。"
           }
         }
       }
@@ -73192,26 +73192,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "アプリの場所の問題"
+            "state": "translated",
+            "value": "c11 がアプリケーションフォルダにありません"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "应用位置问题"
+            "state": "translated",
+            "value": "c11 不在「应用程序」里"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "App 位置問題"
+            "state": "translated",
+            "value": "c11 不在「應用程式」裡"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "앱 위치 문제"
+            "state": "translated",
+            "value": "c11이 응용 프로그램에 없어요"
           }
         },
         "de": {
@@ -73305,26 +73305,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "アップデートの確認中にネットワーク接続が切れました。もう一度お試しください。"
+            "state": "translated",
+            "value": "アップデートの確認中にネットワーク接続が切れました。もう一度試してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "检查更新时网络连接中断。请重试。"
+            "state": "translated",
+            "value": "检查更新时网络断了。再试一次。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "檢查更新時網路連線中斷。請再試一次。"
+            "state": "translated",
+            "value": "檢查更新時網路斷了。再試一次。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "업데이트 확인 중 네트워크 연결이 끊어졌습니다. 다시 시도하세요."
+            "state": "translated",
+            "value": "업데이트 확인 중에 네트워크가 끊어졌어요. 다시 시도하세요."
           }
         },
         "de": {
@@ -73757,26 +73757,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11 はアップデートフィードをダウンロードできませんでした。接続を確認してもう一度お試しください。"
+            "state": "translated",
+            "value": "c11 はアップデート一覧を取得できませんでした。接続を確認してもう一度試してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11 无法下载更新源。请检查网络连接后重试。"
+            "state": "translated",
+            "value": "c11 没能取到更新清单。查一下网络,再试一次。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11 無法下載更新來源。請檢查您的連線後再試一次。"
+            "state": "translated",
+            "value": "c11 沒能取到更新清單。查一下網路,再試一次。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11에서 업데이트 피드를 다운로드할 수 없습니다. 연결을 확인하고 다시 시도하세요."
+            "state": "translated",
+            "value": "c11이 업데이트 목록을 가져오지 못했어요. 연결을 확인하고 다시 시도하세요."
           }
         },
         "de": {
@@ -73870,26 +73870,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "アップデートフィードエラー"
+            "state": "translated",
+            "value": "アップデートを読み込めません"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "更新源错误"
+            "state": "translated",
+            "value": "读不了更新"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "更新來源錯誤"
+            "state": "translated",
+            "value": "讀不了更新"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "업데이트 피드 오류"
+            "state": "translated",
+            "value": "업데이트를 읽지 못했어요"
           }
         },
         "de": {
@@ -73983,26 +73983,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "アップデートフィードを読み取れませんでした。後でもう一度お試しください。"
+            "state": "translated",
+            "value": "アップデート一覧を読み取れませんでした。後でもう一度試してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "无法读取更新源。请稍后重试。"
+            "state": "translated",
+            "value": "读不了更新清单。稍后再试。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "無法讀取更新來源。請稍後再試。"
+            "state": "translated",
+            "value": "讀不了更新清單。稍後再試。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "업데이트 피드를 읽을 수 없습니다. 나중에 다시 시도하세요."
+            "state": "translated",
+            "value": "업데이트 목록을 읽을 수 없어요. 나중에 다시 시도하세요."
           }
         },
         "de": {
@@ -74096,26 +74096,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "アップデートフィードが安全ではありません。サポートにお問い合わせください。"
+            "state": "translated",
+            "value": "アップデート一覧が安全な接続を使っていません。サポートに連絡してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "更新源不安全。请联系支持团队。"
+            "state": "translated",
+            "value": "更新清单走的不是安全连接。联系支持。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "更新來源不安全。請聯絡支援團隊。"
+            "state": "translated",
+            "value": "更新清單走的不是安全連線。聯絡支援。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "업데이트 피드가 안전하지 않습니다. 지원팀에 문의하세요."
+            "state": "translated",
+            "value": "업데이트 목록이 보안 연결을 사용하지 않아요. 지원팀에 문의하세요."
           }
         },
         "de": {
@@ -74209,26 +74209,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "安全でないアップデートフィード"
+            "state": "translated",
+            "value": "安全でないアップデート元"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "不安全的更新源"
+            "state": "translated",
+            "value": "更新源不安全"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "不安全的更新來源"
+            "state": "translated",
+            "value": "更新來源不安全"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "안전하지 않은 업데이트 피드"
+            "state": "translated",
+            "value": "안전하지 않은 업데이트 소스"
           }
         },
         "de": {
@@ -74322,26 +74322,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "アップデートフィードのURLが無効です。サポートにお問い合わせください。"
+            "state": "translated",
+            "value": "アップデート元の URL が無効です。サポートに連絡してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "更新源 URL 无效。请联系支持团队。"
+            "state": "translated",
+            "value": "更新源 URL 无效。联系支持。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "更新來源 URL 無效。請聯絡支援團隊。"
+            "state": "translated",
+            "value": "更新來源 URL 無效。聯絡支援。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "업데이트 피드 URL이 유효하지 않습니다. 지원팀에 문의하세요."
+            "state": "translated",
+            "value": "업데이트 소스 URL이 유효하지 않아요. 지원팀에 문의하세요."
           }
         },
         "de": {
@@ -74435,26 +74435,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "無効なアップデートフィード"
+            "state": "translated",
+            "value": "無効なアップデート元"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "无效的更新源"
+            "state": "translated",
+            "value": "更新源无效"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "無效的更新來源"
+            "state": "translated",
+            "value": "更新來源無效"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "유효하지 않은 업데이트 피드"
+            "state": "translated",
+            "value": "유효하지 않은 업데이트 소스"
           }
         },
         "de": {
@@ -74548,26 +74548,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11 はアップデートサーバーに接続できません。インターネット接続を確認してもう一度お試しください。"
+            "state": "translated",
+            "value": "c11 はアップデートサーバーに接続できません。接続を確認してもう一度試してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11 无法连接到更新服务器。请检查互联网连接后重试。"
+            "state": "translated",
+            "value": "c11 连不上更新服务器。查一下网络,再试一次。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11 無法連線至更新伺服器。請檢查您的網際網路連線後再試一次。"
+            "state": "translated",
+            "value": "c11 連不上更新伺服器。查一下網路,再試一次。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11에서 업데이트 서버에 연결할 수 없습니다. 인터넷 연결을 확인하고 다시 시도하세요."
+            "state": "translated",
+            "value": "c11이 업데이트 서버에 연결할 수 없어요. 연결을 확인하고 다시 시도하세요."
           }
         },
         "de": {
@@ -74887,26 +74887,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "アップデーター権限エラー"
+            "state": "translated",
+            "value": "c11 はアプリケーションフォルダに置く必要があります"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "更新程序权限错误"
+            "state": "translated",
+            "value": "c11 得住在「应用程序」里"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "更新程式權限錯誤"
+            "state": "translated",
+            "value": "c11 得住在「應用程式」裡"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "업데이터 권한 오류"
+            "state": "translated",
+            "value": "c11은 응용 프로그램에 있어야 해요"
           }
         },
         "de": {
@@ -75000,26 +75000,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "アップデートサーバーへのセキュア接続を確立できませんでした。後でもう一度お試しください。"
+            "state": "translated",
+            "value": "アップデートサーバーへのセキュア接続を確立できませんでした。後でもう一度試してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "无法与更新服务器建立安全连接。请稍后重试。"
+            "state": "translated",
+            "value": "与更新服务器建不起安全连接。稍后再试。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "無法建立與更新伺服器的安全連線。請稍後再試。"
+            "state": "translated",
+            "value": "與更新伺服器建不起安全連線。稍後再試。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "업데이트 서버에 대한 보안 연결을 설정할 수 없습니다. 나중에 다시 시도하세요."
+            "state": "translated",
+            "value": "업데이트 서버에 보안 연결을 열지 못했어요. 나중에 다시 시도하세요."
           }
         },
         "de": {
@@ -75226,26 +75226,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "アップデートサーバーが見つかりません。接続を確認するか、後でもう一度お試しください。"
+            "state": "translated",
+            "value": "アップデートサーバーが見つかりません。接続を確認するか、後でもう一度試してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "找不到更新服务器。请检查网络连接或稍后重试。"
+            "state": "translated",
+            "value": "找不到更新服务器。查一下网络,或稍后再试。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "找不到更新伺服器。請檢查您的連線或稍後再試。"
+            "state": "translated",
+            "value": "找不到更新伺服器。查一下網路,或稍後再試。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "업데이트 서버를 찾을 수 없습니다. 연결을 확인하거나 나중에 다시 시도하세요."
+            "state": "translated",
+            "value": "업데이트 서버를 찾을 수 없어요. 연결을 확인하거나 나중에 다시 시도하세요."
           }
         },
         "de": {
@@ -75678,26 +75678,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "アップデートの署名を検証できませんでした。後でもう一度お試しください。"
+            "state": "translated",
+            "value": "アップデートの署名を検証できませんでした。後でもう一度試してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "无法验证更新的签名。请稍后重试。"
+            "state": "translated",
+            "value": "更新签名未通过验证。稍后再试。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "無法驗證更新的簽章。請稍後再試。"
+            "state": "translated",
+            "value": "更新簽章未通過驗證。稍後再試。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "업데이트 서명을 확인할 수 없습니다. 나중에 다시 시도하세요."
+            "state": "translated",
+            "value": "업데이트 서명이 확인되지 않았어요. 나중에 다시 시도하세요."
           }
         },
         "de": {
@@ -75791,26 +75791,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "アップデート署名エラー"
+            "state": "translated",
+            "value": "署名の検証に失敗"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "更新签名错误"
+            "state": "translated",
+            "value": "签名未通过验证"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "更新簽章錯誤"
+            "state": "translated",
+            "value": "簽章未通過驗證"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "업데이트 서명 오류"
+            "state": "translated",
+            "value": "서명 확인 실패"
           }
         },
         "de": {
@@ -76469,26 +76469,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "アップデートをインストールして再起動を準備中"
+            "state": "translated",
+            "value": "アップデートをインストールして、再起動します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "正在安装更新并准备重启"
+            "state": "translated",
+            "value": "正在安装更新,随后重启。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "正在安裝更新並準備重新啟動"
+            "state": "translated",
+            "value": "正在安裝更新,隨後重啟。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "업데이트 설치 및 재시작 준비 중"
+            "state": "translated",
+            "value": "업데이트를 설치하고 다시 시작해요."
           }
         },
         "de": {
@@ -76582,26 +76582,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "最新バージョンを使用しています"
+            "state": "translated",
+            "value": "最新バージョンです。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "您正在运行最新版本"
+            "state": "translated",
+            "value": "已是最新版本。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "您正在執行最新版本"
+            "state": "translated",
+            "value": "已是最新版本。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "최신 버전을 사용 중입니다"
+            "state": "translated",
+            "value": "최신 버전을 사용 중이에요."
           }
         },
         "de": {
@@ -76921,26 +76921,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "アップデートを確認しています。しばらくお待ちください"
+            "state": "translated",
+            "value": "利用可能なアップデートを確認しています。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "正在检查可用更新，请稍候"
+            "state": "translated",
+            "value": "正在检查可用更新。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "請稍候，正在檢查可用的更新"
+            "state": "translated",
+            "value": "正在檢查可用更新。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "사용 가능한 업데이트를 확인하는 동안 잠시 기다려주세요"
+            "state": "translated",
+            "value": "사용 가능한 업데이트를 확인 중이에요."
           }
         },
         "de": {
@@ -77034,26 +77034,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11 はバックグラウンドで自動的にアップデートを確認できます。"
+            "state": "translated",
+            "value": "c11 はバックグラウンドでアップデートを確認できます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11 可以在后台自动检查更新。"
+            "state": "translated",
+            "value": "c11 可在后台自动检查更新。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11 可以在背景自動檢查更新。"
+            "state": "translated",
+            "value": "c11 可在背景自動檢查更新。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "c11가 백그라운드에서 자동으로 업데이트를 확인할 수 있습니다."
+            "state": "translated",
+            "value": "c11이 백그라운드에서 업데이트를 확인할 수 있어요."
           }
         },
         "de": {
@@ -77712,26 +77712,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "すでに最新バージョンを使用しています。"
+            "state": "translated",
+            "value": "最新バージョンです。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "您已经在运行最新版本。"
+            "state": "translated",
+            "value": "已是最新版本。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "您已經在使用最新版本。"
+            "state": "translated",
+            "value": "已是最新版本。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "이미 최신 버전을 사용 중입니다."
+            "state": "translated",
+            "value": "최신 버전을 사용 중이에요."
           }
         },
         "de": {
@@ -78164,26 +78164,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "アップデートの準備ができました。インストールを完了するにはアプリケーションを再起動してください。"
+            "state": "translated",
+            "value": "アップデートの準備ができました。インストールするには c11 を再起動してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "更新已就绪。请重启应用程序以完成安装。"
+            "state": "translated",
+            "value": "更新已就绪。重启 c11 即可安装。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "更新已就緒。請重新啟動應用程式以完成安裝。"
+            "state": "translated",
+            "value": "更新已就緒。重啟 c11 即可安裝。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "업데이트가 준비되었습니다. 설치를 완료하려면 앱을 재시작하세요."
+            "state": "translated",
+            "value": "업데이트가 준비됐어요. 설치하려면 c11을 다시 시작하세요."
           }
         },
         "de": {
@@ -78616,26 +78616,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "アップデートを展開して準備中"
+            "state": "translated",
+            "value": "アップデートを準備しています。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "正在解压和准备更新"
+            "state": "translated",
+            "value": "正在准备更新。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "正在解壓並準備更新"
+            "state": "translated",
+            "value": "正在準備更新。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "업데이트 추출 및 준비 중"
+            "state": "translated",
+            "value": "업데이트를 준비 중이에요."
           }
         },
         "de": {
@@ -79311,26 +79311,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "アクティブなワークスペースの直後に新しいワークスペースを挿入します。"
+            "state": "translated",
+            "value": "新しいワークスペースはアクティブなワークスペースの直後に追加されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "在活动工作区之后插入新工作区。"
+            "state": "translated",
+            "value": "新工作区落在当前工作区之后。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "將新工作區插入目前使用中工作區的後方。"
+            "state": "translated",
+            "value": "新工作區落在目前工作區之後。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "활성 작업 공간 바로 다음에 새 작업 공간을 삽입합니다."
+            "state": "translated",
+            "value": "새 워크스페이스는 활성 워크스페이스 바로 뒤에 들어가요."
           }
         },
         "de": {
@@ -79537,26 +79537,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "新しいワークスペースをリストの末尾に追加します。"
+            "state": "translated",
+            "value": "新しいワークスペースは末尾に追加されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "将新工作区添加到列表底部。"
+            "state": "translated",
+            "value": "新工作区落在列表底部。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "將新工作區附加到列表底部。"
+            "state": "translated",
+            "value": "新工作區落在列表底部。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "목록 하단에 새 작업 공간을 추가합니다."
+            "state": "translated",
+            "value": "새 워크스페이스는 맨 아래에 들어가요."
           }
         },
         "de": {
@@ -79763,26 +79763,26 @@
         },
         "ja": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "新しいワークスペースをリストの先頭に挿入します。"
+            "state": "translated",
+            "value": "新しいワークスペースは先頭に追加されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "在列表顶部插入新工作区。"
+            "state": "translated",
+            "value": "新工作区落在列表顶部。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "將新工作區插入列表最上方。"
+            "state": "translated",
+            "value": "新工作區落在列表頂部。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "목록 맨 위에 새 작업 공간을 삽입합니다."
+            "state": "translated",
+            "value": "새 워크스페이스는 맨 위에 들어가요."
           }
         },
         "de": {

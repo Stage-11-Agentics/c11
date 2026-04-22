@@ -4,6 +4,28 @@ All notable changes to c11 (and, before the fork, cmux) are documented here.
 
 Note: historical entries below pre-date the `c11mux` → `c11` rename and reference the old binary / cask / artifact / bundle-ID names (`cmux`, `c11mux`, `c11mux-macos.dmg`, `stage-11-agentics/c11mux`, `com.stage11.c11mux`). Those entries are preserved as-is for historical accuracy; see the 0.38.0 section for the rename.
 
+## [0.40.0] - 2026-04-22
+
+### Added
+- Settings sidebar is reorganized into logical pages with a two-column layout, and the Settings window title reads "c11 Settings". — thanks @BenevolentFutures!
+
+### Changed
+- User-facing copy tightened across the app — 72 strings rewritten for density and active voice across agent onboarding, confirmation dialogs, the notifications empty state, the Sparkle update flow, the sidebar feedback form, and the browser import wizard. Non-English translations for touched strings are marked `needs_review` for the next translation pass. — thanks @BenevolentFutures!
+- About box tagline now reads *"terminal command center for the operator:agent pair. / many surfaces. one workspace. one field of view."* (replacing the previous architecture description). — thanks @BenevolentFutures!
+- Agent Skills onboarding dialog: "Agentically use c11" / "Skillify Your Agent" becomes "Teach your agent c11" / "Teach My Agent". Body copy, transparency note, and empty-detection state rewritten for clarity. — thanks @BenevolentFutures!
+- User-facing copy normalized from "panel" to "pane" throughout dialogs, menus, and command labels ("Flash Focused Pane", "Reopen Closed Browser Pane", "close the workspace and all of its panes"), matching README and skill vocabulary. Internal Swift type names are unchanged. — thanks @BenevolentFutures!
+- Sparkle update flow copy: "Please" filler dropped from error messages, "Update Feed" jargon replaced with "Update Source" / "Update List", and vague error titles rewritten ("App Location Issue" → "c11 isn't in Applications", "Updater Permission Error" → "c11 needs to live in Applications", "Update Signature Error" → "Signature Didn't Verify"). — thanks @BenevolentFutures!
+- The c11-markdown skill now teaches agents to consolidate multi-artifact sessions into one pane or one file rather than scattering top-level tabs. — thanks @BenevolentFutures!
+
+### Fixed
+- Settings pages keep their scroll position when switching between sections. — thanks @BenevolentFutures!
+- Settings two-column layout rendering. — thanks @BenevolentFutures!
+- Settings sidebar review findings addressed. — thanks @BenevolentFutures!
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [0.39.0] - 2026-04-22
 
 ### Added

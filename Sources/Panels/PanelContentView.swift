@@ -39,6 +39,7 @@ struct PanelContentView: View {
                 TerminalPanelView(
                     panel: terminalPanel,
                     paneInteractionRuntime: workspace.paneInteractionRuntime,
+                    drawsPortalTopFrameEdge: !workspace.surfaceTitleBarState(panelId: terminalPanel.id).visible,
                     isFocused: isFocused,
                     isVisibleInUI: isVisibleInUI,
                     portalPriority: portalPriority,

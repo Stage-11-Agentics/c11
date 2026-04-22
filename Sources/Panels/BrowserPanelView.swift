@@ -451,7 +451,7 @@ struct BrowserPanelView: View {
         )
     }
 
-    private var portalWorkspaceFrameStyle: BrowserPortalWorkspaceFrameStyle? {
+    private var portalWorkspaceFrameStyle: PortalWorkspaceFrameStyle? {
         guard workspaceFrameEnabled && themeManager.isEnabled else { return nil }
 
         let isWindowFocused = NSApp.keyWindow?.isKeyWindow ?? true
@@ -474,10 +474,11 @@ struct BrowserPanelView: View {
             opacity = 1.0
         }
 
-        return BrowserPortalWorkspaceFrameStyle(
+        return PortalWorkspaceFrameStyle(
             colorHex: strokeColor.hexString(includeAlpha: strokeColor.alphaComponent < 0.999),
             thicknessPt: thickness,
-            opacity: opacity
+            opacity: opacity,
+            edges: PortalWorkspaceFrameEdges(top: false)
         )
     }
 
@@ -4351,7 +4352,7 @@ struct WebViewRepresentable: NSViewRepresentable {
     let shouldFocusWebView: Bool
     let isPanelFocused: Bool
     let portalZPriority: Int
-    let workspaceFrameStyle: BrowserPortalWorkspaceFrameStyle?
+    let workspaceFrameStyle: PortalWorkspaceFrameStyle?
     let paneDropZone: DropZone?
     let searchOverlay: BrowserPortalSearchOverlayConfiguration?
     let paneInteractionRuntime: PaneInteractionRuntime

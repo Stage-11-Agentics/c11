@@ -1217,12 +1217,6 @@ struct BrowserPortalPaneInteractionConfiguration {
     let runtime: PaneInteractionRuntime
 }
 
-struct BrowserPortalWorkspaceFrameStyle: Equatable {
-    let colorHex: String
-    let thicknessPt: CGFloat
-    let opacity: Double
-}
-
 struct BrowserPaneDropContext: Equatable {
     let workspaceId: UUID
     let panelId: UUID
@@ -2104,7 +2098,7 @@ final class WindowBrowserPortal: NSObject {
         var paneDropContext: BrowserPaneDropContext?
         var searchOverlay: BrowserPortalSearchOverlayConfiguration?
         var paneInteraction: BrowserPortalPaneInteractionConfiguration?
-        var workspaceFrameStyle: BrowserPortalWorkspaceFrameStyle?
+        var workspaceFrameStyle: PortalWorkspaceFrameStyle?
         var paneTopChromeHeight: CGFloat
         var transientRecoveryReason: String?
         var transientRecoveryRetriesRemaining: Int
@@ -2125,8 +2119,11 @@ final class WindowBrowserPortal: NSObject {
         chromeOverlayView.hostedFrameProvider = { [weak self] hostView in
             self?.hostedFramesForChromeOverlay(in: hostView) ?? []
         }
-        chromeOverlayView.chromeSegmentProvider = { [weak self] hostView in
-            self?.workspaceFrameSegmentsForChromeOverlay(in: hostView) ?? []
+        chromeOverlayView.chromeSegmentProvider = { [weak self] hostView, dividerSegments in
+            self?.workspaceFrameSegmentsForChromeOverlay(
+                in: hostView,
+                dividerSegments: dividerSegments
+            ) ?? []
         }
         installGeometryObservers(for: window)
         _ = ensureInstalled()
@@ -2250,7 +2247,10 @@ final class WindowBrowserPortal: NSObject {
         }
     }
 
-    private func workspaceFrameSegmentsForChromeOverlay(in hostView: NSView) -> [PortalChromeOverlaySegment] {
+    private func workspaceFrameSegmentsForChromeOverlay(
+        in hostView: NSView,
+        dividerSegments: [PortalChromeOverlayDividerSegment]
+    ) -> [PortalChromeOverlaySegment] {
         let hostBounds = hostView.bounds
         guard hostBounds.width > 1, hostBounds.height > 1 else { return [] }
 
@@ -2261,55 +2261,20 @@ final class WindowBrowserPortal: NSObject {
                   let containerView = entry.containerView,
                   !containerView.isHidden,
                   containerView.superview === hostView,
-                  let color = Self.workspaceFrameColor(from: style) else {
+                  let color = PortalWorkspaceFrameOverlay.color(from: style) else {
                 continue
             }
 
-            appendWorkspaceFrameSegments(
+            PortalWorkspaceFrameOverlay.appendWorkspaceFrameSegments(
                 for: containerView.frame,
                 hostBounds: hostBounds,
                 style: style,
                 color: color,
+                dividerSegments: dividerSegments,
                 into: &segments
             )
         }
         return segments
-    }
-
-    private func appendWorkspaceFrameSegments(
-        for frame: NSRect,
-        hostBounds: NSRect,
-        style: BrowserPortalWorkspaceFrameStyle,
-        color: NSColor,
-        into segments: inout [PortalChromeOverlaySegment]
-    ) {
-        let edgeEpsilon: CGFloat = 1.5
-        let thickness = max(1, style.thicknessPt)
-
-        func appendClipped(_ rect: NSRect) {
-            let clipped = rect.intersection(hostBounds)
-            guard !clipped.isNull, clipped.width > 0, clipped.height > 0 else { return }
-            segments.append(PortalChromeOverlaySegment(rect: clipped, color: color))
-        }
-
-        if abs(frame.minX - hostBounds.minX) <= edgeEpsilon {
-            appendClipped(NSRect(x: hostBounds.minX, y: frame.minY, width: thickness, height: frame.height))
-        }
-        if abs(frame.maxX - hostBounds.maxX) <= edgeEpsilon {
-            appendClipped(NSRect(x: hostBounds.maxX - thickness, y: frame.minY, width: thickness, height: frame.height))
-        }
-        if abs(frame.minY - hostBounds.minY) <= edgeEpsilon {
-            appendClipped(NSRect(x: frame.minX, y: hostBounds.minY, width: frame.width, height: thickness))
-        }
-        if abs(frame.maxY - hostBounds.maxY) <= edgeEpsilon {
-            appendClipped(NSRect(x: frame.minX, y: hostBounds.maxY - thickness, width: frame.width, height: thickness))
-        }
-    }
-
-    private static func workspaceFrameColor(from style: BrowserPortalWorkspaceFrameStyle) -> NSColor? {
-        guard let base = NSColor(hex: style.colorHex) else { return nil }
-        let alpha = base.alphaComponent * CGFloat(max(0, min(1, style.opacity)))
-        return base.withAlphaComponent(alpha)
     }
 
     @discardableResult
@@ -2816,7 +2781,7 @@ final class WindowBrowserPortal: NSObject {
 
     func updateWorkspaceFrameStyle(
         forWebViewId webViewId: ObjectIdentifier,
-        style: BrowserPortalWorkspaceFrameStyle?
+        style: PortalWorkspaceFrameStyle?
     ) {
         guard var entry = entriesByWebViewId[webViewId] else { return }
         guard entry.workspaceFrameStyle != style else { return }
@@ -3891,7 +3856,7 @@ enum BrowserWindowPortalRegistry {
         portal.updatePaneInteraction(forWebViewId: webViewId, configuration: configuration)
     }
 
-    static func updateWorkspaceFrameStyle(for webView: WKWebView, style: BrowserPortalWorkspaceFrameStyle?) {
+    static func updateWorkspaceFrameStyle(for webView: WKWebView, style: PortalWorkspaceFrameStyle?) {
         let webViewId = ObjectIdentifier(webView)
         guard let windowId = webViewToWindowId[webViewId],
               let portal = portalsByWindowId[windowId] else { return }

@@ -10380,108 +10380,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Administrator privileges were required to write to /usr/local/bin."
+            "value": "Admin privileges were required to write to /usr/local/bin."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "/usr/local/binへの書き込みに管理者権限が必要でした。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "写入 /usr/local/bin 需要管理员权限。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "寫入 /usr/local/bin 需要管理者權限。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "/usr/local/bin에 기록하기 위해 관리자 권한이 필요합니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Zum Schreiben in /usr/local/bin waren Administratorrechte erforderlich."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Se requirieron privilegios de administrador para escribir en /usr/local/bin."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Des privilèges d'administrateur étaient nécessaires pour écrire dans /usr/local/bin."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Sono stati richiesti i privilegi di amministratore per scrivere in /usr/local/bin."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Administratorrettigheder var nødvendige for at skrive til /usr/local/bin."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Do zapisu w /usr/local/bin wymagane były uprawnienia administratora."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Для записи в /usr/local/bin потребовались права администратора."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Potrebne su administratorske privilegije za pisanje u /usr/local/bin."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "كانت صلاحيات المسؤول مطلوبة للكتابة في /usr/local/bin."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Administratorrettigheter var nødvendig for å skrive til /usr/local/bin."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Privilégios de administrador foram necessários para gravar em /usr/local/bin."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ต้องใช้สิทธิ์ผู้ดูแลระบบเพื่อเขียนไปยัง /usr/local/bin"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "/usr/local/bin dizinine yazmak için yönetici ayrıcalıkları gerekiyordu."
           }
         }
@@ -10832,108 +10832,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Administrator privileges were required to modify /usr/local/bin."
+            "value": "Admin privileges were required to modify /usr/local/bin."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "/usr/local/binの変更に管理者権限が必要でした。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "修改 /usr/local/bin 需要管理员权限。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "修改 /usr/local/bin 需要管理者權限。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "/usr/local/bin을 수정하기 위해 관리자 권한이 필요합니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Zum Ändern von /usr/local/bin waren Administratorrechte erforderlich."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Se requirieron privilegios de administrador para modificar /usr/local/bin."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Des privilèges d'administrateur étaient nécessaires pour modifier /usr/local/bin."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Sono stati richiesti i privilegi di amministratore per modificare /usr/local/bin."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Administratorrettigheder var nødvendige for at ændre /usr/local/bin."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Do modyfikacji /usr/local/bin wymagane były uprawnienia administratora."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Для изменения /usr/local/bin потребовались права администратора."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Potrebne su administratorske privilegije za izmjenu /usr/local/bin."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "كانت صلاحيات المسؤول مطلوبة لتعديل /usr/local/bin."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Administratorrettigheter var nødvendig for å endre /usr/local/bin."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Privilégios de administrador foram necessários para modificar /usr/local/bin."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ต้องใช้สิทธิ์ผู้ดูแลระบบเพื่อแก้ไข /usr/local/bin"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "/usr/local/bin dizinini değiştirmek için yönetici ayrıcalıkları gerekiyordu."
           }
         }
@@ -10945,108 +10945,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No c11 CLI symlink was found at %@."
+            "value": "No c11 CLI symlink found at %@."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@にc11 CLIのシンボリックリンクが見つかりませんでした。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 %@ 处未找到 c11 CLI 符号链接。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "在 %@ 找不到 c11 CLI 的符號連結。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@에서 c11 CLI 심볼릭 링크를 찾을 수 없습니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Es wurde keine symbolische Verknüpfung für c11 CLI unter %@ gefunden."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "No se encontró ningún enlace simbólico de la CLI de c11 en %@."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Aucun lien symbolique de la CLI c11 n'a été trouvé à l'emplacement %@."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nessun collegamento simbolico della CLI di c11 trovato in %@."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Intet c11 CLI symbolsk link blev fundet på %@."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nie znaleziono dowiązania symbolicznego CLI c11 pod adresem %@."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Символическая ссылка c11 CLI не найдена по пути %@."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Simbolička veza c11 CLI nije pronađena na %@."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "لم يتم العثور على رابط رمزي لواجهة أوامر c11 في %@."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Ingen c11 CLI-symbolsk lenke ble funnet på %@."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nenhum link simbólico do CLI do c11 foi encontrado em %@."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ไม่พบลิงก์สัญลักษณ์ c11 CLI ที่ %@"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "%@ konumunda c11 CLI sembolik bağı bulunamadı."
           }
         }
@@ -29898,12 +29898,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tune the profile popover padding live while comparing it against the browser toolbar menu."
+            "value": "Tune profile popover padding live while comparing against the browser toolbar menu."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ブラウザーツールバーのメニューと見比べながら、プロファイルポップオーバーの余白をライブで調整します。"
           }
         }
@@ -34115,108 +34115,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Could not load any folder path from the clipboard."
+            "value": "Couldn't read a folder path from the clipboard."
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "クリップボードからフォルダパスを読み込めませんでした。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "无法从剪贴板加载文件夹路径。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "無法從剪貼簿載入資料夾路徑。"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "클립보드에서 폴더 경로를 불러올 수 없습니다."
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Es konnte kein Ordnerpfad aus der Zwischenablage geladen werden."
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "No se pudo cargar ninguna ruta de carpeta desde el portapapeles."
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Impossible de charger un chemin de dossier depuis le presse-papiers."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Impossibile caricare un percorso cartella dagli appunti."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Kunne ikke indlæse nogen mappesti fra udklipsholderen."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nie udało się wczytać ścieżki folderu ze schowka."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Не удалось загрузить путь к папке из буфера обмена."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nije moguće učitati putanju foldera iz međuspremnika."
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "تعذر تحميل أي مسار مجلد من الحافظة."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Kunne ikke laste inn noen mappesti fra utklippstavlen."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Não foi possível carregar nenhum caminho de pasta da área de transferência."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ไม่สามารถโหลดเส้นทางโฟลเดอร์จากคลิปบอร์ดได้"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Panodan herhangi bir klasör yolu yüklenemedi."
           }
         }
@@ -72963,12 +72963,12 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Go To Next Notification"
+            "value": "Go to Next Notification"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "次の通知へ移動"
           }
         }
@@ -75594,108 +75594,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Configure automatic update preferences"
+            "value": "Configure automatic updates"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "自動アップデートの設定"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "配置自动更新偏好设置"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "設定自動更新偏好"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "자동 업데이트 환경설정 구성"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Einstellungen für automatische Updates konfigurieren"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Configurar preferencias de actualización automática"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Configurer les préférences de mise à jour automatique"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Configura le preferenze di aggiornamento automatico"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Konfigurer præferencer for automatiske opdateringer"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Skonfiguruj preferencje automatycznych aktualizacji"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Настроить параметры автоматических обновлений"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Konfigurišite postavke automatskog ažuriranja"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "تكوين تفضيلات التحديث التلقائي"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Konfigurer innstillinger for automatiske oppdateringer"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Configurar preferências de atualização automática"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "กำหนดค่าการอัปเดตอัตโนมัติ"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Otomatik güncelleme tercihlerini yapılandır"
           }
         }
@@ -82330,108 +82330,108 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "After current"
+            "value": "After Current"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "現在の後"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "当前之后"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "目前之後"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "현재 다음"
           }
         },
         "de": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Nach aktuellem"
           }
         },
         "es": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Después del actual"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Après l'actuel"
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Dopo la corrente"
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Efter nuværende"
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Po bieżącej"
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "После текущего"
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Poslije trenutnog"
           }
         },
         "ar": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "بعد الحالي"
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Etter gjeldende"
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Após a atual"
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "หลังรายการปัจจุบัน"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Geçerli sonrasına"
           }
         }

@@ -1,224 +1,358 @@
-# c11 snapshot & restore
+# c11 workspace persistence — Blueprints + Snapshots + session resume
 
-**Status:** plan
-**Ticket:** CMUX-37
+**Status:** implementation plan
+**Ticket:** CMUX-37 (`task_01KPMTEY4WGECM9MNZ4XARN7Y6`)
+**Companion:** `.lattice/plans/task_01KPMTEY4WGECM9MNZ4XARN7Y6.md`
+**Related:** C11-7 (`task_01KPS4FBHSSCCJC3EP43YJ7XMZ`) — socket reliability
 **Author:** @atin
-**Date:** 2026-04-20
+**Last refreshed:** 2026-04-23
+
+> **Note on supersession.** The older version of this file described snapshot/restore only, driven by shell choreography from `c11 restore`. That approach was invalidated by the 2026-04-21 dogfood (five-workspace fixture attempt). This revision carries the app-side transaction design, introduces Blueprints alongside Snapshots, and lists concrete file-level insertion points grounded in the current codebase.
 
 ## Goal
 
-Capture a c11 workspace's full spatial layout and per-surface state to a JSON file, and rebuild it later — including **bit-exact resume of Claude Code sessions** via `cc --resume <session-id>`.
+Two outcomes, one system:
 
-The killer capability is the Claude piece: `claude --resume <id>` rehydrates an entire session with full context and history. Nobody uses it because nobody keeps track of the IDs. Pairing it with a layout snapshot turns "I'll come back to this tomorrow" into `cmux restore morning-work`.
+1. **Restart recovery.** After `c11` quits or the machine reboots, every workspace returns to the shape it had, with agents (`cc`, `codex`, `opencode`) resumed inside their prior context instead of starting fresh shells.
+2. **Declarative workspaces.** Operators or agents can hand-author a workspace layout in markdown (a *Blueprint*), check it into a repo, and spawn it with `c11 workspace new --blueprint <path>`. Layouts become shareable artifacts.
 
-## Prior art
+Both routes compile to the same app-side primitive (`WorkspaceApplyPlan`) executed in one transaction.
 
-Third-party `sanghun0724/cmux-claude-skills` ships `cmux-snapshot` / `cmux-restore` Python scripts (~450 LOC). We're not adopting them directly. Three fragilities to avoid:
+## Why this shape
 
-1. Reads c11's private session file (`~/Library/Application Support/cmux/...json`) — undocumented, drift-prone. We use `cmux tree --all --json`.
-2. Detects Claude surfaces by spinner chars (`✳⠂⠐`) in the title. We use the manifest (`terminal_type == claude-code`).
-3. Matches session IDs via fuzzy title scoring over `~/.claude/projects/*/sessions-index.json`. We use a SessionStart hook that writes the ID directly to the surface manifest.
+### The dogfood finding (2026-04-21)
 
-Their idea is right; the implementation is heuristic-heavy. Ours is manifest-driven.
+A dogfood run composed five custom workspaces by chaining CLI calls: `new-workspace`, then per pane `new-surface` / `set-title` / `set-description` / repeated `set-metadata` / `notify`, then follow-up `tree` calls to rediscover refs. The layout work itself was fast. The composition was slow and flaky — many process launches, many socket round-trips, many race windows while AppKit/SwiftUI was still attaching panes. One transient stall in a v1 handler (`notify_target`) stalled the whole batch.
 
-## Principle check
+The fix is structural: **the caller describes the end state; the app materializes it in one pass.** Shell choreography is the failure mode.
 
-Fits **"unopinionated about the terminal"** as sharpened on 2026-04-20:
+### Claude session resume exists but isn't used
 
-- Reads only c11's own data (`cmux tree`, manifests) and writes only to its own data dir (`~/.cmux-snapshots/`).
-- The only outbound action is `cmux send "cc --resume <id>\n"` — indistinguishable from sending any other string into a terminal. No touching `~/.claude/settings.json`, no hook installation.
-- The SessionStart hook that writes `claude.session_id` is **operator-installed, skill-documented**. c11 does not install the hook. Matches the "skill-driven self-reporting is the standard pattern" rule.
+`claude --resume <id>` rehydrates full history. Nobody uses it because nobody tracks the ids. c11 already captures the id on every `cc` launch (the grandfathered `Resources/bin/claude` wrapper mints `--session-id <uuid>`; `c11 claude-hook session-start` persists it). We just need to route it through restart.
+
+### Tier 1 persistence is already shipped
+
+`Sources/SessionPersistence.swift` auto-saves an `AppSessionSnapshot` every 8s to `~/Library/Application Support/c11mux/session-<bundleId>.json`. Layouts, metadata, status pills, scrollback all round-trip today. What's missing is the agent resume step on restart.
+
+## Principle check (unchanged from prior revision)
+
+- **Unopinionated about the terminal.** Writes only to c11-scoped paths: `~/.cmux-snapshots/` (Snapshots), `.cmux/blueprints/` + `~/.config/cmux/blueprints/` (Blueprints). Does not write to `~/.claude/settings.json`, `~/.codex/*`, or shell rc files.
+- **Observe-from-outside session capture.** The Claude SessionStart hook is **operator-installed**, documented in the `c11` skill. c11 does not install it. `Resources/bin/claude` is a grandfathered exception, not a pattern to extend.
+- **Automation as first-class consumer.** Bounded, inspectable, structured, fast.
 
 ## Verified preconditions
 
-- **`cc --resume <id>` works.** `cc` is a shell alias expanding to `claude --model opus --dangerously-skip-permissions`; extra flags pass straight through. `claude -r, --resume [value]` takes an optional session ID.
-- **SessionStart hook receives `session_id` on stdin JSON** (along with `source`, `cwd`, `model`). Mechanism confirmed via Claude Code hooks docs.
-- **`terminal_type` is already being written to the surface manifest** for live Claude sessions inside c11. Half the plumbing exists today.
+- `cc --resume <id>` works (cc is a shell alias; flags pass through).
+- `claude` SessionStart hook receives `session_id` on stdin JSON (`source`, `cwd`, `model` also).
+- `terminal_type = claude-code` is already written to surface manifests (`SurfaceMetadataStore`).
+- Tier 1 layout persistence already round-trips workspaces, panes, split tree, titles, metadata, status pills, git state, and (truncated) scrollback.
 
 ## Architecture
 
-### New `cmux` subcommands
+### Core primitive: `WorkspaceApplyPlan`
 
-```
-cmux snapshot [name]             # default: "latest"
-cmux restore  [name]             # default: "latest"
-cmux list-snapshots
-```
+A declarative value type describing the end state of a workspace.
 
-Scope is **single workspace by default** (the caller's). Flags:
+```swift
+struct WorkspaceApplyPlan: Codable {
+    var workspace: WorkspaceSpec
+    var layout: LayoutTreeSpec            // nested split tree
+    var surfaces: [SurfaceSpec]           // referenced from LayoutTreeSpec via SurfaceSpec.id
+}
 
-- `--workspace <ref>` — snapshot a different workspace.
-- `--all` — snapshot every workspace in every window. Heavy; explicit opt-in.
-- `--out <path>` — override default snapshot directory.
+struct WorkspaceSpec: Codable {
+    var title: String?
+    var cwd: String?
+    var customColor: String?
+    var metadata: [String: JSONValue]
+}
 
-### Snapshot JSON schema (v1)
+indirect enum LayoutTreeSpec: Codable {
+    case pane(PaneSpec)
+    case split(SplitSpec)
+}
 
-`cmux tree --json` flattens panes into an array; each pane carries a `split_path` breadcrumb (e.g. `["H:left", "H:left"]`) plus pixel/percent rects. **No nested split tree.** The snapshot mirrors this shape:
+struct PaneSpec: Codable {
+    var id: String                         // plan-local id
+    var surface_ids: [String]              // tab order inside the pane
+    var selected_surface: String?
+    var metadata: [String: JSONValue]      // pane-level metadata
+}
 
-```json
-{
-  "version": 1,
-  "captured_at": "2026-04-20T14:30:00Z",
-  "name": "morning-work",
-  "workspaces": [
-    {
-      "title": "cmux-41",
-      "cwd": "/Users/atin/Projects/Stage11/code/cmux",
-      "content_area": { "pixels": { "width": 2808, "height": 1629 } },
-      "panes": [
-        {
-          "ref_at_capture": "pane:7",
-          "split_path": ["H:left", "H:left"],
-          "percent": { "H": [0, 0.275], "V": [0, 1] },
-          "surfaces": [
-            {
-              "type": "terminal",
-              "index_in_pane": 0,
-              "title": "Claude :: CMUX-41 impl",
-              "description": "Implementing snapshot/restore...",
-              "cwd": "/Users/atin/Projects/Stage11/code/cmux",
-              "terminal_type": "claude-code",
-              "model": "claude-opus-4-7",
-              "manifest": { "claude.session_id": "abc123...", ... }
-            }
-          ]
-        }
-      ]
-    }
-  ]
+struct SplitSpec: Codable {
+    var orientation: SplitOrientation      // horizontal | vertical
+    var divider_position: Double           // 0.0–1.0
+    var first: LayoutTreeSpec
+    var second: LayoutTreeSpec
+}
+
+struct SurfaceSpec: Codable {
+    var id: String                         // plan-local id
+    var type: SurfaceType                  // terminal | browser | markdown
+    var title: String?
+    var description: String?
+    var cwd: String?
+    var command: String?                   // terminal: initial command sent after shell is ready
+    var url: String?                       // browser
+    var file: String?                      // markdown
+    var metadata: [String: JSONValue]      // surface metadata (incl. restart-registry keys like agent.claude.session_id)
 }
 ```
 
-- `split_path` drives reconstruction. `H:left` / `H:right` = horizontal split, take left/right child. `V:top` / `V:bottom` = vertical split.
-- `percent` is captured for post-rebuild `resize-pane` correction.
-- `manifest` is fetched per-surface via `cmux get-metadata --surface <ref>` at snapshot time (not present in `cmux tree` output).
-- `ref_at_capture` is informational only — refs are regenerated on restore.
+**Relationship to existing types.** `LayoutTreeSpec` is the same shape as `SessionWorkspaceLayoutSnapshot` in `Sources/SessionPersistence.swift:360-428`. We keep them as separate types (different roles: snapshot state vs. apply plan) but the conversion is a mechanical map. A single helper on `TabManager` builds a `WorkspaceApplyPlan` from the live state of a workspace; Snapshot = persisted `WorkspaceApplyPlan` on disk.
 
-### Known-type restart registry
+### Executor: `WorkspaceLayoutExecutor`
 
-A small table inside the `cmux restore` implementation decides what command to send per `terminal_type`:
+New file: `Sources/WorkspaceLayoutExecutor.swift`.
 
-| terminal_type | With session ID                  | Without           |
-|---------------|----------------------------------|-------------------|
-| `claude-code` | `cc --resume <claude.session_id>` | `cc`              |
-| `codex`       | (TBD — pending codex resume API) | `codex`           |
-| `kimi`        | (TBD)                            | `kimi`            |
-| *unknown*     | —                                | leave empty       |
+```swift
+@MainActor
+enum WorkspaceLayoutExecutor {
+    static func apply(
+        _ plan: WorkspaceApplyPlan,
+        to tabManager: TabManager,
+        options: ApplyOptions
+    ) async -> ApplyResult
+}
 
-Extensible: new agent types add a row. No c11-side code change needed to **capture** a new agent's session ID — the manifest is free-form. Code change needed only to **restore** it.
+struct ApplyOptions {
+    var waitForReadiness: ReadinessLevel   // created | attached | rendered | ready
+    var deadline: Duration                 // bounded wait (ties in with C11-7)
+    var debugTimings: Bool
+}
 
-### The SessionStart hook (skill-side, opt-in)
-
-Operator installs this in `~/.claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "SessionStart": [{
-      "hooks": [{
-        "type": "command",
-        "command": "[ \"$CMUX_SHELL_INTEGRATION\" = \"1\" ] && jq -r '.session_id' | xargs -I{} cmux set-metadata --key claude.session_id --value {} 2>/dev/null || true"
-      }]
-    }]
-  }
+struct ApplyResult {
+    var workspace_ref: WorkspaceRef
+    var pane_refs: [String: PaneRef]       // plan-local id -> live ref
+    var surface_refs: [String: SurfaceRef] // plan-local id -> live ref
+    var timings: [StepTiming]
+    var warnings: [String]
+    var partial_failure: PartialFailure?   // which step failed + what was created up to that point
 }
 ```
 
-- Fires on every session boot (`source` = `startup | resume | clear | compact`).
-- Reads `session_id` from Claude Code's stdin JSON payload.
-- `CMUX_SURFACE_ID` is inherited from the parent c11 shell, so `cmux set-metadata` without flags targets the right surface.
-- `|| true` — hook failures never break sessions.
-- The `$CMUX_SHELL_INTEGRATION` guard makes it a no-op outside c11.
+Execution order:
 
-Documented in the `cmux` skill under a new "Session resume" section.
+1. **Allocate workspace.** `tabManager.addWorkspace(workingDirectory:initialTerminalCommand:...)` from `Sources/TabManager.swift:1138`. `initialTerminalCommand` stays nil here — commands flow through `SurfaceSpec.command`.
+2. **Build layout tree.** Walk `LayoutTreeSpec` depth-first. For a `.pane`, the current root panel is it. For a `.split`, call `workspace.newTerminalSplit`/`newBrowserSplit`/`newMarkdownSplit` (or a generalized internal split operation) to subdivide. The workspace starts with a single pane; we use it as the left/top of the first split, recurse on right/bottom.
+3. **Create surfaces per pane.** For each pane, apply the first surface to the existing panel's surface, then add extras as new tabs inside the pane. `Workspace.swift` has the machinery; we thread through it without going out to a socket.
+4. **Write metadata at creation time.** `SurfaceMetadataStore.shared.set(workspaceId:surfaceId:...)` and `PaneMetadataStore.shared.set(...)` directly — no round-trip through `c11 set-metadata`. Title/description use their existing typed setters so the store's revision bump + autosave hash update fires correctly (`SessionPersistence.swift:2789+`).
+5. **Dispatch restart commands.** For each terminal surface with `metadata["agent.claude.session_id"]`, send `cc --resume <id>\n` via the existing terminal-write path *after* the shell reports ready. Fallback table:
 
-## Restore algorithm
+   ```
+   claude-code + session_id    -> cc --resume <id>
+   claude-code                 -> cc
+   codex + session_id          -> codex resume <id>
+   codex                       -> codex resume --last
+   opencode + session_id       -> opencode -s <id>
+   opencode                    -> opencode -c
+   (unknown)                   -> SurfaceSpec.command, if any
+   ```
 
-### Tree reconstruction from split_path breadcrumbs
+   JSONL-missing check: if `~/.claude/projects/<cwd-slug>/<id>.jsonl` doesn't exist, fall back to fresh `cc` and record a warning.
+6. **Return `ApplyResult`** with per-step timings and all refs. Partial failure returns which step failed and which refs were created up to that point.
 
-Given a flat list of panes with paths like `["H:left", "H:left"]`, `["H:left", "H:right"]`, `["H:right"]`:
+### Socket + CLI surface
+
+New v2 socket method in `Sources/TerminalController.swift` (add near the `v2WorkspaceCreate` handler at ~line 2065):
 
 ```
-build_tree(panes):
-    root = {}
-    for p in panes:
-        node = root
-        for segment in p.split_path:
-            kind, side = segment.split(":")   # "H", "left"
-            node.setdefault("kind", kind)
-            child_key = side                  # "left"|"right"|"top"|"bottom"
-            node = node.setdefault(child_key, {})
-        node["leaf"] = p
-    return root
-
-restore_tree(node, ws_ref, parent_pane_ref, parent_surf_ref):
-    if "leaf" in node:
-        configure(parent_surf_ref, node["leaf"].surfaces[0])
-        for extra in node["leaf"].surfaces[1:]:
-            new_surf = cmux new-surface --pane parent_pane_ref
-            configure(new_surf, extra)
-        return
-
-    direction = "right" if node["kind"] == "H" else "down"
-    first_key, second_key = ("left","right") if node["kind"]=="H" else ("top","bottom")
-
-    before = list-panes(ws_ref)
-    cmux new-split direction --surface parent_surf_ref
-    after = list-panes(ws_ref)
-    new_pane = (after - before).single()
-    new_surf = first_surface_of(new_pane)
-
-    restore_tree(node[first_key],  ws_ref, parent_pane_ref, parent_surf_ref)
-    restore_tree(node[second_key], ws_ref, new_pane,        new_surf)
-
-configure(surf_ref, surface_data):
-    cmux set-metadata --surface surf_ref --json <manifest>
-    cmux set-title       --surface surf_ref <title>
-    cmux set-description --surface surf_ref <description>
-    cmux send --surface surf_ref "cd <cwd>\n"
-    cmd = restart_command(terminal_type, manifest)
-    if cmd: cmux send --surface surf_ref "<cmd>\n"
+workspace.apply(plan: WorkspaceApplyPlan, options: ApplyOptions)
+  -> { workspace_ref, pane_refs, surface_refs, timings, warnings, partial_failure? }
 ```
 
-After full rebuild, walk the pane list once more and `resize-pane` any pane whose actual `percent` rect diverges from the snapshot by more than ~2%.
+New CLI commands (`CLI/c11.swift`):
+
+```
+c11 workspace apply --file <path>                     # Phase 0 debug surface
+c11 workspace new --blueprint <path>                  # Phase 2
+c11 workspace export-blueprint --workspace <ref> --out <path>   # Phase 2
+c11 snapshot [--workspace <ref> | --all]              # Phase 1
+c11 restore <snapshot-id-or-path>                     # Phase 1
+c11 list-snapshots                                    # Phase 1
+```
+
+CLI sends one structured request. The app handles creation, lifecycle waiting, metadata, and ref assignment internally. **CLI never loops over low-level primitives.**
+
+### Snapshots
+
+Snapshot writer (`c11 snapshot`):
+
+- Walks live workspaces (single or `--all`) via `TabManager` state.
+- Calls `WorkspaceApplyPlan.capture(from: workspace)` — a helper that converts live state into a plan, reading `SurfaceMetadataStore` / `PaneMetadataStore` for sidecars and splitting the live bonsplit tree into `LayoutTreeSpec`.
+- Embeds `agent.claude.session_id` (and future `agent.codex.session_id` / `agent.opencode.session_id`) into `SurfaceSpec.metadata`.
+- Writes JSON to `~/.cmux-snapshots/<name>.json`. Atomic write.
+
+Snapshot reader (`c11 restore <name>`):
+
+- Loads JSON → `WorkspaceApplyPlan` → hands to `WorkspaceLayoutExecutor.apply`.
+- Nothing restore-specific beyond the loader. The restart registry lives in the executor, so Blueprints inherit identical resume semantics.
+
+### Blueprints
+
+Phase 2. Markdown + YAML frontmatter → parser → `WorkspaceApplyPlan`. Example:
+
+```markdown
+---
+name: debug-auth
+description: Auth module debugging layout
+---
+
+## Panes
+- main  | `cc`              | cwd: ~/repo          | claude.session_id: abc123
+- logs  | `tail -f log.txt` | split: right of main
+- tests | `vitest --watch`  | split: below logs
+```
+
+Parser TBD in Phase 2 once Phase 0/1 are shipped and we have a working executor to target.
+
+### Claude session id capture
+
+Today (already shipped): the grandfathered `Resources/bin/claude` wrapper mints `--session-id <uuid>` on every `cc` launch. `c11 claude-hook session-start` (`CLI/c11.swift:2403`, handler at `:12198`) persists `{session_id, cwd, summary}` to `~/.cmuxterm/claude-hook-sessions.json` keyed by `(workspaceId, surfaceId)`.
+
+Phase 1 addition: the same handler also writes `agent.claude.session_id` into `SurfaceMetadataStore.shared`. Then the Tier 1 autosave (which already round-trips that store) carries the id through restart for free. The CLI-backed hook is the observe-from-outside seam — c11 app code does not install hooks in tenant tools.
+
+For codex/opencode, the `c11` skill teaches agents to call `c11 set-metadata --key agent.session_id --value <id>` from their own lifecycle. c11 never installs hooks in their tool directories.
+
+## Restart behavior end-to-end
+
+Boot path on app launch:
+
+1. `AppDelegate` loads `AppSessionSnapshot` from `~/Library/Application Support/c11mux/session-<bundleId>.json` and calls `tabManager.restoreSessionSnapshot` (`Sources/TabManager.swift:5173`). Layout, metadata, status pills, scrollback come back (as today).
+2. **New in Phase 1:** after each workspace is reconstructed, the restore path iterates surfaces, reads `agent.*.session_id` from metadata, and dispatches the matching restart command through the restart registry once the shell reports ready.
+3. Warnings (missing JSONL, unknown terminal_type with no command) surface in the sidebar log so the operator sees what didn't resume.
+
+Behind an env flag (`C11_SESSION_RESUME=1`) for one release; on-by-default after.
+
+## Algorithm notes
+
+### Tree reconstruction
+
+The prior revision walked `split_path` breadcrumbs from a flat pane list. With nested `LayoutTreeSpec`, reconstruction is a straight recursive descent — no breadcrumb accounting. The shape matches `SessionWorkspaceLayoutSnapshot` which we already round-trip, so this is well-trodden.
+
+### Divider ratios
+
+`SplitSpec.divider_position` carries the target ratio at 0.0–1.0. After the tree is fully built, walk once and `resize-pane` any split whose actual ratio diverges by more than ~2%. Done in the executor, not as post-hoc CLI calls.
 
 ### Edge cases
 
-- **`new-split` doesn't return the new pane ref.** Use the list-diff trick (documented in the cmux skill).
-- **Split ratios drift.** Apply `resize-pane` corrections after the tree is fully rebuilt, not during recursion.
-- **Session file missing.** If `~/.claude/projects/<key>/<session-id>.jsonl` no longer exists, `cc --resume <id>` fails. Detect by checking the file before sending the command; fall back to `cc` (fresh session) and emit a warning.
-- **Multi-cc in one workspace.** Each surface gets its own restart command dispatched directly — no ready-state polling, so the existing multi-cc gotcha doesn't apply.
-- **Browser / markdown surfaces.** Restore as `cmux new-pane --type browser --url ...` / `--type markdown --file ...`. No session-resume concept, just recreate.
-- **Non-cc agents without a session ID.** Launch the bare binary (`codex`, `kimi`). Fresh session, CWD preserved.
+- **JSONL missing.** Stat `~/.claude/projects/<cwd-slug>/<id>.jsonl` before dispatching `cc --resume`; fall back to fresh `cc` with a sidebar warning.
+- **Multi-cc in one workspace.** Each surface dispatches independently; the executor doesn't wait for one before moving on.
+- **Unknown terminal_type.** No restart command. Respect `SurfaceSpec.command` if present; else leave the shell.
+- **Shell send ordering.** Don't send restart commands until the PTY has reported ready. The executor tracks per-surface readiness, not a global barrier.
+- **User disabled the hook.** Snapshots still round-trip layout + cwd + scrollback; only the cc rehydrate is skipped. Record a warning on restore.
 
 ## Open questions
 
-1. **Surface CWD exposure.** `cmux tree --json` does **not** include per-surface working directory. Options:
-   - (a) Add `working_directory` to `cmux tree` surface output.
-   - (b) Have the SessionStart hook write `$PWD` as `cwd` in the manifest (two `set-metadata` calls, trivial).
-   - (c) Add a small socket command `cmux get-cwd --surface <ref>`.
-   
-   Lean: **(b)**. Keeps c11's surface of concern narrow; operator-controlled via the same hook that's already opt-in.
+1. **`WorkspaceLayoutExecutor` vs extending `TabManager`.** The executor is a separate file for testability and to keep `TabManager` focused. Lean: separate. Revisit if the executor ends up mostly calling `TabManager` private helpers — in that case merge it in.
+2. **Readiness model.** `created | attached | rendered | ready` is the proposed four-state model. Phase 0 can ship with just `created | ready` if we don't yet need the middle states; expand later when the executor is wired into welcome quad and the intermediate states start mattering.
+3. **Blueprint vs snapshot capture format divergence.** Phase 2 decides: do Blueprints author-facing omit fields that Snapshots carry (e.g. exact window pixel sizes)? Lean yes — Blueprints are abstract, Snapshots are exact. Both serialize to `WorkspaceApplyPlan` but the blueprint parser fills in defaults for omitted fields.
+4. **Auto-snapshot cadence.** Tier 1 autosave covers 8s cadence for layout/metadata. A separate `~/.cmux-snapshots/` auto-cadence (e.g. daily) is deferred — operators can cron a manual `c11 snapshot` for now.
 
-2. **Pane-layer manifests.** The pane layer carries its own metadata (CMUX-11). Snapshot schema should include `pane.manifest` per pane entry for symmetry. Add in Phase 1.
+## Phased rollout
 
-3. **Snapshot versioning.** Start with `version: 1`. First schema change gets a migration function in `cmux restore`.
+### Phase 0 — executor + v2 method (no user-facing feature yet)
 
-4. **Auto-snapshot cadence.** Periodic snapshots via c11 itself? Probably not — that's operator policy, best done via a cron or a `Stop` hook the operator installs.
+**Scope.** Land the primitive and prove it works. No Blueprints, no Snapshots, no restart registry.
 
-## Implementation phases
+**Deliverables.**
+- New types in a new file `Sources/WorkspaceApplyPlan.swift` (or appended to `SessionPersistence.swift` if the team prefers colocating snapshot-adjacent types).
+- New file `Sources/WorkspaceLayoutExecutor.swift` with `apply(plan:to:options:) async -> ApplyResult`.
+- v2 socket method `workspace.apply` wired in `Sources/TerminalController.swift` near the existing `v2WorkspaceCreate` handler (~line 2065). Runs off-main per socket threading policy; only the executor's AppKit mutations hop to main.
+- CLI: `c11 workspace apply --file <path>` debug command.
+- Re-express `WelcomeSettings.performQuadLayout` (`Sources/c11App.swift:3932-3995`) through the executor — proves general applicability. Keep a feature flag to revert if regressions appear.
+- Unit test: plan in → expected workspace shape out.
+- Regression fixture: build a 5-workspace mixed fixture as a test (terminal + browser + markdown + titles + descriptions + metadata). Target ~2s on a dev machine. Rides on C11-7's stress fixture.
 
-**Phase 1 — primitives.** `cmux snapshot`, `cmux restore`, `cmux list-snapshots` subcommands. Terminal-only surfaces. Claude resume via session ID. Single workspace. Resolve open question (1) by going with option (b).
+**Exit criteria.** Executor materializes arbitrary mixed workspaces in one app-side pass. Welcome quad flows through the executor with no behavior change.
 
-**Phase 2 — full surface coverage.** Browser and markdown surfaces. `--all` flag for multi-workspace snapshots.
+### Phase 1 — Snapshots + `cc --resume` restart registry
 
-**Phase 3 — skill docs + hook.** Add "Session resume" section to `~/.claude/skills/cmux/SKILL.md` with the SessionStart hook snippet (both `claude.session_id` and `cwd`). Update `references/metadata.md` to document `claude.session_id` as a non-canonical convention.
+**Scope.** `c11 snapshot`, `c11 restore`, `c11 list-snapshots`. Terminal surfaces. Claude session resume.
 
-**Phase 4 — resume registry.** Add codex / kimi / opencode rows when their resume APIs stabilize. Driven by user demand.
+**Deliverables.**
+- `WorkspaceApplyPlan.capture(from:)` — walks live workspace state to build a plan.
+- CLI: `c11 snapshot`, `c11 restore`, `c11 list-snapshots`.
+- Restart registry inside the executor (cc-only in this phase).
+- Claude hook handler (`CLI/c11.swift:12198+`) writes `agent.claude.session_id` into `SurfaceMetadataStore`.
+- Boot-time restore path in `AppDelegate`/`TabManager` dispatches restart commands.
+- JSONL-missing fallback + sidebar warning.
+- Env-flag opt-in (`C11_SESSION_RESUME=1`).
 
-## Related tickets
+**Exit criteria.** Restart c11 → all `cc` panels come back with history rehydrated.
 
-- **CMUX-4** — Claude session index (opt-in). Overlaps; this plan supersedes the "manual index" idea with a SessionStart-hook-driven manifest write.
-- **CMUX-5** — Recovery UI. Natural follow-on: surface snapshots in a picker instead of requiring CLI invocation.
-- **CMUX-11** — Nameable panes + pane metadata. Snapshot schema should preserve pane-layer metadata.
-- **CMUX-14** — Lineage primitive on the surface manifest. Restore preserves `::` chains verbatim via the manifest blob.
+### Phase 2 — Blueprints + picker + exporter
+
+- Blueprint markdown schema + parser.
+- `c11 workspace new --blueprint <path>`.
+- New-workspace picker (per-repo → per-user → built-in, recency-sorted).
+- `c11 workspace export-blueprint --workspace <ref> --out <path>`.
+
+### Phase 3 — browser/markdown surfaces + `--all`
+
+- Extend Snapshot capture + restore to non-terminal surfaces.
+- Extend Blueprint schema to cover browser/markdown.
+- `c11 snapshot --all`.
+
+### Phase 4 — skill docs + hook snippet
+
+- "Session resume" section in `~/.claude/skills/c11/SKILL.md` (or the checked-in version).
+- Document `agent.*.session_id` metadata convention.
+- Document the operator-install SessionStart hook snippet.
+
+### Phase 5 — codex / kimi / opencode registry rows
+
+- Restart commands per agent type.
+- Agents self-report via `c11 set-metadata` from the skill.
+
+## Insertion-point map (for implementation)
+
+| Concern | File | Notes |
+|---|---|---|
+| Welcome quad | `Sources/c11App.swift:3932-3995` | `WelcomeSettings.performQuadLayout` — Phase 0 re-expresses through executor |
+| Workspace allocator | `Sources/TabManager.swift:1138` | `addWorkspace(workingDirectory:initialTerminalCommand:...)` |
+| Split creation | `Sources/Workspace.swift` | `newTerminalSplit`, `newBrowserSplit`, `newMarkdownSplit` |
+| Surface metadata | `Sources/SurfaceMetadataStore.swift:63` | Direct writes from executor; revision bump drives autosave |
+| Pane metadata | `Sources/PaneMetadataStore.swift:22` | Symmetric with surface |
+| v2 socket routing | `Sources/TerminalController.swift:~2065` | Add `workspace.apply` near `v2WorkspaceCreate` |
+| v1 legacy | `Sources/TerminalController.swift:1683-1685, 13516-13526` | `DispatchQueue.main.sync` path — C11-7 audits these |
+| Session persistence (today) | `Sources/SessionPersistence.swift:360-428, 462+` | `SessionWorkspaceLayoutSnapshot`, `AppSessionSnapshot` — related shape |
+| Autosave trigger | `Sources/AppDelegate.swift:3414-3462` | 8s tick; `saveSessionSnapshot` |
+| Restore on launch | `Sources/TabManager.swift:5173` | `restoreSessionSnapshot(_:)` — Phase 1 dispatches restart commands after |
+| Scrollback replay | `Sources/SessionPersistence.swift:534` | `SessionScrollbackReplayStore`, `CMUX_RESTORE_SCROLLBACK_FILE` |
+| Claude hook CLI | `CLI/c11.swift:2403-2410` | `c11 claude-hook session-start` entry |
+| Claude hook handler | `CLI/c11.swift:12198-12237` | Phase 1 adds `SurfaceMetadataStore` write here |
+| Grandfathered wrapper | `Resources/bin/claude` | Already mints `--session-id <uuid>`. Don't generalize. |
+
+## Acceptance criteria
+
+- One `workspace.apply` call materializes a 5-workspace mixed fixture (terminal + browser + markdown + metadata + titles + descriptions) in ~2s on a dev machine, or fails fast with a named timeout.
+- Executor returns per-step timings in debug output.
+- Every readiness wait is bounded and named in the error.
+- Welcome quad uses the executor with no visible behavior change.
+- Phase 1: restart → all `cc` panels rehydrate their session; missing JSONL triggers fallback + warning, not a broken terminal.
+- No `workspace.apply` or restart-registry code shells out through the socket to an existing CLI command.
+
+## Dependencies (C11-7)
+
+CMUX-37 depends on but does not absorb:
+
+- Bounded CLI waits by default.
+- Named timeout errors (method + refs + socket path + elapsed).
+- `C11_TRACE=1` per-command start/end/timing.
+- `c11 notify` migrated to v2.
+- Audit of risky `DispatchQueue.main.sync` socket handlers.
+- Deadline-aware main-actor bridge.
+
+Start Phase 0 of CMUX-37 after C11-7 has landed bounded waits and v2 `notify`; the rest of C11-7 can run parallel.
+
+## Supersedes / preserves
+
+- Supersedes **CMUX-4** (manual Claude session index) — hook-driven metadata write replaces discovery/disambiguation logic.
+- Supersedes **CMUX-5** (recovery UI banner) — new-workspace picker + restart registry.
+- Preserves **CMUX-11** pane manifests and **CMUX-14** lineage chains verbatim via the metadata pass-through.
+
+## Prior art
+
+- `sanghun0724/cmux-claude-skills` — private session JSON + spinner-char detection + fuzzy ID matching. Right idea, heuristic-heavy implementation. We use the public manifest.
+- `drolosoft/cmux-resurrect` (crex) — community save/restore for upstream `manaflow-ai/cmux`, adjacent design (Markdown blueprints + watch daemon + template gallery). Inspired the Blueprint/Snapshot split. c11 keeps the primitive narrower; templates/REPL/daemon stay ecosystem territory.

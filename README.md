@@ -120,6 +120,8 @@ shoutout to cmux and manaflow-ai for this feature — they built it, we brought 
 
 ## advanced mode: an open metadata comm layer for agents.
 
+*a note before the wiring.* this section is not required reading. splits, surfaces, workspaces, the browser, tab names, sidebar status — that is c11 for the typical user, and it is complete on its own. what follows is plumbing for the operator already deep in: multiple complex workspaces in parallel, agents beginning to orchestrate other agents, the meta-layer hyperengineers build *on top of* c11 after the substrate has become second nature. if that is not where you are yet, skip it. come back when the substrate feels too small.
+
 every surface carries a **surface manifest**, an open JSON blob any agent can read and write over the socket. c11 renders a small canonical subset in the UI (title, description, status, progress, role, model). the rest of the key space is open.
 
 this matters because the interesting workflows have not been designed yet. meta-orchestrators routing work based on progress ratios across siblings. review swarms passing findings through shared keys. supervisor agents watching a stats blob and intervening. whatever higher-order patterns hyperengineers and agents invent next — c11 is a beautiful primitive layer, and we are excited to see the meta orchestration structures that will take advantage of this feature.

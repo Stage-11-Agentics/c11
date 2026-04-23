@@ -1,0 +1,32 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": null,
+  "created_at": "2026-04-22T20:32:24Z",
+  "created_by": "human:atin",
+  "custom_fields": {},
+  "description": "**Status: DO NOT START.** Filed for future consideration only.\n\n## Shape (if revived)\n\nThinner Linux companion app with agent-driven feature parity. Mac stays the flagship; Linux is a second shell speaking the same socket protocol.\n\n- **Shell:** GTK4. Ghostty already ships a GTK4 embed on Linux \u2014 the terminal surface comes essentially for free. WebKitGTK covers the browser and markdown surfaces.\n- **Socket + CLI:** same protocol, same `c11` CLI, same command names. Agents call `c11 split` identically on either OS.\n- **Operator profile:** Linux user running c11 on their own desktop (needs UI). Remote-viewer-of-Mac-host is a different discussion and explicitly out of scope for this ticket.\n\n## What ports cleanly\n- Ghostty terminal surfaces (GTK4 embed already exists)\n- The `c11` CLI (thin socket client)\n- The skill, the surface model, addressable handles, agent telemetry\n- Markdown + browser surfaces via WebKitGTK\n\n## What gets flattened or cut in v1\n- Bonsplit-derived tab chrome \u2192 GTK equivalent\n- Custom UTType drag-and-drop \u2192 GTK D&D model\n- Menu bar extra \u2192 cut or GTK approximation\n- AppKit portal trick for terminal find overlay \u2192 cut, replace with SwiftUI-free layering\n\n## Load-bearing prerequisite (the actual reason this is locked)\n\nSocket command handlers currently live inside the Mac app (Swift + AppKit). For a Linux companion not to become a maintenance nightmare, those handlers must first be extracted into a platform-agnostic layer \u2014 pure-Swift-on-Linux or a Rust core both shells link against. Otherwise every new command gets implemented twice and drifts.\n\n**That extraction is a significant Mac-side refactor** that would churn the Mac codebase while it lands. Mac is currently stable and shipping; the cost/benefit doesn't pencil out until there's real Linux demand.\n\n## Do not start without\n\n1. Real Linux operator demand from someone running agent fleets.\n2. Explicit willingness to pay the Mac-side refactor cost first.\n3. Explicit reversal of the do-not-start flag by the operator.\n\n## Context\nScoped in conversation on 2026-04-22. Option B (thinner Linux companion) chosen over (A) cross-platform rewrite or (C) don't port. Filed immediately as do-not-start to preserve the thinking without committing engineering.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KPVE9PWRX4FZ4PRW8959FQW7",
+  "last_event_id": "ev_01KPVE9PWSTW3SXVX13YNRXNGD",
+  "last_status_changed_at": "2026-04-22T20:32:24Z",
+  "linked_files": [],
+  "priority": "low",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-11",
+  "status": "backlog",
+  "tags": [
+    "linux",
+    "platform",
+    "do-not-start",
+    "future"
+  ],
+  "title": "Linux companion app (GTK4, agent-driven feature parity)",
+  "type": "spike",
+  "updated_at": "2026-04-22T20:32:24Z",
+  "urgency": null
+}

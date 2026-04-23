@@ -601,6 +601,10 @@ struct AgentSkillsOnboardingSheet: View {
         detectedRows.contains { $0.needsInstallOrUpdate }
     }
 
+    private var anyRowInstalled: Bool {
+        detectedRows.contains { $0.anyInstalled }
+    }
+
     private var primaryActionDisabled: Bool {
         detectedRows.isEmpty || (hasActionNeeded && !anySelected)
     }
@@ -627,7 +631,7 @@ struct AgentSkillsOnboardingSheet: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(String(localized: "agentSkills.onboarding.title", defaultValue: "Your agent doesn't know c11 yet."))
+            Text(headerTitle)
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(BrandColors.whiteSwiftUI)
 
@@ -637,6 +641,19 @@ struct AgentSkillsOnboardingSheet: View {
                 .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.76))
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private var headerTitle: String {
+        if anyRowInstalled {
+            return String(
+                localized: "agentSkills.onboarding.title.known",
+                defaultValue: "Your agent already knows c11."
+            )
+        }
+        return String(
+            localized: "agentSkills.onboarding.title",
+            defaultValue: "Your agent doesn't know c11 yet."
+        )
     }
 
     private var headerBody: String {
@@ -770,12 +787,18 @@ struct AgentSkillsOnboardingSheet: View {
                 .fill(BrandColors.ruleSwiftUI.opacity(0.8))
                 .frame(height: 1)
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text(String(localized: "agentSkills.onboarding.learnMoreTitle", defaultValue: "What gets installed"))
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.62))
 
-                Text(String(localized: "agentSkills.onboarding.transparency", defaultValue: "Built to be inspectable. The skill is plain text — read it in Finder, or hand it to a model for review. c11 won't touch your agent configuration without your permission."))
+                Text(String(localized: "agentSkills.onboarding.transparency", defaultValue: "Built to be inspectable. The skill is plain text — open it in Finder to read exactly what your agent will learn, or install it yourself in any agent that supports the SKILL.md standard."))
+                    .font(.system(size: 12))
+                    .lineSpacing(2)
+                    .foregroundColor(BrandColors.whiteSwiftUI.opacity(0.66))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(String(localized: "agentSkills.onboarding.permission", defaultValue: "c11 won't touch your agent configuration without your permission."))
                     .font(.system(size: 12))
                     .lineSpacing(2)
                     .foregroundColor(BrandColors.whiteSwiftUI.opacity(0.66))

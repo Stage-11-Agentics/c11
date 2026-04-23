@@ -2352,6 +2352,53 @@
         }
       }
     },
+    "agentSkills.onboarding.title.known": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your agent already knows c11."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントはすでに c11 を知っています。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ваш агент уже знає c11."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트는 이미 c11을 알고 있어요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的代理已经认识 c11。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的代理已經認識 c11。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ваш агент уже знает c11."
+          }
+        }
+      }
+    },
     "agentSkills.onboarding.updateAvailable": {
       "extractionState": "manual",
       "localizations": {
@@ -2405,43 +2452,90 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Built to be inspectable. The skill is plain text — read it in Finder, or hand it to a model for review. c11 won't touch your agent configuration without your permission."
+            "value": "Built to be inspectable. The skill is plain text — open it in Finder to read exactly what your agent will learn, or install it yourself in any agent that supports the SKILL.md standard."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "検証できるように作られています。スキルはプレーンテキスト — Finder で読むか、モデルに渡してレビューしてもらえます。c11 は、あなたの許可なくエージェント設定に手を加えません。"
+            "value": "検証できるように作られています。スキルはプレーンテキスト — Finder で開けば、エージェントが学ぶ内容をそのまま読めます。SKILL.md 規格に対応するどのエージェントにも、自分で入れることができます。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Створено прозорим. Навичка — звичайний текст: відкрийте у Finder або передайте моделі на перевірку. c11 не зачепить конфігурацію агента без вашого дозволу."
+            "value": "Створено прозорим. Навичка — звичайний текст: відкрийте у Finder і прочитайте саме те, що вивчить ваш агент, або встановіть її самі в будь-якому агенті, що підтримує стандарт SKILL.md."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "검사할 수 있게 만들었어요. 스킬은 일반 텍스트 — Finder에서 열어 읽거나, 모델에 넘겨 검토받으세요. c11은 허락 없이 에이전트 설정에 손대지 않아요."
+            "value": "검사할 수 있게 만들었어요. 스킬은 일반 텍스트 — Finder에서 열어 에이전트가 배울 내용을 그대로 읽을 수 있고, SKILL.md 표준을 지원하는 어떤 에이전트든 직접 설치할 수 있어요."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "为可查验而生。技能是纯文本 — 在 Finder 中阅读,或交给模型审阅。未经你的许可,c11 不会动你的代理配置。"
+            "value": "为可查验而生。技能是纯文本 — 在 Finder 中打开,就能读到代理将要学到的内容,也可以自己把它装进任何支持 SKILL.md 标准的代理。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "為了可檢視而打造。skill 是純文字 — 在 Finder 裡讀,或交給模型審視。未經你允許,c11 不會動你的代理設定。"
+            "value": "為可檢視而打造。skill 是純文字 — 在 Finder 裡打開,就能讀到代理將要學到的內容,也可以自己裝進任何支援 SKILL.md 標準的代理。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Создано прозрачным. Навык — обычный текст: откройте в Finder или передайте модели на проверку. c11 не тронет конфигурацию агента без вашего разрешения."
+            "value": "Создано прозрачным. Навык — обычный текст: откройте в Finder и прочитайте ровно то, чему научится агент, или установите его сами в любой агент, поддерживающий стандарт SKILL.md."
+          }
+        }
+      }
+    },
+    "agentSkills.onboarding.permission": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 won't touch your agent configuration without your permission."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 は、あなたの許可なくエージェント設定に手を加えません。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 не зачепить конфігурацію агента без вашого дозволу."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11은 허락 없이 에이전트 설정에 손대지 않아요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未经你的许可,c11 不会动你的代理配置。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未經你允許,c11 不會動你的代理設定。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 не тронет конфигурацию агента без вашего разрешения."
           }
         }
       }

@@ -16,6 +16,14 @@ Harassment. Personal attacks. Sustained hostility. Doxxing. Sexual attention tha
 
 Public slap-fights in issues and PRs also aren't part of the deal. If a thread has gone sideways, step out of it and bring the matter to the maintainers privately.
 
+## On agent-assisted contributions
+
+c11 is built by humans and their agents — agent-assisted PRs, issues, and reviews are normal here, not suspect. The standard from above is unchanged whether the keystrokes were yours or a model's: read what you submit, understand it, stand behind it.
+
+What isn't welcome is the slop bomb. PRs, issues, or comments the submitter clearly didn't read before sending. Spray-and-pray refactors. Prompt-fresh RFC comments. Bulk auto-generated patches with no human in the loop. They waste maintainer attention, crowd out work that's actually trying, and get closed.
+
+This is a starting stance. We expect to develop sharper norms over time around distinguishing human-written, agent-written, and human-reviewed contributions, and to lean on tooling as it matures. For now: own what you ship.
+
 ## Scope
 
 This applies everywhere c11 happens: issues, pull requests, discussions, the code itself, any chat we run, and any public venue where you're visibly representing c11 (speaking as a maintainer, posting from a project account, etc.). Off-platform behavior toward another contributor can be in scope when it meaningfully affects work here.

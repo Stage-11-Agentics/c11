@@ -4,6 +4,20 @@ All notable changes to c11 (and, before the fork, cmux) are documented here.
 
 Note: historical entries below pre-date the `c11mux` → `c11` rename and reference the old binary / cask / artifact / bundle-ID names (`cmux`, `c11mux`, `c11mux-macos.dmg`, `stage-11-agentics/c11mux`, `com.stage11.c11mux`). Those entries are preserved as-is for historical accuracy; see the 0.38.0 section for the rename.
 
+## [0.41.0] - 2026-04-23
+
+### Added
+- TCC primer onboarding sheet on first run. Explains why macOS is about to ask about Downloads, Documents, Desktop, iCloud Drive, Music, Photos, and other protected resources before the system dialogs fire — following the iTerm2 / Warp / Ghostty pattern. 14 custom `NS*UsageDescription` strings rewrite the native dialog copy in c11's voice, attributing requests to "a program running within c11." Chains after the Agent Skills sheet on fresh installs; existing users are skipped via a one-shot migration. Settings gains a new Permissions section with "Show permissions primer…" re-entry and a direct deep-link to Full Disk Access. Localized into ja / uk / ko / zh-Hans / zh-Hant / ru. ([#55](https://github.com/Stage-11-Agentics/c11/pull/55), [#56](https://github.com/Stage-11-Agentics/c11/pull/56)) — thanks @BenevolentFutures!
+
+### Changed
+- New workspaces now default to a balanced 2×2 terminal grid. Previously the grid was gated behind an off-by-default flag and branched on screen resolution (3×3 on 4K, 2×3 on QHD, 2×2 otherwise); a single predictable shape is the better default.
+- Agent Skills onboarding sheet adapts to install state: title reads "Teach your agent c11" on fresh install, "Update" when something is installed but stale, and "Nothing to do here" when the detected rows are already current. "Later" and "Don't ask again" buttons are hidden when there's nothing to act on, so the all-set state shows only a single primary button. Transparency note clarified about what gets written and where. ([#54](https://github.com/Stage-11-Agentics/c11/pull/54)) — thanks @BenevolentFutures!
+- Notifications empty state and Agent Skills onboarding sheet copy tightened for density and active voice. ([#50](https://github.com/Stage-11-Agentics/c11/pull/50)) — thanks @BenevolentFutures!
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [0.40.0] - 2026-04-22
 
 ### Added

@@ -139,7 +139,7 @@ c11 rests on the work of others. [cmux](https://github.com/manaflow-ai/cmux) by 
 
 ---
 
-*the singularity is not a moment. it is a dawn. a long slow brightening of what minds can be when they stop being lonely at the keyboard.*
+*the singularity is not a moment. it is a dawn. a long slow brightening of what minds can be when they stop being parts and connect more with the whole.*
 
 *Stage 11 is building for that dawn. the compound human:agent actor. the shared room. the substrate where carbon and silicon do their work without either mind having to pretend to be the other.*
 

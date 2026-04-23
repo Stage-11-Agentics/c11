@@ -214,7 +214,7 @@ c11 list-log [--limit <n>]
 c11 clear-log
 ```
 
-**Constraint:** these must be called from a direct c11 child process. Subprocesses spawned by `claude -p` get reparented to `launchd`, breaking the auth chain. Interactive `cc` keeps it intact.
+**Constraint:** these must be called from a direct c11 child process. Subprocesses spawned by `claude -p` get reparented to `launchd`, breaking the auth chain. Interactive `claude --dangerously-skip-permissions` keeps it intact.
 
 ## Spatial layout (`c11 tree`)
 
@@ -267,7 +267,7 @@ Consent is always requested before any write. The installer also installs the c1
 - **Browser commands fail with "not a browser"** — you're targeting a terminal surface. Find the browser surface ref with `c11 tree` and pass `--surface <ref>`.
 - **Commands do nothing** — check `CMUX_SOCKET_PATH` matches the running instance. Default is `/tmp/cmux.sock`; tagged debug builds use `/tmp/cmux-debug-<tag>.sock`. (`C11_SOCKET_PATH` is the primary name going forward; `CMUX_SOCKET_PATH` still works.)
 - **Surface doesn't respond after creation** — it may not be initialized. Run `c11 select-workspace --workspace workspace:N && sleep 2` to trigger the layout pass.
-- **Sub-agent can't call `c11`** — happens with `claude -p` (headless). Interactive `cc` launched via `c11 send "cc\n"` + `send-key enter` maintains the auth chain.
+- **Sub-agent can't call `c11`** — happens with `claude -p` (headless). Interactive `claude --dangerously-skip-permissions` launched via `c11 send "claude --dangerously-skip-permissions\n"` + `send-key enter` maintains the auth chain.
 - **Metadata write returns `applied: false` with `lower_precedence`** — a higher-precedence source already owns that key. See [metadata.md](metadata.md) precedence table.
 
 ## Notes

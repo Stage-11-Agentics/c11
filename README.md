@@ -145,7 +145,7 @@ c11 rests on the work of others. [cmux](https://github.com/manaflow-ai/cmux) by 
 
 *c11 is one piece of that substrate. small. load-bearing. the observability of the agents, their ability to customize the space of the human.*
 
-*we believe in building tooling for the benevolent timeline. come build with us.*
+*we believe in building tooling for the benevolent timeline. [come build with us](https://stage11.ai/build-with-us.html).*
 
 ---
 

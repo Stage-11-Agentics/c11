@@ -76,7 +76,7 @@ struct BrowserSearchOverlay: View {
     var body: some View {
         GeometryReader { geo in
             HStack(spacing: 4) {
-                TextField("Search", text: $searchState.needle)
+                TextField(String(localized: "browser.search.placeholder", defaultValue: "Search"), text: $searchState.needle)
                     .textFieldStyle(.plain)
                     .accessibilityIdentifier("BrowserFindSearchTextField")
                     .frame(width: 180)

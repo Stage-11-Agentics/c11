@@ -52,82 +52,10 @@
             "value": "c11 내에서 실행 중인 프로그램이 마이크를 사용하려고 합니다."
           }
         },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ein in c11 ausgeführtes Programm möchte Ihr Mikrofon verwenden."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Un programa en ejecución dentro de c11 desea usar tu micrófono."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Un programme s'exécutant dans c11 souhaite utiliser votre microphone."
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Un programma in esecuzione in c11 desidera utilizzare il microfono."
-          }
-        },
-        "da": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Et program, der kører i c11, vil gerne bruge din mikrofon."
-          }
-        },
-        "pl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Program działający w c11 chciałby użyć Twojego mikrofonu."
-          }
-        },
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Программа, запущенная в c11, хотела бы использовать ваш микрофон."
-          }
-        },
-        "bs": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Program koji se izvršava unutar c11 želi koristiti vaš mikrofon."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "يرغب برنامج يعمل داخل c11 في استخدام الميكروفون."
-          }
-        },
-        "nb": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Et program som kjører i c11 ønsker å bruke mikrofonen din."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Um programa em execução no c11 gostaria de usar seu microfone."
-          }
-        },
-        "th": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "โปรแกรมที่ทำงานภายใน c11 ต้องการใช้ไมโครโฟนของคุณ"
-          }
-        },
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "c11 içinde çalışan bir program mikrofonunuzu kullanmak istiyor."
           }
         }
       }
@@ -165,82 +93,10 @@
             "value": "여기에 새 c11 작업 공간"
           }
         },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Neuer c11-Arbeitsbereich hier"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nuevo espacio de trabajo de c11 aquí"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nouvel espace de travail c11 ici"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nuova area di lavoro c11 qui"
-          }
-        },
-        "da": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nyt c11-arbejdsområde her"
-          }
-        },
-        "pl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nowa przestrzeń robocza c11 tutaj"
-          }
-        },
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Новое рабочее пространство c11 здесь"
-          }
-        },
-        "bs": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Novi c11 radni prostor ovdje"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "مساحة عمل c11 جديدة هنا"
-          }
-        },
-        "nb": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nytt c11-arbeidsområde her"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nova Área de Trabalho do c11 Aqui"
-          }
-        },
-        "th": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "เวิร์กสเปซ c11 ใหม่ที่นี่"
-          }
-        },
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Buraya Yeni c11 Çalışma Alanı"
           }
         }
       }
@@ -278,82 +134,10 @@
             "value": "여기에 새 c11 윈도우"
           }
         },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Neues c11-Fenster hier"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nueva ventana de c11 aquí"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nouvelle fenêtre c11 ici"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nuova finestra c11 qui"
-          }
-        },
-        "da": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nyt c11-vindue her"
-          }
-        },
-        "pl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nowe okno c11 tutaj"
-          }
-        },
         "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Новое окно c11 здесь"
-          }
-        },
-        "bs": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Novi c11 prozor ovdje"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "نافذة c11 جديدة هنا"
-          }
-        },
-        "nb": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nytt c11-vindu her"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nova Janela do c11 Aqui"
-          }
-        },
-        "th": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "หน้าต่าง c11 ใหม่ที่นี่"
-          }
-        },
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Buraya Yeni c11 Penceresi"
           }
         }
       }

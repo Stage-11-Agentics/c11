@@ -88,11 +88,13 @@ The orchestrator writes the first lineage line when it spawns the child so the c
 
 ## Launching sub-agents in panes
 
-Use **`cc`** (the `--dangerously-skip-permissions` alias) — never bare `claude` or `claude -p`:
+Use **`claude --dangerously-skip-permissions`** — never bare `claude` (stalls on approvals) or `claude -p` (headless, breaks the auth chain):
 
 - **`claude -p` (headless)** breaks the c11 auth chain. The subprocess is reparented to `launchd` and cannot call any `c11` command. Sub-agents lose the ability to self-report.
 - **Plain `claude`** stalls on every tool call waiting for permission approvals nobody answers.
-- **`cc` in an interactive pane** inherits c11 env vars, preserves the auth chain, and skips approvals. Sub-agents can self-report via `c11 set-status`, `c11 log`, `c11 set-progress`, `c11 set-metadata`.
+- **`claude --dangerously-skip-permissions` in an interactive pane** inherits c11 env vars, preserves the auth chain, and skips approvals. Sub-agents can self-report via `c11 set-status`, `c11 log`, `c11 set-progress`, `c11 set-metadata`.
+
+> **`claude` on PATH is the c11 wrapper.** Inside a c11 surface, `claude` resolves to `Resources/bin/claude` — a PATH-scoped wrapper that injects session-id and hook settings so the sidebar gets `claude_code` status. Always invoke `claude --dangerously-skip-permissions` explicitly in anything you send to a pane.
 
 ### Standard launch pattern
 
@@ -101,11 +103,11 @@ Use **`cc`** (the `--dangerously-skip-permissions` alias) — never bare `claude
 c11 new-split right
 # → returns surface:NNN
 
-# 2. Launch cc
-c11 send --workspace $WS --surface $SURF "cc"
+# 2. Launch claude
+c11 send --workspace $WS --surface $SURF "claude --dangerously-skip-permissions"
 c11 send-key --workspace $WS --surface $SURF enter
 
-# 3. Wait for cc to be ready (see polling section), then name the tab with lineage
+# 3. Wait for claude to be ready (see polling section), then name the tab with lineage
 #    (parent first, `::` separator — see Tab naming above)
 c11 rename-tab       --workspace $WS --surface $SURF "Login Button :: Lint Fixes"
 c11 set-description  --workspace $WS --surface $SURF "Lineage: Login Button → Lint Fixes sub-agent.
@@ -139,11 +141,11 @@ c11 send-key --workspace $WS --surface $SURF enter
 
 ## Ready-state handoff
 
-`cc` takes a few seconds to start. Do not `sleep 5` and do not screen-scrape for the prompt glyph. Two patterns solve this depending on whether you need a post-boot conversation or a single-turn handoff.
+`claude` takes a few seconds to start. Do not `sleep 5` and do not screen-scrape for the prompt glyph. Two patterns solve this depending on whether you need a post-boot conversation or a single-turn handoff.
 
-### Preferred — one-shot prompt via cc argv
+### Preferred — one-shot prompt via claude argv
 
-For the common orchestration case ("spawn a fresh-context sub-agent with a complete brief"), pass the initial prompt to `cc` as a positional argument. cc boots and submits the message in one step, so there is no ready-state race to solve:
+For the common orchestration case ("spawn a fresh-context sub-agent with a complete brief"), pass the initial prompt to `claude --dangerously-skip-permissions` as a positional argument. It boots and submits the message in one step, so there is no ready-state race to solve:
 
 ```bash
 # Complex prompt → stage to file (shell escaping in c11 send is brittle)
@@ -151,19 +153,19 @@ cat > /tmp/agent-prompt.md <<'EOF'
 [full prompt here, with backticks / code blocks / etc.]
 EOF
 
-# One-shot launch — cc consumes the short argv instruction, which points it at the file
-c11 send --workspace $WS --surface $SURF "cd /path && cc \"Read /tmp/agent-prompt.md and follow the instructions.\""
+# One-shot launch — claude consumes the short argv instruction, which points it at the file
+c11 send --workspace $WS --surface $SURF "cd /path && claude --dangerously-skip-permissions \"Read /tmp/agent-prompt.md and follow the instructions.\""
 c11 send-key --workspace $WS --surface $SURF enter
 ```
 
-This is the default for orchestrated sub-agents. No polling, no sleep, no screen-scraping. Works regardless of how many other cc surfaces are in the workspace.
+This is the default for orchestrated sub-agents. No polling, no sleep, no screen-scraping. Works regardless of how many other Claude Code surfaces are in the workspace.
 
 ### Fallback — polling the workspace `claude_code` status
 
-When you need cc interactive first (e.g. to send follow-up messages over the course of the session) and can guarantee no sibling cc is running concurrently in the workspace, you can poll the sidebar status that cc's PATH wrapper populates:
+When you need claude interactive first (e.g. to send follow-up messages over the course of the session) and can guarantee no sibling claude is running concurrently in the workspace, you can poll the sidebar status that the c11 claude PATH wrapper populates:
 
 ```bash
-# Wait for cc to reach Idle before sending the prompt
+# Wait for claude to reach Idle before sending the prompt
 until c11 list-status --workspace $WS 2>/dev/null | grep -q '^claude_code=Idle '; do sleep 1; done
 c11 send --workspace $WS --surface $SURF "Read /tmp/prompt.md and follow the instructions."
 c11 send-key --workspace $WS --surface $SURF enter
@@ -171,17 +173,17 @@ c11 send-key --workspace $WS --surface $SURF enter
 
 Supported status values: `Idle` (prompt waiting), `Running` (processing a turn), `Needs input` (permission/dialog), plus opt-in verbose tool descriptions. Values are `TitleCase`. The trailing space in the grep anchors the match to just `Idle`.
 
-> **Critical gotcha — workspace aggregation.** `c11 list-status` is workspace-scoped; `--surface` is silently ignored. The `claude_code=...` row reflects activity across **every** cc surface in the workspace, not the one you're targeting. With two or more cc's running (orchestrator + sub-agent, planner + triage + impl, or any parallel review fan-out), the row never decisively reports `Idle` and the `until` loop deadlocks. Prefer the one-shot pattern above whenever any sibling cc is in flight. This gotcha is a known binary limitation (no surface-scoped agent-status query exists); there is no polling recipe that safely substitutes in the multi-cc case.
+> **Critical gotcha — workspace aggregation.** `c11 list-status` is workspace-scoped; `--surface` is silently ignored. The `claude_code=...` row reflects activity across **every** Claude Code surface in the workspace, not the one you're targeting. With two or more claudes running (orchestrator + sub-agent, planner + triage + impl, or any parallel review fan-out), the row never decisively reports `Idle` and the `until` loop deadlocks. Prefer the one-shot pattern above whenever any sibling claude is in flight. This gotcha is a known binary limitation (no surface-scoped agent-status query exists); there is no polling recipe that safely substitutes in the multi-claude case.
 
 Additional notes on the polling signal:
-- The signal only exists when cc was launched through c11's bundled PATH. A cc / claude invocation that bypasses the PATH wrapper will not emit status. For sub-agents you orchestrate from inside a c11 surface this is almost always fine — the wrapper is the default for `cc` / `claude` in that context.
+- The signal only exists when claude was launched through c11's bundled PATH. A `claude` invocation that bypasses the PATH wrapper will not emit status. For sub-agents you orchestrate from inside a c11 surface this is almost always fine — the wrapper is the default for `claude` in that context.
 - Other TUIs (codex, kimi, opencode, etc.) do **not** get an equivalent wrapper, by design. For those, agents self-report by calling `c11 set-metadata --key status --value idle` / `running` themselves, following instructions in the c11 skill file they load at session start. If an agent hasn't been taught to self-report, you won't see status for them — that's expected.
 
-**Do not** regex for `❯`, `> `, or `Welcome to Claude Code`. Those patterns drift across cc releases and produce silent stalls when they miss (v2.1.114 dropped the box prompt and changed the banner, breaking every previous recipe). Use one-shot argv delivery, or poll the status row when it's safe to do so.
+**Do not** regex for `❯`, `> `, or `Welcome to Claude Code`. Those patterns drift across Claude Code releases and produce silent stalls when they miss (v2.1.114 dropped the box prompt and changed the banner, breaking every previous recipe). Use one-shot argv delivery, or poll the status row when it's safe to do so.
 
-### Why this works only for cc, and why that's okay
+### Why this works only for Claude Code, and why that's okay
 
-The cc PATH wrapper at `Resources/bin/claude` is a **grandfathered, cc-specific concession** — c11 does not write to any TUI's persistent config, and will not install analogous wrappers for codex, kimi, or opencode. The host is deliberately unopinionated about the terminal: c11 provides the surface, the socket, and the skill file; what an agent does with them is the agent's business. For every TUI except cc, the skill-driven self-reporting path above is how status gets populated — there is no installer, no config-writing, no hook injection performed by c11.
+The claude PATH wrapper at `Resources/bin/claude` is a **grandfathered, Claude Code-specific concession** — c11 does not write to any TUI's persistent config, and will not install analogous wrappers for codex, kimi, or opencode. The host is deliberately unopinionated about the terminal: c11 provides the surface, the socket, and the skill file; what an agent does with them is the agent's business. For every TUI except Claude Code, the skill-driven self-reporting path above is how status gets populated — there is no installer, no config-writing, no hook injection performed by c11.
 
 ## Agent-to-agent communication
 
@@ -198,7 +200,7 @@ Structured handoffs can also ride on the metadata blob — agent A writes `c11 s
 
 ## Sub-agent self-reporting
 
-Because `cc` preserves the auth chain, sub-agents can update the sidebar and the metadata blob directly:
+Because interactive `claude --dangerously-skip-permissions` preserves the auth chain, sub-agents can update the sidebar and the metadata blob directly:
 
 ```bash
 c11 set-status task "3/5 complete" --icon "play.fill" --color "#00FF00"
@@ -237,7 +239,7 @@ When spawning sub-agents in c11, include these as first-class instructions in th
 
 1. **Self-identify immediately.** First action: `c11 identify` + `c11 get-titlebar-state` (to read any lineage the orchestrator pre-wrote) + `c11 rename-tab "<descriptive name>"` + `c11 set-agent --type <tui> --model <model-id>`. An unnamed, undeclared tab is an unidentifiable agent. If a lineage prefix (`Parent :: …`) is already present, preserve it and refine only the trailing segment.
 2. **Name every tab you create with lineage.** Format: `<parent title> :: <child role>` (e.g., `Login Button :: Plan`). Chain additional rungs as needed. Also write `c11 set-description` with a `Lineage: A → B → C` breadcrumb so the sub-agent inherits the chain and preserves it when self-updating. Pass the parent title in the spawn prompt so the sub-agent can recompose if it ever has to rename from scratch.
-3. **Report at milestones** via `c11 set-metadata`, `c11 set-status`, `c11 set-progress`, `c11 log`. Interactive `cc` inherits the auth chain, so sub-agents can self-report. Preserve any lineage prefix/breadcrumb when updating title/description on task change.
+3. **Report at milestones** via `c11 set-metadata`, `c11 set-status`, `c11 set-progress`, `c11 log`. Interactive `claude --dangerously-skip-permissions` inherits the auth chain, so sub-agents can self-report. Preserve any lineage prefix/breadcrumb when updating title/description on task change.
 4. **Deliver complex prompts via temp files** — write to a file, tell the agent to read it. Avoids shell-escaping issues with `c11 send`.
 5. **Do not make silent splits.** For multiple related outputs, prefer tabs over splits. Propose layouts when they would help; do not impose them.
 6. **Read the room before reshaping it.** `c11 tree --json` gives pixel and percent coordinates for every pane — check whether a new split will fit before asking for one.

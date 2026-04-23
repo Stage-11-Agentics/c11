@@ -56,7 +56,7 @@ Also populate `role`, `task`, and `status` via `c11 set-metadata` **if known** f
 
 **Show lineage for downstream tabs.** When a pane is spawned from another — sub-agents under an orchestrator, review agents over a feature's work, follow-ups rooted in earlier output — chain parent to child with `::`, parent first: `Login Button :: MA Review :: Claude`. Multiple rungs chain in order. The sidebar truncates to the parent (grouping siblings visibly); the full chain shows in the title bar. Users may override; lineage is the default whenever a parent exists. Before renaming, check `c11 get-titlebar-state` — if a chain is already present, preserve the prefix and only refine the trailing segment. See [references/orchestration.md#tab-naming-mandatory](references/orchestration.md#tab-naming-mandatory) for the full convention.
 
-**Sibling workers are not downstream.** When the operator sets up peer panes they'll drive directly — e.g., two `cc` panes for parallel feature work, a standing "Lattice Manager" next to them — skip the `::` chain and use a short positional or role anchor: `Feature Left`, `Feature Right`, `Lattice Manager`. Reserve `::` lineage for true hierarchical orchestration where a parent agent routes work down to sub-agents it will read back from.
+**Sibling workers are not downstream.** When the operator sets up peer panes they'll drive directly — e.g., two Claude Code panes for parallel feature work, a standing "Lattice Manager" next to them — skip the `::` chain and use a short positional or role anchor: `Feature Left`, `Feature Right`, `Lattice Manager`. Reserve `::` lineage for true hierarchical orchestration where a parent agent routes work down to sub-agents it will read back from.
 
 **If the user's opening message is absent or ambiguous, ask before orienting.** This aligns with the global "dialogue" norm — don't silently rename a tab `"Explore"` just to have something in the sidebar. A direct request ("fix this bug", "what is X called") is not ambiguous; proceed with the request and run orientation in the same turn.
 
@@ -277,15 +277,17 @@ c11 list-status
 c11 clear-status task
 ```
 
-**Constraint**: these only work from a direct c11 child process. Headless `claude -p` subprocesses are reparented to `launchd` and lose the auth chain — they cannot call any `c11` command. Interactive `cc` keeps the chain intact.
+**Constraint**: these only work from a direct c11 child process. Headless `claude -p` subprocesses are reparented to `launchd` and lose the auth chain — they cannot call any `c11` command. Interactive `claude` keeps the chain intact.
 
 ## Launching sub-agents
 
-Use **`cc`** (the `--dangerously-skip-permissions` alias) — never bare `claude` or `claude -p`:
+Use **`claude --dangerously-skip-permissions`** — never bare `claude` (stalls on approvals) or `claude -p` (headless, breaks the auth chain):
 
 - `claude -p` (headless) breaks the auth chain; sub-agents can't self-report.
 - Plain `claude` stalls on permission approvals.
-- `cc` in an interactive pane inherits c11 env vars, preserves the auth chain, and skips approvals. Sub-agents can `c11 set-status`, `c11 log`, `c11 set-progress` freely.
+- `claude --dangerously-skip-permissions` in an interactive pane inherits c11 env vars, preserves the auth chain, and skips approvals. Sub-agents can `c11 set-status`, `c11 log`, `c11 set-progress` freely.
+
+> **`claude` on PATH is the c11 wrapper.** Inside a c11 surface, `claude` resolves to `Resources/bin/claude` — a PATH-scoped wrapper that injects session-id and hook settings so the sidebar gets `claude_code` status. Always invoke `claude --dangerously-skip-permissions` explicitly in anything you send to a pane.
 
 For **Codex** in a visible c11 surface, launch the interactive TUI with `codex --yolo`, not `codex exec`. `codex exec` is headless/non-interactive and is only appropriate for background jobs whose output will be read after completion; it is the wrong tool when the operator should be able to watch, inspect, or take over the agent in c11.
 
@@ -294,7 +296,7 @@ c11 send --workspace $WS --surface $SURF "cd /path && codex --yolo \"Read /tmp/l
 c11 send-key --workspace $WS --surface $SURF enter
 ```
 
-**Preferred launch — one-shot prompt via cc argv.** Write the prompt to a file first, then launch `cc` with a short positional argument that tells it to read the file. cc boots and submits the initial message in one step, so there is no ready-state race to solve:
+**Preferred launch — one-shot prompt via claude argv.** Write the prompt to a file first, then launch `claude --dangerously-skip-permissions` with a short positional argument that tells it to read the file. It boots and submits the initial message in one step, so there is no ready-state race to solve:
 
 ```bash
 # 1. Stage the prompt (complex content → file; shell escaping in `c11 send` is brittle)
@@ -303,25 +305,25 @@ cat > /tmp/lat-xxx-prompt.md <<'EOF'
 EOF
 
 # 2. One-shot launch
-c11 send --workspace $WS --surface $SURF "cd /path && cc \"Read /tmp/lat-xxx-prompt.md and follow the instructions.\""
+c11 send --workspace $WS --surface $SURF "cd /path && claude --dangerously-skip-permissions \"Read /tmp/lat-xxx-prompt.md and follow the instructions.\""
 c11 send-key --workspace $WS --surface $SURF enter
 ```
 
 This is the default pattern for all orchestrated sub-agent launches. No polling, no sleep, no screen-scraping.
 
-**Two-call launch — only when you need to interact post-boot.** Launch `cc` bare, wait for the sidebar `claude_code` status to hit `Idle` (the cc wrapper emits it), then send additional input:
+**Two-call launch — only when you need to interact post-boot.** Launch `claude --dangerously-skip-permissions` bare, wait for the sidebar `claude_code` status to hit `Idle` (the c11 claude wrapper emits it), then send additional input:
 
 ```bash
-c11 send --workspace $WS --surface $SURF "cd /path && cc"
+c11 send --workspace $WS --surface $SURF "cd /path && claude --dangerously-skip-permissions"
 c11 send-key --workspace $WS --surface $SURF enter
 until c11 list-status --workspace $WS 2>/dev/null | grep -q '^claude_code=Idle '; do sleep 1; done
 c11 send --workspace $WS --surface $SURF "Read /tmp/prompt.md and follow the instructions."
 c11 send-key --workspace $WS --surface $SURF enter
 ```
 
-> **Multi-cc gotcha:** `c11 list-status` is **workspace-scoped**; `--surface` is silently ignored. The `claude_code=Running|Idle` row reflects activity across every cc surface in the workspace, not the one you're targeting. With two or more cc's running in the same workspace (the common orchestration case — planner + triage + impl, or orchestrator + sub-agent), the row never decisively reports `Idle` and the `until` loop deadlocks. Prefer the one-shot pattern above when any sibling cc is in flight. Polling is only safe when your target is the sole cc in the workspace.
+> **Multi-claude gotcha:** `c11 list-status` is **workspace-scoped**; `--surface` is silently ignored. The `claude_code=Running|Idle` row reflects activity across every Claude Code surface in the workspace, not the one you're targeting. With two or more claudes running in the same workspace (the common orchestration case — planner + triage + impl, or orchestrator + sub-agent), the row never decisively reports `Idle` and the `until` loop deadlocks. Prefer the one-shot pattern above when any sibling claude is in flight. Polling is only safe when your target is the sole claude in the workspace.
 
-**Never screen-scrape `c11 read-screen` for `❯`, `> `, `Welcome to Claude Code`, `Claude Code v`, or any other banner string** — those drift across cc releases and fail silently. See [references/orchestration.md](references/orchestration.md) for the full pattern including tab-naming conventions and agent-to-agent handoffs.
+**Never screen-scrape `c11 read-screen` for `❯`, `> `, `Welcome to Claude Code`, `Claude Code v`, or any other banner string** — those drift across Claude Code releases and fail silently. See [references/orchestration.md](references/orchestration.md) for the full pattern including tab-naming conventions and agent-to-agent handoffs.
 
 ## Web validation
 
@@ -350,7 +352,7 @@ disown
 ## References
 
 - **[references/api.md](references/api.md)** — full command surface: addressing, discovery, workspace/pane/surface management, surface initialization quirks, sidebar metadata, notifications, troubleshooting
-- **[references/orchestration.md](references/orchestration.md)** — multi-agent patterns: layout, tab naming, launching `cc` sub-agents, agent-to-agent communication, sidebar reporting, writing c11-aware prompts
+- **[references/orchestration.md](references/orchestration.md)** — multi-agent patterns: layout, tab naming, launching Claude Code sub-agents, agent-to-agent communication, sidebar reporting, writing c11-aware prompts
 - **[references/metadata.md](references/metadata.md)** — metadata deep dive: socket methods, precedence table, all canonical keys, sidecar sources, consumer patterns
 - **[../c11-browser/SKILL.md](../c11-browser/SKILL.md)** — c11 embedded browser automation
 - **[../c11-markdown/SKILL.md](../c11-markdown/SKILL.md)** — markdown surface viewer

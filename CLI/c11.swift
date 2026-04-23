@@ -8967,9 +8967,14 @@ struct CMUXCLI {
         let workspaceRaw = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowOverride)
         let workspaceId = try normalizeWorkspaceHandle(workspaceRaw, client: client)
 
+        // Only fall back to CMUX_SURFACE_ID when the caller did not explicitly pass
+        // --workspace. workspaceRaw includes the env-derived workspace, so gating
+        // on workspaceRaw == nil defeats the env-surface fallback whenever the
+        // agent is running inside c11 (CMUX_WORKSPACE_ID is always set).
+        let explicitWorkspaceFlag = optionValue(commandArgs, name: "--workspace")
         let surfaceRaw = optionValue(commandArgs, name: "--surface")
             ?? optionValue(commandArgs, name: "--panel")
-            ?? (workspaceRaw == nil && windowOverride == nil
+            ?? (explicitWorkspaceFlag == nil && windowOverride == nil
                 ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
                 : nil)
         let surfaceId = try normalizeSurfaceHandle(

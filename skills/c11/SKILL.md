@@ -84,7 +84,7 @@ Think of the manifest as the extension point for c11: the host provides the surf
 ```bash
 # Write
 c11 set-metadata --json '{"role":"reviewer","task":"lat-412","progress":0.4}'
-c11 set-metadata --key status --value "running" 
+c11 set-metadata --key status --value "running"
 c11 set-metadata --key progress --value 0.6 --type number
 
 # Read
@@ -96,6 +96,13 @@ c11 get-metadata --sources              # include provenance (who wrote each key
 c11 clear-metadata --key task
 c11 clear-metadata                      # clear everything (explicit source only)
 ```
+
+> **Always pass `--surface "$CMUX_SURFACE_ID"` explicitly on surface-write commands** — `set-metadata`, `set-agent`, `set-title`, `set-description`, `rename-tab`, `clear-metadata`, etc. The env-var default is only safe on c11 binaries built after the `fix/set-metadata-env-default` fix; older binaries silently write to whatever surface the *operator* is focused on, which in a multi-surface workspace means you'll stomp a peer agent's metadata instead of your own. Defensive form costs one flag and works on every c11 version.
+>
+> ```bash
+> c11 set-metadata --surface "$CMUX_SURFACE_ID" --key status --value "running"
+> c11 set-title    --surface "$CMUX_SURFACE_ID" "TICKET-42 :: Impl"
+> ```
 
 **Canonical keys** (typed, rendered, size-capped):
 

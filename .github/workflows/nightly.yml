@@ -1,8 +1,11 @@
 name: Nightly c11 macOS build
 
 on:
-  push:
-    branches: [main]
+  schedule:
+    # Daily at 10:00 UTC (~02:00–03:00 Pacific). The `decide` job still skips
+    # the expensive build if main has no new commits since the last nightly tag,
+    # so an idle day costs only the cheap Ubuntu gate.
+    - cron: '0 10 * * *'
   workflow_dispatch:
     inputs:
       force:

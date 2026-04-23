@@ -1,8 +1,8 @@
 # c11 development
 
-A one-screen map of the codebase so a new contributor (or their agent) can find their way without grepping blindly.
+A one-screen map of the codebase so a new contributor — or their agent — can land somewhere useful on the first grep instead of the fifteenth.
 
-This doc describes *where things live*. For *how to work* — setup, build, reload, commit style, PR flow — see [`../CONTRIBUTING.md`](../CONTRIBUTING.md). For *why things are shaped the way they are*, see [`../PHILOSOPHY.md`](../PHILOSOPHY.md).
+This doc is *where things live*. For *how to work* — setup, build, reload, commit style, PR flow — see [`../CONTRIBUTING.md`](../CONTRIBUTING.md). For *why things are shaped the way they are*, see [`../PHILOSOPHY.md`](../PHILOSOPHY.md).
 
 ## Top-level layout
 
@@ -30,7 +30,7 @@ c11/
 
 ## The Xcode project
 
-The project file is still called `GhosttyTabs.xcodeproj` from before the cmux → c11 rename — cheap to rename, expensive in merge-conflict risk, so we left it. Schemes inside it are the current names:
+The project file is still called `GhosttyTabs.xcodeproj` from before the cmux → c11 rename. Cheap to rename, expensive in merge-conflict risk — so we left it. Schemes inside it use the current names:
 
 - **c11** — full app, Debug/Release configurations
 - **c11-unit** — unit test target only; no app launch, safe to run from Xcode
@@ -98,7 +98,7 @@ The socket protocol it speaks is documented in [`socket-api-reference.md`](socke
 
 ## Latency-sensitive paths — read before editing
 
-A small number of code paths are called on every keystroke. Work added here shows up as visible typing lag. Full details in [`../CLAUDE.md`](../CLAUDE.md); the TL;DR:
+A small number of code paths are called on every keystroke. Work added here shows up as visible typing lag. Full detail in [`../CLAUDE.md`](../CLAUDE.md); the short version:
 
 - **`WindowTerminalHostView.hitTest()`** in `TerminalWindowPortal.swift` — all divider/sidebar/drag routing is gated to pointer events only. Don't add work outside the `isPointerEvent` guard.
 - **`TabItemView` in `ContentView.swift`** — uses `Equatable` + `.equatable()` to skip body re-evaluation during typing. Don't add `@EnvironmentObject`, `@ObservedObject` (besides `tab`), or `@Binding` without updating `==`. Don't remove `.equatable()` from the `ForEach`.
@@ -139,7 +139,7 @@ The `ghostty/` submodule tracks [`manaflow-ai/ghostty`](https://github.com/manaf
 
 ## Where the upstream lineage shows
 
-c11 is a fork of [`manaflow-ai/cmux`](https://github.com/manaflow-ai/cmux). A lot of code paths still carry the upstream shape — file names, module names, socket protocol. When you touch code that clearly came from upstream and your fix isn't c11-specific, flag it in the PR description so we can decide whether to float the change back upstream. See the "cmux ↔ c11 relationship" section in [`../CLAUDE.md`](../CLAUDE.md).
+c11 is a fork of [`manaflow-ai/cmux`](https://github.com/manaflow-ai/cmux). Lots of code paths still carry the upstream shape — file names, module names, socket protocol. If you touch code that clearly came from upstream and your fix isn't c11-specific, flag it in the PR description so we can decide whether to also float the change back upstream. Shared improvements should flow both ways; silent divergence on shared code makes future merges painful and costs both projects wins they'd otherwise share. See the "cmux ↔ c11 relationship" section in [`../CLAUDE.md`](../CLAUDE.md).
 
 ## Further reading
 

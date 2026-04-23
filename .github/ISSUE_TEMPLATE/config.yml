@@ -2,7 +2,7 @@ blank_issues_enabled: false
 contact_links:
   - name: Discussions
     url: https://github.com/Stage-11-Agentics/c11/discussions
-    about: Ask questions, share ideas, or chat with other c11 users and contributors.
+    about: Questions, ideas, and open-ended conversation with other c11 users and contributors.
   - name: Security vulnerability
     url: https://github.com/Stage-11-Agentics/c11/security/advisories/new
-    about: Please report security issues privately instead of opening a public issue.
+    about: Report security issues privately — public issues turn bad news into worse news.

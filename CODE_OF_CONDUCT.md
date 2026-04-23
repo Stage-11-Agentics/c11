@@ -1,83 +1,42 @@
-# Contributor Covenant Code of Conduct
+# Code of Conduct
 
-## Our Pledge
+c11 is built by a small team, their agents, and whoever else shows up wanting to make it better. This is how we treat each other while we do that.
 
-We as members, contributors, and leaders pledge to make participation in our community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, caste, color, religion, or sexual identity and orientation.
+## The baseline
 
-We pledge to act and interact in ways that contribute to an open, welcoming, diverse, inclusive, and healthy community.
+Be direct. Be kind. Assume the other person is here in good faith until you have a specific reason to think otherwise. Review the work, not the person. Disagree concretely — "this approach breaks X because Y" beats "this is bad." If you're wrong, say so and move on; nobody loses status by updating.
 
-## Our Standards
+Tell the truth. Include your uncertainty. Ask when you don't know. The standard is the same whether you're a human, an agent, or the compound actor of the two.
 
-Examples of behavior that contributes to a positive environment for our community include:
+Unkindness slows everybody down, and so does politeness that hides what you actually think. We want neither.
 
-* Demonstrating empathy and kindness toward other people
-* Being respectful of differing opinions, viewpoints, and experiences
-* Giving and gracefully accepting constructive feedback
-* Accepting responsibility and apologizing to those affected by our mistakes, and learning from the experience
-* Focusing on what is best not just for us as individuals, but for the overall community
+## What isn't welcome
 
-Examples of unacceptable behavior include:
+Harassment. Personal attacks. Sustained hostility. Doxxing. Sexual attention that wasn't invited. Threats. These aren't more tolerable because of who the target is or who the sender is — they're not part of the deal here, full stop.
 
-* The use of sexualized language or imagery, and sexual attention or advances of any kind
-* Trolling, insulting or derogatory comments, and personal or political attacks
-* Public or private harassment
-* Publishing others' private information, such as a physical or email address, without their explicit permission
-* Other conduct which could reasonably be considered inappropriate in a professional setting
-
-## Enforcement Responsibilities
-
-Community leaders are responsible for clarifying and enforcing our standards of acceptable behavior and will take appropriate and fair corrective action in response to any behavior that they deem inappropriate, threatening, offensive, or harmful.
-
-Community leaders have the right and responsibility to remove, edit, or reject comments, commits, code, wiki edits, issues, and other contributions that are not aligned to this Code of Conduct, and will communicate reasons for moderation decisions when appropriate.
+Public slap-fights in issues and PRs also aren't part of the deal. If a thread has gone sideways, step out of it and bring the matter to the maintainers privately.
 
 ## Scope
 
-This Code of Conduct applies within all community spaces, and also applies when an individual is officially representing the community in public spaces. Examples of representing our community include using an official e-mail address, posting via an official social media account, or acting as an appointed representative at an online or offline event.
+This applies everywhere c11 happens: issues, pull requests, discussions, the code itself, any chat we run, and any public venue where you're visibly representing c11 (speaking as a maintainer, posting from a project account, etc.). Off-platform behavior toward another contributor can be in scope when it meaningfully affects work here.
 
-## Enforcement
+## Reporting
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement at benevolent.futures@gmail.com. All complaints will be reviewed and investigated promptly and fairly.
+Email `benevolent.futures@gmail.com` with `c11 conduct` in the subject. Include what happened, where, when, and any evidence you have — links, screenshots, context. We read everything, respond within a few business days, and won't share the reporter's identity with the subject of the report beyond what's strictly necessary to resolve it.
 
-All community leaders are obligated to respect the privacy and security of the reporter of any incident.
+Bad-faith reports are themselves a violation.
 
-## Enforcement Guidelines
+## Consequences
 
-Community leaders will follow these Community Impact Guidelines in determining the consequences for any action they deem in violation of this Code of Conduct:
+Maintainers may ask you to edit a comment, step back from a thread, cool off for a while, or — in severe or sustained cases — leave the project. You'll be told which line was crossed and why. The response escalates with the pattern:
 
-### 1. Correction
+1. **A quiet word.** Private note clarifying what crossed the line. Usually this is enough.
+2. **A formal warning.** Named consequence for continued behavior; time-bound cooling off from a thread or venue.
+3. **Temporary ban.** Time-limited removal from project spaces.
+4. **Permanent ban.** For a pattern of sustained harassment, unrepentant hostility, or any single severe violation.
 
-**Community Impact**: Use of inappropriate language or other behavior deemed unprofessional or unwelcome in the community.
-
-**Consequence**: A private, written warning from community leaders, providing clarity around the nature of the violation and an explanation of why the behavior was inappropriate. A public apology may be requested.
-
-### 2. Warning
-
-**Community Impact**: A violation through a single incident or series of actions.
-
-**Consequence**: A warning with consequences for continued behavior. No interaction with the people involved, including unsolicited interaction with those enforcing the Code of Conduct, for a specified period of time. This includes avoiding interactions in community spaces as well as external channels like social media. Violating these terms may lead to a temporary or permanent ban.
-
-### 3. Temporary Ban
-
-**Community Impact**: A serious violation of community standards, including sustained inappropriate behavior.
-
-**Consequence**: A temporary ban from any sort of interaction or public communication with the community for a specified period of time. No public or private interaction with the people involved, including unsolicited interaction with those enforcing the Code of Conduct, is allowed during this period. Violating these terms may lead to a permanent ban.
-
-### 4. Permanent Ban
-
-**Community Impact**: Demonstrating a pattern of violation of community standards, including sustained inappropriate behavior, harassment of an individual, or aggression toward or disparagement of classes of individuals.
-
-**Consequence**: A permanent ban from any sort of public interaction within the community.
+Maintainers are held to the same standard. If we're the problem, use the same reporting channel — the operator reads that inbox.
 
 ## Attribution
 
-This Code of Conduct is adapted from the [Contributor Covenant][homepage], version 2.1, available at [https://www.contributor-covenant.org/version/2/1/code_of_conduct.html][v2.1].
-
-Community Impact Guidelines were inspired by [Mozilla's code of conduct enforcement ladder][Mozilla CoC].
-
-For answers to common questions about this code of conduct, see the FAQ at [https://www.contributor-covenant.org/faq][FAQ]. Translations are available at [https://www.contributor-covenant.org/translations][translations].
-
-[homepage]: https://www.contributor-covenant.org
-[v2.1]: https://www.contributor-covenant.org/version/2/1/code_of_conduct.html
-[Mozilla CoC]: https://github.com/mozilla/diversity
-[FAQ]: https://www.contributor-covenant.org/faq
-[translations]: https://www.contributor-covenant.org/translations
+The enforcement ladder borrows structure from the [Contributor Covenant](https://www.contributor-covenant.org), which in turn borrows from Mozilla's enforcement guidelines. Credit where due; the voice is ours.

@@ -1,19 +1,19 @@
 # Contributing to c11 with your agent
 
-c11 is agent-native. It was built with agents, is maintained with agents, and expects to be extended with agents. If you're here to help your agent help us, you're in the right place.
+c11 is agent-native. It was built with agents, is maintained with agents, and expects to be extended with agents. If you've brought one along, this is the page for you.
 
-This doc is the agent-specific supplement to [`CONTRIBUTING.md`](../CONTRIBUTING.md). Read that first for the human-facing workflow (setup, hot reload, tests, PR template). This page covers the parts that are specific to having an agent in the driver's seat.
+This is the agent-specific supplement to [`CONTRIBUTING.md`](../CONTRIBUTING.md). Read that first for the general workflow (setup, hot reload, tests, PR template). This page is the part specific to having an agent in the driver's seat.
 
 ## Ground rules
 
 - **Agent-authored PRs are welcome.** We don't gate on who held the keyboard. We gate on whether the change is correct, tested, and well-shaped.
-- **You are still the author.** Review the diff before opening the PR. Understand the change well enough to answer review comments. An agent that can't be explained by its operator is a liability; a change its operator can defend is a contribution.
-- **Signal agent involvement.** Add a `Co-Authored-By` trailer naming the agent(s) when they did meaningful work on the commit. It's honest, helps us calibrate review depth, and normalizes the practice.
-- **Read before you write.** Agents that skip [`CLAUDE.md`](../CLAUDE.md), [`PHILOSOPHY.md`](../PHILOSOPHY.md), and the relevant files in [`skills/`](../skills/) consistently produce PRs that miss load-bearing invariants (threading rules, latency-sensitive paths, primitives-before-policy). Load the context first.
+- **You are still the author.** Review the diff before opening the PR. Understand the change well enough to answer review comments. An agent whose operator can't defend its work is a liability; the same change, explained by an operator who actually read it, is a contribution.
+- **Signal agent involvement.** Add a `Co-Authored-By` trailer for the agent(s) that did meaningful work on the commit. It's honest, helps us calibrate review depth, and normalizes the practice.
+- **Read before you write.** Agents that skip [`CLAUDE.md`](../CLAUDE.md), [`PHILOSOPHY.md`](../PHILOSOPHY.md), and the relevant files in [`skills/`](../skills/) consistently produce PRs that miss load-bearing invariants — threading rules, latency-sensitive paths, primitives-before-policy. Load the context first. An extra 30 seconds of reading saves a rejected PR.
 
 ## Point your agent at the right files
 
-Before your agent touches c11 source, make sure it's read these. They're terse, they're accurate, and they save review rounds.
+Before your agent touches c11 source, make sure it's read these. Terse, accurate, and save review rounds.
 
 | File | What it's for | Why your agent needs it |
 |---|---|---|
@@ -37,10 +37,10 @@ We maintain `AGENTS.md` as a symlink to `CLAUDE.md` so both Claude Code and Code
 
 ## The PR flow for agent-authored changes
 
-The flow is identical to the human flow, with two additions:
+Identical to the human flow, with two additions:
 
-1. **Bot review block.** After your agent's latest commit, paste the review-bot trigger block from [`.github/pull_request_template.md`](../.github/pull_request_template.md) as a PR comment. This invokes `@codex`, `@coderabbitai`, `@greptile-apps`, and `@cubic-dev-ai` for independent review. Resolve their feedback (or explain why it's wrong) before requesting human review.
-2. **Validation evidence.** UI changes need a demo video. Behavior changes need enough test output, log snippets, or screenshots in the PR description that a reviewer can confirm the change worked without rebuilding locally. A confident PR description saves everybody time.
+1. **Bot review block.** After your agent's latest commit, paste the review-bot trigger block from [`.github/pull_request_template.md`](../.github/pull_request_template.md) as a PR comment. That invokes `@codex`, `@coderabbitai`, `@greptile-apps`, and `@cubic-dev-ai` for independent review. Resolve what they surface — or explain why they're wrong — before a human reviews.
+2. **Validation evidence.** UI changes get a demo video. Behavior changes get enough test output, log snippets, or screenshots in the PR description that a reviewer can confirm the change worked without rebuilding locally. A confident PR description is a gift to everyone downstream of it.
 
 ## Common failure modes
 
@@ -54,7 +54,7 @@ Patterns we've seen cause PR rework:
 
 ## Tell us what your agent learned
 
-If your agent hit a surprising pothole getting a PR landed — missing documentation, an unclear invariant, a skill file that didn't cover the case — open a small follow-up PR updating the docs. We'd rather fix the onboarding than watch the next agent trip on the same rock.
+If your agent hit a surprising pothole getting a PR landed — missing documentation, an unclear invariant, a skill file that didn't cover the case — open a small follow-up PR updating the docs. We'd rather fix the onboarding than watch the next agent trip on the same rock. One agent's hard-won discovery becomes every agent's baseline.
 
 ## Growing this page
 

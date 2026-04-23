@@ -42,17 +42,27 @@ Refs accept UUIDs, short refs, or indexes: `window:1`, `workspace:1`, `pane:2`, 
 At session start — always, in this order:
 
 ```bash
-c11 identify                                                    # Your workspace/surface/pane refs (JSON)
-c11 tree                                                        # Spatial layout of the current workspace + hierarchical listing
-c11 set-agent --type claude-code --model claude-opus-4-7        # Declare terminal_type + model (mandatory)
-c11 rename-tab --surface "$CMUX_SURFACE_ID" "<your role>"       # Name your own tab before anything else
+c11 identify                                                        # Your workspace/surface/pane refs (JSON)
+c11 tree                                                            # Spatial layout of the current workspace + hierarchical listing
+c11 set-agent --type claude-code --model claude-opus-4-7            # Declare terminal_type + model (mandatory)
+c11 rename-tab       --surface "$CMUX_SURFACE_ID" "<your role>"     # Title — what this surface is (mandatory)
+c11 set-description  --surface "$CMUX_SURFACE_ID" "<why it's open>" # Description — what you're doing right now (mandatory)
 ```
 
 > **Binary bug (as of 2026-04-18):** `CMUX_TAB_ID` is exported equal to the workspace UUID, not the tab UUID. Bare `c11 rename-tab "<role>"` (and any other tab-scoped command that defaults to `CMUX_TAB_ID`) errors with `not_found: Tab not found`. Always pass `--surface "$CMUX_SURFACE_ID"` for tab-scoped commands (`rename-tab`, `set-title`, `set-description`) until this is fixed — `CMUX_SURFACE_ID` itself is correct.
 
 Also populate `role`, `task`, and `status` via `c11 set-metadata` **if known** from the opening message or environment (e.g. the user references a ticket ID, or `CMUX_AGENT_TASK` is set). Skip when unknown — don't guess.
 
-**An unnamed tab is an unidentifiable agent.** Name your tab immediately, even when working solo. Key word first, 2–4 words, under 25 characters (the sidebar truncates from the right): `c11 rename-tab "TICKET-42 Plan"` survives; `"Planning TICKET-42"` truncates to `"Planning TICK…"`.
+**Title and description are both mandatory at orientation — not optional, not "if you have time," not "only for orchestrated sub-agents."** Every agent in every pane sets both, every time. The sidebar is the operator's only view into a room full of parallel agents; a surface that doesn't announce what it is *and* why it's open is invisible. The *Title and description* section below covers **what** to write; this section is about **when**: immediately, before touching the work.
+
+Solo-agent orientation looks like this:
+
+```bash
+c11 rename-tab       --surface "$CMUX_SURFACE_ID" "TICKET-42 Plan"
+c11 set-description  --surface "$CMUX_SURFACE_ID" "Planning the migration off the legacy auth middleware. Drafting a stepwise approach; no code changes yet."
+```
+
+**An unnamed, undescribed tab is an unidentifiable agent.** Name your tab immediately, even when working solo. Key word first, 2–4 words, under 25 characters (the sidebar truncates from the right): `c11 rename-tab "TICKET-42 Plan"` survives; `"Planning TICKET-42"` truncates to `"Planning TICK…"`.
 
 **Show lineage for downstream tabs.** When a pane is spawned from another — sub-agents under an orchestrator, review agents over a feature's work, follow-ups rooted in earlier output — chain parent to child with `::`, parent first: `Login Button :: MA Review :: Claude`. Multiple rungs chain in order. The sidebar truncates to the parent (grouping siblings visibly); the full chain shows in the title bar. Users may override; lineage is the default whenever a parent exists. Before renaming, check `c11 get-titlebar-state` — if a chain is already present, preserve the prefix and only refine the trailing segment. See [references/orchestration.md#tab-naming-mandatory](references/orchestration.md#tab-naming-mandatory) for the full convention.
 
@@ -247,6 +257,14 @@ The operator is running parallel work and context-switching between surfaces; ti
 **Batch with the open command.** When you `c11 new-pane --type markdown --file …` or `--type browser --url …` for the operator, set title + description as the immediate next calls — don't defer. A surface that lives even briefly without a description is one the operator will have to re-derive context for when they tab over.
 
 **Multiple artifacts in one session → one pane, not many tabs.** If the work produces more than one markdown artifact for the operator to review, consolidate them: either append to a single trail file with sections, or add subsequent files as **tabs of the same pane** with `c11 new-surface --type markdown --file <path> --pane <pane-ref>`. Three top-level markdown tabs make the operator do navigation work c11 is supposed to remove. See the c11-markdown skill's *Producing artifacts the operator will return to* section for the full pattern.
+
+### Keep them current when scope shifts
+
+Title and description are only useful as a navigable index if they reflect what the surface is *right now*. When your work pivots — planning → implementation, one ticket → another, one file → another, one sub-task → another — refresh both fields **at the pivot**, not at the end of the session. The operator glancing at the sidebar should never see a stale breadcrumb.
+
+Rough test for "did I drift?": if an operator scanning the sidebar would make a different routing decision based on the new state of the work, the title or description is out of date.
+
+When updating, preserve any lineage prefix on the title and the `Lineage:` line on the description — those are the operator's map for reconstructing why this pane exists (see below). Refine the trailing segment, not the chain.
 
 ### Lineage in titles and descriptions
 

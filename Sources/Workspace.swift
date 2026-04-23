@@ -5264,6 +5264,13 @@ final class Workspace: Identifiable, ObservableObject {
         )
     }
 
+    func setTabBarVisible(_ visible: Bool) {
+        guard bonsplitController.configuration.appearance.showsTabBar != visible else { return }
+        var next = bonsplitController.configuration
+        next.appearance.showsTabBar = visible
+        bonsplitController.configuration = next
+    }
+
     func applyGhosttyChrome(from config: GhosttyConfig, reason: String = "unspecified") {
         applyGhosttyChrome(
             backgroundColor: config.backgroundColor,
@@ -5389,11 +5396,15 @@ final class Workspace: Identifiable, ObservableObject {
         // appearance uses the theme's default context (workspaceColor=nil). The first
         // `applyGhosttyChrome` call — triggered on workspace mount — re-applies with the
         // actual custom color once the Workspace is installed in the sidebar.
-        let appearance = Self.bonsplitAppearance(
+        var appearance = Self.bonsplitAppearance(
             from: GhosttyApp.shared.defaultBackgroundColor,
             backgroundOpacity: GhosttyApp.shared.defaultBackgroundOpacity,
             context: nil
         )
+        let initialChromeState = TabBarChromeSettings.state(
+            for: UserDefaults.standard.string(forKey: TabBarChromeSettings.stateKey)
+        )
+        appearance.showsTabBar = initialChromeState == .full
         let config = BonsplitConfiguration(
             allowSplits: true,
             allowCloseTabs: true,

@@ -2077,9 +2077,15 @@ struct ContentView: View {
     @State private var titlebarPadding: CGFloat = 32
     @AppStorage(WorkspacePresentationModeSettings.modeKey)
     private var workspacePresentationMode = WorkspacePresentationModeSettings.defaultMode.rawValue
+    @AppStorage(TabBarChromeSettings.stateKey)
+    private var tabBarChromeStateRaw = TabBarChromeState.full.rawValue
 
     private var isMinimalMode: Bool {
         WorkspacePresentationModeSettings.mode(for: workspacePresentationMode) == .minimal
+    }
+
+    private var tabBarChromeState: TabBarChromeState {
+        TabBarChromeSettings.state(for: tabBarChromeStateRaw)
     }
 
     private var effectiveTitlebarPadding: CGFloat {
@@ -2408,6 +2414,15 @@ struct ContentView: View {
                         fullscreenControls
                             .padding(.leading, 10)
                             .padding(.top, 4)
+                    }
+                }
+                .overlay(alignment: .topTrailing) {
+                    if tabBarChromeState == .shrunk {
+                        TabBarChromeHandle(onExpand: {
+                            tabBarChromeStateRaw = TabBarChromeState.full.rawValue
+                        })
+                        .padding(.top, isMinimalMode ? 4 : titlebarPadding + 4)
+                        .padding(.trailing, 8)
                     }
                 }
                 .frame(minWidth: CGFloat(SessionPersistencePolicy.minimumWindowWidth), minHeight: CGFloat(SessionPersistencePolicy.minimumWindowHeight))
@@ -2876,6 +2891,14 @@ struct ContentView: View {
                 sidebarDragStartWidth = nil
             }
             removeSidebarResizerPointerMonitor()
+        })
+
+        view = AnyView(view.onChange(of: tabBarChromeStateRaw) { _, newRaw in
+            let state = TabBarChromeSettings.state(for: newRaw)
+            let visible = state == .full
+            for tab in tabManager.tabs {
+                tab.setTabBarVisible(visible)
+            }
         })
 
         view = AnyView(view.background(WindowAccessor { [sidebarBlendMode, bgGlassEnabled, bgGlassTintHex, bgGlassTintOpacity] window in
@@ -9459,12 +9482,14 @@ private struct SidebarFooterButtons: View {
     let onSendFeedback: () -> Void
 
     var body: some View {
-        HStack(spacing: 4) {
-            SidebarHelpMenuButton(onSendFeedback: onSendFeedback)
+        VStack(alignment: .leading, spacing: 6) {
             SidebarJumpToUnreadButton()
-            UpdatePill(model: updateViewModel)
+            HStack(spacing: 4) {
+                SidebarHelpMenuButton(onSendFeedback: onSendFeedback)
+                UpdatePill(model: updateViewModel)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -10383,9 +10408,6 @@ private struct SidebarHelpMenuButton: View {
 private struct SidebarJumpToUnreadButton: View {
     @EnvironmentObject private var notificationStore: TerminalNotificationStore
 
-    private let buttonSize: CGFloat = 22
-    private let iconSize: CGFloat = 11
-
     private var display: StatusBarButtonDisplay {
         StatusBarButtonDisplay(unreadCount: notificationStore.unreadCount)
     }
@@ -10393,7 +10415,7 @@ private struct SidebarJumpToUnreadButton: View {
     private var label: String {
         String(
             localized: "statusBar.nextNotification.title",
-            defaultValue: "Go To Next Notification"
+            defaultValue: "Next Notification"
         )
     }
 
@@ -10404,35 +10426,57 @@ private struct SidebarJumpToUnreadButton: View {
         )
     }
 
+    private var shortcutText: String {
+        KeyboardShortcutSettings.shortcut(for: .jumpToUnread).displayString
+    }
+
     var body: some View {
         let display = self.display
         return Button(action: jump) {
-            Image(systemName: "bell")
-                .symbolRenderingMode(.monochrome)
-                .font(.system(size: iconSize, weight: .medium))
-                .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                .frame(width: buttonSize, height: buttonSize, alignment: .center)
-                .overlay(alignment: .topTrailing) {
-                    if let badge = display.badgeText {
-                        Text(badge)
-                            .font(.system(size: 8, weight: .bold))
-                            .monospacedDigit()
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 3)
-                            .frame(minWidth: 10, minHeight: 10)
-                            .background(
-                                Capsule(style: .continuous)
-                                    .fill(Color.red)
-                            )
-                            .offset(x: 3, y: -2)
-                            .accessibilityHidden(true)
-                    }
+            HStack(spacing: 6) {
+                Text(label)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+
+                if let badge = display.badgeText {
+                    Text(badge)
+                        .font(.system(size: 9, weight: .bold))
+                        .monospacedDigit()
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(BrandColors.blackSwiftUI.opacity(0.18))
+                        )
+                        .foregroundColor(BrandColors.blackSwiftUI)
+                        .accessibilityHidden(true)
                 }
+
+                Spacer(minLength: 4)
+
+                Text(shortcutText)
+                    .font(.system(size: 10, weight: .medium))
+                    .monospacedDigit()
+                    .opacity(0.72)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(cmuxAccentColor().opacity(display.isEnabled ? 1.0 : 0.18))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(cmuxAccentColor().opacity(display.isEnabled ? 0 : 0.5), lineWidth: 1)
+            )
+            .foregroundColor(display.isEnabled ? BrandColors.blackSwiftUI : .secondary)
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
-        .buttonStyle(SidebarFooterIconButtonStyle())
-        .frame(width: buttonSize, height: buttonSize, alignment: .center)
+        .buttonStyle(.plain)
         .disabled(!display.isEnabled)
-        .opacity(display.isEnabled ? 1.0 : 0.45)
+        .opacity(display.isEnabled ? 1.0 : 0.72)
         .accessibilityIdentifier("SidebarJumpToUnreadButton")
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(display.badgeText ?? "")
@@ -14061,5 +14105,23 @@ extension NSColor {
             return String(format: "#%02X%02X%02X%02X", redByte, greenByte, blueByte, alphaByte)
         }
         return String(format: "#%02X%02X%02X", redByte, greenByte, blueByte)
+    }
+}
+
+private struct TabBarChromeHandle: View {
+    let onExpand: () -> Void
+
+    var body: some View {
+        Button(action: onExpand) {
+            Image(systemName: "sidebar.left")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 32, height: 32)
+        }
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .shadow(color: .black.opacity(0.12), radius: 4, x: 0, y: 2)
+        .buttonStyle(.plain)
+        .accessibilityLabel(String(localized: "accessibility.tab_bar.expand_handle",
+                                  defaultValue: "Expand tab bar"))
     }
 }

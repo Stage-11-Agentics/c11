@@ -146,6 +146,18 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             workspace: workspace
         )
 
+        // 3b. Terminal working-directory plumb — explicit cwd on a
+        //     split-created terminal should either land on the panel
+        //     (requestedWorkingDirectory matches) or emit a typed
+        //     working_directory_not_applied failure. Silent drop is the
+        //     bug review cycle 1 I1 flagged.
+        assertWorkingDirectoriesApplied(
+            fixtureName: name,
+            plan: plan,
+            result: result,
+            workspace: workspace
+        )
+
         // 4. Timing budget.
         let totalMs = result.timings.first { $0.step == "total" }?.durationMs ?? .infinity
         XCTAssertLessThan(
@@ -280,6 +292,45 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
                 livePane.selectedTabId,
                 expectedTabId,
                 "[\(fixtureName) @ \(path)] selectedTabId mismatch (expected surface \(expectedSurfaceId))"
+            )
+        }
+    }
+
+    // MARK: - Working directory
+
+    /// For each terminal `SurfaceSpec` that declares a `workingDirectory`,
+    /// assert it either landed on the live panel or emitted a typed
+    /// `working_directory_not_applied` failure. Silent drop (pre-rework B1/I1)
+    /// now fails the test.
+    private func assertWorkingDirectoriesApplied(
+        fixtureName: String,
+        plan: WorkspaceApplyPlan,
+        result: ApplyResult,
+        workspace: Workspace
+    ) {
+        for spec in plan.surfaces {
+            guard spec.kind == .terminal,
+                  let expectedCwd = spec.workingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !expectedCwd.isEmpty else {
+                continue
+            }
+            guard let panelId = parseUUIDSuffix(result.surfaceRefs[spec.id]),
+                  let terminalPanel = workspace.panels[panelId] as? TerminalPanel else {
+                XCTFail("[\(fixtureName)] terminal surface[\(spec.id)] with workingDirectory did not produce a resolvable panel")
+                continue
+            }
+            let landed = terminalPanel.requestedWorkingDirectory?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if landed == expectedCwd {
+                continue
+            }
+            let reported = result.failures.contains {
+                $0.code == "working_directory_not_applied"
+                    && $0.message.contains("surface[\(spec.id)]")
+            }
+            XCTAssertTrue(
+                reported,
+                "[\(fixtureName)] surface[\(spec.id)] workingDirectory='\(expectedCwd)' neither landed ('\(landed)') nor emitted working_directory_not_applied ApplyFailure"
             )
         }
     }

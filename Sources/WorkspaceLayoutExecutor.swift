@@ -372,6 +372,21 @@ enum WorkspaceLayoutExecutor {
             let firstPanelId: UUID
             if anchor.kind == firstSurface.kind {
                 firstPanelId = anchor.panelId
+                // Anchor reuse cannot honor an explicit workingDirectory —
+                // either the seed already launched with the workspace cwd
+                // (seedTerminal case), or the panel was created by a split
+                // primitive in the enclosing materializeSplit and its cwd
+                // is already baked in (anyExisting case). Emit a typed
+                // warning so callers see the cwd didn't apply, matching
+                // review cycle 1 I1.
+                if let cwd = firstSurface.workingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !cwd.isEmpty,
+                   case .seedTerminal = anchor {
+                    reportWorkingDirectoryNotApplicable(
+                        firstSurface,
+                        context: "seed terminal reuse (cwd fixed at workspace creation)"
+                    )
+                }
             } else {
                 // Kind mismatch: replace the anchor with the target kind in
                 // the same pane, then close the old anchor. This handles the
@@ -509,8 +524,10 @@ enum WorkspaceLayoutExecutor {
 
         /// Dispatch to the right `Workspace.newXSplit` primitive. Always
         /// passes `focus: false` — the executor does not steal focus per
-        /// CLAUDE.md socket focus policy.
-        private func splitFromPanel(
+        /// CLAUDE.md socket focus policy. Terminal splits honor
+        /// `spec.workingDirectory` via the overload added in R3 of the
+        /// review cycle 1 rework.
+        private mutating func splitFromPanel(
             _ panelId: UUID,
             orientation: SplitOrientation,
             spec: SurfaceSpec
@@ -521,9 +538,13 @@ enum WorkspaceLayoutExecutor {
                     from: panelId,
                     orientation: orientation,
                     insertFirst: false,
-                    focus: false
+                    focus: false,
+                    workingDirectory: spec.workingDirectory
                 )?.id
             case .browser:
+                if spec.workingDirectory != nil {
+                    reportWorkingDirectoryNotApplicable(spec, context: "browser split")
+                }
                 let url = spec.url.flatMap { URL(string: $0) }
                 return workspace.newBrowserSplit(
                     from: panelId,
@@ -533,6 +554,9 @@ enum WorkspaceLayoutExecutor {
                     focus: false
                 )?.id
             case .markdown:
+                if spec.workingDirectory != nil {
+                    reportWorkingDirectoryNotApplicable(spec, context: "markdown split")
+                }
                 return workspace.newMarkdownSplit(
                     from: panelId,
                     orientation: orientation,
@@ -541,6 +565,25 @@ enum WorkspaceLayoutExecutor {
                     focus: false
                 )?.id
             }
+        }
+
+        /// Emit a typed ApplyFailure when a caller sets
+        /// `SurfaceSpec.workingDirectory` on a path that cannot honor it
+        /// (browser/markdown creation, or reusing a seed terminal whose
+        /// shell has already launched). Keeps cwd loss non-silent per
+        /// review cycle 1 I1.
+        mutating func reportWorkingDirectoryNotApplicable(
+            _ spec: SurfaceSpec,
+            context: String
+        ) {
+            let cwd = spec.workingDirectory ?? ""
+            let message = "surface[\(spec.id)] workingDirectory='\(cwd)' ignored: \(context) path does not accept an explicit cwd"
+            warnings.append(message)
+            failures.append(ApplyFailure(
+                code: "working_directory_not_applied",
+                step: "surface[\(spec.id)].create",
+                message: message
+            ))
         }
 
         /// Apply `spec.description`, the rest of `spec.metadata`, and

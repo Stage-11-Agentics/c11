@@ -30,8 +30,8 @@
   },
   "surfaces": [
     { "id": "tl", "kind": "terminal" },
-    { "id": "tr", "kind": "terminal" },
-    { "id": "bl", "kind": "terminal" },
+    { "id": "tr", "kind": "terminal", "workingDirectory": "/tmp" },
+    { "id": "bl", "kind": "terminal", "workingDirectory": "/var/tmp" },
     { "id": "br", "kind": "terminal" }
   ]
 }

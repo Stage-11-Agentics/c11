@@ -7245,22 +7245,33 @@ final class Workspace: Identifiable, ObservableObject {
         return nil
     }
 
-    /// Create a new split with a terminal panel
+    /// Create a new split with a terminal panel.
+    ///
+    /// If `workingDirectory` is provided and non-empty, it overrides the
+    /// source-panel / workspace inheritance chain below — used by
+    /// `WorkspaceLayoutExecutor` to honor explicit `SurfaceSpec.workingDirectory`
+    /// values declared in a `WorkspaceApplyPlan`.
     @discardableResult
     func newTerminalSplit(
         from panelId: UUID,
         orientation: SplitOrientation,
         insertFirst: Bool = false,
-        focus: Bool = true
+        focus: Bool = true,
+        workingDirectory: String? = nil
     ) -> TerminalPanel? {
         guard let paneId = paneIdForPanel(panelId) else { return nil }
         let inheritedConfig = inheritedTerminalConfig(preferredPanelId: panelId, inPane: paneId)
         let remoteTerminalStartupCommand = remoteTerminalStartupCommand()
 
-        // Inherit working directory: prefer the source panel's reported cwd,
-        // then its requested startup cwd if shell integration has not reported
-        // back yet, and finally fall back to the workspace's current directory.
+        // Inherit working directory: caller-supplied override wins, then the
+        // source panel's reported cwd, then its requested startup cwd if
+        // shell integration has not reported back yet, and finally fall back
+        // to the workspace's current directory.
         let splitWorkingDirectory: String? = {
+            if let override = workingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !override.isEmpty {
+                return override
+            }
             if let panelDirectory = panelDirectories[panelId]?.trimmingCharacters(in: .whitespacesAndNewlines),
                !panelDirectory.isEmpty {
                 return panelDirectory

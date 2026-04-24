@@ -144,7 +144,7 @@ enum KeyboardShortcutSettings {
             case .showNotifications:
                 return StoredShortcut(key: "i", command: true, shift: false, option: false, control: false)
             case .jumpToUnread:
-                return StoredShortcut(key: "u", command: true, shift: true, option: false, control: false)
+                return StoredShortcut(key: "\r", command: true, shift: false, option: false, control: true)
             case .triggerFlash:
                 return StoredShortcut(key: "h", command: true, shift: true, option: false, control: false)
             case .nextSidebarTab:

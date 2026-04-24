@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-04-24T01:05:27Z",
+  "created_by": "agent:claude-opus-4-7",
+  "custom_fields": {},
+  "id": "art_01KPYGAC3XW6JZH3X9P6HV6NDY",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KPYGAC3XW6JZH3X9P6HV6NDY.md",
+    "size_bytes": 14109
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Codex full-force review",
+  "token_usage": null,
+  "type": "file"
+}

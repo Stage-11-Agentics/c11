@@ -1,0 +1,43 @@
+{
+  "assigned_to": "agent:claude-opus-4-7",
+  "branch_links": [],
+  "comment_count": 12,
+  "complexity": "medium",
+  "created_at": "2026-04-24T00:10:14Z",
+  "created_by": "agent:claude-opus-4-7",
+  "custom_fields": {},
+  "description": "## Problem\n\nOn first launch, new users are hit with a cascade of macOS permission prompts (Documents / Desktop / Downloads / iCloud Drive / removable volumes) the instant they open c11. The prior TCC primer (merged in #55 / #56) was supposed to contextualize these \u2014 but in practice the race is already lost by the time the primer appears.\n\nFlow in `Sources/AppDelegate.swift:6202-6218` (`sendWelcomeCommandWhenReady`):\n\n1. welcome workspace opens\n2. `runWhenInitialTerminalReady` \u2014 **initial Ghostty surface spawns a shell** \u2192 rc files execute \u2192 protected-folder access \u2192 prompts fire, attributed to c11\n3. `performQuadLayout` (sends `c11 welcome\\n`)\n4. 1.2 s delay\n5. AgentSkills sheet (if relevant)\n6. TCC primer sheet\n\nBy step 6, the user has already seen five dialogs. The primer explains prompts that already fired.\n\n## Web research (Apr 2026)\n\n- `NS*UsageDescription` keys in Info.plist **do not trigger prompts on their own.** They only customize the prompt copy when the corresponding API is called. Unused keys (Music, Photos, Contacts, Calendar, Reminders, Camera) are cosmetic noise at worst \u2014 not the cause of the cascade the user is seeing.\n- The cascade is caused by shell activity. When Ghostty spawns a shell, macOS treats c11 as the *responsible process*. Every protected folder the shell's rc files touch fires a prompt. Universal across iTerm2, Warp, Ghostty \u2014 documented in [Ghostty Discussion #4496](https://github.com/ghostty-org/ghostty/discussions/4496) and [iTerm2's FDA wiki](https://gitlab.com/gnachman/iterm2/-/wikis/Fulldiskaccess).\n- **Full Disk Access is THE industry-accepted fix.** One-time grant, suppresses the entire cascade. The posix_spawn \"shed the responsible-process bit\" workaround is blocked by `TIOCSCTTY` / `setsid` requirements (Ghostty issue #9263).\n- Local Network (macOS 15+) is a separate single prompt, not a cascade. Not in scope here.\n\n## Fix\n\nTwo coordinated changes:\n\n### 1. Reorder `sendWelcomeCommandWhenReady` so the primer resolves BEFORE the initial shell spawns\n\n- Welcome workspace is created but the initial terminal pane does not yet spawn a shell.\n- TCC primer sheet presents immediately on first launch.\n- User chooses Full Disk Access (opens Settings \u2192 Privacy & Security) or \"Continue without it.\"\n- *Then* the shell spawns, `c11 welcome` prints, quad layout assembles.\n\nExact call site: `Sources/AppDelegate.swift:6202-6218`. Current order is `runWhenInitialTerminalReady { \u2026 performQuadLayout + sendText \u2026 presentAgentSkillsOnboarding \u2192 chained TCC primer }`. New order: TCC primer first (via `shouldPresent` gate), then Agent Skills (if applicable), then the shell-spawning steps.\n\n### 2. Promote Full Disk Access to primary button in `Sources/TCCPrimerView.swift`\n\n- **Primary**: \"Grant Full Disk Access\" \u2014 opens the Settings pane.\n- **Secondary**: \"Continue without it\" \u2014 closes the sheet, shell spawns, cascade may fire.\n- Copy refreshed to make FDA the recommended path and acknowledge this is the industry-standard approach for mature terminal emulators.\n\n## Scope\n\n- Fresh installs only. `TCCPrimer.migrateExistingUserIfNeeded` at `AppDelegate.swift:2348` stays as-is \u2014 users who already saw the old primer are not re-prompted with the new one.\n- English copy changes require xcstrings updates for the six supported locales (ja, uk, ko, zh-Hans, zh-Hant, ru). Delegate to a translator sub-agent after English lands.\n- Follow-up ticket tracks FDA runtime detection + auto-continue (the primer currently doesn't notice when the user grants FDA and comes back; user has to click \"Continue without it\" even though they did grant it).\n\n## Acceptance\n\n- On a fresh install (fresh UserDefaults suite \u2014 tagged dev build), launching c11 shows the TCC primer as the first surface, not a shell pane with prompts flying.\n- Clicking \"Grant Full Disk Access\" opens the Settings pane.\n- Clicking \"Continue without it\" closes the sheet and lets the welcome workspace + shell continue.\n- Existing users (pre-migration) do NOT see the new primer.\n- Localized copy lands for all six locales.",
+  "done_at": "2026-04-24T00:39:23Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01KPYETN888X1C0T6F3DGCJ14K",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KPYETN888X1C0T6F3DGCJ14J",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KPYEW98P6Q9W2WR4FBK6BSDQ",
+      "role": null,
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KPYD58ZKBCHHMF4M2GKE6A0E",
+  "last_event_id": "ev_01KPYEWDGNRBMZTX1RFWE97JDV",
+  "last_status_changed_at": "2026-04-24T00:39:23Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-15",
+  "status": "done",
+  "tags": null,
+  "title": "Reorder first-launch onboarding: TCC primer before initial shell spawn, Full Disk Access as primary CTA",
+  "type": "task",
+  "updated_at": "2026-04-24T00:40:21Z",
+  "urgency": null
+}

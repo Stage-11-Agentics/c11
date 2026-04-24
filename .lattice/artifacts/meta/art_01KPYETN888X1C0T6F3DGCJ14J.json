@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-04-24T00:39:23Z",
+  "created_by": "agent:claude-opus-4-7",
+  "custom_fields": {},
+  "id": "art_01KPYETN888X1C0T6F3DGCJ14J",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KPYETN888X1C0T6F3DGCJ14J.md",
+    "size_bytes": 880
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Implemented and reviewed clean. Root fix was architectural: shell spawns inside Workspace.init() (via addWorkspace in openWelcomeWorkspace), so the only reliable gate is deferring addWorkspace to a pr",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

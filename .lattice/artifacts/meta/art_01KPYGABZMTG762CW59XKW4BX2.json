@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-04-24T01:05:27Z",
+  "created_by": "agent:claude-opus-4-7",
+  "custom_fields": {},
+  "id": "art_01KPYGABZMTG762CW59XKW4BX2",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KPYGABZMTG762CW59XKW4BX2.md",
+    "size_bytes": 9307
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Both reviewers agree on: drop 'PTY is the queue' framing, commit to at-least-once, make sweep + dispatch log + async PTY writes v1 mandatory, lock schema as public API with parity test. They disagree on: exec in v1 (Codex no, Claude yes), topic fan-out in v1 (Claude cut, Codex keep), --via-ref in v1. My leans: defer exec, keep topic fan-out (cut registry), defer --via-ref.",
+  "tags": [],
+  "title": "Merged review synthesis (Claude + Codex)",
+  "token_usage": null,
+  "type": "file"
+}

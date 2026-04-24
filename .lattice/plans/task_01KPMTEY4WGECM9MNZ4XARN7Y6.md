@@ -3,7 +3,9 @@
 **Ticket:** CMUX-37 (`task_01KPMTEY4WGECM9MNZ4XARN7Y6`)
 **Companion doc:** `docs/c11-snapshot-restore-plan.md`
 **Related platform ticket:** C11-7 (`task_01KPS4FBHSSCCJC3EP43YJ7XMZ`) — socket reliability. CMUX-37 depends on it; does not absorb it.
-**Last refreshed:** 2026-04-23
+**Related feature ticket:** C11-13 (`task_01KPYFX4PV4QQQYHCPE0R02GEZ`) — inter-agent messaging primitive. Shares the CMUX-11 per-surface metadata layer; see alignment doc below.
+**Alignment doc:** [`docs/c11-13-cmux-37-alignment.md`](../../docs/c11-13-cmux-37-alignment.md) — locked conventions for `mailbox.*` metadata namespace, surface-name addressing, strings-only values for v1, and `WorkspaceApplyPlan` composition path.
+**Last refreshed:** 2026-04-24 (added C11-13 alignment)
 
 ## What this is
 
@@ -39,11 +41,13 @@ struct SurfaceSpec: Codable {
     var url: String?                  // browser
     var file: String?                 // markdown
     var metadata: [String: JSONValue] // surface metadata (including restart registry keys)
-    var pane_metadata: [String: JSONValue]
+    var pane_metadata: [String: JSONValue] // pane metadata (including mailbox.* keys per C11-13 alignment)
 }
 ```
 
 Nested `LayoutTreeSpec` mirrors `SessionWorkspaceLayoutSnapshot` (`Sources/SessionPersistence.swift:360-428`) so Snapshots convert trivially.
+
+**C11-13 coordination:** `pane_metadata` must faithfully round-trip any keys under the reserved `mailbox.*` namespace without modification. For v1 both systems treat metadata values as strings; if CMUX-37 wants structured JSON values earlier, coordinate the `PaneMetadataStore`/`SurfaceMetadataStore` schema migration with C11-13 jointly. See `docs/c11-13-cmux-37-alignment.md`.
 
 ## Executor
 

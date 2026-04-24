@@ -1,0 +1,68 @@
+{
+  "assigned_to": "agent:claude-opus-4-7",
+  "branch_links": [],
+  "cmux_surface": "BABFCBF8-AE7E-49B0-8AAC-ED9C2014DC9D",
+  "cmux_workspace": "48438BFA-8D65-468D-8174-5BC2CD9F93A0",
+  "comment_count": 6,
+  "complexity": null,
+  "created_at": "2026-04-24T00:58:13Z",
+  "created_by": "agent:claude-opus-4-7",
+  "custom_fields": {},
+  "description": "Design and ship a minimal inter-surface messaging primitive for c11. Filesystem-contract-first mailbox at $C11_STATE/mailboxes/ with a shared _outbox/, per-surface inboxes, and pluggable delivery handlers (stdin, silent, watch, potentially exec). XML-tag wire format for PTY injection. Topic discovery via hybrid advertised+emergent registry. CLI is a thin convenience wrapper; direct file writes are equivalent. See design doc at docs/c11-messaging-primitive-design.md.",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "art_01KPYFXG4JQ7P8BBBD55DQNS64",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KPYGABZMTG762CW59XKW4BX2",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KPYGAC1SE1T0RYABJNJKYVBT",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KPYGAC3XW6JZH3X9P6HV6NDY",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KPZ18QCN2TBY9E54RXGT4KVA",
+      "role": null,
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KPYFX4PV4QQQYHCPE0R02GEZ",
+  "last_event_id": "ev_01KPZ18QK3V4BH67WV9SJB89KR",
+  "last_status_changed_at": "2026-04-24T01:00:17Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-04-24T01:39:37Z",
+      "created_by": "agent:claude-opus-4-7",
+      "note": "Both touch the per-surface manifest/metadata layer (CMUX-11). C11-13 extends pane metadata with mailbox fields (delivery, subscribe, retention, advertises); CMUX-37's WorkspaceApplyPlan will absorb these as structured fields when Blueprints/Snapshots land. C11-13 ships independently without blocking on CMUX-37; manifest field namespace chosen so Blueprint serialization composes cleanly.",
+      "target_task_id": "task_01KPMTEY4WGECM9MNZ4XARN7Y6",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-13",
+  "status": "in_planning",
+  "tags": [
+    "messaging",
+    "agents",
+    "infrastructure",
+    "design"
+  ],
+  "title": "Inter-agent messaging primitive: mailbox + pluggable delivery handlers",
+  "type": "task",
+  "updated_at": "2026-04-24T06:01:39Z",
+  "urgency": null
+}

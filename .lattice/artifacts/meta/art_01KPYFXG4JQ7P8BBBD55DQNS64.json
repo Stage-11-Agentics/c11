@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-04-24T00:58:25Z",
+  "created_by": "agent:claude-opus-4-7",
+  "custom_fields": {},
+  "id": "art_01KPYFXG4JQ7P8BBBD55DQNS64",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KPYFXG4JQ7P8BBBD55DQNS64.md",
+    "size_bytes": 32698
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Architecture, wire format, handler registry, filesystem contract, topic discovery, drift-prevention rules, open questions.",
+  "tags": [],
+  "title": "Design sketch: inter-agent messaging primitive",
+  "token_usage": null,
+  "type": "file"
+}

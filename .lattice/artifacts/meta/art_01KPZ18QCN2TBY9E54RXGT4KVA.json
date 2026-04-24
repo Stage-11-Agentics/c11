@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-04-24T06:01:38Z",
+  "created_by": "agent:claude-opus-4-7",
+  "custom_fields": {},
+  "id": "art_01KPZ18QCN2TBY9E54RXGT4KVA",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KPZ18QCN2TBY9E54RXGT4KVA.md",
+    "size_bytes": 7131
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Locks surface-names-as-addresses, mailbox.* namespace reservation, strings-only metadata encoding, WorkspaceApplyPlan composition path, Snapshot/restore lifecycle. Shared source of truth for both tickets.",
+  "tags": [],
+  "title": "Alignment: C11-13 \u21c4 CMUX-37 (shared metadata conventions)",
+  "token_usage": null,
+  "type": "file"
+}

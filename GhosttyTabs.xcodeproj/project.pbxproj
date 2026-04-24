@@ -19,6 +19,7 @@
 		A5001540 /* PortScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001541 /* PortScanner.swift */; };
 		A5001542 /* SurfaceMetadataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001543 /* SurfaceMetadataStore.swift */; };
 		D70A3BF0A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70A3BF1A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift */; };
+		D70A3BF0A1B2C3D4E5F60719 /* WorkspaceMetadataKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70A3BF1A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift */; };
 		D70A4BF0A1B2C3D4E5F60718 /* WorkspaceMetadataValidatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70A4BF1A1B2C3D4E5F60718 /* WorkspaceMetadataValidatorTests.swift */; };
 		D7005BF0A1B2C3D4E5F60718 /* PersistedMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7005BF1A1B2C3D4E5F60718 /* PersistedMetadata.swift */; };
 		D7010BF0A1B2C3D4E5F60718 /* PaneMetadataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7010BF1A1B2C3D4E5F60718 /* PaneMetadataStore.swift */; };
@@ -1232,6 +1233,7 @@
 				D7202BF0A1B2C3D4E5F60719 /* MailboxIO.swift in Sources */,
 				D7203BF0A1B2C3D4E5F60719 /* MailboxULID.swift in Sources */,
 				D7206BF0A1B2C3D4E5F60719 /* MailboxEnvelope.swift in Sources */,
+				D70A3BF0A1B2C3D4E5F60719 /* WorkspaceMetadataKeys.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

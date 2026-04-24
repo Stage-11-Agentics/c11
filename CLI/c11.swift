@@ -12751,12 +12751,11 @@ struct CMUXCLI {
                 // bubbles up from the metadata path.
                 let trimmedSessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmedSessionId.isEmpty, !surfaceId.isEmpty {
-                    // Mirrors `SurfaceMetadataKeyName.claudeSessionId` in the
-                    // app target (Sources/WorkspaceMetadataKeys.swift); the
-                    // CLI target does not link that file, so the literal is
-                    // kept in lockstep by reader convention.
+                    // `Sources/WorkspaceMetadataKeys.swift` is linked into
+                    // both the c11 app target and the c11-cli target, so the
+                    // reserved-key constant has one spelling in one place.
                     let metadata: [String: Any] = [
-                        "claude.session_id": trimmedSessionId
+                        SurfaceMetadataKeyName.claudeSessionId: trimmedSessionId
                     ]
                     var params: [String: Any] = [
                         "surface_id": surfaceId,

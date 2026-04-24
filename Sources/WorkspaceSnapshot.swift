@@ -103,10 +103,46 @@ struct WorkspaceSnapshotIndex: Codable, Sendable, Equatable {
     /// Where the entry was discovered: `current` for `~/.c11-snapshots/`,
     /// `legacy` for the `~/.cmux-snapshots/` read-fallback path.
     var source: Source
+    /// Whether the envelope could be decoded. `.ok` is the common case;
+    /// `.unreadable(reason)` surfaces files on disk whose JSON could not
+    /// be parsed (truncated, corrupted, or not a snapshot envelope) so
+    /// operators can see and delete them. Defaults to `.ok` when a wire
+    /// producer omits the field, for forward compatibility with older
+    /// socket clients.
+    var readability: Readability
 
     enum Source: String, Codable, Sendable, Equatable {
         case current
         case legacy
+    }
+
+    /// Parallel `source` discriminator. Tagged Codable: an `.ok` row
+    /// encodes as `{"status": "ok"}`; an `.unreadable` row encodes as
+    /// `{"status": "unreadable", "reason": "..."}`. Keeps the wire shape
+    /// stable and machine-readable.
+    enum Readability: Sendable, Equatable {
+        case ok
+        case unreadable(String)
+    }
+
+    init(
+        snapshotId: String,
+        path: String,
+        createdAt: Date,
+        workspaceTitle: String?,
+        surfaceCount: Int,
+        origin: WorkspaceSnapshotFile.Origin,
+        source: Source,
+        readability: Readability = .ok
+    ) {
+        self.snapshotId = snapshotId
+        self.path = path
+        self.createdAt = createdAt
+        self.workspaceTitle = workspaceTitle
+        self.surfaceCount = surfaceCount
+        self.origin = origin
+        self.source = source
+        self.readability = readability
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -117,6 +153,54 @@ struct WorkspaceSnapshotIndex: Codable, Sendable, Equatable {
         case surfaceCount = "surface_count"
         case origin
         case source
+        case readability
+    }
+
+    private enum ReadabilityKeys: String, CodingKey {
+        case status
+        case reason
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(snapshotId, forKey: .snapshotId)
+        try c.encode(path, forKey: .path)
+        try c.encode(createdAt, forKey: .createdAt)
+        try c.encodeIfPresent(workspaceTitle, forKey: .workspaceTitle)
+        try c.encode(surfaceCount, forKey: .surfaceCount)
+        try c.encode(origin, forKey: .origin)
+        try c.encode(source, forKey: .source)
+        var r = c.nestedContainer(keyedBy: ReadabilityKeys.self, forKey: .readability)
+        switch readability {
+        case .ok:
+            try r.encode("ok", forKey: .status)
+        case .unreadable(let reason):
+            try r.encode("unreadable", forKey: .status)
+            try r.encode(reason, forKey: .reason)
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        snapshotId = try c.decode(String.self, forKey: .snapshotId)
+        path = try c.decode(String.self, forKey: .path)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        workspaceTitle = try c.decodeIfPresent(String.self, forKey: .workspaceTitle)
+        surfaceCount = try c.decode(Int.self, forKey: .surfaceCount)
+        origin = try c.decode(WorkspaceSnapshotFile.Origin.self, forKey: .origin)
+        source = try c.decode(Source.self, forKey: .source)
+        if let r = try? c.nestedContainer(keyedBy: ReadabilityKeys.self, forKey: .readability),
+           let status = try? r.decode(String.self, forKey: .status) {
+            switch status {
+            case "unreadable":
+                let reason = (try? r.decode(String.self, forKey: .reason)) ?? ""
+                readability = .unreadable(reason)
+            default:
+                readability = .ok
+            }
+        } else {
+            readability = .ok
+        }
     }
 }
 

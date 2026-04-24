@@ -335,16 +335,37 @@ struct WorkspaceSnapshotStore: Sendable {
         }
         var out: [WorkspaceSnapshotIndex] = []
         for url in entries where url.pathExtension.lowercased() == "json" {
-            guard let summary = try? readSummary(from: url) else { continue }
-            out.append(WorkspaceSnapshotIndex(
-                snapshotId: summary.snapshotId,
-                path: url.path,
-                createdAt: summary.createdAt,
-                workspaceTitle: summary.workspaceTitle,
-                surfaceCount: summary.surfaceCount,
-                origin: summary.origin,
-                source: source
-            ))
+            do {
+                let summary = try readSummary(from: url)
+                out.append(WorkspaceSnapshotIndex(
+                    snapshotId: summary.snapshotId,
+                    path: url.path,
+                    createdAt: summary.createdAt,
+                    workspaceTitle: summary.workspaceTitle,
+                    surfaceCount: summary.surfaceCount,
+                    origin: summary.origin,
+                    source: source,
+                    readability: .ok
+                ))
+            } catch {
+                // I8: surface unreadable files instead of silently dropping.
+                // Best-effort id = filename stem; `Date.distantPast` keeps
+                // unreadable rows at the bottom of the newest-first sort so
+                // they don't bury healthy snapshots.
+                let stem = url.deletingPathExtension().lastPathComponent
+                let rawReason = "\(error)"
+                let reason = String(rawReason.prefix(160))
+                out.append(WorkspaceSnapshotIndex(
+                    snapshotId: stem,
+                    path: url.path,
+                    createdAt: .distantPast,
+                    workspaceTitle: nil,
+                    surfaceCount: 0,
+                    origin: .manual,
+                    source: source,
+                    readability: .unreadable(reason)
+                ))
+            }
         }
         return out
     }

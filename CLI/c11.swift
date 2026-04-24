@@ -2948,10 +2948,22 @@ struct CMUXCLI {
         let rows: [(String, String, String, String, String, String)] = snapshotsAny.map { entry in
             let id = (entry["snapshot_id"] as? String) ?? "?"
             let created = (entry["created_at"] as? String) ?? "?"
-            let title = (entry["workspace_title"] as? String) ?? "(no title)"
-            let surfaces = (entry["surface_count"] as? Int).map(String.init) ?? "?"
             let origin = (entry["origin"] as? String) ?? "?"
             let source = (entry["source"] as? String) ?? "current"
+            // I8: unreadable rows carry a `{"status": "unreadable", "reason": "..."}`
+            // payload under `readability`. Show `UNREADABLE` in the title
+            // column and `?` in the surfaces column so operators can see
+            // the bad file without losing sight of the healthy rows. The
+            // reason is preserved on the wire (`--json`) for machine
+            // consumers.
+            let readability = entry["readability"] as? [String: Any]
+            if (readability?["status"] as? String) == "unreadable" {
+                let unreadableLabel = String(localized: "cli.listSnapshots.column.unreadable",
+                                             defaultValue: "UNREADABLE")
+                return (id, created, truncate(unreadableLabel, max: 32), "?", origin, source)
+            }
+            let title = (entry["workspace_title"] as? String) ?? "(no title)"
+            let surfaces = (entry["surface_count"] as? Int).map(String.init) ?? "?"
             return (id, created, truncate(title, max: 32), surfaces, origin, source)
         }
         func pad(_ s: String, _ width: Int) -> String {
@@ -2975,6 +2987,26 @@ struct CMUXCLI {
                 + pad(r.4, 12) + "  "
                 + pad(r.5, 8)
             )
+        }
+        // I8: after the main table, show the reason for each unreadable
+        // row so operators have enough to investigate (the path and the
+        // parse error). The tabular form keeps `UNREADABLE` in the title
+        // column; the per-row reason goes here.
+        let unreadables = snapshotsAny.compactMap { entry -> (String, String, String)? in
+            guard let readability = entry["readability"] as? [String: Any],
+                  (readability["status"] as? String) == "unreadable" else { return nil }
+            let id = (entry["snapshot_id"] as? String) ?? "?"
+            let path = (entry["path"] as? String) ?? "?"
+            let reason = (readability["reason"] as? String) ?? ""
+            return (id, path, reason)
+        }
+        if !unreadables.isEmpty {
+            let prefix = String(localized: "cli.listSnapshots.unreadable.prefix",
+                                defaultValue: "unreadable: ")
+            print("")
+            for (id, path, reason) in unreadables {
+                print("  \(prefix)\(id) [\(path)] — \(reason)")
+            }
         }
     }
 

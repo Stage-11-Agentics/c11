@@ -142,10 +142,15 @@ final class WorkspaceSnapshotCaptureTests: XCTestCase {
         XCTAssertEqual(bEntry.workspaceTitle, "beta")
     }
 
-    func testStoreListSkipsMalformedJSON() throws {
+    /// I8 (was: testStoreListSkipsMalformedJSON). Before I8, malformed JSON
+    /// was silently dropped. After I8, it surfaces as an unreadable row
+    /// with a best-effort id (filename stem), preserving the healthy entry
+    /// at the top of the newest-first sort.
+    func testStoreListSurfacesMalformedJSONAsUnreadableRow() throws {
         let tmp = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: tmp) }
-        let garbage = tmp.appendingPathComponent("01KQ0GARBAGE000000000000.json")
+        let garbageId = "01KQ0GARBAGE000000000000"
+        let garbage = tmp.appendingPathComponent("\(garbageId).json")
         try Data("not json".utf8).write(to: garbage, options: .atomic)
         let valid = sampleEnvelope(id: "01KQ0VALIDLIST0000000000")
         let store = WorkspaceSnapshotStore(
@@ -155,8 +160,81 @@ final class WorkspaceSnapshotCaptureTests: XCTestCase {
         )
         _ = try store.write(valid)
         let list = try store.list()
-        XCTAssertEqual(list.count, 1, "malformed json is skipped, valid entry survives")
-        XCTAssertEqual(list.first?.snapshotId, valid.snapshotId)
+        XCTAssertEqual(list.count, 2, "both healthy and unreadable rows appear")
+        let valids = list.filter { $0.readability == .ok }
+        let unreadables = list.filter {
+            if case .unreadable = $0.readability { return true } else { return false }
+        }
+        XCTAssertEqual(valids.count, 1)
+        XCTAssertEqual(valids.first?.snapshotId, valid.snapshotId)
+        XCTAssertEqual(unreadables.count, 1)
+        let unreadable = try XCTUnwrap(unreadables.first)
+        XCTAssertEqual(unreadable.snapshotId, garbageId, "unreadable row id is filename stem")
+        XCTAssertEqual(unreadable.path, garbage.path)
+        XCTAssertEqual(unreadable.surfaceCount, 0)
+        XCTAssertEqual(unreadable.createdAt, .distantPast, "unreadable rows sort to the bottom")
+        if case .unreadable(let reason) = unreadable.readability {
+            XCTAssertFalse(reason.isEmpty, "reason is best-effort but must be populated")
+            XCTAssertLessThanOrEqual(reason.count, 160, "reason is truncated to 160 chars")
+        } else {
+            XCTFail("expected .unreadable variant")
+        }
+    }
+
+    /// Sort invariant: healthy rows come first (newest createdAt),
+    /// unreadable rows come last (createdAt = .distantPast).
+    func testStoreListSortsHealthyBeforeUnreadable() throws {
+        let tmp = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let garbage = tmp.appendingPathComponent("01KQ0GARBAGE00SORT000000.json")
+        try Data("{\"not\": \"a snapshot\"}".utf8).write(to: garbage, options: .atomic)
+        let valid = sampleEnvelope(
+            id: "01KQ0SORTVALID0000000000",
+            createdAt: Date(timeIntervalSince1970: 1_745_000_000)
+        )
+        let store = WorkspaceSnapshotStore(
+            currentDirectory: tmp,
+            legacyDirectory: tmp.appendingPathComponent("nowhere"),
+            fileManager: .default
+        )
+        _ = try store.write(valid)
+        let list = try store.list()
+        XCTAssertEqual(list.first?.readability, .ok, "healthy row first")
+        XCTAssertEqual(list.count, 2)
+    }
+
+    /// Readability round-trips through Codable.
+    func testReadabilityRoundTripsThroughCodable() throws {
+        let ok = WorkspaceSnapshotIndex(
+            snapshotId: "01KQ0RTOK00000000000000",
+            path: "/tmp/ok.json",
+            createdAt: Date(timeIntervalSince1970: 1_745_000_000),
+            workspaceTitle: "ok",
+            surfaceCount: 1,
+            origin: .manual,
+            source: .current,
+            readability: .ok
+        )
+        let bad = WorkspaceSnapshotIndex(
+            snapshotId: "01KQ0RTBAD0000000000000",
+            path: "/tmp/bad.json",
+            createdAt: .distantPast,
+            workspaceTitle: nil,
+            surfaceCount: 0,
+            origin: .manual,
+            source: .current,
+            readability: .unreadable("parse error: truncated")
+        )
+        for entry in [ok, bad] {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(entry)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let decoded = try decoder.decode(WorkspaceSnapshotIndex.self, from: data)
+            XCTAssertEqual(decoded.readability, entry.readability)
+            XCTAssertEqual(decoded.snapshotId, entry.snapshotId)
+        }
     }
 
     // MARK: - P1: header-only summary for `snapshot.list`

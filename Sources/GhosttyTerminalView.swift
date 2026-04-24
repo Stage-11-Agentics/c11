@@ -2594,6 +2594,16 @@ final class TerminalSurface: Identifiable, ObservableObject {
     private var lastFocusState: Bool = false
 #if DEBUG
     private var needsConfirmCloseOverrideForTesting: Bool?
+
+    /// Test-only accessor that concatenates `pendingTextQueue` into a single
+    /// string. Used by the Phase 1 snapshot round-trip acceptance fixture
+    /// (and future layout-executor harnesses) to verify what `sendText`
+    /// queued before the live Ghostty surface came up.
+    var pendingInitialInputForTests: String {
+        var bytes = Data()
+        for chunk in pendingTextQueue { bytes.append(chunk) }
+        return String(data: bytes, encoding: .utf8) ?? ""
+    }
 #endif
     private enum PortalLifecycleState: String {
         case live

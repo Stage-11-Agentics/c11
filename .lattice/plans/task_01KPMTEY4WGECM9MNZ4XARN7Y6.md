@@ -550,3 +550,294 @@ After R7 lands and is pushed, the rework Impl agent posts the completion comment
 ## Reset 2026-04-24 by agent:claude-opus-4-7-cmux-37
 
 ## Reset 2026-04-24 by human:atin
+
+---
+
+## Phase 1 Implementation Plan (2026-04-24)
+
+*Agent:* `agent:claude-opus-4-7-cmux-37-p1-plan`. Scope is **Snapshot capture + file format, Snapshot restore, `c11 snapshot` / `c11 restore` / `c11 list-snapshots`, and Claude session resume (cc-only)**. No Blueprints, no picker, no `--all`, no codex/kimi/opencode registry rows. Terminal surfaces are the primary target, but the snapshot file faithfully carries browser/markdown kinds too so Phase 3's `--all` + non-terminal work is a schema extension (new fields), not a format break. Built entirely on top of Phase 0's shipped `WorkspaceApplyPlan` / `WorkspaceLayoutExecutor`.
+
+### Design decisions (picked before the file list)
+
+1. **Snapshot wire format: wrap `WorkspaceApplyPlan`, don't extend it.** New `WorkspaceSnapshotFile` envelope that *embeds* a `WorkspaceApplyPlan` alongside snapshot-scoped metadata (`snapshot_id`, `created_at`, `c11_version`, `origin`). Rationale: Phase 0's `WorkspaceApplyPlan` is the shared primitive for Blueprints (Phase 2) *and* Snapshots — adding `snapshot_id` / timestamps to the plan type itself would contaminate Blueprint authoring (why does my checked-in markdown layout carry `snapshot_id`?) and force every future plan consumer to ignore fields it doesn't care about. Wrapping keeps the plan type pure. Phase 1's on-disk JSON is `{version, snapshot_id, created_at, c11_version, origin, plan: <WorkspaceApplyPlan>}` — one level of nesting, obvious separation.
+2. **Reuse, don't extend, `SessionPersistence.swift`'s snapshot types.** Phase 0's plan already mirrors `SessionWorkspaceLayoutSnapshot` structurally; converting one to the other is a ~30-line translator inside the capture path. Reusing the session types would force the converter to keep two parallel type families in sync forever (and would couple the snapshot file to Tier 1's autosave format, which can change independently). `WorkspaceSnapshotFile` stays thin; the plan inside is exactly what the executor takes. No churn to `SessionPersistence.swift`.
+3. **Storage: `~/.c11-snapshots/<ulid>.json`.** The rename from `cmux` → `c11` is the one-way door; aligning fresh directories with the new name keeps future grep-ability honest. Backwards-compat read of `~/.cmux-snapshots/` (if it exists) is added so operators who piloted an earlier iteration don't lose files. Writes always go to `~/.c11-snapshots/`. `c11 list-snapshots` merges both locations for discovery, with a `source:` column when listing from the legacy directory.
+4. **Session-id metadata key: `claude.session_id` on *surface* metadata.** Pairs with the canonical `terminal_type` key that `SurfaceMetadataStore.reservedKeys` already recognizes (`Sources/SurfaceMetadataStore.swift:143-152`) and that `c11 set-agent --type claude-code` already writes. A pane can host multiple tab-stacked surfaces; each Claude Code surface has its own session. Per-surface is the right granularity. The `claude.*` prefix is reserved in the alignment doc (`docs/c11-13-cmux-37-alignment.md:34`) for the restart registry and does not collide with C11-13's `mailbox.*` (pane-layer) namespace.
+5. **Opt-in gate (`C11_SESSION_RESUME=1`): applied at *restore* time only.** Capture always writes `claude.session_id` to surface metadata because the SessionStart hook does that continuously regardless of flags — the metadata is data, not policy. Only synthesis of `cc --resume <id>` is gated. The env var is read once at the top of `c11 restore`'s command handler (CLI layer) and threads through to the executor as `ApplyOptions.restartRegistry = .phase1` (vs. `nil`). This way an operator disabling resume still gets their layout back, just with fresh `cc` shells instead of resumed ones — and snapshots written while the flag is off still contain the session ids for later use.
+6. **Executor integration for restart: new `ApplyOptions.restartRegistry: AgentRestartRegistry?` (default `nil`).** When non-nil and a `SurfaceSpec.command` is `nil` on a terminal surface, the executor consults the registry with `(terminal_type, session_id, surface.metadata)` and, if the registry returns a command, uses that for `TerminalPanel.sendText`. Explicit `SurfaceSpec.command` always wins (no synthesis). Default `nil` preserves Phase 0 behavior bit-exactly for the debug `c11 workspace apply` path and all existing acceptance fixtures. Nothing in Phase 0's `ApplyResult` shape changes; the new field is additive and Codable-optional.
+7. **Converter purity: a pure file, pure function, no AppKit, no stores, no env reads.** The env gate is resolved at the CLI layer. The converter's job is shape-only: take a loaded `WorkspaceSnapshotFile`, produce a `WorkspaceApplyPlan`. Restart-registry synthesis is NOT done in the converter — it happens in the executor, at the creation-time seam, so Blueprints (Phase 2) also benefit without a second copy of the logic.
+8. **Capture seam: `WorkspaceSnapshotSource` protocol.** `LiveWorkspaceSnapshotSource` walks `TabManager` + `Workspace.bonsplitController.treeSnapshot()` + `SurfaceMetadataStore` + `PaneMetadataStore`. Tests use a `FakeWorkspaceSnapshotSource` that returns canned snapshots without touching AppKit. Same pattern Phase 0 applied for `WorkspaceLayoutExecutorDependencies`.
+9. **`cmux` compat is automatic.** The `cmux` binary name (shipped as a copy/hardlink of `c11` today — see `CLI/c11.swift:33` "binary rename" note and `mirrorC11CmuxEnv()`) dispatches through the same `main.swift` entry point and subcommand switch. `cmux snapshot`, `cmux restore`, `cmux list-snapshots` work for free once the switch arms exist. No separate wiring; we only verify the help text includes the aliases (plan notes below).
+
+### Files to add
+
+- `Sources/WorkspaceSnapshot.swift` — the `WorkspaceSnapshotFile` envelope (`Codable, Sendable, Equatable`) with `version: Int`, `snapshotId: String` (ULID), `createdAt: Date`, `c11Version: String`, `origin: Origin` (enum: `.manual`, `.autoRestart`), `plan: WorkspaceApplyPlan`. No behavior. ~80 LOC including Codable boilerplate. Lives adjacent to `Sources/WorkspaceApplyPlan.swift` for symmetry.
+- `Sources/WorkspaceSnapshotCapture.swift` — the `WorkspaceSnapshotSource` protocol, `LiveWorkspaceSnapshotSource: WorkspaceSnapshotSource` implementation, and the `captureWorkspace(_: Workspace) -> WorkspaceSnapshotFile` walk. The walker produces a `WorkspaceApplyPlan` by translating the live bonsplit tree (`Workspace.bonsplitController.treeSnapshot()`) into `LayoutTreeSpec`, each leaf panel into a `SurfaceSpec`, reading surface metadata (`SurfaceMetadataStore.shared.getMetadata`) and pane metadata (`PaneMetadataStore.shared.getMetadata`). Runs `@MainActor` — capture needs a consistent snapshot of AppKit state. ~300 LOC.
+- `Sources/WorkspaceSnapshotConverter.swift` — the pure converter. `enum WorkspaceSnapshotConverter` with a single `nonisolated static func applyPlan(from snapshot: WorkspaceSnapshotFile) -> Result<WorkspaceApplyPlan, ConverterError>`. No AppKit, no stores, no file I/O, no env reads. Also houses `enum ConverterError` (version mismatch, corrupt envelope). ~80 LOC.
+- `Sources/WorkspaceSnapshotStore.swift` — filesystem I/O: `WorkspaceSnapshotStore.write(_:to:)`, `WorkspaceSnapshotStore.read(from:)`, `WorkspaceSnapshotStore.list() -> [WorkspaceSnapshotIndex]`, `WorkspaceSnapshotStore.defaultDirectory() -> URL` (resolves `~/.c11-snapshots/`), `WorkspaceSnapshotStore.legacyDirectory() -> URL` (resolves `~/.cmux-snapshots/`). Atomic writes. ULID-named files. Also defines the small `WorkspaceSnapshotIndex` record used by `list-snapshots` (id, created_at, workspace-title-hint, surface-count, origin). ~180 LOC. Tests go through a public `directoryOverride:` init for isolation from the real home dir.
+- `Sources/AgentRestartRegistry.swift` — pure value type. Shape:
+  ```swift
+  struct AgentRestartRegistry: Sendable {
+      struct Row: Sendable {
+          let terminalType: String
+          /// Returns the command string, or nil if the row declines (e.g., missing session id with no fallback).
+          let resolve: @Sendable (_ sessionId: String?, _ metadata: [String: String]) -> String?
+      }
+      private let rowsByType: [String: Row]
+      init(rows: [Row])
+      func resolveCommand(terminalType: String?, sessionId: String?, metadata: [String: String]) -> String?
+      static let phase1: AgentRestartRegistry = .init(rows: [
+          Row(terminalType: "claude-code") { sessionId, _ in
+              guard let id = sessionId?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty else { return nil }
+              return "cc --resume \(id)"
+          }
+      ])
+  }
+  ```
+  Phase 5 adds rows for `codex` / `opencode` / `kimi` inside this same file without schema changes. ~70 LOC.
+- `c11Tests/WorkspaceSnapshotConverterTests.swift` — pure Codable + converter tests. Round-trip a `WorkspaceSnapshotFile` through `JSONEncoder` / `JSONDecoder`; pass the loaded snapshot through `WorkspaceSnapshotConverter.applyPlan` and assert the resulting `WorkspaceApplyPlan` matches the expected shape. Fixtures include: one terminal with `claude.session_id` + `terminal_type=claude-code`; one with `mailbox.*` pane-metadata keys; one mixed terminal + browser + markdown. No AppKit. Lives in the existing `c11Tests` target (same target membership as `WorkspaceApplyPlanCodableTests.swift`).
+- `c11Tests/AgentRestartRegistryTests.swift` — pure tests for the registry. Cases: claude-code with session id → `"cc --resume <id>"`; claude-code without session id → `nil`; unknown terminal_type → `nil`; empty session id whitespace → `nil`; explicit command path short-circuits (exercised at the executor seam, but a direct registry test for the resolver closure lives here). ~60 LOC.
+- `c11Tests/WorkspaceSnapshotCaptureTests.swift` — seam-level tests using a `FakeWorkspaceSnapshotSource` that returns a canned `WorkspaceSnapshotFile`. Validates the capture→write→read→convert→apply loop for a small fixture, asserts round-trip through `WorkspaceSnapshotStore`. No `@MainActor` needed for the fake path.
+- `c11Tests/WorkspaceSnapshotRoundTripAcceptanceTests.swift` — the end-to-end acceptance fixture (see *Acceptance fixture* section below). Runs against a real `TabManager` + `WorkspaceLayoutExecutor`, same CI-only pattern as Phase 0's `WorkspaceLayoutExecutorAcceptanceTests.swift`. Triggers via `gh workflow run test-e2e.yml` with a test-filter arg.
+- `c11Tests/Fixtures/workspace-snapshots/mixed-claude-mailbox.json` — the acceptance fixture: one workspace, one terminal with `claude.session_id` + `terminal_type=claude-code` + `mailbox.delivery="stdin,watch"` + `mailbox.subscribe="build.*"`, one browser with a stable local-file URL (data URL to avoid network), one markdown tab-stacked on the terminal, one additional terminal split right with a fresh `claude-code` / session id. Human-readable; doubles as a documentation artifact.
+- `skills/c11/references/claude-resume.md` — new reference doc. Covers: what Claude Code SessionStart delivers on stdin (`session_id`, `cwd`, transcript path); the `~/.claude/settings.json` SessionStart hook snippet operators add manually (exact content reproduces the SessionStart entry from `CLI/c11.swift:13642-13648`); how `c11 claude-hook session-start` maps `session_id` → surface metadata `claude.session_id` via the socket; the `C11_SESSION_RESUME=1` env flag; cross-reference to the grandfathered `Resources/bin/claude` wrapper as "the in-c11 path, not a pattern to extend" per CLAUDE.md. Note explicitly that **c11 never writes to `~/.claude/settings.json`** — the operator copy-pastes the snippet themselves or runs their own config management. ~80 lines of markdown.
+
+### Files to edit
+
+- `CLI/c11.swift` — add three top-level switch arms next to `case "workspace":` at line **1736**:
+  - `case "snapshot":` — `c11 snapshot [--workspace <ref>] [--out <path>]`. Default scope is the caller's current workspace; `--workspace` overrides. `--out` overrides the default `~/.c11-snapshots/<ulid>.json` path. Runs via `snapshot.create` v2 socket method (see socket-method section below). Prints the resulting snapshot path (or JSON `{snapshot_id, path}` under `--json`).
+  - `case "restore":` — `c11 restore <snapshot-id-or-path> [--select]`. Accepts either an id that resolves inside `~/.c11-snapshots/` (+ legacy fallback) or an absolute path. Reads `C11_SESSION_RESUME` env at this site only; threads resolved `restartRegistry` into `snapshot.restore` v2 params. Prints the new `workspace_ref` + per-surface refs, same shape as `workspace apply`.
+  - `case "list-snapshots":` — `c11 list-snapshots [--json]`. Merges `~/.c11-snapshots/` + `~/.cmux-snapshots/` (marking legacy entries). Columns: `SNAPSHOT_ID`, `CREATED_AT`, `WORKSPACE_TITLE`, `SURFACES`, `ORIGIN`, `SOURCE`. The help text listing at `CLI/c11.swift:1441+` gets a one-line entry for each command.
+- `CLI/c11.swift:12332-12369` — augment the existing `case "session-start", "active":` handler. After the existing `sessionStore.upsert(...)` call at line **12351** (which persists to `~/.cmuxterm/claude-hook-sessions.json`), add a second best-effort write: a `client.sendV2(method: "surface.set_metadata", params: {...})` call that merges `{"claude.session_id": <id>}` with `source: "explicit"` (the operator-hook is the operator's voice, so `.explicit` is correct; `.declare` would not persist past a higher-precedence write) onto the resolved `surfaceId`. Wrap in `do {...} catch let error as CLIError where isAdvisoryHookConnectivityError(error) {...}` so a missing socket (Claude running outside a c11 surface) doesn't error the hook. Telemetry breadcrumb: `"claude-hook.session-id.metadata-write.{ok,skipped,failed}"`. No new symbols; reuses the in-scope `client` and `surfaceId` bindings. ~25 LOC of additions.
+- `CLI/c11.swift:2620-2672` — near `runWorkspaceApply(...)`, add `runSnapshotCreate`, `runSnapshotRestore`, `runListSnapshots` helpers. Each is ~40-60 LOC, mirrors the existing `runWorkspaceApply` pattern: parse flags → build params → `client.sendV2(method: ..., params:)` → format output. `runSnapshotRestore` reads `C11_SESSION_RESUME` via `ProcessInfo.processInfo.environment["C11_SESSION_RESUME"]` (the `CMUX_*` mirror via `mirrorC11CmuxEnv()` makes `CMUX_SESSION_RESUME` work identically) and includes `{"restart_registry": "phase1"}` or similar in params; the app-side handler resolves the named registry.
+- `Sources/TerminalController.swift` near line **2105** (`case "workspace.apply":`) — add two more v2 method arms:
+  - `case "snapshot.create":` → `v2SnapshotCreate(params:)`. Off-main decode, resolve the target `Workspace` on `v2MainSync`, invoke `LiveWorkspaceSnapshotSource.capture(...)`, write through `WorkspaceSnapshotStore.write`, return `{snapshot_id, path, surface_count, workspace_ref}`.
+  - `case "snapshot.restore":` → `v2SnapshotRestore(params:)`. Off-main read + decode + converter pass (converter is `nonisolated`, validated off-main like `validate(plan:)` at line **4386**), then `v2MainSync` around the executor call. Registry threading: params may carry `"restart_registry": "phase1"`; the handler maps the string to `AgentRestartRegistry.phase1` (named-registry lookup keeps the wire format stringly-typed and forward-compatible). Returns the same `ApplyResult` shape `workspace.apply` returns.
+  - `case "snapshot.list":` → returns `[WorkspaceSnapshotIndex]` serialized as an array of dicts. Pure file-listing; runs off-main entirely.
+- `Sources/WorkspaceApplyPlan.swift` — extend `ApplyOptions` with one new field: `var restartRegistry: AgentRestartRegistry? = nil`. Codable-optional; absent in JSON = nil = Phase 0 behavior unchanged. Update the field's doc comment to cite its purpose. Also extend the `ApplyFailure.code` comment with `"restart_registry_declined"` (when the registry was consulted but returned nil) for observability.
+- `Sources/WorkspaceLayoutExecutor.swift` — insert the restart-registry guard in step 7 (terminal initial commands), lines **182-196**. The current loop reads `surfaceSpec.command`; replace with a computed `effectiveCommand`:
+  ```swift
+  let explicitCommand = surfaceSpec.command?.trimmingCharacters(in: .whitespacesAndNewlines)
+  let effectiveCommand: String?
+  if let explicit = explicitCommand, !explicit.isEmpty {
+      effectiveCommand = explicit
+  } else if let registry = options.restartRegistry {
+      let surfaceMeta = stringMetadata(surfaceSpec.metadata)   // decode only string-valued PersistedJSONValues
+      let terminalType = surfaceMeta["terminal_type"]
+      let sessionId = surfaceMeta["claude.session_id"]
+      effectiveCommand = registry.resolveCommand(
+          terminalType: terminalType,
+          sessionId: sessionId,
+          metadata: surfaceMeta
+      )
+      if effectiveCommand == nil, terminalType != nil || sessionId != nil {
+          // Registry saw inputs but declined — make it visible.
+          failures.append(ApplyFailure(
+              code: "restart_registry_declined",
+              step: "surface[\(surfaceSpec.id)].command.resolve",
+              message: "restart registry declined for terminal_type=\(terminalType ?? "nil") sessionId=\(sessionId?.prefix(8).description ?? "nil")"
+          ))
+      }
+  } else {
+      effectiveCommand = nil
+  }
+  guard let cmd = effectiveCommand, !cmd.isEmpty, …
+  ```
+  `stringMetadata` is a new `fileprivate` helper that flattens `[String: PersistedJSONValue]?` to `[String: String]` (only `.string(...)` entries, others are skipped). Explicit `SurfaceSpec.command` wins over the registry unconditionally. Add this to the step-7 comment block; ~35 LOC including the helper.
+- `Sources/WorkspaceMetadataKeys.swift` — add `public static let claudeSessionId = "claude.session_id"` and (for symmetry) `public static let terminalTypeClaudeCode = "claude-code"` constants next to the existing ones. The executor and capture walker reference these constants rather than string-literal the keys. Keeps the spelling in one place; makes a future rename grep-tractable.
+- `skills/c11/SKILL.md` — three additions:
+  1. In the *References* section (near `skills/c11/SKILL.md:458+`), add a line `**[references/claude-resume.md](references/claude-resume.md)** — Claude session resume: operator-installed SessionStart hook and the `C11_SESSION_RESUME` gate`.
+  2. New short *Workspace persistence* section (~20 lines) immediately before *References*, covering `c11 snapshot` / `c11 restore` / `c11 list-snapshots` with 2 example invocations and a pointer to the reference doc for the resume semantics.
+  3. Under *Declaring your agent (details)* (line **~125**), add one line after the `c11 set-agent` examples: `> When inside Claude Code, `claude.session_id` is populated automatically by the `c11 claude-hook session-start` handler — no agent action required.`
+- `docs/c11-snapshot-restore-plan.md` — note Phase 1 ship status in the header table at the top once Impl completes (one-line edit, non-blocking). Out-of-scope for the plan Impl agent; delegator handles on close-out.
+
+### Snapshot JSON schema (Phase 1 v1)
+
+```jsonc
+{
+  "version": 1,                                   // snapshot envelope schema version
+  "snapshot_id": "01KQ0XYZ...",                   // ULID, matches filename stem
+  "created_at": "2026-04-24T18:30:00.000Z",       // ISO 8601 UTC
+  "c11_version": "0.01.123+42",                   // CFBundleShortVersionString+CFBundleVersion at capture time
+  "origin": "manual",                             // "manual" | "auto-restart"
+
+  "plan": {                                       // <-- exactly a WorkspaceApplyPlan, no deltas
+    "version": 1,
+    "workspace": {
+      "title": "CMUX-37 P1 :: Plan",
+      "customColor": "#C0392B",
+      "workingDirectory": "/Users/atin/Projects/Stage11/code/c11",
+      "metadata": {
+        "description": "Planning Phase 1 of CMUX-37"
+      }
+    },
+    "layout": {
+      "type": "split",
+      "split": {
+        "orientation": "horizontal",
+        "dividerPosition": 0.5,
+        "first": { "type": "pane", "pane": { "surfaceIds": ["s1", "s2"], "selectedIndex": 0 } },
+        "second": { "type": "pane", "pane": { "surfaceIds": ["s3"] } }
+      }
+    },
+    "surfaces": [
+      {
+        "id": "s1",
+        "kind": "terminal",
+        "title": "cc :: plan",
+        "description": "Phase 1 planning session",
+        "workingDirectory": "/Users/atin/Projects/Stage11/code/c11",
+        // "command" is intentionally absent: on restore, the executor's
+        // restart registry synthesizes `cc --resume <claude.session_id>`.
+        "metadata": {
+          "terminal_type":     { "string": "claude-code" },
+          "model":             { "string": "claude-opus-4-7" },
+          "claude.session_id": { "string": "abc12345-ef67-890a-bcde-f0123456789a" }
+        },
+        "paneMetadata": {
+          "mailbox.delivery":        { "string": "stdin,watch" },
+          "mailbox.subscribe":       { "string": "build.*,deploy.green" },
+          "mailbox.retention_days":  { "string": "7" }
+        }
+      },
+      {
+        "id": "s2",
+        "kind": "markdown",
+        "title": "plan.md",
+        "filePath": "/Users/atin/Projects/Stage11/code/c11-worktrees/cmux-37-phase1/.lattice/plans/task_01KPMTEY4WGECM9MNZ4XARN7Y6.md"
+      },
+      {
+        "id": "s3",
+        "kind": "browser",
+        "title": "c11 docs",
+        "url": "https://example.invalid/c11-docs"
+      }
+    ]
+  }
+}
+```
+
+**Invariants the capture walker must honour:**
+- Surface `title` is the exact `setPanelCustomTitle` value (`Workspace.swift:5854`) at capture time. Round-trips byte-exact. Surface-name addressing (mailbox, etc.) depends on this.
+- `mailbox.*` pane-metadata keys are copied into `paneMetadata` unmodified, strings-only. The capture walker does not read through, does not decode, does not rewrite keys or values. It uses `PaneMetadataStore.shared.getMetadata(workspaceId:paneId:)`.
+- `claude.session_id` lives on *surface* metadata (not pane). Pane metadata reserves `mailbox.*`; surface metadata reserves the canonical-keys set + `claude.*` / `codex.*` / `opencode.*` restart-registry prefixes (alignment doc `:34`).
+- `ApplyResult`-local UUIDs (live refs) are never persisted. Plan-local `SurfaceSpec.id` values are re-minted at capture time (e.g. `"s1"`, `"s2"`, …) and exist only within a single snapshot file's lifetime.
+
+### Converter purity / test harness
+
+**Pure file:** `Sources/WorkspaceSnapshotConverter.swift`. No imports beyond `Foundation`.
+
+**Pure function:**
+```swift
+enum WorkspaceSnapshotConverter {
+    /// Pure conversion from a loaded snapshot envelope to a plan the
+    /// executor can apply. Does NOT materialize the restart-registry
+    /// command — that happens at apply time inside the executor so
+    /// Blueprints get the same behavior without duplicate logic. Does
+    /// NOT read env vars, touch stores, or hit AppKit.
+    nonisolated static func applyPlan(
+        from snapshot: WorkspaceSnapshotFile
+    ) -> Result<WorkspaceApplyPlan, ConverterError>
+}
+```
+
+**Inputs:** `WorkspaceSnapshotFile` (Codable value). **Outputs:** `WorkspaceApplyPlan` (Phase 0's shipped type) or a `ConverterError` (`versionUnsupported`, `planVersionUnsupported` — delegates to `WorkspaceLayoutExecutor.supportedPlanVersions`, `planDecodeFailed`).
+
+**Test file:** `c11Tests/WorkspaceSnapshotConverterTests.swift`. Fixture-driven. Each test is `XCTestCase` method that loads a JSON file from `c11Tests/Fixtures/workspace-snapshots/`, decodes, passes through the converter, asserts the `WorkspaceApplyPlan` structure. Matrix:
+- `minimal-single-terminal.json` — one terminal, no agent metadata.
+- `claude-code-with-session.json` — one terminal with `claude.session_id` + `terminal_type=claude-code`, no `command`. Converter output has `surfaces[0].command == nil` (the registry runs in the executor, not here).
+- `mailbox-roundtrip.json` — three `mailbox.*` pane-metadata keys. Asserts every key + value round-trips byte-for-byte through the converter.
+- `mixed-surfaces.json` — terminal + browser + markdown, nested split. Asserts layout tree shape is preserved.
+- `version-mismatch.json` — `"version": 999`. Asserts `.failure(.versionUnsupported(999))`.
+
+All tests are `@MainActor`-free. Runs in the existing `c11Tests` target alongside `WorkspaceApplyPlanCodableTests.swift`.
+
+### Restart registry shape
+
+```swift
+// Sources/AgentRestartRegistry.swift
+
+/// Pure-value lookup table mapping a known terminal type + session hint to
+/// the shell command that resumes it. Phase 1 ships a single row for
+/// `claude-code`; rows for `codex`, `opencode`, `kimi` land in Phase 5
+/// without schema changes.
+struct AgentRestartRegistry: Sendable {
+    struct Row: Sendable {
+        /// Canonical terminal_type string, matching the value written by
+        /// `c11 set-agent --type <type>` and surfaced by the sidebar chip.
+        let terminalType: String
+        /// Pure resolver. Returns the command to run, or `nil` to decline
+        /// (e.g., required session id missing). Metadata is the full
+        /// string-valued surface-metadata map; future rows may consult
+        /// additional keys without schema changes.
+        let resolve: @Sendable (_ sessionId: String?, _ metadata: [String: String]) -> String?
+    }
+
+    private let rowsByType: [String: Row]
+
+    init(rows: [Row]) {
+        var map: [String: Row] = [:]
+        for row in rows { map[row.terminalType] = row }
+        self.rowsByType = map
+    }
+
+    /// Consult the registry. Returns nil when the type is unknown or the
+    /// matching row declines.
+    func resolveCommand(
+        terminalType: String?,
+        sessionId: String?,
+        metadata: [String: String]
+    ) -> String? {
+        guard let type = terminalType?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !type.isEmpty,
+              let row = rowsByType[type] else { return nil }
+        return row.resolve(sessionId, metadata)
+    }
+
+    /// Phase 1 ships cc resume only. Phase 5 adds codex / opencode / kimi
+    /// rows here; adding a row is a one-line append to this literal.
+    static let phase1: AgentRestartRegistry = .init(rows: [
+        Row(terminalType: "claude-code") { sessionId, _ in
+            guard let id = sessionId?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !id.isEmpty else { return nil }
+            return "cc --resume \(id)"
+        }
+    ])
+}
+```
+
+The registry is **not Codable**. It flows through `ApplyOptions.restartRegistry` as an in-process reference and is resolved by name at the v2 handler boundary (`"phase1"` → `.phase1`). Keeping it out of the wire format prevents snapshot files from locking in a specific registry version — a snapshot written today stays restorable after Phase 5 adds rows, because the registry is resolved app-side at restore time.
+
+### Acceptance fixture
+
+**Scenario:** a single mixed-surface workspace captured and restored round-trip.
+
+**Shape:** workspace `"CMUX-37 acceptance"` at horizontal split. Left pane: two tab-stacked surfaces — one terminal with `terminal_type=claude-code` + `claude.session_id=<fixed-uuid>` + pane-metadata `mailbox.delivery=stdin` and `mailbox.subscribe=build.*`, one markdown (file path pointing to an existing repo markdown file to keep the test deterministic). Right pane: one terminal with a different `claude.session_id` and `mailbox.retention_days=14`, plus one browser surface split below it.
+
+**Location:** `c11Tests/WorkspaceSnapshotRoundTripAcceptanceTests.swift` + `c11Tests/Fixtures/workspace-snapshots/mixed-claude-mailbox.json`.
+
+**Flow:**
+1. Load `mixed-claude-mailbox.json` as a seed `WorkspaceApplyPlan`, apply via `WorkspaceLayoutExecutor.apply` (no restart registry — initial fixture apply should NOT synthesize `cc --resume`, because the plan declares `claude.session_id` but `command` would normally be missing → we seed the fixture with an explicit `command: "echo seed"` on the terminals so the initial apply path is deterministic).
+2. Capture the live workspace via `LiveWorkspaceSnapshotSource.capture(workspaceId:)` → `WorkspaceSnapshotFile`.
+3. Write through `WorkspaceSnapshotStore.write(_:to:)` to a temp directory; read back via `WorkspaceSnapshotStore.read(from:)`; assert the round-tripped envelope is `Equatable`-equal to the captured one (strips only the `created_at` + `snapshot_id` when comparing).
+4. Run `WorkspaceSnapshotConverter.applyPlan(from:)` on the read-back envelope; get a `WorkspaceApplyPlan`.
+5. Strip the `command` fields from the plan's terminal surfaces (simulating the "no explicit command, let restart registry decide" case), then `WorkspaceLayoutExecutor.apply` with `ApplyOptions(restartRegistry: .phase1)`.
+6. Assertions:
+   - `ApplyResult.failures` contains no `restart_registry_declined` entries (both terminals had session ids).
+   - Both terminals received the correct `cc --resume <session-id>` text (observable via the same test-harness read path Phase 0's acceptance fixture uses — either inspect `TerminalPanel.pendingSendText` or route through the existing buffer-read helper in `WorkspaceLayoutExecutorAcceptanceTests.swift`).
+   - `mailbox.*` pane-metadata keys round-trip byte-for-byte: read back via `PaneMetadataStore.shared.getMetadata(workspaceId:paneId:)`, compare maps directly.
+   - Surface `title` values byte-exact; surface-name addressing is unchanged across the round-trip.
+   - Layout tree structural fingerprint (orientation + pane grouping + tab order + `selectedIndex`) matches the fixture.
+   - `ApplyResult.warnings` contains no unexpected entries.
+7. Negative case (one additional test method): re-run step 5 with `ApplyOptions(restartRegistry: nil)` and assert both terminals receive **no** command (Phase 0-default behavior preserved when the gate is off).
+
+**Invocation:** CI-only, triggered via `gh workflow run test-e2e.yml` with `test_filter=WorkspaceSnapshotRoundTripAcceptanceTests`. Never run locally per `CLAUDE.md` testing policy.
+
+### Open questions for the operator
+
+1. **List-snapshots columns.** Default columns proposed: `SNAPSHOT_ID`, `CREATED_AT`, `WORKSPACE_TITLE`, `SURFACES`, `ORIGIN`, `SOURCE`. Drop any? Add any? The minimum useful set is probably `SNAPSHOT_ID`, `CREATED_AT`, `WORKSPACE_TITLE`, `SURFACES`. Happy to default-trim if preferred; not worth blocking Impl on.
+2. **`c11 snapshot` default argument.** Proposed: no args = current workspace, `--workspace <ref>` targets another. An explicit `--all` goes out to Phase 3 per plan scope. Is `c11 snapshot` (no args) the right default, or should it require `--workspace` always? Impl default assumes "no args = current" unless told otherwise.
+
+### Stop line
+
+Phase 1 ships `c11 snapshot` / `c11 restore` / `c11 list-snapshots` + Claude session resume (cc-only) + the session-id metadata-write augment to the `claude-hook session-start` handler + the `skills/c11/references/claude-resume.md` doc. Blueprints, the new-workspace picker, `c11 snapshot --all`, codex/opencode/kimi restart-registry rows, browser-history / markdown-scrollback persistence beyond what the snapshot file already carries — all remain out of scope for Phase 1 and land in Phases 2–5 per the master plan.

@@ -188,7 +188,7 @@ indirect enum LayoutTreeSpec: Codable, Sendable, Equatable {
 
 /// Caller-supplied knobs for `WorkspaceLayoutExecutor.apply`. Defaults match
 /// Phase 0's acceptance-fixture expectations.
-struct ApplyOptions: Codable, Sendable, Equatable {
+struct ApplyOptions: Sendable, Equatable {
     /// Select + foreground the created workspace once ready. Defaults `true`
     /// so the debug CLI behaves like `workspace.create`. Passed through to
     /// `TabManager.addWorkspace(select:)`.
@@ -203,15 +203,77 @@ struct ApplyOptions: Codable, Sendable, Equatable {
     /// `TabManager.addWorkspace(autoWelcomeIfNeeded:)` regardless — the field
     /// exists for future (Phase 1 restore) callers.
     var autoWelcomeIfNeeded: Bool
+    /// Optional Phase 1 restart registry. When non-nil and a
+    /// `SurfaceSpec.command` is missing/empty on a terminal surface, the
+    /// executor consults the registry with `(terminal_type, session_id,
+    /// surface.metadata)` and uses the returned command for
+    /// `TerminalPanel.sendText`. Explicit `SurfaceSpec.command` always wins
+    /// (never overridden). Default `nil` preserves Phase 0 behavior bit-exact
+    /// for the debug `c11 workspace apply` path and all existing acceptance
+    /// tests.
+    ///
+    /// Not Codable — snapshot files never serialise a registry. The v2
+    /// `snapshot.restore` handler resolves a stringly-typed name
+    /// (`"phase1"` → `AgentRestartRegistry.phase1`) so snapshots stay
+    /// forward-compatible after Phase 5 adds rows.
+    var restartRegistry: AgentRestartRegistry?
 
     init(
         select: Bool = true,
         perStepTimeoutMs: Int = 2_000,
-        autoWelcomeIfNeeded: Bool = false
+        autoWelcomeIfNeeded: Bool = false,
+        restartRegistry: AgentRestartRegistry? = nil
     ) {
         self.select = select
         self.perStepTimeoutMs = perStepTimeoutMs
         self.autoWelcomeIfNeeded = autoWelcomeIfNeeded
+        self.restartRegistry = restartRegistry
+    }
+
+    static func == (lhs: ApplyOptions, rhs: ApplyOptions) -> Bool {
+        // `AgentRestartRegistry` is not Equatable (closure-carrying); treat
+        // both-nil as equal and either-non-nil as inequality for the purpose
+        // of Codable round-trip tests that exercise the nil default. The
+        // executor never compares options, so this is only called from test
+        // assertions on Codable-encoded options.
+        guard lhs.select == rhs.select,
+              lhs.perStepTimeoutMs == rhs.perStepTimeoutMs,
+              lhs.autoWelcomeIfNeeded == rhs.autoWelcomeIfNeeded else {
+            return false
+        }
+        switch (lhs.restartRegistry, rhs.restartRegistry) {
+        case (nil, nil): return true
+        default: return false
+        }
+    }
+}
+
+extension ApplyOptions: Codable {
+    // Codable deliberately omits `restartRegistry` — see the field doc.
+    // Decoded options always have `restartRegistry = nil`; callers that
+    // want a registry set it programmatically after decode.
+    private enum CodingKeys: String, CodingKey {
+        case select, perStepTimeoutMs, autoWelcomeIfNeeded
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let select = try container.decodeIfPresent(Bool.self, forKey: .select) ?? true
+        let perStep = try container.decodeIfPresent(Int.self, forKey: .perStepTimeoutMs) ?? 2_000
+        let autoWelcome = try container.decodeIfPresent(Bool.self, forKey: .autoWelcomeIfNeeded) ?? false
+        self.init(
+            select: select,
+            perStepTimeoutMs: perStep,
+            autoWelcomeIfNeeded: autoWelcome,
+            restartRegistry: nil
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(select, forKey: .select)
+        try container.encode(perStepTimeoutMs, forKey: .perStepTimeoutMs)
+        try container.encode(autoWelcomeIfNeeded, forKey: .autoWelcomeIfNeeded)
     }
 }
 
@@ -244,7 +306,7 @@ struct ApplyFailure: Codable, Sendable, Equatable {
     /// `"mailbox_non_string_value"`, `"unsupported_version"`,
     /// `"working_directory_not_applied"`, `"divider_apply_failed"`,
     /// `"divider_clamped"`, `"per_step_timeout_exceeded"`,
-    /// `"seed_panel_missing"`.
+    /// `"seed_panel_missing"`, `"restart_registry_declined"`.
     var code: String
     /// Matches a `StepTiming.step` when possible.
     var step: String

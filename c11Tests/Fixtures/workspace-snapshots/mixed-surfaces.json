@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "snapshot_id": "01KQ0MIXEDSURFACES0000000",
+  "created_at": "2026-04-24T18:30:00Z",
+  "c11_version": "0.01.0+1",
+  "origin": "manual",
+  "plan": {
+    "version": 1,
+    "workspace": {
+      "title": "Mixed"
+    },
+    "layout": {
+      "type": "split",
+      "split": {
+        "orientation": "horizontal",
+        "dividerPosition": 0.5,
+        "first": {
+          "type": "pane",
+          "pane": {
+            "surfaceIds": ["term1", "md1"],
+            "selectedIndex": 0
+          }
+        },
+        "second": {
+          "type": "pane",
+          "pane": {
+            "surfaceIds": ["web1"]
+          }
+        }
+      }
+    },
+    "surfaces": [
+      {
+        "id": "term1",
+        "kind": "terminal",
+        "title": "driver"
+      },
+      {
+        "id": "md1",
+        "kind": "markdown",
+        "title": "plan",
+        "filePath": "/tmp/plan.md"
+      },
+      {
+        "id": "web1",
+        "kind": "browser",
+        "title": "docs",
+        "url": "https://example.invalid/docs"
+      }
+    ]
+  }
+}

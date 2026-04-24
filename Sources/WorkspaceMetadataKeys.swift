@@ -12,6 +12,34 @@ public enum WorkspaceMetadataKey {
     public static let canonical: Set<String> = [description, icon]
 }
 
+/// Surface-scoped metadata keys used by the Phase 1 Snapshot + restart
+/// registry paths. Kept here — beside `WorkspaceMetadataKey` — so the
+/// spelling lives in one place and a future rename stays grep-tractable.
+/// `SurfaceMetadataStore.reservedKeys` still owns the canonical-set
+/// validation for keys like `"terminal_type"` / `"status"`; this enum
+/// only names the keys the executor and capture walker reach for by
+/// hand.
+public enum SurfaceMetadataKeyName {
+    /// Surface-scoped session id written by the `c11 claude-hook
+    /// session-start` handler when Claude Code emits `SessionStart`.
+    /// Consumed by `AgentRestartRegistry` at restore time to synthesise
+    /// `cc --resume <id>`. The `claude.*` prefix is reserved per
+    /// `docs/c11-13-cmux-37-alignment.md:34` and does not collide with
+    /// the C11-13 `mailbox.*` (pane-scoped) namespace.
+    public static let claudeSessionId = "claude.session_id"
+
+    /// Canonical `terminal_type` key (same literal as
+    /// `SurfaceMetadataStore.reservedKeys`). Named here for executor
+    /// readability; validation still flows through the store's reserved
+    /// set.
+    public static let terminalType = "terminal_type"
+
+    /// Canonical `terminal_type` value for a Claude Code surface. Matches
+    /// what `c11 set-agent --type claude-code` writes and what the
+    /// Phase 1 restart registry keys against.
+    public static let terminalTypeClaudeCode = "claude-code"
+}
+
 /// Validation for workspace metadata writes.
 ///
 /// Values for canonical keys have specific caps; unknown keys are accepted up

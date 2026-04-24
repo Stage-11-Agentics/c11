@@ -2105,6 +2105,14 @@ class TerminalController {
         case "workspace.apply":
             return v2Result(id: id, self.v2WorkspaceApply(params: params))
 
+        // Snapshots (CMUX-37 Phase 1)
+        case "snapshot.create":
+            return v2Result(id: id, self.v2SnapshotCreate(params: params))
+        case "snapshot.restore":
+            return v2Result(id: id, self.v2SnapshotRestore(params: params))
+        case "snapshot.list":
+            return v2Result(id: id, self.v2SnapshotList(params: params))
+
         // Themes (CMUX-35)
         case "theme.list":
             return v2Result(id: id, .ok(ThemeSocketMethods.list()))
@@ -4446,6 +4454,205 @@ class TerminalController {
                 message: "Failed to encode ApplyResult: \(error)",
                 data: nil
             )
+        }
+    }
+
+    // MARK: - V2 Snapshot Methods (CMUX-37 Phase 1)
+
+    /// `snapshot.create`: capture the live workspace to a `WorkspaceSnapshotFile`
+    /// on disk. Params: `workspace_id` / `surface_id` (defaults to current).
+    /// Returns `{snapshot_id, path, surface_count, workspace_ref}`.
+    ///
+    /// Socket-initiated captures **always** land in
+    /// `WorkspaceSnapshotStore.defaultDirectory()` — any caller-supplied
+    /// `params["path"]` is rejected with `invalid_params`. The CLI's
+    /// `c11 snapshot --out <path>` path is fine because the CLI process
+    /// holds the caller's real permissions; the threat here is an agent
+    /// with only socket access turning `snapshot.create` into an
+    /// arbitrary-file-write primitive (overwriting
+    /// `~/.claude/settings.json` etc.).
+    private func v2SnapshotCreate(params: [String: Any]) -> V2CallResult {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+        if let rawPath = params["path"] as? String,
+           !rawPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return .err(
+                code: "invalid_params",
+                message: "socket-initiated snapshot.create does not accept 'path'; "
+                    + "use 'c11 snapshot --out <path>' from the CLI instead",
+                data: nil
+            )
+        }
+        let originRaw = (params["origin"] as? String) ?? "manual"
+        let origin: WorkspaceSnapshotFile.Origin =
+            (originRaw == "auto-restart") ? .autoRestart : .manual
+
+        var snapshot: WorkspaceSnapshotFile?
+        var workspaceRef = ""
+        v2MainSync {
+            guard let workspace = v2ResolveWorkspace(params: params, tabManager: tabManager) else { return }
+            let source = LiveWorkspaceSnapshotSource(tabManager: tabManager)
+            snapshot = source.capture(workspaceId: workspace.id, origin: origin, clock: { Date() })
+            workspaceRef = self.v2EnsureHandleRef(kind: .workspace, uuid: workspace.id)
+        }
+        guard let envelope = snapshot else {
+            return .err(code: "not_found", message: "Workspace not found for snapshot.create", data: nil)
+        }
+        let store = WorkspaceSnapshotStore()
+        let path: URL
+        do {
+            path = try store.writeToDefaultDirectory(envelope)
+        } catch let err as WorkspaceSnapshotStore.StoreError {
+            return .err(code: err.code, message: "\(err)", data: nil)
+        } catch {
+            return .err(code: "snapshot_write_failed", message: "\(error)", data: nil)
+        }
+        let payload: [String: Any] = [
+            "snapshot_id": envelope.snapshotId,
+            "path": path.path,
+            "surface_count": envelope.plan.surfaces.count,
+            "workspace_ref": workspaceRef
+        ]
+        return .ok(payload)
+    }
+
+    /// `snapshot.restore`: read a snapshot by id, run the embedded plan
+    /// through `WorkspaceLayoutExecutor`, optionally threading a named
+    /// restart registry (`"phase1"` → `AgentRestartRegistry.phase1`) so cc
+    /// terminals resume via `cc --resume <session-id>`. Returns the same
+    /// `ApplyResult` shape `workspace.apply` returns.
+    ///
+    /// Socket-initiated restores resolve `snapshot_id` through
+    /// `WorkspaceSnapshotStore.resolvePath(byId:)`, which validates the id
+    /// grammar and asserts the resolved realpath lives under a configured
+    /// snapshot root. Caller-supplied `params["path"]` is rejected with
+    /// `invalid_params`: an agent with socket access must not be able to
+    /// coerce the restore path-reader into parsing arbitrary files
+    /// (`/etc/passwd.json`, say) — parser errors can leak file contents.
+    /// The CLI's `c11 restore <path-or-id>` classifies locally before
+    /// sending and always submits via `snapshot_id`.
+    private func v2SnapshotRestore(params: [String: Any]) -> V2CallResult {
+        if let rawPath = params["path"] as? String,
+           !rawPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return .err(
+                code: "invalid_params",
+                message: "socket-initiated snapshot.restore does not accept 'path'; "
+                    + "use 'snapshot_id' (resolved against the snapshot roots) instead",
+                data: nil
+            )
+        }
+        let rawId = (params["snapshot_id"] as? String).map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let store = WorkspaceSnapshotStore()
+        let envelope: WorkspaceSnapshotFile
+        do {
+            if let id = rawId, !id.isEmpty {
+                envelope = try store.read(byId: id)
+            } else {
+                return .err(
+                    code: "invalid_params",
+                    message: "snapshot.restore requires 'snapshot_id'",
+                    data: nil
+                )
+            }
+        } catch let err as WorkspaceSnapshotStore.StoreError {
+            return .err(code: err.code, message: "\(err)", data: nil)
+        } catch {
+            return .err(code: "snapshot_read_failed", message: "\(error)", data: nil)
+        }
+
+        // Envelope → plan, off-main.
+        let planResult = WorkspaceSnapshotConverter.applyPlan(from: envelope)
+        let plan: WorkspaceApplyPlan
+        switch planResult {
+        case .success(let p): plan = p
+        case .failure(let err):
+            return .err(code: err.code, message: err.message, data: nil)
+        }
+        if let validationFailure = WorkspaceLayoutExecutor.validate(plan: plan) {
+            let data: [String: Any] = [
+                "failure": [
+                    "code": validationFailure.code,
+                    "step": validationFailure.step,
+                    "message": validationFailure.message
+                ]
+            ]
+            return .err(
+                code: "invalid_params",
+                message: "snapshot plan validation failed: \(validationFailure.message)",
+                data: data
+            )
+        }
+
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+
+        // Build options: select is subject to the focus policy; the restart
+        // registry is resolved by name on the wire so snapshot files stay
+        // forward-compatible with future Phase 5 rows.
+        var options = ApplyOptions()
+        if let selectValue = params["select"] as? Bool {
+            options.select = selectValue
+        }
+        if options.select && !v2FocusAllowed(requested: true) {
+            options.select = false
+        }
+        if let registryName = params["restart_registry"] as? String {
+            options.restartRegistry = AgentRestartRegistry.named(registryName)
+        }
+
+        var result: ApplyResult?
+        v2MainSync {
+            let deps = WorkspaceLayoutExecutorDependencies(
+                tabManager: tabManager,
+                workspaceRefMinter: { [weak self] uuid in
+                    self?.v2EnsureHandleRef(kind: .workspace, uuid: uuid) ?? "workspace:\(uuid.uuidString)"
+                },
+                surfaceRefMinter: { [weak self] uuid in
+                    self?.v2EnsureHandleRef(kind: .surface, uuid: uuid) ?? "surface:\(uuid.uuidString)"
+                },
+                paneRefMinter: { [weak self] uuid in
+                    self?.v2EnsureHandleRef(kind: .pane, uuid: uuid) ?? "pane:\(uuid.uuidString)"
+                }
+            )
+            result = WorkspaceLayoutExecutor.apply(plan, options: options, dependencies: deps)
+        }
+        guard let applyResult = result else {
+            return .err(code: "internal_error", message: "Executor returned no result", data: nil)
+        }
+        do {
+            let encoded = try JSONEncoder().encode(applyResult)
+            let asAny = try JSONSerialization.jsonObject(with: encoded, options: [])
+            return .ok(asAny)
+        } catch {
+            return .err(code: "internal_error", message: "Failed to encode ApplyResult: \(error)", data: nil)
+        }
+    }
+
+    /// `snapshot.list`: enumerate `~/.c11-snapshots/` + `~/.cmux-snapshots/`
+    /// and return entries sorted newest-first. Pure filesystem; runs
+    /// off-main.
+    private func v2SnapshotList(params: [String: Any]) -> V2CallResult {
+        let store = WorkspaceSnapshotStore()
+        let entries: [WorkspaceSnapshotIndex]
+        do {
+            entries = try store.list()
+        } catch let err as WorkspaceSnapshotStore.StoreError {
+            return .err(code: err.code, message: "\(err)", data: nil)
+        } catch {
+            return .err(code: "snapshot_list_failed", message: "\(error)", data: nil)
+        }
+        do {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let encoded = try encoder.encode(entries)
+            let asAny = try JSONSerialization.jsonObject(with: encoded, options: [])
+            return .ok(["snapshots": asAny])
+        } catch {
+            return .err(code: "internal_error", message: "\(error)", data: nil)
         }
     }
 

@@ -1767,6 +1767,39 @@ struct CMUXCLI {
                 idFormat: idFormat
             )
 
+        case "snapshot":
+            // CMUX-37 Phase 1: `c11 snapshot [--workspace <ref>] [--out <path>]`
+            // captures the current workspace (or a named one) to
+            // `~/.c11-snapshots/<ulid>.json`. Backed by the `snapshot.create`
+            // v2 method.
+            try runSnapshotCreate(
+                commandArgs,
+                client: client,
+                jsonOutput: jsonOutput
+            )
+
+        case "restore":
+            // CMUX-37 Phase 1: `c11 restore <snapshot-id|path>`. Reads
+            // `C11_SESSION_RESUME` / `CMUX_SESSION_RESUME` at this site and,
+            // when set, threads the `phase1` restart registry into
+            // `snapshot.restore` so cc terminals resume via
+            // `cc --resume <session-id>`.
+            try runSnapshotRestore(
+                commandArgs,
+                client: client,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat
+            )
+
+        case "list-snapshots":
+            // CMUX-37 Phase 1: `c11 list-snapshots [--json]`. Merges
+            // `~/.c11-snapshots/` + legacy `~/.cmux-snapshots/`.
+            try runListSnapshots(
+                commandArgs,
+                client: client,
+                jsonOutput: jsonOutput
+            )
+
         case "new-workspace":
             let (commandOpt, rem0) = parseOption(commandArgs, name: "--command")
             let (cwdOpt, remaining) = parseOption(rem0, name: "--cwd")
@@ -2669,6 +2702,302 @@ struct CMUXCLI {
                 }
             }
         }
+    }
+
+    // MARK: - CMUX-37 Phase 1: snapshot commands
+
+    /// `c11 snapshot [--workspace <ref>] [--out <path>] [--json]`. Defaults
+    /// to the current workspace (`$CMUX_WORKSPACE_ID`). Prints the resolved
+    /// path + snapshot id. Backed by `snapshot.create` v2.
+    ///
+    /// `--out <path>` is honoured in the CLI process, not over the socket.
+    /// The socket always writes to the default directory (B3: socket-initiated
+    /// captures cannot choose their destination). After the socket returns,
+    /// the CLI — running with the user's real FS permissions — moves the
+    /// emitted file to the requested path.
+    private func runSnapshotCreate(
+        _ args: [String],
+        client: SocketClient,
+        jsonOutput: Bool
+    ) throws {
+        let (workspaceOpt, afterWorkspace) = parseOption(args, name: "--workspace")
+        let (outOpt, afterOut) = parseOption(afterWorkspace, name: "--out")
+        if let unknown = afterOut.first(where: { $0.hasPrefix("--") }) {
+            throw CLIError(message: "snapshot: unknown flag '\(unknown)'. Known flags: --workspace <ref>, --out <path>")
+        }
+        var params: [String: Any] = [:]
+        if let wsRaw = workspaceOpt {
+            // Route through the standard resolver so `workspace:2`
+            // (index-form ref), `workspace:<uuid>` (handle-form ref), bare
+            // UUID, and bare integer index all work — matches what the
+            // help text advertises (Trident I3). `parseUUIDFromRef` only
+            // knew the UUID shapes.
+            params["workspace_id"] = try resolveWorkspaceId(wsRaw, client: client)
+        }
+        let payload = try client.sendV2(method: "snapshot.create", params: params)
+        let id = (payload["snapshot_id"] as? String) ?? "?"
+        var resolvedPath = (payload["path"] as? String) ?? "?"
+        let count = (payload["surface_count"] as? Int) ?? 0
+        if let outRaw = outOpt {
+            let src = URL(fileURLWithPath: resolvedPath)
+            let dst = URL(fileURLWithPath: resolvePath(outRaw))
+            do {
+                try FileManager.default.createDirectory(
+                    at: dst.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+                if FileManager.default.fileExists(atPath: dst.path) {
+                    try FileManager.default.removeItem(at: dst)
+                }
+                try FileManager.default.moveItem(at: src, to: dst)
+                resolvedPath = dst.path
+            } catch {
+                throw CLIError(message: "snapshot: --out move failed: \(error)")
+            }
+        }
+        if jsonOutput {
+            var mutable = payload
+            mutable["path"] = resolvedPath
+            print(jsonString(mutable))
+            return
+        }
+        print("OK snapshot=\(id) surfaces=\(count) path=\(resolvedPath)")
+    }
+
+    /// `c11 restore <snapshot-id-or-path> [--json]`. Reads
+    /// `C11_SESSION_RESUME` / `CMUX_SESSION_RESUME` at this site only;
+    /// when set (any non-empty non-"0"/"false" value) threads
+    /// `{"restart_registry": "phase1"}` into the v2 call so cc terminals
+    /// resume via `cc --resume <session-id>`.
+    ///
+    /// Path targets are resolved in the CLI process, not over the socket
+    /// (B3: the socket never reads caller-supplied paths — it would turn
+    /// the restore handler into an arbitrary-.json-parser primitive). The
+    /// CLI reads the file with the user's real FS permissions, extracts
+    /// the `snapshot_id`, plants the file under
+    /// `~/.c11-snapshots/<snapshot_id>.json` if it isn't already there,
+    /// and then submits `snapshot.restore` by id.
+    private func runSnapshotRestore(
+        _ args: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) throws {
+        // `--select` was advertised in help but silently ignored — the
+        // socket focus policy (`CLAUDE.md` "Socket focus policy" section)
+        // forbids `snapshot.restore` from stealing focus, and
+        // `v2SnapshotRestore` cleared `options.select` unconditionally.
+        // Per Trident I4 option (b), drop the promise rather than grant a
+        // focus-intent exception. The flag is no longer accepted.
+        let positional = args
+        if let unknown = positional.first(where: { $0.hasPrefix("--") }) {
+            throw CLIError(message: "restore: unknown flag '\(unknown)'. Known flags: (none)")
+        }
+        guard let target = positional.first else {
+            throw CLIError(message: "restore: missing snapshot id or path")
+        }
+        if positional.count > 1 {
+            throw CLIError(message: "restore: unexpected trailing argument '\(positional[1])'")
+        }
+        var params: [String: Any] = [:]
+        // Path-like targets (absolute / `~` / extension `.json`) get
+        // resolved in the CLI. Everything else is treated as a snapshot
+        // id and submitted as-is; the handler's traversal guard catches
+        // any shenanigans there.
+        if target.hasPrefix("/")
+            || target.lowercased().hasSuffix(".json")
+            || target.hasPrefix("~")
+            || target.contains("/") {
+            let resolvedPath = resolvePath(target)
+            let snapshotId = try importSnapshotFileForRestore(pathOnDisk: resolvedPath)
+            params["snapshot_id"] = snapshotId
+        } else {
+            params["snapshot_id"] = target
+        }
+        // Env gate: mirrored by `mirrorC11CmuxEnv()` so either variable works.
+        let env = ProcessInfo.processInfo.environment
+        let raw = env["C11_SESSION_RESUME"] ?? env["CMUX_SESSION_RESUME"]
+        if let raw, isTruthyFlag(raw) {
+            params["restart_registry"] = "phase1"
+        }
+        let payload = try client.sendV2(method: "snapshot.restore", params: params)
+        if jsonOutput {
+            print(jsonString(formatIDs(payload, mode: idFormat)))
+            return
+        }
+        let ref = (payload["workspaceRef"] as? String) ?? "?"
+        let surfaceRefs = payload["surfaceRefs"] as? [String: String] ?? [:]
+        let paneRefs = payload["paneRefs"] as? [String: String] ?? [:]
+        let warnings = payload["warnings"] as? [String] ?? []
+        let failures = payload["failures"] as? [[String: Any]] ?? []
+        print("OK workspace=\(ref) surfaces=\(surfaceRefs.count) panes=\(paneRefs.count)")
+        if !warnings.isEmpty {
+            print("warnings: \(warnings.count)")
+            for w in warnings { print("  - \(w)") }
+        }
+        if !failures.isEmpty {
+            print("failures: \(failures.count)")
+            for f in failures {
+                let code = (f["code"] as? String) ?? "?"
+                let step = (f["step"] as? String) ?? "?"
+                let msg = (f["message"] as? String) ?? ""
+                print("  - [\(code)] \(step): \(msg)")
+            }
+        }
+    }
+
+    /// Read a snapshot file at `pathOnDisk`, extract `snapshot_id`, and
+    /// ensure a copy exists under `~/.c11-snapshots/<snapshot_id>.json` so
+    /// the v2 handler's id-based lookup can find it. Returns the
+    /// snapshot_id.
+    ///
+    /// Exists because the socket rejects caller-supplied paths (B3). The
+    /// CLI holds the user's real FS permissions, so reading and copying
+    /// the file here is safe in a way reading via the socket is not.
+    private func importSnapshotFileForRestore(pathOnDisk: String) throws -> String {
+        let srcURL = URL(fileURLWithPath: pathOnDisk)
+        let data: Data
+        do {
+            data = try Data(contentsOf: srcURL)
+        } catch {
+            throw CLIError(message: "restore: failed to read '\(pathOnDisk)': \(error)")
+        }
+        let snapshotId: String
+        do {
+            let obj = try JSONSerialization.jsonObject(with: data, options: [])
+            guard let dict = obj as? [String: Any],
+                  let id = dict["snapshot_id"] as? String,
+                  !id.isEmpty else {
+                throw CLIError(message: "restore: file '\(pathOnDisk)' is not a valid snapshot envelope (missing snapshot_id)")
+            }
+            snapshotId = id
+        } catch let err as CLIError {
+            throw err
+        } catch {
+            throw CLIError(message: "restore: file '\(pathOnDisk)' is not valid JSON: \(error)")
+        }
+        // Reject traversal-shaped ids before we touch disk — matches the
+        // grammar the v2 handler enforces on the other side.
+        let idRange = NSRange(location: 0, length: (snapshotId as NSString).length)
+        let safePattern = try NSRegularExpression(
+            pattern: "^[A-Za-z0-9_-]{1,128}$",
+            options: []
+        )
+        if safePattern.firstMatch(in: snapshotId, options: [], range: idRange) == nil {
+            throw CLIError(message: "restore: snapshot_id '\(snapshotId)' is not a safe filename stem")
+        }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let defaultDir = home.appendingPathComponent(".c11-snapshots", isDirectory: true)
+        let destURL = defaultDir.appendingPathComponent("\(snapshotId).json")
+        // If the user passed in a path that already is the default
+        // location, there's nothing to copy.
+        if destURL.standardizedFileURL.path == srcURL.standardizedFileURL.path {
+            return snapshotId
+        }
+        do {
+            try FileManager.default.createDirectory(
+                at: defaultDir,
+                withIntermediateDirectories: true
+            )
+            if FileManager.default.fileExists(atPath: destURL.path) {
+                try FileManager.default.removeItem(at: destURL)
+            }
+            try FileManager.default.copyItem(at: srcURL, to: destURL)
+        } catch {
+            throw CLIError(message: "restore: failed to stage '\(pathOnDisk)' into ~/.c11-snapshots/: \(error)")
+        }
+        return snapshotId
+    }
+
+    /// `c11 list-snapshots [--json]`. Columns:
+    /// SNAPSHOT_ID, CREATED_AT, WORKSPACE_TITLE, SURFACES, ORIGIN, SOURCE.
+    private func runListSnapshots(
+        _ args: [String],
+        client: SocketClient,
+        jsonOutput: Bool
+    ) throws {
+        if let unknown = args.first(where: { $0.hasPrefix("--") }) {
+            throw CLIError(message: "list-snapshots: unknown flag '\(unknown)'. Known flags: --json")
+        }
+        let payload = try client.sendV2(method: "snapshot.list", params: [:])
+        guard let snapshotsAny = payload["snapshots"] as? [[String: Any]] else {
+            if jsonOutput {
+                print(jsonString(payload))
+                return
+            }
+            print("no snapshots")
+            return
+        }
+        if jsonOutput {
+            print(jsonString(payload))
+            return
+        }
+        if snapshotsAny.isEmpty {
+            print("no snapshots")
+            return
+        }
+        // Format fixed-width columns. Titles are free-form so we truncate
+        // long ones rather than bloat the row. `%s` does not work with
+        // Swift `String` (only with `CVarArg`-bridged `NSString`), so pad
+        // natively via `String.padding(toLength:withPad:startingAt:)` —
+        // emits garbage or crashes with the printf-style form (Trident I5).
+        let rows: [(String, String, String, String, String, String)] = snapshotsAny.map { entry in
+            let id = (entry["snapshot_id"] as? String) ?? "?"
+            let created = (entry["created_at"] as? String) ?? "?"
+            let title = (entry["workspace_title"] as? String) ?? "(no title)"
+            let surfaces = (entry["surface_count"] as? Int).map(String.init) ?? "?"
+            let origin = (entry["origin"] as? String) ?? "?"
+            let source = (entry["source"] as? String) ?? "current"
+            return (id, created, truncate(title, max: 32), surfaces, origin, source)
+        }
+        func pad(_ s: String, _ width: Int) -> String {
+            if s.count >= width { return s }
+            return s + String(repeating: " ", count: width - s.count)
+        }
+        print(
+            pad("SNAPSHOT_ID", 26) + "  "
+            + pad("CREATED_AT", 24) + "  "
+            + pad("WORKSPACE_TITLE", 32) + "  "
+            + pad("SURFACES", 8) + "  "
+            + pad("ORIGIN", 12) + "  "
+            + pad("SOURCE", 8)
+        )
+        for r in rows {
+            print(
+                pad(r.0, 26) + "  "
+                + pad(r.1, 24) + "  "
+                + pad(r.2, 32) + "  "
+                + pad(r.3, 8) + "  "
+                + pad(r.4, 12) + "  "
+                + pad(r.5, 8)
+            )
+        }
+    }
+
+    /// `parseUUIDFromRef("workspace:abc…")` → UUID. Also accepts a bare
+    /// UUID string. Returns nil on anything else.
+    private func parseUUIDFromRef(_ raw: String) -> UUID? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let uuid = UUID(uuidString: trimmed) { return uuid }
+        if let colon = trimmed.firstIndex(of: ":") {
+            let suffix = String(trimmed[trimmed.index(after: colon)...])
+            return UUID(uuidString: suffix)
+        }
+        return nil
+    }
+
+    /// Truthiness rule used by `C11_SESSION_RESUME`: any non-empty value
+    /// that isn't `"0"` or `"false"` (case-insensitive) counts as on.
+    private func isTruthyFlag(_ raw: String) -> Bool {
+        let v = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if v.isEmpty { return false }
+        return v != "0" && v != "false" && v != "no" && v != "off"
+    }
+
+    private func truncate(_ s: String, max: Int) -> String {
+        if s.count <= max { return s }
+        let idx = s.index(s.startIndex, offsetBy: max - 1)
+        return String(s[..<idx]) + "…"
     }
 
     private func sanitizedFilenameComponent(_ raw: String) -> String {
@@ -7890,6 +8219,62 @@ struct CMUXCLI {
               c11 markdown ~/project/CHANGELOG.md
               c11 markdown open ./docs/design.md --workspace 0
             """
+        case "snapshot":
+            return """
+            Usage: c11 snapshot [--workspace <ref>] [--out <path>] [--json]
+
+            Capture the current workspace (or a named one) to
+            `~/.c11-snapshots/<ulid>.json`. No args → current workspace
+            (resolved from $CMUX_WORKSPACE_ID / $C11_WORKSPACE_ID).
+
+            Flags:
+              --workspace <ref>   Workspace to capture (ref or UUID)
+              --out <path>        Override the default output path
+              --json              Emit raw snapshot.create result as JSON
+
+            Examples:
+              c11 snapshot
+              c11 snapshot --workspace workspace:2 --out ~/snapshots/phase1.json
+            """
+        case "restore":
+            return """
+            Usage: c11 restore <snapshot-id-or-path> [--json]
+
+            Restore a workspace layout from a snapshot written by `c11 snapshot`.
+            The argument is either a ULID (resolved under `~/.c11-snapshots/` or
+            the legacy `~/.cmux-snapshots/`) or an absolute path to a `.json`
+            snapshot file.
+
+            When $C11_SESSION_RESUME (mirror: $CMUX_SESSION_RESUME) is set to a
+            truthy value, Claude Code terminals resume their prior session via
+            `cc --resume <session-id>`. Unset the env var to restore the layout
+            with fresh shells instead.
+
+            Per the socket focus policy (see CLAUDE.md), restore does not
+            foreground the restored workspace — select it manually with
+            `c11 workspace select <ref>` if needed.
+
+            Flags:
+              --json   Emit raw snapshot.restore result as JSON
+
+            Examples:
+              c11 restore 01KQ0XYZ…
+              C11_SESSION_RESUME=1 c11 restore ~/snapshots/phase1.json
+            """
+        case "list-snapshots":
+            return """
+            Usage: c11 list-snapshots [--json]
+
+            List snapshots under `~/.c11-snapshots/` merged with the legacy
+            `~/.cmux-snapshots/` path. Newest first.
+
+            Columns: SNAPSHOT_ID, CREATED_AT, WORKSPACE_TITLE, SURFACES, ORIGIN, SOURCE.
+            SOURCE is `current` for `~/.c11-snapshots/`, `legacy` for the fallback.
+
+            Examples:
+              c11 list-snapshots
+              c11 list-snapshots --json
+            """
         default:
             return nil
         }
@@ -12355,6 +12740,42 @@ struct CMUXCLI {
                     cwd: parsedInput.cwd,
                     pid: claudePid
                 )
+                // CMUX-37 Phase 1: also write `claude.session_id` to the
+                // surface metadata so `c11 restore` + the Phase 1 restart
+                // registry can synthesise `cc --resume <id>` on restore.
+                // Best-effort: a missing socket (Claude running outside a
+                // c11 surface) follows the existing advisory pattern —
+                // the outer claude-hook dispatch already absorbs
+                // connectivity errors; we double-wrap here so the
+                // sessionStore write succeeds even if another CLIError
+                // bubbles up from the metadata path.
+                let trimmedSessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedSessionId.isEmpty, !surfaceId.isEmpty {
+                    // Mirrors `SurfaceMetadataKeyName.claudeSessionId` in the
+                    // app target (Sources/WorkspaceMetadataKeys.swift); the
+                    // CLI target does not link that file, so the literal is
+                    // kept in lockstep by reader convention.
+                    let metadata: [String: Any] = [
+                        "claude.session_id": trimmedSessionId
+                    ]
+                    var params: [String: Any] = [
+                        "surface_id": surfaceId,
+                        "metadata": metadata,
+                        "mode": "merge",
+                        "source": "explicit"
+                    ]
+                    if !workspaceId.isEmpty {
+                        params["workspace_id"] = workspaceId
+                    }
+                    do {
+                        _ = try client.sendV2(method: "surface.set_metadata", params: params)
+                        telemetry.breadcrumb("claude-hook.session-id.metadata-write.ok")
+                    } catch let error as CLIError where isAdvisoryHookConnectivityError(error) {
+                        telemetry.breadcrumb("claude-hook.session-id.metadata-write.skipped")
+                    } catch {
+                        telemetry.breadcrumb("claude-hook.session-id.metadata-write.failed")
+                    }
+                }
             }
             // Register PID for stale-session detection and OSC suppression,
             // but don't set a visible status. "Running" only appears when the

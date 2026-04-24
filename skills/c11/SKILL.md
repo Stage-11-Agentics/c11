@@ -85,6 +85,8 @@ If c11's integration was installed for your TUI via `c11 install <tui>`, the dec
 
 You can also declare via env vars set in the spawning shell: `CMUX_AGENT_TYPE`, `CMUX_AGENT_MODEL`, `CMUX_AGENT_TASK`. Read once at surface start.
 
+> When inside Claude Code, `claude.session_id` is populated automatically by the `c11 claude-hook session-start` handler — no agent action required. It becomes the anchor `c11 restore` uses to resume the session via `cc --resume <id>`.
+
 ## The surface manifest
 
 Every surface carries a **surface manifest** — an open-ended JSON document that declares what the surface is, what it's doing, and anything else agents or tools want to advertise about it. Agents read and write it over the socket via `c11 get-metadata` / `c11 set-metadata`. c11 renders a small set of canonical keys in the sidebar and title bar, and leaves every other field opaque for Lattice, Mycelium, and third-party tools to define their own keyspace on top.
@@ -458,11 +460,33 @@ c11 mailbox inbox-dir                           # absolute path of your inbox
 - **At-least-once is steady-state only.** Envelopes sitting in `_outbox/` when c11 restarts do get picked up on next start. But if c11 is killed *between* moving an envelope into `_processing/` and finishing the inbox copy, the envelope is stranded there until Stage 3 ships the `_processing/` recovery sweep. Callers that care about crash-window durability should pair with reply-chain retries or application-level tracking until then.
 - **No per-surface inbox cap.** Stage 3 adds this alongside the crash-recovery sweep.
 
+## Workspace persistence
+
+c11 can snapshot a workspace to disk and restore it later with the layout, surface titles, metadata (including `mailbox.*` pane metadata), and — when opted-in — resumed Claude Code sessions.
+
+```bash
+# Capture the current workspace to ~/.c11-snapshots/<ulid>.json
+c11 snapshot
+
+# List what's on disk (newest first, legacy ~/.cmux-snapshots/ merged in)
+c11 list-snapshots
+
+# Restore by id (fresh shells)
+c11 restore 01KQ0XYZ…
+
+# Restore with cc session resume: each Claude Code surface re-spawns as
+# `cc --resume <claude.session_id>` via the Phase 1 restart registry.
+C11_SESSION_RESUME=1 c11 restore 01KQ0XYZ…
+```
+
+The snapshot wraps a `WorkspaceApplyPlan`; the same shape Blueprints and the debug `c11 workspace apply` use. Explicit `SurfaceSpec.command` always wins over any registry synthesis — the registry only fires when a terminal surface has no command and its metadata declares a known `terminal_type`. See [`references/claude-resume.md`](references/claude-resume.md) for the full wire-up (the SessionStart hook operators paste into `~/.claude/settings.json`, the `C11_SESSION_RESUME` gate, troubleshooting).
+
 ## References
 
 - **[references/api.md](references/api.md)** — full command surface: addressing, discovery, workspace/pane/surface management, surface initialization quirks, sidebar metadata, notifications, troubleshooting
 - **[references/orchestration.md](references/orchestration.md)** — multi-agent patterns: layout, tab naming, launching Claude Code sub-agents, agent-to-agent communication, sidebar reporting, writing c11-aware prompts
 - **[references/metadata.md](references/metadata.md)** — metadata deep dive: socket methods, precedence table, all canonical keys, sidecar sources, consumer patterns
+- **[references/claude-resume.md](references/claude-resume.md)** — Claude session resume: operator-installed SessionStart hook and the `C11_SESSION_RESUME` gate
 - **[../c11-browser/SKILL.md](../c11-browser/SKILL.md)** — c11 embedded browser automation
 - **[../c11-markdown/SKILL.md](../c11-markdown/SKILL.md)** — markdown surface viewer
 

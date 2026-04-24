@@ -80,6 +80,68 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         )
     }
 
+    // MARK: - Phase 0 parity: whitespace-only command (B4)
+
+    /// Phase 0 sent `SurfaceSpec.command` to the terminal verbatim as long
+    /// as it was non-nil. A command of `" "` (single space) reached the
+    /// terminal as a single space. Phase 1's registry wiring used to trim
+    /// the explicit command before the presence check, which routed
+    /// whitespace-only commands into the registry — and the registry
+    /// returns `nil` — so the space was silently dropped. B4 restores
+    /// the pre-registry behaviour: only a genuinely `nil` command
+    /// delegates to the registry.
+    func testWhitespaceOnlyCommandIsSentVerbatimAndBypassesRegistry() throws {
+        let plan = WorkspaceApplyPlan(
+            version: 1,
+            workspace: WorkspaceSpec(title: "b4 whitespace"),
+            layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["t"])),
+            surfaces: [
+                SurfaceSpec(
+                    id: "t",
+                    kind: .terminal,
+                    title: "whitespace terminal",
+                    command: " ",
+                    metadata: [
+                        // Metadata that *would* match the registry. The
+                        // registry must NOT be consulted when a plan
+                        // declares any command, whitespace included.
+                        "terminal_type": .string("claude-code"),
+                        "claude.session_id": .string("aaaaaaaa-1111-2222-3333-444455556666")
+                    ]
+                )
+            ]
+        )
+        let deps = WorkspaceLayoutExecutorDependencies(
+            tabManager: tabManager,
+            workspaceRefMinter: { "workspace:\($0.uuidString)" },
+            surfaceRefMinter: { "surface:\($0.uuidString)" },
+            paneRefMinter: { "pane:\($0.uuidString)" }
+        )
+        let result = WorkspaceLayoutExecutor.apply(
+            plan,
+            options: ApplyOptions(select: false, restartRegistry: .phase1),
+            dependencies: deps
+        )
+        XCTAssertFalse(result.workspaceRef.isEmpty)
+        XCTAssertTrue(
+            result.failures.allSatisfy { $0.code != "restart_registry_declined" },
+            "whitespace command must not consult the registry: \(result.failures)"
+        )
+        let workspace = try XCTUnwrap(resolveWorkspace(from: result.workspaceRef))
+        guard let panelId = parseUUIDSuffix(result.surfaceRefs["t"]),
+              let terminal = workspace.panels[panelId] as? TerminalPanel else {
+            return XCTFail("terminal panel not resolvable")
+        }
+        #if DEBUG
+        let sent = terminal.surface.pendingInitialInputForTests ?? ""
+        XCTAssertEqual(
+            sent,
+            " ",
+            "Phase 0 whitespace command must reach sendText verbatim"
+        )
+        #endif
+    }
+
     // MARK: - Harness
 
     @discardableResult

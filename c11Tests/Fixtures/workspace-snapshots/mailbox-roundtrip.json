@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "snapshot_id": "01KQ0MAILBOXROUNDTRIP00000",
+  "created_at": "2026-04-24T18:30:00Z",
+  "c11_version": "0.01.0+1",
+  "origin": "manual",
+  "plan": {
+    "version": 1,
+    "workspace": {
+      "title": "Mailbox Round-Trip"
+    },
+    "layout": {
+      "type": "pane",
+      "pane": {
+        "surfaceIds": ["watcher"]
+      }
+    },
+    "surfaces": [
+      {
+        "id": "watcher",
+        "kind": "terminal",
+        "title": "build watcher",
+        "paneMetadata": {
+          "mailbox.delivery":       { "string": "stdin,watch" },
+          "mailbox.subscribe":      { "string": "build.*,deploy.green" },
+          "mailbox.retention_days": { "string": "7" }
+        }
+      }
+    ]
+  }
+}

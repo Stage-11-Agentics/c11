@@ -179,16 +179,65 @@ enum WorkspaceLayoutExecutor {
         // Step 7 — terminal initial commands. TerminalPanel.sendText
         // auto-queues pre-ready and flushes when the Ghostty surface comes
         // up, so the executor does not need to await readiness here.
+        //
+        // Phase 0 parity rule: whether a command is "present" is decided
+        // from the **raw** `SurfaceSpec.command`, not a trimmed copy.
+        // Phase 0 sent the raw string to the terminal as long as it was
+        // non-nil — a command of `" "` (whitespace-only) was delivered
+        // verbatim. Trimming before the presence check would silently
+        // route whitespace-only commands into the registry, which
+        // returns `nil`, and the terminal would never receive the
+        // space. This matters for fixtures and blueprints that use a
+        // space to "kick" the shell into printing a prompt.
+        //
+        // Phase 1: when `options.restartRegistry` is non-nil **and**
+        // `SurfaceSpec.command` is genuinely `nil`, consult the registry
+        // with `(terminal_type, claude.session_id, surface.metadata)`
+        // and use the returned command. A registry miss (types matched
+        // but session id absent, etc.) emits a `restart_registry_declined`
+        // ApplyFailure for observability without aborting the walk.
         for surfaceSpec in plan.surfaces {
             guard surfaceSpec.kind == .terminal,
-                  let command = surfaceSpec.command,
-                  !command.isEmpty,
                   let panelId = walkState.planSurfaceIdToPanelId[surfaceSpec.id],
                   let terminalPanel = workspace.panels[panelId] as? TerminalPanel else {
                 continue
             }
+            let effectiveCommand: String?
+            if let rawCommand = surfaceSpec.command {
+                // Explicit command — Phase 0 rule: deliver verbatim,
+                // including whitespace-only strings. Registry is not
+                // consulted when the plan declared a command at all.
+                effectiveCommand = rawCommand
+            } else if let registry = options.restartRegistry {
+                let surfaceMeta = stringMetadata(surfaceSpec.metadata)
+                let terminalType = surfaceMeta[SurfaceMetadataKeyName.terminalType]
+                let sessionId = surfaceMeta[SurfaceMetadataKeyName.claudeSessionId]
+                let synthesized = registry.resolveCommand(
+                    terminalType: terminalType,
+                    sessionId: sessionId,
+                    metadata: surfaceMeta
+                )
+                if synthesized == nil, (terminalType != nil || sessionId != nil) {
+                    // Registry saw inputs but declined — make it visible.
+                    let message = "restart registry declined for terminal_type=\(terminalType ?? "nil") sessionId=\(sessionId?.prefix(8).description ?? "nil")"
+                    walkState.warnings.append(message)
+                    walkState.failures.append(ApplyFailure(
+                        code: "restart_registry_declined",
+                        step: "surface[\(surfaceSpec.id)].command.resolve",
+                        message: message
+                    ))
+                }
+                effectiveCommand = synthesized
+            } else {
+                effectiveCommand = nil
+            }
+            // Genuinely empty commands (`""`) are a no-op under Phase 0
+            // too — sendText of zero bytes would write nothing. Skip
+            // them to avoid a noisy timing entry. Whitespace-only
+            // commands are NOT empty; they reach sendText unchanged.
+            guard let cmd = effectiveCommand, !cmd.isEmpty else { continue }
             let cmdClock = Clock()
-            terminalPanel.sendText(command)
+            terminalPanel.sendText(cmd)
             walkState.timings.append(StepTiming(
                 step: "surface[\(surfaceSpec.id)].command.enqueue",
                 durationMs: cmdClock.elapsedMs
@@ -932,6 +981,29 @@ enum WorkspaceLayoutExecutor {
         case (.pane, .pane):
             return []
         }
+    }
+
+    // MARK: - Metadata helpers
+
+    /// Flatten a `[String: PersistedJSONValue]?` surface-metadata blob to
+    /// `[String: String]`, keeping only `.string(...)` entries. The
+    /// restart-registry contract takes string-valued inputs only —
+    /// `terminal_type` and `claude.session_id` are both strings in v1 —
+    /// so non-string values (numbers, booleans, arrays, objects) are
+    /// silently dropped here rather than surfaced as warnings; a
+    /// non-string `terminal_type` would have been caught by
+    /// `SurfaceMetadataStore.validateReservedKey` at write time.
+    fileprivate nonisolated static func stringMetadata(
+        _ metadata: [String: PersistedJSONValue]?
+    ) -> [String: String] {
+        guard let metadata else { return [:] }
+        var out: [String: String] = [:]
+        for (key, value) in metadata {
+            if case .string(let s) = value {
+                out[key] = s
+            }
+        }
+        return out
     }
 
     // MARK: - Timing helper

@@ -1532,6 +1532,16 @@ struct CMUXCLI {
         } catch {
             cliTelemetry.breadcrumb("socket.connect.failure", data: ["path": resolvedSocketPath])
             cliTelemetry.captureError(stage: "socket_connect", error: error)
+            // Advisory commands (claude-hook) should never error a Claude Code
+            // banner on every prompt just because c11 isn't listening. Exit
+            // cleanly when the eager connect fails for a connectivity reason.
+            // Real hook bugs still propagate from inside the subcommand.
+            if command == "claude-hook",
+               let cliError = error as? CLIError,
+               isAdvisoryHookConnectivityError(cliError) {
+                cliTelemetry.breadcrumb("claude-hook.socket-unreachable")
+                return
+            }
             throw error
         }
         defer { client.close() }

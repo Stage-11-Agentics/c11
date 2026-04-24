@@ -2709,6 +2709,12 @@ struct CMUXCLI {
     /// `c11 snapshot [--workspace <ref>] [--out <path>] [--json]`. Defaults
     /// to the current workspace (`$CMUX_WORKSPACE_ID`). Prints the resolved
     /// path + snapshot id. Backed by `snapshot.create` v2.
+    ///
+    /// `--out <path>` is honoured in the CLI process, not over the socket.
+    /// The socket always writes to the default directory (B3: socket-initiated
+    /// captures cannot choose their destination). After the socket returns,
+    /// the CLI — running with the user's real FS permissions — moves the
+    /// emitted file to the requested path.
     private func runSnapshotCreate(
         _ args: [String],
         client: SocketClient,
@@ -2727,18 +2733,34 @@ struct CMUXCLI {
                 throw CLIError(message: "snapshot: --workspace value '\(wsRaw)' is not a workspace ref or UUID")
             }
         }
-        if let outRaw = outOpt {
-            params["path"] = resolvePath(outRaw)
-        }
         let payload = try client.sendV2(method: "snapshot.create", params: params)
+        let id = (payload["snapshot_id"] as? String) ?? "?"
+        var resolvedPath = (payload["path"] as? String) ?? "?"
+        let count = (payload["surface_count"] as? Int) ?? 0
+        if let outRaw = outOpt {
+            let src = URL(fileURLWithPath: resolvedPath)
+            let dst = URL(fileURLWithPath: resolvePath(outRaw))
+            do {
+                try FileManager.default.createDirectory(
+                    at: dst.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+                if FileManager.default.fileExists(atPath: dst.path) {
+                    try FileManager.default.removeItem(at: dst)
+                }
+                try FileManager.default.moveItem(at: src, to: dst)
+                resolvedPath = dst.path
+            } catch {
+                throw CLIError(message: "snapshot: --out move failed: \(error)")
+            }
+        }
         if jsonOutput {
-            print(jsonString(payload))
+            var mutable = payload
+            mutable["path"] = resolvedPath
+            print(jsonString(mutable))
             return
         }
-        let id = (payload["snapshot_id"] as? String) ?? "?"
-        let path = (payload["path"] as? String) ?? "?"
-        let count = (payload["surface_count"] as? Int) ?? 0
-        print("OK snapshot=\(id) surfaces=\(count) path=\(path)")
+        print("OK snapshot=\(id) surfaces=\(count) path=\(resolvedPath)")
     }
 
     /// `c11 restore <snapshot-id-or-path> [--select] [--json]`. Reads
@@ -2746,6 +2768,14 @@ struct CMUXCLI {
     /// when set (any non-empty non-"0"/"false" value) threads
     /// `{"restart_registry": "phase1"}` into the v2 call so cc terminals
     /// resume via `cc --resume <session-id>`.
+    ///
+    /// Path targets are resolved in the CLI process, not over the socket
+    /// (B3: the socket never reads caller-supplied paths — it would turn
+    /// the restore handler into an arbitrary-.json-parser primitive). The
+    /// CLI reads the file with the user's real FS permissions, extracts
+    /// the `snapshot_id`, plants the file under
+    /// `~/.c11-snapshots/<snapshot_id>.json` if it isn't already there,
+    /// and then submits `snapshot.restore` by id.
     private func runSnapshotRestore(
         _ args: [String],
         client: SocketClient,
@@ -2764,10 +2794,17 @@ struct CMUXCLI {
             throw CLIError(message: "restore: unexpected trailing argument '\(positional[1])'")
         }
         var params: [String: Any] = [:]
-        // A path-like argument (absolute or contains `/` or `.json`) is
-        // passed as `path`; otherwise treated as a snapshot id.
-        if target.hasPrefix("/") || target.contains(".json") || target.hasPrefix("~") {
-            params["path"] = resolvePath(target)
+        // Path-like targets (absolute / `~` / extension `.json`) get
+        // resolved in the CLI. Everything else is treated as a snapshot
+        // id and submitted as-is; the handler's traversal guard catches
+        // any shenanigans there.
+        if target.hasPrefix("/")
+            || target.lowercased().hasSuffix(".json")
+            || target.hasPrefix("~")
+            || target.contains("/") {
+            let resolvedPath = resolvePath(target)
+            let snapshotId = try importSnapshotFileForRestore(pathOnDisk: resolvedPath)
+            params["snapshot_id"] = snapshotId
         } else {
             params["snapshot_id"] = target
         }
@@ -2809,6 +2846,69 @@ struct CMUXCLI {
                 print("  - [\(code)] \(step): \(msg)")
             }
         }
+    }
+
+    /// Read a snapshot file at `pathOnDisk`, extract `snapshot_id`, and
+    /// ensure a copy exists under `~/.c11-snapshots/<snapshot_id>.json` so
+    /// the v2 handler's id-based lookup can find it. Returns the
+    /// snapshot_id.
+    ///
+    /// Exists because the socket rejects caller-supplied paths (B3). The
+    /// CLI holds the user's real FS permissions, so reading and copying
+    /// the file here is safe in a way reading via the socket is not.
+    private func importSnapshotFileForRestore(pathOnDisk: String) throws -> String {
+        let srcURL = URL(fileURLWithPath: pathOnDisk)
+        let data: Data
+        do {
+            data = try Data(contentsOf: srcURL)
+        } catch {
+            throw CLIError(message: "restore: failed to read '\(pathOnDisk)': \(error)")
+        }
+        let snapshotId: String
+        do {
+            let obj = try JSONSerialization.jsonObject(with: data, options: [])
+            guard let dict = obj as? [String: Any],
+                  let id = dict["snapshot_id"] as? String,
+                  !id.isEmpty else {
+                throw CLIError(message: "restore: file '\(pathOnDisk)' is not a valid snapshot envelope (missing snapshot_id)")
+            }
+            snapshotId = id
+        } catch let err as CLIError {
+            throw err
+        } catch {
+            throw CLIError(message: "restore: file '\(pathOnDisk)' is not valid JSON: \(error)")
+        }
+        // Reject traversal-shaped ids before we touch disk — matches the
+        // grammar the v2 handler enforces on the other side.
+        let idRange = NSRange(location: 0, length: (snapshotId as NSString).length)
+        let safePattern = try NSRegularExpression(
+            pattern: "^[A-Za-z0-9_-]{1,128}$",
+            options: []
+        )
+        if safePattern.firstMatch(in: snapshotId, options: [], range: idRange) == nil {
+            throw CLIError(message: "restore: snapshot_id '\(snapshotId)' is not a safe filename stem")
+        }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let defaultDir = home.appendingPathComponent(".c11-snapshots", isDirectory: true)
+        let destURL = defaultDir.appendingPathComponent("\(snapshotId).json")
+        // If the user passed in a path that already is the default
+        // location, there's nothing to copy.
+        if destURL.standardizedFileURL.path == srcURL.standardizedFileURL.path {
+            return snapshotId
+        }
+        do {
+            try FileManager.default.createDirectory(
+                at: defaultDir,
+                withIntermediateDirectories: true
+            )
+            if FileManager.default.fileExists(atPath: destURL.path) {
+                try FileManager.default.removeItem(at: destURL)
+            }
+            try FileManager.default.copyItem(at: srcURL, to: destURL)
+        } catch {
+            throw CLIError(message: "restore: failed to stage '\(pathOnDisk)' into ~/.c11-snapshots/: \(error)")
+        }
+        return snapshotId
     }
 
     /// `c11 list-snapshots [--json]`. Columns:

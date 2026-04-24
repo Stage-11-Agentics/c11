@@ -52,15 +52,19 @@ struct WorkspaceSnapshotStore: Sendable {
         case readFailed(String, underlying: String)
         case decodeFailed(String, underlying: String)
         case notFound(String)
+        case invalidSnapshotId(String)
+        case pathEscapesSnapshotRoots(String)
 
         var code: String {
             switch self {
-            case .createDirectoryFailed: return "snapshot_dir_create_failed"
-            case .encodeFailed:          return "snapshot_encode_failed"
-            case .writeFailed:           return "snapshot_write_failed"
-            case .readFailed:            return "snapshot_read_failed"
-            case .decodeFailed:          return "snapshot_decode_failed"
-            case .notFound:              return "snapshot_not_found"
+            case .createDirectoryFailed:   return "snapshot_dir_create_failed"
+            case .encodeFailed:            return "snapshot_encode_failed"
+            case .writeFailed:             return "snapshot_write_failed"
+            case .readFailed:              return "snapshot_read_failed"
+            case .decodeFailed:            return "snapshot_decode_failed"
+            case .notFound:                return "snapshot_not_found"
+            case .invalidSnapshotId:       return "invalid_snapshot_id"
+            case .pathEscapesSnapshotRoots: return "path_escapes_snapshot_roots"
             }
         }
 
@@ -78,13 +82,40 @@ struct WorkspaceSnapshotStore: Sendable {
                 return "snapshot decode failed at \(path): \(err)"
             case .notFound(let id):
                 return "snapshot id '\(id)' not found under ~/.c11-snapshots or ~/.cmux-snapshots"
+            case .invalidSnapshotId(let id):
+                return "snapshot id '\(id)' is not a safe filename stem"
+            case .pathEscapesSnapshotRoots(let path):
+                return "resolved path '\(path)' escapes the snapshot roots"
             }
         }
+    }
+
+    // MARK: - Snapshot-id safety
+
+    /// Grammar for a safe snapshot-id filename stem: at least one character,
+    /// Crockford-base32-ish alphabet + a few delimiters, bounded length.
+    /// Rejects path separators, `..`, dots, and anything that could escape
+    /// the destination directory when appended verbatim.
+    private static let safeSnapshotIdPattern: NSRegularExpression = {
+        // swiftlint:disable:next force_try
+        try! NSRegularExpression(pattern: "^[A-Za-z0-9_-]{1,128}$", options: [])
+    }()
+
+    static func isSafeSnapshotId(_ candidate: String) -> Bool {
+        let range = NSRange(location: 0, length: (candidate as NSString).length)
+        return safeSnapshotIdPattern.firstMatch(in: candidate, options: [], range: range) != nil
     }
 
     /// Write `snapshot` to `<currentDirectory>/<snapshot.snapshot_id>.json`,
     /// or to an explicit path. Returns the resolved path. Atomic write;
     /// directory is created on demand.
+    ///
+    /// **Do not call this path from socket handlers.** An arbitrary
+    /// `explicitPath` is an arbitrary-file-write primitive — a malicious
+    /// agent could overwrite `~/.claude/settings.json` with snapshot
+    /// JSON. This entry point exists for the CLI (`c11 snapshot --out
+    /// <path>`) where the caller holds real shell permissions already.
+    /// Socket handlers must call `writeToDefaultDirectory(_:)` instead.
     @discardableResult
     func write(_ snapshot: WorkspaceSnapshotFile, to explicitPath: URL? = nil) throws -> URL {
         let target: URL
@@ -116,6 +147,26 @@ struct WorkspaceSnapshotStore: Sendable {
         return target
     }
 
+    /// Socket-safe write: always lands at
+    /// `<currentDirectory>/<snapshot_id>.json`. The snapshot id must be
+    /// a safe filename stem; rejects anything that could traverse out of
+    /// the destination directory (`..`, `/`, embedded dots, etc.).
+    ///
+    /// Socket handlers (`snapshot.create`) must go through here. An agent
+    /// that can talk to the v2 socket cannot supply a caller-chosen path,
+    /// so this primitive cannot be turned into an arbitrary-file-write
+    /// vector.
+    @discardableResult
+    func writeToDefaultDirectory(_ snapshot: WorkspaceSnapshotFile) throws -> URL {
+        guard WorkspaceSnapshotStore.isSafeSnapshotId(snapshot.snapshotId) else {
+            throw StoreError.invalidSnapshotId(snapshot.snapshotId)
+        }
+        return try write(
+            snapshot,
+            to: currentDirectory.appendingPathComponent("\(snapshot.snapshotId).json")
+        )
+    }
+
     // MARK: - Read
 
     /// Read and decode a snapshot from an absolute URL. Does not consult the
@@ -138,13 +189,26 @@ struct WorkspaceSnapshotStore: Sendable {
 
     /// Resolve an id to a path (current dir first, then legacy). Returns the
     /// first match. Throws `.notFound` when neither path exists.
+    ///
+    /// Validates the id against `isSafeSnapshotId`, then verifies the
+    /// realpath after resolution lives under one of the configured
+    /// snapshot roots. Belt and braces: the filename-stem check catches
+    /// the common `"../../etc/passwd"` case, and the realpath check
+    /// catches symlink escapes where the file name looks safe but the
+    /// resolved file lives elsewhere on disk (e.g. a symlinked legacy
+    /// directory pointing outside home).
     func resolvePath(byId snapshotId: String) throws -> URL {
+        guard WorkspaceSnapshotStore.isSafeSnapshotId(snapshotId) else {
+            throw StoreError.invalidSnapshotId(snapshotId)
+        }
         let primary = currentDirectory.appendingPathComponent("\(snapshotId).json")
         if fileManager.fileExists(atPath: primary.path) {
+            try assertPathUnderSnapshotRoots(primary)
             return primary
         }
         let legacy = legacyDirectory.appendingPathComponent("\(snapshotId).json")
         if fileManager.fileExists(atPath: legacy.path) {
+            try assertPathUnderSnapshotRoots(legacy)
             return legacy
         }
         throw StoreError.notFound(snapshotId)
@@ -154,6 +218,36 @@ struct WorkspaceSnapshotStore: Sendable {
     /// directory. Throws `.notFound` if neither has it.
     func read(byId snapshotId: String) throws -> WorkspaceSnapshotFile {
         try read(from: resolvePath(byId: snapshotId))
+    }
+
+    /// Verify that `url` resolves to a file under either `currentDirectory`
+    /// or `legacyDirectory`. Uses `URL.standardized.resolvingSymlinksInPath()`
+    /// on both sides so the comparison is on canonical paths, not string
+    /// prefixes. Rejects escapes in two classes:
+    ///
+    /// 1. Lexical — a snapshot id containing `..` segments. The
+    ///    `isSafeSnapshotId` pre-check normally filters these before we
+    ///    ever get here, but the defence holds even if that filter is
+    ///    bypassed.
+    /// 2. Symlink — a file whose name looks safe but whose realpath
+    ///    points outside the snapshot roots (e.g. a symlink farm inside
+    ///    the legacy directory).
+    private func assertPathUnderSnapshotRoots(_ url: URL) throws {
+        let resolvedTarget = url.standardized.resolvingSymlinksInPath().path
+        let roots = [currentDirectory, legacyDirectory].map {
+            $0.standardized.resolvingSymlinksInPath().path
+        }
+        for root in roots {
+            // Append a trailing separator to ensure `/a/b` does not match
+            // `/a/bc`. Comparing the normalised forms of `$root + "/"`
+            // against the resolved file path gives a proper containment
+            // check.
+            let rootWithSeparator = root.hasSuffix("/") ? root : root + "/"
+            if resolvedTarget.hasPrefix(rootWithSeparator) {
+                return
+            }
+        }
+        throw StoreError.pathEscapesSnapshotRoots(resolvedTarget)
     }
 
     // MARK: - List

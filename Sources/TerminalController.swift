@@ -4460,17 +4460,29 @@ class TerminalController {
     // MARK: - V2 Snapshot Methods (CMUX-37 Phase 1)
 
     /// `snapshot.create`: capture the live workspace to a `WorkspaceSnapshotFile`
-    /// on disk. Params: `workspace_id` / `surface_id` (defaults to current);
-    /// `path` (optional explicit output path). Returns `{snapshot_id, path,
-    /// surface_count, workspace_ref}`.
+    /// on disk. Params: `workspace_id` / `surface_id` (defaults to current).
+    /// Returns `{snapshot_id, path, surface_count, workspace_ref}`.
+    ///
+    /// Socket-initiated captures **always** land in
+    /// `WorkspaceSnapshotStore.defaultDirectory()` — any caller-supplied
+    /// `params["path"]` is rejected with `invalid_params`. The CLI's
+    /// `c11 snapshot --out <path>` path is fine because the CLI process
+    /// holds the caller's real permissions; the threat here is an agent
+    /// with only socket access turning `snapshot.create` into an
+    /// arbitrary-file-write primitive (overwriting
+    /// `~/.claude/settings.json` etc.).
     private func v2SnapshotCreate(params: [String: Any]) -> V2CallResult {
         guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
-
-        let explicitPath: URL? = (params["path"] as? String).flatMap { raw in
-            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : URL(fileURLWithPath: trimmed)
+        if let rawPath = params["path"] as? String,
+           !rawPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return .err(
+                code: "invalid_params",
+                message: "socket-initiated snapshot.create does not accept 'path'; "
+                    + "use 'c11 snapshot --out <path>' from the CLI instead",
+                data: nil
+            )
         }
         let originRaw = (params["origin"] as? String) ?? "manual"
         let origin: WorkspaceSnapshotFile.Origin =
@@ -4490,7 +4502,7 @@ class TerminalController {
         let store = WorkspaceSnapshotStore()
         let path: URL
         do {
-            path = try store.write(envelope, to: explicitPath)
+            path = try store.writeToDefaultDirectory(envelope)
         } catch let err as WorkspaceSnapshotStore.StoreError {
             return .err(code: err.code, message: "\(err)", data: nil)
         } catch {
@@ -4505,15 +4517,30 @@ class TerminalController {
         return .ok(payload)
     }
 
-    /// `snapshot.restore`: read a snapshot by id or path, run the embedded
-    /// plan through `WorkspaceLayoutExecutor`, optionally threading a named
+    /// `snapshot.restore`: read a snapshot by id, run the embedded plan
+    /// through `WorkspaceLayoutExecutor`, optionally threading a named
     /// restart registry (`"phase1"` → `AgentRestartRegistry.phase1`) so cc
     /// terminals resume via `cc --resume <session-id>`. Returns the same
     /// `ApplyResult` shape `workspace.apply` returns.
+    ///
+    /// Socket-initiated restores resolve `snapshot_id` through
+    /// `WorkspaceSnapshotStore.resolvePath(byId:)`, which validates the id
+    /// grammar and asserts the resolved realpath lives under a configured
+    /// snapshot root. Caller-supplied `params["path"]` is rejected with
+    /// `invalid_params`: an agent with socket access must not be able to
+    /// coerce the restore path-reader into parsing arbitrary files
+    /// (`/etc/passwd.json`, say) — parser errors can leak file contents.
+    /// The CLI's `c11 restore <path-or-id>` classifies locally before
+    /// sending and always submits via `snapshot_id`.
     private func v2SnapshotRestore(params: [String: Any]) -> V2CallResult {
-        // Resolve source: explicit path wins, then id.
-        let rawPath = (params["path"] as? String).map {
-            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let rawPath = params["path"] as? String,
+           !rawPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return .err(
+                code: "invalid_params",
+                message: "socket-initiated snapshot.restore does not accept 'path'; "
+                    + "use 'snapshot_id' (resolved against the snapshot roots) instead",
+                data: nil
+            )
         }
         let rawId = (params["snapshot_id"] as? String).map {
             $0.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -4521,14 +4548,12 @@ class TerminalController {
         let store = WorkspaceSnapshotStore()
         let envelope: WorkspaceSnapshotFile
         do {
-            if let p = rawPath, !p.isEmpty {
-                envelope = try store.read(from: URL(fileURLWithPath: p))
-            } else if let id = rawId, !id.isEmpty {
+            if let id = rawId, !id.isEmpty {
                 envelope = try store.read(byId: id)
             } else {
                 return .err(
                     code: "invalid_params",
-                    message: "snapshot.restore requires 'snapshot_id' or 'path'",
+                    message: "snapshot.restore requires 'snapshot_id'",
                     data: nil
                 )
             }

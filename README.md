@@ -157,7 +157,7 @@ c11 assumes RAM. it is conceivable — normal, even — to have fifty terminals 
 
 c11 puts no ceiling on how many terminals, panes, browsers, or files you have open at once. the limit is your machine, not c11 governing you. the modern hyperengineer runs a tricked-out MacBook with memory to spare, and c11 is built for that machine. fifteen workspaces, six panes to a workspace, six terminals to a pane — if the silicon can carry it, carry on.
 
-on an 8GB MacBook Air, c11 will happily let you walk yourself right off a performance cliff. that one is on you to handle.
+however, on an 8GB MacBook Air, c11 will happily let you walk yourself right off a performance cliff.
 
 ---
 

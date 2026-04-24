@@ -3,25 +3,28 @@ import AppKit
 
 // MARK: - First-run TCC primer sheet
 
-/// Shown before the first shell spawns, giving the user the choice to
-/// pre-grant Full Disk Access (recommended by iTerm2, Warp, and Ghostty)
-/// or proceed and respond to per-folder TCC prompts individually.
+/// Shown once on first run, after the Agent Skills onboarding dismisses,
+/// to explain the cascade of macOS permission dialogs a new c11 user is
+/// about to see. Qualified-engineer audience: the goal is to frame each
+/// prompt as expected and reassuringly deniable, and to offer Full Disk
+/// Access as the one-time escape hatch iTerm2 / Warp / Ghostty all
+/// document.
 struct TCCPrimerSheet: View {
-    let onGrantFDA: () -> Void
-    let onContinueWithout: () -> Void
+    let onGotIt: () -> Void
+    let onOpenSettings: () -> Void
     let onDismiss: () -> Void
 
     init(
-        onGrantFDA: @escaping () -> Void = {},
-        onContinueWithout: @escaping () -> Void = {},
+        onGotIt: @escaping () -> Void = {},
+        onOpenSettings: @escaping () -> Void = {},
         onDismiss: @escaping () -> Void = {}
     ) {
-        self.onGrantFDA = onGrantFDA
-        self.onContinueWithout = onContinueWithout
+        self.onGotIt = onGotIt
+        self.onOpenSettings = onOpenSettings
         self.onDismiss = onDismiss
     }
 
-    @State private var selectedAction: TCCPrimerAction = .grantFDA
+    @State private var selectedAction: TCCPrimerAction = .gotIt
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -40,7 +43,7 @@ struct TCCPrimerSheet: View {
                 )
             },
             onActivate: { activateSelectedAction() },
-            onCancel: { onContinueWithout() }
+            onCancel: { onGotIt() }
         ))
         .environment(\.colorScheme, .dark)
     }
@@ -49,7 +52,7 @@ struct TCCPrimerSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(String(
                 localized: "tccPrimer.title",
-                defaultValue: "Before your first shell opens."
+                defaultValue: "macOS will ask about folders."
             ))
             .font(.system(size: 18, weight: .semibold))
             .foregroundStyle(BrandColors.whiteSwiftUI)
@@ -68,15 +71,6 @@ struct TCCPrimerSheet: View {
     private var bodyCopy: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(String(
-                localized: "tccPrimer.body.fullDisk",
-                defaultValue: "Grant Full Disk Access once in System Settings → Privacy & Security and you won't see individual dialogs at all. This is what iTerm2, Warp, and Ghostty recommend for engineers running many agents. You can revoke it any time."
-            ))
-            .font(.system(size: 12, weight: .regular))
-            .lineSpacing(2)
-            .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.76))
-            .fixedSize(horizontal: false, vertical: true)
-
-            Text(String(
                 localized: "tccPrimer.body.whoAsks",
                 defaultValue: "The dialog will say \"c11 wants to access…\" because macOS attributes the request to the parent app. The actual requester is whatever you — or an agent — just ran."
             ))
@@ -90,6 +84,15 @@ struct TCCPrimerSheet: View {
                 .lineSpacing(2)
                 .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.86))
                 .fixedSize(horizontal: false, vertical: true)
+
+            Text(String(
+                localized: "tccPrimer.body.fullDisk",
+                defaultValue: "If you'd rather not see the dialogs one by one, you can grant c11 Full Disk Access once in System Settings → Privacy & Security. Most engineers running many agents do this; it's the same tradeoff iTerm2, Warp, and Ghostty document. You can revoke it any time."
+            ))
+            .font(.system(size: 12, weight: .regular))
+            .lineSpacing(2)
+            .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.76))
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -138,46 +141,46 @@ struct TCCPrimerSheet: View {
 
             OnboardingActionButton(
                 title: String(
-                    localized: "tccPrimer.button.continueWithout",
-                    defaultValue: "Continue without it"
+                    localized: "tccPrimer.button.openSettings",
+                    defaultValue: "Open Privacy & Security"
                 ),
                 kind: .secondary,
-                isSelected: selectedAction == .continueWithout,
-                action: onContinueWithout
+                isSelected: selectedAction == .openSettings,
+                action: onOpenSettings
             )
 
             OnboardingActionButton(
                 title: String(
-                    localized: "tccPrimer.button.grantFDA",
-                    defaultValue: "Grant Full Disk Access"
+                    localized: "tccPrimer.button.gotIt",
+                    defaultValue: "Got it"
                 ),
                 kind: .primary,
-                isSelected: selectedAction == .grantFDA,
-                action: onGrantFDA
+                isSelected: selectedAction == .gotIt,
+                action: onGotIt
             )
         }
     }
 
     private func activateSelectedAction() {
         switch selectedAction {
-        case .grantFDA:
-            onGrantFDA()
-        case .continueWithout:
-            onContinueWithout()
+        case .gotIt:
+            onGotIt()
+        case .openSettings:
+            onOpenSettings()
         }
     }
 }
 
 private enum TCCPrimerAction: CaseIterable {
-    case continueWithout
-    case grantFDA
+    case openSettings
+    case gotIt
 
     static func moved(
         from current: TCCPrimerAction,
         direction: ConfirmMoveDirection
     ) -> TCCPrimerAction {
         let order = Self.allCases
-        guard let index = order.firstIndex(of: current) else { return .grantFDA }
+        guard let index = order.firstIndex(of: current) else { return .gotIt }
         switch direction {
         case .left:
             return order[max(order.startIndex, index - 1)]
@@ -193,15 +196,15 @@ private enum TCCPrimerAction: CaseIterable {
 // MARK: - Presentation gate
 
 enum TCCPrimer {
-    /// Persistent "primer shown" flag. Set by the Continue/Grant buttons and
-    /// also by the one-shot migration that marks existing welcome-completed
-    /// users as already-seen on first launch of a build that ships this sheet.
+    /// Persistent "primer shown" flag. Set by the Got-it button and also by
+    /// the one-shot migration that marks existing welcome-completed users as
+    /// already-seen on first launch of a build that ships this sheet.
     static let shownKey = "cmuxTCCPrimerShown"
 
     /// In-memory flag scoped to the current launch. Set when the user
     /// dismisses the sheet via the red close button (which never runs
-    /// onContinueWithout). Prevents a chained welcome workspace or re-entry
-    /// path from popping the sheet again in the same run.
+    /// onGotIt). Prevents a chained welcome workspace or re-entry path from
+    /// popping the sheet again in the same run.
     @MainActor private static var _dismissedThisLaunch: Bool = false
 
     @MainActor static func markDismissedThisLaunch() {

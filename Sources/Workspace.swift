@@ -10637,9 +10637,11 @@ extension Workspace: BonsplitDelegate {
     func splitTabBar(_ controller: BonsplitController, didSelectNewTabMenuItem itemId: String, forKind kind: String, inPane pane: PaneID) {
         guard kind == "agent",
               let chosen = AgentLauncherSettings.Kind(rawValue: itemId) else { return }
+        // Update the default only; the next left-click on A spawns the chosen
+        // agent. Launching here would contradict right-click semantics (a
+        // preference gesture, not an action gesture).
         UserDefaults.standard.set(chosen.rawValue, forKey: AgentLauncherSettings.kindKey)
         refreshSplitButtonTooltips()
-        launchAgentSurface(inPane: pane)
     }
 
     func splitTabBar(_ controller: BonsplitController, didRequestClosePane pane: PaneID) {

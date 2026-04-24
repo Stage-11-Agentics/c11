@@ -3986,14 +3986,12 @@ enum ClaudeCodeIntegrationSettings {
 /// quitting the agent leaves the shell running.
 enum AgentLauncherSettings {
     static let kindKey = "agentLauncherKind"
-    static let customCommandKey = "agentLauncherCustomCommand"
 
     enum Kind: String, CaseIterable, Identifiable {
         case claudeCode
         case codex
         case opencode
         case kimi
-        case other
 
         var id: String { rawValue }
 
@@ -4007,15 +4005,12 @@ enum AgentLauncherSettings {
                 return String(localized: "agentLauncher.kind.opencode", defaultValue: "OpenCode")
             case .kimi:
                 return String(localized: "agentLauncher.kind.kimi", defaultValue: "Kimi")
-            case .other:
-                return String(localized: "agentLauncher.kind.other", defaultValue: "Other…")
             }
         }
 
-        /// Default shell command for each built-in agent. The "Other" case
-        /// reads its command from a user-supplied text field; everything else
-        /// is hardcoded to the launcher form that runs the agent as an
-        /// interactive TUI.
+        /// Shell command each agent is launched with — hardcoded to the
+        /// launcher form that runs the agent as an interactive TUI inside the
+        /// operator's login shell.
         fileprivate var builtInCommand: String {
             switch self {
             case .claudeCode:
@@ -4026,14 +4021,11 @@ enum AgentLauncherSettings {
                 return "opencode"
             case .kimi:
                 return "kimi"
-            case .other:
-                return ""
             }
         }
     }
 
     static let defaultKind: Kind = .claudeCode
-    static let defaultCustomCommand = ""
 
     struct Resolved {
         let kind: Kind
@@ -4045,15 +4037,7 @@ enum AgentLauncherSettings {
     static func current(defaults: UserDefaults = .standard) -> Resolved {
         let kindRaw = defaults.string(forKey: kindKey) ?? defaultKind.rawValue
         let kind = Kind(rawValue: kindRaw) ?? defaultKind
-        let command: String
-        switch kind {
-        case .other:
-            command = (defaults.string(forKey: customCommandKey) ?? defaultCustomCommand)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        default:
-            command = kind.builtInCommand
-        }
-        return Resolved(kind: kind, shellCommand: command)
+        return Resolved(kind: kind, shellCommand: kind.builtInCommand)
     }
 }
 
@@ -4341,8 +4325,6 @@ struct SettingsView: View {
     private var claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
     @AppStorage(AgentLauncherSettings.kindKey)
     private var agentLauncherKindRaw = AgentLauncherSettings.defaultKind.rawValue
-    @AppStorage(AgentLauncherSettings.customCommandKey)
-    private var agentLauncherCustomCommand = AgentLauncherSettings.defaultCustomCommand
     @AppStorage(TelemetrySettings.sendAnonymousTelemetryKey)
     private var sendAnonymousTelemetry = TelemetrySettings.defaultSendAnonymousTelemetry
     @AppStorage("cmuxPortBase") private var cmuxPortBase = 9100
@@ -5985,22 +5967,6 @@ struct SettingsView: View {
             ) {
                 ForEach(AgentLauncherSettings.Kind.allCases) { kind in
                     Text(kind.displayName).tag(kind.rawValue)
-                }
-            }
-
-            if AgentLauncherSettings.Kind(rawValue: agentLauncherKindRaw) == .other {
-                SettingsCardDivider()
-                SettingsCardRow(
-                    String(localized: "settings.agentLauncher.customCommand", defaultValue: "Custom Command"),
-                    subtitle: String(localized: "settings.agentLauncher.customCommand.subtitle", defaultValue: "Sent to the new terminal as if typed. Runs inside your shell.")
-                ) {
-                    TextField(
-                        String(localized: "settings.agentLauncher.customCommand.placeholder", defaultValue: "my-agent --flag"),
-                        text: $agentLauncherCustomCommand
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 240)
-                    .accessibilityIdentifier("SettingsAgentLauncherCustomCommandField")
                 }
             }
 

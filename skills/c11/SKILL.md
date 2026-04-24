@@ -411,6 +411,8 @@ c11 mailbox send --to watcher --topic ci.status --urgent --body "CI red" \
 
 Auto-fills `version`, `id`, `ts`, `from` (resolved via the caller's surface title). Prints the envelope id on success.
 
+**Stage 2 requires `--to`.** Topic-only sends (`--topic` with no `--to`) are rejected with a non-zero exit — topic subscribe/fan-out ships in Stage 3. Until then, always pair `--topic` with an explicit `--to <surface-name>`.
+
 **Raw file write (any process, any language):**
 
 ```bash
@@ -448,7 +450,7 @@ c11 mailbox inbox-dir                           # absolute path of your inbox
 
 ### Stage 2 limitations (know before you lean on these)
 
-- **No topic fan-out.** Envelopes with `topic` but no `to` are accepted but resolve to an empty recipient list. Stage 3 wires `mailbox.subscribe` globs through the dispatcher.
+- **No topic fan-out.** `c11 mailbox send` rejects topic-only envelopes (`--topic` without `--to`) with a non-zero exit and `topics_not_implemented`. Pair `--topic` with `--to <surface-name>` to send now; Stage 3 wires `mailbox.subscribe` globs through the dispatcher.
 - **No `watch` handler.** `c11 mailbox watch` is unimplemented; use `c11 mailbox tail` to follow the dispatch log.
 - **No `c11 mailbox configure` convenience.** Set `mailbox.delivery` / `mailbox.subscribe` / `mailbox.retention_days` via `c11 set-metadata` for now.
 - **No `body_ref` read-through.** The schema accepts the field and the dispatcher stores it; reading external bodies is the recipient's job for now.

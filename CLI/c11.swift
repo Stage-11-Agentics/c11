@@ -16258,6 +16258,20 @@ extension CMUXCLI {
             )
         }
 
+        // Stage 2 does not implement topic subscribe / fan-out. A topic-only
+        // envelope would resolve to an empty recipient list and silently
+        // vanish — reject at the CLI boundary so the operator sees the
+        // failure instead of losing the message. Tracked for Stage 3;
+        // pair with --to <surface> until then.
+        if to == nil && topic != nil {
+            throw CLIError(
+                message: String(
+                    localized: "mailbox.cli.error.topics-not-implemented",
+                    defaultValue: "Topic-only envelopes are not delivered in Stage 2 (topic subscribe/fan-out ships in Stage 3). Pair --topic with --to <surface-name> to send now."
+                )
+            )
+        }
+
         if Data(body.utf8).count > MailboxEnvelope.maxBodyBytes {
             throw CLIError(
                 message: String(

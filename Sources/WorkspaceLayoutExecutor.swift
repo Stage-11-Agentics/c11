@@ -179,16 +179,52 @@ enum WorkspaceLayoutExecutor {
         // Step 7 — terminal initial commands. TerminalPanel.sendText
         // auto-queues pre-ready and flushes when the Ghostty surface comes
         // up, so the executor does not need to await readiness here.
+        //
+        // Phase 1: when `options.restartRegistry` is non-nil and a terminal
+        // surface has no explicit `command`, consult the registry with
+        // `(terminal_type, claude.session_id, surface.metadata)` and use
+        // the returned command. Explicit `SurfaceSpec.command` always wins;
+        // an empty/whitespace explicit command counts as no command and
+        // falls through to the registry. A registry miss (types matched
+        // but session id absent, etc.) emits a `restart_registry_declined`
+        // ApplyFailure for observability without aborting the walk.
         for surfaceSpec in plan.surfaces {
             guard surfaceSpec.kind == .terminal,
-                  let command = surfaceSpec.command,
-                  !command.isEmpty,
                   let panelId = walkState.planSurfaceIdToPanelId[surfaceSpec.id],
                   let terminalPanel = workspace.panels[panelId] as? TerminalPanel else {
                 continue
             }
+            let explicitCommand = surfaceSpec.command?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let effectiveCommand: String?
+            if let explicit = explicitCommand, !explicit.isEmpty {
+                effectiveCommand = surfaceSpec.command
+            } else if let registry = options.restartRegistry {
+                let surfaceMeta = stringMetadata(surfaceSpec.metadata)
+                let terminalType = surfaceMeta[SurfaceMetadataKeyName.terminalType]
+                let sessionId = surfaceMeta[SurfaceMetadataKeyName.claudeSessionId]
+                let synthesized = registry.resolveCommand(
+                    terminalType: terminalType,
+                    sessionId: sessionId,
+                    metadata: surfaceMeta
+                )
+                if synthesized == nil, (terminalType != nil || sessionId != nil) {
+                    // Registry saw inputs but declined — make it visible.
+                    let message = "restart registry declined for terminal_type=\(terminalType ?? "nil") sessionId=\(sessionId?.prefix(8).description ?? "nil")"
+                    walkState.warnings.append(message)
+                    walkState.failures.append(ApplyFailure(
+                        code: "restart_registry_declined",
+                        step: "surface[\(surfaceSpec.id)].command.resolve",
+                        message: message
+                    ))
+                }
+                effectiveCommand = synthesized
+            } else {
+                effectiveCommand = nil
+            }
+            guard let cmd = effectiveCommand, !cmd.isEmpty else { continue }
             let cmdClock = Clock()
-            terminalPanel.sendText(command)
+            terminalPanel.sendText(cmd)
             walkState.timings.append(StepTiming(
                 step: "surface[\(surfaceSpec.id)].command.enqueue",
                 durationMs: cmdClock.elapsedMs
@@ -932,6 +968,29 @@ enum WorkspaceLayoutExecutor {
         case (.pane, .pane):
             return []
         }
+    }
+
+    // MARK: - Metadata helpers
+
+    /// Flatten a `[String: PersistedJSONValue]?` surface-metadata blob to
+    /// `[String: String]`, keeping only `.string(...)` entries. The
+    /// restart-registry contract takes string-valued inputs only —
+    /// `terminal_type` and `claude.session_id` are both strings in v1 —
+    /// so non-string values (numbers, booleans, arrays, objects) are
+    /// silently dropped here rather than surfaced as warnings; a
+    /// non-string `terminal_type` would have been caught by
+    /// `SurfaceMetadataStore.validateReservedKey` at write time.
+    fileprivate nonisolated static func stringMetadata(
+        _ metadata: [String: PersistedJSONValue]?
+    ) -> [String: String] {
+        guard let metadata else { return [:] }
+        var out: [String: String] = [:]
+        for (key, value) in metadata {
+            if case .string(let s) = value {
+                out[key] = s
+            }
+        }
+        return out
     }
 
     // MARK: - Timing helper

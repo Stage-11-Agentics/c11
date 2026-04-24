@@ -202,6 +202,8 @@
 				D7107BF0A1B2C3D4E5F60718 /* MailboxEnvelopeValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7107BF1A1B2C3D4E5F60718 /* MailboxEnvelopeValidationTests.swift */; };
 				D7108BF0A1B2C3D4E5F60718 /* MailboxDispatchLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7108BF1A1B2C3D4E5F60718 /* MailboxDispatchLog.swift */; };
 				D7109BF0A1B2C3D4E5F60718 /* MailboxDispatchLogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7109BF1A1B2C3D4E5F60718 /* MailboxDispatchLogTests.swift */; };
+				D710ABF0A1B2C3D4E5F60718 /* MailboxSurfaceResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D710ABF1A1B2C3D4E5F60718 /* MailboxSurfaceResolver.swift */; };
+				D710BBF0A1B2C3D4E5F60718 /* MailboxSurfaceResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D710BBF1A1B2C3D4E5F60718 /* MailboxSurfaceResolverTests.swift */; };
 		/* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -450,6 +452,8 @@
 			D7107BF1A1B2C3D4E5F60718 /* MailboxEnvelopeValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailboxEnvelopeValidationTests.swift; sourceTree = "<group>"; };
 			D7108BF1A1B2C3D4E5F60718 /* MailboxDispatchLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/MailboxDispatchLog.swift; sourceTree = "<group>"; };
 			D7109BF1A1B2C3D4E5F60718 /* MailboxDispatchLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailboxDispatchLogTests.swift; sourceTree = "<group>"; };
+			D710ABF1A1B2C3D4E5F60718 /* MailboxSurfaceResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/MailboxSurfaceResolver.swift; sourceTree = "<group>"; };
+			D710BBF1A1B2C3D4E5F60718 /* MailboxSurfaceResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailboxSurfaceResolverTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -613,6 +617,7 @@
 				D7103BF1A1B2C3D4E5F60718 /* MailboxULID.swift */,
 				D7106BF1A1B2C3D4E5F60718 /* MailboxEnvelope.swift */,
 				D7108BF1A1B2C3D4E5F60718 /* MailboxDispatchLog.swift */,
+				D710ABF1A1B2C3D4E5F60718 /* MailboxSurfaceResolver.swift */,
 				A5008F12 /* SurfaceTitleBarView.swift */,
 				A5008F22 /* TitleFormatting.swift */,
 				A5001225 /* SocketControlSettings.swift */,
@@ -789,6 +794,7 @@
 					D7105BF1A1B2C3D4E5F60718 /* MailboxULIDTests.swift */,
 					D7107BF1A1B2C3D4E5F60718 /* MailboxEnvelopeValidationTests.swift */,
 					D7109BF1A1B2C3D4E5F60718 /* MailboxDispatchLogTests.swift */,
+					D710BBF1A1B2C3D4E5F60718 /* MailboxSurfaceResolverTests.swift */,
 				);
 				path = c11Tests;
 				sourceTree = "<group>";
@@ -976,6 +982,7 @@
 			D7103BF0A1B2C3D4E5F60718 /* MailboxULID.swift in Sources */,
 			D7106BF0A1B2C3D4E5F60718 /* MailboxEnvelope.swift in Sources */,
 			D7108BF0A1B2C3D4E5F60718 /* MailboxDispatchLog.swift in Sources */,
+			D710ABF0A1B2C3D4E5F60718 /* MailboxSurfaceResolver.swift in Sources */,
 				A5008F11 /* SurfaceTitleBarView.swift in Sources */,
 				A5008F21 /* TitleFormatting.swift in Sources */,
 				A5001226 /* SocketControlSettings.swift in Sources */,
@@ -1115,6 +1122,7 @@
 					D7105BF0A1B2C3D4E5F60718 /* MailboxULIDTests.swift in Sources */,
 					D7107BF0A1B2C3D4E5F60718 /* MailboxEnvelopeValidationTests.swift in Sources */,
 					D7109BF0A1B2C3D4E5F60718 /* MailboxDispatchLogTests.swift in Sources */,
+					D710BBF0A1B2C3D4E5F60718 /* MailboxSurfaceResolverTests.swift in Sources */,
 				);
 				runOnlyForDeploymentPostprocessing = 0;
 			};

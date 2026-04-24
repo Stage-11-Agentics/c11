@@ -5600,6 +5600,25 @@ final class Workspace: Identifiable, ObservableObject {
         surfaceIdToPanelId.first { $0.value == panelId }?.key
     }
 
+    /// Resolve the bonsplit pane hosting the given panel.
+    ///
+    /// Walks `bonsplitController.allPaneIds` searching for a pane whose tabs
+    /// include the panel's surface id. Used by split primitives to find the
+    /// source pane of a split and by `WorkspaceLayoutExecutor` to resolve the
+    /// pane that hosts a just-created panel for pane-metadata writes.
+    ///
+    /// O(panes * tabsPerPane) worst case; workspaces in the field have
+    /// single-digit pane counts so the cost is negligible.
+    func paneIdForPanel(_ panelId: UUID) -> PaneID? {
+        guard let tabId = surfaceIdFromPanelId(panelId) else { return nil }
+        for paneId in bonsplitController.allPaneIds {
+            if bonsplitController.tabs(inPane: paneId).contains(where: { $0.id == tabId }) {
+                return paneId
+            }
+        }
+        return nil
+    }
+
 
     private func installBrowserPanelSubscription(_ browserPanel: BrowserPanel) {
         let subscription = Publishers.CombineLatest3(
@@ -7211,18 +7230,7 @@ final class Workspace: Identifiable, ObservableObject {
         insertFirst: Bool = false,
         focus: Bool = true
     ) -> TerminalPanel? {
-        // Find the pane containing the source panel
-        guard let sourceTabId = surfaceIdFromPanelId(panelId) else { return nil }
-        var sourcePaneId: PaneID?
-        for paneId in bonsplitController.allPaneIds {
-            let tabs = bonsplitController.tabs(inPane: paneId)
-            if tabs.contains(where: { $0.id == sourceTabId }) {
-                sourcePaneId = paneId
-                break
-            }
-        }
-
-        guard let paneId = sourcePaneId else { return nil }
+        guard let paneId = paneIdForPanel(panelId) else { return nil }
         let inheritedConfig = inheritedTerminalConfig(preferredPanelId: panelId, inPane: paneId)
         let remoteTerminalStartupCommand = remoteTerminalStartupCommand()
 
@@ -7413,18 +7421,7 @@ final class Workspace: Identifiable, ObservableObject {
         preferredProfileID: UUID? = nil,
         focus: Bool = true
     ) -> BrowserPanel? {
-        // Find the pane containing the source panel
-        guard let sourceTabId = surfaceIdFromPanelId(panelId) else { return nil }
-        var sourcePaneId: PaneID?
-        for paneId in bonsplitController.allPaneIds {
-            let tabs = bonsplitController.tabs(inPane: paneId)
-            if tabs.contains(where: { $0.id == sourceTabId }) {
-                sourcePaneId = paneId
-                break
-            }
-        }
-
-        guard let paneId = sourcePaneId else { return nil }
+        guard let paneId = paneIdForPanel(panelId) else { return nil }
 
         // Create browser panel
         let browserPanel = BrowserPanel(
@@ -7572,17 +7569,7 @@ final class Workspace: Identifiable, ObservableObject {
         filePath: String? = nil,
         focus: Bool = true
     ) -> MarkdownPanel? {
-        guard let sourceTabId = surfaceIdFromPanelId(panelId) else { return nil }
-        var sourcePaneId: PaneID?
-        for paneId in bonsplitController.allPaneIds {
-            let tabs = bonsplitController.tabs(inPane: paneId)
-            if tabs.contains(where: { $0.id == sourceTabId }) {
-                sourcePaneId = paneId
-                break
-            }
-        }
-
-        guard let paneId = sourcePaneId else { return nil }
+        guard let paneId = paneIdForPanel(panelId) else { return nil }
 
         let markdownPanel = MarkdownPanel(workspaceId: id, filePath: filePath)
         panels[markdownPanel.id] = markdownPanel

@@ -51,11 +51,19 @@ Nested `LayoutTreeSpec` mirrors `SessionWorkspaceLayoutSnapshot` (`Sources/Sessi
 
 ## Executor
 
-New file: `Sources/WorkspaceLayoutExecutor.swift`. One async entry point:
+New file: `Sources/WorkspaceLayoutExecutor.swift`. One entry point (shipped
+sync in Phase 0 — the walk has no await points; Phase 1's readiness pass
+will reintroduce `async` when surface-ready awaiting lands):
 
 ```swift
 @MainActor
-func apply(_ plan: WorkspaceApplyPlan, options: ApplyOptions) async -> ApplyResult
+enum WorkspaceLayoutExecutor {
+    static func apply(
+        _ plan: WorkspaceApplyPlan,
+        options: ApplyOptions = ApplyOptions(),
+        dependencies: WorkspaceLayoutExecutorDependencies
+    ) -> ApplyResult
+}
 ```
 
 - Creates the workspace (routes through `TabManager.addWorkspace` at `Sources/TabManager.swift:1138`).
@@ -536,3 +544,7 @@ Ship as a continuation of the same feature branch (`cmux-37/phase-0-workspace-ap
 7. **Commit R7 — plan file sync.** Edit `.lattice/plans/task_01KPMTEY4WGECM9MNZ4XARN7Y6.md:58` to match the shipped sync signature. One-line documentation edit.
 
 After R7 lands and is pushed, the rework Impl agent posts the completion comment on CMUX-37 and the delegator spawns Trident cycle 2 on the new branch head.
+
+## Reset 2026-04-24 by agent:claude-opus-4-7-cmux-37
+
+## Reset 2026-04-24 by agent:claude-opus-4-7-cmux-37

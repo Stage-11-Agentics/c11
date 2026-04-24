@@ -492,3 +492,47 @@ Each commit carries the `CMUX-37 Phase 0:` prefix and references the specific de
 8. **`TabManager.workspaceRef(for:)` helper — exists or new?** Ref minting for `workspace:N` is owned by the v2 handler layer today (`TerminalController.swift:2066`). Impl should reuse that helper rather than duplicating the logic in the executor. If the helper lives inside `TerminalController`, lift it to `TabManager` or a small `V2Refs` namespace so the executor doesn't depend on the socket layer. **Not a blocker** — trivial refactor.
 
 None of the open questions rise to a `needs_human` architectural fork. They are execution-detail calls Impl can make in-session with reasonable defaults captured above.
+
+## Review Cycle 1 Findings (2026-04-24)
+
+*Verdict:* **FAIL-IMPL-REWORK** from `/trident-code-review` (9-agent pack; 3-model consensus on both blockers). Same branch, no plan reshape. Scope: ~1 day walker + harness rework, ~½ day for the accompanying minor-fixes. Cycle 1 of max 3.
+
+*Review pack:* `notes/trident-review-CMUX-37-pack-20260424-0303/` (12 files: 9 per-agent + 3 synthesis).
+
+*What's clean (consensus — do not change):* value types + Codable round-trips; `PersistedJSONValue` reuse; `source: .explicit` throughout; `mailbox.*` strings-only guard; reserved-key routing through `setPanelCustomTitle` / canonical `setMetadata`; no typing-latency hot-path edits; no terminal-opinion creep (no `Resources/bin/claude` touch, no `c11 install <tui>`); `async` drop is clean (no trailing awaits, no spurious `Task { }` in the socket handler); 8-commit boundary hygiene; TODO comments at welcome-quad / default-grid migration sites.
+
+### BLOCKERS (must fix to pass cycle 2)
+
+**B1. Layout walker composes nested splits bottom-up against a leaf-only API.** `WorkspaceLayoutExecutor.materializeSplit` (`Sources/WorkspaceLayoutExecutor.swift:448-501`) splits a leaf of `split.first` to produce what should be a sibling of the whole `split.first` subtree, but bonsplit's `splitPane(_:orientation:insertFirst:)` only splits leaf panes. 4 of 5 acceptance fixtures materialize malformed trees (welcome-quad, default-grid, mixed-browser-markdown, deep-nested-splits); only `single-large-with-metadata` (no splits) escapes. This is a design-level defect — not a line edit. **Fix path:** top-down injection matching `Workspace.restoreSessionLayoutNode` (the existing idiom the `SessionWorkspaceLayoutSnapshot` restore path already uses), or outer-first two-pass preallocation. Trace-validate the new walker against welcome-quad and default-grid shapes before landing.
+
+**B2. Acceptance harness cannot detect B1.** `c11Tests/WorkspaceLayoutExecutorAcceptanceTests.swift:106-147` asserts only ref-set membership + the 2_000 ms timing. No bonsplit tree-shape comparison, no divider-position check, no `selectedIndex` check, no per-fixture metadata round-trip beyond `single-large-with-metadata`. Section 6 of the plan called for structural-fingerprint assertions — they were not shipped, which is why B1 passed CI silently. **Fix path:** add structural assertions to `runFixture` that normalize `workspace.bonsplitController.treeSnapshot()` (orientation + recursive pane grouping + leaf surface-id order + divider positions + `selectedIndex`) and compare against the plan's `LayoutTreeSpec`. Extend the metadata round-trip pattern from `single-large-with-metadata` to every fixture. **Land the test first, watch all 5 fail, then ship the walker fix** — this is the TDD anchor for B1.
+
+### IMPORTANT (fix in the same rework pass)
+
+**I1. `SurfaceSpec.workingDirectory` silently dropped for split-created terminals and the reused seed.** At `Sources/WorkspaceLayoutExecutor.swift:361` (seed-reuse path) and `:506-537` (split path), `newTerminalSplit` has no `cwd` parameter and no `ApplyFailure` is emitted when `workingDirectory` is non-nil. Silent data loss. **Fix path:** either plumb `cwd` through `Workspace.newTerminalSplit` / `newTerminalSurface(inPane:)` / seed-reuse, or emit `ApplyFailure("working_directory_not_applied", step: ..., message: "…")` when `workingDirectory` is set and the creation path doesn't support it. First option preferred since the single-pane path already honors `workspace.workingDirectory` via `TabManager.addWorkspace`.
+
+**I2. CLI subcommand name drift.** Impl shipped `c11 workspace-apply` at `CLI/c11.swift:1713`, but the CMUX-37 plan body (`:83`) and `docs/c11-snapshot-restore-plan.md:164` both specify `c11 workspace apply` (subcommand under `workspace`). **Fix path:** add a `c11 workspace apply` subcommand route at `CLI/c11.swift:1713` (or equivalent subcommand dispatch point) to match plan and docs. Keeping `c11 workspace-apply` as a back-compat alias is acceptable but not required — nothing else consumes it yet.
+
+**I3. `validate(plan:)` runs on MainActor inside `v2MainSync`, contradicting the handler header's off-main promise.** `Sources/TerminalController.swift:4347-4399` + `Sources/WorkspaceLayoutExecutor.swift:63-64`. The socket-command threading policy in `CLAUDE.md` requires parse/validate off-main, with only AppKit/model mutation on main. **Fix path:** hoist the `validate(plan:)` call (and any pure decode/arg-parsing) above the `v2MainSync { … }` block in `v2WorkspaceApply` so the handler comment becomes true. Only the `apply(_:options:)` body needs the MainActor.
+
+**I4. Silent-failure gaps (close in the same pass).**
+  - **I4a.** `ApplyOptions.perStepTimeoutMs` is not enforced (Codex finding). The option exists on the struct but nothing inside the executor reads it. **Fix path:** wrap each step's timing measurement with the deadline check; on breach, append a warning with the step name and keep going (soft limit, per the plan's partial-failure semantics).
+  - **I4b.** `WorkspaceApplyPlan.version` is not validated (Codex finding). Version-1 plans should be accepted; anything else should short-circuit with a typed error before any workspace is created.
+  - **I4c.** `applyDividerPositions` does not emit `ApplyFailure` on tree-shape mismatch (Gemini finding). When the plan's `SplitSpec.dividerPosition` references a split slot that doesn't exist in the live bonsplit tree (because of B1 or a future divergence), it currently no-ops silently. **Fix path:** emit `ApplyFailure("divider_apply_failed", step: "layout.split[<i>].divider", message: ...)` and continue.
+  - **I4d.** `validateLayout` does not detect duplicate `surfaceIds` references in `PaneSpec.surfaceIds` or across multiple `PaneSpec`s (Gemini finding). Two leaves referencing the same plan-local surface id produce undefined behavior. **Fix path:** add a duplicate-reference check to step 1 validation; emit a typed error and short-circuit before any workspace is created.
+
+**I5. Plan file — sync the `async` signature with what shipped.** `.lattice/plans/task_01KPMTEY4WGECM9MNZ4XARN7Y6.md:58` still reads `async @MainActor func apply(…)`. Impl shipped sync because Phase 0 has no await points (verified clean by review). Update the plan sketch to match so Phase 1 agents implementing the readiness pass see the correct current shape. This is a documentation-only plan edit; it does NOT change the rework scope.
+
+### Rework directive — order of work
+
+Ship as a continuation of the same feature branch (`cmux-37/phase-0-workspace-apply-plan`). Commits carry the `CMUX-37 Phase 0 (rework):` prefix.
+
+1. **Commit R1 — structural-assertion harness (lands first).** Rewrite `c11Tests/WorkspaceLayoutExecutorAcceptanceTests.swift:runFixture` to normalize `bonsplitController.treeSnapshot()` and compare against the plan `LayoutTreeSpec`. Extend metadata round-trip to every fixture. Push. CI should fail all 5 fixtures (expected — this is the TDD anchor).
+2. **Commit R2 — walker top-down rewrite.** Replace `materializeSplit` with a top-down injection / outer-first two-pass strategy modeled on `Workspace.restoreSessionLayoutNode`. Trace-validate welcome-quad + default-grid shapes in-source before pushing. CI now passes all 5 fixtures.
+3. **Commit R3 — plumb `SurfaceSpec.workingDirectory`.** Either through split primitives or via `ApplyFailure` emission when unsupported. Add a fixture that exercises `workingDirectory` on a split-created terminal.
+4. **Commit R4 — CLI subcommand rename.** Add `c11 workspace apply` route. Alias retained or removed per Impl judgment.
+5. **Commit R5 — off-main validate.** Hoist `validate(plan:)` above `v2MainSync` in `v2WorkspaceApply`.
+6. **Commit R6 — silent-failure gaps.** I4a (`perStepTimeoutMs` enforcement), I4b (`version` validation), I4c (`divider_apply_failed` warning), I4d (duplicate-ref check). Extend existing Codable/validation tests with cases for each.
+7. **Commit R7 — plan file sync.** Edit `.lattice/plans/task_01KPMTEY4WGECM9MNZ4XARN7Y6.md:58` to match the shipped sync signature. One-line documentation edit.
+
+After R7 lands and is pushed, the rework Impl agent posts the completion comment on CMUX-37 and the delegator spawns Trident cycle 2 on the new branch head.

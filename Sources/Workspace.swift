@@ -5169,6 +5169,13 @@ final class Workspace: Identifiable, ObservableObject {
 
     private static func currentSplitButtonTooltips() -> BonsplitConfiguration.SplitButtonTooltips {
         BonsplitConfiguration.SplitButtonTooltips(
+            newAgent: {
+                let template = String(
+                    localized: "workspace.tooltip.newAgent",
+                    defaultValue: "Launch Agent (%@)"
+                )
+                return String(format: template, locale: Locale.current, AgentLauncherSettings.current().displayName)
+            }(),
             newTerminal: KeyboardShortcutSettings.Action.newSurface.tooltip(
                 String(localized: "workspace.tooltip.newTerminal", defaultValue: "New Terminal")
             ),
@@ -5182,7 +5189,8 @@ final class Workspace: Identifiable, ObservableObject {
             splitDown: KeyboardShortcutSettings.Action.splitDown.tooltip(
                 String(localized: "workspace.tooltip.splitDown", defaultValue: "Split Down")
             ),
-            newTab: String(localized: "workspace.tooltip.newTab", defaultValue: "New Tab")
+            newTab: String(localized: "workspace.tooltip.newTab", defaultValue: "New Tab"),
+            closePane: String(localized: "workspace.tooltip.closePane", defaultValue: "Close Pane")
         )
     }
 
@@ -10595,11 +10603,96 @@ extension Workspace: BonsplitDelegate {
             _ = newBrowserSurface(inPane: pane)
         case "markdown":
             _ = newMarkdownSurface(inPane: pane)
+        case "agent":
+            launchAgentSurface(inPane: pane)
         case "newTab":
             createNewTabOfFocusedKind(inPane: pane)
         default:
             _ = newTerminalSurface(inPane: pane)
         }
+    }
+
+    /// Create a new terminal and immediately send the configured agent launcher
+    /// command. Uses the same "queue sendText before ready, flush on ready"
+    /// pattern as the welcome workspace.
+    private func launchAgentSurface(inPane pane: PaneID) {
+        guard let panel = newTerminalSurface(inPane: pane) else { return }
+        let command = AgentLauncherSettings.current().shellCommand
+        guard !command.isEmpty else { return }
+        panel.sendText(command + "\n")
+    }
+
+    func splitTabBar(_ controller: BonsplitController, menuItemsForNewTabKind kind: String, inPane pane: PaneID) -> [BonsplitNewTabMenuItem] {
+        guard kind == "agent" else { return [] }
+        let current = AgentLauncherSettings.current().kind
+        return AgentLauncherSettings.Kind.allCases.map { k in
+            BonsplitNewTabMenuItem(
+                id: k.rawValue,
+                label: k.displayName,
+                isCurrent: k == current
+            )
+        }
+    }
+
+    func splitTabBar(_ controller: BonsplitController, didSelectNewTabMenuItem itemId: String, forKind kind: String, inPane pane: PaneID) {
+        guard kind == "agent",
+              let chosen = AgentLauncherSettings.Kind(rawValue: itemId) else { return }
+        // Update the default only; the next left-click on A spawns the chosen
+        // agent. Launching here would contradict right-click semantics (a
+        // preference gesture, not an action gesture).
+        UserDefaults.standard.set(chosen.rawValue, forKey: AgentLauncherSettings.kindKey)
+        refreshSplitButtonTooltips()
+    }
+
+    func splitTabBar(_ controller: BonsplitController, didRequestClosePane pane: PaneID) {
+        let tabs = controller.tabs(inPane: pane)
+        let paneCount = controller.allPaneIds.count
+        guard paneCount > 1 else { return }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(
+            localized: "workspace.closePane.alert.title",
+            defaultValue: "Close this pane?"
+        )
+        alert.informativeText = Self.closePaneConfirmationMessage(tabCount: tabs.count)
+        alert.addButton(withTitle: String(
+            localized: "workspace.closePane.alert.confirm",
+            defaultValue: "Close Pane"
+        ))
+        alert.addButton(withTitle: String(
+            localized: "workspace.closePane.alert.cancel",
+            defaultValue: "Cancel"
+        ))
+
+        // First button is the default/accept; make it the destructive role visually
+        if let confirmButton = alert.buttons.first {
+            confirmButton.hasDestructiveAction = true
+        }
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+        _ = bonsplitController.closePane(pane)
+    }
+
+    private static func closePaneConfirmationMessage(tabCount: Int) -> String {
+        if tabCount <= 0 {
+            return String(
+                localized: "workspace.closePane.alert.body.empty",
+                defaultValue: "This pane will be removed from the workspace. This cannot be undone."
+            )
+        }
+        if tabCount == 1 {
+            return String(
+                localized: "workspace.closePane.alert.body.one",
+                defaultValue: "This will close 1 tab in this pane. This cannot be undone."
+            )
+        }
+        let template = String(
+            localized: "workspace.closePane.alert.body.many",
+            defaultValue: "This will close %lld tabs in this pane. This cannot be undone."
+        )
+        return String(format: template, locale: Locale.current, tabCount)
     }
 
     /// Handle the "+" toolbar button: create a new tab in the given pane of

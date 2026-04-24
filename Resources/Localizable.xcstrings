@@ -660,6 +660,241 @@
         }
       }
     },
+    "agentLauncher.kind.claudeCode": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code"
+          }
+        }
+      }
+    },
+    "agentLauncher.kind.codex": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex"
+          }
+        }
+      }
+    },
+    "agentLauncher.kind.kimi": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kimi"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kimi"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kimi"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kimi"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kimi"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kimi"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kimi"
+          }
+        }
+      }
+    },
+    "agentLauncher.kind.opencode": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode"
+          }
+        }
+      }
+    },
+    "agentLauncher.kind.other": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Other…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その他…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기타…"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Другое…"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Інше…"
+          }
+        }
+      }
+    },
     "agentSkills.action.envelope": {
       "extractionState": "manual",
       "localizations": {
@@ -2709,43 +2944,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "If you'd rather not see the dialogs one by one, you can grant c11 Full Disk Access once in System Settings → Privacy & Security. Most engineers running many agents do this; it's the same tradeoff iTerm2, Warp, and Ghostty document. You can revoke it any time."
+            "value": "Grant Full Disk Access once in System Settings → Privacy & Security and you won't see individual dialogs at all. This is what iTerm2, Warp, and Ghostty recommend for engineers running many agents. You can revoke it any time."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ダイアログを一つずつ見るのが面倒なら、システム設定 → プライバシーとセキュリティで c11 に Full Disk Access を一度だけ許可できます。多くのエージェントを動かすエンジニアの多くはこうしています — iTerm2、Warp、Ghostty でも同じトレードオフが案内されています。いつでも取り消せます。"
+            "value": "システム設定 → プライバシーとセキュリティで Full Disk Access を一度許可するだけで、個別のダイアログは一切表示されなくなります。これは多くのエージェントを動かすエンジニアに iTerm2、Warp、Ghostty が推奨していることです。いつでも取り消せます。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Якщо не хочете бачити ці діалоги по одному, можете один раз надати c11 Full Disk Access у System Settings → Privacy & Security. Саме так роблять більшість інженерів, які керують багатьма агентами; це той самий компроміс, що описують iTerm2, Warp і Ghostty. Ви можете відкликати його будь-коли."
+            "value": "Надайте Full Disk Access один раз у Системних налаштуваннях → Конфіденційність і безпека, і жодних індивідуальних діалогів більше не з'явиться. Саме це рекомендують інженерам, які запускають багато агентів, iTerm2, Warp і Ghostty. Ви можете відкликати це будь-коли."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "대화상자를 하나씩 보고 싶지 않다면, System Settings → Privacy & Security에서 c11에 Full Disk Access를 한 번 허용하면 돼요. 여러 에이전트를 돌리는 엔지니어 대부분이 이 방식을 써요 — iTerm2, Warp, Ghostty에서도 똑같은 트레이드오프를 안내하죠. 언제든지 취소할 수 있어요."
+            "value": "시스템 설정 → 개인 정보 보호 및 보안에서 Full Disk Access를 한 번 허용하면 개별 대화상자가 전혀 표시되지 않아요. 이것이 많은 에이전트를 실행하는 엔지니어에게 iTerm2, Warp, Ghostty가 권장하는 방식이에요. 언제든지 취소할 수 있어요."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "如果不想一个个看这些对话框,可以在 System Settings → Privacy & Security 中一次性授予 c11 Full Disk Access。多数同时跑很多代理的工程师都会这么做 — iTerm2、Warp 和 Ghostty 记录的就是同样的取舍。你可以随时撤销。"
+            "value": "在系统设置 → 隐私与安全性中一次性授予 Full Disk Access，就再也不会看到单个权限对话框了。这是 iTerm2、Warp 和 Ghostty 为运行大量代理的工程师所推荐的做法。您可以随时撤销。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "如果不想一個一個看這些對話框,可以在 System Settings → Privacy & Security 裡一次給 c11 Full Disk Access。大多同時跑很多代理的工程師都是這麼做 — iTerm2、Warp 和 Ghostty 所記載的就是同一個取捨。你隨時都能撤銷。"
+            "value": "在系統設定 → 隱私與安全性中一次授予 Full Disk Access，就再也不會看到個別的權限對話框了。這是 iTerm2、Warp 和 Ghostty 為執行大量代理的工程師所推薦的做法。您可以隨時撤銷。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Если не хотите видеть эти диалоги по одному, можно один раз выдать c11 Full Disk Access в System Settings → Privacy & Security. Большинство инженеров, запускающих много агентов, так и делают — это тот же компромисс, что описан у iTerm2, Warp и Ghostty. Вы можете отозвать его в любой момент."
+            "value": "Выдайте Full Disk Access один раз в Системных настройках → Конфиденциальность и безопасность, и вы больше не увидите отдельных диалогов. Именно это рекомендуют инженерам, запускающим много агентов, iTerm2, Warp и Ghostty. Вы можете отозвать его в любой момент."
           }
         }
       }
@@ -2985,6 +3220,100 @@
         }
       }
     },
+    "tccPrimer.button.continueWithout": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue without it"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このまま続ける"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Продовжити без нього"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "없이 계속하기"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不授予，继续"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不授予，繼續"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Продолжить без него"
+          }
+        }
+      }
+    },
+    "tccPrimer.button.grantFDA": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grant Full Disk Access"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Full Disk Access を許可"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Надати Full Disk Access"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Full Disk Access 허용"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "授予 Full Disk Access"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "授予 Full Disk Access"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Предоставить Full Disk Access"
+          }
+        }
+      }
+    },
     "tccPrimer.button.openSettings": {
       "extractionState": "manual",
       "localizations": {
@@ -3132,43 +3461,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS will ask about folders."
+            "value": "Before your first shell opens."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS がフォルダについて尋ねてきます。"
+            "value": "最初のシェルが開く前に。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS питатиме про теки."
+            "value": "Перш ніж відкриється ваш перший шел."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS가 폴더에 대해 물어볼 거예요."
+            "value": "첫 번째 셸이 열리기 전에."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS 会询问文件夹权限。"
+            "value": "在您的第一个 shell 打开之前。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS 會詢問檔案夾權限。"
+            "value": "在您的第一個 shell 打開之前。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS будет спрашивать про папки."
+            "value": "Прежде чем откроется ваш первый шелл."
           }
         }
       }
@@ -27942,6 +28271,288 @@
         }
       }
     },
+    "settings.agentLauncher.customCommand": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Custom Command"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カスタムコマンド"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义命令"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自訂指令"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용자 설정 명령"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пользовательская команда"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Користувацька команда"
+          }
+        }
+      }
+    },
+    "settings.agentLauncher.customCommand.placeholder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "my-agent --flag"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "my-agent --flag"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "my-agent --flag"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "my-agent --flag"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "my-agent --flag"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "my-agent --flag"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "my-agent --flag"
+          }
+        }
+      }
+    },
+    "settings.agentLauncher.customCommand.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sent to the new terminal as if typed. Runs inside your shell."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力されたかのように新しいターミナルへ送信されます。お使いのシェル内で実行されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如同输入一般发送至新终端。在您的 shell 中运行。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如同輸入般傳送至新終端機。在您的 shell 中執行。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "입력된 것처럼 새 터미널로 전송됩니다. 셸 내부에서 실행됩니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отправляется в новый терминал, как если бы было введено вручную. Выполняется в вашей оболочке."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Надсилається до нового термінала, ніби його ввели вручну. Виконується у вашій оболонці."
+          }
+        }
+      }
+    },
+    "settings.agentLauncher.kind": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Launch Agent"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "起動エージェント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启动代理"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "啟動代理"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 에이전트"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запускаемый агент"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агент для запуску"
+          }
+        }
+      }
+    },
+    "settings.agentLauncher.kind.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The \"A\" button in each pane's tab bar spawns a new terminal and runs this agent."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各ペインのタブバーにある「A」ボタンで新しいターミナルが生成され、このエージェントが実行されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个窗格标签栏上的 “A” 按钮会新建终端并运行此代理。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每個窗格分頁列上的「A」按鈕會開啟新終端機並執行此代理。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "각 창의 탭 바에 있는 \"A\" 버튼은 새 터미널을 생성하고 이 에이전트를 실행합니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Кнопка «A» на панели вкладок каждой панели открывает новый терминал и запускает этого агента."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Кнопка «A» на панелі вкладок кожної панелі відкриває новий термінал і запускає цього агента."
+          }
+        }
+      }
+    },
+    "settings.agentLauncher.note": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The agent runs as a child of the new terminal's login shell, so quitting the agent leaves the shell available."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントは新しいターミナルのログインシェルの子プロセスとして実行されるため、エージェントを終了してもシェルは残ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理作为新终端登录 shell 的子进程运行，因此退出代理后 shell 仍可使用。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理會作為新終端機登入 shell 的子行程執行，因此結束代理後 shell 仍可繼續使用。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트는 새 터미널의 로그인 셸의 자식 프로세스로 실행되므로, 에이전트를 종료해도 셸은 계속 사용할 수 있습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агент запускается как дочерний процесс входной оболочки нового терминала, поэтому после выхода из агента оболочка остаётся доступной."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агент запускається як дочірній процес стартової оболонки нового термінала, тож після виходу з агента оболонка залишається доступною."
+          }
+        }
+      }
+    },
     "settings.agentSkills.note": {
       "extractionState": "manual",
       "localizations": {
@@ -38043,6 +38654,53 @@
           "stringUnit": {
             "state": "translated",
             "value": "Сбросить настройки"
+          }
+        }
+      }
+    },
+    "settings.section.agentLauncher": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent Launcher Button"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェント起動ボタン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理启动按钮"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理啟動按鈕"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트 실행 버튼"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Кнопка запуска агента"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Кнопка запуску агента"
           }
         }
       }
@@ -51160,6 +51818,288 @@
         }
       }
     },
+    "workspace.closePane.alert.body.empty": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This pane will be removed from the workspace. This cannot be undone."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このペインはワークスペースから削除されます。この操作は取り消せません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此窗格将从工作区中移除。此操作无法撤销。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此窗格將從工作區中移除。此操作無法復原。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 창이 작업 공간에서 제거됩니다. 이 작업은 되돌릴 수 없습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Эта панель будет удалена из рабочего пространства. Действие нельзя отменить."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Цю панель буде видалено з робочого простору. Дію не можна скасувати."
+          }
+        }
+      }
+    },
+    "workspace.closePane.alert.body.many": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This will close %lld tabs in this pane. This cannot be undone."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このペインの %lld 個のタブが閉じられます。この操作は取り消せません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这将关闭此窗格中的 %lld 个标签页。此操作无法撤销。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這將關閉此窗格中的 %lld 個分頁。此操作無法復原。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 창의 탭 %lld개가 닫힙니다. 이 작업은 되돌릴 수 없습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Будет закрыто %lld вкладок в этой панели. Действие нельзя отменить."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Буде закрито %lld вкладок у цій панелі. Дію не можна скасувати."
+          }
+        }
+      }
+    },
+    "workspace.closePane.alert.body.one": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This will close 1 tab in this pane. This cannot be undone."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このペインの 1 個のタブが閉じられます。この操作は取り消せません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这将关闭此窗格中的 1 个标签页。此操作无法撤销。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這將關閉此窗格中的 1 個分頁。此操作無法復原。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 창의 탭 1개가 닫힙니다. 이 작업은 되돌릴 수 없습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Будет закрыта 1 вкладка в этой панели. Действие нельзя отменить."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Буде закрито 1 вкладку в цій панелі. Дію не можна скасувати."
+          }
+        }
+      }
+    },
+    "workspace.closePane.alert.cancel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャンセル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "취소"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отмена"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скасувати"
+          }
+        }
+      }
+    },
+    "workspace.closePane.alert.confirm": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close Pane"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペインを閉じる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭窗格"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "關閉窗格"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "창 닫기"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрыть панель"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрити панель"
+          }
+        }
+      }
+    },
+    "workspace.closePane.alert.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close this pane?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このペインを閉じますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭此窗格？"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "關閉此窗格？"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 창을 닫으시겠습니까?"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрыть эту панель?"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрити цю панель?"
+          }
+        }
+      }
+    },
     "workspace.displayName.fallback": {
       "extractionState": "manual",
       "localizations": {
@@ -51673,6 +52613,100 @@
           "stringUnit": {
             "state": "translated",
             "value": "Нові робочі простори з'являються вгорі."
+          }
+        }
+      }
+    },
+    "workspace.tooltip.closePane": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close Pane"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペインを閉じる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭窗格"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "關閉窗格"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "창 닫기"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрыть панель"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрити панель"
+          }
+        }
+      }
+    },
+    "workspace.tooltip.newAgent": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Launch Agent (%@)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントを起動 (%@)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启动代理 (%@)"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "啟動代理 (%@)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트 실행 (%@)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запустить агента (%@)"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запустити агента (%@)"
           }
         }
       }

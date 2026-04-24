@@ -189,6 +189,7 @@ c11 new-surface --pane <pane-ref>              # Add a tab to an existing pane
 - **Direction is relative to the focused pane.** `new-pane` has no `--pane` flag; it operates on the currently focused pane. Call `c11 focus-pane --pane <ref> --workspace <ref>` first if you need to target a different one.
 - **`new-split` does NOT return the new pane ref** — output is `OK surface:<N> workspace:<M>` only. Follow with `c11 tree --no-layout` (or `--json`) to discover the newly created pane. `new-pane` *does* return the pane ref (`OK surface:<N> pane:<P> workspace:<M>`).
 - **Default targets differ.** `new-split` defaults to the **caller's** pane; `new-surface` defaults to the **focused** pane (often different). To add a tab to your own pane, read `caller.pane_ref` from `c11 identify` and pass it via `--pane`.
+- **Operator-facing tab bar buttons.** Each pane's tab bar carries surface-spawn buttons: **A** (leftmost — launches the operator's configured agent; default Claude Code, set in Settings → Agents & Automation → Agent Launcher Button), then Terminal, Browser, Markdown. On the right, after the split buttons: **+** (new tab of the focused kind) and **X** (close this entire pane — shows a confirmation dialog). The X button is disabled when only one pane exists. These are UI affordances for the operator; agents continue to use the CLI commands above.
 
 ## Resize panes
 

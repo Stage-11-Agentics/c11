@@ -3980,6 +3980,67 @@ enum ClaudeCodeIntegrationSettings {
     }
 }
 
+/// Controls which terminal agent the "A" tab-bar button spawns.
+/// The button creates a new terminal surface and sends `shellCommand` as if
+/// the operator typed it — the agent runs inside the user's login shell, so
+/// quitting the agent leaves the shell running.
+enum AgentLauncherSettings {
+    static let kindKey = "agentLauncherKind"
+
+    enum Kind: String, CaseIterable, Identifiable {
+        case claudeCode
+        case codex
+        case opencode
+        case kimi
+
+        var id: String { rawValue }
+
+        var displayName: String {
+            switch self {
+            case .claudeCode:
+                return String(localized: "agentLauncher.kind.claudeCode", defaultValue: "Claude Code")
+            case .codex:
+                return String(localized: "agentLauncher.kind.codex", defaultValue: "Codex")
+            case .opencode:
+                return String(localized: "agentLauncher.kind.opencode", defaultValue: "OpenCode")
+            case .kimi:
+                return String(localized: "agentLauncher.kind.kimi", defaultValue: "Kimi")
+            }
+        }
+
+        /// Shell command each agent is launched with — hardcoded to the
+        /// launcher form that runs the agent as an interactive TUI inside the
+        /// operator's login shell.
+        fileprivate var builtInCommand: String {
+            switch self {
+            case .claudeCode:
+                return "claude --dangerously-skip-permissions"
+            case .codex:
+                return "codex --yolo"
+            case .opencode:
+                return "opencode"
+            case .kimi:
+                return "kimi"
+            }
+        }
+    }
+
+    static let defaultKind: Kind = .claudeCode
+
+    struct Resolved {
+        let kind: Kind
+        let shellCommand: String
+
+        var displayName: String { kind.displayName }
+    }
+
+    static func current(defaults: UserDefaults = .standard) -> Resolved {
+        let kindRaw = defaults.string(forKey: kindKey) ?? defaultKind.rawValue
+        let kind = Kind(rawValue: kindRaw) ?? defaultKind
+        return Resolved(kind: kind, shellCommand: kind.builtInCommand)
+    }
+}
+
 enum WelcomeSettings {
     static let shownKey = "cmuxWelcomeShown"
     static let spikeURL = "https://stage11.ai"
@@ -4262,6 +4323,8 @@ struct SettingsView: View {
     @AppStorage(SocketControlSettings.appStorageKey) private var socketControlMode = SocketControlSettings.defaultMode.rawValue
     @AppStorage(ClaudeCodeIntegrationSettings.hooksEnabledKey)
     private var claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
+    @AppStorage(AgentLauncherSettings.kindKey)
+    private var agentLauncherKindRaw = AgentLauncherSettings.defaultKind.rawValue
     @AppStorage(TelemetrySettings.sendAnonymousTelemetryKey)
     private var sendAnonymousTelemetry = TelemetrySettings.defaultSendAnonymousTelemetry
     @AppStorage("cmuxPortBase") private var cmuxPortBase = 9100
@@ -5892,6 +5955,25 @@ struct SettingsView: View {
             localized: "settings.agentSkills.note",
             defaultValue: "c11 installs its skill files into detected agent skill folders only with your approval. Linked skill folders are shown as shared so one remove action cannot silently affect another agent."
         ))
+
+        SettingsSectionHeader(title: String(localized: "settings.section.agentLauncher", defaultValue: "Agent Launcher Button"))
+        SettingsCard {
+            SettingsPickerRow(
+                String(localized: "settings.agentLauncher.kind", defaultValue: "Launch Agent"),
+                subtitle: String(localized: "settings.agentLauncher.kind.subtitle", defaultValue: "The \"A\" button in each pane's tab bar spawns a new terminal and runs this agent."),
+                controlWidth: pickerColumnWidth,
+                selection: $agentLauncherKindRaw,
+                accessibilityId: "SettingsAgentLauncherKindPicker"
+            ) {
+                ForEach(AgentLauncherSettings.Kind.allCases) { kind in
+                    Text(kind.displayName).tag(kind.rawValue)
+                }
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardNote(String(localized: "settings.agentLauncher.note", defaultValue: "The agent runs as a child of the new terminal's login shell, so quitting the agent leaves the shell available."))
+        }
 
         SettingsSectionHeader(title: String(
             localized: "settings.section.permissions",

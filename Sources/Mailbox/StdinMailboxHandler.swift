@@ -32,16 +32,23 @@ import Foundation
 /// deliberate security property of the framing per design doc §prose.
 final class StdinMailboxHandler: MailboxHandler {
 
-    /// Closure the dispatcher injects so the handler can resolve a TerminalPanel
-    /// (or whatever write sink) on the main actor. Returning nil → `eio`.
+    /// Closure the dispatcher injects so the handler can resolve a
+    /// TerminalPanel (or whatever write sink) on the main actor.
+    ///
+    /// The outcome set is deliberately narrow: Stage 2's production writer
+    /// (`Sources/Workspace.swift`) returns `.ok` / `.surfaceNotFound` /
+    /// `.surfaceNotTerminal` and never surfaces PTY write errors. EIO /
+    /// EPIPE propagation from `GhosttyTerminalView.sendText()` is
+    /// follow-up work — tracked with the genuine async-cancellable
+    /// writer (see plan risks, Stage 2 P0 #5/#6). Until that lands,
+    /// "real PTY write failure → dispatcher log" is not a Stage 2
+    /// contract.
     typealias Writer = @MainActor (_ surfaceId: UUID, _ bytes: String) -> WriteOutcome
 
     enum WriteOutcome: Equatable {
         case ok(bytes: Int)
         case surfaceNotFound
         case surfaceNotTerminal
-        case closed
-        case eio
     }
 
     let writer: Writer
@@ -84,10 +91,6 @@ final class StdinMailboxHandler: MailboxHandler {
                     )
                 case .surfaceNotFound, .surfaceNotTerminal:
                     return .init(outcome: .closed, bytes: 0, elapsedMs: elapsed())
-                case .closed:
-                    return .init(outcome: .closed, bytes: 0, elapsedMs: elapsed())
-                case .eio:
-                    return .init(outcome: .eio, bytes: 0, elapsedMs: elapsed())
                 }
             }
 

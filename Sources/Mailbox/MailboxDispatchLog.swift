@@ -57,8 +57,24 @@ final class MailboxDispatchLog {
         case gc(tempFilesRemoved: Int)
     }
 
+    /// Dispatcher-observable outcomes for a single handler invocation.
+    ///
+    /// - `ok`: handler signalled success (bytes written, silent drop, etc.).
+    /// - `timeout`: dispatcher gave up waiting for the handler Task. This
+    ///   is a reporting bound — the handler closure may still be running;
+    ///   see `StdinMailboxHandler` docs for the honest story.
+    /// - `closed`: recipient surface is not available (missing, wrong
+    ///   panel type, etc.). Emitted by the stdin handler when the surface
+    ///   lookup fails.
+    /// - `eio`: the dispatcher itself failed to stage the envelope for the
+    ///   handler — inbox write failure or unknown handler name. Not the
+    ///   same as "real PTY write errno 5"; Stage 2 does not propagate
+    ///   PTY write errors (follow-up; see plan risks).
+    ///
+    /// The previously-declared `.epipe` variant was never produced and
+    /// was removed in review cycle 1 rework.
     enum HandlerOutcome: String {
-        case ok, timeout, eio, epipe, closed
+        case ok, timeout, eio, closed
     }
 
     // MARK: - File I/O

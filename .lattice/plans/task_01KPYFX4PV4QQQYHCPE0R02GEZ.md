@@ -265,7 +265,7 @@ Ordered sub-item by sub-item. Each step is a discrete commit-level unit. Depende
 ### Step 10 — `stdin` handler (async PTY write with 500 ms timeout)
 
 - **Files to add:**
-  - `Sources/Mailbox/MailboxHandler.swift` — `protocol MailboxHandler { func deliver(envelope: MailboxEnvelope, to surfaceId: UUID) async -> HandlerOutcome }`; `enum HandlerOutcome { case ok, timeout, eio, epipe, closed }`.
+  - `Sources/Mailbox/MailboxHandler.swift` — `protocol MailboxHandler { func deliver(envelope: MailboxEnvelope, to surfaceId: UUID) async -> HandlerOutcome }`; `enum HandlerOutcome { case ok, timeout, eio, closed }`. (`.epipe` was removed in the review cycle 1 rework as unreachable; real PTY errno propagation is deferred to Stage 3.)
   - `Sources/Mailbox/StdinMailboxHandler.swift` — formats the envelope as a `<c11-msg>` block (leading blank line, tag with XML-escaped attributes, body, closing tag, trailing blank line). Hops to `@MainActor`, writes via the existing Ghostty surface input API, with a 500 ms `Task.withTimeout` semaphore guarding the await. Logs outcome.
 - **Files to edit:**
   - `Sources/Mailbox/MailboxDispatcher.swift` — register `StdinMailboxHandler` under the string key `"stdin"`. `silent` registers a no-op handler that always returns `.ok`. `watch` is NOT implemented in Stage 2 (deferred; dispatcher rejects unknown handlers with a log warning but does not fail).

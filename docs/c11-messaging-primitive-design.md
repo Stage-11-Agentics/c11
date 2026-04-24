@@ -194,7 +194,7 @@ c11 get-metadata --key mailbox.delivery        # one-key read
 
 | Handler | What it does | Who it's for |
 |---|---|---|
-| `stdin` | Writes the `<c11-msg>` framed block to the recipient's PTY **asynchronously** with a 500 ms timeout. Logs failure on EIO/EPIPE/timeout, leaves envelope in inbox for self-retrieval. | Default for agent surfaces (Claude Code, Codex, Kimi, plain REPLs). Not auto-selected for unknown surface types — must be declared in manifest. |
+| `stdin` | Writes the `<c11-msg>` framed block to the recipient's PTY on the main actor, with a 500 ms **reporting** bound (dispatcher moves on and logs `timeout`; the underlying writer may still be running — see §Stage 2 scope). Logs `closed` when the surface lookup fails, `timeout` when the deadline fires. Envelope is already in the recipient's inbox before the handler runs, so a dropped write still leaves the message available via `recv`. Real PTY write errno propagation (EIO/EPIPE) is Stage 3 scope alongside async-cancellable writes. | Default for agent surfaces (Claude Code, Codex, Kimi, plain REPLs). Not auto-selected for unknown surface types — must be declared in manifest. |
 | `silent` | No-op beyond the mailbox write. Recipient fetches via `recv` or `watch`. | Full-screen raw-mode TUIs (vim, lazygit). Agents that want zero side effects. |
 | `watch` | Pushes an NDJSON line to active `c11 mailbox watch` subscribers on the socket. | Sidecar processes. Silent surfaces paired with an external watcher. Tooling that wants a stream. |
 
@@ -517,7 +517,7 @@ sequenceDiagram
     Busy->>Busy: parse 3 blocks,<br/>dedupe by id,<br/>acknowledge all three
 ```
 
-**The inbox is the queue, not the PTY.** Each envelope is durably stored in the recipient's inbox the moment it's written — before the PTY attempt. If any PTY write fails (timeout, EIO, EPIPE), the envelope is still in the inbox, the recipient finds it on next `recv`, and the handler failure is recorded in `_dispatch.log`.
+**The inbox is the queue, not the PTY.** Each envelope is durably stored in the recipient's inbox the moment it's written — before the PTY attempt. If the stdin handler's reporting deadline fires (`timeout`) or the surface is gone (`closed`), the envelope is still in the inbox, the recipient finds it on next `recv`, and the outcome is recorded in `_dispatch.log`. Propagating real PTY errno (EIO/EPIPE) from the Ghostty writer into the dispatch log is Stage 3 work alongside the async-cancellable writer — Stage 2 does not claim that contract.
 
 ---
 

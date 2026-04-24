@@ -42,7 +42,7 @@
 - **Two interfaces for content, one interface for config.** Send/recv: direct file I/O **or** `c11 mailbox …` CLI, equivalent and parity-tested. Configure: `c11 mailbox configure` (wraps the same metadata commands the rest of c11 uses).
 - **Socket is for live streams, not storage.** `c11 mailbox watch` uses the socket (long-lived connection). Send / recv go through files.
 - **Delivery is framed text into the PTY** for stdin-delivery agents; for others, delivery runs through handlers declared in pane metadata. PTY writes are **asynchronous with a 500 ms timeout** — they are not the queue, the inbox is.
-- **At-least-once delivery.** Envelopes survive dispatcher crashes; periodic sweep re-delivers on restart. **Receivers dedupe by `id`.** This is the contract.
+- **At-least-once delivery (steady-state).** Envelopes survive dispatcher restarts for files already in `_outbox/`; the on-start scan picks them up. **Stage 2 caveat:** full at-least-once under dispatcher-crash-while-processing requires the `_processing/` recovery sweep shipping in Stage 3. **Receivers dedupe by `id`.** This is the contract.
 - **Receiver-declared, sender-hints.** Recipients declare how they want messages delivered via their own pane metadata. Senders can add attributes (`urgent: true`, …) that handlers may or may not honor.
 - **Per-workspace scoping.** Mailbox trees are sealed per workspace. Cross-workspace messaging is out of scope for v1.
 - **Grammar is the skill.** The `c11` skill teaches the XML-tag format, default protocol, file layout, and CLI shortcuts.
@@ -194,7 +194,7 @@ c11 get-metadata --key mailbox.delivery        # one-key read
 
 | Handler | What it does | Who it's for |
 |---|---|---|
-| `stdin` | Writes the `<c11-msg>` framed block to the recipient's PTY **asynchronously** with a 500 ms timeout. Logs failure on EIO/EPIPE/timeout, leaves envelope in inbox for self-retrieval. | Default for agent surfaces (Claude Code, Codex, Kimi, plain REPLs). Not auto-selected for unknown surface types — must be declared in manifest. |
+| `stdin` | Writes the `<c11-msg>` framed block to the recipient's PTY on the main actor, with a 500 ms **reporting** bound (dispatcher moves on and logs `timeout`; the underlying writer may still be running — see §Stage 2 scope). Logs `closed` when the surface lookup fails, `timeout` when the deadline fires. Envelope is already in the recipient's inbox before the handler runs, so a dropped write still leaves the message available via `recv`. Real PTY write errno propagation (EIO/EPIPE) is Stage 3 scope alongside async-cancellable writes. | Default for agent surfaces (Claude Code, Codex, Kimi, plain REPLs). Not auto-selected for unknown surface types — must be declared in manifest. |
 | `silent` | No-op beyond the mailbox write. Recipient fetches via `recv` or `watch`. | Full-screen raw-mode TUIs (vim, lazygit). Agents that want zero side effects. |
 | `watch` | Pushes an NDJSON line to active `c11 mailbox watch` subscribers on the socket. | Sidecar processes. Silent surfaces paired with an external watcher. Tooling that wants a stream. |
 
@@ -306,26 +306,27 @@ $C11_STATE/workspaces/<ws>/mailboxes/
 
 ### Sending — two equivalent ways
 
-**As a file write** (any process, any language, no c11 SDK). `$C11_WORKSPACE_ID` and `$C11_SURFACE_NAME` are env vars c11 sets in every surface's shell. `$C11_SURFACE_NAME` holds the nameable-panes name (CMUX-11).
+**As a file write** (any process, any language, no c11 SDK). The raw writer pulls its own outbox directory and surface title via three helper subcommands — no c11-specific env vars required.
 
 ```bash
-MBOX="$C11_STATE/workspaces/$C11_WORKSPACE_ID/mailboxes"
-ULID=$(c11 new-ulid)
-cat > "$MBOX/_outbox/$ULID.tmp" <<EOF
+OUTBOX=$(c11 mailbox outbox-dir)
+MY_NAME=$(c11 mailbox surface-name)
+ULID=$(c11 mailbox new-id)
+cat > "$OUTBOX/.$ULID.tmp" <<EOF
 {
   "version": 1,
   "id": "$ULID",
-  "from": "$C11_SURFACE_NAME",
+  "from": "$MY_NAME",
   "to": "watcher",
   "topic": "ci.status",
   "ts": "$(date -u +%FT%TZ)",
   "body": "build green sha=abc"
 }
 EOF
-mv "$MBOX/_outbox/$ULID.tmp" "$MBOX/_outbox/$ULID.msg"
+mv "$OUTBOX/.$ULID.tmp" "$OUTBOX/$ULID.msg"
 ```
 
-The `.tmp → .msg` rename is atomic within a filesystem. c11's fsevent watcher only sees the final `.msg` state. Stale `.tmp` files are GC'd after 5 minutes (writer crash protection).
+The `.tmp → .msg` rename is atomic within a filesystem. c11's fsevent watcher only sees the final `.msg` state. Stale `.tmp` files are GC'd after 5 minutes (writer crash protection). The dot-prefix on the temp file keeps it hidden from shell globs and the watcher's filename filter.
 
 **As a CLI call:**
 
@@ -333,15 +334,15 @@ The `.tmp → .msg` rename is atomic within a filesystem. c11's fsevent watcher 
 c11 mailbox send --to watcher --topic ci.status --body "build green sha=abc"
 ```
 
-Equivalent to the above; auto-fills `version`, `from`, `ts`, `id`.
+Equivalent to the above; auto-fills `version`, `from`, `ts`, `id`. Prints the envelope id on success.
 
 ### Receiving — two equivalent ways
 
 **As file reads:**
 
 ```bash
-MBOX="$C11_STATE/workspaces/$C11_WORKSPACE_ID/mailboxes"
-for msg in "$MBOX/$C11_SURFACE_NAME"/*.msg; do
+INBOX=$(c11 mailbox inbox-dir)
+for msg in "$INBOX"/*.msg; do
   cat "$msg"
   rm  "$msg"
 done
@@ -422,7 +423,8 @@ Agents discover topics in v1 by reading each other's pane metadata (`c11 get-met
 ## 5. Delivery semantics — at-least-once, dedupe by id
 
 **The contract:**
-- **Durable to inbox at-least-once.** Once an envelope lands in `_outbox/`, it reaches every resolved recipient's inbox at least once. A dispatcher crash between inbox copy and `_processing/` cleanup causes the sweep to re-deliver on restart.
+- **Durable to inbox at-least-once (steady-state).** Once an envelope lands in `_outbox/` while the dispatcher is running, it reaches every resolved recipient's inbox at least once. Restarts pick up pre-existing `_outbox/*.msg` files on start (see `MailboxOutboxWatcher.start`).
+- **Stage-2 caveat: crash-recovery for `_processing/` is Stage 3.** If the dispatcher is killed mid-dispatch after an envelope has moved to `_processing/` but before the inbox copy finishes, Stage 2 does not sweep `_processing/` back to `_outbox/` on restart. Those envelopes are stranded until Stage 3 ships the recovery sweep. The steady-state at-least-once claim above holds; the crash-while-processing corner of at-least-once does not, and callers that care MUST rely on reply chains or application-level retries until Stage 3.
 - **Best-effort to handler.** Handler invocation (PTY write, watch stream, etc.) may fail independently without affecting inbox durability. Handler outcomes are recorded in `_dispatch.log`.
 - **Receivers dedupe by `id`.** Because at-most-once is not achievable (cleanup isn't atomic with dispatch), receivers MUST tolerate duplicates. Deduplication is trivial: maintain a short-lived seen-id set and skip already-processed IDs.
 
@@ -516,7 +518,7 @@ sequenceDiagram
     Busy->>Busy: parse 3 blocks,<br/>dedupe by id,<br/>acknowledge all three
 ```
 
-**The inbox is the queue, not the PTY.** Each envelope is durably stored in the recipient's inbox the moment it's written — before the PTY attempt. If any PTY write fails (timeout, EIO, EPIPE), the envelope is still in the inbox, the recipient finds it on next `recv`, and the handler failure is recorded in `_dispatch.log`.
+**The inbox is the queue, not the PTY.** Each envelope is durably stored in the recipient's inbox the moment it's written — before the PTY attempt. If the stdin handler's reporting deadline fires (`timeout`) or the surface is gone (`closed`), the envelope is still in the inbox, the recipient finds it on next `recv`, and the outcome is recorded in `_dispatch.log`. Propagating real PTY errno (EIO/EPIPE) from the Ghostty writer into the dispatch log is Stage 3 work alongside the async-cancellable writer — Stage 2 does not claim that contract.
 
 ---
 
@@ -645,7 +647,7 @@ No orchestrator. Coordination emerges from the topic graph.
 > c11 mailbox send --to <surface> --body-ref /path/to/large.json   # for bodies >4KB
 > ```
 >
-> **Direct file write (if you need it):** drop a JSON envelope in `$C11_STATE/workspaces/$C11_WORKSPACE_ID/mailboxes/_outbox/<ulid>.tmp` and atomically rename to `.msg`. Required fields: `version`, `id`, `from`, `ts`, `body`, plus at least one of `to`/`topic`. `from` is your surface name (`$C11_SURFACE_NAME`).
+> **Direct file write (if you need it):** resolve paths through the CLI helpers so the agent never depends on raw env vars. The outbox lives at `$(c11 mailbox outbox-dir)` and your surface name is `$(c11 mailbox surface-name)`. Drop a JSON envelope as `<outbox>/.<ulid>.tmp` (dot-prefix so the dispatcher ignores it until atomic rename) then `mv` it to `<outbox>/<ulid>.msg`. Required fields: `version`, `id`, `from`, `ts`, `body`, plus `to` (topic-only sends are not delivered in Stage 2). Mint a fresh id with `$(c11 mailbox new-id)`.
 >
 > ### Receiving — two equivalent ways
 >
@@ -653,7 +655,7 @@ No orchestrator. Coordination emerges from the topic graph.
 >
 > **File reads / CLI:**
 > ```
-> c11 mailbox recv --drain     # or: ls $C11_STATE/workspaces/$C11_WORKSPACE_ID/mailboxes/$C11_SURFACE_NAME/*.msg
+> c11 mailbox recv --drain     # or: ls "$(c11 mailbox inbox-dir)"/*.msg
 > c11 mailbox watch            # live stream (blocks)
 > ```
 >

@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "id": "01K3A2B7X8PQRTVWYZ0123456P",
+  "from": "builder",
+  "ts": "2026-04-23T10:15:42Z",
+  "body": "",
+  "to": "watcher",
+  "body_ref": "/tmp/c11-blob-example.json",
+  "content_type": "application/json"
+}

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "id": "01K3A2B7X8PQRTVWYZ0123456M",
+  "from": "builder",
+  "ts": "2026-04-23T10:15:42Z",
+  "body": "deploy starting",
+  "to": "watcher",
+  "topic": "deploy.green",
+  "urgent": true,
+  "ttl_seconds": 3600,
+  "ext": {
+    "trace_id": "abc-123",
+    "workflow_run": "gh-7890"
+  }
+}

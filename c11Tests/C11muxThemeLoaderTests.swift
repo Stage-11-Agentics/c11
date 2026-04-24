@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import cmux
+@testable import c11
 
 final class C11muxThemeLoaderTests: XCTestCase {
     func testStage11TomlRoundTripsAgainstGoldenSnapshot() throws {

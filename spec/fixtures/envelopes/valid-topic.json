@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "id": "01K3A2B7X8PQRTVWYZ0123456K",
+  "from": "builder",
+  "ts": "2026-04-23T10:15:42.123Z",
+  "body": "build green sha=abc",
+  "topic": "ci.status"
+}

@@ -5001,6 +5001,11 @@ final class Workspace: Identifiable, ObservableObject {
     /// Subscriptions for panel updates (e.g., browser title changes)
     private var panelSubscriptions: [UUID: AnyCancellable] = [:]
 
+    /// C11-13 Stage 2: per-workspace mailbox dispatcher. Lazily started by
+    /// `startMailboxDispatcher()` (TabManager calls this after wiring a new
+    /// workspace into the tab strip); stopped on deinit.
+    private var mailboxDispatcher: MailboxDispatcher?
+
     /// When true, suppresses auto-creation in didSplitPane (programmatic splits handle their own panels)
     private var isProgrammaticSplit = false
     private var debugStressPreloadSelectionDepth = 0
@@ -5495,6 +5500,58 @@ final class Workspace: Identifiable, ObservableObject {
     deinit {
         activeRemoteSessionControllerID = nil
         remoteSessionController?.stop()
+        mailboxDispatcher?.stop()
+    }
+
+    /// Creates a per-workspace mailbox dispatcher bound to this workspace's
+    /// UUID and starts watching `$C11_STATE/workspaces/<id>/mailboxes/_outbox/`.
+    /// Idempotent. A no-op `silent` handler is registered so topic-silent
+    /// flows work before Step 10 lands the real stdin handler.
+    func startMailboxDispatcher() {
+        guard mailboxDispatcher == nil else { return }
+        let stateURL: URL
+        do {
+            stateURL = try MailboxLayout.defaultStateURL()
+        } catch {
+            return
+        }
+        let resolver = MailboxSurfaceResolver(workspaceId: self.id) { [weak self] in
+            guard let self else { return [] }
+            // `panels` is @Published. Read it from main to avoid the SwiftUI/Combine
+            // non-main warning under Swift 5.10+; dispatch volume is low enough
+            // that the bounded hop is invisible.
+            if Thread.isMainThread {
+                return Array(self.panels.keys)
+            }
+            var result: [UUID] = []
+            DispatchQueue.main.sync { result = Array(self.panels.keys) }
+            return result
+        }
+        let dispatcher = MailboxDispatcher(
+            workspaceId: self.id,
+            stateURL: stateURL,
+            resolver: resolver
+        )
+        dispatcher.registerHandler(name: "silent") { _, _, _ in
+            .init(outcome: .ok)
+        }
+        let stdinHandler = StdinMailboxHandler { [weak self] surfaceId, text in
+            guard let self else { return .surfaceNotFound }
+            guard let panel = self.panels[surfaceId] else {
+                return .surfaceNotFound
+            }
+            guard let terminalPanel = panel as? TerminalPanel else {
+                return .surfaceNotTerminal
+            }
+            terminalPanel.sendText(text)
+            return .ok(bytes: text.utf8.count)
+        }
+        dispatcher.registerHandler(
+            name: "stdin",
+            stdinHandler.asDispatcherFunction()
+        )
+        dispatcher.start()
+        mailboxDispatcher = dispatcher
     }
 
     func refreshSplitButtonTooltips() {

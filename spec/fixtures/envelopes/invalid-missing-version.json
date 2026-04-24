@@ -1,0 +1,7 @@
+{
+  "id": "01K3A2B7X8PQRTVWYZ0123456J",
+  "from": "builder",
+  "ts": "2026-04-23T10:15:42Z",
+  "body": "build green sha=abc",
+  "to": "watcher"
+}

@@ -1,9 +1,9 @@
 import XCTest
 
-#if canImport(cmux_DEV)
-@testable import cmux_DEV
-#elseif canImport(cmux)
-@testable import cmux
+#if canImport(c11_DEV)
+@testable import c11_DEV
+#elseif canImport(c11)
+@testable import c11
 #endif
 
 /// Unit tests for `DefaultGridSettings` — the pure grid-construction helpers

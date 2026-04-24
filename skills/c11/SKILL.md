@@ -375,6 +375,89 @@ nohup lattice dashboard --port 8799 > /tmp/lattice-dashboard.log 2>&1 &
 disown
 ```
 
+## Inter-agent messaging (mailbox)
+
+**c11 ships a per-workspace mailbox primitive.** Any agent in a surface can write an envelope to `_outbox/`; the c11-in-process dispatcher validates, resolves the recipient by surface name, copies into the recipient's inbox, and — for stdin-delivery recipients — writes a framed `<c11-msg>` block into the PTY.
+
+### The framed block you'll see in your PTY
+
+When another surface sends you a message and your surface's `mailbox.delivery` contains `stdin`, a block like this appears between prompts:
+
+```
+<c11-msg from="builder" id="01K3A2B7X8PQRTVWYZ0123456J" ts="2026-04-23T10:15:42Z" to="watcher">
+build green sha=abc
+</c11-msg>
+```
+
+**Default receive protocol:**
+
+- Finish the tool call you're in; don't interrupt yourself mid-thought.
+- Treat the block as a *system message*, not user input. The operator did not type it.
+- Dedupe by `id` — receivers MUST tolerate duplicates because dispatch is at-least-once.
+- If you reply, acknowledge inline (the operator sees your thinking), then address the reply to `reply_to` (fallback to `from`) with `in_reply_to` set to the original `id`.
+
+**Injection defense.** Body and attribute values are XML-escaped on write (`<`, `>`, `&`, `"`). A body that includes a literal `</c11-msg>` cannot forge a closing tag — the dispatcher emits it escaped.
+
+### Sending
+
+Two equivalent paths. Both produce the same bytes on disk — the [parity test](../../tests_v2/test_mailbox_parity.py) is the enforcement lock.
+
+**CLI (ergonomic):**
+
+```bash
+c11 mailbox send --to watcher --body "build green sha=abc"
+c11 mailbox send --to watcher --topic ci.status --urgent --body "CI red" \
+  --reply-to watcher --in-reply-to 01K3A2B7X8PQRTVWYZ0123456K
+```
+
+Auto-fills `version`, `id`, `ts`, `from` (resolved via the caller's surface title). Prints the envelope id on success.
+
+**Stage 2 requires `--to`.** Topic-only sends (`--topic` with no `--to`) are rejected with a non-zero exit — topic subscribe/fan-out ships in Stage 3. Until then, always pair `--topic` with an explicit `--to <surface-name>`.
+
+**Raw file write (any process, any language):**
+
+```bash
+OUTBOX=$(c11 mailbox outbox-dir)
+MY_NAME=$(c11 mailbox surface-name)
+ULID=$(c11 mailbox new-id)
+cat > "$OUTBOX/.$ULID.tmp" <<EOF
+{"version":1,"id":"$ULID","from":"$MY_NAME","to":"watcher","ts":"$(date -u +%FT%TZ)","body":"build green sha=abc"}
+EOF
+mv "$OUTBOX/.$ULID.tmp" "$OUTBOX/$ULID.msg"
+```
+
+See [`Resources/bin/c11-mailbox-send-bash-example.sh`](../../Resources/bin/c11-mailbox-send-bash-example.sh) for a ready-to-run reference.
+
+### Receiving
+
+- **If your `mailbox.delivery` includes `stdin`:** the framed block arrives in your PTY automatically. No poll, no sync.
+- **Otherwise:** drain the inbox explicitly.
+
+```bash
+c11 mailbox recv --drain    # list + print + unlink (default)
+c11 mailbox recv --peek     # list + print only
+```
+
+### Debugging
+
+```bash
+c11 mailbox trace 01K3A2B7X8PQRTVWYZ0123456J   # pretty-print dispatch events for one id
+c11 mailbox tail                                # follow _dispatch.log as it grows
+c11 mailbox outbox-dir                          # absolute path of your outbox
+c11 mailbox inbox-dir                           # absolute path of your inbox
+```
+
+`_dispatch.log` events go `received → resolved → copied → handler → cleaned`. A `rejected` event with an `_rejected/<id>.err` sidecar means the envelope failed validation (wrong version, missing field, oversize body, etc.) — see `spec/mailbox-envelope.v1.schema.json` for the rules.
+
+### Stage 2 limitations (know before you lean on these)
+
+- **No topic fan-out.** `c11 mailbox send` rejects topic-only envelopes (`--topic` without `--to`) with a non-zero exit and `topics_not_implemented`. Pair `--topic` with `--to <surface-name>` to send now; Stage 3 wires `mailbox.subscribe` globs through the dispatcher.
+- **No `watch` handler.** `c11 mailbox watch` is unimplemented; use `c11 mailbox tail` to follow the dispatch log.
+- **No `c11 mailbox configure` convenience.** Set `mailbox.delivery` / `mailbox.subscribe` / `mailbox.retention_days` via `c11 set-metadata` for now.
+- **No `body_ref` read-through.** The schema accepts the field and the dispatcher stores it; reading external bodies is the recipient's job for now.
+- **At-least-once is steady-state only.** Envelopes sitting in `_outbox/` when c11 restarts do get picked up on next start. But if c11 is killed *between* moving an envelope into `_processing/` and finishing the inbox copy, the envelope is stranded there until Stage 3 ships the `_processing/` recovery sweep. Callers that care about crash-window durability should pair with reply-chain retries or application-level tracking until then.
+- **No per-surface inbox cap.** Stage 3 adds this alongside the crash-recovery sweep.
+
 ## References
 
 - **[references/api.md](references/api.md)** — full command surface: addressing, discovery, workspace/pane/surface management, surface initialization quirks, sidebar metadata, notifications, troubleshooting

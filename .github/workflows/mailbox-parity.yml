@@ -1,0 +1,163 @@
+name: Mailbox parity
+
+# Drift-enforcement lock for the c11 mailbox primitive (C11-13 Stage 2).
+# Runs on every push that touches the mailbox surface so the byte-shape
+# invariants (envelope encoder, watcher semantics, dispatcher outcome
+# set) are checked before merge — the `ci.yml` build job would catch
+# compile breaks but not behavioral regressions.
+#
+# Scope today:
+#   1. Python syntax check on tests_v2/test_mailbox_parity.py so the
+#      end-to-end test never goes stale.
+#   2. xcodebuild test against the `c11-unit` scheme, filtered to the
+#      Mailbox* and StdinHandler* test classes. These tests assert the
+#      byte-level invariants the parity test depends on (e.g. that
+#      JSONSerialization does not escape forward slashes).
+#
+# Out of scope (follow-up): launching a real c11 app on a virtual
+# display and running the Python parity test against its socket. The
+# app-launch wiring lives in `test-e2e.yml` (manual dispatch) and
+# requires ffmpeg + TCC grants — too heavy to fire on every push for
+# the byte-level lock this workflow owns.
+
+on:
+  push:
+    paths:
+      - "tests_v2/test_mailbox_parity.py"
+      - "Sources/Mailbox/**"
+      - "CLI/c11.swift"
+      - "spec/**"
+      - "c11Tests/Mailbox*.swift"
+      - "c11Tests/StdinHandler*.swift"
+      - ".github/workflows/mailbox-parity.yml"
+  pull_request:
+    paths:
+      - "tests_v2/test_mailbox_parity.py"
+      - "Sources/Mailbox/**"
+      - "CLI/c11.swift"
+      - "spec/**"
+      - "c11Tests/Mailbox*.swift"
+      - "c11Tests/StdinHandler*.swift"
+      - ".github/workflows/mailbox-parity.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  python-syntax:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Compile parity test (syntax check)
+        run: python3 -m py_compile tests_v2/test_mailbox_parity.py
+
+  mailbox-unit:
+    # Fork-PR guard: paid runner only for repo-owned refs.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: macos-15-xlarge
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          XCODE_DIR="/Applications/Xcode.app/Contents/Developer"
+          if [ ! -d "$XCODE_DIR" ]; then
+            XCODE_APP="$(ls -d /Applications/Xcode*.app 2>/dev/null | sort | tail -n 1 || true)"
+            [ -n "$XCODE_APP" ] || { echo "No Xcode.app found under /Applications" >&2; exit 1; }
+            XCODE_DIR="$XCODE_APP/Contents/Developer"
+          fi
+          echo "DEVELOPER_DIR=$XCODE_DIR" >> "$GITHUB_ENV"
+          export DEVELOPER_DIR="$XCODE_DIR"
+          XCODE_VERSION_OUTPUT="$(xcodebuild -version)"
+          XCODE_VER="${XCODE_VERSION_OUTPUT%%$'\n'*}"
+          echo "XCODE_VER=$XCODE_VER" >> "$GITHUB_ENV"
+          echo "$XCODE_VERSION_OUTPUT"
+
+      - name: Cache GhosttyKit.xcframework
+        id: cache-ghosttykit
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v4
+        with:
+          path: GhosttyKit.xcframework
+          key: ghosttykit-${{ hashFiles('.gitmodules', 'ghostty') }}
+
+      - name: Download pre-built GhosttyKit.xcframework
+        if: steps.cache-ghosttykit.outputs.cache-hit != 'true'
+        run: ./scripts/download-prebuilt-ghosttykit.sh
+
+      - name: Install zig
+        # Required by the cmux scheme's Run Script build phase
+        # (build-ghostty-cli-helper.sh), which compiles a small zig
+        # helper at build time.
+        run: |
+          set -euo pipefail
+          ZIG_REQUIRED="0.15.2"
+          if command -v zig >/dev/null 2>&1 && zig version 2>/dev/null | grep -q "^${ZIG_REQUIRED}"; then
+            echo "zig ${ZIG_REQUIRED} already installed"
+            exit 0
+          fi
+          case "$(uname -m)" in
+            arm64|aarch64) ARCH="aarch64" ;;
+            x86_64) ARCH="x86_64" ;;
+            *) echo "Unsupported CPU arch: $(uname -m)" >&2; exit 1 ;;
+          esac
+          curl -fSL "https://ziglang.org/download/${ZIG_REQUIRED}/zig-${ARCH}-macos-${ZIG_REQUIRED}.tar.xz" -o /tmp/zig.tar.xz
+          tar xf /tmp/zig.tar.xz -C /tmp
+          sudo mkdir -p /usr/local/bin /usr/local/lib
+          sudo cp -f /tmp/zig-${ARCH}-macos-${ZIG_REQUIRED}/zig /usr/local/bin/zig
+          sudo cp -rf /tmp/zig-${ARCH}-macos-${ZIG_REQUIRED}/lib /usr/local/lib/zig
+          zig version
+
+      - name: Cache Swift packages
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v4
+        with:
+          path: .ci-source-packages
+          key: spm-${{ runner.os }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Resolve Swift packages
+        run: |
+          set -euo pipefail
+          SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
+          mkdir -p "$SOURCE_PACKAGES_DIR"
+          xcodebuild -project GhosttyTabs.xcodeproj -scheme c11-unit -configuration Debug \
+            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
+            -resolvePackageDependencies
+
+      - name: Run mailbox unit tests
+        # CLAUDE.md notes `xcodebuild -scheme c11-unit` is safe (no
+        # app launch). The -only-testing filters narrow to the byte-
+        # shape and dispatcher-behavior tests so the push path stays
+        # fast (sub-5-min on a warm cache).
+        run: |
+          set -euo pipefail
+          SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
+          xcodebuild -project GhosttyTabs.xcodeproj -scheme c11-unit -configuration Debug \
+            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
+            -disableAutomaticPackageResolution \
+            -destination "platform=macOS" \
+            -only-testing:c11Tests/MailboxEnvelopeValidationTests \
+            -only-testing:c11Tests/MailboxDispatcherTests \
+            -only-testing:c11Tests/MailboxDispatcherGCTests \
+            -only-testing:c11Tests/MailboxOutboxWatcherTests \
+            -only-testing:c11Tests/MailboxDispatchLogTests \
+            -only-testing:c11Tests/MailboxIOTests \
+            -only-testing:c11Tests/MailboxLayoutTests \
+            -only-testing:c11Tests/MailboxSurfaceResolverTests \
+            -only-testing:c11Tests/MailboxULIDTests \
+            -only-testing:c11Tests/StdinHandlerFormattingTests \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            test

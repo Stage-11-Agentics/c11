@@ -1166,6 +1166,7 @@ class TabManager: ObservableObject {
         )
         newWorkspace.owningTabManager = self
         wireClosedBrowserTracking(for: newWorkspace)
+        newWorkspace.startMailboxDispatcher()
         let insertIndex = newTabInsertIndex(snapshot: snapshot, placementOverride: placementOverride)
         if eagerLoadTerminal && !select {
             requestBackgroundWorkspaceLoad(for: newWorkspace.id)
@@ -5220,6 +5221,7 @@ extension TabManager {
             workspace.owningTabManager = self
             workspace.restoreSessionSnapshot(workspaceSnapshot)
             wireClosedBrowserTracking(for: workspace)
+            workspace.startMailboxDispatcher()
             newTabs.append(workspace)
         }
 
@@ -5230,6 +5232,7 @@ extension TabManager {
             let fallback = Workspace(title: defaultTitle, stableDefaultTitle: defaultTitle, portOrdinal: ordinal)
             fallback.owningTabManager = self
             wireClosedBrowserTracking(for: fallback)
+            fallback.startMailboxDispatcher()
             newTabs.append(fallback)
         }
 

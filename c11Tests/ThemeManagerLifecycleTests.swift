@@ -1,7 +1,7 @@
 import XCTest
 import AppKit
 import Combine
-@testable import cmux
+@testable import c11
 
 @MainActor
 final class ThemeManagerLifecycleTests: XCTestCase {

@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "id": "not-a-ulid",
+  "from": "builder",
+  "ts": "2026-04-23T10:15:42Z",
+  "body": "build green sha=abc",
+  "to": "watcher"
+}

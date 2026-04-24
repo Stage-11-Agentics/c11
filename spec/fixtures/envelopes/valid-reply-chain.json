@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "id": "01K3A2B7X8PQRTVWYZ0123456N",
+  "from": "watcher",
+  "ts": "2026-04-23T10:15:50Z",
+  "body": "acknowledged, running checks",
+  "to": "builder",
+  "reply_to": "watcher",
+  "in_reply_to": "01K3A2B7X8PQRTVWYZ0123456J"
+}

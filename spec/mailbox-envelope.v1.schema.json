@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stage11.ai/schemas/mailbox-envelope.v1.json",
+  "title": "c11 Mailbox Envelope v1",
+  "description": "Source of truth for the c11 inter-agent mailbox envelope (v1). Every envelope written to $C11_STATE/workspaces/<ws>/mailboxes/_outbox/*.msg must validate against this schema. See docs/c11-messaging-primitive-design.md §3.",
+  "type": "object",
+  "required": ["version", "id", "from", "ts", "body"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version. Integer, not a string. Bumps are breaking."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID: Crockford base32, 26 chars (no I, L, O, U)."
+    },
+    "from": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "Sender surface handle (surface name set via c11 set-title / nameable-panes)."
+    },
+    "ts": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$",
+      "description": "RFC3339 UTC timestamp with Z suffix (sender-attested; NOT an ordering field)."
+    },
+    "body": {
+      "type": "string",
+      "maxLength": 4096,
+      "description": "UTF-8 body. Schema enforces chars; Swift validator enforces bytes. Must be empty string when body_ref is set."
+    },
+    "to": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "Recipient surface handle. At least one of to or topic is required."
+    },
+    "topic": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.\\-]*$",
+      "maxLength": 256,
+      "description": "Dotted topic token published by senders. No globs on publish (globs are for subscribers)."
+    },
+    "reply_to": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "Surface handle the reply should be addressed to."
+    },
+    "in_reply_to": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID of the envelope this is a reply to."
+    },
+    "urgent": {
+      "type": "boolean",
+      "description": "Sender hint. Handlers may honor or ignore."
+    },
+    "ttl_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Advisory expiry in seconds from ts. Recipients may drop expired envelopes on read."
+    },
+    "body_ref": {
+      "type": "string",
+      "pattern": "^/",
+      "description": "Absolute path to an external body payload. When set, body must be empty."
+    },
+    "content_type": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "MIME type hint for body or body_ref contents."
+    },
+    "ext": {
+      "type": "object",
+      "description": "Forward-compat escape hatch. Any keys allowed under ext."
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "anyOf": [
+        { "required": ["to"] },
+        { "required": ["topic"] }
+      ]
+    },
+    {
+      "if": {
+        "required": ["body_ref"]
+      },
+      "then": {
+        "properties": {
+          "body": { "const": "" }
+        }
+      }
+    }
+  ]
+}

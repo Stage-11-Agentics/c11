@@ -7,10 +7,10 @@ import ObjectiveC.runtime
 import Bonsplit
 import UserNotifications
 
-#if canImport(cmux_DEV)
-@testable import cmux_DEV
-#elseif canImport(cmux)
-@testable import cmux
+#if canImport(c11_DEV)
+@testable import c11_DEV
+#elseif canImport(c11)
+@testable import c11
 #endif
 
 private func drainBrowserPanelMainQueue() {

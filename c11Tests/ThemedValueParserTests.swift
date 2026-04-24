@@ -1,5 +1,5 @@
 import XCTest
-@testable import cmux
+@testable import c11
 
 final class ThemedValueParserTests: XCTestCase {
     func testParsesVariableDotPath() throws {

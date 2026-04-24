@@ -1,6 +1,6 @@
 import AppKit
 import XCTest
-@testable import cmux
+@testable import c11
 
 final class ThemeResolverBenchmarks: XCTestCase {
     func testResolverP95PerformanceBudget() throws {

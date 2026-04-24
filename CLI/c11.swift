@@ -2592,6 +2592,14 @@ struct CMUXCLI {
         case "workspace-color":
             try runWorkspaceColor(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput)
 
+        // C11-13 Stage 2: inter-agent mailbox (send/recv/trace/tail + helpers).
+        case "mailbox":
+            try runMailboxCommand(
+                commandArgs: commandArgs,
+                client: client,
+                jsonOutput: jsonOutput
+            )
+
         default:
             print(usage())
             throw CLIError(message: "Unknown command: \(command)")
@@ -16211,5 +16219,400 @@ extension CMUXCLI {
         if !result.skipped.isEmpty {
             print("  skipped: \(result.skipped.joined(separator: ", "))")
         }
+    }
+}
+
+// MARK: - C11-13 Stage 2: `c11 mailbox` subcommand
+//
+// Pure file-I/O wrappers around MailboxEnvelope + MailboxIO + MailboxLayout.
+// One socket call in practice: `surface.get_metadata` to resolve the caller's
+// surface title. Raw-bash writers use the outbox-dir / inbox-dir / surface-name
+// helpers to avoid any c11-provided env vars.
+
+extension CMUXCLI {
+
+    fileprivate func runMailboxCommand(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool
+    ) throws {
+        guard let sub = commandArgs.first else {
+            print(mailboxUsage())
+            return
+        }
+        let rest = Array(commandArgs.dropFirst())
+        switch sub {
+        case "help", "-h", "--help":
+            print(mailboxUsage())
+        case "send":
+            try runMailboxSendCommand(subArgs: rest, client: client, jsonOutput: jsonOutput)
+        case "recv":
+            try runMailboxRecvCommand(subArgs: rest, client: client, jsonOutput: jsonOutput)
+        case "trace":
+            try runMailboxTraceCommand(subArgs: rest, client: client, jsonOutput: jsonOutput)
+        case "tail":
+            try runMailboxTailCommand(subArgs: rest, client: client)
+        case "outbox-dir":
+            try runMailboxOutboxDirCommand(subArgs: rest, client: client)
+        case "inbox-dir":
+            try runMailboxInboxDirCommand(subArgs: rest, client: client)
+        case "surface-name":
+            try runMailboxSurfaceNameCommand(subArgs: rest, client: client)
+        case "new-id":
+            print(MailboxULID.make())
+        case "watch":
+            throw CLIError(message: "watch not implemented in Stage 2; see c11 mailbox tail for the log-follow equivalent")
+        default:
+            throw CLIError(message: "unknown mailbox subcommand '\(sub)'. Use `c11 mailbox help` for usage.")
+        }
+    }
+
+    private func mailboxUsage() -> String {
+        """
+        c11 mailbox — inter-agent messaging
+
+          send       write an envelope to the per-workspace outbox
+          recv       drain or peek the caller's inbox
+          trace      pretty-print _dispatch.log lines for an envelope id
+          tail       follow _dispatch.log
+          outbox-dir print the caller's outbox directory (for raw-bash writers)
+          inbox-dir  print the caller's inbox directory (for raw-bash readers)
+          surface-name
+                     print the caller's surface title (for `from` auto-fill)
+          new-id     print a fresh Crockford base32 ULID (26 chars)
+
+        Send flags:
+          --to <surface>          recipient surface name
+          --topic <topic>         dotted topic token
+          --body <text>           inline body (≤ 4096 bytes UTF-8)
+          --body-ref <path>       absolute path to external body (body must be empty)
+          --reply-to <surface>    surface that should receive the reply
+          --in-reply-to <ulid>    envelope id this is replying to
+          --urgent                sender hint (handlers may ignore)
+          --ttl-seconds <n>       advisory expiry
+          --from <surface>        override caller's resolved title
+          --id <ulid>             pin envelope id (testing / replay)
+          --ts <rfc3339>          pin timestamp (testing / replay)
+          --content-type <mime>   MIME hint for body or body_ref
+
+        Recv flags:
+          --drain                 default — list, print, unlink
+          --peek                  list + print only
+          --surface <name>        override caller's resolved surface
+        """
+    }
+
+    // MARK: - Caller resolution
+
+    /// Returns the caller's workspace UUID and surface name. Workspace UUID
+    /// comes from the CMUX_WORKSPACE_ID (or C11_WORKSPACE_ID alias) env var
+    /// that every surface shell inherits. Surface name is looked up via
+    /// `surface.get_metadata`. Pass an override when scripting without a
+    /// live c11 surface.
+    private func resolveMailboxCaller(
+        client: SocketClient,
+        fromOverride: String?,
+        surfaceOverride: String?
+    ) throws -> (workspaceId: UUID, surfaceName: String) {
+        let env = ProcessInfo.processInfo.environment
+        let workspaceIdStr = env["CMUX_WORKSPACE_ID"] ?? env["C11_WORKSPACE_ID"]
+        guard
+            let workspaceIdStr,
+            let workspaceId = UUID(uuidString: workspaceIdStr)
+        else {
+            throw CLIError(
+                message: "CMUX_WORKSPACE_ID not set — run from inside a c11 surface or script with --from override and env"
+            )
+        }
+
+        if let name = fromOverride ?? surfaceOverride, !name.isEmpty {
+            return (workspaceId, name)
+        }
+
+        let surfaceIdStr = env["CMUX_SURFACE_ID"] ?? env["C11_SURFACE_ID"]
+        guard let surfaceIdStr else {
+            throw CLIError(message: "CMUX_SURFACE_ID not set — pass --from <surface> to override")
+        }
+
+        let payload = try client.sendV2(
+            method: "surface.get_metadata",
+            params: [
+                "workspace_id": workspaceIdStr,
+                "surface_id": surfaceIdStr
+            ]
+        )
+        let metadata = (payload["metadata"] as? [String: Any]) ?? [:]
+        guard let title = metadata["title"] as? String, !title.isEmpty else {
+            throw CLIError(
+                message: String(
+                    localized: "mailbox.cli.error.surface-not-found",
+                    defaultValue: "No surface named %@ in this workspace."
+                ).replacingOccurrences(of: "%@", with: "(untitled)")
+            )
+        }
+        return (workspaceId, title)
+    }
+
+    // MARK: - send
+
+    private func runMailboxSendCommand(
+        subArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool
+    ) throws {
+        let to = optionValue(subArgs, name: "--to")
+        let topic = optionValue(subArgs, name: "--topic")
+        let body = optionValue(subArgs, name: "--body") ?? ""
+        let bodyRef = optionValue(subArgs, name: "--body-ref")
+        let replyTo = optionValue(subArgs, name: "--reply-to")
+        let inReplyTo = optionValue(subArgs, name: "--in-reply-to")
+        let urgent = hasFlag(subArgs, name: "--urgent")
+        let ttlSeconds = optionValue(subArgs, name: "--ttl-seconds").flatMap(Int.init)
+        let idOverride = optionValue(subArgs, name: "--id")
+        let tsOverride = optionValue(subArgs, name: "--ts")
+        let contentType = optionValue(subArgs, name: "--content-type")
+        let fromOverride = optionValue(subArgs, name: "--from")
+
+        if to == nil && topic == nil {
+            throw CLIError(
+                message: String(
+                    localized: "mailbox.cli.error.no-recipient",
+                    defaultValue: "A mailbox envelope needs --to or --topic."
+                )
+            )
+        }
+
+        // Stage 2 does not implement topic subscribe / fan-out. A topic-only
+        // envelope would resolve to an empty recipient list and silently
+        // vanish — reject at the CLI boundary so the operator sees the
+        // failure instead of losing the message. Tracked for Stage 3;
+        // pair with --to <surface> until then.
+        if to == nil && topic != nil {
+            throw CLIError(
+                message: String(
+                    localized: "mailbox.cli.error.topics-not-implemented",
+                    defaultValue: "Topic-only envelopes are not delivered in Stage 2 (topic subscribe/fan-out ships in Stage 3). Pair --topic with --to <surface-name> to send now."
+                )
+            )
+        }
+
+        if Data(body.utf8).count > MailboxEnvelope.maxBodyBytes {
+            throw CLIError(
+                message: String(
+                    localized: "mailbox.cli.error.body-too-large",
+                    defaultValue: "Inline --body exceeds the 4 KB cap. Use --body-ref <path> for larger payloads."
+                )
+            )
+        }
+
+        let (workspaceId, surfaceName) = try resolveMailboxCaller(
+            client: client,
+            fromOverride: fromOverride,
+            surfaceOverride: nil
+        )
+
+        let envelope = try MailboxEnvelope.build(
+            from: fromOverride ?? surfaceName,
+            to: to,
+            topic: topic,
+            body: body,
+            id: idOverride,
+            ts: tsOverride,
+            replyTo: replyTo,
+            inReplyTo: inReplyTo,
+            urgent: urgent ? true : nil,
+            ttlSeconds: ttlSeconds,
+            bodyRef: bodyRef,
+            contentType: contentType
+        )
+
+        let stateURL = try MailboxLayout.defaultStateURL()
+        let outboxURL = MailboxLayout.outboxURL(state: stateURL, workspaceId: workspaceId)
+        try FileManager.default.createDirectory(
+            at: outboxURL,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let targetURL = outboxURL.appendingPathComponent(
+            MailboxLayout.envelopeFilename(id: envelope.id)
+        )
+        let data = try envelope.encode()
+        try MailboxIO.atomicWrite(data: data, to: targetURL)
+
+        if jsonOutput {
+            print(jsonString([
+                "id": envelope.id,
+                "outbox_path": targetURL.path,
+                "workspace_id": workspaceId.uuidString,
+                "from": envelope.from
+            ]))
+        } else {
+            print(envelope.id)
+        }
+    }
+
+    // MARK: - recv
+
+    private func runMailboxRecvCommand(
+        subArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool
+    ) throws {
+        let peek = hasFlag(subArgs, name: "--peek")
+        let drain = hasFlag(subArgs, name: "--drain") || !peek
+        let surfaceOverride = optionValue(subArgs, name: "--surface")
+
+        let (workspaceId, surfaceName) = try resolveMailboxCaller(
+            client: client,
+            fromOverride: nil,
+            surfaceOverride: surfaceOverride
+        )
+
+        let stateURL = try MailboxLayout.defaultStateURL()
+        let inboxURL = try MailboxLayout.inboxURL(
+            state: stateURL,
+            workspaceId: workspaceId,
+            surfaceName: surfaceName
+        )
+        guard FileManager.default.fileExists(atPath: inboxURL.path) else {
+            return
+        }
+
+        let entries = try FileManager.default.contentsOfDirectory(
+            at: inboxURL,
+            includingPropertiesForKeys: nil
+        )
+        .filter { $0.pathExtension == MailboxLayout.envelopeExtension }
+        .sorted { $0.lastPathComponent < $1.lastPathComponent }
+
+        for url in entries {
+            let data = try Data(contentsOf: url)
+            if let text = String(data: data, encoding: .utf8) {
+                print(text)
+            }
+            if drain {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+    }
+
+    // MARK: - trace
+
+    private func runMailboxTraceCommand(
+        subArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool
+    ) throws {
+        guard let id = subArgs.first(where: { !$0.hasPrefix("--") }) else {
+            throw CLIError(
+                message: String(
+                    localized: "mailbox.cli.trace.usage",
+                    defaultValue: "c11 mailbox trace <envelope-id>"
+                )
+            )
+        }
+        let (workspaceId, _) = try resolveMailboxCaller(
+            client: client,
+            fromOverride: nil,
+            surfaceOverride: nil
+        )
+        let stateURL = try MailboxLayout.defaultStateURL()
+        let logURL = MailboxLayout.dispatchLogURL(state: stateURL, workspaceId: workspaceId)
+        guard let text = try? String(contentsOf: logURL, encoding: .utf8) else {
+            return
+        }
+        let needle = "\"\(id)\""
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            if line.contains(needle) {
+                print(String(line))
+            }
+        }
+    }
+
+    // MARK: - tail
+
+    private func runMailboxTailCommand(
+        subArgs: [String],
+        client: SocketClient
+    ) throws {
+        let (workspaceId, _) = try resolveMailboxCaller(
+            client: client,
+            fromOverride: nil,
+            surfaceOverride: nil
+        )
+        let stateURL = try MailboxLayout.defaultStateURL()
+        let logURL = MailboxLayout.dispatchLogURL(state: stateURL, workspaceId: workspaceId)
+
+        // Print existing contents, then poll for growth.
+        var lastSize: UInt64 = 0
+        func flushHandle(_ handle: FileHandle) {
+            let data = (try? handle.readToEnd()) ?? nil ?? Data()
+            if !data.isEmpty, let text = String(data: data, encoding: .utf8) {
+                print(text, terminator: "")
+                fflush(stdout)
+            }
+            lastSize = (try? handle.offset()) ?? lastSize
+        }
+
+        if FileManager.default.fileExists(atPath: logURL.path),
+           let handle = try? FileHandle(forReadingFrom: logURL) {
+            flushHandle(handle)
+            try? handle.close()
+        }
+        while true {
+            Thread.sleep(forTimeInterval: 0.25)
+            guard FileManager.default.fileExists(atPath: logURL.path) else { continue }
+            guard let handle = try? FileHandle(forReadingFrom: logURL) else { continue }
+            try? handle.seek(toOffset: lastSize)
+            flushHandle(handle)
+            try? handle.close()
+        }
+    }
+
+    // MARK: - Helpers for raw-bash senders/receivers
+
+    private func runMailboxOutboxDirCommand(
+        subArgs: [String],
+        client: SocketClient
+    ) throws {
+        let (workspaceId, _) = try resolveMailboxCaller(
+            client: client,
+            fromOverride: nil,
+            surfaceOverride: nil
+        )
+        let stateURL = try MailboxLayout.defaultStateURL()
+        let url = MailboxLayout.outboxURL(state: stateURL, workspaceId: workspaceId)
+        print(url.path)
+    }
+
+    private func runMailboxInboxDirCommand(
+        subArgs: [String],
+        client: SocketClient
+    ) throws {
+        let surfaceOverride = optionValue(subArgs, name: "--surface")
+        let (workspaceId, surfaceName) = try resolveMailboxCaller(
+            client: client,
+            fromOverride: nil,
+            surfaceOverride: surfaceOverride
+        )
+        let stateURL = try MailboxLayout.defaultStateURL()
+        let url = try MailboxLayout.inboxURL(
+            state: stateURL,
+            workspaceId: workspaceId,
+            surfaceName: surfaceName
+        )
+        print(url.path)
+    }
+
+    private func runMailboxSurfaceNameCommand(
+        subArgs: [String],
+        client: SocketClient
+    ) throws {
+        let (_, surfaceName) = try resolveMailboxCaller(
+            client: client,
+            fromOverride: nil,
+            surfaceOverride: nil
+        )
+        print(surfaceName)
     }
 }

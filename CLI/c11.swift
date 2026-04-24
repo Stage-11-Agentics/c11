@@ -1710,55 +1710,39 @@ struct CMUXCLI {
         case "ssh-session-end":
             try runSSHSessionEnd(commandArgs: commandArgs, client: client)
 
+        case "workspace":
+            // CMUX-37 Phase 0: `c11 workspace <subcommand>`. Plan and docs
+            // (docs/c11-snapshot-restore-plan.md:164) specify this form.
+            // Future subcommands: snapshot/restore (Phase 1), new/export-
+            // blueprint (Phase 2). For now `apply` is the only subcommand.
+            guard let sub = commandArgs.first else {
+                throw CLIError(message: "workspace: missing subcommand. Known subcommands: apply")
+            }
+            let subArgs = Array(commandArgs.dropFirst())
+            switch sub {
+            case "apply":
+                try runWorkspaceApply(
+                    subArgs,
+                    client: client,
+                    commandLabel: "workspace apply",
+                    jsonOutput: jsonOutput,
+                    idFormat: idFormat
+                )
+            default:
+                throw CLIError(message: "workspace: unknown subcommand '\(sub)'. Known subcommands: apply")
+            }
+
         case "workspace-apply":
-            // CMUX-37 Phase 0 debug/test entry point for WorkspaceLayoutExecutor.
-            // Reads a JSON-encoded WorkspaceApplyPlan from a file path (or `-` for
-            // stdin), POSTs it to the workspace.apply socket method, and prints
-            // the ApplyResult.
-            let (fileOpt, remaining) = parseOption(commandArgs, name: "--file")
-            if let unknown = remaining.first(where: { $0.hasPrefix("--") }) {
-                throw CLIError(message: "workspace-apply: unknown flag '\(unknown)'. Known flags: --file <path|->")
-            }
-            guard let fileArg = fileOpt else {
-                throw CLIError(message: "workspace-apply requires --file <path|->")
-            }
-            let planData: Data
-            if fileArg == "-" {
-                planData = FileHandle.standardInput.readDataToEndOfFile()
-            } else {
-                let resolvedPath = resolvePath(fileArg)
-                guard let data = FileManager.default.contents(atPath: resolvedPath) else {
-                    throw CLIError(message: "workspace-apply: could not read '\(resolvedPath)'")
-                }
-                planData = data
-            }
-            guard let planObject = try? JSONSerialization.jsonObject(with: planData, options: []) else {
-                throw CLIError(message: "workspace-apply: --file contents are not valid JSON")
-            }
-            let payload = try client.sendV2(method: "workspace.apply", params: ["plan": planObject])
-            if jsonOutput {
-                print(jsonString(formatIDs(payload, mode: idFormat)))
-            } else {
-                let ref = (payload["workspaceRef"] as? String) ?? "?"
-                let surfaceRefs = payload["surfaceRefs"] as? [String: String] ?? [:]
-                let paneRefs = payload["paneRefs"] as? [String: String] ?? [:]
-                let warnings = payload["warnings"] as? [String] ?? []
-                let failures = payload["failures"] as? [[String: Any]] ?? []
-                print("OK workspace=\(ref) surfaces=\(surfaceRefs.count) panes=\(paneRefs.count)")
-                if !warnings.isEmpty {
-                    print("warnings: \(warnings.count)")
-                    for w in warnings { print("  - \(w)") }
-                }
-                if !failures.isEmpty {
-                    print("failures: \(failures.count)")
-                    for f in failures {
-                        let code = (f["code"] as? String) ?? "?"
-                        let step = (f["step"] as? String) ?? "?"
-                        let msg = (f["message"] as? String) ?? ""
-                        print("  - [\(code)] \(step): \(msg)")
-                    }
-                }
-            }
+            // Back-compat alias for the Phase 0 `c11 workspace apply` form
+            // that shipped before the review cycle 1 rename. Prefer the
+            // subcommand form going forward.
+            try runWorkspaceApply(
+                commandArgs,
+                client: client,
+                commandLabel: "workspace-apply",
+                jsonOutput: jsonOutput,
+                idFormat: idFormat
+            )
 
         case "new-workspace":
             let (commandOpt, rem0) = parseOption(commandArgs, name: "--command")
@@ -2587,6 +2571,64 @@ struct CMUXCLI {
         if expanded.hasPrefix("/") { return expanded }
         let cwd = FileManager.default.currentDirectoryPath
         return (cwd as NSString).appendingPathComponent(expanded)
+    }
+
+    /// Shared implementation for `c11 workspace apply` and its back-compat
+    /// alias `c11 workspace-apply`. Reads a JSON `WorkspaceApplyPlan` from a
+    /// file path (or `-` for stdin), POSTs it via `workspace.apply`, and
+    /// prints the `ApplyResult`. `commandLabel` is threaded into error
+    /// messages so operators know which spelling they invoked.
+    private func runWorkspaceApply(
+        _ args: [String],
+        client: SocketClient,
+        commandLabel: String,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) throws {
+        let (fileOpt, remaining) = parseOption(args, name: "--file")
+        if let unknown = remaining.first(where: { $0.hasPrefix("--") }) {
+            throw CLIError(message: "\(commandLabel): unknown flag '\(unknown)'. Known flags: --file <path|->")
+        }
+        guard let fileArg = fileOpt else {
+            throw CLIError(message: "\(commandLabel) requires --file <path|->")
+        }
+        let planData: Data
+        if fileArg == "-" {
+            planData = FileHandle.standardInput.readDataToEndOfFile()
+        } else {
+            let resolvedPath = resolvePath(fileArg)
+            guard let data = FileManager.default.contents(atPath: resolvedPath) else {
+                throw CLIError(message: "\(commandLabel): could not read '\(resolvedPath)'")
+            }
+            planData = data
+        }
+        guard let planObject = try? JSONSerialization.jsonObject(with: planData, options: []) else {
+            throw CLIError(message: "\(commandLabel): --file contents are not valid JSON")
+        }
+        let payload = try client.sendV2(method: "workspace.apply", params: ["plan": planObject])
+        if jsonOutput {
+            print(jsonString(formatIDs(payload, mode: idFormat)))
+        } else {
+            let ref = (payload["workspaceRef"] as? String) ?? "?"
+            let surfaceRefs = payload["surfaceRefs"] as? [String: String] ?? [:]
+            let paneRefs = payload["paneRefs"] as? [String: String] ?? [:]
+            let warnings = payload["warnings"] as? [String] ?? []
+            let failures = payload["failures"] as? [[String: Any]] ?? []
+            print("OK workspace=\(ref) surfaces=\(surfaceRefs.count) panes=\(paneRefs.count)")
+            if !warnings.isEmpty {
+                print("warnings: \(warnings.count)")
+                for w in warnings { print("  - \(w)") }
+            }
+            if !failures.isEmpty {
+                print("failures: \(failures.count)")
+                for f in failures {
+                    let code = (f["code"] as? String) ?? "?"
+                    let step = (f["step"] as? String) ?? "?"
+                    let msg = (f["message"] as? String) ?? ""
+                    print("  - [\(code)] \(step): \(msg)")
+                }
+            }
+        }
     }
 
     private func sanitizedFilenameComponent(_ raw: String) -> String {

@@ -208,6 +208,9 @@
 				D710DBF0A1B2C3D4E5F60718 /* MailboxOutboxWatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D710DBF1A1B2C3D4E5F60718 /* MailboxOutboxWatcherTests.swift */; };
 				D710EBF0A1B2C3D4E5F60718 /* MailboxDispatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = D710EBF1A1B2C3D4E5F60718 /* MailboxDispatcher.swift */; };
 				D710FBF0A1B2C3D4E5F60718 /* MailboxDispatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D710FBF1A1B2C3D4E5F60718 /* MailboxDispatcherTests.swift */; };
+				D7110BF0A1B2C3D4E5F60718 /* MailboxHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7110BF1A1B2C3D4E5F60718 /* MailboxHandler.swift */; };
+				D7111BF0A1B2C3D4E5F60718 /* StdinMailboxHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7111BF1A1B2C3D4E5F60718 /* StdinMailboxHandler.swift */; };
+				D7112BF0A1B2C3D4E5F60718 /* StdinHandlerFormattingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7112BF1A1B2C3D4E5F60718 /* StdinHandlerFormattingTests.swift */; };
 		/* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -462,6 +465,9 @@
 			D710DBF1A1B2C3D4E5F60718 /* MailboxOutboxWatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailboxOutboxWatcherTests.swift; sourceTree = "<group>"; };
 			D710EBF1A1B2C3D4E5F60718 /* MailboxDispatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/MailboxDispatcher.swift; sourceTree = "<group>"; };
 			D710FBF1A1B2C3D4E5F60718 /* MailboxDispatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailboxDispatcherTests.swift; sourceTree = "<group>"; };
+			D7110BF1A1B2C3D4E5F60718 /* MailboxHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/MailboxHandler.swift; sourceTree = "<group>"; };
+			D7111BF1A1B2C3D4E5F60718 /* StdinMailboxHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/StdinMailboxHandler.swift; sourceTree = "<group>"; };
+			D7112BF1A1B2C3D4E5F60718 /* StdinHandlerFormattingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StdinHandlerFormattingTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -628,6 +634,8 @@
 				D710ABF1A1B2C3D4E5F60718 /* MailboxSurfaceResolver.swift */,
 				D710CBF1A1B2C3D4E5F60718 /* MailboxOutboxWatcher.swift */,
 				D710EBF1A1B2C3D4E5F60718 /* MailboxDispatcher.swift */,
+				D7110BF1A1B2C3D4E5F60718 /* MailboxHandler.swift */,
+				D7111BF1A1B2C3D4E5F60718 /* StdinMailboxHandler.swift */,
 				A5008F12 /* SurfaceTitleBarView.swift */,
 				A5008F22 /* TitleFormatting.swift */,
 				A5001225 /* SocketControlSettings.swift */,
@@ -807,6 +815,7 @@
 					D710BBF1A1B2C3D4E5F60718 /* MailboxSurfaceResolverTests.swift */,
 					D710DBF1A1B2C3D4E5F60718 /* MailboxOutboxWatcherTests.swift */,
 					D710FBF1A1B2C3D4E5F60718 /* MailboxDispatcherTests.swift */,
+					D7112BF1A1B2C3D4E5F60718 /* StdinHandlerFormattingTests.swift */,
 				);
 				path = c11Tests;
 				sourceTree = "<group>";
@@ -997,6 +1006,8 @@
 			D710ABF0A1B2C3D4E5F60718 /* MailboxSurfaceResolver.swift in Sources */,
 			D710CBF0A1B2C3D4E5F60718 /* MailboxOutboxWatcher.swift in Sources */,
 			D710EBF0A1B2C3D4E5F60718 /* MailboxDispatcher.swift in Sources */,
+			D7110BF0A1B2C3D4E5F60718 /* MailboxHandler.swift in Sources */,
+			D7111BF0A1B2C3D4E5F60718 /* StdinMailboxHandler.swift in Sources */,
 				A5008F11 /* SurfaceTitleBarView.swift in Sources */,
 				A5008F21 /* TitleFormatting.swift in Sources */,
 				A5001226 /* SocketControlSettings.swift in Sources */,
@@ -1139,6 +1150,7 @@
 					D710BBF0A1B2C3D4E5F60718 /* MailboxSurfaceResolverTests.swift in Sources */,
 					D710DBF0A1B2C3D4E5F60718 /* MailboxOutboxWatcherTests.swift in Sources */,
 					D710FBF0A1B2C3D4E5F60718 /* MailboxDispatcherTests.swift in Sources */,
+					D7112BF0A1B2C3D4E5F60718 /* StdinHandlerFormattingTests.swift in Sources */,
 				);
 				runOnlyForDeploymentPostprocessing = 0;
 			};

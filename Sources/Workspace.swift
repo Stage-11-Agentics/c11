@@ -5527,6 +5527,21 @@ final class Workspace: Identifiable, ObservableObject {
         dispatcher.registerHandler(name: "silent") { _, _, _ in
             .init(outcome: .ok)
         }
+        let stdinHandler = StdinMailboxHandler { [weak self] surfaceId, text in
+            guard let self else { return .surfaceNotFound }
+            guard let panel = self.panels[surfaceId] else {
+                return .surfaceNotFound
+            }
+            guard let terminalPanel = panel as? TerminalPanel else {
+                return .surfaceNotTerminal
+            }
+            terminalPanel.sendText(text)
+            return .ok(bytes: text.utf8.count)
+        }
+        dispatcher.registerHandler(
+            name: "stdin",
+            stdinHandler.asDispatcherFunction()
+        )
         dispatcher.start()
         mailboxDispatcher = dispatcher
     }

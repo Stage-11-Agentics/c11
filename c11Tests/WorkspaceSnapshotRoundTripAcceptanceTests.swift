@@ -241,6 +241,132 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
         }
     }
 
+    // MARK: - P7: browser-first and markdown-first layouts
+
+    /// Phase 1 acceptance puts a terminal first. Phase 3 will exercise
+    /// non-terminal-first workspaces; the Phase 1 walker already handles
+    /// them, but there is no integration test. P7 adds one per
+    /// non-terminal kind and asserts that the distinguishing surface
+    /// field (`url` / `filePath`) round-trips and the trailing terminal
+    /// still receives `cc --resume <session-id>`.
+    func testCaptureAndRestoreBrowserFirstLayout() throws {
+        #if !DEBUG
+        throw XCTSkip("pendingInitialInputForTests is a DEBUG-only accessor; this acceptance test requires a debug build.")
+        #endif
+        try runMixedFirstFixtureRoundTrip(
+            fixtureName: "browser-first-mixed",
+            firstSurfaceId: "docs",
+            firstSurfaceKind: .browser,
+            distinguishingValue: "https://example.com",
+            trailingTerminalId: "driver"
+        )
+    }
+
+    func testCaptureAndRestoreMarkdownFirstLayout() throws {
+        #if !DEBUG
+        throw XCTSkip("pendingInitialInputForTests is a DEBUG-only accessor; this acceptance test requires a debug build.")
+        #endif
+        try runMixedFirstFixtureRoundTrip(
+            fixtureName: "markdown-first-mixed",
+            firstSurfaceId: "readme",
+            firstSurfaceKind: .markdown,
+            distinguishingValue: "/tmp/readme.md",
+            trailingTerminalId: "driver"
+        )
+    }
+
+    /// Shared body for the two P7 fixtures. Seeds the plan, captures, runs
+    /// the round-trip through the store + converter, restores with
+    /// restartRegistry: .phase1, and asserts both the distinguishing
+    /// non-terminal field and the `cc --resume` command on the trailing
+    /// terminal.
+    private func runMixedFirstFixtureRoundTrip(
+        fixtureName: String,
+        firstSurfaceId: String,
+        firstSurfaceKind: SurfaceSpecKind,
+        distinguishingValue: String,
+        trailingTerminalId: String
+    ) throws {
+        let seedPlan = try loadFixturePlan(named: fixtureName)
+        let deps = makeDependencies()
+        let seedResult = WorkspaceLayoutExecutor.apply(
+            seedPlan,
+            options: ApplyOptions(select: false),
+            dependencies: deps
+        )
+        XCTAssertFalse(seedResult.workspaceRef.isEmpty)
+        let workspace = try XCTUnwrap(resolveWorkspace(from: seedResult.workspaceRef))
+
+        let source = LiveWorkspaceSnapshotSource(
+            tabManager: tabManager,
+            c11Version: "acceptance+0"
+        )
+        let captured = try XCTUnwrap(source.capture(
+            workspaceId: workspace.id,
+            origin: .manual,
+            clock: { Date(timeIntervalSince1970: 1_745_000_000) }
+        ))
+
+        let tmp = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let store = WorkspaceSnapshotStore(
+            currentDirectory: tmp,
+            legacyDirectory: tmp.appendingPathComponent("legacy"),
+            fileManager: .default
+        )
+        let writtenURL = try store.write(captured)
+        let readBack = try store.read(from: writtenURL)
+        XCTAssertEqual(readBack.plan, captured.plan)
+
+        let planResult = WorkspaceSnapshotConverter.applyPlan(from: readBack)
+        guard case .success(var convertedPlan) = planResult else {
+            XCTFail("converter failed: \(planResult)")
+            return
+        }
+
+        // Distinguishing-field assertion on the captured plan: browser
+        // round-trips url, markdown round-trips filePath. This is what
+        // Phase 3 Blueprints will depend on when they author non-terminal
+        // surfaces.
+        let firstSurfaceInRoundTrip = try XCTUnwrap(
+            convertedPlan.surfaces.first { $0.id == firstSurfaceId }
+        )
+        XCTAssertEqual(firstSurfaceInRoundTrip.kind, firstSurfaceKind)
+        switch firstSurfaceKind {
+        case .browser:
+            XCTAssertEqual(firstSurfaceInRoundTrip.url, distinguishingValue)
+        case .markdown:
+            XCTAssertEqual(firstSurfaceInRoundTrip.filePath, distinguishingValue)
+        case .terminal:
+            XCTFail("P7 fixtures put a non-terminal first")
+        }
+
+        // Strip terminal commands so the registry is what decides what
+        // runs; this mirrors the primary acceptance test.
+        for idx in convertedPlan.surfaces.indices where convertedPlan.surfaces[idx].kind == .terminal {
+            convertedPlan.surfaces[idx].command = nil
+        }
+        let restoreDeps = makeDependencies()
+        let restoreResult = WorkspaceLayoutExecutor.apply(
+            convertedPlan,
+            options: ApplyOptions(select: false, restartRegistry: .phase1),
+            dependencies: restoreDeps
+        )
+        XCTAssertFalse(restoreResult.workspaceRef.isEmpty)
+        let restoredWorkspace = try XCTUnwrap(resolveWorkspace(from: restoreResult.workspaceRef))
+
+        // Trailing terminal receives `cc --resume <session-id>` via the
+        // registry. Same exact-match pattern as the mixed-claude-mailbox
+        // acceptance.
+        let terminalSpec = try XCTUnwrap(convertedPlan.surfaces.first { $0.id == trailingTerminalId })
+        let panelId = try XCTUnwrap(parseUUIDSuffix(restoreResult.surfaceRefs[terminalSpec.id]))
+        let terminal = try XCTUnwrap(restoredWorkspace.panels[panelId] as? TerminalPanel)
+        let sessionId = try XCTUnwrap(stringMetadataValue(terminalSpec.metadata, key: "claude.session_id"))
+        let expected = "cc --resume \(sessionId)\n"
+        let sent = terminalPendingInput(terminal) ?? ""
+        XCTAssertEqual(sent, expected)
+    }
+
     // MARK: - Helpers
 
     private func loadFixturePlan(named name: String) throws -> WorkspaceApplyPlan {

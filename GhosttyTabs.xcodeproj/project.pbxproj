@@ -24,6 +24,7 @@
 		D7010BF0A1B2C3D4E5F60718 /* PaneMetadataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7010BF1A1B2C3D4E5F60718 /* PaneMetadataStore.swift */; };
 		D8001BF0A1B2C3D4E5F60718 /* WorkspaceApplyPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8001BF1A1B2C3D4E5F60718 /* WorkspaceApplyPlan.swift */; };
 		D8002BF0A1B2C3D4E5F60718 /* WorkspaceApplyPlanCodableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8002BF1A1B2C3D4E5F60718 /* WorkspaceApplyPlanCodableTests.swift */; };
+		D8003BF0A1B2C3D4E5F60718 /* WorkspaceLayoutExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8003BF1A1B2C3D4E5F60718 /* WorkspaceLayoutExecutor.swift */; };
 		D7011BF0A1B2C3D4E5F60718 /* PaneMetadataStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7011BF1A1B2C3D4E5F60718 /* PaneMetadataStoreTests.swift */; };
 		D7012BF0A1B2C3D4E5F60718 /* PaneMetadataPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7012BF1A1B2C3D4E5F60718 /* PaneMetadataPersistenceTests.swift */; };
 		D7015BF0A1B2C3D4E5F60718 /* DefaultGridSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7015BF1A1B2C3D4E5F60718 /* DefaultGridSettingsTests.swift */; };
@@ -267,6 +268,7 @@
 		D7010BF1A1B2C3D4E5F60718 /* PaneMetadataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneMetadataStore.swift; sourceTree = "<group>"; };
 		D8001BF1A1B2C3D4E5F60718 /* WorkspaceApplyPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceApplyPlan.swift; sourceTree = "<group>"; };
 		D8002BF1A1B2C3D4E5F60718 /* WorkspaceApplyPlanCodableTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceApplyPlanCodableTests.swift; sourceTree = "<group>"; };
+		D8003BF1A1B2C3D4E5F60718 /* WorkspaceLayoutExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceLayoutExecutor.swift; sourceTree = "<group>"; };
 		D7011BF1A1B2C3D4E5F60718 /* PaneMetadataStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneMetadataStoreTests.swift; sourceTree = "<group>"; };
 		D7012BF1A1B2C3D4E5F60718 /* PaneMetadataPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneMetadataPersistenceTests.swift; sourceTree = "<group>"; };
 		D7015BF1A1B2C3D4E5F60718 /* DefaultGridSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultGridSettingsTests.swift; sourceTree = "<group>"; };
@@ -574,6 +576,7 @@
 				D7005BF1A1B2C3D4E5F60718 /* PersistedMetadata.swift */,
 				D7010BF1A1B2C3D4E5F60718 /* PaneMetadataStore.swift */,
 				D8001BF1A1B2C3D4E5F60718 /* WorkspaceApplyPlan.swift */,
+				D8003BF1A1B2C3D4E5F60718 /* WorkspaceLayoutExecutor.swift */,
 				A5001545 /* AgentDetector.swift */,
 				A5001701 /* TextBoxInput.swift */,
 				A5F1002001A1B2C3D4E5F001 /* ThemedValueAST.swift */,
@@ -929,6 +932,7 @@
 				D7005BF0A1B2C3D4E5F60718 /* PersistedMetadata.swift in Sources */,
 				D7010BF0A1B2C3D4E5F60718 /* PaneMetadataStore.swift in Sources */,
 				D8001BF0A1B2C3D4E5F60718 /* WorkspaceApplyPlan.swift in Sources */,
+				D8003BF0A1B2C3D4E5F60718 /* WorkspaceLayoutExecutor.swift in Sources */,
 				A5001544 /* AgentDetector.swift in Sources */,
 			A5001700 /* TextBoxInput.swift in Sources */,
 			A5F1001001A1B2C3D4E5F001 /* ThemedValueAST.swift in Sources */,

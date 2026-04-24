@@ -6051,6 +6051,29 @@ final class Workspace: Identifiable, ObservableObject {
         }
     }
 
+    /// Merge operator-authored entries into `metadata` (workspace-scoped).
+    /// Trimmed empty values clear their keys; trimmed non-empty values
+    /// overwrite. Mirrors the shape of `SessionWorkspaceSnapshot.metadata`
+    /// at the plan/snapshot boundary so `WorkspaceLayoutExecutor` and
+    /// Phase 1 Snapshot restore can land values through one setter.
+    func setOperatorMetadata(_ entries: [String: String]) {
+        guard !entries.isEmpty else { return }
+        var next = metadata
+        for (rawKey, rawValue) in entries {
+            let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !key.isEmpty else { continue }
+            let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                next.removeValue(forKey: key)
+            } else {
+                next[key] = trimmed
+            }
+        }
+        if next != metadata {
+            metadata = next
+        }
+    }
+
     // MARK: - Directory Updates
 
     func updatePanelDirectory(panelId: UUID, directory: String) {

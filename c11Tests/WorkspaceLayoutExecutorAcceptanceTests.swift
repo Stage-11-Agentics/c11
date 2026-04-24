@@ -1,4 +1,5 @@
 import XCTest
+import Bonsplit
 
 #if canImport(cmux_DEV)
 @testable import cmux_DEV
@@ -8,8 +9,16 @@ import XCTest
 
 /// Acceptance fixture for `WorkspaceLayoutExecutor`. Runs each of five
 /// `WorkspaceApplyPlan` JSON fixtures through the executor on a real
-/// `TabManager` and asserts the workspace materializes in under 2 s —
-/// the per-fixture budget from the Phase 0 plan.
+/// `TabManager` and verifies three things:
+///
+/// 1. Every plan-local surface id appears in `result.surfaceRefs` and
+///    `result.paneRefs`.
+/// 2. The live bonsplit tree shape — split orientations, divider positions,
+///    pane tab ordering, selected tab — matches the fixture's `LayoutTreeSpec`.
+///    Without this assertion, a broken layout walker can produce malformed
+///    geometry and still satisfy surface-ref coverage (review cycle 1 B1/B2).
+/// 3. Every `SurfaceSpec.metadata` / `SurfaceSpec.paneMetadata` entry in the
+///    fixture round-trips through `SurfaceMetadataStore` / `PaneMetadataStore`.
 ///
 /// Per `CLAUDE.md`, tests are never run locally by the impl agent; this file
 /// is committed and exercised only in CI.
@@ -18,17 +27,13 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
 
     // MARK: - Fixtures
 
-    private static let fixtureNames = [
-        "welcome-quad",
-        "default-grid",
-        "single-large-with-metadata",
-        "mixed-browser-markdown",
-        "deep-nested-splits"
-    ]
-
     /// Budget per fixture in milliseconds. Matches `ApplyOptions.perStepTimeoutMs`
     /// default and the plan's acceptance target.
     private static let perFixtureBudgetMs: Double = 2_000
+
+    /// Divider positions are floating-point; allow a small tolerance when
+    /// comparing plan value vs. live bonsplit value.
+    private static let dividerTolerance: Double = 0.001
 
     // MARK: - Setup
 
@@ -55,36 +60,10 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
     }
 
     func testAppliesSingleLargeWithMetadataFixture() throws {
-        let result = try runFixture(
+        try runFixture(
             named: "single-large-with-metadata",
             expectedSurfaceIds: ["main"]
         )
-        // Workspace-level metadata should land on the workspace.
-        let workspaceId = try XCTUnwrap(UUID(uuidString: result.workspaceRef.replacingOccurrences(of: "workspace:", with: "")))
-        let workspace = try XCTUnwrap(tabManager.tabs.first { $0.id == workspaceId })
-        XCTAssertEqual(workspace.metadata["description"], "single-pane driver session with mailbox config")
-
-        // Surface metadata round-trips through SurfaceMetadataStore.
-        let mainPanelId = try XCTUnwrap(
-            panelId(forSurfaceRef: result.surfaceRefs["main"], workspace: workspace)
-        )
-        let (surfaceMetadata, _) = SurfaceMetadataStore.shared.getMetadata(
-            workspaceId: workspace.id,
-            surfaceId: mainPanelId
-        )
-        XCTAssertEqual(surfaceMetadata["role"] as? String, "driver")
-        XCTAssertEqual(surfaceMetadata["status"] as? String, "ready")
-        XCTAssertEqual(surfaceMetadata["description"] as? String, "cc session with mailbox.* subscription")
-
-        // mailbox.* pane metadata round-trips verbatim through PaneMetadataStore.
-        let paneId = try XCTUnwrap(workspace.paneIdForPanel(mainPanelId)?.id)
-        let (paneMetadata, _) = PaneMetadataStore.shared.getMetadata(
-            workspaceId: workspace.id,
-            paneId: paneId
-        )
-        XCTAssertEqual(paneMetadata["mailbox.delivery"] as? String, "stdin,watch")
-        XCTAssertEqual(paneMetadata["mailbox.subscribe"] as? String, "build.*,deploy.green")
-        XCTAssertEqual(paneMetadata["mailbox.retention_days"] as? String, "7")
     }
 
     func testAppliesMixedBrowserMarkdownFixture() throws {
@@ -121,6 +100,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             dependencies: deps
         )
 
+        // 1. Surface / pane ref coverage.
         XCTAssertFalse(result.workspaceRef.isEmpty, "workspaceRef populated for \(name)")
         XCTAssertEqual(
             Set(result.surfaceRefs.keys),
@@ -137,6 +117,36 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             "no validation_failed entries in \(name): \(result.failures)"
         )
 
+        let workspace = try XCTUnwrap(
+            resolveWorkspace(from: result.workspaceRef),
+            "workspaceRef \(result.workspaceRef) resolves to a live Workspace"
+        )
+
+        // 2. Structural assertion against bonsplit treeSnapshot.
+        let liveTree = workspace.bonsplitController.treeSnapshot()
+        let planSurfaceIdToPanelUUID = Dictionary(uniqueKeysWithValues: result.surfaceRefs
+            .compactMap { (planId, ref) -> (String, UUID)? in
+                guard let uuid = parseUUIDSuffix(ref) else { return nil }
+                return (planId, uuid)
+            })
+        compareStructure(
+            fixtureName: name,
+            path: "layout",
+            plan: plan.layout,
+            live: liveTree,
+            planSurfaceIdToPanelUUID: planSurfaceIdToPanelUUID,
+            workspace: workspace
+        )
+
+        // 3. Metadata round-trip for every fixture that declares metadata.
+        assertMetadataRoundTrip(
+            fixtureName: name,
+            plan: plan,
+            result: result,
+            workspace: workspace
+        )
+
+        // 4. Timing budget.
         let totalMs = result.timings.first { $0.step == "total" }?.durationMs ?? .infinity
         XCTAssertLessThan(
             totalMs,
@@ -156,12 +166,276 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         return try JSONDecoder().decode(WorkspaceApplyPlan.self, from: data)
     }
 
-    private func panelId(forSurfaceRef ref: String?, workspace: Workspace) -> UUID? {
+    // MARK: - Workspace lookup
+
+    private func resolveWorkspace(from ref: String) -> Workspace? {
+        guard let uuid = parseUUIDSuffix(ref) else { return nil }
+        return tabManager.tabs.first { $0.id == uuid }
+    }
+
+    private func parseUUIDSuffix(_ ref: String?) -> UUID? {
         guard let ref = ref,
-              let uuidString = ref.split(separator: ":").last,
-              let uuid = UUID(uuidString: String(uuidString)) else {
+              let uuidString = ref.split(separator: ":").last else {
             return nil
         }
-        return workspace.panels[uuid] != nil ? uuid : nil
+        return UUID(uuidString: String(uuidString))
+    }
+
+    // MARK: - Structural comparison
+
+    /// Walk plan and live trees in lockstep. Every divergence (shape,
+    /// orientation, divider position, tab order, selected tab) fails the
+    /// test with a fixture-and-path-qualified message so breakage points at
+    /// the specific subtree that disagrees.
+    private func compareStructure(
+        fixtureName: String,
+        path: String,
+        plan: LayoutTreeSpec,
+        live: ExternalTreeNode,
+        planSurfaceIdToPanelUUID: [String: UUID],
+        workspace: Workspace
+    ) {
+        switch (plan, live) {
+        case (.split(let planSplit), .split(let liveSplit)):
+            XCTAssertEqual(
+                planSplit.orientation.rawValue,
+                liveSplit.orientation,
+                "[\(fixtureName) @ \(path)] split orientation mismatch"
+            )
+            XCTAssertEqual(
+                planSplit.dividerPosition,
+                liveSplit.dividerPosition,
+                accuracy: Self.dividerTolerance,
+                "[\(fixtureName) @ \(path)] dividerPosition mismatch"
+            )
+            compareStructure(
+                fixtureName: fixtureName,
+                path: "\(path).first",
+                plan: planSplit.first,
+                live: liveSplit.first,
+                planSurfaceIdToPanelUUID: planSurfaceIdToPanelUUID,
+                workspace: workspace
+            )
+            compareStructure(
+                fixtureName: fixtureName,
+                path: "\(path).second",
+                plan: planSplit.second,
+                live: liveSplit.second,
+                planSurfaceIdToPanelUUID: planSurfaceIdToPanelUUID,
+                workspace: workspace
+            )
+        case (.pane(let planPane), .pane(let livePane)):
+            comparePane(
+                fixtureName: fixtureName,
+                path: path,
+                planPane: planPane,
+                livePane: livePane,
+                planSurfaceIdToPanelUUID: planSurfaceIdToPanelUUID,
+                workspace: workspace
+            )
+        case (.split, .pane):
+            XCTFail("[\(fixtureName) @ \(path)] plan expected split, live is pane")
+        case (.pane, .split):
+            XCTFail("[\(fixtureName) @ \(path)] plan expected pane, live is split")
+        }
+    }
+
+    private func comparePane(
+        fixtureName: String,
+        path: String,
+        planPane: LayoutTreeSpec.PaneSpec,
+        livePane: ExternalPaneNode,
+        planSurfaceIdToPanelUUID: [String: UUID],
+        workspace: Workspace
+    ) {
+        // Resolve the bonsplit tab ids back to plan-local surface ids so the
+        // assertion compares like for like. Tabs whose panel id doesn't
+        // resolve to a plan surface are surfaced as "unknown" in the
+        // assertion message — they indicate a stray seed or leaked panel.
+        let panelUUIDToPlanId = Dictionary(
+            uniqueKeysWithValues: planSurfaceIdToPanelUUID.map { ($0.value, $0.key) }
+        )
+        let livePlanIds: [String] = livePane.tabs.map { tab in
+            guard let panelId = workspace.panelIdFromSurfaceId(tab.id),
+                  let planId = panelUUIDToPlanId[panelId] else {
+                return "unknown(\(tab.id))"
+            }
+            return planId
+        }
+        XCTAssertEqual(
+            livePlanIds,
+            planPane.surfaceIds,
+            "[\(fixtureName) @ \(path)] pane tab ordering mismatch"
+        )
+
+        let expectedSelectedIndex = planPane.selectedIndex ?? 0
+        if expectedSelectedIndex >= 0, expectedSelectedIndex < planPane.surfaceIds.count {
+            let expectedSurfaceId = planPane.surfaceIds[expectedSelectedIndex]
+            guard let expectedPanelId = planSurfaceIdToPanelUUID[expectedSurfaceId],
+                  let expectedTabId = workspace.surfaceIdFromPanelId(expectedPanelId) else {
+                XCTFail("[\(fixtureName) @ \(path)] could not resolve expected selected surface \(expectedSurfaceId)")
+                return
+            }
+            XCTAssertEqual(
+                livePane.selectedTabId,
+                expectedTabId,
+                "[\(fixtureName) @ \(path)] selectedTabId mismatch (expected surface \(expectedSurfaceId))"
+            )
+        }
+    }
+
+    // MARK: - Metadata round-trip
+
+    /// For every `SurfaceSpec` in the plan, verify that declared surface and
+    /// pane metadata landed in the respective stores. Absent metadata is a
+    /// no-op — fixtures don't need entries they don't care about.
+    private func assertMetadataRoundTrip(
+        fixtureName: String,
+        plan: WorkspaceApplyPlan,
+        result: ApplyResult,
+        workspace: Workspace
+    ) {
+        // Workspace-level metadata.
+        if let entries = plan.workspace.metadata {
+            for (key, expected) in entries {
+                XCTAssertEqual(
+                    workspace.metadata[key],
+                    expected,
+                    "[\(fixtureName)] workspace.metadata[\"\(key)\"] round-trip"
+                )
+            }
+        }
+        if let expectedTitle = plan.workspace.title {
+            XCTAssertEqual(
+                workspace.customTitle,
+                expectedTitle,
+                "[\(fixtureName)] workspace customTitle matches plan.workspace.title"
+            )
+        }
+
+        for surfaceSpec in plan.surfaces {
+            guard let panelId = parseUUIDSuffix(result.surfaceRefs[surfaceSpec.id]) else {
+                continue
+            }
+            let paneUUID = workspace.paneIdForPanel(panelId)?.id
+
+            // Surface-level metadata.
+            let (surfaceMetadata, _) = SurfaceMetadataStore.shared.getMetadata(
+                workspaceId: workspace.id,
+                surfaceId: panelId
+            )
+            if let title = surfaceSpec.title {
+                XCTAssertEqual(
+                    surfaceMetadata["title"] as? String,
+                    title,
+                    "[\(fixtureName)] surface[\(surfaceSpec.id)] title in SurfaceMetadataStore"
+                )
+            }
+            if let description = surfaceSpec.description?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !description.isEmpty {
+                XCTAssertEqual(
+                    surfaceMetadata["description"] as? String,
+                    description,
+                    "[\(fixtureName)] surface[\(surfaceSpec.id)] description in SurfaceMetadataStore"
+                )
+            }
+            if let metadata = surfaceSpec.metadata {
+                for (key, expected) in metadata {
+                    assertMetadataValueMatches(
+                        fixtureName: fixtureName,
+                        storeName: "SurfaceMetadataStore",
+                        surfaceId: surfaceSpec.id,
+                        key: key,
+                        expected: expected,
+                        actual: surfaceMetadata[key]
+                    )
+                }
+            }
+
+            // Pane-level metadata (including the reserved `mailbox.*` namespace).
+            if let paneMetadata = surfaceSpec.paneMetadata,
+               !paneMetadata.isEmpty,
+               let paneUUID {
+                let (livePaneMetadata, _) = PaneMetadataStore.shared.getMetadata(
+                    workspaceId: workspace.id,
+                    paneId: paneUUID
+                )
+                for (key, expected) in paneMetadata {
+                    // v1 strings-only: non-string values on `mailbox.*` are
+                    // intentionally dropped with an ApplyFailure. The round-trip
+                    // assertion skips those; presence of the matching failure
+                    // is verified separately.
+                    if key.hasPrefix("mailbox."), case .string = expected {
+                        // fall through to the assertion
+                    } else if key.hasPrefix("mailbox.") {
+                        XCTAssertTrue(
+                            result.failures.contains {
+                                $0.code == "mailbox_non_string_value"
+                                    && $0.message.contains("[\(key)")
+                            },
+                            "[\(fixtureName)] surface[\(surfaceSpec.id)] non-string mailbox.\(key) emits ApplyFailure"
+                        )
+                        XCTAssertNil(
+                            livePaneMetadata[key],
+                            "[\(fixtureName)] surface[\(surfaceSpec.id)] non-string mailbox.\(key) dropped from store"
+                        )
+                        continue
+                    }
+                    assertMetadataValueMatches(
+                        fixtureName: fixtureName,
+                        storeName: "PaneMetadataStore",
+                        surfaceId: surfaceSpec.id,
+                        key: key,
+                        expected: expected,
+                        actual: livePaneMetadata[key]
+                    )
+                }
+            }
+        }
+    }
+
+    /// Compare a `PersistedJSONValue` expected value to whatever the store
+    /// returned (the store speaks `[String: Any]`). Scalars are matched
+    /// directly; containers are normalized through JSON to avoid leaking
+    /// Swift-specific equality rules into the assertion.
+    private func assertMetadataValueMatches(
+        fixtureName: String,
+        storeName: String,
+        surfaceId: String,
+        key: String,
+        expected: PersistedJSONValue,
+        actual: Any?
+    ) {
+        let qualifier = "[\(fixtureName)] \(storeName) surface[\(surfaceId)] \(key)"
+        switch expected {
+        case .string(let value):
+            XCTAssertEqual(actual as? String, value, "\(qualifier): string")
+        case .bool(let value):
+            XCTAssertEqual(actual as? Bool, value, "\(qualifier): bool")
+        case .number(let value):
+            if let actualDouble = (actual as? NSNumber)?.doubleValue ?? (actual as? Double) {
+                XCTAssertEqual(actualDouble, value, accuracy: 0.0001, "\(qualifier): number")
+            } else {
+                XCTFail("\(qualifier): expected number \(value), got \(String(describing: actual))")
+            }
+        case .null:
+            XCTAssertNil(actual, "\(qualifier): null")
+        case .array, .object:
+            // Containers: compare JSON round-trips. This keeps the assertion
+            // honest without enumerating every container layout.
+            guard let actual = actual,
+                  let expectedData = try? JSONEncoder().encode(expected),
+                  let actualData = try? JSONSerialization.data(withJSONObject: actual),
+                  let expectedJSON = try? JSONSerialization.jsonObject(with: expectedData),
+                  let actualJSON = try? JSONSerialization.jsonObject(with: actualData) else {
+                XCTFail("\(qualifier): container comparison failed; expected=\(expected), actual=\(String(describing: actual))")
+                return
+            }
+            XCTAssertEqual(
+                String(describing: actualJSON),
+                String(describing: expectedJSON),
+                "\(qualifier): container round-trip"
+            )
+        }
     }
 }

@@ -854,20 +854,37 @@ private enum CLISocketPathResolver {
     }
 }
 
+// Policy a sendV2 caller declares for how long the CLI will wait for the server response.
+// Long-running operations (browser.wait, browser.download.wait, pane.confirm) use .none so
+// their server-side timeouts control the wall-clock bound without a competing CLI deadline.
+enum SocketDeadline {
+    case `default`            // C11_DEFAULT_SOCKET_DEADLINE_MS / CMUX_ fallback / 10 s hard default
+    case none                 // No CLI-side deadline; server timeout governs
+    case custom(TimeInterval) // Explicit seconds (reserved for future use)
+}
+
 final class SocketClient {
     private let path: String
     private var socketFD: Int32 = -1
-    private static let defaultResponseTimeoutSeconds: TimeInterval = 15.0
-    private static let multilineResponseIdleTimeoutSeconds: TimeInterval = 0.12
-    private static let responseTimeoutSeconds: TimeInterval = {
+
+    // Default deadline: 10 s, tunable via env. Dual-read: C11_* primary, CMUX_* compat.
+    // Legacy CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC (seconds) honoured for backward compat.
+    static let configuredDefaultDeadlineSeconds: TimeInterval = {
         let env = ProcessInfo.processInfo.environment
-        if let raw = env["CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC"],
-           let seconds = Double(raw),
-           seconds > 0 {
-            return seconds
+        for key in ["C11_DEFAULT_SOCKET_DEADLINE_MS", "CMUX_DEFAULT_SOCKET_DEADLINE_MS"] {
+            if let raw = env[key], let ms = Double(raw), ms > 0 { return ms / 1000 }
         }
-        return defaultResponseTimeoutSeconds
+        if let raw = env["CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC"], let s = Double(raw), s > 0 { return s }
+        return 10.0
     }()
+
+    // C11_TRACE=1 (or CMUX_TRACE=1) prints per-request start/end/timing lines to stderr.
+    static let traceEnabled: Bool = {
+        let env = ProcessInfo.processInfo.environment
+        return env["C11_TRACE"] == "1" || env["CMUX_TRACE"] == "1"
+    }()
+
+    private static let multilineResponseIdleTimeoutSeconds: TimeInterval = 0.12
 
     init(path: String) {
         self.path = path
@@ -889,7 +906,13 @@ final class SocketClient {
         }
     }
 
+    // Backward-compat overload: uses the configured default deadline.
     func send(command: String) throws -> String {
+        try send(command: command, responseTimeout: Self.configuredDefaultDeadlineSeconds)
+    }
+
+    // responseTimeout: nil = no SO_RCVTIMEO (unbounded); >0 = initial-read deadline in seconds.
+    func send(command: String, responseTimeout: TimeInterval?) throws -> String {
         guard socketFD >= 0 else { throw CLIError(message: "Not connected") }
         let payload = command + "\n"
         try payload.withCString { ptr in
@@ -904,7 +927,7 @@ final class SocketClient {
 
         while true {
             try configureReceiveTimeout(
-                sawNewline ? Self.multilineResponseIdleTimeoutSeconds : Self.responseTimeoutSeconds
+                sawNewline ? Self.multilineResponseIdleTimeoutSeconds : responseTimeout
             )
 
             var buffer = [UInt8](repeating: 0, count: 8192)
@@ -984,11 +1007,17 @@ final class SocketClient {
         )
     }
 
-    private func configureReceiveTimeout(_ timeout: TimeInterval) throws {
-        var interval = timeval(
-            tv_sec: Int(timeout.rounded(.down)),
-            tv_usec: __darwin_suseconds_t((timeout - floor(timeout)) * 1_000_000)
-        )
+    // timeout == nil clears SO_RCVTIMEO (no deadline). timeout > 0 sets the deadline.
+    private func configureReceiveTimeout(_ timeout: TimeInterval?) throws {
+        var interval: timeval
+        if let t = timeout, t > 0 {
+            interval = timeval(
+                tv_sec: Int(t.rounded(.down)),
+                tv_usec: __darwin_suseconds_t((t - floor(t)) * 1_000_000)
+            )
+        } else {
+            interval = timeval(tv_sec: 0, tv_usec: 0)
+        }
         let result = withUnsafePointer(to: &interval) { ptr in
             setsockopt(
                 socketFD,
@@ -1122,34 +1151,82 @@ final class SocketClient {
         return nil
     }
 
-    func sendV2(method: String, params: [String: Any] = [:]) throws -> [String: Any] {
+    func sendV2(method: String, params: [String: Any] = [:], deadline: SocketDeadline = .default) throws -> [String: Any] {
+        let effectiveTimeout: TimeInterval?
+        switch deadline {
+        case .default: effectiveTimeout = Self.configuredDefaultDeadlineSeconds
+        case .none: effectiveTimeout = nil
+        case .custom(let t): effectiveTimeout = t > 0 ? t : nil
+        }
+
+        let startTime = Date()
+        var traceStatus = "ok"
+
+        if Self.traceEnabled {
+            let refs = traceRefs(from: params)
+            let refsStr = refs.isEmpty ? "" : "(\(refs)) "
+            FileHandle.standardError.write(
+                Data("[c11-trace] -> \(method) \(refsStr)socket=\(path)\n".utf8)
+            )
+        }
+        defer {
+            if Self.traceEnabled {
+                let ms = Int((Date().timeIntervalSince(startTime) * 1000).rounded())
+                FileHandle.standardError.write(
+                    Data("[c11-trace] <- \(method) elapsed=\(ms)ms status=\(traceStatus)\n".utf8)
+                )
+            }
+        }
+
         let request: [String: Any] = [
             "id": UUID().uuidString,
             "method": method,
             "params": params
         ]
         guard JSONSerialization.isValidJSONObject(request) else {
+            traceStatus = "error"
             throw CLIError(message: "Failed to encode v2 request")
         }
 
         let requestData = try JSONSerialization.data(withJSONObject: request, options: [])
         guard let requestLine = String(data: requestData, encoding: .utf8) else {
+            traceStatus = "error"
             throw CLIError(message: "Failed to encode v2 request")
         }
 
-        let raw = try send(command: requestLine)
+        let raw: String
+        do {
+            raw = try send(command: requestLine, responseTimeout: effectiveTimeout)
+        } catch let err as CLIError where err.message == "Command timed out" {
+            traceStatus = "timeout"
+            let elapsedMs = Int((Date().timeIntervalSince(startTime) * 1000).rounded())
+            var parts = ["method=\(method)"]
+            if let ws = params["workspace_id"] as? String { parts.append("workspace=\(ws)") }
+            if let surf = params["surface_id"] as? String { parts.append("surface=\(surf)") }
+            if let pane = params["pane_id"] as? String { parts.append("pane=\(pane)") }
+            if let panel = params["panel_id"] as? String { parts.append("panel=\(panel)") }
+            parts.append("socket=\(path)")
+            parts.append("elapsed_ms=\(elapsedMs)")
+            throw CLIError(message: "c11: timeout: \(parts.joined(separator: " "))")
+        } catch {
+            traceStatus = "error"
+            throw error
+        }
 
         // The server may return plain-text errors (e.g., "ERROR: Access denied ...")
         // before the JSON protocol starts. Surface these directly instead of letting
         // JSONSerialization throw a confusing parse error.
         if raw.hasPrefix("ERROR:") {
+            traceStatus = "error"
             throw CLIError(message: raw)
         }
 
         guard let responseData = raw.data(using: .utf8) else {
+            traceStatus = "error"
             throw CLIError(message: "Invalid UTF-8 v2 response")
         }
         guard let response = try JSONSerialization.jsonObject(with: responseData, options: []) as? [String: Any] else {
+            traceStatus = "error"
             throw CLIError(message: "Invalid v2 response: \(raw)")
         }
 
@@ -1158,12 +1235,23 @@ final class SocketClient {
         }
 
         if let error = response["error"] as? [String: Any] {
+            traceStatus = "error"
             let code = (error["code"] as? String) ?? "error"
             let message = (error["message"] as? String) ?? "Unknown v2 error"
             throw CLIError(message: "\(code): \(message)")
         }
 
+        traceStatus = "error"
         throw CLIError(message: "v2 request failed")
+    }
+
+    private func traceRefs(from params: [String: Any]) -> String {
+        var parts: [String] = []
+        if let ws = params["workspace_id"] as? String { parts.append("workspace=\(ws)") }
+        if let surf = params["surface_id"] as? String { parts.append("surface=\(surf)") }
+        if let pane = params["pane_id"] as? String { parts.append("pane=\(pane)") }
+        if let panel = params["panel_id"] as? String { parts.append("panel=\(panel)") }
+        return parts.joined(separator: " ")
     }
 }
 
@@ -1898,7 +1986,7 @@ struct CMUXCLI {
             if let cancelLabel = optionValue(commandArgs, name: "--cancel-label") {
                 params["cancel_label"] = cancelLabel
             }
-            let payload = try client.sendV2(method: "pane.confirm", params: params)
+            let payload = try client.sendV2(method: "pane.confirm", params: params, deadline: .none)
             // Exit code maps to outcome: 0=ok, 2=cancel, 3=dismissed, 1=error.
             // Note: socket reports timeout as "dismissed" (exit 3); the user
             // cannot distinguish a timeout from a panel-teardown from the CLI.
@@ -5247,7 +5335,7 @@ struct CMUXCLI {
                 params["timeout_ms"] = max(1, Int(seconds * 1000.0))
             }
 
-            let payload = try client.sendV2(method: "browser.wait", params: params)
+            let payload = try client.sendV2(method: "browser.wait", params: params, deadline: .none)
             output(payload, fallback: "OK")
             return
         }
@@ -5782,7 +5870,7 @@ struct CMUXCLI {
                 params["timeout_ms"] = max(1, Int(seconds * 1000.0))
             }
 
-            let payload = try client.sendV2(method: "browser.download.wait", params: params)
+            let payload = try client.sendV2(method: "browser.download.wait", params: params, deadline: .none)
             output(payload, fallback: "OK")
             return
         }

@@ -42,7 +42,7 @@
 - **Two interfaces for content, one interface for config.** Send/recv: direct file I/O **or** `c11 mailbox …` CLI, equivalent and parity-tested. Configure: `c11 mailbox configure` (wraps the same metadata commands the rest of c11 uses).
 - **Socket is for live streams, not storage.** `c11 mailbox watch` uses the socket (long-lived connection). Send / recv go through files.
 - **Delivery is framed text into the PTY** for stdin-delivery agents; for others, delivery runs through handlers declared in pane metadata. PTY writes are **asynchronous with a 500 ms timeout** — they are not the queue, the inbox is.
-- **At-least-once delivery.** Envelopes survive dispatcher crashes; periodic sweep re-delivers on restart. **Receivers dedupe by `id`.** This is the contract.
+- **At-least-once delivery (steady-state).** Envelopes survive dispatcher restarts for files already in `_outbox/`; the on-start scan picks them up. **Stage 2 caveat:** full at-least-once under dispatcher-crash-while-processing requires the `_processing/` recovery sweep shipping in Stage 3. **Receivers dedupe by `id`.** This is the contract.
 - **Receiver-declared, sender-hints.** Recipients declare how they want messages delivered via their own pane metadata. Senders can add attributes (`urgent: true`, …) that handlers may or may not honor.
 - **Per-workspace scoping.** Mailbox trees are sealed per workspace. Cross-workspace messaging is out of scope for v1.
 - **Grammar is the skill.** The `c11` skill teaches the XML-tag format, default protocol, file layout, and CLI shortcuts.
@@ -423,7 +423,8 @@ Agents discover topics in v1 by reading each other's pane metadata (`c11 get-met
 ## 5. Delivery semantics — at-least-once, dedupe by id
 
 **The contract:**
-- **Durable to inbox at-least-once.** Once an envelope lands in `_outbox/`, it reaches every resolved recipient's inbox at least once. A dispatcher crash between inbox copy and `_processing/` cleanup causes the sweep to re-deliver on restart.
+- **Durable to inbox at-least-once (steady-state).** Once an envelope lands in `_outbox/` while the dispatcher is running, it reaches every resolved recipient's inbox at least once. Restarts pick up pre-existing `_outbox/*.msg` files on start (see `MailboxOutboxWatcher.start`).
+- **Stage-2 caveat: crash-recovery for `_processing/` is Stage 3.** If the dispatcher is killed mid-dispatch after an envelope has moved to `_processing/` but before the inbox copy finishes, Stage 2 does not sweep `_processing/` back to `_outbox/` on restart. Those envelopes are stranded until Stage 3 ships the recovery sweep. The steady-state at-least-once claim above holds; the crash-while-processing corner of at-least-once does not, and callers that care MUST rely on reply chains or application-level retries until Stage 3.
 - **Best-effort to handler.** Handler invocation (PTY write, watch stream, etc.) may fail independently without affecting inbox durability. Handler outcomes are recorded in `_dispatch.log`.
 - **Receivers dedupe by `id`.** Because at-most-once is not achievable (cleanup isn't atomic with dispatch), receivers MUST tolerate duplicates. Deduplication is trivial: maintain a short-lived seen-id set and skip already-processed IDs.
 

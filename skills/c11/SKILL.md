@@ -454,7 +454,8 @@ c11 mailbox inbox-dir                           # absolute path of your inbox
 - **No `watch` handler.** `c11 mailbox watch` is unimplemented; use `c11 mailbox tail` to follow the dispatch log.
 - **No `c11 mailbox configure` convenience.** Set `mailbox.delivery` / `mailbox.subscribe` / `mailbox.retention_days` via `c11 set-metadata` for now.
 - **No `body_ref` read-through.** The schema accepts the field and the dispatcher stores it; reading external bodies is the recipient's job for now.
-- **No per-surface inbox cap or `_processing/` crash recovery.** Stage 3 adds both.
+- **At-least-once is steady-state only.** Envelopes sitting in `_outbox/` when c11 restarts do get picked up on next start. But if c11 is killed *between* moving an envelope into `_processing/` and finishing the inbox copy, the envelope is stranded there until Stage 3 ships the `_processing/` recovery sweep. Callers that care about crash-window durability should pair with reply-chain retries or application-level tracking until then.
+- **No per-surface inbox cap.** Stage 3 adds this alongside the crash-recovery sweep.
 
 ## References
 

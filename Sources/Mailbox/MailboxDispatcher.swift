@@ -92,6 +92,15 @@ final class MailboxDispatcher {
     /// Idempotent: calling again after `start` is a no-op. Returns whether the
     /// dispatcher took ownership (false if the state directory couldn't be
     /// created).
+    ///
+    /// **At-least-once is steady-state only in Stage 2.** Pre-existing
+    /// envelopes in `_outbox/` are picked up by the watcher's initial
+    /// scan below. Envelopes stranded in `_processing/` after a prior
+    /// dispatcher was killed mid-flight are NOT swept back to `_outbox/`
+    /// here — that recovery pass is Stage 3 scope.
+    /// TODO(stage-3): move surviving `_processing/*.msg` back to
+    /// `_outbox/` (or re-dispatch directly) on start so at-least-once
+    /// holds across dispatcher-crash-while-processing.
     @discardableResult
     func start() -> Bool {
         if watcher != nil { return true }

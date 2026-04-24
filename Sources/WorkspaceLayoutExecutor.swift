@@ -296,6 +296,17 @@ enum WorkspaceLayoutExecutor {
         ) {
             return failure
         }
+        // Every SurfaceSpec must be referenced from the layout tree.
+        // Orphan entries otherwise silently vanish — cycle 2 finding
+        // (Codex). Sorting keeps the error message deterministic.
+        let orphans = known.subtracting(referencedIds).sorted()
+        if !orphans.isEmpty {
+            return ApplyFailure(
+                code: "orphan_surface",
+                step: "validate",
+                message: "SurfaceSpec id(s) not referenced from layout tree: \(orphans.joined(separator: ","))"
+            )
+        }
         return nil
     }
 
@@ -797,8 +808,13 @@ enum WorkspaceLayoutExecutor {
         }
 
         /// Create an in-pane surface of the right kind. Returns the new
-        /// panel id. `focus: false` always.
-        private func createSurface(
+        /// panel id. `focus: false` always. Terminal honors
+        /// `spec.workingDirectory` via `newTerminalSurface(inPane:workingDirectory:)`;
+        /// browser/markdown cannot accept cwd and emit a typed
+        /// `working_directory_not_applied` failure when one is declared
+        /// (cycle 2: R3 left this in-pane path silent; split path was
+        /// already covered).
+        private mutating func createSurface(
             _ spec: SurfaceSpec,
             inPane paneId: PaneID,
             focus: Bool
@@ -811,6 +827,9 @@ enum WorkspaceLayoutExecutor {
                     workingDirectory: spec.workingDirectory
                 )?.id
             case .browser:
+                if spec.workingDirectory != nil {
+                    reportWorkingDirectoryNotApplicable(spec, context: "browser in-pane creation")
+                }
                 let url = spec.url.flatMap { URL(string: $0) }
                 return workspace.newBrowserSurface(
                     inPane: paneId,
@@ -818,6 +837,9 @@ enum WorkspaceLayoutExecutor {
                     focus: focus
                 )?.id
             case .markdown:
+                if spec.workingDirectory != nil {
+                    reportWorkingDirectoryNotApplicable(spec, context: "markdown in-pane creation")
+                }
                 return workspace.newMarkdownSurface(
                     inPane: paneId,
                     filePath: spec.filePath,
@@ -839,6 +861,14 @@ enum WorkspaceLayoutExecutor {
 
     // MARK: - Divider positions
 
+    /// Bonsplit enforces its own divider bounds (hard-clamped inside
+    /// `setDividerPosition`). Plan schema allows `0...1`; the executor
+    /// reports a typed warning when the plan's value falls outside this
+    /// window so the fidelity loss is visible to Phase 1 Snapshot and
+    /// Phase 2 Blueprint authors — cycle 2 IM3.
+    private static let bonsplitDividerFloor: Double = 0.1
+    private static let bonsplitDividerCeiling: Double = 0.9
+
     /// Walk plan tree and live bonsplit tree in lockstep, applying each
     /// plan-side `dividerPosition`. Same shape as
     /// `Workspace.applySessionDividerPositions` — plan tree replaces the
@@ -846,8 +876,9 @@ enum WorkspaceLayoutExecutor {
     ///
     /// Returns any `ApplyFailure` records produced when the plan and live
     /// trees disagree on shape (plan expected a split but live has a pane,
-    /// or vice versa). Pane-vs-pane is a legitimate no-op (no dividers to
-    /// apply), not a failure.
+    /// or vice versa), or when a plan-side `dividerPosition` was outside
+    /// bonsplit's acceptable `0.1...0.9` clamp. Pane-vs-pane is a
+    /// legitimate no-op (no dividers to apply), not a failure.
     private static func applyDividerPositions(
         planNode: LayoutTreeSpec,
         liveNode: ExternalTreeNode,
@@ -858,7 +889,15 @@ enum WorkspaceLayoutExecutor {
         case (.split(let planSplit), .split(let liveSplit)):
             var out: [ApplyFailure] = []
             if let splitID = UUID(uuidString: liveSplit.id) {
-                let clamped = min(max(planSplit.dividerPosition, 0), 1)
+                let requested = planSplit.dividerPosition
+                let clamped = min(max(requested, bonsplitDividerFloor), bonsplitDividerCeiling)
+                if abs(requested - clamped) > 0.0001 {
+                    out.append(ApplyFailure(
+                        code: "divider_clamped",
+                        step: "\(path).dividerPosition",
+                        message: "plan dividerPosition=\(requested) at \(path) clamped to bonsplit's acceptable range [\(bonsplitDividerFloor), \(bonsplitDividerCeiling)] (applied \(clamped))"
+                    ))
+                }
                 _ = workspace.bonsplitController.setDividerPosition(
                     CGFloat(clamped),
                     forSplit: splitID,

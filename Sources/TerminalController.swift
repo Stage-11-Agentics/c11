@@ -4379,33 +4379,39 @@ class TerminalController {
 
         // Pre-validate off-main. Per review cycle 1 I3, the v2 handler
         // must not ride MainActor for pure validation — this block runs
-        // entirely on the socket worker thread. If the plan is malformed
-        // we encode an ApplyResult carrying the failure and return
-        // without ever entering v2MainSync.
+        // entirely on the socket worker thread. A malformed plan returns
+        // a typed `invalid_params` error (JSON-RPC clients parse as
+        // failure), not an `ok` envelope with an ApplyFailure body —
+        // cycle 2 IM2 fix.
         if let validationFailure = WorkspaceLayoutExecutor.validate(plan: plan) {
-            let preflightResult = ApplyResult(
-                workspaceRef: "",
-                surfaceRefs: [:],
-                paneRefs: [:],
-                timings: [StepTiming(step: "validate", durationMs: 0)],
-                warnings: [validationFailure.message],
-                failures: [validationFailure]
+            let data: [String: Any] = [
+                "failure": [
+                    "code": validationFailure.code,
+                    "step": validationFailure.step,
+                    "message": validationFailure.message
+                ]
+            ]
+            return .err(
+                code: "invalid_params",
+                message: "WorkspaceApplyPlan validation failed: \(validationFailure.message)",
+                data: data
             )
-            do {
-                let encoded = try JSONEncoder().encode(preflightResult)
-                let asAny = try JSONSerialization.jsonObject(with: encoded, options: [])
-                return .ok(asAny)
-            } catch {
-                return .err(
-                    code: "internal_error",
-                    message: "Failed to encode preflight ApplyResult: \(error)",
-                    data: nil
-                )
-            }
         }
 
         guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+
+        // Apply the socket focus policy (CLAUDE.md: "Socket/CLI commands
+        // must not steal macOS app focus"). workspace.apply is not in
+        // `focusIntentV2Methods`, so `v2FocusAllowed` returns false for
+        // this command regardless of caller intent. Zero out
+        // `options.select` before dispatch so the executor does not
+        // raise the window / select the created workspace. Cycle 2 IM1
+        // fix.
+        var effectiveOptions = options
+        if options.select && !v2FocusAllowed(requested: true) {
+            effectiveOptions.select = false
         }
 
         var result: ApplyResult?
@@ -4422,7 +4428,7 @@ class TerminalController {
                     self?.v2EnsureHandleRef(kind: .pane, uuid: uuid) ?? "pane:\(uuid.uuidString)"
                 }
             )
-            result = WorkspaceLayoutExecutor.apply(plan, options: options, dependencies: deps)
+            result = WorkspaceLayoutExecutor.apply(plan, options: effectiveOptions, dependencies: deps)
         }
 
         guard let applyResult = result else {

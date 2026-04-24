@@ -419,12 +419,17 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
                     if key.hasPrefix("mailbox."), case .string = expected {
                         // fall through to the assertion
                     } else if key.hasPrefix("mailbox.") {
+                        // Executor emits: `... pane metadata["<key>"] dropped ...`.
+                        // The `["<key>"]` substring is distinctive enough to scope
+                        // the assertion to the right key without false positives
+                        // from other failures sharing the same code.
+                        let keyMatch = "[\"\(key)\"]"
                         XCTAssertTrue(
                             result.failures.contains {
                                 $0.code == "mailbox_non_string_value"
-                                    && $0.message.contains("[\(key)")
+                                    && $0.message.contains(keyMatch)
                             },
-                            "[\(fixtureName)] surface[\(surfaceSpec.id)] non-string mailbox.\(key) emits ApplyFailure"
+                            "[\(fixtureName)] surface[\(surfaceSpec.id)] non-string mailbox.\(key) emits ApplyFailure (looking for '\(keyMatch)' in failure messages)"
                         )
                         XCTAssertNil(
                             livePaneMetadata[key],

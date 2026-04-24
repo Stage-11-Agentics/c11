@@ -12,6 +12,12 @@
   <code>brew tap stage-11-agentics/c11 && brew install --cask c11</code>
 </p>
 
+<p align="center">
+  <img src="./docs/assets/workspace-wide.png" alt="a c11 workspace on a 32-inch display: terminals, a Lattice board, markdown, and sub-agents composed as one view" />
+  <br>
+  <sub><i>a real session on a 32-inch display — terminals, a Lattice board, markdown, and sub-agents, composed as one view.</i></sub>
+</p>
+
 ---
 
 listen.
@@ -29,12 +35,6 @@ by making the assemblage spatial and addressable, c11 allows the brain to track 
 and for our agents — our LLMs, our friends on the other side of the glass — that's where c11 really shines. c11 is agent-native terminal multiplexing. advanced skill files let your agent deeply understand the entire screen, visualize all the open panes and their contents, and move communication freely from one terminal to another, amongst many near-magical improvements. agents split panes. open browsers to validate work. name their own tabs. announce role, task, status, and progress to the sidebar so the whole configuration stays legible while work happens in parallel. neither party manages the other. both are first-class.
 
 no more Claude Code subagents that you have zero visibility on. let your agent fire off 6 new tabs inside of a new pane, grouping logically related subagents together, which in turn improves human observability and lets you iterate faster. it's a new way of thinking about how to interact with terminals — and once the muscle memory takes, flat terminals will feel like a regression. the learning curve is gentle. the payoff is significant.
-
-<p align="center">
-  <img src="./docs/assets/workspace-wide.png" alt="a c11 workspace on a 32-inch display: terminals, a Lattice board, markdown, and sub-agents composed as one view" />
-  <br>
-  <sub><i>a real session on a 32-inch display — terminals, a Lattice board, markdown, and sub-agents, composed as one view.</i></sub>
-</p>
 
 ---
 
@@ -153,7 +153,9 @@ if your session is a single Claude Code in a single terminal, c11 will feel like
 
 ### a note on hardware.
 
-c11 assumes RAM. it is conceivable — normal, even — to have fifty terminals open across eight workspaces while an embedded browser runs in pane 3 and a markdown viewer scrolls release notes in pane 5. we do not apologize for that shape. the modern hyperengineer has a tricked-out MacBook with memory to spare, and c11 is built for that machine. if you are on 8GB, we love you — probably not the right fit yet.
+c11 assumes RAM. it is conceivable — normal, even — to have fifty terminals open across eight workspaces while an embedded browser runs in pane 3 and a markdown viewer scrolls release notes in pane 5. we do not apologize for that shape.
+
+c11 does not throttle. there is no performance governor, no ceiling on how many terminals you can spawn — the limit is your machine, not our code. on a 128GB MacBook, that might mean 500 panes running in parallel; if the hardware can carry them, carry on. on an 8GB Air, the same freedom is a short walk off a performance cliff. plan for the machine you're on.
 
 ---
 

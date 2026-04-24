@@ -17,6 +17,19 @@ struct CLIError: Error, CustomStringConvertible {
     var description: String { message }
 }
 
+/// Returns true when a `CLIError` represents "c11 app isn't reachable on its
+/// control socket" — used by advisory pathways (like the claude-hook dispatch)
+/// that should no-op rather than surface an error when nothing is listening.
+private func isAdvisoryHookConnectivityError(_ error: CLIError) -> Bool {
+    let m = error.message
+    return m.contains("Socket not found")
+        || m.contains("socket not found")
+        || m.contains("c11 app did not start in time")
+        || m.contains("Connection refused")
+        || m.contains("Failed to connect")
+        || m.contains("No such file or directory")
+}
+
 // Mirrors CMUX_* ↔ C11_* env vars so callers can use either prefix.
 // Why: binary rename from `cmux` to `c11` keeps both namespaces live during transition.
 func mirrorC11CmuxEnv() {
@@ -2408,6 +2421,15 @@ struct CMUXCLI {
             do {
                 try runClaudeHook(commandArgs: commandArgs, client: client, telemetry: cliTelemetry)
                 cliTelemetry.breadcrumb("claude-hook.completed")
+            } catch let error as CLIError where isAdvisoryHookConnectivityError(error) {
+                // claude-hook is advisory — it signals c11 about Claude Code
+                // lifecycle events (prompt submitted, notification, etc.) so
+                // the sidebar can update. When c11 isn't running (socket
+                // missing / refused / path orphaned from a crashed process),
+                // there's nothing to signal. Exit cleanly so Claude Code
+                // doesn't surface a hook-error banner on every prompt. Real
+                // hook bugs (malformed input, logic errors) still propagate.
+                cliTelemetry.breadcrumb("claude-hook.socket-unreachable")
             } catch {
                 cliTelemetry.breadcrumb("claude-hook.failure")
                 cliTelemetry.captureError(stage: "claude_hook_dispatch", error: error)
@@ -13502,7 +13524,7 @@ struct IntegrationInstallerConstants {
     static let tomlFenceEnd = "# cmux-install-end"
 }
 
-/// Canonical hook entries cmux writes into `~/.claude/settings.json`.
+/// Canonical hook entries c11 writes into `~/.claude/settings.json`.
 /// Identity is established by content-hash match against the `x-cmux.entries`
 /// table. See `docs/c11mux-module-4-integration-installers-spec.md`.
 private func claudeCanonicalEntries() -> [(event: String, entry: [String: Any])] {
@@ -13510,38 +13532,38 @@ private func claudeCanonicalEntries() -> [(event: String, entry: [String: Any])]
         ("SessionStart", [
             "matcher": "",
             "hooks": [
-                ["type": "command", "command": "cmux claude-hook session-start", "timeout": 10],
-                ["type": "command", "command": "cmux set-agent --type claude-code --source declare", "timeout": 5]
+                ["type": "command", "command": "c11 claude-hook session-start", "timeout": 10],
+                ["type": "command", "command": "c11 set-agent --type claude-code --source declare", "timeout": 5]
             ]
         ]),
         ("Stop", [
             "matcher": "",
             "hooks": [
-                ["type": "command", "command": "cmux claude-hook stop", "timeout": 10]
+                ["type": "command", "command": "c11 claude-hook stop", "timeout": 10]
             ]
         ]),
         ("SessionEnd", [
             "matcher": "",
             "hooks": [
-                ["type": "command", "command": "cmux claude-hook session-end", "timeout": 1]
+                ["type": "command", "command": "c11 claude-hook session-end", "timeout": 1]
             ]
         ]),
         ("Notification", [
             "matcher": "",
             "hooks": [
-                ["type": "command", "command": "cmux claude-hook notification", "timeout": 10]
+                ["type": "command", "command": "c11 claude-hook notification", "timeout": 10]
             ]
         ]),
         ("UserPromptSubmit", [
             "matcher": "",
             "hooks": [
-                ["type": "command", "command": "cmux claude-hook prompt-submit", "timeout": 10]
+                ["type": "command", "command": "c11 claude-hook prompt-submit", "timeout": 10]
             ]
         ]),
         ("PreToolUse", [
             "matcher": "",
             "hooks": [
-                ["type": "command", "command": "cmux claude-hook pre-tool-use", "timeout": 5, "async": true]
+                ["type": "command", "command": "c11 claude-hook pre-tool-use", "timeout": 5, "async": true]
             ]
         ])
     ]

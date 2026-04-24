@@ -1,5 +1,34 @@
 import Foundation
 
+/// UUIDv4 (Claude SessionStart `session_id`) grammar. Must match the exact
+/// 8-4-4-4-12 hex shape with dashes. Anchored so any non-matching suffix or
+/// prefix — shell metacharacters, embedded newlines, extra tokens — is
+/// rejected. Declared `nonisolated` and file-scoped so
+/// `SurfaceMetadataStore.validateReservedKey` (off the main actor) and the
+/// `AgentRestartRegistry.phase1` resolver closure (Sendable) can share one
+/// compiled regex without cross-actor traffic.
+///
+/// Defence in depth: the store rejects malformed writes at the boundary;
+/// the registry re-validates at synthesis time so a value that somehow
+/// slipped past the store (direct in-process writer, future bypass) still
+/// cannot become a shell command.
+let claudeSessionIdUUIDPattern: NSRegularExpression = {
+    // swiftlint:disable:next force_try
+    return try! NSRegularExpression(
+        pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        options: []
+    )
+}()
+
+/// Returns true iff `candidate` matches the UUIDv4 shape exactly.
+/// Trims nothing — callers are expected to normalise whitespace before
+/// calling (the registry does, the store's reserved-key validator does not
+/// because values it receives have already passed `WriteMode` normalisation).
+func isValidClaudeSessionId(_ candidate: String) -> Bool {
+    let range = NSRange(location: 0, length: (candidate as NSString).length)
+    return claudeSessionIdUUIDPattern.firstMatch(in: candidate, options: [], range: range) != nil
+}
+
 /// Pure-value lookup table mapping a known terminal type + session hint to
 /// the shell command that resumes it. Phase 1 ships a single row for
 /// `claude-code`; rows for `codex`, `opencode`, `kimi` land in Phase 5
@@ -65,11 +94,20 @@ struct AgentRestartRegistry: Sendable {
 
     /// Phase 1 ships cc resume only. Phase 5 adds codex / opencode / kimi
     /// rows here; adding a row is a one-line append to this literal.
+    ///
+    /// The closure re-validates `sessionId` against the UUIDv4 grammar even
+    /// though `SurfaceMetadataStore` already rejects non-UUID writes for the
+    /// `claude.session_id` reserved key. The "never trust the metadata
+    /// layer solely" belt-and-braces is deliberate: the synthesised string
+    /// is interpolated into a shell command that runs on restore, and any
+    /// future in-process writer that bypasses the store must not become a
+    /// command-injection vector.
     static let phase1: AgentRestartRegistry = .init(rows: [
         Row(terminalType: "claude-code") { sessionId, _ in
-            guard let id = sessionId?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !id.isEmpty else { return nil }
-            return "cc --resume \(id)"
+            guard let raw = sessionId?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !raw.isEmpty,
+                  isValidClaudeSessionId(raw) else { return nil }
+            return "cc --resume \(raw)"
         }
     ])
 }

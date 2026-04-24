@@ -140,6 +140,12 @@ final class SurfaceMetadataStore: @unchecked Sendable {
     // MARK: - Canonical key validation
 
     /// Reserved canonical keys. Keys not in this set accept any JSON value.
+    ///
+    /// `claude.session_id` is reserved because its value is interpolated
+    /// into the `cc --resume <id>` shell command at restore time by
+    /// `AgentRestartRegistry.phase1`. Accepting arbitrary strings here
+    /// would make the metadata layer a command-injection vector. See
+    /// `validateReservedKey` for the UUIDv4 grammar enforced at write time.
     static let reservedKeys: Set<String> = [
         "role",
         "status",
@@ -148,7 +154,8 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         "progress",
         "terminal_type",
         "title",
-        "description"
+        "description",
+        "claude.session_id"
     ]
 
     static func validateReservedKey(_ key: String, _ value: Any) -> WriteError? {
@@ -176,6 +183,21 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             return validateString(key: key, value: value, maxLen: 256)
         case "description":
             return validateString(key: key, value: value, maxLen: 2048)
+        case "claude.session_id":
+            // Claude SessionStart's `session_id` is a UUIDv4; reject
+            // anything else. The value is interpolated verbatim into
+            // `cc --resume <id>` at restore time, so a non-UUID value
+            // would be a command-injection vector.
+            guard let s = value as? String else {
+                return .reservedKeyInvalidType(key, "expected string")
+            }
+            if !isValidClaudeSessionId(s) {
+                return .reservedKeyInvalidType(
+                    key,
+                    "must match UUIDv4 shape 8-4-4-4-12 hex"
+                )
+            }
+            return nil
         default:
             return nil
         }

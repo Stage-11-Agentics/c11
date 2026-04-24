@@ -4377,6 +4377,33 @@ class TerminalController {
             options = ApplyOptions()
         }
 
+        // Pre-validate off-main. Per review cycle 1 I3, the v2 handler
+        // must not ride MainActor for pure validation — this block runs
+        // entirely on the socket worker thread. If the plan is malformed
+        // we encode an ApplyResult carrying the failure and return
+        // without ever entering v2MainSync.
+        if let validationFailure = WorkspaceLayoutExecutor.validate(plan: plan) {
+            let preflightResult = ApplyResult(
+                workspaceRef: "",
+                surfaceRefs: [:],
+                paneRefs: [:],
+                timings: [StepTiming(step: "validate", durationMs: 0)],
+                warnings: [validationFailure.message],
+                failures: [validationFailure]
+            )
+            do {
+                let encoded = try JSONEncoder().encode(preflightResult)
+                let asAny = try JSONSerialization.jsonObject(with: encoded, options: [])
+                return .ok(asAny)
+            } catch {
+                return .err(
+                    code: "internal_error",
+                    message: "Failed to encode preflight ApplyResult: \(error)",
+                    data: nil
+                )
+            }
+        }
+
         guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }

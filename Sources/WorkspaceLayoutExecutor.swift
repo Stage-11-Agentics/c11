@@ -223,8 +223,11 @@ enum WorkspaceLayoutExecutor {
     // MARK: - Plan validation
 
     /// Returns the first validation failure encountered, or `nil` if the plan
-    /// is structurally sound. Pure; no AppKit access.
-    private static func validate(plan: WorkspaceApplyPlan) -> ApplyFailure? {
+    /// is structurally sound. Pure — safe to call off the main actor before
+    /// dispatching to `apply(_:options:dependencies:)`. Per review cycle 1 I3,
+    /// the v2 socket handler pre-checks via this entry point so validation
+    /// never rides the main actor.
+    nonisolated static func validate(plan: WorkspaceApplyPlan) -> ApplyFailure? {
         // Duplicate surface ids.
         var seen = Set<String>()
         for surface in plan.surfaces {
@@ -245,7 +248,7 @@ enum WorkspaceLayoutExecutor {
         return nil
     }
 
-    private static func validateLayout(
+    nonisolated private static func validateLayout(
         _ node: LayoutTreeSpec,
         knownSurfaceIds: Set<String>
     ) -> ApplyFailure? {

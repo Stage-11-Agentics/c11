@@ -69,7 +69,7 @@ jobs:
 
       - name: Cache GhosttyKit.xcframework
         id: cache-ghosttykit
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v4
         with:
           path: GhosttyKit.xcframework
           key: ghosttykit-${{ hashFiles('.gitmodules', 'ghostty') }}
@@ -102,7 +102,7 @@ jobs:
           fi
 
       - name: Cache DerivedData
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v4
         with:
           path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*
           key: deriveddata-${{ matrix.os }}-${{ env.XCODE_VER }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.pbxproj') }}
@@ -111,7 +111,7 @@ jobs:
             deriveddata-${{ matrix.os }}-${{ env.XCODE_VER }}-
 
       - name: Cache Swift packages
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v4
         with:
           path: .ci-source-packages
           key: spm-${{ matrix.os }}-${{ hashFiles('GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}

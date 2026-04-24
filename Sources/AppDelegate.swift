@@ -6320,11 +6320,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         window.isReleasedWhenClosed = false
         window.level = .modalPanel
         let rootView = TCCPrimerSheet(
-            onGotIt: { [weak window] in
+            onGrantFDA: { TCCPrimer.openFullDiskAccessPane() },
+            onContinueWithout: { [weak window] in
                 UserDefaults.standard.set(true, forKey: TCCPrimer.shownKey)
                 window?.close()
             },
-            onOpenSettings: { TCCPrimer.openFullDiskAccessPane() },
             onDismiss: { [weak window] in window?.close() }
         )
         window.contentView = NSHostingView(rootView: rootView)

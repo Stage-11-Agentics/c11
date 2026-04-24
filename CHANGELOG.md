@@ -4,6 +4,28 @@ All notable changes to c11 (and, before the fork, cmux) are documented here.
 
 Note: historical entries below pre-date the `c11mux` → `c11` rename and reference the old binary / cask / artifact / bundle-ID names (`cmux`, `c11mux`, `c11mux-macos.dmg`, `stage-11-agentics/c11mux`, `com.stage11.c11mux`). Those entries are preserved as-is for historical accuracy; see the 0.38.0 section for the rename.
 
+## [0.42.0] - 2026-04-24
+
+### Added
+- **Tab bar agent launcher + close-pane buttons.** Every pane's tab bar gets two first-class buttons: **A** (leftmost, spawns a new terminal running the operator's configured agent launcher — default Claude Code) and **X** (rightmost, closes the entire pane after a confirmation alert that names how many tabs will be lost; disabled when only one pane exists). Right-click **A** opens a context menu of all agent kinds (Claude Code, Codex, OpenCode, Kimi, Other) with a checkmark on the current default; picking one updates the default AND spawns that agent immediately. Settings → Agents & Automation gains an *Agent Launcher Button* section at the top for the picker and free-form command field. ([#72](https://github.com/Stage-11-Agentics/c11/pull/72)) — thanks @BenevolentFutures!
+- **Tab bar chrome states.** View → Tab Bar gains Full / Shrunk / Hidden entries with ⌘⇧B to cycle. Shrunk and Hidden give dense multi-agent workspaces more vertical room; the handle overlay stays available in Shrunk state for drag-to-rearrange. Default remains Full. — thanks @BenevolentFutures!
+- **`c11 mailbox` inter-agent messaging primitive.** New CLI surface for sending envelopes between surfaces on the same c11 instance — `c11 mailbox send | recv | trace | tail | outbox-dir | inbox-dir | surface-name`. Envelopes are validated against a v1 schema, written atomically, and delivered through an fsevent watcher. The default `stdin` handler writes the body to the recipient's PTY with a 500 ms timeout; a `silent` no-op handler is available for dry-run routing. Dispatch log is NDJSON at the mailbox layout path. ([#73](https://github.com/Stage-11-Agentics/c11/pull/73)) — thanks @BenevolentFutures!
+- **`c11 workspace apply` and the `workspace.apply` socket method.** Build a whole workspace from a single declarative JSON plan — nested split trees, surface kinds (terminal / browser / markdown), titles, descriptions, pane metadata, surface metadata, and terminal cwd — in one call. Foundation for the upcoming Workspace Snapshots and Blueprints flow. ([#75](https://github.com/Stage-11-Agentics/c11/pull/75)) — thanks @BenevolentFutures!
+- **`c11 notify` on v2 notification methods.** The CLI now routes through the modern `sidebar.notification.*` methods, bringing richer notification metadata and keeping CLI and sidebar v2 plumbing consistent. ([#66](https://github.com/Stage-11-Agentics/c11/pull/66)) — thanks @BenevolentFutures!
+
+### Changed
+- **Jump-to-Unread moved from the bottom status bar to the sidebar footer; the bottom status bar is gone.** The jump button is now larger, labeled, and badge-aware in its new home, and its default keyboard shortcut is ⌃⌘⏎. ([#64](https://github.com/Stage-11-Agentics/c11/pull/64)) — thanks @BenevolentFutures!
+- **macOS permissions primer sheet refresh.** Full Disk Access is now the primary CTA, the button order is flipped to match platform conventions, and the body copy is tightened. — thanks @BenevolentFutures!
+- **c11 skill requires a title and a description at orientation.** Every agent that reads the c11 skill now names its surface with both a title and a description on startup — unnamed or undescribed surfaces become the exception, not the norm. ([#65](https://github.com/Stage-11-Agentics/c11/pull/65)) — thanks @BenevolentFutures!
+- **Claude Code hook runs quietly.** The `claude-hook` subcommand now exits cleanly when the c11 socket is unreachable (no stderr noise in Claude Code transcripts), and its advisory guidance speaks c11 vocabulary instead of the older `cmux` names. Real CLI usage (`c11 identify`, etc.) still surfaces missing-socket errors as before. ([#74](https://github.com/Stage-11-Agentics/c11/pull/74)) — thanks @BenevolentFutures!
+
+### Fixed
+- **`c11 set-metadata` / `c11 set-agent` default to the focused surface again.** Omitting the surface argument now resolves to the currently focused surface as documented, rather than targeting the wrong surface in some configurations. ([#63](https://github.com/Stage-11-Agentics/c11/pull/63)) — thanks @BenevolentFutures!
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [0.41.0] - 2026-04-23
 
 ### Added

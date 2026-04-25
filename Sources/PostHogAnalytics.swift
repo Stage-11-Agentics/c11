@@ -13,8 +13,8 @@ final class PostHogAnalytics {
     // PostHog Cloud US default.
     private let host = "https://us.i.posthog.com"
 
-    private let dailyActiveEvent = "cmux_daily_active"
-    private let hourlyActiveEvent = "cmux_hourly_active"
+    private let dailyActiveEvent = "c11_daily_active"
+    private let hourlyActiveEvent = "c11_hourly_active"
 
     private let lastActiveDayUTCKey = "posthog.lastActiveDayUTC"
     private let lastActiveHourUTCKey = "posthog.lastActiveHourUTC"
@@ -38,7 +38,7 @@ final class PostHogAnalytics {
         guard TelemetrySettings.enabledForCurrentLaunch else { return false }
 #if DEBUG
         // Avoid polluting production analytics while iterating locally.
-        return ProcessInfo.processInfo.environment["CMUX_POSTHOG_ENABLE"] == "1"
+        return ProcessInfo.processInfo.environment["C11_POSTHOG_ENABLE"] == "1"
 #else
         return !apiKey.isEmpty && apiKey != "REPLACE_WITH_POSTHOG_PUBLIC_KEY"
 #endif
@@ -90,7 +90,7 @@ final class PostHogAnalytics {
         config.captureApplicationLifecycleEvents = false
         config.captureScreenViews = false
 #if DEBUG
-        config.debug = ProcessInfo.processInfo.environment["CMUX_POSTHOG_DEBUG"] == "1"
+        config.debug = ProcessInfo.processInfo.environment["C11_POSTHOG_DEBUG"] == "1"
 #endif
 
         PostHogSDK.shared.setup(config)
@@ -218,7 +218,7 @@ final class PostHogAnalytics {
     }
 
     nonisolated static func superProperties(infoDictionary: [String: Any]) -> [String: Any] {
-        var properties: [String: Any] = ["platform": "cmuxterm"]
+        var properties: [String: Any] = ["platform": "c11"]
         properties.merge(versionProperties(infoDictionary: infoDictionary)) { _, new in new }
         return properties
     }
@@ -251,7 +251,7 @@ final class PostHogAnalytics {
 
     nonisolated static func shouldFlushAfterCapture(event: String) -> Bool {
         switch event {
-        case "cmux_daily_active", "cmux_hourly_active":
+        case "c11_daily_active", "c11_hourly_active":
             return true
         default:
             return false

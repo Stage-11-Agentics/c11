@@ -1913,7 +1913,7 @@ final class PostHogAnalyticsPropertiesTests: XCTestCase {
             ]
         )
 
-        XCTAssertEqual(properties["platform"] as? String, "cmuxterm")
+        XCTAssertEqual(properties["platform"] as? String, "c11")
         XCTAssertEqual(properties["app_version"] as? String, "0.31.0")
         XCTAssertEqual(properties["app_build"] as? String, "230")
     }
@@ -1949,7 +1949,7 @@ final class PostHogAnalyticsPropertiesTests: XCTestCase {
 
     func testPropertiesOmitVersionFieldsWhenUnavailable() {
         let superProperties = PostHogAnalytics.superProperties(infoDictionary: [:])
-        XCTAssertEqual(superProperties["platform"] as? String, "cmuxterm")
+        XCTAssertEqual(superProperties["platform"] as? String, "c11")
         XCTAssertNil(superProperties["app_version"])
         XCTAssertNil(superProperties["app_build"])
 
@@ -1965,9 +1965,9 @@ final class PostHogAnalyticsPropertiesTests: XCTestCase {
     }
 
     func testFlushPolicyIncludesDailyAndHourlyActiveEvents() {
-        XCTAssertTrue(PostHogAnalytics.shouldFlushAfterCapture(event: "cmux_daily_active"))
-        XCTAssertTrue(PostHogAnalytics.shouldFlushAfterCapture(event: "cmux_hourly_active"))
-        XCTAssertFalse(PostHogAnalytics.shouldFlushAfterCapture(event: "cmux_other_event"))
+        XCTAssertTrue(PostHogAnalytics.shouldFlushAfterCapture(event: "c11_daily_active"))
+        XCTAssertTrue(PostHogAnalytics.shouldFlushAfterCapture(event: "c11_hourly_active"))
+        XCTAssertFalse(PostHogAnalytics.shouldFlushAfterCapture(event: "c11_other_event"))
     }
 }
 

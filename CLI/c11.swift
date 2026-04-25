@@ -20,14 +20,18 @@ struct CLIError: Error, CustomStringConvertible {
 /// Returns true when a `CLIError` represents "c11 app isn't reachable on its
 /// control socket" — used by advisory pathways (like the claude-hook dispatch)
 /// that should no-op rather than surface an error when nothing is listening.
-private func isAdvisoryHookConnectivityError(_ error: CLIError) -> Bool {
-    let m = error.message
-    return m.contains("Socket not found")
-        || m.contains("socket not found")
-        || m.contains("c11 app did not start in time")
-        || m.contains("Connection refused")
-        || m.contains("Failed to connect")
-        || m.contains("No such file or directory")
+///
+/// c11 is single-user: the claude-hook writer treats "another uid owns the
+/// socket", "an orphaned socket file exists but no listener accepts", and
+/// "permission denied on the socket directory" all as "no live c11 app on
+/// this machine for me" — advisory, not failure. If multi-user support ever
+/// lands, revisit and split `failed` from advisory.
+///
+/// The string-based predicate lives in `Sources/CLIAdvisoryConnectivity.swift`
+/// so it can be unit-tested in the app test target without dragging `CLIError`
+/// (CLI-local) into the c11 module.
+func isAdvisoryHookConnectivityError(_ error: CLIError) -> Bool {
+    CLIAdvisoryConnectivity.isAdvisoryHookConnectivity(message: error.message)
 }
 
 // Mirrors CMUX_* ↔ C11_* env vars so callers can use either prefix.
@@ -2789,9 +2793,23 @@ struct CMUXCLI {
         // `v2SnapshotRestore` cleared `options.select` unconditionally.
         // Per Trident I4 option (b), drop the promise rather than grant a
         // focus-intent exception. The flag is no longer accepted.
-        let positional = args
-        if let unknown = positional.first(where: { $0.hasPrefix("--") }) {
-            throw CLIError(message: "restore: unknown flag '\(unknown)'. Known flags: (none)")
+        //
+        // I2: `--in-place` / `--replace` (aliases) replaces the current
+        // workspace's content with the restored plan instead of creating
+        // a fresh workspace. Without it, running `c11 restore <id>` twice
+        // produces two duplicate workspaces.
+        var inPlace = false
+        var positional: [String] = []
+        for arg in args {
+            switch arg {
+            case "--in-place", "--replace":
+                inPlace = true
+            default:
+                if arg.hasPrefix("--") {
+                    throw CLIError(message: "restore: unknown flag '\(arg)'. Known flags: --in-place / --replace")
+                }
+                positional.append(arg)
+            }
         }
         guard let target = positional.first else {
             throw CLIError(message: "restore: missing snapshot id or path")
@@ -2819,6 +2837,34 @@ struct CMUXCLI {
         let raw = env["C11_SESSION_RESUME"] ?? env["CMUX_SESSION_RESUME"]
         if let raw, isTruthyFlag(raw) {
             params["restart_registry"] = "phase1"
+        }
+        if inPlace {
+            params["in_place"] = true
+            // Resolve the target workspace. Destructive commands must
+            // prefer the caller's own workspace (CMUX_WORKSPACE_ID /
+            // C11_WORKSPACE_ID) per the socket focus policy in CLAUDE.md:
+            // a background agent running `c11 restore --in-place` should
+            // replace its own workspace, not whatever the operator
+            // currently has selected. Only when the CLI is invoked
+            // outside a c11 surface (no env) do we fall back to
+            // `workspace.current`.
+            let callerWs = env["CMUX_WORKSPACE_ID"] ?? env["C11_WORKSPACE_ID"]
+            if let trimmed = callerWs?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !trimmed.isEmpty,
+               UUID(uuidString: trimmed) != nil {
+                params["target_workspace_id"] = trimmed
+            } else {
+                let currentPayload = try client.sendV2(method: "workspace.current", params: [:])
+                if let wsId = currentPayload["workspace_id"] as? String,
+                   UUID(uuidString: wsId) != nil {
+                    params["target_workspace_id"] = wsId
+                } else if let ref = currentPayload["workspace_ref"] as? String,
+                          let uuid = parseUUIDFromRef(ref) {
+                    params["target_workspace_id"] = uuid.uuidString
+                } else {
+                    throw CLIError(message: "restore: --in-place could not resolve the target workspace (set CMUX_WORKSPACE_ID or invoke from a c11 surface)")
+                }
+            }
         }
         let payload = try client.sendV2(method: "snapshot.restore", params: params)
         if jsonOutput {
@@ -2911,24 +2957,40 @@ struct CMUXCLI {
 
     /// `c11 list-snapshots [--json]`. Columns:
     /// SNAPSHOT_ID, CREATED_AT, WORKSPACE_TITLE, SURFACES, ORIGIN, SOURCE.
+    ///
+    /// `--json` is accepted both as a global pre-subcommand flag (handled
+    /// by the main parser and threaded in via `jsonOutput`) and as a
+    /// subcommand-local flag. The help text advertises
+    /// `c11 list-snapshots --json`; callers writing that literally should
+    /// not have to know about the global/local distinction.
     private func runListSnapshots(
         _ args: [String],
         client: SocketClient,
         jsonOutput: Bool
     ) throws {
-        if let unknown = args.first(where: { $0.hasPrefix("--") }) {
-            throw CLIError(message: "list-snapshots: unknown flag '\(unknown)'. Known flags: --json")
+        var localJson = false
+        for arg in args {
+            switch arg {
+            case "--json":
+                localJson = true
+            default:
+                if arg.hasPrefix("--") {
+                    throw CLIError(message: "list-snapshots: unknown flag '\(arg)'. Known flags: --json")
+                }
+                throw CLIError(message: "list-snapshots: unexpected argument '\(arg)'")
+            }
         }
+        let wantJson = jsonOutput || localJson
         let payload = try client.sendV2(method: "snapshot.list", params: [:])
         guard let snapshotsAny = payload["snapshots"] as? [[String: Any]] else {
-            if jsonOutput {
+            if wantJson {
                 print(jsonString(payload))
                 return
             }
             print("no snapshots")
             return
         }
-        if jsonOutput {
+        if wantJson {
             print(jsonString(payload))
             return
         }
@@ -2944,10 +3006,22 @@ struct CMUXCLI {
         let rows: [(String, String, String, String, String, String)] = snapshotsAny.map { entry in
             let id = (entry["snapshot_id"] as? String) ?? "?"
             let created = (entry["created_at"] as? String) ?? "?"
-            let title = (entry["workspace_title"] as? String) ?? "(no title)"
-            let surfaces = (entry["surface_count"] as? Int).map(String.init) ?? "?"
             let origin = (entry["origin"] as? String) ?? "?"
             let source = (entry["source"] as? String) ?? "current"
+            // I8: unreadable rows carry a `{"status": "unreadable", "reason": "..."}`
+            // payload under `readability`. Show `UNREADABLE` in the title
+            // column and `?` in the surfaces column so operators can see
+            // the bad file without losing sight of the healthy rows. The
+            // reason is preserved on the wire (`--json`) for machine
+            // consumers.
+            let readability = entry["readability"] as? [String: Any]
+            if (readability?["status"] as? String) == "unreadable" {
+                let unreadableLabel = String(localized: "cli.listSnapshots.column.unreadable",
+                                             defaultValue: "UNREADABLE")
+                return (id, created, truncate(unreadableLabel, max: 32), "?", origin, source)
+            }
+            let title = (entry["workspace_title"] as? String) ?? "(no title)"
+            let surfaces = (entry["surface_count"] as? Int).map(String.init) ?? "?"
             return (id, created, truncate(title, max: 32), surfaces, origin, source)
         }
         func pad(_ s: String, _ width: Int) -> String {
@@ -2971,6 +3045,26 @@ struct CMUXCLI {
                 + pad(r.4, 12) + "  "
                 + pad(r.5, 8)
             )
+        }
+        // I8: after the main table, show the reason for each unreadable
+        // row so operators have enough to investigate (the path and the
+        // parse error). The tabular form keeps `UNREADABLE` in the title
+        // column; the per-row reason goes here.
+        let unreadables = snapshotsAny.compactMap { entry -> (String, String, String)? in
+            guard let readability = entry["readability"] as? [String: Any],
+                  (readability["status"] as? String) == "unreadable" else { return nil }
+            let id = (entry["snapshot_id"] as? String) ?? "?"
+            let path = (entry["path"] as? String) ?? "?"
+            let reason = (readability["reason"] as? String) ?? ""
+            return (id, path, reason)
+        }
+        if !unreadables.isEmpty {
+            let prefix = String(localized: "cli.listSnapshots.unreadable.prefix",
+                                defaultValue: "unreadable: ")
+            print("")
+            for (id, path, reason) in unreadables {
+                print("  \(prefix)\(id) [\(path)]: \(reason)")
+            }
         }
     }
 
@@ -8237,13 +8331,25 @@ struct CMUXCLI {
               c11 snapshot --workspace workspace:2 --out ~/snapshots/phase1.json
             """
         case "restore":
+            let inPlaceHelp = String(
+                localized: "cli.restore.usage.inPlace",
+                defaultValue:
+                    "--in-place, --replace   Replace the current workspace's content instead of creating a new workspace"
+            )
+            let inPlaceNote = String(
+                localized: "cli.restore.usage.inPlace.note",
+                defaultValue:
+                    "Running `c11 restore <id>` twice creates two workspaces unless --in-place is passed."
+            )
             return """
-            Usage: c11 restore <snapshot-id-or-path> [--json]
+            Usage: c11 restore <snapshot-id-or-path> [--in-place] [--json]
 
             Restore a workspace layout from a snapshot written by `c11 snapshot`.
             The argument is either a ULID (resolved under `~/.c11-snapshots/` or
             the legacy `~/.cmux-snapshots/`) or an absolute path to a `.json`
             snapshot file.
+
+            \(inPlaceNote)
 
             When $C11_SESSION_RESUME (mirror: $CMUX_SESSION_RESUME) is set to a
             truthy value, Claude Code terminals resume their prior session via
@@ -8251,14 +8357,16 @@ struct CMUXCLI {
             with fresh shells instead.
 
             Per the socket focus policy (see CLAUDE.md), restore does not
-            foreground the restored workspace — select it manually with
+            foreground the restored workspace; select it manually with
             `c11 workspace select <ref>` if needed.
 
             Flags:
-              --json   Emit raw snapshot.restore result as JSON
+              \(inPlaceHelp)
+              --json                  Emit raw snapshot.restore result as JSON
 
             Examples:
               c11 restore 01KQ0XYZ…
+              c11 restore --in-place 01KQ0XYZ…
               C11_SESSION_RESUME=1 c11 restore ~/snapshots/phase1.json
             """
         case "list-snapshots":
@@ -12751,12 +12859,11 @@ struct CMUXCLI {
                 // bubbles up from the metadata path.
                 let trimmedSessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmedSessionId.isEmpty, !surfaceId.isEmpty {
-                    // Mirrors `SurfaceMetadataKeyName.claudeSessionId` in the
-                    // app target (Sources/WorkspaceMetadataKeys.swift); the
-                    // CLI target does not link that file, so the literal is
-                    // kept in lockstep by reader convention.
+                    // `Sources/WorkspaceMetadataKeys.swift` is linked into
+                    // both the c11 app target and the c11-cli target, so the
+                    // reserved-key constant has one spelling in one place.
                     let metadata: [String: Any] = [
-                        "claude.session_id": trimmedSessionId
+                        SurfaceMetadataKeyName.claudeSessionId: trimmedSessionId
                     ]
                     var params: [String: Any] = [
                         "surface_id": surfaceId,

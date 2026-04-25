@@ -142,10 +142,15 @@ final class WorkspaceSnapshotCaptureTests: XCTestCase {
         XCTAssertEqual(bEntry.workspaceTitle, "beta")
     }
 
-    func testStoreListSkipsMalformedJSON() throws {
+    /// I8 (was: testStoreListSkipsMalformedJSON). Before I8, malformed JSON
+    /// was silently dropped. After I8, it surfaces as an unreadable row
+    /// with a best-effort id (filename stem), preserving the healthy entry
+    /// at the top of the newest-first sort.
+    func testStoreListSurfacesMalformedJSONAsUnreadableRow() throws {
         let tmp = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: tmp) }
-        let garbage = tmp.appendingPathComponent("01KQ0GARBAGE000000000000.json")
+        let garbageId = "01KQ0GARBAGE000000000000"
+        let garbage = tmp.appendingPathComponent("\(garbageId).json")
         try Data("not json".utf8).write(to: garbage, options: .atomic)
         let valid = sampleEnvelope(id: "01KQ0VALIDLIST0000000000")
         let store = WorkspaceSnapshotStore(
@@ -155,8 +160,173 @@ final class WorkspaceSnapshotCaptureTests: XCTestCase {
         )
         _ = try store.write(valid)
         let list = try store.list()
-        XCTAssertEqual(list.count, 1, "malformed json is skipped, valid entry survives")
-        XCTAssertEqual(list.first?.snapshotId, valid.snapshotId)
+        XCTAssertEqual(list.count, 2, "both healthy and unreadable rows appear")
+        let valids = list.filter { $0.readability == .ok }
+        let unreadables = list.filter {
+            if case .unreadable = $0.readability { return true } else { return false }
+        }
+        XCTAssertEqual(valids.count, 1)
+        XCTAssertEqual(valids.first?.snapshotId, valid.snapshotId)
+        XCTAssertEqual(unreadables.count, 1)
+        let unreadable = try XCTUnwrap(unreadables.first)
+        XCTAssertEqual(unreadable.snapshotId, garbageId, "unreadable row id is filename stem")
+        XCTAssertEqual(unreadable.path, garbage.path)
+        XCTAssertEqual(unreadable.surfaceCount, 0)
+        XCTAssertEqual(unreadable.createdAt, .distantPast, "unreadable rows sort to the bottom")
+        if case .unreadable(let reason) = unreadable.readability {
+            XCTAssertFalse(reason.isEmpty, "reason is best-effort but must be populated")
+            XCTAssertLessThanOrEqual(reason.count, 160, "reason is truncated to 160 chars")
+        } else {
+            XCTFail("expected .unreadable variant")
+        }
+    }
+
+    /// Edge case: a file literally named `.json` has an empty filename
+    /// stem after `deletingPathExtension`. The unreadable-row fallback
+    /// must still produce an identifiable id (the full filename) so the
+    /// row isn't an empty string in the plain-table column.
+    func testStoreListUnreadableRowFallsBackWhenFilenameStemIsEmpty() throws {
+        let tmp = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let degenerate = tmp.appendingPathComponent(".json")
+        try Data("not json".utf8).write(to: degenerate, options: .atomic)
+        let store = WorkspaceSnapshotStore(
+            currentDirectory: tmp,
+            legacyDirectory: tmp.appendingPathComponent("nowhere"),
+            fileManager: .default
+        )
+        let list = try store.list()
+        XCTAssertEqual(list.count, 1)
+        let row = try XCTUnwrap(list.first)
+        XCTAssertFalse(row.snapshotId.isEmpty, "empty stem must fall back to filename")
+        XCTAssertEqual(row.snapshotId, ".json")
+        guard case .unreadable = row.readability else {
+            return XCTFail("expected .unreadable variant for malformed JSON")
+        }
+    }
+
+    /// Sort invariant: healthy rows come first (newest createdAt),
+    /// unreadable rows come last (createdAt = .distantPast).
+    func testStoreListSortsHealthyBeforeUnreadable() throws {
+        let tmp = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let garbage = tmp.appendingPathComponent("01KQ0GARBAGE00SORT000000.json")
+        try Data("{\"not\": \"a snapshot\"}".utf8).write(to: garbage, options: .atomic)
+        let valid = sampleEnvelope(
+            id: "01KQ0SORTVALID0000000000",
+            createdAt: Date(timeIntervalSince1970: 1_745_000_000)
+        )
+        let store = WorkspaceSnapshotStore(
+            currentDirectory: tmp,
+            legacyDirectory: tmp.appendingPathComponent("nowhere"),
+            fileManager: .default
+        )
+        _ = try store.write(valid)
+        let list = try store.list()
+        XCTAssertEqual(list.first?.readability, .ok, "healthy row first")
+        XCTAssertEqual(list.count, 2)
+    }
+
+    /// Readability round-trips through Codable.
+    func testReadabilityRoundTripsThroughCodable() throws {
+        let ok = WorkspaceSnapshotIndex(
+            snapshotId: "01KQ0RTOK00000000000000",
+            path: "/tmp/ok.json",
+            createdAt: Date(timeIntervalSince1970: 1_745_000_000),
+            workspaceTitle: "ok",
+            surfaceCount: 1,
+            origin: .manual,
+            source: .current,
+            readability: .ok
+        )
+        let bad = WorkspaceSnapshotIndex(
+            snapshotId: "01KQ0RTBAD0000000000000",
+            path: "/tmp/bad.json",
+            createdAt: .distantPast,
+            workspaceTitle: nil,
+            surfaceCount: 0,
+            origin: .manual,
+            source: .current,
+            readability: .unreadable("parse error: truncated")
+        )
+        for entry in [ok, bad] {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(entry)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let decoded = try decoder.decode(WorkspaceSnapshotIndex.self, from: data)
+            XCTAssertEqual(decoded.readability, entry.readability)
+            XCTAssertEqual(decoded.snapshotId, entry.snapshotId)
+        }
+    }
+
+    // MARK: - P1: header-only summary for `snapshot.list`
+
+    /// New-file path: when the envelope carries `surface_count` explicitly
+    /// (as written by `LiveWorkspaceSnapshotSource.capture` after P1), the
+    /// list path surfaces that count verbatim — no full-plan decode.
+    func testStoreListReadsExplicitSurfaceCountFromEnvelope() throws {
+        let tmp = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let store = WorkspaceSnapshotStore(
+            currentDirectory: tmp,
+            legacyDirectory: tmp.appendingPathComponent("nowhere"),
+            fileManager: .default
+        )
+        var envelope = sampleEnvelope(id: "01KQ0SURFACECOUNT0000000")
+        // Fabricate a disagreement so we can prove the list path reads the
+        // explicit envelope count, not the embedded plan's count. In the
+        // real world the two always agree — capture writes both — but if
+        // somebody hand-edits the file, the envelope field wins.
+        envelope.surfaceCount = 7
+        _ = try store.write(envelope)
+        let list = try store.list()
+        let entry = try XCTUnwrap(list.first)
+        XCTAssertEqual(entry.surfaceCount, 7)
+    }
+
+    /// Legacy-file path: an envelope written before P1 landed omits
+    /// `surface_count`. The list path falls back to the embedded plan's
+    /// `surfaces.count`.
+    func testStoreListFallsBackToPlanSurfacesCountWhenEnvelopeLacksKey() throws {
+        let tmp = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let store = WorkspaceSnapshotStore(
+            currentDirectory: tmp,
+            legacyDirectory: tmp.appendingPathComponent("nowhere"),
+            fileManager: .default
+        )
+        // Craft a legacy-shaped JSON by hand — no surface_count key, two
+        // surfaces in the embedded plan.
+        let id = "01KQ0LEGACYSURFACECOUNT0"
+        let legacyJSON = """
+        {
+          "version": 1,
+          "snapshot_id": "\(id)",
+          "created_at": "2026-04-24T18:00:00.000Z",
+          "c11_version": "0.01.0+1",
+          "origin": "manual",
+          "plan": {
+            "version": 1,
+            "workspace": { "title": "legacy shape" },
+            "layout": {
+              "type": "pane",
+              "pane": { "surfaceIds": ["a", "b"] }
+            },
+            "surfaces": [
+              { "id": "a", "kind": "terminal" },
+              { "id": "b", "kind": "terminal" }
+            ]
+          }
+        }
+        """
+        let url = tmp.appendingPathComponent("\(id).json")
+        try Data(legacyJSON.utf8).write(to: url, options: .atomic)
+        let list = try store.list()
+        let entry = try XCTUnwrap(list.first { $0.snapshotId == id })
+        XCTAssertEqual(entry.surfaceCount, 2, "fallback to plan.surfaces.count when envelope lacks surface_count")
+        XCTAssertEqual(entry.workspaceTitle, "legacy shape")
     }
 
     // MARK: - Capture seam (fake source)
@@ -249,6 +419,44 @@ final class WorkspaceSnapshotCaptureTests: XCTestCase {
             24,
             "position 10 should sample most of the 32 alphabet characters across \(samples) draws; saw \(seen.sorted())"
         )
+    }
+
+    /// Time prefix of a ULID-shaped id must decode back to the millisecond
+    /// value of the injected clock. Capture reads the clock once and passes
+    /// that value to both `WorkspaceSnapshotID.generate(now:)` and the
+    /// envelope's `createdAt`, so verifying the decode invariant lets us
+    /// rely on "ULID prefix millis == createdAt millis" byte-for-byte.
+    func testSnapshotIDTimePrefixDecodesToInjectedClockMillis() {
+        let instants: [TimeInterval] = [
+            1_745_000_000.000,
+            1_745_000_000.999,
+            1_600_000_123.456,
+            0.000
+        ]
+        for interval in instants {
+            let now = Date(timeIntervalSince1970: interval)
+            let id = WorkspaceSnapshotID.generate(now: now)
+            let prefix = String(id.prefix(10))
+            let decoded = Self.decodeCrockfordBase32(prefix)
+            let expected = UInt64(now.timeIntervalSince1970 * 1000)
+            XCTAssertEqual(
+                decoded,
+                expected,
+                "ULID time prefix '\(prefix)' must decode to \(expected) ms"
+            )
+        }
+    }
+
+    /// Crockford base32 decoder for the 10-char time prefix. Kept inside the
+    /// test class so it stays scoped to the invariant it is verifying.
+    private static func decodeCrockfordBase32(_ input: String) -> UInt64 {
+        let alphabet = Array("0123456789ABCDEFGHJKMNPQRSTVWXYZ")
+        var result: UInt64 = 0
+        for char in input {
+            guard let idx = alphabet.firstIndex(of: char) else { return 0 }
+            result = (result << 5) | UInt64(idx)
+        }
+        return result
     }
 
     /// Historical bug: position 12 of the id was always `'0'` because

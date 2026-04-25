@@ -231,11 +231,10 @@ struct ApplyOptions: Sendable, Equatable {
     }
 
     static func == (lhs: ApplyOptions, rhs: ApplyOptions) -> Bool {
-        // `AgentRestartRegistry` is not Equatable (closure-carrying); treat
-        // both-nil as equal and either-non-nil as inequality for the purpose
-        // of Codable round-trip tests that exercise the nil default. The
-        // executor never compares options, so this is only called from test
-        // assertions on Codable-encoded options.
+        // `AgentRestartRegistry` carries closures (not `Equatable`); identity
+        // lives on its `name`. Two registries with the same name are treated
+        // as equal — matches the "singletons resolved at the v2 handler"
+        // contract (`"phase1"` always resolves to `.phase1`).
         guard lhs.select == rhs.select,
               lhs.perStepTimeoutMs == rhs.perStepTimeoutMs,
               lhs.autoWelcomeIfNeeded == rhs.autoWelcomeIfNeeded else {
@@ -243,6 +242,7 @@ struct ApplyOptions: Sendable, Equatable {
         }
         switch (lhs.restartRegistry, rhs.restartRegistry) {
         case (nil, nil): return true
+        case let (l?, r?): return l.name == r.name
         default: return false
         }
     }

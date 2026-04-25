@@ -242,10 +242,27 @@ final class AgentRestartRegistryTests: XCTestCase {
         )
     }
 
+    // MARK: - Symmetric trim on insert and lookup
+
+    /// `resolveCommand` trims the query side (`terminalType?.trimmingCharacters(...)`).
+    /// `init(rows:)` must trim on insert so a row registered with surrounding
+    /// whitespace is still resolvable. Otherwise a typo in a future Phase 5
+    /// row definition silently disables it.
+    func testCustomRegistryTrimsTerminalTypeOnInsert() {
+        let registry = AgentRestartRegistry(name: "trim-test", rows: [
+            AgentRestartRegistry.Row(terminalType: "  claude-code  ") { _, _ in "cc trimmed" }
+        ])
+        XCTAssertEqual(
+            registry.resolveCommand(terminalType: "claude-code", sessionId: nil, metadata: [:]),
+            "cc trimmed",
+            "row registered with surrounding whitespace must still match an un-padded lookup"
+        )
+    }
+
     // MARK: - Custom row (Phase 5 shape preview)
 
     func testCustomRegistryCanCarryAdditionalRows() {
-        let registry = AgentRestartRegistry(rows: [
+        let registry = AgentRestartRegistry(name: "multi-row-test", rows: [
             AgentRestartRegistry.Row(terminalType: "claude-code") { _, _ in "cc" },
             AgentRestartRegistry.Row(terminalType: "codex") { sid, _ in
                 guard let sid else { return nil }

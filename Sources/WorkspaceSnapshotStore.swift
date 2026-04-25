@@ -306,10 +306,21 @@ struct WorkspaceSnapshotStore: Sendable {
         return result
     }
 
-    /// Walk a directory and emit one `WorkspaceSnapshotIndex` per decodable
-    /// `.json` file. Malformed files are skipped silently; the listing's
-    /// job is to show what's usable, not to surface every parse error.
-    /// (Callers who want strict-mode reads call `read(from:)` directly.)
+    /// Walk a directory and emit one `WorkspaceSnapshotIndex` per `.json`
+    /// file. Decodable rows get `readability: .ok` with envelope fields
+    /// populated; malformed rows emit `readability: .unreadable(reason)`
+    /// with a best-effort id (filename stem) and `createdAt =
+    /// .distantPast` so they sort to the bottom of the newest-first list
+    /// (I8). Callers who want strict-mode reads call `read(from:)`
+    /// directly; listing only surfaces per-file errors for the operator.
+    ///
+    /// Uses a `JSONSerialization`-based shallow decode that reads envelope
+    /// keys (`snapshot_id`, `created_at`, `c11_version`, `origin`,
+    /// `surface_count`) and probes `plan.workspace.title` +
+    /// `plan.surfaces.count` without materialising the full
+    /// `WorkspaceApplyPlan`. `snapshot.list` gets slower as snapshots
+    /// accumulate; a header-only summary keeps enumeration proportional to
+    /// envelope size, not embedded plan size.
     private func enumerate(
         directory: URL,
         source: WorkspaceSnapshotIndex.Source
@@ -327,17 +338,122 @@ struct WorkspaceSnapshotStore: Sendable {
         }
         var out: [WorkspaceSnapshotIndex] = []
         for url in entries where url.pathExtension.lowercased() == "json" {
-            guard let snapshot = try? read(from: url) else { continue }
-            out.append(WorkspaceSnapshotIndex(
-                snapshotId: snapshot.snapshotId,
-                path: url.path,
-                createdAt: snapshot.createdAt,
-                workspaceTitle: snapshot.plan.workspace.title,
-                surfaceCount: snapshot.plan.surfaces.count,
-                origin: snapshot.origin,
-                source: source
-            ))
+            do {
+                let summary = try readSummary(from: url)
+                out.append(WorkspaceSnapshotIndex(
+                    snapshotId: summary.snapshotId,
+                    path: url.path,
+                    createdAt: summary.createdAt,
+                    workspaceTitle: summary.workspaceTitle,
+                    surfaceCount: summary.surfaceCount,
+                    origin: summary.origin,
+                    source: source,
+                    readability: .ok
+                ))
+            } catch {
+                // I8: surface unreadable files instead of silently dropping.
+                // Best-effort id = filename stem (capped at 128 to keep the
+                // plain-table column bounded); `Date.distantPast` keeps
+                // unreadable rows at the bottom of the newest-first sort so
+                // they don't bury healthy snapshots. A file literally
+                // named `.json` has an empty stem; fall back to the full
+                // filename so the row is still identifiable in the table.
+                let rawStem = url.deletingPathExtension().lastPathComponent
+                let stem = rawStem.isEmpty ? url.lastPathComponent : rawStem
+                let snapshotId = String(stem.prefix(128))
+                let rawReason = "\(error)"
+                let reason = String(rawReason.prefix(160))
+                out.append(WorkspaceSnapshotIndex(
+                    snapshotId: snapshotId,
+                    path: url.path,
+                    createdAt: .distantPast,
+                    workspaceTitle: nil,
+                    surfaceCount: 0,
+                    origin: .manual,
+                    source: source,
+                    readability: .unreadable(reason)
+                ))
+            }
         }
         return out
+    }
+
+    /// Header-only summary of a snapshot envelope. Cheaper than a full
+    /// `WorkspaceApplyPlan` Codable decode: `JSONSerialization` still
+    /// materialises the entire JSON object graph into `NSDictionary` /
+    /// `NSArray`, but skips the `WorkspaceApplyPlan` decode (with its
+    /// nested layout and per-surface metadata coercions). For plans with
+    /// many surfaces or deep layouts the decode work is the dominant
+    /// cost; for tiny snapshots the wins are modest. Kept private so
+    /// callers can't confuse a summary with an envelope that carries a
+    /// real `WorkspaceApplyPlan`.
+    private struct SnapshotSummary {
+        let snapshotId: String
+        let createdAt: Date
+        let workspaceTitle: String?
+        let surfaceCount: Int
+        let origin: WorkspaceSnapshotFile.Origin
+    }
+
+    /// Parse just the envelope-level fields + shallow workspace/surfaces
+    /// probes. Falls back to `plan.surfaces.count` when the envelope's
+    /// `surface_count` is missing (legacy files written before P1 landed).
+    /// Throws `StoreError.decodeFailed` on parse failure; the caller in
+    /// `enumerate` drops throwing rows into the silent-skip bucket (I8
+    /// will re-emit them as `unreadable` entries).
+    private func readSummary(from url: URL) throws -> SnapshotSummary {
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            throw StoreError.readFailed(url.path, underlying: "\(error)")
+        }
+        let root: Any
+        do {
+            root = try JSONSerialization.jsonObject(with: data, options: [])
+        } catch {
+            throw StoreError.decodeFailed(url.path, underlying: "\(error)")
+        }
+        guard let dict = root as? [String: Any] else {
+            throw StoreError.decodeFailed(url.path, underlying: "root is not an object")
+        }
+        guard let rawId = dict["snapshot_id"] as? String, !rawId.isEmpty else {
+            throw StoreError.decodeFailed(url.path, underlying: "missing snapshot_id")
+        }
+        guard let rawCreatedAt = dict["created_at"] as? String else {
+            throw StoreError.decodeFailed(url.path, underlying: "missing created_at")
+        }
+        let createdAt: Date
+        if let d = workspaceSnapshotDateFormatter.date(from: rawCreatedAt) {
+            createdAt = d
+        } else {
+            let legacy = ISO8601DateFormatter()
+            legacy.formatOptions = [.withInternetDateTime]
+            if let d = legacy.date(from: rawCreatedAt) {
+                createdAt = d
+            } else {
+                throw StoreError.decodeFailed(url.path, underlying: "invalid created_at '\(rawCreatedAt)'")
+            }
+        }
+        let origin: WorkspaceSnapshotFile.Origin
+        if let rawOrigin = dict["origin"] as? String,
+           let parsed = WorkspaceSnapshotFile.Origin(rawValue: rawOrigin) {
+            origin = parsed
+        } else {
+            origin = .manual
+        }
+        // Shallow plan probe: title + surfaces count via `[String: Any]`
+        // navigation. Never instantiates the full Codable tree.
+        let plan = dict["plan"] as? [String: Any]
+        let workspaceTitle = (plan?["workspace"] as? [String: Any])?["title"] as? String
+        let fallbackSurfaceCount = (plan?["surfaces"] as? [Any])?.count ?? 0
+        let surfaceCount = (dict["surface_count"] as? Int) ?? fallbackSurfaceCount
+        return SnapshotSummary(
+            snapshotId: rawId,
+            createdAt: createdAt,
+            workspaceTitle: workspaceTitle,
+            surfaceCount: surfaceCount,
+            origin: origin
+        )
     }
 }

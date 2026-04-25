@@ -29,8 +29,8 @@ protocol WorkspaceSnapshotSource {
 ///
 /// Invariants the walker honours, enforced by `WorkspaceSnapshotCaptureTests`:
 /// - Surface `title` is the exact `panelCustomTitles[panelId]` at capture
-///   time (falls back to the live `displayTitle` when the operator has
-///   never set a custom title).
+///   time; `nil` when the operator has never set a custom title. The walker
+///   does not read through to `displayTitle`.
 /// - `mailbox.*` pane-metadata keys copy through unmodified. The walker
 ///   does not read-through, decode, or rewrite keys or values.
 /// - `claude.session_id` lives on *surface* metadata, not pane. Surface
@@ -58,12 +58,16 @@ struct LiveWorkspaceSnapshotSource: WorkspaceSnapshotSource {
             return nil
         }
         let plan = capturePlan(workspace: workspace)
+        // Single clock read so the ULID time prefix in `snapshotId` and the
+        // envelope's `createdAt` can never diverge by a tick.
+        let now = clock()
         return WorkspaceSnapshotFile(
             version: 1,
-            snapshotId: WorkspaceSnapshotID.generate(now: clock()),
-            createdAt: clock(),
+            snapshotId: WorkspaceSnapshotID.generate(now: now),
+            createdAt: now,
             c11Version: c11Version,
             origin: origin,
+            surfaceCount: plan.surfaces.count,
             plan: plan
         )
     }

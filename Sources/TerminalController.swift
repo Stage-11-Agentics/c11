@@ -4600,9 +4600,38 @@ class TerminalController {
         if options.select && !v2FocusAllowed(requested: true) {
             options.select = false
         }
+        // Pre-apply warnings surfaced through ApplyResult.warnings below so
+        // operators see them in both JSON and the CLI's `warnings:` block.
+        var preApplyWarnings: [String] = []
         if let registryName = params["restart_registry"] as? String {
-            options.restartRegistry = AgentRestartRegistry.named(registryName)
+            let resolved = AgentRestartRegistry.named(registryName)
+            options.restartRegistry = resolved
+            if resolved == nil {
+                // Unknown wire name → fall back to Phase 0 (no synthesis) but
+                // make the silent degradation visible. Reject is the
+                // tempting alternative, but the registry is designed for
+                // Phase 5 forward compatibility — an operator submitting
+                // "phase5" against an older c11 binary should still land
+                // their restore, just without restart synthesis.
+                preApplyWarnings.append(
+                    "unknown restart_registry '\(registryName)': falling back to no-op (no cc --resume synthesis)"
+                )
+            }
         }
+
+        // In-place restore (I2): resolve the target workspace UUID either
+        // from the `target_workspace_id` param or from the focus-policy
+        // default. When the target doesn't resolve the executor surfaces
+        // `invalid_params` via ApplyResult.failures.
+        let inPlace = (params["in_place"] as? Bool) == true
+        let inPlaceTarget: UUID? = {
+            guard inPlace else { return nil }
+            if let raw = params["target_workspace_id"] as? String,
+               let uuid = UUID(uuidString: raw) {
+                return uuid
+            }
+            return nil
+        }()
 
         var result: ApplyResult?
         v2MainSync {
@@ -4618,10 +4647,38 @@ class TerminalController {
                     self?.v2EnsureHandleRef(kind: .pane, uuid: uuid) ?? "pane:\(uuid.uuidString)"
                 }
             )
-            result = WorkspaceLayoutExecutor.apply(plan, options: options, dependencies: deps)
+            if inPlace, let target = inPlaceTarget {
+                result = WorkspaceLayoutExecutor.applyToExistingWorkspace(
+                    plan,
+                    options: options,
+                    dependencies: deps,
+                    existingWorkspaceId: target
+                )
+            } else if inPlace {
+                // Requested in_place but no target resolver succeeded.
+                // Synthesise the same invalid_params failure the executor
+                // would emit so callers see a consistent shape.
+                result = ApplyResult(
+                    workspaceRef: "",
+                    surfaceRefs: [:],
+                    paneRefs: [:],
+                    timings: [],
+                    warnings: ["in_place restore requires a resolvable target_workspace_id"],
+                    failures: [ApplyFailure(
+                        code: "invalid_params",
+                        step: "validate",
+                        message: "in_place restore requires 'target_workspace_id' as a UUID string"
+                    )]
+                )
+            } else {
+                result = WorkspaceLayoutExecutor.apply(plan, options: options, dependencies: deps)
+            }
         }
-        guard let applyResult = result else {
+        guard var applyResult = result else {
             return .err(code: "internal_error", message: "Executor returned no result", data: nil)
+        }
+        if !preApplyWarnings.isEmpty {
+            applyResult.warnings = preApplyWarnings + applyResult.warnings
         }
         do {
             let encoded = try JSONEncoder().encode(applyResult)
@@ -4647,7 +4704,15 @@ class TerminalController {
         }
         do {
             let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
+            // Match the store's write-side formatter (fractional seconds)
+            // so a timestamp written by `WorkspaceSnapshotStore.write` and
+            // re-read into a `snapshot.list` response round-trips
+            // bit-for-bit. The default `.iso8601` strategy drops subsecond
+            // precision and creates a write-vs-read mismatch.
+            encoder.dateEncodingStrategy = .custom { date, encoder in
+                var container = encoder.singleValueContainer()
+                try container.encode(workspaceSnapshotDateFormatter.string(from: date))
+            }
             let encoded = try encoder.encode(entries)
             let asAny = try JSONSerialization.jsonObject(with: encoded, options: [])
             return .ok(["snapshots": asAny])

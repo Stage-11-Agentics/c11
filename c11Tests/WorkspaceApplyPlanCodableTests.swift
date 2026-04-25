@@ -209,6 +209,31 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         try roundTrip(ApplyOptions(select: false, perStepTimeoutMs: 0, autoWelcomeIfNeeded: true))
     }
 
+    /// P3: two `ApplyOptions` with the same non-nil registry (matched by
+    /// `AgentRestartRegistry.name`) must compare equal. The previous
+    /// implementation treated any two non-nil registries as unequal, which
+    /// prevented tests from asserting equality of options that shared a
+    /// singleton.
+    func testApplyOptionsEqualsTreatsSameNamedRegistryAsEqual() {
+        let lhs = ApplyOptions(select: false, restartRegistry: .phase1)
+        let rhs = ApplyOptions(select: false, restartRegistry: .phase1)
+        XCTAssertEqual(lhs, rhs)
+    }
+
+    func testApplyOptionsEqualsTreatsDifferentNamedRegistriesAsUnequal() {
+        let other = AgentRestartRegistry(name: "other", rows: [])
+        let lhs = ApplyOptions(select: false, restartRegistry: .phase1)
+        let rhs = ApplyOptions(select: false, restartRegistry: other)
+        XCTAssertNotEqual(lhs, rhs)
+    }
+
+    func testApplyOptionsEqualsTreatsNilVsNonNilAsUnequal() {
+        let lhs = ApplyOptions(select: false, restartRegistry: .phase1)
+        let rhs = ApplyOptions(select: false, restartRegistry: nil)
+        XCTAssertNotEqual(lhs, rhs)
+        XCTAssertNotEqual(rhs, lhs)
+    }
+
     func testApplyResultRoundTripsWithWarningsAndFailures() throws {
         let result = ApplyResult(
             workspaceRef: "workspace:1",

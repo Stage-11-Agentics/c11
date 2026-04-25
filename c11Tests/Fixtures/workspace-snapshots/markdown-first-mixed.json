@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "snapshot_id": "01KQ0MARKDOWNFIRSTMIXED00",
+  "created_at": "2026-04-24T18:32:00Z",
+  "c11_version": "acceptance+0",
+  "origin": "manual",
+  "plan": {
+    "version": 1,
+    "workspace": {
+      "title": "CMUX-37 markdown-first"
+    },
+    "layout": {
+      "type": "split",
+      "split": {
+        "orientation": "horizontal",
+        "dividerPosition": 0.5,
+        "first": {
+          "type": "pane",
+          "pane": {
+            "surfaceIds": ["readme"],
+            "selectedIndex": 0
+          }
+        },
+        "second": {
+          "type": "pane",
+          "pane": {
+            "surfaceIds": ["driver"]
+          }
+        }
+      }
+    },
+    "surfaces": [
+      {
+        "id": "readme",
+        "kind": "markdown",
+        "title": "readme",
+        "filePath": "/tmp/readme.md"
+      },
+      {
+        "id": "driver",
+        "kind": "terminal",
+        "title": "cc :: driver",
+        "command": "echo seed",
+        "metadata": {
+          "terminal_type":     { "string": "claude-code" },
+          "claude.session_id": { "string": "dddd3333-4444-5555-6666-777788889999" }
+        }
+      }
+    ]
+  }
+}

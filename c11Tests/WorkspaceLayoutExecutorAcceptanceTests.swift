@@ -142,6 +142,153 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         #endif
     }
 
+    // MARK: - In-place restore (I2)
+
+    /// BL-1 regression: with a single workspace in the window, in-place
+    /// restore must produce exactly one workspace (the replacement), not
+    /// duplicate. The pre-fix order called `closeWorkspace` first, which
+    /// silently no-ops when `tabs.count <= 1`; `apply` then created a
+    /// second workspace alongside the untouched first. The fix flips
+    /// order (apply first, close second): at the moment of close, tab
+    /// count is 2, so the guard passes.
+    func testInPlaceRestoreReplacesSingleWorkspaceWithoutDuplicating() throws {
+        let existing = tabManager.addWorkspace()
+        XCTAssertEqual(tabManager.tabs.count, 1, "test seeded with exactly one workspace")
+        let existingId = existing.id
+
+        let plan = makeTrivialInPlacePlan(title: "replacement-1")
+        let result = WorkspaceLayoutExecutor.applyToExistingWorkspace(
+            plan,
+            options: ApplyOptions(select: false),
+            dependencies: makeInPlaceDeps(),
+            existingWorkspaceId: existingId
+        )
+
+        XCTAssertFalse(result.workspaceRef.isEmpty, "result carries a usable workspaceRef")
+        XCTAssertTrue(
+            result.failures.allSatisfy { $0.code != "invalid_params" },
+            "no invalid_params failure: \(result.failures)"
+        )
+        XCTAssertEqual(
+            tabManager.tabs.count,
+            1,
+            "exactly one workspace after in-place restore (single-workspace regression)"
+        )
+        XCTAssertFalse(
+            tabManager.tabs.contains(where: { $0.id == existingId }),
+            "original workspace closed"
+        )
+        let newId = parseUUIDSuffix(result.workspaceRef)
+        XCTAssertNotEqual(newId, existingId, "replacement has a new UUID (F4 preserves it)")
+        XCTAssertTrue(
+            result.warnings.contains(where: { $0.contains("workspace_uuid_changed") }),
+            "workspace_uuid_changed warning surfaced: \(result.warnings)"
+        )
+    }
+
+    /// Multi-workspace case: target is replaced, sibling is untouched,
+    /// and the overall tab count is stable.
+    func testInPlaceRestoreReplacesTargetAndLeavesSiblingIntact() throws {
+        let target = tabManager.addWorkspace()
+        let sibling = tabManager.addWorkspace()
+        XCTAssertEqual(tabManager.tabs.count, 2)
+        let targetId = target.id
+        let siblingId = sibling.id
+
+        let plan = makeTrivialInPlacePlan(title: "replacement-2")
+        let result = WorkspaceLayoutExecutor.applyToExistingWorkspace(
+            plan,
+            options: ApplyOptions(select: false),
+            dependencies: makeInPlaceDeps(),
+            existingWorkspaceId: targetId
+        )
+
+        XCTAssertFalse(result.workspaceRef.isEmpty)
+        XCTAssertEqual(tabManager.tabs.count, 2, "tab count stable: sibling plus replacement")
+        XCTAssertFalse(
+            tabManager.tabs.contains(where: { $0.id == targetId }),
+            "target workspace closed"
+        )
+        XCTAssertTrue(
+            tabManager.tabs.contains(where: { $0.id == siblingId }),
+            "sibling workspace intact"
+        )
+    }
+
+    /// A missing target UUID surfaces `invalid_params` without touching
+    /// any existing workspace (non-destructive failure).
+    func testInPlaceRestoreMissingTargetReturnsInvalidParams() throws {
+        let existing = tabManager.addWorkspace()
+        let existingId = existing.id
+        let bogusId = UUID()
+        XCTAssertNotEqual(bogusId, existingId)
+
+        let plan = makeTrivialInPlacePlan(title: "replacement-3")
+        let result = WorkspaceLayoutExecutor.applyToExistingWorkspace(
+            plan,
+            options: ApplyOptions(select: false),
+            dependencies: makeInPlaceDeps(),
+            existingWorkspaceId: bogusId
+        )
+
+        XCTAssertEqual(result.workspaceRef, "")
+        XCTAssertTrue(
+            result.failures.contains(where: { $0.code == "invalid_params" }),
+            "invalid_params failure recorded: \(result.failures)"
+        )
+        XCTAssertEqual(tabManager.tabs.count, 1, "no workspace created or closed on failure")
+        XCTAssertTrue(
+            tabManager.tabs.contains(where: { $0.id == existingId }),
+            "existing workspace untouched"
+        )
+    }
+
+    /// A plan with an unsupported version short-circuits in `validate`
+    /// before touching any workspace. The target stays intact.
+    func testInPlaceRestoreValidationFailureLeavesTargetIntact() throws {
+        let existing = tabManager.addWorkspace()
+        let existingId = existing.id
+
+        let plan = WorkspaceApplyPlan(
+            version: 99,
+            workspace: WorkspaceSpec(title: "bad-version"),
+            layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s"])),
+            surfaces: [SurfaceSpec(id: "s", kind: .terminal)]
+        )
+        let result = WorkspaceLayoutExecutor.applyToExistingWorkspace(
+            plan,
+            options: ApplyOptions(select: false),
+            dependencies: makeInPlaceDeps(),
+            existingWorkspaceId: existingId
+        )
+
+        XCTAssertEqual(result.workspaceRef, "")
+        XCTAssertFalse(result.failures.isEmpty, "validation failure recorded")
+        XCTAssertEqual(tabManager.tabs.count, 1, "no workspace created or closed on failure")
+        XCTAssertTrue(
+            tabManager.tabs.contains(where: { $0.id == existingId }),
+            "target untouched on validation failure"
+        )
+    }
+
+    private func makeTrivialInPlacePlan(title: String) -> WorkspaceApplyPlan {
+        WorkspaceApplyPlan(
+            version: 1,
+            workspace: WorkspaceSpec(title: title),
+            layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["s"])),
+            surfaces: [SurfaceSpec(id: "s", kind: .terminal, title: title)]
+        )
+    }
+
+    private func makeInPlaceDeps() -> WorkspaceLayoutExecutorDependencies {
+        WorkspaceLayoutExecutorDependencies(
+            tabManager: tabManager,
+            workspaceRefMinter: { "workspace:\($0.uuidString)" },
+            surfaceRefMinter: { "surface:\($0.uuidString)" },
+            paneRefMinter: { "pane:\($0.uuidString)" }
+        )
+    }
+
     // MARK: - Harness
 
     @discardableResult

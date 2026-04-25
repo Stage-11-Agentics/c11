@@ -42,6 +42,12 @@ c11 restore 01KQ0XYZ…
 
 # Restore with cc session resume
 C11_SESSION_RESUME=1 c11 restore 01KQ0XYZ…
+
+# Replace the current workspace's content in place (no duplicate tab).
+# The target workspace's existing panels and splits are closed first;
+# the new workspace inherits the plan. Note: the workspace UUID changes
+# (a fresh workspace is minted and the prior one is closed).
+c11 restore --in-place 01KQ0XYZ…
 ```
 
 - `C11_SESSION_RESUME` (mirror: `CMUX_SESSION_RESUME`) is read at the CLI layer only.  A truthy value (anything except empty / `0` / `false` / `no` / `off`) threads `restart_registry: "phase1"` into the `snapshot.restore` v2 call.
@@ -55,6 +61,14 @@ C11_SESSION_RESUME=1 c11 restore 01KQ0XYZ…
 | `~/.cmuxterm/claude-hook-sessions.json` | SessionStore record | Sidebar UI, stale-session detection |
 | Surface metadata (`SurfaceMetadataStore`) | `claude.session_id` key, source `.explicit` | Phase 1 restart registry; serialised into snapshot envelopes |
 | Snapshot envelope (`WorkspaceSnapshotFile`) | Embedded plan → `surfaces[i].metadata["claude.session_id"]` | Loaded at restore time; executor synthesises `cc --resume <id>` when registry is set |
+
+## Privacy and storage
+
+Snapshot envelopes store `claude.session_id` values in cleartext under `~/.c11-snapshots/` (and the legacy `~/.cmux-snapshots/`). Session ids are UUIDv4 transcript-lookup keys, not credentials: they cannot mint a new Claude session and they grant no API or auth scope on their own.
+
+The threat model is narrow: a local attacker who already has read access to the operator's home directory can pair a captured session id with `~/.claude/projects/<project>/` to enumerate historical Claude transcripts. If that is outside your threat model, no action is needed. If it is inside, treat `~/.c11-snapshots/` with the same hygiene you give `~/.claude/projects/`: restrict permissions, exclude from shared-volume backups, or delete snapshots after restore.
+
+c11 does not encrypt at rest (no Keychain round-trip). The restart registry synthesises the resume command in-process well before the operator would be prompted for biometrics, so Keychain storage would block non-interactive restore without meaningfully raising the attacker bar (anyone with local read access to the snapshot file already has local read access to `~/.claude/projects/`). Operator decision (C11-14): document the threat model and ship as-is. Revisit if the threat model ever includes untrusted local processes.
 
 ## Troubleshooting
 

@@ -2599,6 +2599,14 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// string. Used by the Phase 1 snapshot round-trip acceptance fixture
     /// (and future layout-executor harnesses) to verify what `sendText`
     /// queued before the live Ghostty surface came up.
+    ///
+    /// `TerminalSurface` is an `NSView`; AppKit conventions put its state
+    /// on the main actor. The `@MainActor` annotation here makes the race
+    /// impossible by construction: any off-main caller would fail to
+    /// compile. Existing callers (the acceptance harness, future
+    /// executor tests) already run on the main actor so no behavioural
+    /// change.
+    @MainActor
     var pendingInitialInputForTests: String {
         var bytes = Data()
         for chunk in pendingTextQueue { bytes.append(chunk) }

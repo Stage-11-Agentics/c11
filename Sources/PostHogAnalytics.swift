@@ -6,9 +6,8 @@ final class PostHogAnalytics {
     static let shared = PostHogAnalytics()
 
     // The PostHog project API key is intentionally embedded in the app (it's a public key).
-    // Empty string disables PostHog at runtime. Pending: provision a `stage11-c11` project
-    // under the Stage 11 Agentics PostHog org and embed the project public key here.
-    private let apiKey = ""
+    // Project: `stage11-c11` under the Stage 11 PostHog org (us.posthog.com).
+    private let apiKey = "phc_DfsnweKfe5uHUDK2scRVddAjpX8xGkq5NZWANmZaKo97"
 
     // PostHog Cloud US default.
     private let host = "https://us.i.posthog.com"

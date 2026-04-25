@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "name": "side-by-side",
+  "description": "Two terminals split horizontally",
+  "plan": {
+    "version": 1,
+    "workspace": {},
+    "layout": {
+      "type": "split",
+      "split": {
+        "orientation": "horizontal",
+        "dividerPosition": 0.5,
+        "first": {
+          "type": "pane",
+          "pane": { "surfaceIds": ["s1"] }
+        },
+        "second": {
+          "type": "pane",
+          "pane": { "surfaceIds": ["s2"] }
+        }
+      }
+    },
+    "surfaces": [
+      {
+        "id": "s1",
+        "kind": "terminal"
+      },
+      {
+        "id": "s2",
+        "kind": "terminal"
+      }
+    ]
+  }
+}

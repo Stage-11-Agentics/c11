@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "name": "basic-terminal",
+  "description": "Single terminal pane",
+  "plan": {
+    "version": 1,
+    "workspace": {},
+    "layout": {
+      "type": "pane",
+      "pane": { "surfaceIds": ["s1"] }
+    },
+    "surfaces": [
+      {
+        "id": "s1",
+        "kind": "terminal"
+      }
+    ]
+  }
+}

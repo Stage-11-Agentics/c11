@@ -37,6 +37,13 @@
 		D800DBF0A1B2C3D4E5F60718 /* WorkspaceSnapshotRoundTripAcceptanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D800DBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotRoundTripAcceptanceTests.swift */; };
 		D800EBF0A1B2C3D4E5F60718 /* SurfaceMetadataStoreValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D800EBF1A1B2C3D4E5F60718 /* SurfaceMetadataStoreValidationTests.swift */; };
 		D800FBF0A1B2C3D4E5F60718 /* WorkspaceSnapshotStoreSecurityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D800FBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotStoreSecurityTests.swift */; };
+		D8010BF0A1B2C3D4E5F60718 /* WorkspacePlanCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8010BF1A1B2C3D4E5F60718 /* WorkspacePlanCapture.swift */; };
+		D8011BF0A1B2C3D4E5F60718 /* WorkspaceBlueprintFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8011BF1A1B2C3D4E5F60718 /* WorkspaceBlueprintFile.swift */; };
+		D8012BF0A1B2C3D4E5F60718 /* WorkspaceBlueprintStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8012BF1A1B2C3D4E5F60718 /* WorkspaceBlueprintStore.swift */; };
+		D8013BF0A1B2C3D4E5F60718 /* WorkspaceBlueprintExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8013BF1A1B2C3D4E5F60718 /* WorkspaceBlueprintExporter.swift */; };
+		D8014BF0A1B2C3D4E5F60718 /* WorkspaceBlueprintFileCodableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8014BF1A1B2C3D4E5F60718 /* WorkspaceBlueprintFileCodableTests.swift */; };
+		D8015BF0A1B2C3D4E5F60718 /* WorkspaceBlueprintStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8015BF1A1B2C3D4E5F60718 /* WorkspaceBlueprintStoreTests.swift */; };
+		D8016BF0A1B2C3D4E5F60718 /* WorkspaceSnapshotBrowserMarkdownRoundTripTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8016BF1A1B2C3D4E5F60718 /* WorkspaceSnapshotBrowserMarkdownRoundTripTests.swift */; };
 		D7011BF0A1B2C3D4E5F60718 /* PaneMetadataStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7011BF1A1B2C3D4E5F60718 /* PaneMetadataStoreTests.swift */; };
 		D7012BF0A1B2C3D4E5F60718 /* PaneMetadataPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7012BF1A1B2C3D4E5F60718 /* PaneMetadataPersistenceTests.swift */; };
 		D7015BF0A1B2C3D4E5F60718 /* DefaultGridSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7015BF1A1B2C3D4E5F60718 /* DefaultGridSettingsTests.swift */; };
@@ -317,6 +324,15 @@
 		D800DBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotRoundTripAcceptanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceSnapshotRoundTripAcceptanceTests.swift; sourceTree = "<group>"; };
 		D800EBF1A1B2C3D4E5F60718 /* SurfaceMetadataStoreValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceMetadataStoreValidationTests.swift; sourceTree = "<group>"; };
 		D800FBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotStoreSecurityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceSnapshotStoreSecurityTests.swift; sourceTree = "<group>"; };
+		D8010BF1A1B2C3D4E5F60718 /* WorkspacePlanCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspacePlanCapture.swift; sourceTree = "<group>"; };
+		D8011BF1A1B2C3D4E5F60718 /* WorkspaceBlueprintFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceBlueprintFile.swift; sourceTree = "<group>"; };
+		D8012BF1A1B2C3D4E5F60718 /* WorkspaceBlueprintStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceBlueprintStore.swift; sourceTree = "<group>"; };
+		D8013BF1A1B2C3D4E5F60718 /* WorkspaceBlueprintExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceBlueprintExporter.swift; sourceTree = "<group>"; };
+		D8014BF1A1B2C3D4E5F60718 /* WorkspaceBlueprintFileCodableTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceBlueprintFileCodableTests.swift; sourceTree = "<group>"; };
+		D8015BF1A1B2C3D4E5F60718 /* WorkspaceBlueprintStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceBlueprintStoreTests.swift; sourceTree = "<group>"; };
+		D8016BF1A1B2C3D4E5F60718 /* WorkspaceSnapshotBrowserMarkdownRoundTripTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceSnapshotBrowserMarkdownRoundTripTests.swift; sourceTree = "<group>"; };
+		D8017BF1A1B2C3D4E5F60718 /* Blueprints */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Blueprints; sourceTree = "<group>"; };
+		D8017BF0A1B2C3D4E5F60718 /* Blueprints in Resources */ = {isa = PBXBuildFile; fileRef = D8017BF1A1B2C3D4E5F60718 /* Blueprints */; };
 		D7011BF1A1B2C3D4E5F60718 /* PaneMetadataStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneMetadataStoreTests.swift; sourceTree = "<group>"; };
 		D7012BF1A1B2C3D4E5F60718 /* PaneMetadataPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneMetadataPersistenceTests.swift; sourceTree = "<group>"; };
 		D7015BF1A1B2C3D4E5F60718 /* DefaultGridSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultGridSettingsTests.swift; sourceTree = "<group>"; };
@@ -554,6 +570,7 @@
 				DA7A10CA710E000000000003 /* Localizable.xcstrings in Resources */,
 				DA7A10CA710E000000000004 /* InfoPlist.xcstrings in Resources */,
 				DA7A10CA710E000000000006 /* welcome.md in Resources */,
+				D8017BF0A1B2C3D4E5F60718 /* Blueprints in Resources */,
 				A5001623 /* c11.sdef in Resources */,
 				A5F1001001A1B2C3D4E5F019 /* stage11.toml in Resources */,
 				A5F1001001A1B2C3D4E5F120 /* phosphor.toml in Resources */,
@@ -650,6 +667,10 @@
 				D8007BF1A1B2C3D4E5F60718 /* AgentRestartRegistry.swift */,
 				D800ABF1A1B2C3D4E5F60718 /* WorkspaceSnapshotCapture.swift */,
 				D800BBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotStore.swift */,
+				D8010BF1A1B2C3D4E5F60718 /* WorkspacePlanCapture.swift */,
+				D8011BF1A1B2C3D4E5F60718 /* WorkspaceBlueprintFile.swift */,
+				D8012BF1A1B2C3D4E5F60718 /* WorkspaceBlueprintStore.swift */,
+				D8013BF1A1B2C3D4E5F60718 /* WorkspaceBlueprintExporter.swift */,
 				A5001545 /* AgentDetector.swift */,
 				A5001701 /* TextBoxInput.swift */,
 				A5F1002001A1B2C3D4E5F001 /* ThemedValueAST.swift */,
@@ -744,6 +765,7 @@
 				B2E7294509CC42FE9191870E /* xterm-ghostty */,
 				A5002001 /* THIRD_PARTY_LICENSES.md */,
 				C1ADE00001A1B2C3D4E5F719 /* claude */,
+				D8017BF1A1B2C3D4E5F60718 /* Blueprints */,
 				DA7A10CA710E000000000001 /* Localizable.xcstrings */,
 				DA7A10CA710E000000000002 /* InfoPlist.xcstrings */,
 				DA7A10CA710E000000000005 /* welcome.md */,
@@ -857,6 +879,9 @@
 					D800DBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotRoundTripAcceptanceTests.swift */,
 					D800EBF1A1B2C3D4E5F60718 /* SurfaceMetadataStoreValidationTests.swift */,
 					D800FBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotStoreSecurityTests.swift */,
+				D8014BF1A1B2C3D4E5F60718 /* WorkspaceBlueprintFileCodableTests.swift */,
+				D8015BF1A1B2C3D4E5F60718 /* WorkspaceBlueprintStoreTests.swift */,
+				D8016BF1A1B2C3D4E5F60718 /* WorkspaceSnapshotBrowserMarkdownRoundTripTests.swift */,
 					A5C36031 /* StatusBarButtonDisplayTests.swift */,
 					D7101BF1A1B2C3D4E5F60718 /* MailboxLayoutTests.swift */,
 					D7104BF1A1B2C3D4E5F60718 /* MailboxIOTests.swift */,
@@ -1038,6 +1063,10 @@
 				D8007BF0A1B2C3D4E5F60718 /* AgentRestartRegistry.swift in Sources */,
 				D800ABF0A1B2C3D4E5F60718 /* WorkspaceSnapshotCapture.swift in Sources */,
 				D800BBF0A1B2C3D4E5F60718 /* WorkspaceSnapshotStore.swift in Sources */,
+				D8010BF0A1B2C3D4E5F60718 /* WorkspacePlanCapture.swift in Sources */,
+				D8011BF0A1B2C3D4E5F60718 /* WorkspaceBlueprintFile.swift in Sources */,
+				D8012BF0A1B2C3D4E5F60718 /* WorkspaceBlueprintStore.swift in Sources */,
+				D8013BF0A1B2C3D4E5F60718 /* WorkspaceBlueprintExporter.swift in Sources */,
 				A5001544 /* AgentDetector.swift in Sources */,
 			A5001700 /* TextBoxInput.swift in Sources */,
 			A5F1001001A1B2C3D4E5F001 /* ThemedValueAST.swift in Sources */,
@@ -1219,6 +1248,9 @@
 					D800DBF0A1B2C3D4E5F60718 /* WorkspaceSnapshotRoundTripAcceptanceTests.swift in Sources */,
 					D800EBF0A1B2C3D4E5F60718 /* SurfaceMetadataStoreValidationTests.swift in Sources */,
 					D800FBF0A1B2C3D4E5F60718 /* WorkspaceSnapshotStoreSecurityTests.swift in Sources */,
+					D8014BF0A1B2C3D4E5F60718 /* WorkspaceBlueprintFileCodableTests.swift in Sources */,
+					D8015BF0A1B2C3D4E5F60718 /* WorkspaceBlueprintStoreTests.swift in Sources */,
+					D8016BF0A1B2C3D4E5F60718 /* WorkspaceSnapshotBrowserMarkdownRoundTripTests.swift in Sources */,
 				);
 				runOnlyForDeploymentPostprocessing = 0;
 			};

@@ -1734,12 +1734,10 @@ struct CMUXCLI {
             try runSSHSessionEnd(commandArgs: commandArgs, client: client)
 
         case "workspace":
-            // CMUX-37 Phase 0: `c11 workspace <subcommand>`. Plan and docs
-            // (docs/c11-snapshot-restore-plan.md:164) specify this form.
-            // Future subcommands: snapshot/restore (Phase 1), new/export-
-            // blueprint (Phase 2). For now `apply` is the only subcommand.
+            // CMUX-37: `c11 workspace <subcommand>`. Subcommands added across
+            // phases: apply (Phase 0), new + export-blueprint (Phase 2).
             guard let sub = commandArgs.first else {
-                throw CLIError(message: "workspace: missing subcommand. Known subcommands: apply")
+                throw CLIError(message: "workspace: missing subcommand. Known subcommands: apply, new, export-blueprint")
             }
             let subArgs = Array(commandArgs.dropFirst())
             switch sub {
@@ -1751,8 +1749,21 @@ struct CMUXCLI {
                     jsonOutput: jsonOutput,
                     idFormat: idFormat
                 )
+            case "new":
+                try runWorkspaceBlueprintNew(
+                    subArgs,
+                    client: client,
+                    jsonOutput: jsonOutput,
+                    idFormat: idFormat
+                )
+            case "export-blueprint":
+                try runWorkspaceExportBlueprint(
+                    subArgs,
+                    client: client,
+                    jsonOutput: jsonOutput
+                )
             default:
-                throw CLIError(message: "workspace: unknown subcommand '\(sub)'. Known subcommands: apply")
+                throw CLIError(message: "workspace: unknown subcommand '\(sub)'. Known subcommands: apply, new, export-blueprint")
             }
 
         case "workspace-apply":
@@ -2639,6 +2650,19 @@ struct CMUXCLI {
         }
     }
 
+    private func localizedBlueprintSourceLabel(_ raw: String) -> String {
+        switch raw {
+        case "repo":
+            return String(localized: "workspace.blueprint.source.repo", defaultValue: "repo")
+        case "user":
+            return String(localized: "workspace.blueprint.source.user", defaultValue: "user")
+        case "built-in":
+            return String(localized: "workspace.blueprint.source.builtIn", defaultValue: "built-in")
+        default:
+            return raw
+        }
+    }
+
     private func resolvePath(_ path: String) -> String {
         let expanded = NSString(string: path).expandingTildeInPath
         if expanded.hasPrefix("/") { return expanded }
@@ -2704,9 +2728,198 @@ struct CMUXCLI {
         }
     }
 
+    // MARK: - CMUX-37 Phase 2: blueprint commands
+
+    /// `c11 workspace new [--blueprint <path>]`. Without `--blueprint` drops
+    /// into an interactive picker that calls `workspace.list_blueprints` and
+    /// lets the user choose by number. With `--blueprint <path>` reads the
+    /// `WorkspaceBlueprintFile` JSON directly and applies its plan.
+    private func runWorkspaceBlueprintNew(
+        _ args: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) throws {
+        let (blueprintOpt, remaining) = parseOption(args, name: "--blueprint")
+        if let unknown = remaining.first(where: { $0.hasPrefix("--") }) {
+            throw CLIError(message: "workspace new: unknown flag '\(unknown)'. Known flags: --blueprint <path>")
+        }
+
+        if jsonOutput && blueprintOpt == nil {
+            print(#"{"ok": false, "error": {"code": "PICKER_NOT_SUPPORTED_IN_JSON_MODE", "message": "--json requires --blueprint; interactive picker is not available in JSON mode"}}"#)
+            return
+        }
+
+        let planObject: Any
+        if let bpArg = blueprintOpt {
+            let resolved = resolvePath(bpArg)
+            guard let data = FileManager.default.contents(atPath: resolved) else {
+                throw CLIError(message: "workspace new: could not read '\(resolved)'")
+            }
+            guard
+                let file = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let plan = file["plan"]
+            else {
+                throw CLIError(message: "workspace new: '\(resolved)' is not a valid blueprint file (missing 'plan' key)")
+            }
+            planObject = plan
+        } else {
+            planObject = try workspaceBlueprintPicker(client: client, jsonOutput: jsonOutput)
+        }
+
+        let payload = try client.sendV2(method: "workspace.apply", params: ["plan": planObject])
+        if jsonOutput {
+            print(jsonString(formatIDs(payload, mode: idFormat)))
+        } else {
+            let ref = (payload["workspaceRef"] as? String) ?? "?"
+            let surfaceRefs = payload["surfaceRefs"] as? [String: String] ?? [:]
+            let paneRefs = payload["paneRefs"] as? [String: String] ?? [:]
+            let warnings = payload["warnings"] as? [String] ?? []
+            let failures = payload["failures"] as? [[String: Any]] ?? []
+            print("OK workspace=\(ref) surfaces=\(surfaceRefs.count) panes=\(paneRefs.count)")
+            if !warnings.isEmpty {
+                for w in warnings { print("  warning: \(w)") }
+            }
+            if !failures.isEmpty {
+                for f in failures {
+                    let code = (f["code"] as? String) ?? "?"
+                    let step = (f["step"] as? String) ?? "?"
+                    let msg = (f["message"] as? String) ?? ""
+                    print("  failure: [\(code)] \(step): \(msg)")
+                }
+            }
+        }
+    }
+
+    /// Fetches `workspace.list_blueprints`, prints a numbered picker, reads
+    /// from stdin, and returns the selected plan object ready for
+    /// `workspace.apply`. Throws `CLIError` on cancel ("q") or invalid input.
+    private func workspaceBlueprintPicker(client: SocketClient, jsonOutput: Bool) throws -> Any {
+        let cwd = FileManager.default.currentDirectoryPath
+        let payload = try client.sendV2(method: "workspace.list_blueprints", params: ["cwd": cwd])
+        guard let blueprints = payload["blueprints"] as? [[String: Any]], !blueprints.isEmpty else {
+            throw CLIError(message: String(localized: "workspace.blueprint.picker.noBlueprints",
+                defaultValue: "workspace new: no blueprints found. Use --blueprint <path> to apply one directly."))
+        }
+
+        let maxBracketLen = blueprints.map {
+            let src = $0["source"] as? String ?? ""
+            return localizedBlueprintSourceLabel(src).count + 2 // +2 for "[]"
+        }.max() ?? 0
+
+        for (i, bp) in blueprints.enumerated() {
+            let source = bp["source"] as? String ?? ""
+            let name = bp["name"] as? String ?? "(unnamed)"
+            let desc = bp["description"] as? String
+            let bracketLabel = "[\(localizedBlueprintSourceLabel(source))]"
+            let label = bracketLabel.padding(toLength: maxBracketLen, withPad: " ", startingAt: 0)
+            let num = String(i + 1).leftPadded(to: String(blueprints.count).count)
+            if let d = desc {
+                print("  \(label)  \(num)  \(name) — \(d)")
+            } else {
+                print("  \(label)  \(num)  \(name)")
+            }
+        }
+        print("")
+        print(String(localized: "workspace.blueprint.picker.prompt",
+            defaultValue: "Enter number to apply, or q to cancel: "), terminator: "")
+        fflush(stdout)
+
+        guard let line = readLine(strippingNewline: true) else {
+            throw CLIError(message: "workspace new: cancelled")
+        }
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if trimmed == "q" || trimmed == "Q" {
+            throw CLIError(message: "workspace new: cancelled")
+        }
+        guard let idx = Int(trimmed), idx >= 1, idx <= blueprints.count else {
+            throw CLIError(message: "workspace new: invalid selection '\(trimmed)'")
+        }
+
+        let chosen = blueprints[idx - 1]
+        guard let url = chosen["url"] as? String else {
+            throw CLIError(message: "workspace new: selected blueprint has no url")
+        }
+        let resolved = resolvePath(url)
+        guard let data = FileManager.default.contents(atPath: resolved) else {
+            throw CLIError(message: "workspace new: could not read blueprint at '\(resolved)'")
+        }
+        guard
+            let file = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let plan = file["plan"]
+        else {
+            throw CLIError(message: "workspace new: '\(resolved)' is not a valid blueprint file (missing 'plan' key)")
+        }
+        return plan
+    }
+
+    /// `c11 workspace export-blueprint --name <name> [--workspace <ref>]
+    /// [--description <text>] [--out <path>] [--force]`. Captures the current
+    /// (or named) workspace as a `WorkspaceBlueprintFile` JSON and writes it.
+    /// Without `--out`, prints the default path written by the socket handler.
+    /// `--force` allows overwriting an existing blueprint with the same name.
+    private func runWorkspaceExportBlueprint(
+        _ args: [String],
+        client: SocketClient,
+        jsonOutput: Bool
+    ) throws {
+        let (workspaceOpt, a1) = parseOption(args, name: "--workspace")
+        let (nameOpt, a2) = parseOption(a1, name: "--name")
+        let (descOpt, a3) = parseOption(a2, name: "--description")
+        let (outOpt, a4) = parseOption(a3, name: "--out")
+        let forceFlag = a4.contains("--force")
+        let a5 = a4.filter { $0 != "--force" }
+        if let unknown = a5.first(where: { $0.hasPrefix("--") }) {
+            throw CLIError(message: "workspace export-blueprint: unknown flag '\(unknown)'. Known flags: --workspace <ref>, --name <name>, --description <text>, --out <path>, --force")
+        }
+        guard let name = nameOpt else {
+            throw CLIError(message: "workspace export-blueprint: --name <name> is required")
+        }
+
+        var params: [String: Any] = ["name": name]
+        if let wsRaw = workspaceOpt {
+            params["workspace_id"] = try resolveWorkspaceId(wsRaw, client: client)
+        }
+        if let desc = descOpt {
+            params["description"] = desc
+        }
+        if forceFlag {
+            params["force"] = true
+        }
+
+        let payload = try client.sendV2(method: "workspace.export_blueprint", params: params)
+        var resolvedPath = (payload["path"] as? String) ?? "?"
+
+        if let outRaw = outOpt {
+            let src = URL(fileURLWithPath: resolvedPath)
+            let dst = URL(fileURLWithPath: resolvePath(outRaw))
+            do {
+                try FileManager.default.createDirectory(
+                    at: dst.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+                if FileManager.default.fileExists(atPath: dst.path) {
+                    try FileManager.default.removeItem(at: dst)
+                }
+                try FileManager.default.moveItem(at: src, to: dst)
+                resolvedPath = dst.path
+            } catch {
+                throw CLIError(message: "workspace export-blueprint: --out move failed: \(error)")
+            }
+        }
+
+        if jsonOutput {
+            var mutable = payload
+            mutable["path"] = resolvedPath
+            print(jsonString(mutable))
+        } else {
+            print("OK blueprint=\(name) path=\(resolvedPath)")
+        }
+    }
+
     // MARK: - CMUX-37 Phase 1: snapshot commands
 
-    /// `c11 snapshot [--workspace <ref>] [--out <path>] [--json]`. Defaults
+    /// `c11 snapshot [--workspace <ref>] [--out <path>] [--all] [--json]`. Defaults
     /// to the current workspace (`$CMUX_WORKSPACE_ID`). Prints the resolved
     /// path + snapshot id. Backed by `snapshot.create` v2.
     ///
@@ -2715,6 +2928,9 @@ struct CMUXCLI {
     /// captures cannot choose their destination). After the socket returns,
     /// the CLI — running with the user's real FS permissions — moves the
     /// emitted file to the requested path.
+    ///
+    /// `--all` captures every open workspace. Mutually exclusive with
+    /// `--workspace` and `--out`.
     private func runSnapshotCreate(
         _ args: [String],
         client: SocketClient,
@@ -2722,9 +2938,43 @@ struct CMUXCLI {
     ) throws {
         let (workspaceOpt, afterWorkspace) = parseOption(args, name: "--workspace")
         let (outOpt, afterOut) = parseOption(afterWorkspace, name: "--out")
-        if let unknown = afterOut.first(where: { $0.hasPrefix("--") }) {
-            throw CLIError(message: "snapshot: unknown flag '\(unknown)'. Known flags: --workspace <ref>, --out <path>")
+        let (afterAll, hasAll) = parseFlag(afterOut, name: "--all")
+        if let unknown = afterAll.first(where: { $0.hasPrefix("--") }) {
+            throw CLIError(message: "snapshot: unknown flag '\(unknown)'. Known flags: --workspace <ref>, --out <path>, --all")
         }
+
+        if hasAll {
+            if workspaceOpt != nil {
+                throw CLIError(message: "snapshot: --all and --workspace are mutually exclusive")
+            }
+            if outOpt != nil {
+                throw CLIError(message: "snapshot: --all and --out are mutually exclusive")
+            }
+            let payload = try client.sendV2(method: "snapshot.create", params: ["all": true])
+            let snapshots = payload["snapshots"] as? [[String: Any]] ?? []
+            if jsonOutput {
+                print(jsonString(payload))
+                return
+            }
+            var anyFailure = false
+            for snap in snapshots {
+                let wsRef = (snap["workspace_ref"] as? String) ?? "?"
+                if let err = snap["error"] as? String {
+                    print("ERROR workspace=\(wsRef) reason=\(err)")
+                    anyFailure = true
+                } else {
+                    let id = (snap["snapshot_id"] as? String) ?? "?"
+                    let path = (snap["path"] as? String) ?? "?"
+                    let count = (snap["surface_count"] as? Int) ?? 0
+                    print("OK snapshot=\(id) surfaces=\(count) workspace=\(wsRef) path=\(path)")
+                }
+            }
+            if anyFailure {
+                throw CLIError(message: "snapshot --all: one or more workspaces failed to write")
+            }
+            return
+        }
+
         var params: [String: Any] = [:]
         if let wsRaw = workspaceOpt {
             // Route through the standard resolver so `workspace:2`
@@ -2738,6 +2988,7 @@ struct CMUXCLI {
         let id = (payload["snapshot_id"] as? String) ?? "?"
         var resolvedPath = (payload["path"] as? String) ?? "?"
         let count = (payload["surface_count"] as? Int) ?? 0
+        let wsRef = (payload["workspace_ref"] as? String) ?? "?"
         if let outRaw = outOpt {
             let src = URL(fileURLWithPath: resolvedPath)
             let dst = URL(fileURLWithPath: resolvePath(outRaw))
@@ -2761,7 +3012,7 @@ struct CMUXCLI {
             print(jsonString(mutable))
             return
         }
-        print("OK snapshot=\(id) surfaces=\(count) path=\(resolvedPath)")
+        print("OK snapshot=\(id) surfaces=\(count) workspace=\(wsRef) path=\(resolvedPath)")
     }
 
     /// `c11 restore <snapshot-id-or-path> [--json]`. Reads
@@ -8221,7 +8472,7 @@ struct CMUXCLI {
             """
         case "snapshot":
             return """
-            Usage: c11 snapshot [--workspace <ref>] [--out <path>] [--json]
+            Usage: c11 snapshot [--workspace <ref>] [--out <path>] [--all] [--json]
 
             Capture the current workspace (or a named one) to
             `~/.c11-snapshots/<ulid>.json`. No args → current workspace
@@ -8230,11 +8481,15 @@ struct CMUXCLI {
             Flags:
               --workspace <ref>   Workspace to capture (ref or UUID)
               --out <path>        Override the default output path
+              --all               Capture every open workspace in one pass
               --json              Emit raw snapshot.create result as JSON
+
+            Note: --all and --workspace / --out are mutually exclusive.
 
             Examples:
               c11 snapshot
               c11 snapshot --workspace workspace:2 --out ~/snapshots/phase1.json
+              c11 snapshot --all
             """
         case "restore":
             return """
@@ -9373,6 +9628,20 @@ struct CMUXCLI {
             .replacingOccurrences(of: "\r", with: "\\r")
         return "\"\(escaped)\""
     }
+    /// Returns `(remaining, found)` — `found` is true when `name` is present.
+    private func parseFlag(_ args: [String], name: String) -> ([String], Bool) {
+        var remaining: [String] = []
+        var found = false
+        for arg in args {
+            if arg == name {
+                found = true
+            } else {
+                remaining.append(arg)
+            }
+        }
+        return (remaining, found)
+    }
+
     private func parseOption(_ args: [String], name: String) -> (String?, [String]) {
         var remaining: [String] = []
         var value: String?
@@ -13899,6 +14168,11 @@ private extension String {
             result.removeLast()
         }
         return result
+    }
+
+    func leftPadded(to length: Int, with pad: Character = " ") -> String {
+        guard count < length else { return self }
+        return String(repeating: pad, count: length - count) + self
     }
 }
 

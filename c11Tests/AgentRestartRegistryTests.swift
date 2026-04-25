@@ -62,8 +62,9 @@ final class AgentRestartRegistryTests: XCTestCase {
 
     func testUnknownTerminalTypeReturnsNil() {
         let registry = AgentRestartRegistry.phase1
+        // Use a type that is genuinely absent from the registry.
         XCTAssertNil(registry.resolveCommand(
-            terminalType: "codex",
+            terminalType: "cursor",
             sessionId: "anything",
             metadata: [:]
         ))
@@ -239,6 +240,66 @@ final class AgentRestartRegistryTests: XCTestCase {
             cmd,
             "cc --resume AaBbCcDd-1111-2222-3333-AABBCCDDEEFF\n",
             "UUID grammar is case-insensitive for hex"
+        )
+    }
+
+    // MARK: - Phase 5: codex / opencode / kimi rows
+
+    /// Codex uses best-effort `--last` semantics regardless of session id.
+    func testCodexRowReturnsBestEffortLastCommand() {
+        let registry = AgentRestartRegistry.phase1
+        // Returns the command regardless of whether a session id is present.
+        XCTAssertEqual(
+            registry.resolveCommand(terminalType: "codex", sessionId: nil, metadata: [:]),
+            "codex resume --last\n",
+            "codex row returns best-effort resume --last even without session id"
+        )
+        XCTAssertEqual(
+            registry.resolveCommand(
+                terminalType: "codex",
+                sessionId: "abc12345-ef67-890a-bcde-f0123456789a",
+                metadata: [:]
+            ),
+            "codex resume --last\n",
+            "codex row ignores session id and always returns resume --last"
+        )
+    }
+
+    /// Opencode has no verified resume flag — launches fresh.
+    func testOpencodeRowReturnsBareCommand() {
+        let registry = AgentRestartRegistry.phase1
+        XCTAssertEqual(
+            registry.resolveCommand(terminalType: "opencode", sessionId: nil, metadata: [:]),
+            "opencode\n",
+            "opencode row returns bare launch (no resume flag)"
+        )
+        XCTAssertEqual(
+            registry.resolveCommand(
+                terminalType: "opencode",
+                sessionId: "11111111-2222-3333-4444-555566667777",
+                metadata: [:]
+            ),
+            "opencode\n",
+            "opencode row ignores session id and returns bare launch"
+        )
+    }
+
+    /// Kimi has no verified resume flag — launches fresh.
+    func testKimiRowReturnsBareCommand() {
+        let registry = AgentRestartRegistry.phase1
+        XCTAssertEqual(
+            registry.resolveCommand(terminalType: "kimi", sessionId: nil, metadata: [:]),
+            "kimi\n",
+            "kimi row returns bare launch (no resume flag)"
+        )
+        XCTAssertEqual(
+            registry.resolveCommand(
+                terminalType: "kimi",
+                sessionId: "aaaabbbb-cccc-dddd-eeee-ffff00001111",
+                metadata: [:]
+            ),
+            "kimi\n",
+            "kimi row ignores session id and returns bare launch"
         )
     }
 

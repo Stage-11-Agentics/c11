@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "name": "agent-room",
+  "description": "Three-pane agent layout: main terminal left, log tail top-right, browser bottom-right",
+  "plan": {
+    "version": 1,
+    "workspace": {},
+    "layout": {
+      "type": "split",
+      "split": {
+        "orientation": "horizontal",
+        "dividerPosition": 0.6,
+        "first": {
+          "type": "pane",
+          "pane": { "surfaceIds": ["s1"] }
+        },
+        "second": {
+          "type": "split",
+          "split": {
+            "orientation": "vertical",
+            "dividerPosition": 0.5,
+            "first": {
+              "type": "pane",
+              "pane": { "surfaceIds": ["s2"] }
+            },
+            "second": {
+              "type": "pane",
+              "pane": { "surfaceIds": ["s3"] }
+            }
+          }
+        }
+      }
+    },
+    "surfaces": [
+      {
+        "id": "s1",
+        "kind": "terminal",
+        "title": "main"
+      },
+      {
+        "id": "s2",
+        "kind": "terminal",
+        "title": "logs"
+      },
+      {
+        "id": "s3",
+        "kind": "browser"
+      }
+    ]
+  }
+}

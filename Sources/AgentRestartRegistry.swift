@@ -92,10 +92,9 @@ struct AgentRestartRegistry: Sendable {
         }
     }
 
-    /// Phase 1 ships cc resume only. Phase 5 adds codex / opencode / kimi
-    /// rows here; adding a row is a one-line append to this literal.
+    /// Phase 1 ships cc resume. Phase 5 added codex / opencode / kimi rows.
     ///
-    /// The closure re-validates `sessionId` against the UUIDv4 grammar even
+    /// The cc closure re-validates `sessionId` against the UUIDv4 grammar even
     /// though `SurfaceMetadataStore` already rejects non-UUID writes for the
     /// `claude.session_id` reserved key. The "never trust the metadata
     /// layer solely" belt-and-braces is deliberate: the synthesised string
@@ -107,15 +106,30 @@ struct AgentRestartRegistry: Sendable {
     /// returns the **submit form** of the command, not the typed form.
     /// How to submit is the registry's concern, not the executor's —
     /// otherwise every executor caller would have to remember to append
-    /// one. Without it, `TerminalPanel.sendText` writes the bytes verbatim
-    /// and the command sits at the prompt unexecuted. Phase 5 rows for
-    /// codex/opencode/kimi follow the same "return submit form" contract.
+    /// one.
+    ///
+    /// Codex uses `--last` best-effort to resume the most recent session
+    /// globally. Opencode and kimi have no verified resume flag and launch
+    /// fresh — best-effort is preferable to a broken flag.
     static let phase1: AgentRestartRegistry = .init(rows: [
         Row(terminalType: "claude-code") { sessionId, _ in
             guard let raw = sessionId?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !raw.isEmpty,
                   isValidClaudeSessionId(raw) else { return nil }
             return "cc --resume \(raw)\n"
+        },
+        Row(terminalType: "codex") { _, _ in
+            // codex resume --last resumes the most recent codex session globally.
+            // Best-effort: may not match the exact session in the snapshot.
+            "codex resume --last\n"
+        },
+        Row(terminalType: "opencode") { _, _ in
+            // no stable resume flag known; launches fresh.
+            "opencode\n"
+        },
+        Row(terminalType: "kimi") { _, _ in
+            // no stable resume flag known; launches fresh.
+            "kimi\n"
         }
     ])
 }

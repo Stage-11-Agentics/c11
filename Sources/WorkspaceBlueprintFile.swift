@@ -30,7 +30,7 @@ struct WorkspaceBlueprintIndex: Codable, Sendable, Equatable {
 
     enum Source: String, Codable, Sendable, Equatable {
         case repo = "repo"          // committed alongside the project
-        case user = "user"          // ~/.c11-blueprints/
+        case user = "user"          // ~/.config/cmux/blueprints/
         case builtIn = "built-in"   // shipped inside the app bundle
     }
 

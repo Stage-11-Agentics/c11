@@ -1250,6 +1250,7 @@
 					D800FBF0A1B2C3D4E5F60718 /* WorkspaceSnapshotStoreSecurityTests.swift in Sources */,
 					D8014BF0A1B2C3D4E5F60718 /* WorkspaceBlueprintFileCodableTests.swift in Sources */,
 					D8015BF0A1B2C3D4E5F60718 /* WorkspaceBlueprintStoreTests.swift in Sources */,
+					D8016BF0A1B2C3D4E5F60718 /* WorkspaceSnapshotBrowserMarkdownRoundTripTests.swift in Sources */,
 				);
 				runOnlyForDeploymentPostprocessing = 0;
 			};

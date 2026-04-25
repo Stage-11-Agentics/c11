@@ -598,7 +598,7 @@ enum WorkspaceLayoutExecutor {
             // applies (select: false) must not steal bonsplit tab focus.
             if selectAllowed,
                let selectedIndex = paneSpec.selectedIndex,
-               selectedIndex > 0,
+               selectedIndex >= 0,
                selectedIndex < paneSpec.surfaceIds.count {
                 let selectedSurfaceId = paneSpec.surfaceIds[selectedIndex]
                 if let selectedPanelId = planSurfaceIdToPanelId[selectedSurfaceId],

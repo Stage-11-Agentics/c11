@@ -53,12 +53,20 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
         super.tearDown()
     }
 
-    // MARK: - Scenarios
-
-    func testCaptureAndRestoreMixedClaudeMailboxWithRegistry() throws {
+    /// All scenarios assert against `TerminalSurface.pendingInitialInputForTests`,
+    /// which is `#if DEBUG` only. In Release builds the accessor isn't
+    /// compiled in and the tests have no way to observe what was sent;
+    /// skip rather than emit a meaningless pass/fail.
+    private func skipIfReleaseBuild() throws {
         #if !DEBUG
         throw XCTSkip("pendingInitialInputForTests is a DEBUG-only accessor; this acceptance test requires a debug build.")
         #endif
+    }
+
+    // MARK: - Scenarios
+
+    func testCaptureAndRestoreMixedClaudeMailboxWithRegistry() throws {
+        try skipIfReleaseBuild()
         // Step 1: seed.
         let seedPlan = try loadFixturePlan(named: "mixed-claude-mailbox")
         let deps = makeDependencies()
@@ -194,9 +202,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
     }
 
     func testRestoreWithoutRegistrySendsNoCommand() throws {
-        #if !DEBUG
-        throw XCTSkip("pendingInitialInputForTests is a DEBUG-only accessor; this acceptance test requires a debug build.")
-        #endif
+        try skipIfReleaseBuild()
         // Step 5-only negative case: restore the captured envelope through
         // the converter with `restartRegistry: nil` and assert no terminal
         // receives a synthesised command. Phase 0 behaviour preserved.
@@ -250,9 +256,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
     /// field (`url` / `filePath`) round-trips and the trailing terminal
     /// still receives `cc --resume <session-id>`.
     func testCaptureAndRestoreBrowserFirstLayout() throws {
-        #if !DEBUG
-        throw XCTSkip("pendingInitialInputForTests is a DEBUG-only accessor; this acceptance test requires a debug build.")
-        #endif
+        try skipIfReleaseBuild()
         try runMixedFirstFixtureRoundTrip(
             fixtureName: "browser-first-mixed",
             firstSurfaceId: "docs",
@@ -263,9 +267,7 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
     }
 
     func testCaptureAndRestoreMarkdownFirstLayout() throws {
-        #if !DEBUG
-        throw XCTSkip("pendingInitialInputForTests is a DEBUG-only accessor; this acceptance test requires a debug build.")
-        #endif
+        try skipIfReleaseBuild()
         try runMixedFirstFixtureRoundTrip(
             fixtureName: "markdown-first-mixed",
             firstSurfaceId: "readme",

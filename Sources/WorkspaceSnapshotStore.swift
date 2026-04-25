@@ -352,14 +352,19 @@ struct WorkspaceSnapshotStore: Sendable {
                 ))
             } catch {
                 // I8: surface unreadable files instead of silently dropping.
-                // Best-effort id = filename stem; `Date.distantPast` keeps
+                // Best-effort id = filename stem (capped at 128 to keep the
+                // plain-table column bounded); `Date.distantPast` keeps
                 // unreadable rows at the bottom of the newest-first sort so
-                // they don't bury healthy snapshots.
-                let stem = url.deletingPathExtension().lastPathComponent
+                // they don't bury healthy snapshots. A file literally
+                // named `.json` has an empty stem; fall back to the full
+                // filename so the row is still identifiable in the table.
+                let rawStem = url.deletingPathExtension().lastPathComponent
+                let stem = rawStem.isEmpty ? url.lastPathComponent : rawStem
+                let snapshotId = String(stem.prefix(128))
                 let rawReason = "\(error)"
                 let reason = String(rawReason.prefix(160))
                 out.append(WorkspaceSnapshotIndex(
-                    snapshotId: stem,
+                    snapshotId: snapshotId,
                     path: url.path,
                     createdAt: .distantPast,
                     workspaceTitle: nil,
@@ -373,10 +378,15 @@ struct WorkspaceSnapshotStore: Sendable {
         return out
     }
 
-    /// Header-only summary of a snapshot envelope. Cheaper than full Codable
-    /// decode — `plan.layout` and `plan.surfaces[].metadata` stay in the
-    /// JSON blob untouched. Kept private so callers can't confuse a summary
-    /// with an envelope that carries a real `WorkspaceApplyPlan`.
+    /// Header-only summary of a snapshot envelope. Cheaper than a full
+    /// `WorkspaceApplyPlan` Codable decode: `JSONSerialization` still
+    /// materialises the entire JSON object graph into `NSDictionary` /
+    /// `NSArray`, but skips the `WorkspaceApplyPlan` decode (with its
+    /// nested layout and per-surface metadata coercions). For plans with
+    /// many surfaces or deep layouts the decode work is the dominant
+    /// cost; for tiny snapshots the wins are modest. Kept private so
+    /// callers can't confuse a summary with an envelope that carries a
+    /// real `WorkspaceApplyPlan`.
     private struct SnapshotSummary {
         let snapshotId: String
         let createdAt: Date

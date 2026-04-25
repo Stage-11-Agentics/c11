@@ -181,6 +181,30 @@ final class WorkspaceSnapshotCaptureTests: XCTestCase {
         }
     }
 
+    /// Edge case: a file literally named `.json` has an empty filename
+    /// stem after `deletingPathExtension`. The unreadable-row fallback
+    /// must still produce an identifiable id (the full filename) so the
+    /// row isn't an empty string in the plain-table column.
+    func testStoreListUnreadableRowFallsBackWhenFilenameStemIsEmpty() throws {
+        let tmp = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let degenerate = tmp.appendingPathComponent(".json")
+        try Data("not json".utf8).write(to: degenerate, options: .atomic)
+        let store = WorkspaceSnapshotStore(
+            currentDirectory: tmp,
+            legacyDirectory: tmp.appendingPathComponent("nowhere"),
+            fileManager: .default
+        )
+        let list = try store.list()
+        XCTAssertEqual(list.count, 1)
+        let row = try XCTUnwrap(list.first)
+        XCTAssertFalse(row.snapshotId.isEmpty, "empty stem must fall back to filename")
+        XCTAssertEqual(row.snapshotId, ".json")
+        guard case .unreadable = row.readability else {
+            return XCTFail("expected .unreadable variant for malformed JSON")
+        }
+    }
+
     /// Sort invariant: healthy rows come first (newest createdAt),
     /// unreadable rows come last (createdAt = .distantPast).
     func testStoreListSortsHealthyBeforeUnreadable() throws {

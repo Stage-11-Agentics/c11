@@ -4704,7 +4704,15 @@ class TerminalController {
         }
         do {
             let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
+            // Match the store's write-side formatter (fractional seconds)
+            // so a timestamp written by `WorkspaceSnapshotStore.write` and
+            // re-read into a `snapshot.list` response round-trips
+            // bit-for-bit. The default `.iso8601` strategy drops subsecond
+            // precision and creates a write-vs-read mismatch.
+            encoder.dateEncodingStrategy = .custom { date, encoder in
+                var container = encoder.singleValueContainer()
+                try container.encode(workspaceSnapshotDateFormatter.string(from: date))
+            }
             let encoded = try encoder.encode(entries)
             let asAny = try JSONSerialization.jsonObject(with: encoded, options: [])
             return .ok(["snapshots": asAny])

@@ -62,8 +62,9 @@ final class AgentRestartRegistryTests: XCTestCase {
 
     func testUnknownTerminalTypeReturnsNil() {
         let registry = AgentRestartRegistry.phase1
+        // Use a type that is genuinely absent from the registry.
         XCTAssertNil(registry.resolveCommand(
-            terminalType: "codex",
+            terminalType: "cursor",
             sessionId: "anything",
             metadata: [:]
         ))
@@ -239,6 +240,66 @@ final class AgentRestartRegistryTests: XCTestCase {
             cmd,
             "cc --resume AaBbCcDd-1111-2222-3333-AABBCCDDEEFF\n",
             "UUID grammar is case-insensitive for hex"
+        )
+    }
+
+    // MARK: - Phase 5: codex / opencode / kimi rows
+
+    /// Codex uses best-effort `--last` semantics regardless of session id.
+    func testCodexRowReturnsBestEffortLastCommand() {
+        let registry = AgentRestartRegistry.phase1
+        // Returns the command regardless of whether a session id is present.
+        XCTAssertEqual(
+            registry.resolveCommand(terminalType: "codex", sessionId: nil, metadata: [:]),
+            "codex --last\n",
+            "codex row returns best-effort --last even without session id"
+        )
+        XCTAssertEqual(
+            registry.resolveCommand(
+                terminalType: "codex",
+                sessionId: "abc12345-ef67-890a-bcde-f0123456789a",
+                metadata: [:]
+            ),
+            "codex --last\n",
+            "codex row ignores session id and always returns --last"
+        )
+    }
+
+    /// Opencode uses best-effort `--continue` semantics.
+    func testOpencodeRowReturnsBestEffortContinueCommand() {
+        let registry = AgentRestartRegistry.phase1
+        XCTAssertEqual(
+            registry.resolveCommand(terminalType: "opencode", sessionId: nil, metadata: [:]),
+            "opencode --continue\n",
+            "opencode row returns best-effort --continue"
+        )
+        XCTAssertEqual(
+            registry.resolveCommand(
+                terminalType: "opencode",
+                sessionId: "11111111-2222-3333-4444-555566667777",
+                metadata: [:]
+            ),
+            "opencode --continue\n",
+            "opencode row ignores session id"
+        )
+    }
+
+    /// Kimi uses best-effort `--continue` semantics.
+    func testKimiRowReturnsBestEffortContinueCommand() {
+        let registry = AgentRestartRegistry.phase1
+        XCTAssertEqual(
+            registry.resolveCommand(terminalType: "kimi", sessionId: nil, metadata: [:]),
+            "kimi --continue\n",
+            "kimi row returns best-effort --continue"
+        )
+        XCTAssertEqual(
+            registry.resolveCommand(
+                terminalType: "kimi",
+                sessionId: "aaaabbbb-cccc-dddd-eeee-ffff00001111",
+                metadata: [:]
+            ),
+            "kimi --continue\n",
+            "kimi row ignores session id"
         )
     }
 

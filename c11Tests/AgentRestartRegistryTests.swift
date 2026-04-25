@@ -251,8 +251,8 @@ final class AgentRestartRegistryTests: XCTestCase {
         // Returns the command regardless of whether a session id is present.
         XCTAssertEqual(
             registry.resolveCommand(terminalType: "codex", sessionId: nil, metadata: [:]),
-            "codex --last\n",
-            "codex row returns best-effort --last even without session id"
+            "codex resume --last\n",
+            "codex row returns best-effort resume --last even without session id"
         )
         XCTAssertEqual(
             registry.resolveCommand(
@@ -260,8 +260,8 @@ final class AgentRestartRegistryTests: XCTestCase {
                 sessionId: "abc12345-ef67-890a-bcde-f0123456789a",
                 metadata: [:]
             ),
-            "codex --last\n",
-            "codex row ignores session id and always returns --last"
+            "codex resume --last\n",
+            "codex row ignores session id and always returns resume --last"
         )
     }
 

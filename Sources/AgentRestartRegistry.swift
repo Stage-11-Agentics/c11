@@ -121,9 +121,9 @@ struct AgentRestartRegistry: Sendable {
             return "cc --resume \(raw)\n"
         },
         Row(terminalType: "codex") { _, _ in
-            // codex --last resumes the most recent codex session globally.
+            // codex resume --last resumes the most recent codex session globally.
             // Best-effort: may not match the exact session in the snapshot.
-            "codex --last\n"
+            "codex resume --last\n"
         },
         Row(terminalType: "opencode") { _, _ in
             // opencode --continue resumes the last opencode session.

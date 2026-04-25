@@ -2,7 +2,8 @@
 
 Reference for the JSON shape accepted by `workspace.apply`, emitted by
 `workspace.export_blueprint`, and embedded inside `WorkspaceSnapshotFile`.
-All fields use snake_case wire names.
+Fields use camelCase wire names (Swift synthesized Codable) except where
+explicit `CodingKeys` or custom encode/decode are defined (see LayoutTreeSpec).
 
 ## Top-level envelope
 
@@ -27,13 +28,13 @@ All fields use snake_case wire names.
 ```json
 {
   "title": "My workspace",
-  "custom_color": "#C0392B",
-  "working_directory": "/Users/me/project",
+  "customColor": "#C0392B",
+  "workingDirectory": "/Users/me/project",
   "metadata": { "key": "value" }
 }
 ```
 
-All fields optional. `custom_color` is a hex string (`#RRGGBB`).
+All fields optional. `customColor` is a hex string (`#RRGGBB`).
 `metadata` values must be strings.
 
 ## LayoutTreeSpec
@@ -73,12 +74,12 @@ A recursive union: either a `pane` leaf or a `split` node.
   "kind": "terminal",
   "title": "main",
   "description": "Primary shell",
-  "working_directory": "/Users/me/project",
+  "workingDirectory": "/Users/me/project",
   "command": "echo hello",
   "url": "https://example.com",
-  "file_path": "/Users/me/notes.md",
+  "filePath": "/Users/me/notes.md",
   "metadata": { "terminal_type": "claude-code" },
-  "pane_metadata": { "mailbox.task": "CMUX-37" }
+  "paneMetadata": { "mailbox.task": "CMUX-37" }
 }
 ```
 
@@ -88,12 +89,12 @@ A recursive union: either a `pane` leaf or a `split` node.
 | `kind` | all | `"terminal"`, `"browser"`, or `"markdown"` |
 | `title` | all | Written via `setPanelCustomTitle` |
 | `description` | all | Written to surface metadata under `description` key |
-| `working_directory` | terminal | Shell launch directory; ignored (warning) on browser/markdown |
+| `workingDirectory` | terminal | Shell launch directory; ignored (warning) on browser/markdown |
 | `command` | terminal | Sent as text once the surface is ready |
 | `url` | browser | Initial navigation URL |
-| `file_path` | markdown | Absolute path to the markdown file |
+| `filePath` | markdown | Absolute path to the markdown file |
 | `metadata` | all | Surface-scoped key/value pairs (`SurfaceMetadataStore`) |
-| `pane_metadata` | all | Pane-scoped key/value pairs; only the first surface per pane writes |
+| `paneMetadata` | all | Pane-scoped key/value pairs; only the first surface per pane writes |
 
 `metadata` and `pane_metadata` values must be JSON-serialisable. Non-string
 values on the reserved `mailbox.*` pane namespace are dropped with a warning.

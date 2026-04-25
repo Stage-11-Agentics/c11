@@ -91,7 +91,7 @@ final class WorkspaceBlueprintFileCodableTests: XCTestCase {
             "plan": {
                 "version": 1,
                 "workspace": {},
-                "layout": {"type": "pane", "surface_ids": ["a"]},
+                "layout": {"type": "pane", "pane": {"surfaceIds": ["a"]}},
                 "surfaces": [{"id": "a", "kind": "terminal"}]
             }
         }

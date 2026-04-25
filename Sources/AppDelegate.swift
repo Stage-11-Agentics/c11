@@ -2393,7 +2393,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             _ = NSLocale.preferredLanguages
 
             SentrySDK.start { options in
-                options.dsn = "https://ecba1ec90ecaee02a102fba931b6d2b3@o4507547940749312.ingest.us.sentry.io/4510796264636416"
+                options.dsn = "https://ce836c6e3462a139dcd469f5e4d3ceec@o4511028450295808.ingest.us.sentry.io/4511028453900288"
                 #if DEBUG
                 options.environment = "development"
                 options.debug = true

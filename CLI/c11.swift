@@ -57,7 +57,7 @@ private final class CLISocketSentryTelemetry {
 #if canImport(Sentry)
     private static let startupLock = NSLock()
     private static var started = false
-    private static let dsn = "https://ecba1ec90ecaee02a102fba931b6d2b3@o4507547940749312.ingest.us.sentry.io/4510796264636416"
+    private static let dsn = "https://ce836c6e3462a139dcd469f5e4d3ceec@o4511028450295808.ingest.us.sentry.io/4511028453900288"
 
     private static func currentSentryReleaseName() -> String? {
         guard let bundleIdentifier = currentSentryBundleIdentifier(),

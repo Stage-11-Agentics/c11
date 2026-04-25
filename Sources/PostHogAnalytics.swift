@@ -6,9 +6,11 @@ final class PostHogAnalytics {
     static let shared = PostHogAnalytics()
 
     // The PostHog project API key is intentionally embedded in the app (it's a public key).
-    private let apiKey = "phc_opOVu7oFzR9wD3I6ZahFGOV2h3mqGpl5EHyQvmHciDP"
+    // Empty string disables PostHog at runtime. Pending: provision a `stage11-c11` project
+    // under the Stage 11 Agentics PostHog org and embed the project public key here.
+    private let apiKey = ""
 
-    // PostHog Cloud US default (matches other cmux properties).
+    // PostHog Cloud US default.
     private let host = "https://us.i.posthog.com"
 
     private let dailyActiveEvent = "cmux_daily_active"

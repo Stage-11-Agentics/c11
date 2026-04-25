@@ -195,6 +195,7 @@ struct WorkspaceBlueprintStore: Sendable {
             return []
         }
         return entries.filter {
+            guard (try? $0.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else { return false }
             let ext = $0.pathExtension.lowercased()
             return ext == "json" || ext == "md"
         }

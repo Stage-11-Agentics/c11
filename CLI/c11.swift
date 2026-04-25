@@ -2745,6 +2745,11 @@ struct CMUXCLI {
             throw CLIError(message: "workspace new: unknown flag '\(unknown)'. Known flags: --blueprint <path>")
         }
 
+        if jsonOutput && blueprintOpt == nil {
+            print(#"{"ok": false, "error": {"code": "PICKER_NOT_SUPPORTED_IN_JSON_MODE", "message": "--json requires --blueprint; interactive picker is not available in JSON mode"}}"#)
+            return
+        }
+
         let planObject: Any
         if let bpArg = blueprintOpt {
             let resolved = resolvePath(bpArg)
@@ -2849,9 +2854,10 @@ struct CMUXCLI {
     }
 
     /// `c11 workspace export-blueprint --name <name> [--workspace <ref>]
-    /// [--description <text>] [--out <path>]`. Captures the current (or
-    /// named) workspace as a `WorkspaceBlueprintFile` JSON and writes it.
+    /// [--description <text>] [--out <path>] [--force]`. Captures the current
+    /// (or named) workspace as a `WorkspaceBlueprintFile` JSON and writes it.
     /// Without `--out`, prints the default path written by the socket handler.
+    /// `--force` allows overwriting an existing blueprint with the same name.
     private func runWorkspaceExportBlueprint(
         _ args: [String],
         client: SocketClient,
@@ -2861,8 +2867,10 @@ struct CMUXCLI {
         let (nameOpt, a2) = parseOption(a1, name: "--name")
         let (descOpt, a3) = parseOption(a2, name: "--description")
         let (outOpt, a4) = parseOption(a3, name: "--out")
-        if let unknown = a4.first(where: { $0.hasPrefix("--") }) {
-            throw CLIError(message: "workspace export-blueprint: unknown flag '\(unknown)'. Known flags: --workspace <ref>, --name <name>, --description <text>, --out <path>")
+        let forceFlag = a4.contains("--force")
+        let a5 = a4.filter { $0 != "--force" }
+        if let unknown = a5.first(where: { $0.hasPrefix("--") }) {
+            throw CLIError(message: "workspace export-blueprint: unknown flag '\(unknown)'. Known flags: --workspace <ref>, --name <name>, --description <text>, --out <path>, --force")
         }
         guard let name = nameOpt else {
             throw CLIError(message: "workspace export-blueprint: --name <name> is required")
@@ -2874,6 +2882,9 @@ struct CMUXCLI {
         }
         if let desc = descOpt {
             params["description"] = desc
+        }
+        if forceFlag {
+            params["force"] = true
         }
 
         let payload = try client.sendV2(method: "workspace.export_blueprint", params: params)

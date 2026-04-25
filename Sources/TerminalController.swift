@@ -4491,13 +4491,14 @@ class TerminalController {
     /// `workspace.export_blueprint`: captures the live workspace as a
     /// `WorkspaceBlueprintFile` and writes it to the user blueprint directory
     /// (`~/.config/cmux/blueprints/<sanitized-name>.json`). Required param:
-    /// `name`. Optional: `workspace_id`, `description`.
+    /// `name`. Optional: `workspace_id`, `description`, `force` (bool).
     /// Returns `{path: "...", name: "..."}`.
     private func v2WorkspaceExportBlueprint(params: [String: Any]) -> V2CallResult {
         guard let name = params["name"] as? String, !name.isEmpty else {
             return .err(code: "invalid_params", message: "Missing or empty 'name'", data: nil)
         }
         let description = params["description"] as? String
+        let force = params["force"] as? Bool ?? false
 
         guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
@@ -4524,6 +4525,14 @@ class TerminalController {
         let dir = fm.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/cmux/blueprints")
         let url = dir.appendingPathComponent("\(filename).json")
+
+        if !force && fm.fileExists(atPath: url.path) {
+            return .err(
+                code: "BLUEPRINT_ALREADY_EXISTS",
+                message: "A blueprint named '\(name)' already exists at \(url.path). Use --force to overwrite.",
+                data: nil
+            )
+        }
 
         let store = WorkspaceBlueprintStore()
         do {

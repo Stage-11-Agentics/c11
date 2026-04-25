@@ -2105,6 +2105,12 @@ class TerminalController {
         case "workspace.apply":
             return v2Result(id: id, self.v2WorkspaceApply(params: params))
 
+        // Blueprints (CMUX-37 Phase 2)
+        case "workspace.list_blueprints":
+            return v2Result(id: id, self.v2WorkspaceListBlueprints(params: params))
+        case "workspace.export_blueprint":
+            return v2Result(id: id, self.v2WorkspaceExportBlueprint(params: params))
+
         // Snapshots (CMUX-37 Phase 1)
         case "snapshot.create":
             return v2Result(id: id, self.v2SnapshotCreate(params: params))
@@ -4455,6 +4461,80 @@ class TerminalController {
                 data: nil
             )
         }
+    }
+
+    // MARK: - V2 Blueprint Methods (CMUX-37 Phase 2)
+
+    /// `workspace.list_blueprints`: returns a merged index of all discovered
+    /// blueprint files. Optional `cwd` param enables per-repo discovery.
+    /// Returns `{blueprints: [...WorkspaceBlueprintIndex...]}`.
+    private func v2WorkspaceListBlueprints(params: [String: Any]) -> V2CallResult {
+        let cwdURL: URL?
+        if let cwdStr = params["cwd"] as? String, !cwdStr.isEmpty {
+            cwdURL = URL(fileURLWithPath: cwdStr)
+        } else {
+            cwdURL = nil
+        }
+        let store = WorkspaceBlueprintStore()
+        let entries = store.merged(cwd: cwdURL)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        do {
+            let encoded = try encoder.encode(entries)
+            let asAny = try JSONSerialization.jsonObject(with: encoded, options: [])
+            return .ok(["blueprints": asAny])
+        } catch {
+            return .err(code: "internal_error", message: "\(error)", data: nil)
+        }
+    }
+
+    /// `workspace.export_blueprint`: captures the live workspace as a
+    /// `WorkspaceBlueprintFile` and writes it to the user blueprint directory
+    /// (`~/.config/cmux/blueprints/<sanitized-name>.json`). Required param:
+    /// `name`. Optional: `workspace_id`, `description`.
+    /// Returns `{path: "...", name: "..."}`.
+    private func v2WorkspaceExportBlueprint(params: [String: Any]) -> V2CallResult {
+        guard let name = params["name"] as? String, !name.isEmpty else {
+            return .err(code: "invalid_params", message: "Missing or empty 'name'", data: nil)
+        }
+        let description = params["description"] as? String
+
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+
+        var blueprintFile: WorkspaceBlueprintFile?
+        v2MainSync {
+            let exporter = WorkspaceBlueprintExporter(tabManager: tabManager)
+            guard let workspace = v2ResolveWorkspace(params: params, tabManager: tabManager) else { return }
+            blueprintFile = exporter.export(workspaceId: workspace.id, name: name, description: description)
+        }
+
+        guard let file = blueprintFile else {
+            return .err(code: "not_found", message: "Workspace not found", data: nil)
+        }
+
+        // Sanitize name to a filesystem-safe filename.
+        let sanitized = String(name
+            .replacingOccurrences(of: " ", with: "-")
+            .filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == "." })
+        let filename = sanitized.isEmpty ? "blueprint" : sanitized
+
+        let fm = FileManager.default
+        let dir = fm.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/cmux/blueprints")
+        let url = dir.appendingPathComponent("\(filename).json")
+
+        let store = WorkspaceBlueprintStore()
+        do {
+            try store.write(file, to: url)
+        } catch let err as WorkspaceBlueprintStore.StoreError {
+            return .err(code: err.code, message: "\(err)", data: nil)
+        } catch {
+            return .err(code: "export_failed", message: "\(error)", data: nil)
+        }
+
+        return .ok(["path": url.path, "name": name])
     }
 
     // MARK: - V2 Snapshot Methods (CMUX-37 Phase 1)

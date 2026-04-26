@@ -5028,6 +5028,22 @@ final class Workspace: Identifiable, ObservableObject {
     /// queue + soft cap lives inside the runtime. Views observe `.active`.
     let paneInteractionRuntime = PaneInteractionRuntime()
 
+    /// Pane-scoped (rather than panel-scoped) presenter. Shares the same runtime
+    /// implementation, but its overlays mount over the entire pane — tab strip
+    /// included — so a pane-close confirmation visibly spans every tab it's
+    /// about to remove. Keyed by `PaneID.id` (the runtime's `panelId` argument
+    /// is just an opaque UUID; using a separate instance keeps panel teardown
+    /// from clearing pane-scoped state and vice versa).
+    let paneCloseInteractionRuntime = PaneInteractionRuntime()
+
+    /// Mounts pane-scoped overlays as AppKit subviews of the workspace window's
+    /// themeFrame so they render above the `WindowTerminalPortal` host (and
+    /// thus above terminal/browser portal content). Driven by anchor frames
+    /// pushed in from `PaneInteractionOverlayHostView` per pane.
+    lazy var paneCloseOverlayController = PaneCloseOverlayController(
+        runtime: paneCloseInteractionRuntime
+    )
+
 
     // Closing tabs mutates split layout immediately; terminal views handle their own AppKit
     // layout/size synchronization.
@@ -5421,7 +5437,12 @@ final class Workspace: Identifiable, ObservableObject {
         let config = BonsplitConfiguration(
             allowSplits: true,
             allowCloseTabs: true,
-            allowCloseLastPane: false,
+            // Keep Bonsplit's X enabled even when this is the only pane —
+            // the workspace handler intercepts the request and resets the
+            // pane (close all tabs + open a fresh terminal) instead of
+            // tearing the workspace down. Bonsplit refuses to actually
+            // remove the last pane, which is the right contract.
+            allowCloseLastPane: true,
             allowTabReordering: true,
             allowCrossPaneTabMove: true,
             autoCloseEmptyPanes: true,
@@ -7769,6 +7790,8 @@ final class Workspace: Identifiable, ObservableObject {
         // leaks CheckedContinuations and blocks socket worker threads forever
         // (synthesis-standard §1.1, synthesis-critical §1.3).
         paneInteractionRuntime.clearAll()
+        paneCloseInteractionRuntime.clearAll()
+        paneCloseOverlayController.cleanup()
 
         let panelEntries = Array(panels)
         for (panelId, panel) in panelEntries {
@@ -10415,6 +10438,11 @@ extension Workspace: BonsplitDelegate {
     }
 
     func splitTabBar(_ controller: BonsplitController, didClosePane paneId: PaneID) {
+        // The pane is gone — drop any pending pane-scoped overlay (e.g. a stale
+        // pane-close confirmation that survived the close path) so its
+        // continuation resolves with .dismissed instead of leaking.
+        paneCloseInteractionRuntime.clear(panelId: paneId.id)
+
         let closedPanelIds = pendingPaneClosePanelIds.removeValue(forKey: paneId.id) ?? []
         let shouldScheduleFocusReconcile = !isDetachingCloseTransaction
 
@@ -10725,35 +10753,123 @@ extension Workspace: BonsplitDelegate {
     func splitTabBar(_ controller: BonsplitController, didRequestClosePane pane: PaneID) {
         let tabs = controller.tabs(inPane: pane)
         let paneCount = controller.allPaneIds.count
-        guard paneCount > 1 else { return }
+        let isOnlyPane = paneCount <= 1
 
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = String(
-            localized: "workspace.closePane.alert.title",
-            defaultValue: "Close this pane?"
-        )
-        alert.informativeText = Self.closePaneConfirmationMessage(tabCount: tabs.count)
-        alert.addButton(withTitle: String(
-            localized: "workspace.closePane.alert.confirm",
-            defaultValue: "Close Pane"
-        ))
-        alert.addButton(withTitle: String(
+        let tabTitles = tabs.map { Self.paneCloseTabTitle(for: $0) }
+        let title = Self.closePaneConfirmationTitle(tabCount: tabs.count, isOnlyPane: isOnlyPane)
+        let message = Self.closePaneConfirmationMessage(tabCount: tabs.count, isOnlyPane: isOnlyPane)
+        let confirmLabel = Self.closePaneConfirmLabel(tabCount: tabs.count, isOnlyPane: isOnlyPane)
+        let cancelLabel = String(
             localized: "workspace.closePane.alert.cancel",
             defaultValue: "Cancel"
-        ))
+        )
 
-        // First button is the default/accept; make it the destructive role visually
-        if let confirmButton = alert.buttons.first {
-            confirmButton.hasDestructiveAction = true
+        let runtime = paneCloseInteractionRuntime
+        let paneKey = pane.id
+        Task { @MainActor [weak self] in
+            let confirmed = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+                let content = ConfirmContent(
+                    title: title,
+                    message: message,
+                    detailLines: tabTitles,
+                    confirmLabel: confirmLabel,
+                    cancelLabel: cancelLabel,
+                    role: .destructive,
+                    style: .criticalDestructive,
+                    source: .local,
+                    completion: { result in
+                        cont.resume(returning: result == .confirmed)
+                    }
+                )
+                runtime.present(
+                    panelId: paneKey,
+                    interaction: .confirm(content),
+                    dedupeToken: "workspace.closePane"
+                )
+            }
+            guard confirmed, let self else { return }
+
+            if isOnlyPane {
+                // The pane structure stays (Bonsplit refuses to remove the
+                // last pane and the workspace must always have one). Close
+                // every tab in it without per-tab confirmation — the user
+                // already accepted the bigger "close entire pane" action —
+                // then drop a fresh terminal in so the operator isn't left
+                // staring at the empty-pane chooser. Matches the user's ask:
+                // X always does something, even on the root pane.
+                let tabsNow = self.bonsplitController.tabs(inPane: pane)
+                for tab in tabsNow {
+                    self.forceCloseTabIds.insert(tab.id)
+                    _ = self.bonsplitController.closeTab(tab.id)
+                }
+                _ = self.newTerminalSurface(inPane: pane)
+            } else {
+                guard self.bonsplitController.allPaneIds.contains(pane) else { return }
+                _ = self.bonsplitController.closePane(pane)
+            }
         }
-
-        let response = alert.runModal()
-        guard response == .alertFirstButtonReturn else { return }
-        _ = bonsplitController.closePane(pane)
     }
 
-    private static func closePaneConfirmationMessage(tabCount: Int) -> String {
+    private static func paneCloseTabTitle(for tab: Bonsplit.Tab) -> String {
+        let trimmed = tab.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { return trimmed }
+        return String(
+            localized: "workspace.closePane.alert.tab.untitled",
+            defaultValue: "Untitled tab"
+        )
+    }
+
+    private static func closePaneConfirmationTitle(tabCount: Int, isOnlyPane: Bool) -> String {
+        // Always "entire pane" — the differentiator vs Close Tab is the
+        // word "entire" (rendered with emphasis in the card view), so the
+        // wording stays uniform across tab counts.
+        _ = tabCount
+        if isOnlyPane {
+            return String(
+                localized: "workspace.closePane.alert.title.only",
+                defaultValue: "Reset entire pane?"
+            )
+        }
+        return String(
+            localized: "workspace.closePane.alert.title",
+            defaultValue: "Close entire pane?"
+        )
+    }
+
+    private static func closePaneConfirmLabel(tabCount: Int, isOnlyPane: Bool) -> String {
+        _ = tabCount
+        if isOnlyPane {
+            return String(
+                localized: "workspace.closePane.alert.confirm.only",
+                defaultValue: "Reset Entire Pane"
+            )
+        }
+        return String(
+            localized: "workspace.closePane.alert.confirm",
+            defaultValue: "Close Entire Pane"
+        )
+    }
+
+    private static func closePaneConfirmationMessage(tabCount: Int, isOnlyPane: Bool) -> String {
+        if isOnlyPane {
+            if tabCount <= 0 {
+                return String(
+                    localized: "workspace.closePane.alert.body.only.empty",
+                    defaultValue: "This pane has no tabs. A new terminal will replace it."
+                )
+            }
+            if tabCount == 1 {
+                return String(
+                    localized: "workspace.closePane.alert.body.only.one",
+                    defaultValue: "Current tab that will be closed (a new terminal will replace it):"
+                )
+            }
+            return String(
+                localized: "workspace.closePane.alert.body.only.many",
+                defaultValue: "Current tabs that will be closed (a new terminal will replace them):"
+            )
+        }
+
         if tabCount <= 0 {
             return String(
                 localized: "workspace.closePane.alert.body.empty",
@@ -10763,14 +10879,13 @@ extension Workspace: BonsplitDelegate {
         if tabCount == 1 {
             return String(
                 localized: "workspace.closePane.alert.body.one",
-                defaultValue: "This will close 1 tab in this pane. This cannot be undone."
+                defaultValue: "Current tab that will be closed:"
             )
         }
-        let template = String(
+        return String(
             localized: "workspace.closePane.alert.body.many",
-            defaultValue: "This will close %lld tabs in this pane. This cannot be undone."
+            defaultValue: "Current tabs that will be closed:"
         )
-        return String(format: template, locale: Locale.current, tabCount)
     }
 
     /// Handle the "+" toolbar button: create a new tab in the given pane of

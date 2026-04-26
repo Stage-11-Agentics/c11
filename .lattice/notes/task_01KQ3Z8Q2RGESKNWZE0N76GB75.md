@@ -21,7 +21,7 @@ These picks must credit the upstream reporters in any commit, PR, or release not
 | @tmad4000 | [#3096](https://github.com/manaflow-ai/cmux/issues/3096) |
 | @jewel-sallylab | [#3069](https://github.com/manaflow-ai/cmux/issues/3069) |
 | @alceal | [#1469](https://github.com/manaflow-ai/cmux/issues/1469) |
-| @sldx | [#1153](https://github.com/manaflow-ai/cmux/issues/1153) |
+| @sldx | [#1153](https://github.com/manaflow-ai/cmux/issues/1153) (see pick #12 for full credit chain — diagnosis + fix attribution spans 5 contributors) |
 | @freshtonic | [#2105](https://github.com/manaflow-ai/cmux/issues/2105) |
 | @shaun0927 | [#2949](https://github.com/manaflow-ai/cmux/issues/2949) |
 
@@ -73,9 +73,44 @@ Cherry-picked-from: manaflow-ai/cmux@<sha> by @<author>
 - **Why c11:** Shared keyboard path. Blocking option+key on EU/CJK layouts hits real users on every shipping locale.
 
 ### #1153 — `alt+backspace` doesn't delete last word
-- **Reporter:** @sldx
-- **Fix size:** trivial (single keystroke handler)
-- **Why c11:** Universal macOS convention. Pure delight bug — every Mac user hits this.
+
+**Status: do NOT relitigate. The full upstream story is below — read before touching this.**
+
+- **Reporter:** @sldx (issue #1153)
+- **Fix size:** small if cherry-picked from upstream maintainer commits; medium if reproduced from scratch.
+- **Why c11:** Universal macOS convention. Specifically broken in TUI apps (Claude Code, Codex, lazygit, vim) — plain shell hides it via readline's own bindings.
+
+#### Upstream history (read this before re-attempting the fix)
+
+The bug has a five-contributor history. Two community PRs were attempted, neither merged, and the final fix landed as a side effect of broader maintainer keyboard work. The fix is **not in c11** (commits are post our 2026-03-18 fork point).
+
+1. **PR [#1438](https://github.com/manaflow-ai/cmux/pull/1438) by @shouryamaanjain (2026-03-14, still OPEN).** Fixed at the `textForKeyEvent` layer.
+   - @lawrencecchen (maintainer) couldn't reproduce on German keyboard, asked for repro. PR went stale waiting for a revision that never came.
+2. **@judekim0507's diagnosis (2026-03-16).** Critical context drop: the bug only fires in TUI apps, not plain shell. Plain shell hides it because readline maps M-DEL to `backward-kill-word` independently. This explained the maintainer's repro failure.
+3. **PR [#2246](https://github.com/manaflow-ai/cmux/pull/2246) by @pandec (2026-03-27, CLOSED 2026-04-01).** Different approach with deeper root-cause analysis: AppKit's `interpretKeyEvents → insertText → keyTextAccumulator` path runs **before** `textForKeyEvent`, so #1438's fix point was wrong. Added a fast path for Option+Delete (keyCode 51) mirroring the existing Ctrl fast path. **@pandec self-closed the PR on 2026-04-01 with "Fixed in the latest release."**
+4. **What actually fixed it upstream.** Not @pandec's PR (never merged). The fix was a side effect of broader maintainer keyboard work by **@austinywang (Austin Wang)**:
+   - `ab46c557` Handle left-side modifier releases (2026-04-13)
+   - `fda8daad` Fix modifier release handling after idle (2026-04-12)
+   - `151075f7` Avoid character APIs in flagsChanged (2026-04-13)
+5. **None of those commits explicitly reference #1153 or #1424.** Issue #1424 (a duplicate of #1153) was closed by @judekim0507 on 2026-04-01 as completed, based on community confirmation that the bug stopped reproducing — not a clean closing PR.
+
+#### Recommended fix path
+
+1. **First, repro in c11** — run `lazygit` or Claude Code or vim inside c11 and try `option+delete`. If the bug doesn't reproduce, close this pick as "fixed by drift" and move on.
+2. **If it does reproduce** (likely — c11 doesn't have the maintainer keyboard commits), do **not** revive #1438 or #2246. Cherry-pick the maintainer commits directly: `ab46c557`, `fda8daad`, `151075f7`. Verify each compiles and test the option+delete behavior in TUI apps after each.
+3. **Watch for collateral.** These commits touch modifier release handling broadly. Run the full keyboard / IME smoke test (option keys on non-US layouts, Korean/Japanese IME, modifier-held arrow keys) before landing — this is the typing-latency-sensitive area called out in `code/c11/CLAUDE.md`.
+
+#### Credit chain (to preserve in commit messages and PR description)
+
+```
+Reported-by: @sldx <upstream issue #1153>
+Diagnosed-by: @judekim0507 <TUI-vs-shell context, upstream issue #1424>
+First-attempt: @shouryamaanjain <upstream PR #1438 — closed unmerged>
+Root-cause: @pandec <upstream PR #2246 — closed unmerged>
+Cherry-picked-from: manaflow-ai/cmux@ab46c557 + @fda8daad + @151075f7 by @austinywang
+```
+
+If the c11 fix happens to land cleaner than the upstream side-effect path, surface it back upstream as a focused PR per the `code/c11/CLAUDE.md` "Upstream Fixes" guidance.
 
 ### #2105 — `ctrl-z` kills process instead of backgrounding
 - **Reporter:** @freshtonic

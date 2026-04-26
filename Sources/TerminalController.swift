@@ -3243,6 +3243,30 @@ class TerminalController {
         return DispatchQueue.main.sync(execute: body)
     }
 
+    // 8 s is slightly under the CLI 10 s deadline so the server-side error
+    // propagates before SO_RCVTIMEO fires on the caller side.
+    // Must stay strictly less than SocketClient.configuredDefaultDeadlineSeconds (10 s).
+    private static let kTier1MainThreadDeadlineSeconds: TimeInterval = 8.0
+
+    private func v2MainSyncWithDeadline<T>(seconds: TimeInterval = kTier1MainThreadDeadlineSeconds, _ body: @escaping () -> T) -> T? {
+        if Thread.isMainThread { return body() }
+        var result: T?
+        // Cancellation flag: written by the calling (socket) thread after a timeout, read by the
+        // main-thread closure. Prevents ghost mutations when the main queue drains after the
+        // caller has already received a timeout error and the operation has been declared failed.
+        // On Darwin, GCD memory ordering makes this safe in practice. C11-4 can harden further
+        // if needed (e.g., os_unfair_lock) for strict memory-model correctness.
+        var cancelled = false
+        let sema = DispatchSemaphore(value: 0)
+        DispatchQueue.main.async {
+            if !cancelled { result = body() }
+            sema.signal()
+        }
+        if sema.wait(timeout: .now() + seconds) == .success { return result }
+        cancelled = true
+        return nil
+    }
+
     private func v2Ok(id: Any?, result: Any) -> String {
         return v2Encode([
             "id": v2OrNull(id),
@@ -3606,7 +3630,12 @@ class TerminalController {
     }
 
     private func v2WindowCreate(params _: [String: Any]) -> V2CallResult {
-        guard let windowId = v2MainSync({ AppDelegate.shared?.createMainWindow() }) else {
+        // Two-step unwrap: outer nil = deadline fired; inner nil = AppDelegate.shared unavailable.
+        let rawWindowId = v2MainSyncWithDeadline({ AppDelegate.shared?.createMainWindow() })
+        guard let rawWindowId else {
+            return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)
+        }
+        guard let windowId = rawWindowId else {
             return .err(code: "internal_error", message: "Failed to create window", data: nil)
         }
         // The new window should become key, but setActiveTabManager defensively.
@@ -3698,7 +3727,7 @@ class TerminalController {
 
         var newId: UUID?
         let shouldFocus = v2FocusAllowed()
-        v2MainSync {
+        guard v2MainSyncWithDeadline({
             let ws = tabManager.addWorkspace(
                 workingDirectory: cwd,
                 initialTerminalCommand: initialCommand,
@@ -3707,6 +3736,8 @@ class TerminalController {
                 eagerLoadTerminal: !shouldFocus
             )
             newId = ws.id
+        }) != nil else {
+            return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)
         }
 
         guard let newId else {
@@ -5673,7 +5704,7 @@ class TerminalController {
         }
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to create surface", data: nil)
-        v2MainSync {
+        guard v2MainSyncWithDeadline({
             guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
@@ -5721,6 +5752,8 @@ class TerminalController {
                 "surface_ref": v2Ref(kind: .surface, uuid: newPanelId),
                 "type": panelType.rawValue
             ])
+        }) != nil else {
+            return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)
         }
         return result
     }
@@ -7245,7 +7278,7 @@ class TerminalController {
         let insertFirst = direction.insertFirst
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to create pane", data: nil)
-        v2MainSync {
+        guard v2MainSyncWithDeadline({
             guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
@@ -7305,6 +7338,8 @@ class TerminalController {
                 "surface_ref": v2Ref(kind: .surface, uuid: newPanelId),
                 "type": panelType.rawValue
             ])
+        }) != nil else {
+            return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)
         }
         return result
     }
@@ -14031,9 +14066,11 @@ class TerminalController {
 
         var newTabId: UUID?
         let focus = socketCommandAllowsInAppFocusMutations()
-        DispatchQueue.main.sync {
+        guard v2MainSyncWithDeadline({
             let workspace = tabManager.addTab(select: focus, eagerLoadTerminal: !focus)
             newTabId = workspace.id
+        }) != nil else {
+            return "ERROR: main thread did not respond within deadline"
         }
         return "OK \(newTabId?.uuidString ?? "unknown")"
     }
@@ -14055,7 +14092,7 @@ class TerminalController {
         }
 
         var result = "ERROR: Failed to create split"
-        DispatchQueue.main.sync {
+        guard v2MainSyncWithDeadline({
             guard let tabId = tabManager.selectedTabId,
                   let tab = tabManager.tabs.first(where: { $0.id == tabId }) else {
                 return
@@ -14081,6 +14118,8 @@ class TerminalController {
             if let newPanelId = tabManager.newSplit(tabId: tabId, surfaceId: targetSurface, direction: direction) {
                 result = "OK \(newPanelId.uuidString)"
             }
+        }) != nil else {
+            return "ERROR: main thread did not respond within deadline"
         }
         return result
     }
@@ -15807,7 +15846,7 @@ class TerminalController {
 	        let insertFirst = (direction == .left || direction == .up)
 	
 	        var result = "ERROR: Failed to move surface"
-	        DispatchQueue.main.sync {
+	        guard v2MainSyncWithDeadline({
 	            guard let tabId = tabManager.selectedTabId,
 	                  let tab = tabManager.tabs.first(where: { $0.id == tabId }) else {
 	                result = "ERROR: No tab selected"
@@ -15830,6 +15869,8 @@ class TerminalController {
 	            }
 	
 	            result = "OK \(newPaneId.id.uuidString)"
+	        }) != nil else {
+	            return "ERROR: main thread did not respond within deadline"
 	        }
 	        return result
 	    }

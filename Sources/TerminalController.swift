@@ -3736,6 +3736,7 @@ class TerminalController {
                 eagerLoadTerminal: !shouldFocus
             )
             newId = ws.id
+            return
         }) != nil else {
             return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)
         }
@@ -5705,14 +5706,14 @@ class TerminalController {
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to create surface", data: nil)
         guard v2MainSyncWithDeadline({
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+            guard let ws = self.v2ResolveWorkspace(params: params, tabManager: tabManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
-            v2MaybeFocusWindow(for: tabManager)
-            v2MaybeSelectWorkspace(tabManager, workspace: ws)
+            self.v2MaybeFocusWindow(for: tabManager)
+            self.v2MaybeSelectWorkspace(tabManager, workspace: ws)
 
-            let paneUUID = v2UUID(params, "pane_id")
+            let paneUUID = self.v2UUID(params, "pane_id")
             let paneId: PaneID? = {
                 if let paneUUID {
                     return ws.bonsplitController.allPaneIds.first(where: { $0.id == paneUUID })
@@ -5728,11 +5729,11 @@ class TerminalController {
             let newPanelId: UUID?
             switch panelType {
             case .browser:
-                newPanelId = ws.newBrowserSurface(inPane: paneId, url: url, focus: v2FocusAllowed())?.id
+                newPanelId = ws.newBrowserSurface(inPane: paneId, url: url, focus: self.v2FocusAllowed())?.id
             case .markdown:
-                newPanelId = ws.newMarkdownSurface(inPane: paneId, filePath: resolvedMarkdownPath!, focus: v2FocusAllowed())?.id
+                newPanelId = ws.newMarkdownSurface(inPane: paneId, filePath: resolvedMarkdownPath!, focus: self.v2FocusAllowed())?.id
             case .terminal:
-                newPanelId = ws.newTerminalSurface(inPane: paneId, focus: v2FocusAllowed())?.id
+                newPanelId = ws.newTerminalSurface(inPane: paneId, focus: self.v2FocusAllowed())?.id
             }
 
             guard let newPanelId else {
@@ -5740,16 +5741,16 @@ class TerminalController {
                 return
             }
 
-            let windowId = v2ResolveWindowId(tabManager: tabManager)
+            let windowId = self.v2ResolveWindowId(tabManager: tabManager)
             result = .ok([
-                "window_id": v2OrNull(windowId?.uuidString),
-                "window_ref": v2Ref(kind: .window, uuid: windowId),
+                "window_id": self.v2OrNull(windowId?.uuidString),
+                "window_ref": self.v2Ref(kind: .window, uuid: windowId),
                 "workspace_id": ws.id.uuidString,
-                "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
+                "workspace_ref": self.v2Ref(kind: .workspace, uuid: ws.id),
                 "pane_id": paneId.id.uuidString,
-                "pane_ref": v2Ref(kind: .pane, uuid: paneId.id),
+                "pane_ref": self.v2Ref(kind: .pane, uuid: paneId.id),
                 "surface_id": newPanelId.uuidString,
-                "surface_ref": v2Ref(kind: .surface, uuid: newPanelId),
+                "surface_ref": self.v2Ref(kind: .surface, uuid: newPanelId),
                 "type": panelType.rawValue
             ])
         }) != nil else {
@@ -7279,12 +7280,12 @@ class TerminalController {
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to create pane", data: nil)
         guard v2MainSyncWithDeadline({
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+            guard let ws = self.v2ResolveWorkspace(params: params, tabManager: tabManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
-            v2MaybeFocusWindow(for: tabManager)
-            v2MaybeSelectWorkspace(tabManager, workspace: ws)
+            self.v2MaybeFocusWindow(for: tabManager)
+            self.v2MaybeSelectWorkspace(tabManager, workspace: ws)
             guard let focusedPanelId = ws.focusedPanelId else {
                 result = .err(code: "not_found", message: "No focused surface to split", data: nil)
                 return
@@ -7298,7 +7299,7 @@ class TerminalController {
                     orientation: orientation,
                     insertFirst: insertFirst,
                     url: url,
-                    focus: v2FocusAllowed()
+                    focus: self.v2FocusAllowed()
                 )?.id
             case .markdown:
                 newPanelId = ws.newMarkdownSplit(
@@ -7306,14 +7307,14 @@ class TerminalController {
                     orientation: orientation,
                     insertFirst: insertFirst,
                     filePath: resolvedMarkdownPath!,
-                    focus: v2FocusAllowed()
+                    focus: self.v2FocusAllowed()
                 )?.id
             case .terminal:
                 newPanelId = ws.newTerminalSplit(
                     from: focusedPanelId,
                     orientation: orientation,
                     insertFirst: insertFirst,
-                    focus: v2FocusAllowed()
+                    focus: self.v2FocusAllowed()
                 )?.id
             }
 
@@ -7325,17 +7326,17 @@ class TerminalController {
             // Seed pane title atomic with the pane id becoming valid: the
             // caller observes the pane (via the response) only after the seed
             // is in the store.
-            v2SeedPaneTitle(workspaceId: ws.id, paneUUID: paneUUID, title: titleSeed)
-            let windowId = v2ResolveWindowId(tabManager: tabManager)
+            self.v2SeedPaneTitle(workspaceId: ws.id, paneUUID: paneUUID, title: titleSeed)
+            let windowId = self.v2ResolveWindowId(tabManager: tabManager)
             result = .ok([
-                "window_id": v2OrNull(windowId?.uuidString),
-                "window_ref": v2Ref(kind: .window, uuid: windowId),
+                "window_id": self.v2OrNull(windowId?.uuidString),
+                "window_ref": self.v2Ref(kind: .window, uuid: windowId),
                 "workspace_id": ws.id.uuidString,
-                "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
-                "pane_id": v2OrNull(paneUUID?.uuidString),
-                "pane_ref": v2Ref(kind: .pane, uuid: paneUUID),
+                "workspace_ref": self.v2Ref(kind: .workspace, uuid: ws.id),
+                "pane_id": self.v2OrNull(paneUUID?.uuidString),
+                "pane_ref": self.v2Ref(kind: .pane, uuid: paneUUID),
                 "surface_id": newPanelId.uuidString,
-                "surface_ref": v2Ref(kind: .surface, uuid: newPanelId),
+                "surface_ref": self.v2Ref(kind: .surface, uuid: newPanelId),
                 "type": panelType.rawValue
             ])
         }) != nil else {
@@ -14069,6 +14070,7 @@ class TerminalController {
         guard v2MainSyncWithDeadline({
             let workspace = tabManager.addTab(select: focus, eagerLoadTerminal: !focus)
             newTabId = workspace.id
+            return
         }) != nil else {
             return "ERROR: main thread did not respond within deadline"
         }
@@ -14101,7 +14103,7 @@ class TerminalController {
             // If panel arg provided, resolve it; otherwise use focused panel
             let surfaceId: UUID?
             if !panelArg.isEmpty {
-                surfaceId = resolveSurfaceId(from: panelArg, tab: tab)
+                surfaceId = self.resolveSurfaceId(from: panelArg, tab: tab)
                 if surfaceId == nil {
                     result = "ERROR: Panel not found"
                     return
@@ -15853,7 +15855,7 @@ class TerminalController {
 	                return
 	            }
 	
-	            guard let panelId = resolveSurfaceId(from: surfaceArg, tab: tab),
+	            guard let panelId = self.resolveSurfaceId(from: surfaceArg, tab: tab),
 	                  let bonsplitTabId = tab.surfaceIdFromPanelId(panelId) else {
 	                result = "ERROR: Surface not found"
 	                return

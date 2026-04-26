@@ -1,0 +1,54 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": null,
+  "created_at": "2026-04-26T04:48:57Z",
+  "created_by": "agent:claude-opus-4-7",
+  "custom_fields": {},
+  "description": "Cherry-pick candidate: open PR #2827 in upstream parent project manaflow-ai/cmux by @tranquillum (sole author). Adds an AI Usage Monitoring panel in the sidebar footer that tracks Claude.ai and Codex/ChatGPT subscription rate limits (5-hour and weekly windows), supports multiple accounts per provider, stores credentials in macOS Keychain only, integrates provider status pages, and ships a generic UsageProvider abstraction so new providers can be added without touching UI. Diff: +15055 -155 across 37 files (note: 10278 of those lines are localization xcstrings additions for new English strings). Tests included (cmuxTests/ProviderTests.swift). PR state: OPEN, mergeable: CONFLICTING with upstream main as of 2026-04-26. Strategically aligned with c11's mission since operators running many agents at once are the audience that benefits most from per-agent quota visibility. Full integration analysis and recommended cherry-pick path in task note.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KQ41X24NZVBSKRMQYP6JKBQA",
+  "last_event_id": "ev_01KQ41ZAD143YET08AQX2M10KW",
+  "last_status_changed_at": "2026-04-26T04:48:57Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-04-26T04:50:11Z",
+      "created_by": "agent:claude-opus-4-7",
+      "note": "Sibling upstream-pull bundle (issues bundle, CLI hygiene)",
+      "target_task_id": "task_01KQ3Z8PZR6BTZNN77783YVE7J",
+      "type": "related_to"
+    },
+    {
+      "created_at": "2026-04-26T04:50:11Z",
+      "created_by": "agent:claude-opus-4-7",
+      "note": "Sibling upstream-pull bundle (issues bundle, Input handling)",
+      "target_task_id": "task_01KQ3Z8Q2RGESKNWZE0N76GB75",
+      "type": "related_to"
+    },
+    {
+      "created_at": "2026-04-26T04:50:11Z",
+      "created_by": "agent:claude-opus-4-7",
+      "note": "Sibling upstream-pull bundle (issues bundle, Stability)",
+      "target_task_id": "task_01KQ3Z8Q5N35SSSM50M23V77D8",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-23",
+  "status": "backlog",
+  "tags": [
+    "upstream-pull",
+    "cmux-upstream",
+    "attribution-required",
+    "feature"
+  ],
+  "title": "Upstream cmux PR: Add AI provider usage monitoring (Claude + Codex, sidebar footer, multi-account)",
+  "type": "task",
+  "updated_at": "2026-04-26T04:50:11Z",
+  "urgency": null
+}

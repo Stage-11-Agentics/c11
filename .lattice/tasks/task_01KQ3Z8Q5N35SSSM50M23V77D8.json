@@ -1,7 +1,7 @@
 {
   "assigned_to": null,
   "branch_links": [],
-  "comment_count": 0,
+  "comment_count": 1,
   "complexity": null,
   "created_at": "2026-04-26T04:02:53Z",
   "created_by": "agent:claude-opus-4-7",
@@ -10,7 +10,7 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KQ3Z8Q5N35SSSM50M23V77D8",
-  "last_event_id": "ev_01KQ3Z8Q5P1M1SK7H971ZG2XZ5",
+  "last_event_id": "ev_01KQ3ZZ0K5VWC9TEFQ9G737HE7",
   "last_status_changed_at": "2026-04-26T04:02:53Z",
   "linked_files": [],
   "priority": "medium",
@@ -26,6 +26,6 @@
   ],
   "title": "Upstream pull: Stability \u2014 render, theme, crashes, perf, config, infra (10 picks)",
   "type": "task",
-  "updated_at": "2026-04-26T04:02:53Z",
+  "updated_at": "2026-04-26T04:15:04Z",
   "urgency": null
 }

@@ -1,7 +1,7 @@
 {
   "assigned_to": null,
   "branch_links": [],
-  "comment_count": 0,
+  "comment_count": 1,
   "complexity": null,
   "created_at": "2026-04-26T04:02:53Z",
   "created_by": "agent:claude-opus-4-7",
@@ -10,7 +10,7 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KQ3Z8PZR6BTZNN77783YVE7J",
-  "last_event_id": "ev_01KQ3ZF8JT2E2ZY8Z3BWJBYMBW",
+  "last_event_id": "ev_01KQ3ZZ0D6SX9XWTVCTMT74936",
   "last_status_changed_at": "2026-04-26T04:02:53Z",
   "linked_files": [],
   "priority": "medium",
@@ -41,6 +41,6 @@
   ],
   "title": "Upstream pull: CLI hygiene & focus policy (7 picks)",
   "type": "task",
-  "updated_at": "2026-04-26T04:06:28Z",
+  "updated_at": "2026-04-26T04:15:04Z",
   "urgency": null
 }

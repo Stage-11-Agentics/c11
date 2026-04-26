@@ -1,5 +1,6 @@
 {
   "active_sessions": {
+    "Argus-1": "sess_01KQ2JDVM2796EXC2YZ9N0HZRE",
     "c11-8-orchestrator-1": "sess_01KPSAYDRVB77G448AGWP0212M",
     "cc-opus-cmux9-kickoff-1": "sess_01KPJ7XS8T1PQND3RPWGXX8FC3",
     "cmux-30-orchestrator-1": "sess_01KPKQCNA3ZNB2GQRRRP8PAXPN",
@@ -7,6 +8,7 @@
     "cmux-drift-consolidate-1": "sess_01KPKK3NPCY73PASQFT2TWV8F3"
   },
   "serial_counters": {
+    "Argus": 1,
     "c11-12-impl": 1,
     "c11-8-orchestrator": 1,
     "cc-opus-cmux9-kickoff": 1,

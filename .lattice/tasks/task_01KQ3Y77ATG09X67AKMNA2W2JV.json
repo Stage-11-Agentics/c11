@@ -1,0 +1,40 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": null,
+  "created_at": "2026-04-26T03:44:36Z",
+  "created_by": {
+    "agent_type": "advance",
+    "base_name": "Argus",
+    "framework": "claude-code",
+    "model": "claude-opus-4-7",
+    "name": "Argus-1",
+    "serial": 1,
+    "session": "sess_01KQ2JDVM2796EXC2YZ9N0HZRE"
+  },
+  "custom_fields": {},
+  "description": "## Symptoms\nA Ghostty terminal surface is occasionally drawn TWICE \u2014 once at its proper pane location and once shifted upward, with the duplicate's top edge extending above the workspace title bar / out of the workspace's visible area. The duplicate is not interactive (the user only interacts with the lower copy). Caught visually 2026-04-26 in tagged build `c11 DEV pane-close-overlay` after a sequence of split + close + reset operations on the only-pane reset path.\n\nTwo screenshots attached in the originating chat \u2014 one showing the workspace with the spurious copy bleeding above the chrome, one showing the same state with the menubar visible.\n\n## Reproducibility\n- Rare. Operator has seen \"a few other versions of this\" historically; was able to catch it this time but does not have steady repro steps.\n- Suspicion: portal sync race during rapid pane structural changes (split \u2192 close \u2192 reset \u2192 terminal-respawn). The new pane-close overlay flow probably exercises this race more frequently than the old NSAlert path because the reset action both closes every tab AND immediately spawns a new terminal in the same pane within one frame.\n\n## Where to look (priors)\n1. `WindowTerminalPortal` (`Sources/TerminalWindowPortal.swift`) \u2014 the host that reparents `GhosttySurfaceScrollView` instances into the central window-level layer. Suspect candidates:\n   - `entriesByHostedId` / `hostedByAnchorId` may end up holding two entries for the same panel during a rapid detach/reattach if the portal sync runs before the old anchor is fully torn down.\n   - `synchronizeAllHostedViews(excluding:)` and `synchronizeHostFrameToReference()` may compute a stale frame for one entry while the new one is mid-install.\n   - `transientRecoveryRetriesRemaining` retry budget could re-mount a previously-detached scroll view at a stale frame.\n2. `attachPaneInteraction` / portal mounting interactions in `GhosttyTerminalView.swift` \u2014 when the new terminal spawns via `newTerminalSurface(inPane:)` immediately after `forceCloseTabIds.insert(...)` + `closeTab`, the old scroll view may not have been removed from the portal entry map by the time the new one registers.\n3. SwiftUI `.transaction { tx in tx.disablesAnimations = true }` in `PaneContainerView.contentArea` \u2014 animations are disabled for tab moves but not necessarily for 'all tabs replaced in one frame.' A residual animation transaction could leave the old view rendered for one extra frame at a moved-up frame.\n\n## Suggested investigation paths\n1. Add a portal-state-dump log on every close + spawn (entry count, anchor identifiers, frames) and reproduce by scripting rapid reset-pane cycles via the c11 socket.\n2. Try inserting a one-frame yield (`DispatchQueue.main.async`) between the bulk tab close and the `newTerminalSurface` call in the only-pane branch of `splitTabBar(_:didRequestClosePane:)` \u2014 if the race disappears, the real fix is making the portal idempotent under same-frame churn, not adding an artificial yield.\n3. Audit `WindowTerminalPortal.detachEntry` (or equivalent) \u2014 confirm the entry map is purged synchronously, not lazily on the next sync pass.\n4. Inspect `transientRecoveryEnabled` paths \u2014 disable temporarily to see if the duplicate goes away.\n\n## Severity rationale\n- Visual only (no data loss, no crash).\n- Pre-existing per operator's account; the new pane-reset flow likely makes it more reachable.\n- Distracting and erodes trust; not blocking.\n\n## Out of scope\nThis is NOT caused by the pane-close overlay PR (#81). The portal-layering / multi-mount issue predates that work. The reset flow may make repro easier \u2014 useful signal for the investigation but not a fix target for that PR.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KQ3Y77ATG09X67AKMNA2W2JV",
+  "last_event_id": "ev_01KQ3Y77AV3TK31S4TBNXSXXFX",
+  "last_status_changed_at": "2026-04-26T03:44:36Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-18",
+  "status": "backlog",
+  "tags": [
+    "ui",
+    "portal",
+    "ghostty",
+    "visual-bug"
+  ],
+  "title": "Ghostty surface duplicated/overdraws above pane bounds during portal sync",
+  "type": "bug",
+  "updated_at": "2026-04-26T03:44:36Z",
+  "urgency": null
+}

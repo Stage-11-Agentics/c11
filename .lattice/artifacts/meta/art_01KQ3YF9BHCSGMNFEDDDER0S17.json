@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-04-26T03:49:00Z",
+  "created_by": "human:atin",
+  "custom_fields": {
+    "url": "https://github.com/Stage-11-Agentics/c11/pull/80"
+  },
+  "id": "art_01KQ3YF9BHCSGMNFEDDDER0S17",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": null,
+    "size_bytes": null
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "PR #80 \u2014 C11-7 Automation socket reliability",
+  "token_usage": null,
+  "type": "reference"
+}

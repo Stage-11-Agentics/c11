@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-04-26T02:42:25Z",
+  "created_by": "human:atin",
+  "custom_fields": {
+    "url": "https://github.com/Stage-11-Agentics/c11/pull/79"
+  },
+  "id": "art_01KQ3TNC6JGZ18Z5K8ZPX1VW0F",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": null,
+    "size_bytes": null
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "PR #79 \u2014 CMUX-37 Phases 2-5",
+  "token_usage": null,
+  "type": "reference"
+}

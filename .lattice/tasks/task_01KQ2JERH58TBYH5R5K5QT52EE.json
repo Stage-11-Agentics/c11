@@ -1,0 +1,39 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 1,
+  "complexity": "medium",
+  "created_at": "2026-04-25T14:59:45Z",
+  "created_by": {
+    "agent_type": "advance",
+    "base_name": "Argus",
+    "framework": "claude-code",
+    "model": "claude-opus-4-7",
+    "name": "Argus-1",
+    "serial": 1,
+    "session": "sess_01KQ2JDVM2796EXC2YZ9N0HZRE"
+  },
+  "custom_fields": {},
+  "description": "Sweep ticket for code-quality wins identified during a 2026-04-25 exploratory pass over the c11 source tree. Two concrete items to start, plus a section to be filled in by an exploration pass.\n\n## Pass 1 \u2014 concrete items\n\n### 1. Delete rejected installer code in `CLI/c11.swift` (~2,300 lines)\n\nLines ~13906\u201316252 implement the `cmux install <tui>` integration installers (Module 4). Per CLAUDE.md, this work is **policy-rejected**: 'c11 install <tui> is rejected. Any proposal that writes to a user's persistent tool config is a non-starter\u2026 The 691-line spec exists as a historical artifact only \u2014 do not revive it.'\n\nThe implementation, however, was never deleted. It is dead code by policy, not by accident.\n\nScope:\n- Remove the `cmux install` / `cmux uninstall` subcommand handlers and routing in `CMUXCLI`.\n- Remove the `InstallExitCode`, `IntegrationInstallerConstants`, `IntegrationInstallerPlan`, `IntegrationInstallerStatus` types.\n- Remove the helper enums `IntegrationInstallerHelpers`, the Claude/TOML/OpenCode shim sections.\n- Verify the `Resources/bin/claude` grandfathered wrapper is untouched (CLAUDE.md calls it out as a deliberate exception with a `DO NOT GENERALIZE` header).\n- Update `docs/c11mux-module-4-integration-installers-spec.md` \u2014 either delete or mark as historical with a clear 'NOT IMPLEMENTED, NOT TO BE REVIVED' banner.\n- Drop any tests/fixtures that exist solely to exercise the installer paths.\n\nRisk: zero (policy-dead code, no shipping callers). Win: `c11.swift` 17,039 \u2192 ~14,700.\n\n### 2. Carve `ContentView.swift` enum helpers into sibling files\n\n`Sources/ContentView.swift` is 14,131 lines. The `ContentView` struct itself runs ~1420\u20137328 (~5,900 lines), which is genuinely a SwiftUI god-view and risky to split. But the file also contains many self-contained helper enums and structs that are de-facto separate modules already, just colocated:\n\n- `SidebarRemoteErrorCopySupport`, `InternalTabDragConfigurationProvider`, `SidebarResizeInteraction`, `DragOverlayRoutingPolicy` (lines 65\u2013400)\n- `CommandPaletteOverlayPromotionPolicy`, `WorkspaceMountPolicy`, `MountedWorkspacePresentationPolicy` (lines 918\u20131420)\n- `CommandPaletteSwitcherSearchIndexer`, `CommandPaletteFuzzyMatcher`, `CommandPaletteSearchEngine` (lines 7344\u20138309)\n- `SidebarDropPlanner`, `SidebarDragAutoScrollPlanner`, `SidebarSelection`, `SidebarMaterialOption`/`SidebarBlendModeOption`/`SidebarStateOption`/`SidebarTintDefaults`/`SidebarPresetOption` (lines 12777\u201313997)\n- `FeedbackComposerBridge` (lines 10081\u201310825)\n\nThese move to sibling files (`Sources/Sidebar/`, `Sources/CommandPalette/`, `Sources/Feedback/`) with **no behavior change** \u2014 pure mechanical extraction. Each block is internally cohesive and externally referenced by name. Goal: ContentView.swift down to ~8k by removing the helpers, leaving the actual View body and its tightly-coupled neighbors.\n\n**What NOT to touch in this pass:**\n- `ContentView` struct body (load-bearing for SwiftUI diffing)\n- `TabItemView` and its `Equatable` contract (CLAUDE.md flags as typing-latency-critical)\n- Any helper that reads from `@EnvironmentObject` / `@ObservedObject` of the ContentView (would require care to extract)\n\nRisk: low (mechanical, type-checker enforced). Win: ContentView.swift 14,131 \u2192 ~8,000, helpers become independently navigable and testable.\n\n## Pass 2 \u2014 exploration findings (to be appended)\n\nExploration pass scheduled in same session. Will append findings as comments on this ticket once complete.\n\n## Out of scope (for now)\n\n- `Sources/TerminalController.swift` (17,240) \u2014 single 17k-line god-class is the worst structural smell, but every change risks the typing-latency contracts CLAUDE.md flags by name. Defer until a specific pain point forces it.\n- `Sources/AppDelegate.swift` (13,374) \u2014 needs investigation pass first to know what's actually in there.\n- Sweeping naming or API shape changes.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KQ2JERH58TBYH5R5K5QT52EE",
+  "last_event_id": "ev_01KQ3SHBCFE5FTZN9GMWQTDX4F",
+  "last_status_changed_at": "2026-04-25T14:59:45Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-17",
+  "status": "backlog",
+  "tags": [
+    "refactor",
+    "cleanup",
+    "tech-debt"
+  ],
+  "title": "Refactor cleanup: large files, dead code, structural smells",
+  "type": "chore",
+  "updated_at": "2026-04-26T02:22:45Z",
+  "urgency": null
+}

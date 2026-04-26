@@ -1,0 +1,13 @@
+{
+  "agent_type": "advance",
+  "base_name": "Argus",
+  "framework": "claude-code",
+  "last_active": "2026-04-26T03:54:24Z",
+  "model": "claude-opus-4-7",
+  "name": "Argus-1",
+  "parent": "human:atin",
+  "serial": 1,
+  "session": "sess_01KQ2JDVM2796EXC2YZ9N0HZRE",
+  "started_at": "2026-04-25T14:59:16Z",
+  "status": "active"
+}

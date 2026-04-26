@@ -45,21 +45,70 @@ private struct ConfirmCard: View {
     let panelId: UUID
     let content: ConfirmContent
     @ObservedObject var runtime: PaneInteractionRuntime
+    @State private var pulse: Bool = false
 
     private var selected: ConfirmSelectionField {
         runtime.confirmSelection[panelId] ?? .confirm
     }
 
+    private var isCritical: Bool {
+        content.style == .criticalDestructive
+    }
+
+    private var titleFont: Font {
+        isCritical
+            ? .system(size: 18, weight: .bold)
+            : .system(size: 15, weight: .semibold)
+    }
+
+    private var confirmFont: Font {
+        isCritical
+            ? .system(size: 14, weight: .bold)
+            : .system(size: 13, weight: .regular)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(content.title)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(BrandColors.whiteSwiftUI)
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                if isCritical {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(Color.red)
+                        .accessibilityHidden(true)
+                }
+                Self.emphasizedText(content.title)
+                    .font(titleFont)
+                    .foregroundStyle(BrandColors.whiteSwiftUI)
+            }
 
             if let message = content.message, !message.isEmpty {
                 Text(message)
                     .font(.system(size: 13))
                     .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.85))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !content.detailLines.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(content.detailLines.enumerated()), id: \.offset) { _, line in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text("•")
+                                .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.65))
+                            Text(line)
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.95))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                }
+                .padding(.vertical, 8)
+                .padding(.horizontal, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.black.opacity(0.35))
+                )
             }
 
             HStack(spacing: 8) {
@@ -77,30 +126,57 @@ private struct ConfirmCard: View {
 
                 Button(role: content.role == .destructive ? .destructive : nil,
                        action: confirm) {
-                    Text(content.confirmLabel)
+                    Self.emphasizedText(content.confirmLabel)
+                        .font(confirmFont)
                         .foregroundColor(content.role == .destructive
                                          ? BrandColors.whiteSwiftUI
                                          : BrandColors.blackSwiftUI)
-                        .frame(minWidth: 64)
+                        .frame(minWidth: isCritical ? 96 : 64)
                 }
                 .buttonStyle(.borderedProminent)
+                .controlSize(isCritical ? .large : .regular)
                 .tint(content.role == .destructive ? .red : BrandColors.goldSwiftUI)
                 .selectionBox(isActive: selected == .confirm)
                 .accessibilityAddTraits(selected == .confirm ? .isSelected : [])
+                .scaleEffect(isCritical && pulse ? 1.04 : 1.0)
+                .shadow(color: isCritical
+                        ? Color.red.opacity(pulse ? 0.85 : 0.4)
+                        : .clear,
+                        radius: isCritical ? (pulse ? 14 : 6) : 0)
+                .animation(
+                    isCritical
+                        ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
+                        : .default,
+                    value: pulse
+                )
             }
         }
         .padding(24)
-        .frame(minWidth: 260, maxWidth: 420, alignment: .leading)
+        .frame(
+            minWidth: isCritical ? 320 : 260,
+            maxWidth: isCritical ? 480 : 420,
+            alignment: .leading
+        )
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(BrandColors.surfaceSwiftUI)
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(BrandColors.ruleSwiftUI, lineWidth: 1)
+                        .strokeBorder(
+                            isCritical ? Color.red.opacity(0.85) : BrandColors.ruleSwiftUI,
+                            lineWidth: isCritical ? 2 : 1
+                        )
+                )
+                .shadow(
+                    color: isCritical ? Color.red.opacity(0.45) : .clear,
+                    radius: isCritical ? 20 : 0
                 )
         )
         .environment(\.colorScheme, .dark)
         .accessibilityIdentifier("PaneInteraction.confirm.card")
+        .onAppear {
+            if isCritical { pulse = true }
+        }
     }
 
     private func confirm() {
@@ -116,6 +192,38 @@ private struct ConfirmCard: View {
             result: .cancelled,
             ifInteractionId: content.id
         )
+    }
+
+    /// Underline standalone occurrences of "entire" / "Entire" / "ENTIRE" in
+    /// the supplied string. We use this to make the pane-close title and
+    /// button visibly distinct from a tab close at a glance — the differentiating
+    /// word is what catches the eye, not the sentence as a whole.
+    private static func emphasizedText(_ string: String) -> Text {
+        let pattern = #"\b(entire|Entire|ENTIRE)\b"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return Text(string)
+        }
+        let nsString = string as NSString
+        let fullRange = NSRange(location: 0, length: nsString.length)
+        let matches = regex.matches(in: string, range: fullRange)
+        guard !matches.isEmpty else { return Text(string) }
+
+        var cursor = 0
+        var result = Text("")
+        for match in matches {
+            if match.range.location > cursor {
+                let plainRange = NSRange(location: cursor, length: match.range.location - cursor)
+                result = result + Text(nsString.substring(with: plainRange))
+            }
+            let emphasized = nsString.substring(with: match.range)
+            result = result + Text(emphasized).underline().bold()
+            cursor = match.range.location + match.range.length
+        }
+        if cursor < nsString.length {
+            let tailRange = NSRange(location: cursor, length: nsString.length - cursor)
+            result = result + Text(nsString.substring(with: tailRange))
+        }
+        return result
     }
 }
 

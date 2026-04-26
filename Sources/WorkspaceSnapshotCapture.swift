@@ -69,7 +69,9 @@ struct LiveWorkspaceSnapshotSource: WorkspaceSnapshotSource {
     }
 
     /// Default bundle version + build number, e.g. `"0.01.123+42"`. Lives on
-    /// the type so tests can inject a deterministic string.
+    /// the type so tests can inject a deterministic string. Nonisolated so it
+    /// can be evaluated as a default argument of `init` (Swift 6 won't let a
+    /// main-actor-isolated method run in the synchronous default-arg context).
     nonisolated static func defaultVersionString() -> String {
         let info = Bundle.main.infoDictionary
         let short = (info?["CFBundleShortVersionString"] as? String) ?? "0.0.0"

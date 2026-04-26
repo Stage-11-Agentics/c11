@@ -129,6 +129,21 @@ struct WorkspaceContentView: View {
                 }
         }
         .internalOnlyTabDrag()
+        // Inject a per-pane anchor view. The anchor itself draws nothing; it
+        // reports its window-coord frame to the workspace's overlay controller
+        // so the controller can mount the pane-close confirmation card in the
+        // window's themeFrame (above the WindowTerminalPortal layer). Drawing
+        // the overlay inside the SwiftUI tree leaves it stranded behind
+        // portal-hosted terminals/browsers, which is why we route through an
+        // AppKit overlay layer instead.
+        .environment(\.paneOverlayBuilder, { paneId in
+            AnyView(
+                PaneInteractionOverlayHostView(
+                    paneId: paneId,
+                    controller: workspace.paneCloseOverlayController
+                )
+            )
+        })
         // Split zoom swaps Bonsplit between the full split tree and a single pane view.
         // Recreate the Bonsplit subtree on zoom enter/exit so stale pre-zoom pane chrome
         // cannot remain stacked above portal-hosted browser content.

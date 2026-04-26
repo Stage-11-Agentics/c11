@@ -39,9 +39,15 @@ public struct ConfirmContent: Identifiable {
     public let id = UUID()
     public let title: String
     public let message: String?
+    /// Optional list of items the action will affect, rendered as a bullet
+    /// list under the message. Use for high-stakes destructive flows where
+    /// the user needs to see exactly what's about to be removed (e.g.
+    /// pane-close listing each tab being closed).
+    public let detailLines: [String]
     public let confirmLabel: String
     public let cancelLabel: String
     public let role: ConfirmRole
+    public let style: ConfirmStyle
     public let source: InteractionSource
     public let completion: (ConfirmResult) -> Void
 
@@ -50,20 +56,34 @@ public struct ConfirmContent: Identifiable {
         case destructive
     }
 
+    /// Visual treatment of the card. `.standard` is the default look used by
+    /// every existing call site. `.criticalDestructive` is the emphasised
+    /// treatment used when an irreversible multi-item action is at stake —
+    /// red glow on the card, pulsing destructive button, larger title — so
+    /// the operator can't fat-finger their way through it.
+    public enum ConfirmStyle {
+        case standard
+        case criticalDestructive
+    }
+
     public init(
         title: String,
         message: String?,
+        detailLines: [String] = [],
         confirmLabel: String,
         cancelLabel: String,
         role: ConfirmRole,
+        style: ConfirmStyle = .standard,
         source: InteractionSource,
         completion: @escaping (ConfirmResult) -> Void
     ) {
         self.title = title
         self.message = message
+        self.detailLines = detailLines
         self.confirmLabel = confirmLabel
         self.cancelLabel = cancelLabel
         self.role = role
+        self.style = style
         self.source = source
         self.completion = completion
     }

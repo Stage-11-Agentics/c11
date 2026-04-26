@@ -92,6 +92,8 @@
 		A5C101A0 /* PaneInteraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B0 /* PaneInteraction.swift */; };
 		A5C101A1 /* PaneInteractionCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B1 /* PaneInteractionCardView.swift */; };
 		A5C101A2 /* PaneInteractionOverlayHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B2 /* PaneInteractionOverlayHost.swift */; };
+		A5C101A3 /* PaneInteractionOverlayHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B3 /* PaneInteractionOverlayHostView.swift */; };
+		A5C101A4 /* PaneCloseOverlayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B4 /* PaneCloseOverlayController.swift */; };
 		A5C102A0 /* PaneInteractionRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C102B0 /* PaneInteractionRuntimeTests.swift */; };
 		A58689DE /* MermaidRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A537C229 /* MermaidRenderer.swift */; };
 		A58689DF /* FencedCodeRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A537C22A /* FencedCodeRenderer.swift */; };
@@ -403,6 +405,8 @@
 		A5C101B0 /* PaneInteraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/PaneInteraction.swift; sourceTree = "<group>"; };
 		A5C101B1 /* PaneInteractionCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/PaneInteractionCardView.swift; sourceTree = "<group>"; };
 		A5C101B2 /* PaneInteractionOverlayHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/PaneInteractionOverlayHost.swift; sourceTree = "<group>"; };
+		A5C101B3 /* PaneInteractionOverlayHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/PaneInteractionOverlayHostView.swift; sourceTree = "<group>"; };
+		A5C101B4 /* PaneCloseOverlayController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/PaneCloseOverlayController.swift; sourceTree = "<group>"; };
 		A5C102B0 /* PaneInteractionRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneInteractionRuntimeTests.swift; sourceTree = "<group>"; };
 		A537C229 /* MermaidRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/MermaidRenderer.swift; sourceTree = "<group>"; };
 		A537C22A /* FencedCodeRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/FencedCodeRenderer.swift; sourceTree = "<group>"; };
@@ -722,6 +726,8 @@
 				A5C101B0 /* PaneInteraction.swift */,
 				A5C101B1 /* PaneInteractionCardView.swift */,
 				A5C101B2 /* PaneInteractionOverlayHost.swift */,
+				A5C101B3 /* PaneInteractionOverlayHostView.swift */,
+				A5C101B4 /* PaneCloseOverlayController.swift */,
 				A537C229 /* MermaidRenderer.swift */,
 				A537C22A /* FencedCodeRenderer.swift */,
 				A5001419 /* MarkdownPanelView.swift */,
@@ -1118,6 +1124,8 @@
 				A5C101A0 /* PaneInteraction.swift in Sources */,
 				A5C101A1 /* PaneInteractionCardView.swift in Sources */,
 				A5C101A2 /* PaneInteractionOverlayHost.swift in Sources */,
+				A5C101A3 /* PaneInteractionOverlayHostView.swift in Sources */,
+				A5C101A4 /* PaneCloseOverlayController.swift in Sources */,
 				A58689DE /* MermaidRenderer.swift in Sources */,
 				A58689DF /* FencedCodeRenderer.swift in Sources */,
 				A5001421 /* MarkdownPanelView.swift in Sources */,

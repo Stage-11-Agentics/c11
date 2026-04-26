@@ -864,6 +864,11 @@ enum SocketDeadline {
 }
 
 final class SocketClient {
+    // Stable string used at both the throw site and the catch site in sendV2.
+    // Extracting it prevents the catch clause from silently missing the timeout
+    // if the throw-site message is ever edited.
+    fileprivate static let commandTimedOutMessage = "Command timed out"
+
     private let path: String
     private var socketFD: Int32 = -1
 
@@ -940,7 +945,7 @@ final class SocketClient {
                     if sawNewline {
                         break
                     }
-                    throw CLIError(message: "Command timed out")
+                    throw CLIError(message: SocketClient.commandTimedOutMessage)
                 }
                 throw CLIError(message: "Socket read error")
             }
@@ -1197,7 +1202,7 @@ final class SocketClient {
         let raw: String
         do {
             raw = try send(command: requestLine, responseTimeout: effectiveTimeout)
-        } catch let err as CLIError where err.message == "Command timed out" {
+        } catch let err as CLIError where err.message == SocketClient.commandTimedOutMessage {
             traceStatus = "timeout"
             let elapsedMs = Int((Date().timeIntervalSince(startTime) * 1000).rounded())
             throw CLIError(message: timeoutMessage(method: method, params: params, elapsedMs: elapsedMs))

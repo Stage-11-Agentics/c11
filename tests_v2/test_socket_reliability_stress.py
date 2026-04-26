@@ -34,29 +34,49 @@ def _must(cond: bool, msg: str) -> None:
         raise cmuxError(msg)
 
 
-def _find_cli_binary() -> str:
-    env_cli = os.environ.get("CMUXTERM_CLI")
-    if env_cli and os.path.isfile(env_cli) and os.access(env_cli, os.X_OK):
-        return env_cli
+def _find_cli_binary() -> Optional[str]:
+    """Return path to c11/cmux CLI binary, or None if not found (caller should skip)."""
+    import shutil
 
-    fixed = os.path.expanduser(
-        "~/Library/Developer/Xcode/DerivedData/cmux-tests-v2/Build/Products/Debug/cmux"
-    )
-    if os.path.isfile(fixed) and os.access(fixed, os.X_OK):
-        return fixed
+    # Prefer explicit env vars (c11-style first, then legacy cmux compat).
+    for env_key in ("C11_CLI_BIN", "CMUX_CLI_BIN", "CMUX_CLI", "CMUXTERM_CLI"):
+        val = os.environ.get(env_key)
+        if val and os.path.isfile(val) and os.access(val, os.X_OK):
+            return val
 
-    candidates = glob.glob(
-        os.path.expanduser(
-            "~/Library/Developer/Xcode/DerivedData/**/Build/Products/Debug/cmux"
-        ),
-        recursive=True,
-    )
-    candidates += glob.glob("/tmp/cmux-*/Build/Products/Debug/cmux")
+    # Prefer the path written by scripts/reload.sh --tag.
+    last_cli_path_file = "/tmp/c11-last-cli-path"
+    if os.path.isfile(last_cli_path_file) and not os.path.islink(last_cli_path_file):
+        try:
+            candidate = open(last_cli_path_file).read().strip()
+            if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                return candidate
+        except OSError:
+            pass
+
+    # Xcode DerivedData — search both project names (c11 current, cmux historical).
+    candidates: list[str] = []
+    for binary_name in ("c11", "cmux"):
+        candidates.extend(glob.glob(
+            os.path.expanduser(
+                f"~/Library/Developer/Xcode/DerivedData/**/Build/Products/Debug/{binary_name}"
+            ),
+            recursive=True,
+        ))
+        candidates.extend(glob.glob(f"/tmp/c11-*/Build/Products/Debug/{binary_name}"))
+        candidates.extend(glob.glob(f"/tmp/cmux-*/Build/Products/Debug/{binary_name}"))
     candidates = [p for p in candidates if os.path.isfile(p) and os.access(p, os.X_OK)]
-    if not candidates:
-        raise cmuxError("Could not locate cmux CLI binary; set CMUXTERM_CLI")
-    candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-    return candidates[0]
+    if candidates:
+        candidates.sort(key=os.path.getmtime, reverse=True)
+        return candidates[0]
+
+    # PATH fallback.
+    for binary_name in ("c11", "cmux"):
+        found = shutil.which(binary_name)
+        if found:
+            return found
+
+    return None
 
 
 def _cli_env() -> dict[str, str]:
@@ -86,6 +106,9 @@ def test_no_cli_hangs_under_rapid_surface_creation() -> int:
         return 0
 
     cli = _find_cli_binary()
+    if cli is None:
+        print("SKIP: c11/cmux CLI binary not found. Run ./scripts/reload.sh --tag <name>, or set C11_CLI_BIN.")
+        return 0
     env = _cli_env()
 
     # Seed workspace and surface IDs to use for surface.create and set-metadata.

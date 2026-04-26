@@ -869,7 +869,7 @@ final class SocketClient {
 
     // Default deadline: 10 s, tunable via env. Dual-read: C11_* primary, CMUX_* compat.
     // Legacy CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC (seconds) honoured for backward compat.
-    static let configuredDefaultDeadlineSeconds: TimeInterval = {
+    private static let configuredDefaultDeadlineSeconds: TimeInterval = {
         let env = ProcessInfo.processInfo.environment
         for key in ["C11_DEFAULT_SOCKET_DEADLINE_MS", "CMUX_DEFAULT_SOCKET_DEADLINE_MS"] {
             if let raw = env[key], let ms = Double(raw), ms > 0 { return ms / 1000 }
@@ -879,7 +879,7 @@ final class SocketClient {
     }()
 
     // C11_TRACE=1 (or CMUX_TRACE=1) prints per-request start/end/timing lines to stderr.
-    static let traceEnabled: Bool = {
+    private static let traceEnabled: Bool = {
         let env = ProcessInfo.processInfo.environment
         return env["C11_TRACE"] == "1" || env["CMUX_TRACE"] == "1"
     }()
@@ -1163,7 +1163,7 @@ final class SocketClient {
         var traceStatus = "ok"
 
         if Self.traceEnabled {
-            let refs = traceRefs(from: params)
+            let refs = refTokens(from: params).joined(separator: " ")
             let refsStr = refs.isEmpty ? "" : "(\(refs)) "
             FileHandle.standardError.write(
                 Data("[c11-trace] -> \(method) \(refsStr)socket=\(path)\n".utf8)
@@ -1200,14 +1200,7 @@ final class SocketClient {
         } catch let err as CLIError where err.message == "Command timed out" {
             traceStatus = "timeout"
             let elapsedMs = Int((Date().timeIntervalSince(startTime) * 1000).rounded())
-            var parts = ["method=\(method)"]
-            if let ws = params["workspace_id"] as? String { parts.append("workspace=\(ws)") }
-            if let surf = params["surface_id"] as? String { parts.append("surface=\(surf)") }
-            if let pane = params["pane_id"] as? String { parts.append("pane=\(pane)") }
-            if let panel = params["panel_id"] as? String { parts.append("panel=\(panel)") }
-            parts.append("socket=\(path)")
-            parts.append("elapsed_ms=\(elapsedMs)")
-            throw CLIError(message: "c11: timeout: \(parts.joined(separator: " "))")
+            throw CLIError(message: timeoutMessage(method: method, params: params, elapsedMs: elapsedMs))
         } catch {
             traceStatus = "error"
             throw error
@@ -1235,9 +1228,18 @@ final class SocketClient {
         }
 
         if let error = response["error"] as? [String: Any] {
-            traceStatus = "error"
             let code = (error["code"] as? String) ?? "error"
             let message = (error["message"] as? String) ?? "Unknown v2 error"
+            // Normalize server-side main_thread_timeout to the same parseable c11: timeout:
+            // envelope as a client-side SO_RCVTIMEO, so automation can parse both paths uniformly.
+            // The 8 s server deadline is intentionally shorter than the 10 s CLI deadline, so this
+            // is the expected production timeout path under a saturated main thread.
+            if code == "main_thread_timeout" {
+                traceStatus = "timeout"
+                let elapsedMs = Int((Date().timeIntervalSince(startTime) * 1000).rounded())
+                throw CLIError(message: timeoutMessage(method: method, params: params, elapsedMs: elapsedMs))
+            }
+            traceStatus = "error"
             throw CLIError(message: "\(code): \(message)")
         }
 
@@ -1245,13 +1247,22 @@ final class SocketClient {
         throw CLIError(message: "v2 request failed")
     }
 
-    private func traceRefs(from params: [String: Any]) -> String {
+    // Shared builder for both trace output and timeout error messages.
+    // Extracts workspace/surface/pane/panel refs from params into "key=value" tokens.
+    private func refTokens(from params: [String: Any]) -> [String] {
         var parts: [String] = []
         if let ws = params["workspace_id"] as? String { parts.append("workspace=\(ws)") }
         if let surf = params["surface_id"] as? String { parts.append("surface=\(surf)") }
         if let pane = params["pane_id"] as? String { parts.append("pane=\(pane)") }
         if let panel = params["panel_id"] as? String { parts.append("panel=\(panel)") }
-        return parts.joined(separator: " ")
+        return parts
+    }
+
+    private func timeoutMessage(method: String, params: [String: Any], elapsedMs: Int) -> String {
+        var parts = ["method=\(method)"] + refTokens(from: params)
+        parts.append("socket=\(path)")
+        parts.append("elapsed_ms=\(elapsedMs)")
+        return "c11: timeout: \(parts.joined(separator: " "))"
     }
 }
 
@@ -4168,7 +4179,9 @@ struct CMUXCLI {
                 "sshOptions=\(remoteSSHOptions.joined(separator: "|"))"
             )
             let configureStartedAt = Date()
-            configuredPayload = try client.sendV2(method: "workspace.remote.configure", params: configureParams)
+            // deadline: .none — SSH handshake and relay negotiation can exceed 10 s on slow
+            // VPNs or distant hosts; the server governs the timeout for this operation.
+            configuredPayload = try client.sendV2(method: "workspace.remote.configure", params: configureParams, deadline: .none)
             var selectParams: [String: Any] = ["workspace_id": workspaceId]
             if let workspaceWindowId, !workspaceWindowId.isEmpty {
                 selectParams["window_id"] = workspaceWindowId

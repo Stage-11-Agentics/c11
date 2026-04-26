@@ -4,6 +4,36 @@ All notable changes to c11 (and, before the fork, cmux) are documented here.
 
 Note: historical entries below pre-date the `c11mux` → `c11` rename and reference the old binary / cask / artifact / bundle-ID names (`cmux`, `c11mux`, `c11mux-macos.dmg`, `stage-11-agentics/c11mux`, `com.stage11.c11mux`). Those entries are preserved as-is for historical accuracy; see the 0.38.0 section for the rename.
 
+## [0.43.0] - 2026-04-26
+
+### Added
+
+- **Workspace snapshots.** Capture a workspace's full topology (split tree, surface kinds, titles, descriptions, terminal cwds, per-surface metadata) to `~/.c11-snapshots/<ulid>.json`. Replay any of them with `c11 restore <id>`. `c11 list-snapshots` shows what's saved. Surface names round-trip verbatim, so mailbox addressing survives. Claude Code panes pick up where they left off via `--resume` when restored; opt in for one release with `C11_SESSION_RESUME=1`. Codex (`--last`), opencode, and kimi resume too. ([#77](https://github.com/Stage-11-Agentics/c11/pull/77), [#79](https://github.com/Stage-11-Agentics/c11/pull/79))
+
+- **Workspace blueprints.** Layouts you can name, save, and respawn. `c11 workspace new` opens an interactive picker over available blueprints; `c11 workspace new --blueprint <path|name>` builds from a specific one. Three starters ship in the box: `basic-terminal`, `side-by-side`, `agent-room`. `c11 workspace export-blueprint` writes the current workspace to a reusable file, with a `BLUEPRINT_ALREADY_EXISTS` guard and a `--force` override. Per-repo, per-user, and built-in search paths merge, so blueprints can live next to the project they describe. Localized for all 7 locales. ([#79](https://github.com/Stage-11-Agentics/c11/pull/79))
+
+- **`c11 snapshot --all`.** Capture every open workspace in one call. Browser and markdown surfaces round-trip cleanly through capture and restore. ([#79](https://github.com/Stage-11-Agentics/c11/pull/79))
+
+- **Pane-close confirmation, in-pane and destructive.** Closing a pane (the X on the rightmost tab) drops a destructive overlay anchored to the pane: red-bordered, pulsing, listing every tab about to disappear. The action names itself: "Close *Entire* Pane." The X on the only pane in a workspace resets it (closes every tab, drops in a fresh terminal) instead of being a no-op. Replaces the previous window-centered alert. ([#81](https://github.com/Stage-11-Agentics/c11/pull/81))
+
+- **Bounded waits and named timeouts on the automation socket.** Every CLI socket call carries a 10 s deadline by default, env-tunable via `C11_DEFAULT_SOCKET_DEADLINE_MS`. When it fires, the CLI returns non-zero and writes a parseable envelope to stderr: `c11: timeout: method=... workspace=... socket=... elapsed_ms=...`. Long-runners opt out: `pane.confirm`, `browser.wait`, `browser.download.wait`, `workspace.remote.configure`. App-side, the seven Tier 1 creation handlers (`window.create`, `workspace.create`, `surface.create`, `pane.create`, `new_workspace`, `new_split`, `drag_surface_to_split`) run with an 8 s main-thread deadline and return the same envelope when the main thread doesn't answer. Pipelines no longer hang silently. ([#80](https://github.com/Stage-11-Agentics/c11/pull/80))
+
+- **`C11_TRACE=1` / `CMUX_TRACE=1` socket request tracing.** Bracketing `[c11-trace] ->` / `<-` lines on stderr show every CLI socket call, with elapsed time and status. Useful when the pipeline is slow and you need to know where. ([#80](https://github.com/Stage-11-Agentics/c11/pull/80))
+
+### Changed
+
+- **In-place restore: apply, then close.** `c11 restore --in-place <id>` applies the snapshot before closing the existing workspace, so a partial-apply failure can't leave you with no workspace. Single-workspace windows skip the duplicate-then-self-delete dance. The command honours caller-supplied `CMUX_WORKSPACE_ID` / `C11_WORKSPACE_ID` env vars before the operator's currently-focused workspace, so background agents target their own workspace instead of whatever you happen to be looking at. The apply result surfaces a `workspace_uuid_changed` warning so scripted callers know the workspace identity rotated. ([#78](https://github.com/Stage-11-Agentics/c11/pull/78))
+
+- **`c11 list-snapshots --json` is a subcommand-local flag.** Matches the help text and the rest of the CLI's parse model. ([#78](https://github.com/Stage-11-Agentics/c11/pull/78))
+
+- **Telemetry routes to Stage 11.** Sentry now reports to the stage-11-kl org, not the upstream cmux project. PostHog event names, env vars, and platform tags renamed cmux to c11; the embedded project key is now `stage11-c11`.
+
+- **Privacy: cut the remaining upstream-domain references from shipped strings.** A handful of user-facing strings still pointed at upstream cmux URLs and identifiers. They now point at c11 throughout the app.
+
+### Built and shipped by
+
+Stage 11 Agentics. Operator:agent, fused.
+
 ## [0.42.0] - 2026-04-24
 
 ### Added

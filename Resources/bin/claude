@@ -151,12 +151,25 @@ HOOKS_JSON='{"hooks":{"SessionStart":[{"matcher":"","hooks":[{"type":"command","
 # inline JSON; identical JSON via file path fires correctly). If a
 # future claude version restores inline-JSON support, this rail can
 # be deleted without behavioural change.
+#
+# If the tempfile write fails (e.g. unwritable TMPDIR, full /tmp,
+# or sandboxed filesystem), fall back to passing inline JSON so
+# claude still launches and the rest of the operator's session
+# proceeds — hooks just won't fire that run. We surface the
+# fallback on stderr (claude's stderr is generally surfaced by
+# c11 terminals) so the regression is at least visible rather
+# than completely silent.
 HOOKS_FILE="${TMPDIR:-/tmp}/c11-claude-hooks-$$.json"
-printf '%s' "$HOOKS_JSON" > "$HOOKS_FILE"
+if printf '%s' "$HOOKS_JSON" > "$HOOKS_FILE" 2>/dev/null; then
+    HOOKS_ARG="$HOOKS_FILE"
+else
+    echo "c11: warning: could not write hooks tempfile ($HOOKS_FILE); falling back to inline --settings (claude 2.1.x will silently drop hooks)" >&2
+    HOOKS_ARG="$HOOKS_JSON"
+fi
 
 if [[ "$SKIP_SESSION_ID" == true ]]; then
-    exec "$REAL_CLAUDE" --settings "$HOOKS_FILE" "$@"
+    exec "$REAL_CLAUDE" --settings "$HOOKS_ARG" "$@"
 else
     SESSION_ID="$(uuidgen | tr '[:upper:]' '[:lower:]')"
-    exec "$REAL_CLAUDE" --session-id "$SESSION_ID" --settings "$HOOKS_FILE" "$@"
+    exec "$REAL_CLAUDE" --session-id "$SESSION_ID" --settings "$HOOKS_ARG" "$@"
 fi

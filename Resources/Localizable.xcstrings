@@ -53382,6 +53382,12 @@
             "state": "translated",
             "value": "Ключ сесії"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话密钥"
+          }
         }
       }
     },
@@ -53419,6 +53425,12 @@
           }
         },
         "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "sk-ant-sid01-..."
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "sk-ant-sid01-..."
@@ -53464,6 +53476,12 @@
             "state": "translated",
             "value": "З cookies claude.ai"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从 claude.ai cookies 中获取"
+          }
         }
       }
     },
@@ -53505,6 +53523,12 @@
             "state": "translated",
             "value": "ID організації"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "组织 ID"
+          }
         }
       }
     },
@@ -53542,6 +53566,12 @@
           }
         },
         "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UUID"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "UUID"
@@ -53587,6 +53617,12 @@
             "state": "translated",
             "value": "З мережевих запитів claude.ai"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从 claude.ai 网络请求中获取"
+          }
         }
       }
     },
@@ -53627,6 +53663,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Стан Claude.ai"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude.ai 状态"
           }
         }
       }
@@ -53669,6 +53711,12 @@
             "state": "translated",
             "value": "Токен доступу"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "访问令牌"
+          }
         }
       }
     },
@@ -53706,6 +53754,12 @@
           }
         },
         "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "eyJhbGciOi..."
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "eyJhbGciOi..."
@@ -53751,6 +53805,12 @@
             "state": "translated",
             "value": "Виконайте: jq -r .tokens.access_token < ~/.codex/auth.json"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行：jq -r .tokens.access_token < ~/.codex/auth.json"
+          }
         }
       }
     },
@@ -53792,6 +53852,12 @@
             "state": "translated",
             "value": "ID акаунта (необов'язково)"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账户 ID（可选）"
+          }
         }
       }
     },
@@ -53829,6 +53895,12 @@
           }
         },
         "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "abcd-1234-..."
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "abcd-1234-..."
@@ -53874,6 +53946,12 @@
             "state": "translated",
             "value": "Виконайте: jq -r .tokens.account_id < ~/.codex/auth.json (залиште порожнім, якщо немає)"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行：jq -r .tokens.account_id < ~/.codex/auth.json (留空表示无)"
+          }
         }
       }
     },
@@ -53914,6 +53992,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Стан Codex"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex 状态"
           }
         }
       }
@@ -53956,6 +54040,12 @@
             "state": "translated",
             "value": "Помилка Keychain (статус %lld)."
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "钥匙串错误（状态 %lld）。"
+          }
         }
       }
     },
@@ -53996,6 +54086,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Не вдалося прочитати збережені облікові дані."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取已保存的凭据。"
           }
         }
       }
@@ -54038,6 +54134,12 @@
             "state": "translated",
             "value": "Облікові дані не знайдено."
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未找到凭据。"
+          }
         }
       }
     },
@@ -54078,6 +54180,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Постачальник недоступний."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务提供方不可用。"
           }
         }
       }
@@ -54120,6 +54228,12 @@
             "state": "translated",
             "value": "Не вдалося отримати дані використання."
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法获取用量数据。"
+          }
         }
       }
     },
@@ -54160,6 +54274,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Час очікування запиту минув."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请求超时。"
           }
         }
       }
@@ -54202,6 +54322,12 @@
             "state": "translated",
             "value": "Не вдалося завантажити збережені облікові дані."
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载已保存的凭据。"
+          }
         }
       }
     },
@@ -54242,6 +54368,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ID організації недійсний."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "组织 ID 无效。"
           }
         }
       }
@@ -54284,6 +54416,12 @@
             "state": "translated",
             "value": "Ключ сесії недійсний."
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话密钥无效。"
+          }
         }
       }
     },
@@ -54324,6 +54462,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Термін дії входу минув (статус %lld). Введіть ключ сесії знову."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录已过期（状态 %lld）。请重新输入会话密钥。"
           }
         }
       }
@@ -54366,6 +54510,12 @@
             "state": "translated",
             "value": "Claude повернув статус %lld."
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 返回状态 %lld。"
+          }
         }
       }
     },
@@ -54406,6 +54556,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Несподівана відповідь від Claude."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 返回了意外的响应。"
           }
         }
       }
@@ -54448,6 +54604,12 @@
             "state": "translated",
             "value": "Не вдалося прочитати дані використання Claude."
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取 Claude 用量数据。"
+          }
         }
       }
     },
@@ -54488,6 +54650,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Мережева помилка під час з'єднання з Claude."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接 Claude 时出现网络错误。"
           }
         }
       }
@@ -54530,6 +54698,12 @@
             "state": "translated",
             "value": "Токен доступу недійсний."
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "访问令牌无效。"
+          }
         }
       }
     },
@@ -54570,6 +54744,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ID акаунта недійсний."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账户 ID 无效。"
           }
         }
       }
@@ -54612,6 +54792,12 @@
             "state": "translated",
             "value": "Термін дії входу минув (статус %lld). Введіть токен доступу знову."
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录已过期（状态 %lld）。请重新输入访问令牌。"
+          }
         }
       }
     },
@@ -54652,6 +54838,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Кінцеву точку використання Codex не знайдено. Можливо, акаунт не має доступу."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未找到 Codex 用量接口。该账户可能没有访问权限。"
           }
         }
       }
@@ -54694,6 +54886,12 @@
             "state": "translated",
             "value": "Codex повернув статус %lld."
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex 返回状态 %lld。"
+          }
         }
       }
     },
@@ -54734,6 +54932,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Несподівана відповідь від Codex."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex 返回了意外的响应。"
           }
         }
       }
@@ -54776,6 +54980,12 @@
             "state": "translated",
             "value": "Не вдалося прочитати дані використання Codex."
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取 Codex 用量数据。"
+          }
         }
       }
     },
@@ -54816,6 +55026,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Мережева помилка під час з'єднання з Codex."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接 Codex 时出现网络错误。"
           }
         }
       }
@@ -54858,6 +55074,12 @@
             "state": "translated",
             "value": "Додати акаунт"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加账户"
+          }
         }
       }
     },
@@ -54898,6 +55120,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Редагувати акаунт"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑账户"
           }
         }
       }
@@ -54940,6 +55168,12 @@
             "state": "translated",
             "value": "Назва"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名称"
+          }
         }
       }
     },
@@ -54980,6 +55214,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Скасувати"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消"
           }
         }
       }
@@ -55022,6 +55262,12 @@
             "state": "translated",
             "value": "Зберегти"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存"
+          }
         }
       }
     },
@@ -55062,6 +55308,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Довідка"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "帮助"
           }
         }
       }
@@ -55104,6 +55356,12 @@
             "state": "translated",
             "value": "Моніторинг використання AI"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 用量监控"
+          }
         }
       }
     },
@@ -55144,6 +55402,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Кольори панелі використання"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用量条颜色"
           }
         }
       }
@@ -55186,6 +55450,12 @@
             "state": "translated",
             "value": "Низький"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "低"
+          }
         }
       }
     },
@@ -55226,6 +55496,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Середній"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中"
           }
         }
       }
@@ -55268,6 +55544,12 @@
             "state": "translated",
             "value": "Високий"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高"
+          }
         }
       }
     },
@@ -55308,6 +55590,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Порогові значення"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "阈值"
           }
         }
       }
@@ -55350,6 +55638,12 @@
             "state": "translated",
             "value": "Низький/середній нижче %lld%%, середній/високий нижче %lld%%."
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "低/中低于 %lld%%，中/高低于 %lld%%。"
+          }
         }
       }
     },
@@ -55390,6 +55684,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Плавна інтерполяція"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "平滑插值"
           }
         }
       }
@@ -55432,6 +55732,12 @@
             "state": "translated",
             "value": "Скинути до стандартних"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复默认"
+          }
         }
       }
     },
@@ -55472,6 +55778,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Додати акаунт"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加账户"
           }
         }
       }
@@ -55514,6 +55826,12 @@
             "state": "translated",
             "value": "Додати AI-акаунт"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加 AI 账户"
+          }
         }
       }
     },
@@ -55554,6 +55872,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Редагувати"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑"
           }
         }
       }
@@ -55596,6 +55920,12 @@
             "state": "translated",
             "value": "Видалити"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除"
+          }
         }
       }
     },
@@ -55636,6 +55966,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Сесія %lld%% · Тиждень %lld%%"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话 %lld%% · 周 %lld%%"
           }
         }
       }
@@ -55678,6 +56014,12 @@
             "state": "translated",
             "value": "Невідомий постачальник"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未知服务提供方"
+          }
         }
       }
     },
@@ -55718,6 +56060,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Цей постачальник недоступний у цій збірці. Видаліть акаунт, щоб очистити збережені облікові дані."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此版本不包含该服务提供方。移除账户以清除已保存的凭据。"
           }
         }
       }
@@ -55760,6 +56108,12 @@
             "state": "translated",
             "value": "Видалити цей акаунт?"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要移除此账户吗？"
+          }
         }
       }
     },
@@ -55800,6 +56154,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Видалити"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除"
           }
         }
       }
@@ -55842,6 +56202,12 @@
             "state": "translated",
             "value": "Збережені облікові дані буде видалено з Keychain."
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存的凭据将从钥匙串中删除。"
+          }
         }
       }
     },
@@ -55882,6 +56248,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Скасувати"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消"
           }
         }
       }
@@ -55924,6 +56296,12 @@
             "state": "translated",
             "value": "Не вдалося видалити акаунт"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法移除账户"
+          }
         }
       }
     },
@@ -55964,6 +56342,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "OK"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "好"
           }
         }
       }
@@ -56006,6 +56390,12 @@
             "state": "translated",
             "value": "Акаунт більше не існує."
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该账户已不存在。"
+          }
         }
       }
     },
@@ -56046,6 +56436,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Не вдалося прочитати збережені облікові дані."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取已保存的凭据。"
           }
         }
       }
@@ -56088,6 +56484,12 @@
             "state": "translated",
             "value": "Помилка Keychain."
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "钥匙串错误。"
+          }
         }
       }
     },
@@ -56128,6 +56530,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Сталася невідома помилка."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发生未知错误。"
           }
         }
       }
@@ -56170,6 +56578,12 @@
             "state": "translated",
             "value": "Розгорнути"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "展开"
+          }
         }
       }
     },
@@ -56210,6 +56624,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Згорнути"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收起"
           }
         }
       }
@@ -56252,6 +56672,12 @@
             "state": "translated",
             "value": "Панель використання AI"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 用量面板"
+          }
         }
       }
     },
@@ -56292,6 +56718,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Сесія"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话"
           }
         }
       }
@@ -56334,6 +56766,12 @@
             "state": "translated",
             "value": "Тиждень"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "周"
+          }
         }
       }
     },
@@ -56374,6 +56812,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Стан"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "状态"
           }
         }
       }
@@ -56416,6 +56860,12 @@
             "state": "translated",
             "value": "Відкрити сторінку стану"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开状态页"
+          }
         }
       }
     },
@@ -56456,6 +56906,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Завантаження стану..."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载状态…"
           }
         }
       }
@@ -56498,6 +56954,12 @@
             "state": "translated",
             "value": "Не вдалося завантажити стан."
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载状态。"
+          }
         }
       }
     },
@@ -56538,6 +57000,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Всі системи працюють"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有系统运行正常"
           }
         }
       }
@@ -56580,6 +57048,12 @@
             "state": "translated",
             "value": "Технічне обслуговування"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "维护中"
+          }
         }
       }
     },
@@ -56620,6 +57094,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Незначний інцидент"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "轻微故障"
           }
         }
       }
@@ -56662,6 +57142,12 @@
             "state": "translated",
             "value": "Серйозний інцидент"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重大故障"
+          }
         }
       }
     },
@@ -56703,6 +57189,12 @@
             "state": "translated",
             "value": "Критичний інцидент"
           }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "严重故障"
+          }
         }
       }
     },
@@ -56743,6 +57235,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Оновити зараз"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立即刷新"
           }
         }
       }

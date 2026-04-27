@@ -131,7 +131,7 @@ private enum GhosttyPasteboardHelper {
     static func hasString(for location: ghostty_clipboard_e) -> Bool {
         guard let pasteboard = pasteboard(for: location) else { return false }
         let types = pasteboard.types ?? []
-        if types.contains(.fileURL) || types.contains(.string) || types.contains(utf8PlainTextType)
+        if types.contains(.fileURL) || types.contains(utf8PlainTextType) || types.contains(.string)
             || types.contains(.html) || types.contains(.rtf) || types.contains(.rtfd) {
             return true
         }
@@ -5201,7 +5201,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         //
         // Mirrors the Ctrl fast path above. See cmux#1153 (@sldx report,
         // @judekim0507 diagnosis, @pandec PR #2246 root-cause).
-        if event.keyCode == 51,
+        if event.keyCode == 51, // kVK_ANSI_Delete (Backspace)
            flags.contains(.option),
            !flags.contains(.command),
            !flags.contains(.control),

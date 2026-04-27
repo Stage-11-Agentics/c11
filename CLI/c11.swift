@@ -2326,10 +2326,10 @@ struct CMUXCLI {
             let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
             // Require explicit surface targeting. Shell-integrated callers inside a c11
             // surface have CMUX_SURFACE_ID set automatically. External callers must pass
-            // --surface. Routing to the focused surface by default silently misdirects.
+            // --surface. The windowId path is excluded: --window without --surface still
+            // routes to ws.focusedPanelId, which is the ambient misdirection we're removing.
             guard sfArg != nil
-                || ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] != nil
-                || windowId != nil else {
+                || ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] != nil else {
                 throw CLIError(message: "send requires --surface <id|ref> (or run inside a c11 surface so CMUX_SURFACE_ID is set)")
             }
             let rawText = rem1.dropFirst(rem1.first == "--" ? 1 : 0).joined(separator: " ")
@@ -2349,9 +2349,9 @@ struct CMUXCLI {
             let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
             // Require explicit surface targeting (same policy as send).
+            // windowId alone is excluded for the same reason: it still routes to focusedPanelId.
             guard sfArg != nil
-                || ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] != nil
-                || windowId != nil else {
+                || ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] != nil else {
                 throw CLIError(message: "send-key requires --surface <id|ref> (or run inside a c11 surface so CMUX_SURFACE_ID is set)")
             }
             let keyArgs = rem1.first == "--" ? Array(rem1.dropFirst()) : rem1
@@ -2986,10 +2986,16 @@ struct CMUXCLI {
     /// `{plan: ...}` suitable for `workspace.create`'s `layout` param.
     private func resolveBlueprintPlan(_ ref: String, client: SocketClient) throws -> [String: Any] {
         let pathToTry = resolvePath(ref)
-        if FileManager.default.fileExists(atPath: pathToTry),
-           let data = FileManager.default.contents(atPath: pathToTry),
-           let file = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let plan = file["plan"] {
+        if FileManager.default.fileExists(atPath: pathToTry) {
+            guard let data = FileManager.default.contents(atPath: pathToTry) else {
+                throw CLIError(message: "new-workspace: could not read blueprint file '\(pathToTry)'")
+            }
+            guard let file = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                throw CLIError(message: "new-workspace: blueprint file '\(pathToTry)' is not a valid JSON object")
+            }
+            guard let plan = file["plan"] else {
+                throw CLIError(message: "new-workspace: blueprint file '\(pathToTry)' does not contain a 'plan' key")
+            }
             return ["plan": plan]
         }
         // Not a direct path — search by name in the blueprint store.
@@ -7667,18 +7673,21 @@ struct CMUXCLI {
             """
         case "new-workspace":
             return """
-            Usage: c11 new-workspace [--cwd <path>] [--command <text>]
+            Usage: c11 new-workspace [--cwd <path>] [--command <text>] [--layout <path|name>]
 
             Create a new workspace in the current window.
 
             Flags:
-              --cwd <path>      Set the working directory for the new workspace
-              --command <text>   Send text+Enter to the new workspace after creation
+              --cwd <path>           Set the working directory for the new workspace
+              --command <text>       Send text+Enter to the new workspace after creation
+              --layout <path|name>   Apply a blueprint plan (file path or blueprint name)
 
             Example:
               c11 new-workspace
               c11 new-workspace --cwd ~/projects/myapp
               c11 new-workspace --cwd . --command "npm test"
+              c11 new-workspace --layout my-review-room
+              c11 new-workspace --layout /path/to/blueprint.json
             """
         case "list-workspaces":
             return """

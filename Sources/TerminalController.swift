@@ -3726,6 +3726,48 @@ class TerminalController {
             cwd = nil
         }
 
+        // Layout path: let WorkspaceLayoutExecutor own creation so exactly one workspace is created.
+        // Pre-creating a workspace here causes a ghost tab on every successful layout apply (B1).
+        if let layoutDict = params["layout"] as? [String: Any], !layoutDict.isEmpty {
+            let layoutResult = v2WorkspaceApply(params: layoutDict)
+
+            if case .err = layoutResult {
+                return layoutResult
+            }
+
+            guard case .ok(let resultAny) = layoutResult,
+                  let resultDict = resultAny as? [String: Any] else {
+                return .err(code: "internal_error", message: "Unexpected apply result", data: nil)
+            }
+
+            // Transactional: non-empty failures mean partial apply — roll back the workspace.
+            let failures = resultDict["failures"] as? [[String: Any]] ?? []
+            if !failures.isEmpty {
+                if let refStr = resultDict["workspaceRef"] as? String,
+                   let wsUUID = v2ResolveHandleRef(refStr) {
+                    v2MainSync {
+                        if let ws = tabManager.tabs.first(where: { $0.id == wsUUID }) {
+                            tabManager.closeWorkspace(ws)
+                        }
+                    }
+                }
+                return .err(code: "apply_failed", message: "Layout application partially failed", data: resultDict)
+            }
+
+            // Normalize to the standard snake_case workspace creation envelope (B2).
+            let workspaceRef = resultDict["workspaceRef"] as? String ?? ""
+            let wsUUID = v2ResolveHandleRef(workspaceRef)
+            let windowId = v2ResolveWindowId(tabManager: tabManager)
+            return .ok([
+                "workspace_id": v2OrNull(wsUUID?.uuidString),
+                "workspace_ref": workspaceRef as Any,
+                "window_id": v2OrNull(windowId?.uuidString),
+                "window_ref": v2Ref(kind: .window, uuid: windowId),
+                "layout_result": resultAny
+            ])
+        }
+
+        // No layout: create workspace normally.
         var newId: UUID?
         let shouldFocus = v2FocusAllowed()
         guard v2MainSyncWithDeadline({
@@ -3746,33 +3788,13 @@ class TerminalController {
             return .err(code: "internal_error", message: "Failed to create workspace", data: nil)
         }
 
-        // If no layout param, return immediately (existing behavior unchanged).
-        guard let layoutDict = params["layout"] as? [String: Any], !layoutDict.isEmpty else {
-            let windowId = v2ResolveWindowId(tabManager: tabManager)
-            return .ok([
-                "window_id": v2OrNull(windowId?.uuidString),
-                "window_ref": v2Ref(kind: .window, uuid: windowId),
-                "workspace_id": newId.uuidString,
-                "workspace_ref": v2Ref(kind: .workspace, uuid: newId)
-            ])
-        }
-
-        // Attempt layout application. Inject the new workspace ID so v2WorkspaceApply
-        // targets the freshly created workspace.
-        var layoutParams = layoutDict
-        layoutParams["workspace_id"] = newId.uuidString
-        let layoutResult = v2WorkspaceApply(params: layoutParams)
-
-        if case .err = layoutResult {
-            // Rollback: close the workspace to prevent orphan state.
-            v2MainSync {
-                if let ws = tabManager.tabs.first(where: { $0.id == newId }) {
-                    tabManager.closeWorkspace(ws)
-                }
-            }
-            return layoutResult
-        }
-        return layoutResult
+        let windowId = v2ResolveWindowId(tabManager: tabManager)
+        return .ok([
+            "window_id": v2OrNull(windowId?.uuidString),
+            "window_ref": v2Ref(kind: .window, uuid: windowId),
+            "workspace_id": newId.uuidString,
+            "workspace_ref": v2Ref(kind: .workspace, uuid: newId)
+        ])
     }
     private func v2WorkspaceSelect(params: [String: Any]) -> V2CallResult {
         guard let tabManager = v2ResolveTabManager(params: params) else {
@@ -5739,7 +5761,9 @@ class TerminalController {
                 return
             }
             // Caller may pass focus: false to opt out of focus (--no-focus in CLI).
-            // When the param is absent, default focus-allowed since surface.create is a focusIntent method.
+            // surface.create is NOT in focusIntentV2Methods, so v2FocusAllowed returns false
+            // regardless of callerWantsFocus. The focus param is accepted for forward-compatibility
+            // if surface.create is added to focusIntentV2Methods in the future.
             let callerWantsFocus = self.v2Bool(params, "focus") ?? true
             let focus = self.v2FocusAllowed(requested: callerWantsFocus)
             if focus {

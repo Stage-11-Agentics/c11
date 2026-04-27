@@ -4,7 +4,7 @@ enum AIUsageRegistry {
     /// All registered providers. Concrete provider files extend the
     /// `Providers` namespace and are appended to this list as they land
     /// (`Providers.claude`, `Providers.codex`, future stubs).
-    static var all: [AIUsageProvider] { [Providers.claude] }
+    static var all: [AIUsageProvider] { [Providers.claude, Providers.codex] }
 
     /// Providers with at least one credential field — usable in the UI.
     static var ui: [AIUsageProvider] {

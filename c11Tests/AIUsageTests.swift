@@ -274,6 +274,60 @@ final class AIUsageRegistryClaudeTests: XCTestCase {
     }
 }
 
+final class CodexAIValidatorTests: XCTestCase {
+    private static let validJWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.dGVzdA"
+
+    func testIsValidAccessTokenAcceptsThreeSegmentJWT() {
+        XCTAssertTrue(CodexAIValidators.isValidAccessToken(Self.validJWT))
+    }
+
+    func testIsValidAccessTokenRejectsBadShapes() {
+        XCTAssertFalse(CodexAIValidators.isValidAccessToken(""))
+        XCTAssertFalse(CodexAIValidators.isValidAccessToken("eyJ.b"))
+        XCTAssertFalse(CodexAIValidators.isValidAccessToken("eyJ.b.c.d"))
+        XCTAssertFalse(CodexAIValidators.isValidAccessToken("notjwt.b.c"))
+        XCTAssertFalse(CodexAIValidators.isValidAccessToken("   "))
+        XCTAssertFalse(CodexAIValidators.isValidAccessToken("eyJ.a b.c"))
+    }
+
+    func testIsValidAccessTokenTrimsWhitespace() {
+        XCTAssertTrue(CodexAIValidators.isValidAccessToken("\n  \(Self.validJWT)\n"))
+    }
+
+    func testIsValidAccountIdAcceptsEmptyAndOpaque() {
+        XCTAssertTrue(CodexAIValidators.isValidAccountId(""))
+        XCTAssertTrue(CodexAIValidators.isValidAccountId("abcd-1234-foo"))
+    }
+
+    func testIsValidAccountIdRejectsNullSentinelAndWhitespace() {
+        XCTAssertFalse(CodexAIValidators.isValidAccountId("null"))
+        XCTAssertFalse(CodexAIValidators.isValidAccountId("NULL"))
+        XCTAssertFalse(CodexAIValidators.isValidAccountId("a b"))
+        XCTAssertFalse(CodexAIValidators.isValidAccountId("a\nb"))
+    }
+}
+
+final class AIUsageRegistryCodexTests: XCTestCase {
+    func testRegistryContainsCodex() {
+        let codex = AIUsageRegistry.provider(id: "codex")
+        XCTAssertNotNil(codex)
+        XCTAssertEqual(codex?.displayName, "Codex")
+        XCTAssertEqual(codex?.keychainService, "com.stage11.c11.aiusage.codex-accounts")
+        XCTAssertFalse(codex?.credentialFields.isEmpty ?? true)
+    }
+
+    func testProviderIdsAreUnique() {
+        let ids = AIUsageRegistry.all.map(\.id)
+        XCTAssertEqual(Set(ids).count, ids.count)
+    }
+
+    func testUIProvidersAllHaveCredentialFields() {
+        for provider in AIUsageRegistry.ui {
+            XCTAssertFalse(provider.credentialFields.isEmpty, "\(provider.id) has no fields")
+        }
+    }
+}
+
 final class AIUsagePollerLifecycleTests: XCTestCase {
     private let suiteName = "c11.aiusage.poller.tests.\(UUID().uuidString)"
     private var defaults: UserDefaults!

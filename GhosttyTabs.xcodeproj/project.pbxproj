@@ -256,6 +256,8 @@
 		C1100B1965FA05805AB79CFF /* AIUsagePoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100A1965FA05805AB79CFF /* AIUsagePoller.swift */; };
 		C1100B100678083910E4DF1E /* ClaudeAIProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100A100678083910E4DF1E /* ClaudeAIProvider.swift */; };
 		C1100B4097A2C8952ADB9F99 /* ClaudeAIUsageFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100A4097A2C8952ADB9F99 /* ClaudeAIUsageFetcher.swift */; };
+		C1100B77DEEF1F9C6A53D360 /* CodexAIProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100A77DEEF1F9C6A53D360 /* CodexAIProvider.swift */; };
+		C1100B2D57A5AF939185B8EB /* CodexAIUsageFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100A2D57A5AF939185B8EB /* CodexAIUsageFetcher.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -554,6 +556,8 @@
 		C1100A1965FA05805AB79CFF /* AIUsagePoller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/AIUsagePoller.swift; sourceTree = "<group>"; };
 		C1100A100678083910E4DF1E /* ClaudeAIProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/ClaudeAIProvider.swift; sourceTree = "<group>"; };
 		C1100A4097A2C8952ADB9F99 /* ClaudeAIUsageFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/ClaudeAIUsageFetcher.swift; sourceTree = "<group>"; };
+		C1100A77DEEF1F9C6A53D360 /* CodexAIProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/CodexAIProvider.swift; sourceTree = "<group>"; };
+		C1100A2D57A5AF939185B8EB /* CodexAIUsageFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/CodexAIUsageFetcher.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -681,7 +685,9 @@
 				
 				
 				
-				C1100A4097A2C8952ADB9F99 /* ClaudeAIUsageFetcher.swift */,C1100A100678083910E4DF1E /* ClaudeAIProvider.swift */,C1100A1965FA05805AB79CFF /* AIUsagePoller.swift */,C1100A50192E29F0E1E8542E /* AIUsageStatusPagePoller.swift */,C1100AF249B721A99F1BE49F /* AIUsageISO8601DateParser.swift */,C1100A6EC16A925E06722B3B /* AIUsageHTTP.swift */,C1100A2BB5264B0DF795D21B /* AIUsageAccountStore.swift */,C1100A4CD6E3A6EB06D171B0 /* AIUsageKeychain.swift */,C1100ADBE3520D6CFB59CFB6 /* AIUsageRegistry.swift */,C1100AB22F2C7143F56AAF88 /* AIUsageAccount.swift */,C1100A1B7530E1FEBB72074C /* AIUsageProvider.swift */,A5001011 /* c11App.swift */,
+				
+				
+				C1100A2D57A5AF939185B8EB /* CodexAIUsageFetcher.swift */,C1100A77DEEF1F9C6A53D360 /* CodexAIProvider.swift */,C1100A4097A2C8952ADB9F99 /* ClaudeAIUsageFetcher.swift */,C1100A100678083910E4DF1E /* ClaudeAIProvider.swift */,C1100A1965FA05805AB79CFF /* AIUsagePoller.swift */,C1100A50192E29F0E1E8542E /* AIUsageStatusPagePoller.swift */,C1100AF249B721A99F1BE49F /* AIUsageISO8601DateParser.swift */,C1100A6EC16A925E06722B3B /* AIUsageHTTP.swift */,C1100A2BB5264B0DF795D21B /* AIUsageAccountStore.swift */,C1100A4CD6E3A6EB06D171B0 /* AIUsageKeychain.swift */,C1100ADBE3520D6CFB59CFB6 /* AIUsageRegistry.swift */,C1100AB22F2C7143F56AAF88 /* AIUsageAccount.swift */,C1100A1B7530E1FEBB72074C /* AIUsageProvider.swift */,A5001011 /* c11App.swift */,
 					A5001012 /* ContentView.swift */,
 					9AD52285508B1D6A9875E7B3 /* SidebarSelectionState.swift */,
 					B9000017A1B2C3D4E5F60719 /* WindowDragHandleView.swift */,
@@ -1093,7 +1099,9 @@
 				
 				
 				
-				C1100B4097A2C8952ADB9F99 /* ClaudeAIUsageFetcher.swift in Sources */,C1100B100678083910E4DF1E /* ClaudeAIProvider.swift in Sources */,C1100B1965FA05805AB79CFF /* AIUsagePoller.swift in Sources */,C1100B50192E29F0E1E8542E /* AIUsageStatusPagePoller.swift in Sources */,C1100BF249B721A99F1BE49F /* AIUsageISO8601DateParser.swift in Sources */,C1100B6EC16A925E06722B3B /* AIUsageHTTP.swift in Sources */,C1100B2BB5264B0DF795D21B /* AIUsageAccountStore.swift in Sources */,C1100B4CD6E3A6EB06D171B0 /* AIUsageKeychain.swift in Sources */,C1100BDBE3520D6CFB59CFB6 /* AIUsageRegistry.swift in Sources */,C1100BB22F2C7143F56AAF88 /* AIUsageAccount.swift in Sources */,C1100B1B7530E1FEBB72074C /* AIUsageProvider.swift in Sources */,A5001001 /* c11App.swift in Sources */,
+				
+				
+				C1100B2D57A5AF939185B8EB /* CodexAIUsageFetcher.swift in Sources */,C1100B77DEEF1F9C6A53D360 /* CodexAIProvider.swift in Sources */,C1100B4097A2C8952ADB9F99 /* ClaudeAIUsageFetcher.swift in Sources */,C1100B100678083910E4DF1E /* ClaudeAIProvider.swift in Sources */,C1100B1965FA05805AB79CFF /* AIUsagePoller.swift in Sources */,C1100B50192E29F0E1E8542E /* AIUsageStatusPagePoller.swift in Sources */,C1100BF249B721A99F1BE49F /* AIUsageISO8601DateParser.swift in Sources */,C1100B6EC16A925E06722B3B /* AIUsageHTTP.swift in Sources */,C1100B2BB5264B0DF795D21B /* AIUsageAccountStore.swift in Sources */,C1100B4CD6E3A6EB06D171B0 /* AIUsageKeychain.swift in Sources */,C1100BDBE3520D6CFB59CFB6 /* AIUsageRegistry.swift in Sources */,C1100BB22F2C7143F56AAF88 /* AIUsageAccount.swift in Sources */,C1100B1B7530E1FEBB72074C /* AIUsageProvider.swift in Sources */,A5001001 /* c11App.swift in Sources */,
 					A5001002 /* ContentView.swift in Sources */,
 					E62155868BB29FEB5DAAAF25 /* SidebarSelectionState.swift in Sources */,
 					B9000018A1B2C3D4E5F60719 /* WindowDragHandleView.swift in Sources */,

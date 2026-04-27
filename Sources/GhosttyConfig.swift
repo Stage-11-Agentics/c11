@@ -1,5 +1,8 @@
 import Foundation
 import AppKit
+#if DEBUG
+import Bonsplit
+#endif
 
 struct GhosttyConfig {
     enum ColorSchemePreference: Hashable {
@@ -240,7 +243,11 @@ struct GhosttyConfig {
         if backgroundColor.isLightColor && foregroundColor.isLightColor {
             let oldFg = foregroundColor
             foregroundColor = NSColor(hex: "#1A1A1A")!
+            #if DEBUG
             dlog("contrast-fallback: fg overridden from \(oldFg) to \(foregroundColor) -- bg=\(backgroundColor)")
+            #else
+            _ = oldFg
+            #endif
         }
     }
 

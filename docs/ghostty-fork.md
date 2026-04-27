@@ -4,7 +4,8 @@ This repo uses a fork of Ghostty for local patches that aren't upstream yet.
 When we change the fork, update this document and the parent submodule SHA.
 
 The submodule now points to `Stage-11-Agentics/ghostty` (previously `manaflow-ai/ghostty`).
-The Stage-11-Agentics fork was created from `manaflow-ai/ghostty` main as of 2026-04-26.
+The Stage-11-Agentics fork is based on `bc9be90a` (the c11 theme-picker fork tip, section 7),
+NOT on `manaflow-ai/ghostty` main. The PageList fix (section 8) is rebased on top of that tip.
 
 ## Fork update checklist
 
@@ -91,25 +92,28 @@ touch the same stale-frame mitigation path and tend to conflict in the same file
 
 The fork branch HEAD is now the section 6 zsh redraw follow-up commit.
 
-### 7) cmux theme picker helper hooks
+### 7) c11 theme picker helper hooks
 
-- Commit: `0c52c987b` (Add cmux theme picker helper hooks)
+- Commit: `0c52c987b` (Add c11 theme picker helper hooks)
 - Files:
   - `build.zig`
   - `src/cli/list_themes.zig`
   - `src/main_ghostty.zig`
 - Summary:
-  - Adds a `zig build cli-helper` step so cmux can bundle Ghostty's CLI helper binary on macOS.
-  - Lets `+list-themes` switch into a cmux-managed mode via env vars, writing the cmux theme override file and posting the existing cmux reload notification for live app-wide preview.
+  - Adds a `zig build cli-helper` step so c11 can bundle Ghostty's CLI helper binary on macOS.
+  - Lets `+list-themes` switch into a c11-managed mode via env vars, writing the c11 theme override file and posting the existing c11 reload notification for live app-wide preview.
   - Fixes the helper-only `app-runtime=none` stdout path so the Ghostty CLI binary builds with the current Zig toolchain.
 
-The fork branch HEAD is now the section 7 cmux theme picker helper commit.
+The fork branch HEAD is now the section 7 c11 theme picker helper commit.
 
 ### 8) PageList SIGSEGV race fix (Stage-11-Agentics fork)
 
-- Commit: `f217fb0e6` (fix: snapshot page row count in SlidingWindow.Meta to prevent cross-thread SIGSEGV)
+- Commit: `c64952975` (terminal: snapshot page rows in SlidingWindow.Meta to fix SIGSEGV race)
+  - Rebased from `f217fb0e6` onto `bc9be90a` (c11 theme-picker fork tip) to preserve the
+    7 theme-picker commits that c11 requires. Cherry-picked cleanly with no conflicts.
 - Files:
   - `src/terminal/search/sliding_window.zig`
+  - `src/terminal/highlight.zig`
 - Summary:
   - Snapshots the page row count in `SlidingWindow.Meta.rows` during `append()`, which is called
     under the terminal lock.
@@ -117,6 +121,8 @@ The fork branch HEAD is now the section 7 cmux theme picker helper commit.
     with the search thread's `next()` call reading a now-freed page row count.
   - The `Meta` struct carries a `rows` field that freezes the count at the time the page is
     appended; `next()` reads `meta.rows` instead of the live page.
+  - Adds `page_rows` to `FlattenedHighlight.Chunk` for reverse-search multi-chunk fixup.
+  - Regression test added to `sliding_window.zig`.
 
 ## Upstreamed fork changes
 
@@ -142,9 +148,15 @@ These files change frequently upstream; be careful when rebasing the fork:
     prompt newlines should not get an extra explicit continuation marker after the hidden CR.
 
 - `src/cli/list_themes.zig`
-  - cmux now relies on the upstream picker UI plus local env-driven hooks for live preview and restore.
-    If upstream reorganizes the preview loop or key handling, re-check the cmux mode path and keep the
-    stock Ghostty behavior unchanged when the cmux env vars are absent.
+  - c11 relies on the upstream picker UI plus local env-driven hooks for live preview and restore.
+    The hooks read `CMUX_THEME_PICKER_COLOR_SCHEME`, `CMUX_THEME_PICKER_INITIAL_LIGHT`, and
+    `CMUX_THEME_PICKER_INITIAL_DARK` (set by c11 before calling `ghostty +list-themes`).
+    If upstream reorganizes the preview loop or key handling, re-check the c11 mode path and keep the
+    stock Ghostty behavior unchanged when the c11 env vars are absent.
+  - **Upstream-sync note:** when syncing to a newer upstream Ghostty, the 7 theme-picker commits
+    from section 7 (base: `bc9be90a`) will need to be re-applied on top of the new upstream tip.
+    Cherry-pick them in order from oldest to newest: `116c7af24` through `bc9be90a2`. Conflicts
+    are likely only in `src/cli/list_themes.zig` around the preview loop and key-handling paths.
 
 - `src/terminal/search/sliding_window.zig`
   - The `Meta` struct has a `rows: usize` field added by the PageList SIGSEGV fix (section 8).

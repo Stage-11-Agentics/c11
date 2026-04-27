@@ -207,6 +207,73 @@ final class AIUsageStatusPagePollerHostTests: XCTestCase {
     }
 }
 
+final class ClaudeAIValidatorTests: XCTestCase {
+    func testIsValidOrgIdAcceptsUUID() {
+        XCTAssertTrue(ClaudeAIValidators.isValidOrgId("01970000-1111-7222-aaaa-bbbbcccc1234"))
+    }
+
+    func testIsValidOrgIdRejectsBadInputs() {
+        XCTAssertFalse(ClaudeAIValidators.isValidOrgId(""))
+        XCTAssertFalse(ClaudeAIValidators.isValidOrgId(".."))
+        XCTAssertFalse(ClaudeAIValidators.isValidOrgId("../etc/passwd"))
+        XCTAssertFalse(ClaudeAIValidators.isValidOrgId("foo/bar"))
+        XCTAssertFalse(ClaudeAIValidators.isValidOrgId("foo:bar"))
+        XCTAssertFalse(ClaudeAIValidators.isValidOrgId("foo?bar"))
+        XCTAssertFalse(ClaudeAIValidators.isValidOrgId("foo#bar"))
+        XCTAssertFalse(ClaudeAIValidators.isValidOrgId(" "))
+        XCTAssertFalse(ClaudeAIValidators.isValidOrgId("foo bar"))
+        XCTAssertFalse(ClaudeAIValidators.isValidOrgId("foo\nbar"))
+    }
+
+    func testIsValidSessionKeyAcceptsTypicalToken() {
+        XCTAssertTrue(ClaudeAIValidators.isValidSessionKey("sk-ant-sid01-abc123"))
+    }
+
+    func testIsValidSessionKeyRejectsSeparatorsAndControlChars() {
+        XCTAssertFalse(ClaudeAIValidators.isValidSessionKey(""))
+        XCTAssertFalse(ClaudeAIValidators.isValidSessionKey("a;b"))
+        XCTAssertFalse(ClaudeAIValidators.isValidSessionKey("a,b"))
+        XCTAssertFalse(ClaudeAIValidators.isValidSessionKey("a\nb"))
+        XCTAssertFalse(ClaudeAIValidators.isValidSessionKey("a\rb"))
+        XCTAssertFalse(ClaudeAIValidators.isValidSessionKey("a\tb"))
+    }
+
+    func testIsValidSessionKeyAcceptsPrefixedAssignment() {
+        // Validator is permissive about the `=` character so
+        // strippedSessionKey can recover the actual value.
+        XCTAssertTrue(ClaudeAIValidators.isValidSessionKey("sessionKey=sk-ant-sid01-abc123"))
+    }
+
+    func testStrippedSessionKeyRemovesPrefix() {
+        XCTAssertEqual(
+            ClaudeAIValidators.strippedSessionKey("sessionKey=sk-ant-sid01-abc"),
+            "sk-ant-sid01-abc"
+        )
+        XCTAssertEqual(
+            ClaudeAIValidators.strippedSessionKey("sessionKey=sessionKey=value"),
+            "value"
+        )
+        XCTAssertEqual(
+            ClaudeAIValidators.strippedSessionKey("  sessionKey=value  "),
+            "value"
+        )
+    }
+}
+
+final class AIUsageRegistryClaudeTests: XCTestCase {
+    func testRegistryContainsClaude() {
+        let claude = AIUsageRegistry.provider(id: "claude")
+        XCTAssertNotNil(claude)
+        XCTAssertEqual(claude?.displayName, "Claude")
+        XCTAssertEqual(claude?.keychainService, "com.stage11.c11.aiusage.claude-accounts")
+        XCTAssertFalse(claude?.credentialFields.isEmpty ?? true)
+    }
+
+    func testProviderUnknownReturnsNil() {
+        XCTAssertNil(AIUsageRegistry.provider(id: "nope"))
+    }
+}
+
 final class AIUsagePollerLifecycleTests: XCTestCase {
     private let suiteName = "c11.aiusage.poller.tests.\(UUID().uuidString)"
     private var defaults: UserDefaults!

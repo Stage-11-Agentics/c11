@@ -132,3 +132,141 @@ final class AIUsageSecretRedactionTests: XCTestCase {
         XCTAssertEqual(decoded["sessionKey"], "codable-v")
     }
 }
+
+final class AIUsageISO8601DateParserTests: XCTestCase {
+    func testParsesStandardISO8601() {
+        let date = AIUsageISO8601DateParser.parse("2026-04-26T12:34:56Z")
+        XCTAssertNotNil(date)
+    }
+
+    func testParsesFractionalSeconds() {
+        let date = AIUsageISO8601DateParser.parse("2026-04-26T12:34:56.789Z")
+        XCTAssertNotNil(date)
+    }
+
+    func testNilAndEmptyAndGarbageReturnNil() {
+        XCTAssertNil(AIUsageISO8601DateParser.parse(nil))
+        XCTAssertNil(AIUsageISO8601DateParser.parse(""))
+        XCTAssertNil(AIUsageISO8601DateParser.parse("not-a-date"))
+    }
+}
+
+final class AIUsageHTTPSessionTests: XCTestCase {
+    func testMakeSessionHonorsTimeout() {
+        let session = AIUsageHTTP.makeSession(timeout: 7)
+        XCTAssertEqual(session.configuration.timeoutIntervalForRequest, 7)
+        XCTAssertEqual(session.configuration.timeoutIntervalForResource, 7)
+    }
+
+    func testMakeSessionIsEphemeral() {
+        let session = AIUsageHTTP.makeSession(timeout: 10)
+        XCTAssertNil(session.configuration.httpCookieStorage)
+        XCTAssertNil(session.configuration.urlCache)
+        XCTAssertEqual(session.configuration.requestCachePolicy, .reloadIgnoringLocalCacheData)
+        XCTAssertFalse(session.configuration.httpShouldSetCookies)
+    }
+
+    func testSanitizeHeaderValueStripsControlAndSeparators() {
+        XCTAssertEqual(AIUsageHTTP.sanitizeHeaderValue("a\r\nb"), "ab")
+        XCTAssertEqual(AIUsageHTTP.sanitizeHeaderValue("a\rb"), "ab")
+        XCTAssertEqual(AIUsageHTTP.sanitizeHeaderValue("a\nb"), "ab")
+        XCTAssertEqual(AIUsageHTTP.sanitizeHeaderValue("Bearer abc;path=/"), "Bearer abcpath=/")
+        XCTAssertEqual(AIUsageHTTP.sanitizeHeaderValue("a,b"), "ab")
+        XCTAssertEqual(AIUsageHTTP.sanitizeHeaderValue("Bearer sk-ant-abc="), "Bearer sk-ant-abc=")
+    }
+}
+
+final class AIUsageStatusPagePollerHostTests: XCTestCase {
+    func testRejectsUnlistedHost() async {
+        do {
+            _ = try await AIUsageStatusPagePoller.fetch(host: "evil.example.com")
+            XCTFail("expected invalidHost")
+        } catch AIUsageStatusPageError.invalidHost(let host) {
+            XCTAssertEqual(host, "evil.example.com")
+        } catch {
+            XCTFail("expected invalidHost, got \(error)")
+        }
+    }
+
+    func testRejectsHostWithSlashOrColon() async {
+        for bad in ["status.claude.com/path", "status.openai.com:443"] {
+            do {
+                _ = try await AIUsageStatusPagePoller.fetch(host: bad)
+                XCTFail("expected invalidHost for \(bad)")
+            } catch AIUsageStatusPageError.invalidHost {
+                // expected
+            } catch {
+                XCTFail("expected invalidHost for \(bad), got \(error)")
+            }
+        }
+    }
+
+    func testAllowedHostsAreClaudeAndOpenAI() {
+        XCTAssertTrue(AIUsageStatusPagePoller.allowedHosts.contains("status.claude.com"))
+        XCTAssertTrue(AIUsageStatusPagePoller.allowedHosts.contains("status.openai.com"))
+    }
+}
+
+final class AIUsagePollerLifecycleTests: XCTestCase {
+    private let suiteName = "c11.aiusage.poller.tests.\(UUID().uuidString)"
+    private var defaults: UserDefaults!
+
+    override func setUp() {
+        super.setUp()
+        defaults = UserDefaults(suiteName: suiteName)
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    override func tearDown() {
+        defaults.removePersistentDomain(forName: suiteName)
+        defaults = nil
+        super.tearDown()
+    }
+
+    @MainActor
+    func testStartIsIdempotent() async {
+        let store = AIUsageAccountStore(
+            userDefaults: defaults,
+            indexKey: "c11.aiusage.poller.\(UUID().uuidString)"
+        )
+        var ticks = 0
+        let poller = AIUsagePoller(
+            store: store,
+            providersResolver: { [] },
+            providerByIdResolver: { _ in nil },
+            tickInterval: 60,
+            visibilityProvider: { true },
+            tickBody: { _ in ticks += 1 }
+        )
+        poller.start()
+        let first = ticks
+        poller.start()
+        XCTAssertEqual(ticks, first, "second start must not enqueue extra ticks")
+        poller.stop()
+    }
+
+    @MainActor
+    func testRefreshNowAfterStopDoesNotRestartPolling() async {
+        let store = AIUsageAccountStore(
+            userDefaults: defaults,
+            indexKey: "c11.aiusage.poller.\(UUID().uuidString)"
+        )
+        var ticks = 0
+        let poller = AIUsagePoller(
+            store: store,
+            providersResolver: { [] },
+            providerByIdResolver: { _ in nil },
+            tickInterval: 60,
+            visibilityProvider: { true },
+            tickBody: { _ in ticks += 1 }
+        )
+        poller.start()
+        // Allow the start-time forced tick to complete.
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        poller.stop()
+        let baseline = ticks
+        poller.refreshNow()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(ticks, baseline, "refreshNow after stop must be inert")
+    }
+}

@@ -399,6 +399,29 @@ final class NotificationDockBadgeTests: XCTestCase {
         }
     }
 
+    func testDockBadgeEnabledByDefaultAndLabelIsNonNilWhenUnreadCountIsPositive() {
+        // Verifies the end-to-end dock badge path: the default preference is
+        // enabled, and dockBadgeLabel returns a non-nil label when there are
+        // unread notifications. This path only functions at runtime when
+        // notification authorization includes .badge — the authorization
+        // options fix (Pick 3) enables the Dock to honor the badgeLabel
+        // assignment that refreshDockBadge() makes.
+        let suiteName = "DockBadgeAuthorizationPickThreeTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            XCTFail("Failed to create isolated UserDefaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        XCTAssertTrue(NotificationBadgeSettings.isDockBadgeEnabled(defaults: defaults))
+        let label = TerminalNotificationStore.dockBadgeLabel(
+            unreadCount: 3,
+            isEnabled: NotificationBadgeSettings.isDockBadgeEnabled(defaults: defaults)
+        )
+        XCTAssertNotNil(label, "Dock badge label must be non-nil when badge is enabled and unread count is positive")
+        XCTAssertEqual(label, "3")
+    }
+
     func testNotificationAuthorizationStateMappingCoversKnownUNAuthorizationStatuses() {
         XCTAssertEqual(TerminalNotificationStore.authorizationState(from: .notDetermined), .notDetermined)
         XCTAssertEqual(TerminalNotificationStore.authorizationState(from: .denied), .denied)

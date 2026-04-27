@@ -6394,7 +6394,7 @@ private struct SettingsTitleLeadingInsetReader: NSViewRepresentable {
     }
 }
 
-private struct SettingsSectionHeader: View {
+struct SettingsSectionHeader: View {
     let title: String
 
     var body: some View {
@@ -6406,7 +6406,7 @@ private struct SettingsSectionHeader: View {
     }
 }
 
-private struct SettingsCard<Content: View>: View {
+struct SettingsCard<Content: View>: View {
     @ViewBuilder let content: Content
 
     init(@ViewBuilder content: () -> Content) {
@@ -6428,7 +6428,7 @@ private struct SettingsCard<Content: View>: View {
     }
 }
 
-private struct SettingsCardRow<Trailing: View>: View {
+struct SettingsCardRow<Trailing: View>: View {
     let title: String
     let subtitle: String?
     let controlWidth: CGFloat?
@@ -6544,7 +6544,7 @@ private extension View {
     }
 }
 
-private struct SettingsCardDivider: View {
+struct SettingsCardDivider: View {
     var body: some View {
         Rectangle()
             .fill(Color(nsColor: NSColor.separatorColor).opacity(0.5))

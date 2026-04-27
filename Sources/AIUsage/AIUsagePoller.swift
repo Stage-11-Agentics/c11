@@ -39,6 +39,7 @@ final class AIUsagePoller: ObservableObject {
     private var occlusionObserver: NSObjectProtocol?
     private var inFlightTask: Task<Void, Never>?
     private var hasPendingTick: Bool = false
+    private var pendingForce: Bool = false
     private var taskGeneration: Int = 0
     private var tickCounter: Int = 0
     private var hasStarted: Bool = false
@@ -114,6 +115,7 @@ final class AIUsagePoller: ObservableObject {
         inFlightTask?.cancel()
         inFlightTask = nil
         hasPendingTick = false
+        pendingForce = false
         isRefreshing = false
         hasStarted = false
     }
@@ -129,6 +131,7 @@ final class AIUsagePoller: ObservableObject {
         }
         if inFlightTask != nil {
             hasPendingTick = true
+            pendingForce = pendingForce || force
             return
         }
         taskGeneration &+= 1
@@ -140,7 +143,9 @@ final class AIUsagePoller: ObservableObject {
             self.inFlightTask = nil
             if self.hasPendingTick {
                 self.hasPendingTick = false
-                self.scheduleTick(force: false)
+                let nextForce = self.pendingForce
+                self.pendingForce = false
+                self.scheduleTick(force: nextForce)
             } else {
                 self.isRefreshing = false
             }
@@ -212,7 +217,9 @@ final class AIUsagePoller: ObservableObject {
                 guard let fetchStatus = provider.fetchStatus else { continue }
                 statusLoaded[provider.id] = (statusLoaded[provider.id] ?? false)
                 do {
-                    let result = try await fetchStatus()
+                    let result = try await runWithTimeout(perFetchTimeout) {
+                        try await fetchStatus()
+                    }
                     if generation != taskGeneration { return }
                     incidents[provider.id] = result
                     statusLoaded[provider.id] = true

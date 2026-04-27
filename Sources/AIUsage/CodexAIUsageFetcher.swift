@@ -106,19 +106,27 @@ enum CodexAIUsageFetcher {
             throw CodexAIUsageFetchError.network
         }
 
+        return try parseWindows(payload: payload)
+    }
+
+    static func parseWindows(payload: [String: Any]) throws -> AIUsageWindows {
         guard let rateLimit = payload["rate_limit"] as? [String: Any] else {
             throw CodexAIUsageFetchError.decoding
         }
         let session5h = try parseWindow(rateLimit["primary_window"] as? [String: Any])
-        let session7d = try parseWindow(rateLimit["secondary_window"] as? [String: Any])
+        let session7d: AIUsageWindow
+        if let secondaryRaw = rateLimit["secondary_window"] as? [String: Any] {
+            session7d = try parseWindow(secondaryRaw)
+        } else {
+            session7d = AIUsageWindow(utilization: 0, resetsAt: nil, windowSeconds: 604_800)
+        }
         return AIUsageWindows(session: session5h, week: session7d)
     }
 
-    private static func parseWindow(_ raw: [String: Any]?) throws -> AIUsageWindow {
+    static func parseWindow(_ raw: [String: Any]?) throws -> AIUsageWindow {
         guard let raw else { throw CodexAIUsageFetchError.decoding }
 
-        let usedRaw = raw["used_percent"]
-        let utilization = clamp(toNumber(usedRaw))
+        let utilization = try parseUtilization(raw["used_percent"])
 
         guard let limit = raw["limit_window_seconds"] as? NSNumber else {
             throw CodexAIUsageFetchError.decoding
@@ -149,11 +157,20 @@ enum CodexAIUsageFetcher {
         )
     }
 
-    private static func toNumber(_ value: Any?) -> Int {
-        if value is Bool { return 0 }
-        if let int = value as? Int { return int }
-        if let number = value as? NSNumber { return number.intValue }
-        return 0
+    private static func parseUtilization(_ raw: Any?) throws -> Int {
+        if raw == nil || raw is NSNull { throw CodexAIUsageFetchError.decoding }
+        if raw is Bool { throw CodexAIUsageFetchError.decoding }
+        if let int = raw as? Int {
+            return clamp(int)
+        }
+        if let number = raw as? NSNumber {
+            let double = number.doubleValue
+            if double != Double(Int(double)) {
+                throw CodexAIUsageFetchError.decoding
+            }
+            return clamp(Int(double))
+        }
+        throw CodexAIUsageFetchError.decoding
     }
 
     private static func clamp(_ value: Int) -> Int {

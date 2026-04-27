@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import os.log
 
 @MainActor
 final class AIUsageAccountStore: ObservableObject {
@@ -8,6 +9,8 @@ final class AIUsageAccountStore: ObservableObject {
     @Published private(set) var accounts: [AIUsageAccount] = []
 
     static let defaultIndexKey = "c11.aiusage.accounts.index"
+
+    private static let log = OSLog(subsystem: "com.stage11.c11", category: "aiusage")
 
     private let userDefaults: UserDefaults
     private let indexKey: String
@@ -123,6 +126,9 @@ final class AIUsageAccountStore: ObservableObject {
         do {
             accounts = try JSONDecoder().decode([AIUsageAccount].self, from: data)
         } catch {
+            os_log(.error, log: Self.log,
+                   "aiusage: failed to decode account index, %{public}@",
+                   String(describing: error))
             accounts = []
         }
     }
@@ -133,20 +139,22 @@ final class AIUsageAccountStore: ObservableObject {
     }
 
     func pruneOrphanAccountsIfNeeded() async {
-        var survivors: [AIUsageAccount] = []
-        var changed = false
-        for account in accounts {
+        let snapshot = accounts
+        var removeIds: Set<UUID> = []
+        for account in snapshot {
             let service = account.keychainService ?? keychainServiceResolver(account.providerId)
             let status = await AIUsageKeychain.probePresenceAsync(for: account.id, service: service)
             if status == errSecItemNotFound {
-                changed = true
-            } else {
-                survivors.append(account)
+                removeIds.insert(account.id)
             }
         }
-        if changed {
-            accounts = survivors
-            try? persist(survivors)
-        }
+        guard !removeIds.isEmpty else { return }
+
+        let keep = accounts.filter { !removeIds.contains($0.id) }
+        accounts = keep
+        try? persist(keep)
+        os_log(.info, log: Self.log,
+               "aiusage: pruned %ld orphan account(s) from index",
+               removeIds.count)
     }
 }

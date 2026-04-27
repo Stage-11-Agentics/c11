@@ -460,6 +460,23 @@ final class AIUsagePollerLifecycleTests: XCTestCase {
     }
 
     @MainActor
+    func testLoadWithMalformedBlobLeavesBytesIntact() {
+        let key = "c11.aiusage.poller.malformed.\(UUID().uuidString)"
+        let malformed = Data([0x42, 0x00, 0x99, 0xFE])
+        defaults.set(malformed, forKey: key)
+
+        let store = AIUsageAccountStore(
+            userDefaults: defaults,
+            indexKey: key
+        )
+        XCTAssertTrue(store.accounts.isEmpty,
+                      "load() must end with no accounts on decode failure")
+        let surviving = defaults.data(forKey: key)
+        XCTAssertEqual(surviving, malformed,
+                       "load() must not delete the underlying UserDefaults blob")
+    }
+
+    @MainActor
     func testRefreshNowAfterStopDoesNotRestartPolling() async {
         let store = AIUsageAccountStore(
             userDefaults: defaults,
@@ -482,5 +499,62 @@ final class AIUsagePollerLifecycleTests: XCTestCase {
         poller.refreshNow()
         try? await Task.sleep(nanoseconds: 50_000_000)
         XCTAssertEqual(ticks, baseline, "refreshNow after stop must be inert")
+    }
+}
+
+final class CodexAIUsageFetcherParseTests: XCTestCase {
+    private func makeWindow(_ usedPercent: Any) -> [String: Any] {
+        return [
+            "used_percent": usedPercent,
+            "limit_window_seconds": 18_000,
+        ]
+    }
+
+    func testParseWindowRejectsMissingUsedPercent() {
+        let raw: [String: Any] = ["limit_window_seconds": 18_000]
+        XCTAssertThrowsError(try CodexAIUsageFetcher.parseWindow(raw)) { error in
+            XCTAssertTrue(error is CodexAIUsageFetchError, "expected .decoding for missing used_percent")
+        }
+    }
+
+    func testParseWindowRejectsNSNullUsedPercent() {
+        XCTAssertThrowsError(try CodexAIUsageFetcher.parseWindow(makeWindow(NSNull()))) { error in
+            XCTAssertTrue(error is CodexAIUsageFetchError, "expected .decoding for NSNull used_percent")
+        }
+    }
+
+    func testParseWindowRejectsBoolUsedPercent() {
+        XCTAssertThrowsError(try CodexAIUsageFetcher.parseWindow(makeWindow(true))) { error in
+            XCTAssertTrue(error is CodexAIUsageFetchError, "expected .decoding for bool used_percent")
+        }
+    }
+
+    func testParseWindowRejectsNonNumericStringUsedPercent() {
+        XCTAssertThrowsError(try CodexAIUsageFetcher.parseWindow(makeWindow("oops"))) { error in
+            XCTAssertTrue(error is CodexAIUsageFetchError, "expected .decoding for string used_percent")
+        }
+    }
+
+    func testParseWindowAcceptsValidIntegerUsedPercent() throws {
+        let window = try CodexAIUsageFetcher.parseWindow(makeWindow(42))
+        XCTAssertEqual(window.utilization, 42)
+    }
+
+    func testParseWindowsAcceptsPayloadWithoutSecondaryWindow() throws {
+        let payload: [String: Any] = [
+            "rate_limit": [
+                "primary_window": [
+                    "used_percent": 25,
+                    "limit_window_seconds": 18_000,
+                ],
+            ],
+        ]
+        let windows = try CodexAIUsageFetcher.parseWindows(payload: payload)
+        XCTAssertEqual(windows.session.utilization, 25)
+        XCTAssertEqual(windows.week.utilization, 0,
+                       "missing secondary_window must degrade to a synthetic empty week window")
+        XCTAssertNil(windows.week.resetsAt,
+                     "missing secondary_window has no reset date")
+        XCTAssertEqual(windows.week.windowSeconds, 604_800)
     }
 }

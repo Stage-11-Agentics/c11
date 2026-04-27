@@ -25,7 +25,7 @@ struct WorkspaceApplyPlan: Codable, Sendable, Equatable {
 struct WorkspaceSpec: Codable, Sendable, Equatable {
     /// Applied via `Workspace.setCustomTitle` after creation.
     var title: String?
-    /// Hex string, e.g. `"#C0392B"`. Applied via `Workspace.setCustomColor`.
+    /// Hex string (e.g. `"#C0392B"`) or named palette color (e.g. `"Blue"`, `"Red"`). Applied via `Workspace.setCustomColor`.
     var customColor: String?
     /// Passed to `TabManager.addWorkspace(workingDirectory:)`.
     var workingDirectory: String?

@@ -104,11 +104,11 @@ struct AgentRestartRegistry: Sendable {
         }
     }
 
-    /// Phase 1 ships cc resume. Phase 5 added codex / opencode / kimi rows.
+    /// Phase 1 ships claude resume. Phase 5 added codex / opencode / kimi rows.
     ///
-    /// The cc closure re-validates `sessionId` against the UUIDv4 grammar even
-    /// though `SurfaceMetadataStore` already rejects non-UUID writes for the
-    /// `claude.session_id` reserved key. The "never trust the metadata
+    /// The claude closure re-validates `sessionId` against the UUIDv4 grammar
+    /// even though `SurfaceMetadataStore` already rejects non-UUID writes for
+    /// the `claude.session_id` reserved key. The "never trust the metadata
     /// layer solely" belt-and-braces is deliberate: the synthesised string
     /// is interpolated into a shell command that runs on restore, and any
     /// future in-process writer that bypasses the store must not become a
@@ -122,6 +122,12 @@ struct AgentRestartRegistry: Sendable {
     /// and the command sits at the prompt unexecuted. Phase 5 rows for
     /// codex/opencode/kimi follow the same "return submit form" contract.
     ///
+    /// Use `claude --dangerously-skip-permissions --resume <id>` rather than
+    /// `cc`: `cc` resolves to the C compiler in c11 terminal environments,
+    /// not Claude. The c11 wrapper at `Resources/bin/claude` intercepts the
+    /// command, sees `--resume`, skips its own `--session-id` injection, and
+    /// forwards to real claude with the hooks settings JSON intact.
+    ///
     /// Codex uses `--last` best-effort to resume the most recent session
     /// globally. Opencode and kimi have no verified resume flag and launch
     /// fresh — best-effort is preferable to a broken flag.
@@ -130,7 +136,7 @@ struct AgentRestartRegistry: Sendable {
             guard let raw = sessionId?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !raw.isEmpty,
                   isValidClaudeSessionId(raw) else { return nil }
-            return "cc --resume \(raw)\n"
+            return "claude --dangerously-skip-permissions --resume \(raw)\n"
         },
         Row(terminalType: "codex") { _, _ in
             // codex resume --last resumes the most recent codex session globally.

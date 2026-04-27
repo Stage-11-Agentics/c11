@@ -159,10 +159,10 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
             if let sessionId {
                 // B2 acceptance: the registry returns the submit form — the
                 // trailing newline is load-bearing. `==` not `.contains`:
-                // `.contains("cc --resume <id>")` would happily pass on
-                // `"cc --resume <id>"` (typed but never submitted), which
-                // was exactly the shipped regression this test now guards.
-                let expected = "cc --resume \(sessionId)\n"
+                // `.contains("...")` would happily pass on a typed-but-never-
+                // submitted command, which was exactly the shipped regression
+                // this test now guards.
+                let expected = "claude --dangerously-skip-permissions --resume \(sessionId)\n"
                 let sent = terminalPendingInput(terminal) ?? ""
                 XCTAssertEqual(
                     sent,
@@ -241,8 +241,8 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
             }
             let pending = terminalPendingInput(terminal) ?? ""
             XCTAssertFalse(
-                pending.contains("cc --resume"),
-                "restartRegistry=nil must not synthesise any cc --resume; got: '\(pending)'"
+                pending.contains("--resume"),
+                "restartRegistry=nil must not synthesise any --resume command; got: '\(pending)'"
             )
         }
     }
@@ -357,14 +357,14 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
         XCTAssertFalse(restoreResult.workspaceRef.isEmpty)
         let restoredWorkspace = try XCTUnwrap(resolveWorkspace(from: restoreResult.workspaceRef))
 
-        // Trailing terminal receives `cc --resume <session-id>` via the
-        // registry. Same exact-match pattern as the mixed-claude-mailbox
-        // acceptance.
+        // Trailing terminal receives `claude --dangerously-skip-permissions
+        // --resume <session-id>` via the registry. Same exact-match pattern as
+        // the mixed-claude-mailbox acceptance.
         let terminalSpec = try XCTUnwrap(convertedPlan.surfaces.first { $0.id == trailingTerminalId })
         let panelId = try XCTUnwrap(parseUUIDSuffix(restoreResult.surfaceRefs[terminalSpec.id]))
         let terminal = try XCTUnwrap(restoredWorkspace.panels[panelId] as? TerminalPanel)
         let sessionId = try XCTUnwrap(stringMetadataValue(terminalSpec.metadata, key: "claude.session_id"))
-        let expected = "cc --resume \(sessionId)\n"
+        let expected = "claude --dangerously-skip-permissions --resume \(sessionId)\n"
         let sent = terminalPendingInput(terminal) ?? ""
         XCTAssertEqual(sent, expected)
     }

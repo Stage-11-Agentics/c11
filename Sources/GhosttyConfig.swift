@@ -238,7 +238,9 @@ struct GhosttyConfig {
     // overwrite foreground with a safe dark value so text is always legible.
     mutating func applyContrastFallbackIfNeeded() {
         if backgroundColor.isLightColor && foregroundColor.isLightColor {
+            let oldFg = foregroundColor
             foregroundColor = NSColor(hex: "#1A1A1A")!
+            dlog("contrast-fallback: fg overridden from \(oldFg) to \(foregroundColor) -- bg=\(backgroundColor)")
         }
     }
 

@@ -11103,16 +11103,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         // Control-key combos can surface as ASCII control characters (e.g. Ctrl+H => backspace),
-        // so keep ANSI keyCode fallback for control-modified shortcuts. Also allow fallback for
-        // command punctuation shortcuts, since some non-US layouts report different characters
-        // for the same physical key even when menu-equivalent semantics should still apply.
+        // so keep ANSI keyCode fallback for control-modified shortcuts. For command shortcuts
+        // only fall back to ANSI keyCodes when neither AppKit nor the active layout produced a
+        // usable character: otherwise the physical-key match clobbers a working character match
+        // on layouts where punctuation is remapped (e.g. JIS Cmd+Shift+[ misrouting to ]).
         let allowANSIKeyCodeFallback = flags.contains(.control)
             || (flags.contains(.command)
                 && !flags.contains(.control)
-                && (
-                    !shouldRequireCharacterMatchForCommandShortcut(shortcutKey: shortcutKey)
-                        || (!hasEventChars && (layoutCharacter?.isEmpty ?? true))
-                ))
+                && !hasEventChars
+                && (layoutCharacter?.isEmpty ?? true))
         if allowANSIKeyCodeFallback, let expectedKeyCode = keyCodeForShortcutKey(shortcutKey) {
             return event.keyCode == expectedKeyCode
         }

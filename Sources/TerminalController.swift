@@ -3768,6 +3768,11 @@ class TerminalController {
                 if let windowId = v2ResolveWindowId(tabManager: tabManager) {
                     _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
                     setActiveTabManager(tabManager)
+                    // Bring c11 to the macOS foreground for explicit focus-intent commands.
+                    // workspace.select is in focusIntentV2Methods, so this is intentional.
+                    DispatchQueue.main.async {
+                        NSApp.activate(ignoringOtherApps: true)
+                    }
                 }
                 tabManager.selectWorkspace(ws)
                 success = true

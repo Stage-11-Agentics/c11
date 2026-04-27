@@ -3997,14 +3997,26 @@ struct CMUXCLI {
             throw CLIError(message: "Invalid workspace handle: \(trimmed) (expected UUID, ref like workspace:1, or index)")
         }
 
-        var params: [String: Any] = [:]
         if let windowHandle {
-            params["window_id"] = windowHandle
-        }
-        let listed = try client.sendV2(method: "workspace.list", params: params)
-        let items = listed["workspaces"] as? [[String: Any]] ?? []
-        for item in items where intFromAny(item["index"]) == wantedIndex {
-            return (item["ref"] as? String) ?? (item["id"] as? String)
+            // Caller scoped to a specific window — list only that window's workspaces.
+            let listed = try client.sendV2(method: "workspace.list", params: ["window_id": windowHandle])
+            let items = listed["workspaces"] as? [[String: Any]] ?? []
+            for item in items where intFromAny(item["index"]) == wantedIndex {
+                return (item["ref"] as? String) ?? (item["id"] as? String)
+            }
+        } else {
+            // No window filter: scan all windows so --workspace 1 finds the correct workspace
+            // even if it lives in a different window than the socket's default context.
+            let windowsPayload = try client.sendV2(method: "window.list")
+            let windows = windowsPayload["windows"] as? [[String: Any]] ?? []
+            for window in windows {
+                guard let windowId = window["id"] as? String else { continue }
+                let listed = try client.sendV2(method: "workspace.list", params: ["window_id": windowId])
+                let items = listed["workspaces"] as? [[String: Any]] ?? []
+                for item in items where intFromAny(item["index"]) == wantedIndex {
+                    return (item["ref"] as? String) ?? (item["id"] as? String)
+                }
+            }
         }
         throw CLIError(message: "Workspace index not found")
     }

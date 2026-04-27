@@ -1921,14 +1921,19 @@ struct CMUXCLI {
 
         case "new-workspace":
             let (commandOpt, rem0) = parseOption(commandArgs, name: "--command")
-            let (cwdOpt, remaining) = parseOption(rem0, name: "--cwd")
+            let (cwdOpt, rem1) = parseOption(rem0, name: "--cwd")
+            let (layoutOpt, remaining) = parseOption(rem1, name: "--layout")
             if let unknown = remaining.first(where: { $0.hasPrefix("--") }) {
-                throw CLIError(message: "new-workspace: unknown flag '\(unknown)'. Known flags: --command <text>, --cwd <path>")
+                throw CLIError(message: "new-workspace: unknown flag '\(unknown)'. Known flags: --command <text>, --cwd <path>, --layout <path|name>")
             }
             var params: [String: Any] = [:]
             if let cwdOpt {
                 let resolved = resolvePath(cwdOpt)
                 params["cwd"] = resolved
+            }
+            if let layoutRef = layoutOpt {
+                // Resolve blueprint path or name -> {plan: ...} dict for workspace.create layout param.
+                params["layout"] = try resolveBlueprintPlan(layoutRef, client: client)
             }
             let response = try client.sendV2(method: "workspace.create", params: params)
             let wsId = (response["workspace_ref"] as? String) ?? (response["workspace_id"] as? String) ?? ""
@@ -2048,6 +2053,7 @@ struct CMUXCLI {
             let paneRaw = optionValue(commandArgs, name: "--pane")
             let url = optionValue(commandArgs, name: "--url")
             let file = optionValue(commandArgs, name: "--file")
+            let noFocus = commandArgs.contains("--no-focus")
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
@@ -2056,6 +2062,7 @@ struct CMUXCLI {
             if let type { params["type"] = type }
             if let url { params["url"] = url }
             if let file { params["file"] = file }
+            if noFocus { params["focus"] = false }
             let payload = try client.sendV2(method: "surface.create", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
 
@@ -2317,6 +2324,14 @@ struct CMUXCLI {
             let (sfArg, rem1) = parseOption(rem0, name: "--surface")
             let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
+            // Require explicit surface targeting. Shell-integrated callers inside a c11
+            // surface have CMUX_SURFACE_ID set automatically. External callers must pass
+            // --surface. The windowId path is excluded: --window without --surface still
+            // routes to ws.focusedPanelId, which is the ambient misdirection we're removing.
+            guard sfArg != nil
+                || ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] != nil else {
+                throw CLIError(message: "send requires --surface <id|ref> (or run inside a c11 surface so CMUX_SURFACE_ID is set)")
+            }
             let rawText = rem1.dropFirst(rem1.first == "--" ? 1 : 0).joined(separator: " ")
             guard !rawText.isEmpty else { throw CLIError(message: "send requires text") }
             let text = unescapeSendText(rawText)
@@ -2333,6 +2348,12 @@ struct CMUXCLI {
             let (sfArg, rem1) = parseOption(rem0, name: "--surface")
             let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
+            // Require explicit surface targeting (same policy as send).
+            // windowId alone is excluded for the same reason: it still routes to focusedPanelId.
+            guard sfArg != nil
+                || ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] != nil else {
+                throw CLIError(message: "send-key requires --surface <id|ref> (or run inside a c11 surface so CMUX_SURFACE_ID is set)")
+            }
             let keyArgs = rem1.first == "--" ? Array(rem1.dropFirst()) : rem1
             guard let key = keyArgs.first else { throw CLIError(message: "send-key requires a key") }
             var params: [String: Any] = ["key": key]
@@ -2959,6 +2980,37 @@ struct CMUXCLI {
             throw CLIError(message: "workspace new: '\(resolved)' is not a valid blueprint file (missing 'plan' key)")
         }
         return plan
+    }
+
+    /// Resolve a blueprint reference (file path or name) to a layout dict
+    /// `{plan: ...}` suitable for `workspace.create`'s `layout` param.
+    private func resolveBlueprintPlan(_ ref: String, client: SocketClient) throws -> [String: Any] {
+        let pathToTry = resolvePath(ref)
+        if FileManager.default.fileExists(atPath: pathToTry) {
+            guard let data = FileManager.default.contents(atPath: pathToTry) else {
+                throw CLIError(message: "new-workspace: could not read blueprint file '\(pathToTry)'")
+            }
+            guard let file = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                throw CLIError(message: "new-workspace: blueprint file '\(pathToTry)' is not a valid JSON object")
+            }
+            guard let plan = file["plan"] else {
+                throw CLIError(message: "new-workspace: blueprint file '\(pathToTry)' does not contain a 'plan' key")
+            }
+            return ["plan": plan]
+        }
+        // Not a direct path — search by name in the blueprint store.
+        let cwd = FileManager.default.currentDirectoryPath
+        let payload = try client.sendV2(method: "workspace.list_blueprints", params: ["cwd": cwd])
+        let blueprints = payload["blueprints"] as? [[String: Any]] ?? []
+        let trimmed = ref.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let match = blueprints.first(where: { ($0["name"] as? String) == trimmed }),
+              let url = match["url"] as? String,
+              let data = FileManager.default.contents(atPath: resolvePath(url)),
+              let file = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let plan = file["plan"] else {
+            throw CLIError(message: "new-workspace: blueprint '\(ref)' not found (tried as path and name)")
+        }
+        return ["plan": plan]
     }
 
     /// `c11 workspace export-blueprint --name <name> [--workspace <ref>]
@@ -3981,14 +4033,26 @@ struct CMUXCLI {
             throw CLIError(message: "Invalid workspace handle: \(trimmed) (expected UUID, ref like workspace:1, or index)")
         }
 
-        var params: [String: Any] = [:]
         if let windowHandle {
-            params["window_id"] = windowHandle
-        }
-        let listed = try client.sendV2(method: "workspace.list", params: params)
-        let items = listed["workspaces"] as? [[String: Any]] ?? []
-        for item in items where intFromAny(item["index"]) == wantedIndex {
-            return (item["ref"] as? String) ?? (item["id"] as? String)
+            // Caller scoped to a specific window — list only that window's workspaces.
+            let listed = try client.sendV2(method: "workspace.list", params: ["window_id": windowHandle])
+            let items = listed["workspaces"] as? [[String: Any]] ?? []
+            for item in items where intFromAny(item["index"]) == wantedIndex {
+                return (item["ref"] as? String) ?? (item["id"] as? String)
+            }
+        } else {
+            // No window filter: scan all windows so --workspace 1 finds the correct workspace
+            // even if it lives in a different window than the socket's default context.
+            let windowsPayload = try client.sendV2(method: "window.list")
+            let windows = windowsPayload["windows"] as? [[String: Any]] ?? []
+            for window in windows {
+                guard let windowId = window["id"] as? String else { continue }
+                let listed = try client.sendV2(method: "workspace.list", params: ["window_id": windowId])
+                let items = listed["workspaces"] as? [[String: Any]] ?? []
+                for item in items where intFromAny(item["index"]) == wantedIndex {
+                    return (item["ref"] as? String) ?? (item["id"] as? String)
+                }
+            }
         }
         throw CLIError(message: "Workspace index not found")
     }
@@ -7609,18 +7673,21 @@ struct CMUXCLI {
             """
         case "new-workspace":
             return """
-            Usage: c11 new-workspace [--cwd <path>] [--command <text>]
+            Usage: c11 new-workspace [--cwd <path>] [--command <text>] [--layout <path|name>]
 
             Create a new workspace in the current window.
 
             Flags:
-              --cwd <path>      Set the working directory for the new workspace
-              --command <text>   Send text+Enter to the new workspace after creation
+              --cwd <path>           Set the working directory for the new workspace
+              --command <text>       Send text+Enter to the new workspace after creation
+              --layout <path|name>   Apply a blueprint plan (file path or blueprint name)
 
             Example:
               c11 new-workspace
               c11 new-workspace --cwd ~/projects/myapp
               c11 new-workspace --cwd . --command "npm test"
+              c11 new-workspace --layout my-review-room
+              c11 new-workspace --layout /path/to/blueprint.json
             """
         case "list-workspaces":
             return """
@@ -7792,11 +7859,13 @@ struct CMUXCLI {
               --workspace <id|ref>                Target workspace (default: $CMUX_WORKSPACE_ID)
               --url <url>                         URL for browser surfaces
               --file <path>                       File path for markdown surfaces
+              --no-focus                          Create surface without stealing focus
 
             Example:
               c11 new-surface
               c11 new-surface --type browser --pane pane:1 --url https://example.com
               c11 new-surface --type markdown --file ~/docs/notes.md
+              c11 new-surface --no-focus
             """
         case "close-surface":
             return """
@@ -14394,6 +14463,17 @@ struct CMUXTermMain {
     static func main() {
         // CLI tools should ignore SIGPIPE so closed stdout pipes do not terminate the process.
         _ = signal(SIGPIPE, SIG_IGN)
+        NSSetUncaughtExceptionHandler { exception in
+            // NSFileHandle.writeData: raises NSFileHandleOperationException when writing to a
+            // closed pipe. SIGPIPE is already SIG_IGN; treat a broken-pipe write as a clean exit.
+            if exception.name == .fileHandleOperationException {
+                exit(0)
+            }
+            FileHandle.standardError.write(
+                Data("c11: uncaught exception \(exception.name): \(exception.reason ?? "(none)")\n".utf8)
+            )
+            exit(1)
+        }
         mirrorC11CmuxEnv()
         let cli = CMUXCLI(args: CommandLine.arguments)
         do {

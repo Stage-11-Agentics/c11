@@ -3075,7 +3075,8 @@ class TerminalController {
                 "selected_in_pane": v2OrNull(selectedInPaneByPanelId[panel.id]),
                 "pane_id": v2OrNull(paneUUID?.uuidString),
                 "pane_ref": v2Ref(kind: .pane, uuid: paneUUID),
-                "index_in_pane": v2OrNull(indexInPaneByPanelId[panel.id])
+                "index_in_pane": v2OrNull(indexInPaneByPanelId[panel.id]),
+                "tty": v2OrNull(workspace.surfaceTTYNames[panel.id])
             ]
 
             if panel.panelType == .browser, let browserPanel = panel as? BrowserPanel {
@@ -3725,6 +3726,48 @@ class TerminalController {
             cwd = nil
         }
 
+        // Layout path: let WorkspaceLayoutExecutor own creation so exactly one workspace is created.
+        // Pre-creating a workspace here causes a ghost tab on every successful layout apply (B1).
+        if let layoutDict = params["layout"] as? [String: Any], !layoutDict.isEmpty {
+            let layoutResult = v2WorkspaceApply(params: layoutDict)
+
+            if case .err = layoutResult {
+                return layoutResult
+            }
+
+            guard case .ok(let resultAny) = layoutResult,
+                  let resultDict = resultAny as? [String: Any] else {
+                return .err(code: "internal_error", message: "Unexpected apply result", data: nil)
+            }
+
+            // Transactional: non-empty failures mean partial apply — roll back the workspace.
+            let failures = resultDict["failures"] as? [[String: Any]] ?? []
+            if !failures.isEmpty {
+                if let refStr = resultDict["workspaceRef"] as? String,
+                   let wsUUID = v2ResolveHandleRef(refStr) {
+                    v2MainSync {
+                        if let ws = tabManager.tabs.first(where: { $0.id == wsUUID }) {
+                            tabManager.closeWorkspace(ws)
+                        }
+                    }
+                }
+                return .err(code: "apply_failed", message: "Layout application partially failed", data: resultDict)
+            }
+
+            // Normalize to the standard snake_case workspace creation envelope (B2).
+            let workspaceRef = resultDict["workspaceRef"] as? String ?? ""
+            let wsUUID = v2ResolveHandleRef(workspaceRef)
+            let windowId = v2ResolveWindowId(tabManager: tabManager)
+            return .ok([
+                "workspace_id": v2OrNull(wsUUID?.uuidString),
+                "workspace_ref": workspaceRef as Any,
+                "window_id": v2OrNull(windowId?.uuidString),
+                "window_ref": v2Ref(kind: .window, uuid: windowId),
+                "layout_result": resultAny
+            ])
+        }
+
+        // No layout: create workspace normally.
         var newId: UUID?
         let shouldFocus = v2FocusAllowed()
         guard v2MainSyncWithDeadline({
@@ -3744,6 +3787,7 @@ class TerminalController {
         guard let newId else {
             return .err(code: "internal_error", message: "Failed to create workspace", data: nil)
         }
+
         let windowId = v2ResolveWindowId(tabManager: tabManager)
         return .ok([
             "window_id": v2OrNull(windowId?.uuidString),
@@ -3767,6 +3811,11 @@ class TerminalController {
                 if let windowId = v2ResolveWindowId(tabManager: tabManager) {
                     _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
                     setActiveTabManager(tabManager)
+                    // Bring c11 to the macOS foreground for explicit focus-intent commands.
+                    // workspace.select is in focusIntentV2Methods, so this is intentional.
+                    DispatchQueue.main.async {
+                        NSApp.activate(ignoringOtherApps: true)
+                    }
                 }
                 tabManager.selectWorkspace(ws)
                 success = true
@@ -5537,7 +5586,8 @@ class TerminalController {
                     "pane_id": v2OrNull(paneUUID?.uuidString),
                     "pane_ref": v2Ref(kind: .pane, uuid: paneUUID),
                     "index_in_pane": v2OrNull(indexInPaneByPanelId[panel.id]),
-                    "selected_in_pane": v2OrNull(selectedInPaneByPanelId[panel.id])
+                    "selected_in_pane": v2OrNull(selectedInPaneByPanelId[panel.id]),
+                    "tty": v2OrNull(ws.surfaceTTYNames[panel.id])
                 ]
                 if let browserPanel = panel as? BrowserPanel {
                     item["developer_tools_visible"] = browserPanel.isDeveloperToolsVisible()
@@ -5710,8 +5760,16 @@ class TerminalController {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return
             }
-            self.v2MaybeFocusWindow(for: tabManager)
-            self.v2MaybeSelectWorkspace(tabManager, workspace: ws)
+            // Caller may pass focus: false to opt out of focus (--no-focus in CLI).
+            // surface.create is NOT in focusIntentV2Methods, so v2FocusAllowed returns false
+            // regardless of callerWantsFocus. The focus param is accepted for forward-compatibility
+            // if surface.create is added to focusIntentV2Methods in the future.
+            let callerWantsFocus = self.v2Bool(params, "focus") ?? true
+            let focus = self.v2FocusAllowed(requested: callerWantsFocus)
+            if focus {
+                self.v2MaybeFocusWindow(for: tabManager)
+                self.v2MaybeSelectWorkspace(tabManager, workspace: ws)
+            }
 
             let paneUUID = self.v2UUID(params, "pane_id")
             let paneId: PaneID? = {
@@ -5729,11 +5787,11 @@ class TerminalController {
             let newPanelId: UUID?
             switch panelType {
             case .browser:
-                newPanelId = ws.newBrowserSurface(inPane: paneId, url: url, focus: self.v2FocusAllowed())?.id
+                newPanelId = ws.newBrowserSurface(inPane: paneId, url: url, focus: focus)?.id
             case .markdown:
-                newPanelId = ws.newMarkdownSurface(inPane: paneId, filePath: resolvedMarkdownPath!, focus: self.v2FocusAllowed())?.id
+                newPanelId = ws.newMarkdownSurface(inPane: paneId, filePath: resolvedMarkdownPath!, focus: focus)?.id
             case .terminal:
-                newPanelId = ws.newTerminalSurface(inPane: paneId, focus: self.v2FocusAllowed())?.id
+                newPanelId = ws.newTerminalSurface(inPane: paneId, focus: focus)?.id
             }
 
             guard let newPanelId else {
@@ -6429,7 +6487,9 @@ class TerminalController {
             let sendStart = ProcessInfo.processInfo.systemUptime
             #endif
             let queued: Bool
-            if let surface = terminalPanel.surface.surface {
+            let surface = terminalPanel.surface.surface
+                ?? waitForTerminalSurface(terminalPanel, waitUpTo: 2.0)
+            if let surface {
                 sendSocketText(text, surface: surface)
                 // Ensure we present a new frame after injecting input so snapshot-based tests (and
                 // socket-driven agents) can observe the updated terminal without requiring a focus
@@ -6437,9 +6497,9 @@ class TerminalController {
                 terminalPanel.surface.forceRefresh(reason: "terminalController.v2SurfaceSendText")
                 queued = false
             } else {
-                // Avoid blocking the main actor waiting for view/surface attachment.
+                // Surface not available within 2s (e.g., terminal not yet attached to any window).
+                // Fall back to the pending queue as a last resort.
                 terminalPanel.sendText(text)
-                terminalPanel.surface.requestBackgroundSurfaceStartIfNeeded()
                 queued = true
             }
 #if DEBUG

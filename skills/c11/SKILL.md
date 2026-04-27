@@ -148,6 +148,8 @@ c11 send-key --workspace workspace:2 --surface surface:5 enter
 
 When talking to your own surface, omit both — env vars default them correctly.
 
+**`send` and `send-key` now require explicit surface targeting.** Callers outside a c11 shell integration context must pass `--surface`. The `CMUX_SURFACE_ID` env var satisfies the requirement for callers already inside a c11 surface. Passing `--window` alone is not sufficient — the command errors rather than falling back to whatever surface happens to be focused in that window.
+
 ## Send text to a surface
 
 ```bash
@@ -185,9 +187,14 @@ c11 read-screen --scrollback --lines 200        # include scrollback buffer
 c11 new-split <left|right|up|down>             # Split any pane; the NEW pane is always a terminal
 c11 new-pane --type browser --url <url>        # New pane of any surface type; --direction is relative to focus
 c11 new-surface --pane <pane-ref>              # Add a tab to an existing pane
+c11 new-surface --no-focus                     # Create without stealing focus (safe for background agents)
+c11 new-workspace                              # Create a new workspace
+c11 new-workspace --layout <path|name>         # Create a workspace from a blueprint plan
 ```
 
 - **`new-split` clarified.** Source can be a pane of any surface type — terminal, browser, or markdown. Only the *new* pane is constrained to terminal. Use `new-pane` when the new pane should be a browser or markdown viewer.
+- **`--no-focus` on `new-surface`.** Pass `--no-focus` to create a terminal, browser, or markdown surface without the workspace switching focus to it. Useful when an agent is building out a layout in the background.
+- **`--layout` on `new-workspace`.** Pass a blueprint file path or blueprint name to create a workspace pre-populated with the plan's pane/surface topology. Response includes `workspace_id`, `workspace_ref`, `window_id`, and `window_ref` (same envelope as a plain `new-workspace`), plus a `layout_result` field with apply details.
 - **Direction is relative to the focused pane.** `new-pane` has no `--pane` flag; it operates on the currently focused pane. Call `c11 focus-pane --pane <ref> --workspace <ref>` first if you need to target a different one.
 - **`new-split` does NOT return the new pane ref** — output is `OK surface:<N> workspace:<M>` only. Follow with `c11 tree --no-layout` (or `--json`) to discover the newly created pane. `new-pane` *does* return the pane ref (`OK surface:<N> pane:<P> workspace:<M>`).
 - **Default targets differ.** `new-split` defaults to the **caller's** pane; `new-surface` defaults to the **focused** pane (often different). To add a tab to your own pane, read `caller.pane_ref` from `c11 identify` and pass it via `--pane`.
@@ -229,6 +236,8 @@ c11 tree --no-layout                    # suppress the floor plan, keep hierarch
 ```
 
 Read `c11 tree` before planning layouts — splitting blind leads to cramped panes. For programmatic layout decisions use `--json`: every pane carries its rect in pixels and percent, the workspace content-area dimensions, and its split path.
+
+**`tty` field.** `c11 tree --json` and `c11 surface list` now include a `tty` field on each terminal surface (e.g., `/dev/ttys004`). Use this to correlate a c11 surface with a shell process, process listings, or agent detection — useful for "which surface is running that codex?" lookups.
 
 ## Title and description
 

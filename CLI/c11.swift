@@ -14466,7 +14466,7 @@ struct CMUXTermMain {
         NSSetUncaughtExceptionHandler { exception in
             // NSFileHandle.writeData: raises NSFileHandleOperationException when writing to a
             // closed pipe. SIGPIPE is already SIG_IGN; treat a broken-pipe write as a clean exit.
-            if exception.name.rawValue == NSFileHandleOperationException {
+            if exception.name == .fileHandleOperationException {
                 exit(0)
             }
             FileHandle.standardError.write(

@@ -2083,6 +2083,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var menuBarVisibilityObserver: NSObjectProtocol?
     private var splitButtonTooltipRefreshScheduled = false
     private var ghosttyConfigObserver: NSObjectProtocol?
+    private var appearanceObservation: NSKeyValueObservation?
     private var ghosttyGotoSplitLeftShortcut: StoredShortcut?
     private var ghosttyGotoSplitRightShortcut: StoredShortcut?
     private var ghosttyGotoSplitUpShortcut: StoredShortcut?
@@ -2364,6 +2365,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             object: nil,
             suspensionBehavior: .deliverImmediately
         )
+
+        // Invalidate the GhosttyConfig cache when the system appearance changes so
+        // light:X,dark:Y paired themes resolve to the correct variant on next load.
+        appearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
+            guard self != nil else { return }
+            GhosttyConfig.invalidateLoadCache()
+            DispatchQueue.main.async {
+                GhosttyApp.shared.reloadConfiguration(source: "appearance.change")
+            }
+        }
 
 #if DEBUG
         // UI tests run on a shared VM user profile, so persisted shortcuts can drift and make

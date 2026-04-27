@@ -694,6 +694,32 @@ final class WorkspaceAppearanceConfigResolutionTests: XCTestCase {
         XCTAssertEqual(resolved.backgroundColor.hexString(), "#272822")
     }
 
+    func testCacheInvalidationAllowsCrossSchemeTransitionAfterAppearanceChange() {
+        // Reproduces the scenario fixed by Pick 5: a light config is cached, then the
+        // system switches to dark. Without cache invalidation on appearance change the
+        // stale light config would be returned for the dark scheme request.
+        GhosttyConfig.invalidateLoadCache()
+        defer { GhosttyConfig.invalidateLoadCache() }
+
+        var callCount = 0
+        let loadFromDisk: (GhosttyConfig.ColorSchemePreference) -> GhosttyConfig = { scheme in
+            callCount += 1
+            var config = GhosttyConfig()
+            config.fontFamily = scheme == .light ? "light-scheme" : "dark-scheme"
+            return config
+        }
+
+        let light = GhosttyConfig.load(preferredColorScheme: .light, loadFromDisk: loadFromDisk)
+        XCTAssertEqual(light.fontFamily, "light-scheme")
+
+        // Simulate the appearance change observer calling invalidateLoadCache()
+        GhosttyConfig.invalidateLoadCache()
+
+        let dark = GhosttyConfig.load(preferredColorScheme: .dark, loadFromDisk: loadFromDisk)
+        XCTAssertEqual(dark.fontFamily, "dark-scheme", "After cache invalidation dark-scheme config must be freshly loaded")
+        XCTAssertEqual(callCount, 2, "Both schemes must trigger a fresh disk load after invalidation")
+    }
+
     func testScrollbackLimitParsesGigabyteSuffix() {
         var config = GhosttyConfig()
         config.parse("scrollback-limit = 1G")

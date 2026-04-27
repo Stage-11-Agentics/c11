@@ -4,6 +4,28 @@ All notable changes to c11 (and, before the fork, cmux) are documented here.
 
 Note: historical entries below pre-date the `c11mux` → `c11` rename and reference the old binary / cask / artifact / bundle-ID names (`cmux`, `c11mux`, `c11mux-macos.dmg`, `stage-11-agentics/c11mux`, `com.stage11.c11mux`). Those entries are preserved as-is for historical accuracy; see the 0.38.0 section for the rename.
 
+## [0.44.0] - 2026-04-27
+
+### Added
+
+- **Claude Code session resume across c11 restarts.** When you quit and relaunch c11, terminals that were running Claude Code auto-resume the conversation: about 2.5 s after restore, the pane types and submits `claude --dangerously-skip-permissions --resume <session-uuid>` for you. Capture works via a hooks-via-tempfile workaround for Claude Code 2.1.119, which silently ignores hooks loaded from inline `--settings` JSON; restore drives the resume command through `TextBoxSubmit` (paste plus a synthetic Return), since bracketed-paste mode would otherwise swallow the embedded newline. The wrapper falls back to inline JSON with a stderr warning if the tempfile write fails. SessionEnd clears `claude.session_id` from surface metadata so an already-ended session does not auto-resume on next launch. ([#89](https://github.com/Stage-11-Agentics/c11/pull/89))
+
+- **C11-20: CLI hygiene and focus policy sweep (7 upstream picks).** `c11 new-surface --no-focus` (and `surface.create focus:false`) so agents can spawn surfaces without stealing focus. New `tty` field in `surface.list` and `system.tree` responses. `c11 send` and `send-key` now error when `--surface` is omitted and `CMUX_SURFACE_ID` is unset, so silent defaults can no longer deliver to the wrong surface. `surface.send_text` reaches non-focused tabs via `waitForTerminalSurface`. Focus and `workspace select` bring the existing window forward and resolve indices cross-window. `workspace.create --layout` rolls back the orphan workspace on layout failure. SIGABRT on broken pipe is now caught. Reported upstream by @andy5090, @hummer98, @nengqi, @jasonkuhrt, @EtanHey, @austinywang, @shaun0927. ([#84](https://github.com/Stage-11-Agentics/c11/pull/84))
+
+- **C11-22: Stability, render, theme, config (10 upstream picks).** SSH subprocess inherits the full process environment (`SSH_AUTH_SOCK`, agent forwarding). `parseByteCount` understands K/M/G suffixes with overflow and negative guards. Notification authorization now requests `.badge` so the dock badge fires for terminal alerts. `customColor` accepts named palette colors, with unknown names returning a typed `unknown_color_name` failure. Palette index is bounded to `0...15`; a KVO observer reloads config on system-appearance changes. `.safeHelp` removed from high-churn titlebar, sidebar, and new-workspace buttons (UAF risk). Legacy-mode scrollbar gutter is subtracted from terminal width. Idle redraws are gated when the palette overlay is hidden. `applyContrastFallbackIfNeeded` logs the override and palette entries now apply in `TerminalView`. Ghostty submodule bumps to `c649529` for the `SlidingWindow.Meta` page-rows SIGSEGV race fix. ([#87](https://github.com/Stage-11-Agentics/c11/pull/87))
+
+### Changed
+
+- **C11-21: Input handling, keyboard, IME, paste (8 upstream picks).** Tightened `allowANSIKeyCodeFallback` in `matchShortcut` so the physical-keycode fallback only fires when both AppKit and the active layout returned no character; fixes JIS `Cmd+Shift+[` routing to the wrong shortcut. Option+Backspace now does word-deletion in TUI apps (lazygit, vim, Claude Code, Codex) via a fast path before `interpretKeyEvents`. `flagsChanged` tracks per-bit modifier transitions and emits press / release for newly-set or cleared bits, fixing modifier events dropped during IME marked text. `stringContents(from:)` prefers `NSPasteboard.utf8PlainTextType` over `.string` for clean Hangul, Cyrillic, and Qt non-ASCII paste. Disproportionately important for c11's six-locale shipping story. Reported upstream by @wada811, @sldx, @judekim0507, @shouryamaanjain, @pandec, @austinywang, @shaun0927. ([#86](https://github.com/Stage-11-Agentics/c11/pull/86))
+
+### Fixed
+
+- **Orphan portal entries no longer paint stale chrome strokes on launch.** Bonsplit's `_ConditionalContent` flipping between `EmptyPanelView` and `PanelContentView` during launch or workspace remount could leave a portal entry frozen at its initial frame, painting phantom chrome and sometimes the empty-pane SwiftUI subtree on top of the live workspace for the rest of the session. `TerminalWindowPortal` and `BrowserWindowPortal` now reap these orphans during the geometry-sync pass: when the anchor weak ref deallocates or the anchor migrated to another window, the entry is hidden and the chrome overlay is invalidated. A belt-and-suspenders guard in `workspaceFrameSegmentsForChromeOverlay` keeps chrome strokes from outpacing the hide on a single redraw cycle. ([#88](https://github.com/Stage-11-Agentics/c11/pull/88))
+
+### Built and shipped by
+
+Stage 11 Agentics. Operator:agent, fused.
+
 ## [0.43.0] - 2026-04-26
 
 ### Added

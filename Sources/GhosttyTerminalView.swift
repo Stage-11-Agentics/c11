@@ -4765,6 +4765,12 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             // If we become first responder before the ghostty surface exists (e.g. during
             // split/tab creation while the surface is still being created), record the desired focus.
             desiredFocus = true
+            // Re-snapshot modifier state from the global accessor on focus gain
+            // so the next flagsChanged diff is against ground truth, not the
+            // stale snapshot from before focus loss. Closes a stuck-modifier
+            // window where Option held during focus transitions could
+            // misclassify the subsequent press/release.
+            lastModifierFlags = NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
             // During programmatic splits, SwiftUI reparents the old NSView which triggers
             // becomeFirstResponder. Suppress onFocus + ghostty_surface_set_focus to prevent
@@ -4834,6 +4840,12 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         let result = super.resignFirstResponder()
         if result {
             desiredFocus = false
+            // Drop the modifier snapshot so we don't diff a future flagsChanged
+            // against stale state. While focus lives elsewhere, modifier
+            // transitions go to another responder; the next event we see should
+            // be treated as a fresh PRESS against an empty baseline (or the
+            // baseline re-established in becomeFirstResponder below).
+            lastModifierFlags = []
         }
         if result, let surface = surface {
             let now = CACurrentMediaTime()

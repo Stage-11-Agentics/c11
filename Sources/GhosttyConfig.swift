@@ -227,7 +227,19 @@ struct GhosttyConfig {
         config.resolveSidebarBackground(preferredColorScheme: preferredColorScheme)
         config.applySidebarAppearanceToUserDefaults()
 
+        // Guard against white-on-white text: if both fg and bg are light, the
+        // terminal would be unreadable. Substitute a safe dark foreground.
+        config.applyContrastFallbackIfNeeded()
+
         return config
+    }
+
+    // If both background and foreground are light-colored (luminance > 0.5),
+    // overwrite foreground with a safe dark value so text is always legible.
+    mutating func applyContrastFallbackIfNeeded() {
+        if backgroundColor.isLightColor && foregroundColor.isLightColor {
+            foregroundColor = NSColor(hex: "#1A1A1A")!
+        }
     }
 
     mutating func parse(_ contents: String) {

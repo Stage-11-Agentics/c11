@@ -720,6 +720,52 @@ final class WorkspaceAppearanceConfigResolutionTests: XCTestCase {
         XCTAssertEqual(callCount, 2, "Both schemes must trigger a fresh disk load after invalidation")
     }
 
+    func testWhiteBackgroundWithNearWhiteForegroundIsRemappedToDarkForeground() {
+        // Reproduces the white-on-white regression (#2708): a light theme sets a
+        // white background, but the foreground fell back to the near-white Monokai
+        // default. applyContrastFallbackIfNeeded() corrects this by substituting
+        // a safe dark foreground whenever both bg and fg are light-colored.
+        var config = GhosttyConfig()
+        config.backgroundColor = NSColor(hex: "#FFFFFF")!  // pure white background
+        config.foregroundColor = NSColor(hex: "#FDFFF1")!  // near-white Monokai default
+        config.applyContrastFallbackIfNeeded()
+        XCTAssertFalse(
+            config.foregroundColor.isLightColor,
+            "Foreground must not be near-white when background is also near-white"
+        )
+    }
+
+    func testDarkForegroundOnDarkBackgroundIsNotRemapped() {
+        // Dark themes must not be affected by the contrast-check guard.
+        var config = GhosttyConfig()
+        config.backgroundColor = NSColor(hex: "#272822")!  // Monokai dark background
+        config.foregroundColor = NSColor(hex: "#FDFFF1")!  // near-white Monokai foreground
+        config.applyContrastFallbackIfNeeded()
+        XCTAssertTrue(
+            config.foregroundColor.isLightColor,
+            "Near-white foreground on dark background must be preserved unchanged"
+        )
+    }
+
+    func testLightForegroundOnDarkBackgroundIsNotRemapped() {
+        var config = GhosttyConfig()
+        config.backgroundColor = NSColor(hex: "#000000")!  // black background
+        config.foregroundColor = NSColor(hex: "#FFFFFF")!  // white foreground (high contrast)
+        config.applyContrastFallbackIfNeeded()
+        XCTAssertTrue(
+            config.foregroundColor.isLightColor,
+            "White foreground on black background is correct contrast and must not be remapped"
+        )
+    }
+
+    func testPaletteOverrideStoredByIndex() {
+        var config = GhosttyConfig()
+        let customColor = NSColor(hex: "#FF0000")!
+        config.palette[0] = customColor
+        XCTAssertNotNil(config.palette[0])
+        XCTAssertNil(config.palette[1], "Unset palette entries must remain nil")
+    }
+
     func testScrollbackLimitParsesGigabyteSuffix() {
         var config = GhosttyConfig()
         config.parse("scrollback-limit = 1G")

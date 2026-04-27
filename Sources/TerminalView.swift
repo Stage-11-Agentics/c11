@@ -244,7 +244,12 @@ struct SwiftTermView: NSViewRepresentable {
 
         var colors: [SwiftTerm.Color] = []
         for i in 0..<16 {
-            colors.append(SwiftTerm.Color(hex: defaultPaletteHex[i]))
+            if let override = config.palette[i] {
+                let hex = override.hexString()
+                colors.append(SwiftTerm.Color(hex: hex))
+            } else {
+                colors.append(SwiftTerm.Color(hex: defaultPaletteHex[i]))
+            }
         }
 
         // Install the ANSI colors

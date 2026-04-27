@@ -189,6 +189,16 @@ final class AIUsageAccountStore: ObservableObject {
                 try? persist(accounts)
             }
         }
+
+        let hasCodexAccount = accounts.contains { $0.providerId == Providers.codex.id }
+        if !hasCodexAccount {
+            let codexDB = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".codex/state_5.sqlite")
+            if FileManager.default.fileExists(atPath: codexDB.path) {
+                let auto = AIUsageAccount(id: UUID(), providerId: Providers.codex.id, displayName: "Codex")
+                accounts.append(auto)
+                try? persist(accounts)
+            }
+        }
     }
 
     private func persist(_ next: [AIUsageAccount]) throws {

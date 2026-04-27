@@ -124,6 +124,22 @@ c11 send-key --workspace $WS --surface $SURF enter
 
 **Why two-call send:** `\n` in `c11 send` is stripped by Claude Code's Bash tool before reaching c11, so the command sits unsent on the sub-agent's prompt line. Always pair `send` with a separate `send-key enter`.
 
+### Spawning multiple panes at once
+
+Loop the spawn pattern. Capture the new surface ref from each `c11 new-split` call so you can target it for the rename and send.
+
+```bash
+WS=$(c11 identify | jq -r '.workspace.id')
+for ROLE in plan impl review; do
+  SURF=$(c11 new-split right | awk '{print $2}')
+  c11 rename-tab --workspace $WS --surface $SURF "$ROLE"
+  c11 send       --workspace $WS --surface $SURF "claude --dangerously-skip-permissions \"<prompt>\""
+  c11 send-key   --workspace $WS --surface $SURF enter
+done
+```
+
+For 5+ agents, swap `c11 new-split right` for `c11 new-surface --pane <pane>` so they land as tabs of one pane instead of unreadably narrow splits.
+
 ### For complex prompts: deliver via temp file
 
 Shell escaping of backticks, quotes, and markdown in `c11 send` is brittle. For prompts longer than a sentence or containing special characters:

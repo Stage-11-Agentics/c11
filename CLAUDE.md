@@ -49,6 +49,17 @@ Consequences:
 
 When in doubt: c11's job stops at the edge of its surfaces. What happens inside an agent's process is the agent's business.
 
+## Default workflow for Lattice tickets: lattice-delegate
+
+When the operator hands you a Lattice ticket to execute (or asks to "run", "delegate", "walk through" a ticket), the default response is the `lattice-delegate` skill at `/Users/atin/Projects/Stage11/.claude/skills/lattice-delegate/SKILL.md`. Do not attack the ticket inline from the orchestrator pane.
+
+Why this is the default here:
+- c11 tickets routinely involve typing-latency hot paths, tagged builds, localization passes, and submodule discipline. The delegator pattern carves a worktree per ticket so build artifacts and submodule state cannot bleed across parallel work.
+- Multi-phase work (plan → impl → review → validate → handoff) is hard to keep coherent in a single chat. Surfaces-per-phase plus a Lattice-as-comms-bus give every reader (operator, future agent, retro-AAR) a clean trail.
+- Trident reviews produce a `synthesis-action.md` that the Review sibling executes against directly; the delegator only sees items that genuinely need human or delegator judgment.
+
+Skip the pattern only when the ticket is a one-line text edit, a trivially mechanical change with no review surface, or the operator explicitly says "just do it inline." When in doubt, default to the skill.
+
 ## Local dev
 
 See `skills/c11-hotload/SKILL.md` for the full workflow — `reload.sh --tag` build-and-launch, Release variants, the debug event log, tag hygiene, and the tagged-build reporting format.

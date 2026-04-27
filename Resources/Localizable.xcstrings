@@ -53352,6 +53352,12 @@
             "state": "translated",
             "value": "Session key"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ключ сессии"
+          }
         }
       }
     },
@@ -53359,6 +53365,12 @@
       "extractionState": "manual",
       "localizations": {
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "sk-ant-sid01-..."
+          }
+        },
+        "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "sk-ant-sid01-..."
@@ -53374,6 +53386,12 @@
             "state": "translated",
             "value": "From claude.ai cookies"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Из cookies claude.ai"
+          }
         }
       }
     },
@@ -53385,6 +53403,12 @@
             "state": "translated",
             "value": "Organization ID"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Идентификатор организации"
+          }
         }
       }
     },
@@ -53392,6 +53416,12 @@
       "extractionState": "manual",
       "localizations": {
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UUID"
+          }
+        },
+        "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "UUID"
@@ -53407,6 +53437,12 @@
             "state": "translated",
             "value": "From claude.ai network requests"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Из сетевых запросов claude.ai"
+          }
         }
       }
     },
@@ -53417,6 +53453,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Claude.ai status"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Статус Claude.ai"
           }
         }
       }
@@ -53429,6 +53471,12 @@
             "state": "translated",
             "value": "Access token"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Токен доступа"
+          }
         }
       }
     },
@@ -53436,6 +53484,12 @@
       "extractionState": "manual",
       "localizations": {
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "eyJhbGciOi..."
+          }
+        },
+        "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "eyJhbGciOi..."
@@ -53451,6 +53505,12 @@
             "state": "translated",
             "value": "Run: jq -r .tokens.access_token < ~/.codex/auth.json"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выполните: jq -r .tokens.access_token < ~/.codex/auth.json"
+          }
         }
       }
     },
@@ -53462,6 +53522,12 @@
             "state": "translated",
             "value": "Account ID (optional)"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Идентификатор аккаунта (необязательно)"
+          }
         }
       }
     },
@@ -53469,6 +53535,12 @@
       "extractionState": "manual",
       "localizations": {
         "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "abcd-1234-..."
+          }
+        },
+        "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "abcd-1234-..."
@@ -53484,6 +53556,12 @@
             "state": "translated",
             "value": "Run: jq -r .tokens.account_id < ~/.codex/auth.json (leave blank if empty)"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выполните: jq -r .tokens.account_id < ~/.codex/auth.json (оставьте пустым, если значение отсутствует)"
+          }
         }
       }
     },
@@ -53494,6 +53572,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Codex status"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Статус Codex"
           }
         }
       }
@@ -53506,6 +53590,12 @@
             "state": "translated",
             "value": "Keychain error (status %lld)."
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ошибка связки ключей (статус %lld)."
+          }
         }
       }
     },
@@ -53516,6 +53606,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Saved credential could not be read."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось прочитать сохранённые учётные данные."
           }
         }
       }
@@ -53528,6 +53624,12 @@
             "state": "translated",
             "value": "Credential not found."
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Учётные данные не найдены."
+          }
         }
       }
     },
@@ -53538,6 +53640,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Provider not available."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Провайдер недоступен."
           }
         }
       }
@@ -53550,6 +53658,12 @@
             "state": "translated",
             "value": "Could not fetch usage."
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось получить данные об использовании."
+          }
         }
       }
     },
@@ -53560,6 +53674,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Request timed out."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Время ожидания запроса истекло."
           }
         }
       }
@@ -53572,6 +53692,12 @@
             "state": "translated",
             "value": "Could not load saved credential."
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось загрузить сохранённые учётные данные."
+          }
         }
       }
     },
@@ -53582,6 +53708,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Organization ID is not valid."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Идентификатор организации недействителен."
           }
         }
       }
@@ -53594,6 +53726,12 @@
             "state": "translated",
             "value": "Session key is not valid."
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ключ сессии недействителен."
+          }
         }
       }
     },
@@ -53604,6 +53742,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sign-in expired (status %lld). Re-enter your session key."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Срок входа истёк (статус %lld). Введите ключ сессии заново."
           }
         }
       }
@@ -53616,6 +53760,12 @@
             "state": "translated",
             "value": "Claude returned status %lld."
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude вернул статус %lld."
+          }
         }
       }
     },
@@ -53626,6 +53776,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Unexpected response from Claude."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Неожиданный ответ от Claude."
           }
         }
       }
@@ -53638,6 +53794,12 @@
             "state": "translated",
             "value": "Could not read Claude usage payload."
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось прочитать данные использования Claude."
+          }
         }
       }
     },
@@ -53648,6 +53810,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Network error while contacting Claude."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ошибка сети при обращении к Claude."
           }
         }
       }
@@ -53660,6 +53828,12 @@
             "state": "translated",
             "value": "Access token is not valid."
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Токен доступа недействителен."
+          }
         }
       }
     },
@@ -53670,6 +53844,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Account ID is not valid."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Идентификатор аккаунта недействителен."
           }
         }
       }
@@ -53682,6 +53862,12 @@
             "state": "translated",
             "value": "Sign-in expired (status %lld). Re-enter your access token."
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Срок входа истёк (статус %lld). Введите токен доступа заново."
+          }
         }
       }
     },
@@ -53692,6 +53878,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Codex usage endpoint not found. The account may not have access."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Эндпоинт использования Codex не найден. У аккаунта может не быть доступа."
           }
         }
       }
@@ -53704,6 +53896,12 @@
             "state": "translated",
             "value": "Codex returned status %lld."
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex вернул статус %lld."
+          }
         }
       }
     },
@@ -53714,6 +53912,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Unexpected response from Codex."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Неожиданный ответ от Codex."
           }
         }
       }
@@ -53726,6 +53930,12 @@
             "state": "translated",
             "value": "Could not read Codex usage payload."
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось прочитать данные использования Codex."
+          }
         }
       }
     },
@@ -53736,6 +53946,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Network error while contacting Codex."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ошибка сети при обращении к Codex."
           }
         }
       }
@@ -53748,6 +53964,12 @@
             "state": "translated",
             "value": "Add account"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавить аккаунт"
+          }
         }
       }
     },
@@ -53758,6 +53980,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Edit account"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Изменить аккаунт"
           }
         }
       }
@@ -53770,6 +53998,12 @@
             "state": "translated",
             "value": "Name"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Имя"
+          }
         }
       }
     },
@@ -53780,6 +54014,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cancel"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отмена"
           }
         }
       }
@@ -53792,6 +54032,12 @@
             "state": "translated",
             "value": "Save"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сохранить"
+          }
         }
       }
     },
@@ -53802,6 +54048,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Help"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Справка"
           }
         }
       }
@@ -53814,6 +54066,12 @@
             "state": "translated",
             "value": "AI Usage Monitoring"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Мониторинг использования ИИ"
+          }
         }
       }
     },
@@ -53824,6 +54082,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Usage bar colors"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Цвета индикатора использования"
           }
         }
       }
@@ -53836,6 +54100,12 @@
             "state": "translated",
             "value": "Low"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Низкий"
+          }
         }
       }
     },
@@ -53846,6 +54116,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mid"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Средний"
           }
         }
       }
@@ -53858,6 +54134,12 @@
             "state": "translated",
             "value": "High"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Высокий"
+          }
         }
       }
     },
@@ -53868,6 +54150,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Thresholds"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пороги"
           }
         }
       }
@@ -53880,6 +54168,12 @@
             "state": "translated",
             "value": "Low/mid below %lld%%, mid/high below %lld%%."
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Низкий/средний ниже %lld%%, средний/высокий ниже %lld%%."
+          }
         }
       }
     },
@@ -53890,6 +54184,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Smooth interpolation"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Плавная интерполяция"
           }
         }
       }
@@ -53902,6 +54202,12 @@
             "state": "translated",
             "value": "Reset to defaults"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сбросить к значениям по умолчанию"
+          }
         }
       }
     },
@@ -53912,6 +54218,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Add account"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавить аккаунт"
           }
         }
       }
@@ -53924,6 +54236,12 @@
             "state": "translated",
             "value": "Add an AI account"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавить аккаунт ИИ"
+          }
         }
       }
     },
@@ -53934,6 +54252,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Edit"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Изменить"
           }
         }
       }
@@ -53946,6 +54270,12 @@
             "state": "translated",
             "value": "Remove"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалить"
+          }
         }
       }
     },
@@ -53956,6 +54286,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Session %lld%% · Week %lld%%"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сессия %lld%% · Неделя %lld%%"
           }
         }
       }
@@ -53968,6 +54304,12 @@
             "state": "translated",
             "value": "Unknown provider"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Неизвестный провайдер"
+          }
         }
       }
     },
@@ -53978,6 +54320,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "This provider is not available in this build. Remove the account to clear the saved credential."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот провайдер недоступен в текущей сборке. Удалите аккаунт, чтобы очистить сохранённые учётные данные."
           }
         }
       }
@@ -53990,6 +54338,12 @@
             "state": "translated",
             "value": "Remove this account?"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалить этот аккаунт?"
+          }
         }
       }
     },
@@ -54000,6 +54354,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Remove"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалить"
           }
         }
       }
@@ -54012,6 +54372,12 @@
             "state": "translated",
             "value": "The saved credentials will be deleted from Keychain."
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сохранённые учётные данные будут удалены из связки ключей."
+          }
         }
       }
     },
@@ -54022,6 +54388,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cancel"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отмена"
           }
         }
       }
@@ -54034,6 +54406,12 @@
             "state": "translated",
             "value": "Could not remove account"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось удалить аккаунт"
+          }
         }
       }
     },
@@ -54044,6 +54422,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "OK"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ОК"
           }
         }
       }
@@ -54056,6 +54440,12 @@
             "state": "translated",
             "value": "The account is no longer present."
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Аккаунт больше не существует."
+          }
         }
       }
     },
@@ -54066,6 +54456,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Saved credential could not be read."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось прочитать сохранённые учётные данные."
           }
         }
       }
@@ -54078,6 +54474,12 @@
             "state": "translated",
             "value": "Keychain error."
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ошибка связки ключей."
+          }
         }
       }
     },
@@ -54088,6 +54490,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "An unknown error occurred."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Произошла неизвестная ошибка."
           }
         }
       }
@@ -54100,6 +54508,12 @@
             "state": "translated",
             "value": "Expand"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Развернуть"
+          }
         }
       }
     },
@@ -54110,6 +54524,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Collapse"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Свернуть"
           }
         }
       }
@@ -54122,6 +54542,12 @@
             "state": "translated",
             "value": "AI usage panel"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Панель использования ИИ"
+          }
         }
       }
     },
@@ -54132,6 +54558,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Session"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сессия"
           }
         }
       }
@@ -54144,6 +54576,12 @@
             "state": "translated",
             "value": "Week"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Неделя"
+          }
         }
       }
     },
@@ -54154,6 +54592,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Status"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Статус"
           }
         }
       }
@@ -54166,6 +54610,12 @@
             "state": "translated",
             "value": "Open status page"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть страницу статуса"
+          }
         }
       }
     },
@@ -54176,6 +54626,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Loading status..."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Загрузка статуса..."
           }
         }
       }
@@ -54188,6 +54644,12 @@
             "state": "translated",
             "value": "Could not load status."
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось загрузить статус."
+          }
         }
       }
     },
@@ -54198,6 +54660,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "All systems operational"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Все системы работают"
           }
         }
       }
@@ -54210,6 +54678,12 @@
             "state": "translated",
             "value": "Maintenance"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Обслуживание"
+          }
         }
       }
     },
@@ -54220,6 +54694,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Minor incident"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Незначительный инцидент"
           }
         }
       }
@@ -54232,6 +54712,12 @@
             "state": "translated",
             "value": "Major incident"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Серьёзный инцидент"
+          }
         }
       }
     },
@@ -54243,6 +54729,12 @@
             "state": "translated",
             "value": "Critical incident"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Критический инцидент"
+          }
         }
       }
     },
@@ -54253,6 +54745,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Refresh now"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Обновить сейчас"
           }
         }
       }

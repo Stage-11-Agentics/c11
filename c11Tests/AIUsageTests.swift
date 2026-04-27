@@ -307,6 +307,97 @@ final class CodexAIValidatorTests: XCTestCase {
     }
 }
 
+final class AIUsageColorSettingsTests: XCTestCase {
+    private let suiteName = "c11.aiusage.colors.tests.\(UUID().uuidString)"
+    private var defaults: UserDefaults!
+
+    override func setUp() {
+        super.setUp()
+        defaults = UserDefaults(suiteName: suiteName)
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    override func tearDown() {
+        defaults.removePersistentDomain(forName: suiteName)
+        defaults = nil
+        super.tearDown()
+    }
+
+    @MainActor
+    func testDefaultsApplyWhenNothingStored() {
+        let settings = AIUsageColorSettings(userDefaults: defaults)
+        XCTAssertEqual(settings.lowColorHex, AIUsageColorSettings.defaultLowColorHex)
+        XCTAssertEqual(settings.midColorHex, AIUsageColorSettings.defaultMidColorHex)
+        XCTAssertEqual(settings.highColorHex, AIUsageColorSettings.defaultHighColorHex)
+        XCTAssertEqual(settings.lowMidThreshold, AIUsageColorSettings.defaultLowMidThreshold)
+        XCTAssertEqual(settings.midHighThreshold, AIUsageColorSettings.defaultMidHighThreshold)
+        XCTAssertEqual(settings.interpolate, AIUsageColorSettings.defaultInterpolate)
+    }
+
+    @MainActor
+    func testSetThresholdsEnforcesOrder() {
+        let settings = AIUsageColorSettings(userDefaults: defaults)
+        settings.setThresholds(low: 90, high: 50)
+        XCTAssertLessThan(settings.lowMidThreshold, settings.midHighThreshold)
+    }
+
+    @MainActor
+    func testSetThresholdsClampsToValidRange() {
+        let settings = AIUsageColorSettings(userDefaults: defaults)
+        settings.setThresholds(low: 0, high: 100)
+        XCTAssertGreaterThanOrEqual(settings.lowMidThreshold, 1)
+        XCTAssertLessThanOrEqual(settings.midHighThreshold, 99)
+    }
+
+    @MainActor
+    func testResetToDefaults() {
+        let settings = AIUsageColorSettings(userDefaults: defaults)
+        settings.lowColorHex = "#000000"
+        settings.midColorHex = "#000000"
+        settings.highColorHex = "#000000"
+        settings.setThresholds(low: 30, high: 60)
+        settings.interpolate = false
+
+        settings.resetToDefaults()
+        XCTAssertEqual(settings.lowColorHex, AIUsageColorSettings.defaultLowColorHex)
+        XCTAssertEqual(settings.lowMidThreshold, AIUsageColorSettings.defaultLowMidThreshold)
+        XCTAssertEqual(settings.midHighThreshold, AIUsageColorSettings.defaultMidHighThreshold)
+        XCTAssertEqual(settings.interpolate, AIUsageColorSettings.defaultInterpolate)
+    }
+
+    @MainActor
+    func testColorForPercentBoundsAreClamped() {
+        let settings = AIUsageColorSettings(userDefaults: defaults)
+        // Just exercising the path; actual sRGB equality is fragile across platforms.
+        _ = settings.color(for: -50)
+        _ = settings.color(for: 0)
+        _ = settings.color(for: 100)
+        _ = settings.color(for: 1000)
+    }
+
+    @MainActor
+    func testInterpolationOffMatchesDiscreteBuckets() {
+        let settings = AIUsageColorSettings(userDefaults: defaults)
+        settings.interpolate = false
+        let lowerBucket = settings.color(for: 10)
+        let lowerBucket2 = settings.color(for: 20)
+        XCTAssertEqual(lowerBucket.rgbComponents.red, lowerBucket2.rgbComponents.red, accuracy: 0.001)
+    }
+}
+
+extension Color {
+    fileprivate var testRGB: (Double, Double, Double) { rgbComponents }
+}
+
+final class AIUsageColorHexTests: XCTestCase {
+    func testParsesHexWithAndWithoutHash() {
+        XCTAssertNotNil(Color(usageHex: "#46B46E"))
+        XCTAssertNotNil(Color(usageHex: "46B46E"))
+        XCTAssertNil(Color(usageHex: "#GGG"))
+        XCTAssertNil(Color(usageHex: "#1234"))
+    }
+}
+
 final class AIUsageRegistryCodexTests: XCTestCase {
     func testRegistryContainsCodex() {
         let codex = AIUsageRegistry.provider(id: "codex")

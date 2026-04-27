@@ -102,15 +102,12 @@ final class AIUsageAccountStore: ObservableObject {
         let existing = accounts[index]
         let service = existing.keychainService ?? keychainServiceResolver(existing.providerId)
 
+        try await AIUsageKeychain.delete(for: id, service: service)
+
         var next = accounts
         next.remove(at: index)
         try persist(next)
         accounts = next
-
-        // Persist succeeded; if the Keychain delete fails the next prune
-        // cycle removes the now-orphaned in-memory entry rather than leaving
-        // the user with a stale row whose credential is already gone.
-        try? await AIUsageKeychain.delete(for: id, service: service)
     }
 
     func secret(for id: UUID) async throws -> AIUsageSecret {

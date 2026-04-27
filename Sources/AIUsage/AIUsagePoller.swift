@@ -142,6 +142,7 @@ final class AIUsagePoller: ObservableObject {
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             await self.runTick(force: force, generation: generation)
+            guard self.taskGeneration == generation else { return }
             self.inFlightTask = nil
             if self.hasPendingTick {
                 self.hasPendingTick = false

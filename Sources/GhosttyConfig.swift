@@ -346,7 +346,8 @@ struct GhosttyConfig {
                 return result
             }
         }
-        return Int(s)
+        guard let n = Int(s), n >= 0 else { return nil }
+        return n
     }
 
     mutating func loadTheme(_ name: String) {

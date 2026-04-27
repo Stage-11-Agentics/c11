@@ -817,6 +817,13 @@ final class WorkspaceAppearanceConfigResolutionTests: XCTestCase {
         XCTAssertEqual(config.scrollbackLimit, defaultLimit, "Negative value should leave scrollback limit unchanged")
     }
 
+    func testScrollbackLimitRejectsPlainNegative() {
+        var config = GhosttyConfig()
+        let defaultLimit = config.scrollbackLimit
+        config.parse("scrollback-limit = -1")
+        XCTAssertEqual(config.scrollbackLimit, defaultLimit, "Plain negative value should leave scrollback limit unchanged")
+    }
+
     func testScrollbackLimitRejectsNearMaxOverflow() {
         var config = GhosttyConfig()
         let defaultLimit = config.scrollbackLimit

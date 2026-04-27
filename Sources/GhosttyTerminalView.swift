@@ -97,11 +97,17 @@ private enum GhosttyPasteboardHelper {
                 .joined(separator: " ")
         }
 
-        if let value = pasteboard.string(forType: .string) {
+        // Prefer the explicit UTF-8 plain-text type when available. On modern
+        // macOS `.string` is aliased to `public.utf8-plain-text`, but legacy
+        // pasteboard producers (or apps writing both types) can leave a
+        // Latin-1/ASCII-truncated `.string` value alongside a clean UTF-8
+        // entry; reading UTF-8 first preserves bytes >= 0x80 (Hangul,
+        // Cyrillic, Qt-emitted non-ASCII). See cmux#3069 / #2756 / #2891.
+        if let value = pasteboard.string(forType: utf8PlainTextType) {
             return value
         }
 
-        if let value = pasteboard.string(forType: utf8PlainTextType) {
+        if let value = pasteboard.string(forType: .string) {
             return value
         }
 

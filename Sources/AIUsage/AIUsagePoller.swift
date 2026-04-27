@@ -129,6 +129,7 @@ final class AIUsagePoller: ObservableObject {
 
     private func scheduleTick(force: Bool) {
         if !force, !visibilityProvider() {
+            isRefreshing = false
             return
         }
         if inFlightTask != nil {
@@ -232,6 +233,7 @@ final class AIUsagePoller: ObservableObject {
                     if generation != taskGeneration { return }
                     statusLoaded[provider.id] = true
                     statusFetchFailed[provider.id] = true
+                    incidents[provider.id] = nil
                 }
             }
         }

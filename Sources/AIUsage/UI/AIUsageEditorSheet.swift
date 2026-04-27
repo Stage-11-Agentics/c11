@@ -20,6 +20,7 @@ struct AIUsageEditorSheet: View {
     @ObservedObject private var store = AIUsageAccountStore.shared
     @State private var displayName: String = ""
     @State private var values: [String: String] = [:]
+    @State private var touchedFields: Set<String> = []
     @State private var isLoadingExisting: Bool = false
     @State private var isSaving: Bool = false
     @State private var errorMessage: String?
@@ -106,7 +107,7 @@ struct AIUsageEditorSheet: View {
     private func bindingFor(_ field: AIUsageCredentialField) -> Binding<String> {
         Binding(
             get: { values[field.id] ?? "" },
-            set: { values[field.id] = $0 }
+            set: { touchedFields.insert(field.id); values[field.id] = $0 }
         )
     }
 
@@ -134,10 +135,8 @@ struct AIUsageEditorSheet: View {
         defer { isLoadingExisting = false }
         do {
             let secret = try await store.secret(for: account.id)
-            // Only fill blanks; never clobber user keystrokes that may have
-            // landed before the async load completed.
             for (key, value) in secret.fields {
-                if (values[key] ?? "").isEmpty {
+                if (values[key] ?? "").isEmpty && !touchedFields.contains(key) {
                     values[key] = value
                 }
             }

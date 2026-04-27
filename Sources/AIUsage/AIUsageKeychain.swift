@@ -122,7 +122,7 @@ enum AIUsageKeychain {
         case errSecSuccess:
             return
         case errSecItemNotFound:
-            throw AIUsageStoreError.notFound
+            try writeAdd(payload: payload, accountId: accountId, service: service)
         default:
             throw AIUsageStoreError.keychain(status)
         }

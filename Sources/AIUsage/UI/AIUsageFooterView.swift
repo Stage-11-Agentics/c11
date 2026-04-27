@@ -67,21 +67,36 @@ struct AIUsageFooterView: View {
                 .font(.system(size: 10, weight: .medium))
                 .foregroundColor(.secondary)
                 .frame(width: 44, alignment: .leading)
-            GeometryReader { geo in
-                let width = max(0, geo.size.width)
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.secondary.opacity(0.18))
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(colorSettings.color(for: window.utilization))
-                        .frame(width: width * CGFloat(window.utilization) / 100.0)
+
+            if window.utilization == 0 && window.costUSD > 0 {
+                Text(String(format: "$%.2f", window.costUSD))
+                    .font(.system(size: 10, weight: .regular).monospacedDigit())
+                    .foregroundColor(.secondary)
+            } else {
+                GeometryReader { geo in
+                    let width = max(0, geo.size.width)
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.secondary.opacity(0.18))
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(colorSettings.color(for: window.utilization))
+                            .frame(width: width * CGFloat(window.utilization) / 100.0)
+                    }
+                }
+                .frame(height: 6)
+                HStack(spacing: 4) {
+                    Text("\(window.utilization)%")
+                        .font(.system(size: 10, weight: .regular).monospacedDigit())
+                        .foregroundColor(.secondary)
+                        .frame(width: 32, alignment: .trailing)
+                    if window.costUSD > 0 {
+                        Text(String(format: "$%.2f", window.costUSD))
+                            .font(.system(size: 9, weight: .regular).monospacedDigit())
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
-            .frame(height: 6)
-            Text("\(window.utilization)%")
-                .font(.system(size: 10, weight: .regular).monospacedDigit())
-                .foregroundColor(.secondary)
-                .frame(width: 32, alignment: .trailing)
+
             if let resetText = AIUsageFooterView.resetCountdownText(window: window, isSession: isSession) {
                 Text(resetText)
                     .font(.system(size: 9, weight: .regular))

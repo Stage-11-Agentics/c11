@@ -21,9 +21,12 @@ struct AIUsageEditorSheet: View {
     @State private var displayName: String = ""
     @State private var values: [String: String] = [:]
     @State private var touchedFields: Set<String> = []
+    @State private var sessionTokenLimitText: String = ""
     @State private var isLoadingExisting: Bool = false
     @State private var isSaving: Bool = false
     @State private var errorMessage: String?
+
+    private var isLocalProvider: Bool { provider.credentialFields.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -47,8 +50,28 @@ struct AIUsageEditorSheet: View {
                     .disabled(isLoadingExisting || isSaving)
             }
 
-            ForEach(provider.credentialFields) { field in
-                fieldEditor(for: field)
+            if isLocalProvider {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(String(
+                        localized: "aiusage.editor.sessionTokenLimit",
+                        defaultValue: "Session token limit (optional)"
+                    ))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.secondary)
+                    TextField("e.g. 140000", text: $sessionTokenLimitText)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(isLoadingExisting || isSaving)
+                    Text(String(
+                        localized: "aiusage.editor.sessionTokenLimit.help",
+                        defaultValue: "Set to show a utilization bar. Leave blank to show cost only."
+                    ))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                }
+            } else {
+                ForEach(provider.credentialFields) { field in
+                    fieldEditor(for: field)
+                }
             }
 
             if let errorMessage {
@@ -115,6 +138,7 @@ struct AIUsageEditorSheet: View {
         guard !displayName.trimmingCharacters(in: .whitespaces).isEmpty else {
             return false
         }
+        if isLocalProvider { return true }
         for field in provider.credentialFields {
             let value = (values[field.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if field.isSecret && value.isEmpty { return false }
@@ -131,6 +155,12 @@ struct AIUsageEditorSheet: View {
     private func loadExistingIfNeeded() async {
         guard let account = editingAccount else { return }
         displayName = account.displayName
+        if isLocalProvider {
+            if account.sessionTokenLimit > 0 {
+                sessionTokenLimitText = "\(account.sessionTokenLimit)"
+            }
+            return
+        }
         isLoadingExisting = true
         defer { isLoadingExisting = false }
         do {
@@ -156,16 +186,26 @@ struct AIUsageEditorSheet: View {
     @MainActor
     private func save() async {
         let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let fields = values.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        let secret = AIUsageSecret(fields: fields)
 
         isSaving = true
         defer { isSaving = false }
+
         do {
-            if let account = editingAccount {
-                try await store.update(id: account.id, displayName: trimmedName, secret: secret)
+            if isLocalProvider {
+                let limit = Int(sessionTokenLimitText.trimmingCharacters(in: .whitespaces)) ?? 0
+                if let account = editingAccount {
+                    try store.updateLocalAccount(id: account.id, displayName: trimmedName, sessionTokenLimit: limit)
+                } else {
+                    try store.addLocalAccount(providerId: provider.id, displayName: trimmedName, sessionTokenLimit: limit)
+                }
             } else {
-                try await store.add(providerId: provider.id, displayName: trimmedName, secret: secret)
+                let fields = values.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                let secret = AIUsageSecret(fields: fields)
+                if let account = editingAccount {
+                    try await store.update(id: account.id, displayName: trimmedName, secret: secret)
+                } else {
+                    try await store.add(providerId: provider.id, displayName: trimmedName, secret: secret)
+                }
             }
             AIUsagePoller.shared.refreshNow()
             onClose()

@@ -35,22 +35,30 @@ existing one, refresh now, or open the upstream status page.
 
 ## Claude
 
+Claude usage is read automatically from Claude Code's local activity
+log (`~/.claude/projects/`). No credentials are required and no
+network call is made to fetch usage data.
+
+c11 registers a Claude account automatically on first launch if the
+local log directory exists.
+
 ### Add a Claude account
 
-1. Open `https://claude.ai` in a browser and sign in.
-2. Open DevTools, go to the **Application** panel, and grab the
-   `sessionKey` cookie value (it starts with `sk-ant-sid01-`). You can
-   paste the full `sessionKey=...` segment, c11 will strip the prefix.
-3. Make any request on `claude.ai` and find the organization id in
-   the request URL: `claude.ai/api/organizations/<orgId>/...`. The id
-   is a UUID.
-4. In c11, open Settings → Agents & Automation → AI Usage Monitoring.
-5. Click "Add account", pick **Claude**, give the account a name
-   ("Personal", "Work"), paste the session key, paste the org id, and
-   save.
+1. In c11, open Settings → Agents & Automation → AI Usage Monitoring.
+2. Click "Add account" and pick **Claude**.
+3. Give the account a name ("Personal", "Work") and optionally set a
+   session token limit (e.g. `140000`).
+4. Save.
 
-If you see "Sign-in expired (status 401)", repeat step 2 to get a
-fresh session key.
+When a session token limit is set, the sidebar shows a utilization
+bar. Without a limit, c11 displays session and week costs in dollars
+instead.
+
+### Session token limit
+
+If you know your Claude plan's 5-hour session cap (visible in your
+subscription settings), enter it here to see a utilization bar instead
+of the cost-only view. Leave blank to always show cost.
 
 ## Codex
 

@@ -57266,6 +57266,28 @@
           }
         }
       }
+    },
+    "aiusage.editor.sessionTokenLimit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Session token limit (optional)"
+          }
+        }
+      }
+    },
+    "aiusage.editor.sessionTokenLimit.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Set to show a utilization bar. Leave blank to show cost only."
+          }
+        }
+      }
     }
   }
 }

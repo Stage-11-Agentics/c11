@@ -10,10 +10,12 @@ User-opted. With no accounts configured, none of these calls are made.
 
 | Host | Path | Why | Frequency |
 |------|------|-----|-----------|
-| `claude.ai` | `/api/organizations/<orgId>/usage` | Claude session/week utilization | per Claude account every 60s while window is visible |
 | `chatgpt.com` | `/backend-api/wham/usage` | Codex session/week utilization | per Codex account every 60s while window is visible |
 | `status.claude.com` | `/api/v2/incidents.json` | Claude.ai status banner | every 5th tick (~5 min) when any Claude account exists |
 | `status.openai.com` | `/api/v2/incidents.json` | Codex status banner | every 5th tick (~5 min) when any Codex account exists |
+
+Claude usage data is read locally from `~/.claude/projects/` — no
+network call is made for Claude usage.
 
 Hard guarantees:
 

@@ -11086,7 +11086,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if hasEventChars,
            flags.contains(.command),
            !flags.contains(.control),
-           shouldRequireCharacterMatchForCommandShortcut(shortcutKey: shortcutKey) {
+           shortcutKey.count == 1,
+           let scalar = shortcutKey.unicodeScalars.first,
+           CharacterSet.letters.contains(scalar) {
             return false
         }
 
@@ -11107,6 +11109,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // only fall back to ANSI keyCodes when neither AppKit nor the active layout produced a
         // usable character: otherwise the physical-key match clobbers a working character match
         // on layouts where punctuation is remapped (e.g. JIS Cmd+Shift+[ misrouting to ]).
+        //
+        // Tradeoff: ANSI fallback is now gated on both event-character and layout-character
+        // lookup failing. This fixes JIS Cmd+Shift+[ clobbering prevSurface (cmux#3061) but
+        // means Cmd+punct on layouts where AppKit returns a non-matching character (e.g.
+        // AZERTY Cmd+1 produces '&') will not fire the shortcut. Users on those layouts
+        // should rebind via the keyboard shortcut settings. Validate manually on US, JIS,
+        // AZERTY, and Dvorak before merge.
         let allowANSIKeyCodeFallback = flags.contains(.control)
             || (flags.contains(.command)
                 && !flags.contains(.control)
@@ -11116,13 +11125,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return event.keyCode == expectedKeyCode
         }
         return false
-    }
-
-    private func shouldRequireCharacterMatchForCommandShortcut(shortcutKey: String) -> Bool {
-        guard shortcutKey.count == 1, let scalar = shortcutKey.unicodeScalars.first else {
-            return false
-        }
-        return CharacterSet.letters.contains(scalar)
     }
 
     private func shortcutCharacterMatches(

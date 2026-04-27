@@ -103,7 +103,11 @@ private enum GhosttyPasteboardHelper {
         // Latin-1/ASCII-truncated `.string` value alongside a clean UTF-8
         // entry; reading UTF-8 first preserves bytes >= 0x80 (Hangul,
         // Cyrillic, Qt-emitted non-ASCII). See cmux#3069 / #2756 / #2891.
-        if let value = pasteboard.string(forType: utf8PlainTextType) {
+        //
+        // Skip an empty UTF-8 entry so a pathological producer that registers
+        // utf8PlainTextType with an empty value but populates `.string`
+        // doesn't cause us to return empty.
+        if let value = pasteboard.string(forType: utf8PlainTextType), !value.isEmpty {
             return value
         }
 
@@ -4864,8 +4868,9 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     // can compute press/release deltas. AppKit fires flagsChanged on every
     // modifier transition without telling us whether the bit was set or
     // cleared; diffing against this snapshot is how we know which to send.
-    // Stack value (NSEvent.ModifierFlags is OptionSet) so this stays
-    // allocation-free in the typing-latency hot path.
+    // OptionSet operations on NSEvent.ModifierFlags are allocation-free, so
+    // updating and diffing this snapshot stays cheap on the typing-latency
+    // hot path.
     private var lastModifierFlags: NSEvent.ModifierFlags = []
     private struct SelectionSnapshot {
         let range: NSRange
@@ -5223,6 +5228,10 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             keyEvent.action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
             keyEvent.keycode = UInt32(event.keyCode)
             keyEvent.mods = modsFromEvent(event)
+            // consumed_mods intentionally NONE: Delete has no glyph form, so
+            // macos-option-as-alt doesn't apply. Copying this pattern to a
+            // glyph keycode would silently break option-as-alt; route those
+            // through ghostty_surface_key_translation_mods instead.
             keyEvent.consumed_mods = GHOSTTY_MODS_NONE
             keyEvent.composing = false
             keyEvent.unshifted_codepoint = unshiftedCodepointFromEvent(event)
@@ -5561,13 +5570,13 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         // Option releases (cmux#1153) and breaks IME composition flows where
         // Shift/Cmd are tapped during preedit (cmux#2949).
         //
-        // Diff against the previous snapshot (stack value, allocation-free
-        // since NSEvent.ModifierFlags is OptionSet) and emit the appropriate
-        // action. New bits = PRESS, cleared bits = RELEASE. When the
-        // aggregate diff is empty (e.g. holding left Option, then pressing
-        // and releasing right Option -- the .option bit stays set both
-        // times), disambiguate via the side-specific NX device mask in the
-        // raw modifier flags. Mirrors Ghostty's upstream AppKit handler.
+        // Diff against the previous snapshot (allocation-free OptionSet
+        // operations) and emit the appropriate action. New bits = PRESS,
+        // cleared bits = RELEASE. When the aggregate diff is empty (e.g.
+        // holding left Option, then pressing and releasing right Option --
+        // the .option bit stays set both times), disambiguate via the
+        // side-specific NX device mask in the raw modifier flags. Mirrors
+        // Ghostty's upstream AppKit handler.
         let newFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let oldFlags = lastModifierFlags
         lastModifierFlags = newFlags
@@ -5592,10 +5601,11 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             let sideHeld = (event.modifierFlags.rawValue & sideMask) != 0
             keyEvent.action = sideHeld ? GHOSTTY_ACTION_PRESS : GHOSTTY_ACTION_RELEASE
         } else {
-            // No deviceIndependent bit toggled and the event's keyCode isn't
-            // a recognized modifier. Reachable for mask-stripped bits (e.g.
-            // numericPad, function) and synthetic events. Preserve the prior
-            // unconditional PRESS for backwards compat.
+            // No recognized modifier bit changed. Covers numericPad/function
+            // flags stripped by deviceIndependentFlagsMask and synthetic
+            // events from accessibility. Default to PRESS for backwards
+            // compatibility: these transitions are rare and Ghostty ignores
+            // unknown keycodes gracefully.
             keyEvent.action = GHOSTTY_ACTION_PRESS
         }
 

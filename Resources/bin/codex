@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# c11 codex wrapper - session-resume capture for codex.
+#
+# When running inside a c11 terminal (CMUX_SURFACE_ID set + socket live),
+# this wrapper marks the surface as terminal_type=codex so that the c11
+# session-restore path types `codex resume --last\n` into this terminal
+# on next c11 launch. Outside c11 (or when the socket is unreachable),
+# it passes through to the real codex binary unchanged.
+#
+# Why no session-id capture (unlike Claude Code's wrapper)?
+#
+#   codex 0.124.0 has no `--session-id <id>` flag for forcing a UUID at
+#   start of a new session — codex generates its own. We can't pre-write
+#   `codex.session_id` to metadata before exec the way the claude wrapper
+#   does. Instead we rely on codex's built-in default behaviour: `codex
+#   resume` filters by current working directory unless `--all` is passed,
+#   and `--last` picks the most recent matching session. Combined with c11
+#   restoring each panel's cwd, `codex resume --last` ends up resuming the
+#   right session per panel as long as panels have distinct cwds. The
+#   degenerate case (two codex panels sharing one cwd) resolves to
+#   most-recent — acceptable best-effort.
+#
+# See `Resources/bin/claude` for the reference implementation of the
+# session-resume wrapper pattern and the four constraints all wrappers
+# must honour.
+
+set -uo pipefail
+
+# Find the real codex binary, skipping our own directory.
+find_real_codex() {
+    local self_dir
+    self_dir="$(cd "$(dirname "$0")" && pwd)"
+    local IFS=:
+    for d in $PATH; do
+        [[ "$d" == "$self_dir" ]] && continue
+        [[ -x "$d/codex" ]] && printf '%s' "$d/codex" && return 0
+    done
+    return 1
+}
+
+# Return 0 only when CMUX_SOCKET_PATH points to a live c11 socket.
+c11_socket_available() {
+    local socket="${CMUX_SOCKET_PATH:-}"
+    [[ -n "$socket" && -S "$socket" ]] || return 1
+
+    local self_dir c11_bin
+    self_dir="$(cd "$(dirname "$0")" && pwd)"
+    c11_bin="$self_dir/c11"
+    [[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
+    [[ -n "$c11_bin" ]] || return 1
+
+    # Bounded check so codex startup isn't blocked behind the CLI default
+    # timeout (15s) when the socket is stale or hung.
+    CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+        "$c11_bin" --socket "$socket" ping >/dev/null 2>&1
+}
+
+# Pass through if not in a c11 terminal, hooks are disabled, or the
+# socket is unavailable.
+IN_C11=0
+if [[ -n "${CMUX_SURFACE_ID:-}" ]]; then
+    IN_C11=1
+fi
+
+if [[ "$IN_C11" == "0" || "${CMUX_CODEX_HOOKS_DISABLED:-}" == "1" ]] || ! c11_socket_available; then
+    REAL_CODEX="$(find_real_codex)" || { echo "Error: codex not found in PATH" >&2; exit 127; }
+    exec "$REAL_CODEX" "$@"
+fi
+
+REAL_CODEX="$(find_real_codex)" || { echo "Error: codex not found in PATH" >&2; exit 127; }
+
+# Pass through subcommands that aren't interactive sessions. `exec`,
+# `review`, `login`, `logout`, `mcp`, `completion`, `apply`, `sandbox`,
+# `debug`, `cloud`, `features`, `mcp-server`, `app-server`, `app`,
+# `exec-server`, `plugin`, `help`, and `--help`/`-h`/`-V` are all
+# non-interactive or auxiliary; they should not flip the surface's
+# terminal_type to "codex" (would lie — the surface isn't an interactive
+# codex session).
+case "${1:-}" in
+    exec|review|login|logout|mcp|mcp-server|app-server|app|completion|sandbox|debug|apply|cloud|exec-server|features|plugin|help|--help|-h|--version|-V|-VV)
+        exec "$REAL_CODEX" "$@"
+        ;;
+esac
+
+# Resolve the c11 binary (bundle-relative first, fall back to PATH so a
+# misconfigured bundle still works in dev builds).
+self_dir="$(cd "$(dirname "$0")" && pwd)"
+c11_bin="$self_dir/c11"
+[[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
+
+# Best-effort surface-metadata write: mark this surface as a codex
+# terminal so the c11 session-restore registry knows to send
+# `codex resume --last\n` into it on the next launch.
+#
+# Run in the background so codex startup latency is unaffected;
+# `disown` so a stale write can't keep the wrapper process alive after
+# `exec` (which is moot since exec replaces this process anyway, but
+# defensive).
+if [[ -n "$c11_bin" ]]; then
+    (
+        CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+            "$c11_bin" --socket "${CMUX_SOCKET_PATH}" set-agent --type codex \
+            >/dev/null 2>&1
+    ) &
+    disown 2>/dev/null || true
+fi
+
+exec "$REAL_CODEX" "$@"

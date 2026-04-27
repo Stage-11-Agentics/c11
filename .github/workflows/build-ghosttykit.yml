@@ -44,7 +44,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="xcframework-${{ steps.ghostty-sha.outputs.sha }}"
-          if gh release view "$TAG" --repo manaflow-ai/ghostty >/dev/null 2>&1; then
+          if gh release view "$TAG" --repo Stage-11-Agentics/ghostty >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "Release $TAG already exists, skipping build"
           else
@@ -111,8 +111,28 @@ jobs:
           set -euo pipefail
           TAG="xcframework-${{ steps.ghostty-sha.outputs.sha }}"
           gh release create "$TAG" \
-            --repo manaflow-ai/ghostty \
+            --repo Stage-11-Agentics/ghostty \
             --title "GhosttyKit xcframework (${{ steps.ghostty-sha.outputs.sha }})" \
             --notes "Pre-built GhosttyKit.xcframework for commit ${{ steps.ghostty-sha.outputs.sha }}" \
             GhosttyKit.xcframework.tar.gz
           echo "Published release $TAG"
+
+      - name: Pin checksum in ghosttykit-checksums.txt
+        if: steps.check-release.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SHA="${{ steps.ghostty-sha.outputs.sha }}"
+          CHECKSUM="$(shasum -a 256 GhosttyKit.xcframework.tar.gz | awk '{print $1}')"
+          CHECKSUMS_FILE="scripts/ghosttykit-checksums.txt"
+          if grep -q "^$SHA " "$CHECKSUMS_FILE"; then
+            echo "Checksum for $SHA already present, skipping"
+            exit 0
+          fi
+          echo "$SHA $CHECKSUM" >> "$CHECKSUMS_FILE"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$CHECKSUMS_FILE"
+          git commit -m "ci: pin GhosttyKit checksum for ghostty $SHA"
+          git push

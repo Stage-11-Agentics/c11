@@ -25,6 +25,8 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: macos-15
     timeout-minutes: 45
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -44,7 +46,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="xcframework-${{ steps.ghostty-sha.outputs.sha }}"
-          if gh release view "$TAG" --repo Stage-11-Agentics/ghostty >/dev/null 2>&1; then
+          if gh release view "$TAG" --repo Stage-11-Agentics/c11 >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "Release $TAG already exists, skipping build"
           else
@@ -106,12 +108,12 @@ jobs:
       - name: Upload xcframework release
         if: steps.check-release.outputs.exists == 'false'
         env:
-          GH_TOKEN: ${{ secrets.GHOSTTY_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           TAG="xcframework-${{ steps.ghostty-sha.outputs.sha }}"
           gh release create "$TAG" \
-            --repo Stage-11-Agentics/ghostty \
+            --repo Stage-11-Agentics/c11 \
             --title "GhosttyKit xcframework (${{ steps.ghostty-sha.outputs.sha }})" \
             --notes "Pre-built GhosttyKit.xcframework for commit ${{ steps.ghostty-sha.outputs.sha }}" \
             GhosttyKit.xcframework.tar.gz

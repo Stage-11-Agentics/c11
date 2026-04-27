@@ -6437,7 +6437,9 @@ class TerminalController {
             let sendStart = ProcessInfo.processInfo.systemUptime
             #endif
             let queued: Bool
-            if let surface = terminalPanel.surface.surface {
+            let surface = terminalPanel.surface.surface
+                ?? waitForTerminalSurface(terminalPanel, waitUpTo: 2.0)
+            if let surface {
                 sendSocketText(text, surface: surface)
                 // Ensure we present a new frame after injecting input so snapshot-based tests (and
                 // socket-driven agents) can observe the updated terminal without requiring a focus
@@ -6445,9 +6447,9 @@ class TerminalController {
                 terminalPanel.surface.forceRefresh(reason: "terminalController.v2SurfaceSendText")
                 queued = false
             } else {
-                // Avoid blocking the main actor waiting for view/surface attachment.
+                // Surface not available within 2s (e.g., terminal not yet attached to any window).
+                // Fall back to the pending queue as a last resort.
                 terminalPanel.sendText(text)
-                terminalPanel.surface.requestBackgroundSurfaceStartIfNeeded()
                 queued = true
             }
 #if DEBUG

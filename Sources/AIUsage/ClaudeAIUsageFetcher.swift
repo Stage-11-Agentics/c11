@@ -72,6 +72,8 @@ enum ClaudeAIUsageFetcher {
             throw ClaudeAIUsageFetchError.invalidSessionKey
         }
 
+        // urlPathAllowed includes '/' and '.'; ClaudeAIValidators.isValidOrgId
+        // rejects both, so path traversal would require Keychain write access.
         guard let escaped = orgIdRaw.addingPercentEncoding(
             withAllowedCharacters: .urlPathAllowed
         ),

@@ -6,7 +6,7 @@ enum AIUsageRegistry {
     /// (`Providers.claude`, `Providers.codex`, future stubs).
     static var all: [AIUsageProvider] { [Providers.claude, Providers.codex] }
 
-    /// Providers with at least one credential field — usable in the UI.
+    /// Providers with at least one credential field, usable in the UI.
     static var ui: [AIUsageProvider] {
         all.filter { !$0.credentialFields.isEmpty }
     }

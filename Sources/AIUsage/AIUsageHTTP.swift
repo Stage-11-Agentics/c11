@@ -20,6 +20,9 @@ enum AIUsageHTTP {
     }
 
     static func sanitizeHeaderValue(_ value: String) -> String {
+        // Strips ';' and ',' which are safe for claude.ai session keys and
+        // Codex JWTs; a future token type with legitimate separators must
+        // add a provider-specific sanitizer.
         var out = String()
         out.reserveCapacity(value.count)
         for scalar in value.unicodeScalars {

@@ -121,18 +121,22 @@ jobs:
           echo "Published release $TAG"
 
       - name: Pin checksum in ghosttykit-checksums.txt
-        if: steps.check-release.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           SHA="${{ steps.ghostty-sha.outputs.sha }}"
-          CHECKSUM="$(shasum -a 256 GhosttyKit.xcframework.tar.gz | awk '{print $1}')"
           CHECKSUMS_FILE="scripts/ghosttykit-checksums.txt"
           if grep -q "^$SHA " "$CHECKSUMS_FILE"; then
             echo "Checksum for $SHA already present, skipping"
             exit 0
           fi
+          TAG="xcframework-$SHA"
+          ARCHIVE="GhosttyKit.xcframework.tar.gz"
+          if [ ! -f "$ARCHIVE" ]; then
+            gh release download "$TAG" --repo Stage-11-Agentics/c11 --pattern "$ARCHIVE"
+          fi
+          CHECKSUM="$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')"
           echo "$SHA $CHECKSUM" >> "$CHECKSUMS_FILE"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

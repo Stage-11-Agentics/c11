@@ -1,39 +1,47 @@
 #!/usr/bin/env bash
-# cmux claude wrapper - injects hooks and session tracking
+# c11 claude wrapper - reference implementation of the session-resume wrapper pattern.
 #
-# When running inside a cmux terminal (CMUX_SURFACE_ID is set), this wrapper
-# intercepts `claude` invocations to inject --session-id and --settings flags
-# so that Claude Code hooks fire back into cmux for notifications/status.
-# Outside cmux, it passes through to the real claude binary unchanged.
+# When running inside a c11 terminal (CMUX_SURFACE_ID is set + socket live),
+# this wrapper intercepts `claude` invocations to inject --session-id and
+# --settings flags so that Claude Code hooks fire back into c11 for
+# session-resume capture and lifecycle status. Outside c11 (or when the
+# socket is unreachable), it passes through to the real claude binary
+# unchanged.
 #
-# === GRANDFATHERED cc-SPECIFIC EXCEPTION — DO NOT GENERALIZE ==================
-# This wrapper is the ONE runtime shim c11mux ships for a third-party TUI.
-# It exists because cc was the first agent we integrated with and the wrapper
-# predates the unopinionated-host principle below.
+# === SESSION-RESUME WRAPPER PATTERN (REFERENCE IMPLEMENTATION) ================
+# c11's principle is: host and primitive, not configurator. c11 does not
+# reach into tenant config files (~/.claude/settings.json, ~/.codex/*,
+# ~/.kimi/*, shell rc files, etc.) or persist behavior outside its own
+# runtime. The one narrow exception: PATH-scoped wrappers like this one
+# that capture the minimum lifecycle signal needed for session resume
+# across c11 reboots.
 #
-# Principle: c11mux is host and primitive, not configurator. It provides
-# surfaces, panes, a socket, a CLI, and a metadata seam — all scoped to
-# c11mux's own runtime. It does NOT reach outside that boundary to install
-# hooks, write to tenant config files (~/.claude/settings.json, ~/.codex/*,
-# ~/.kimi/*, shell rc files, etc.), or inject behavior into any other TUI's
-# launch path. The one outgoing touch is the cmux skill file, which agents
-# opt into by reading it.
+# Constraints all session-resume wrappers must honour:
 #
-# Consequence for cc: this wrapper is allowed to stay. It only shapes cc's
-# runtime behavior (PATH-scoped, no persistent writes anywhere), and cc
-# agents that ignore the skill still emit useful sidebar status via the
-# hooks this wrapper installs.
+#   1. Live in c11's bundle (Resources/bin/<tool>) and prepend onto PATH
+#      ONLY inside c11 terminals — gated on CMUX_SURFACE_ID and a live
+#      c11 socket. Pass through to the real binary outside.
+#   2. Make NO persistent writes to tenant config, dotfiles, or any path
+#      outside c11's runtime. /tmp is fine; ~/.claude/, ~/.codex/, etc.
+#      are not.
+#   3. Capture only the minimum needed: typically session id + terminal_type,
+#      plus lifecycle status where the TUI exposes it (claude does via
+#      hooks; codex does not — its wrapper relies on cwd-filter at restore
+#      time instead).
+#   4. Pass through to the real binary unchanged when outside a c11
+#      terminal or when the socket is unreachable. Failures are
+#      best-effort: claude must still launch even when the socket is dead.
 #
-# Consequence for other TUIs (codex, kimi, opencode, etc.): do NOT build
-# equivalent wrappers. They get the skill file and the socket API, period.
-# Agents self-report status via `cmux set-metadata --key status --value ...`
-# from their own lifecycle, following instructions in the skill. If an
-# agent isn't taught to self-report, it won't — that's expected and
-# correct under the principle.
+# Skill-driven self-reporting (`c11 set-metadata` / `c11 set-status` from
+# the agent's own lifecycle, per the c11 skill) remains the standard for
+# *runtime* telemetry. Wrappers handle only the resume-capture rail that
+# the skill cannot, because they have to run *before* the agent process
+# exists.
 #
-# Consequence for `cmux install <tui>`: rejected. c11mux does not write to
-# tenants' config files, not even with consent. See CLAUDE.md for the full
-# principle writeup.
+# `c11 install <tui>` (writing to tenant config) remains rejected. The
+# wrapper pattern is the upper bound on what c11 reaches for. See
+# CLAUDE.md "Principle: unopinionated about the terminal" for the full
+# writeup.
 # ============================================================================
 
 # Find the real claude binary, skipping our own directory.

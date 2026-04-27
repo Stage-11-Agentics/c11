@@ -38,16 +38,24 @@ c11's value to an agent is **the skill** — `skills/c11/SKILL.md` plus the peer
 
 ## Principle: unopinionated about the terminal
 
-c11 is **host and primitive, not configurator.** It provides surfaces, panes, a socket, a CLI, and a metadata seam — all scoped to c11's own runtime. It does not reach outside that boundary to install hooks, write to tenant config files (`~/.claude/settings.json`, `~/.codex/*`, `~/.kimi/*`, shell rc files, etc.), or inject behavior into any other TUI's launch path. The one outgoing touch is the c11 skill file, which agents opt into by reading it.
+c11 is **host and primitive, not configurator.** It provides surfaces, panes, a socket, a CLI, and a metadata seam — all scoped to c11's own runtime. The operator's tenant config files (`~/.claude/settings.json`, `~/.codex/*`, `~/.kimi/*`, shell rc files, etc.) are off-limits: c11 never reaches in to install hooks, persist configuration, or inject behavior into any TUI's on-disk state.
+
+**One narrow exception: session-resume wrappers under `Resources/bin/`.** When a TUI's lifecycle is otherwise opaque to c11, c11 may ship a PATH-scoped wrapper that captures the minimum lifecycle signal needed for *session resume* across c11 reboots. The wrapper must:
+
+- Live in c11's own bundle, prepended to PATH **only inside c11 terminals** (gated on `CMUX_SURFACE_ID` + a live socket).
+- Make **no persistent writes** to tenant config, dotfiles, or any path outside c11's own runtime (`/tmp` is fine; `~/.claude/`, `~/.codex/`, etc. are not).
+- Capture only the minimum needed for session resume — usually a session id and `terminal_type`, plus lifecycle status where the TUI exposes it (Claude Code does via hooks; codex does not).
+- Fall through to the real binary unchanged when outside a c11 terminal or when the c11 socket is unreachable.
+
+`Resources/bin/claude` is the reference implementation. New TUIs (codex, opencode, kimi, …) may add equivalent wrappers under the same constraints.
 
 Consequences:
 
-- **`c11 install <tui>` is rejected.** Any proposal that writes to a user's persistent tool config is a non-starter, even with consent prompts and markers. The 691-line spec at `docs/c11mux-module-4-integration-installers-spec.md` exists as a historical artifact only — do not revive it.
-- **`Resources/bin/claude` is a grandfathered cc-specific exception**, not a pattern to extend. PATH-scoped, no persistent writes anywhere. The wrapper's header carries a `DO NOT GENERALIZE` note. Do not build equivalent wrappers for codex, kimi, opencode, or any future TUI.
-- **Skill-driven self-reporting is the standard pattern** for every agent except cc. Agents that read the c11 skill learn to call `c11 set-metadata` / `c11 set-status` from their own lifecycle. The `cmux` CLI is a compat alias that dispatches to the same binary. Agents that ignore the skill don't emit — that's the expected and correct outcome under the principle.
-- **The skill file is the only outgoing touch.** How it reaches each TUI (cc's `~/.claude/skills/`, codex's equivalent, etc.) is the operator's problem, not c11's.
+- **`c11 install <tui>` remains rejected.** Any proposal that writes to a user's persistent tool config is a non-starter, even with consent prompts and markers. The wrapper pattern is the upper bound on what c11 reaches for; persistent writes to tenant config are still off-limits. The 691-line spec at `docs/c11mux-module-4-integration-installers-spec.md` exists as a historical artifact only — do not revive it.
+- **Skill-driven self-reporting is still the standard pattern** for status/lifecycle telemetry. Agents that read the c11 skill learn to call `c11 set-metadata` / `c11 set-status` from their own lifecycle. The `cmux` CLI is a compat alias that dispatches to the same binary. The session-resume wrappers do not replace this — they handle only the resume capture path that the skill cannot, because they have to run *before* the agent process exists.
+- **The skill file is the only outgoing touch for behavior.** How it reaches each TUI (cc's `~/.claude/skills/`, codex's equivalent, etc.) is the operator's problem, not c11's.
 
-When in doubt: c11's job stops at the edge of its surfaces. What happens inside an agent's process is the agent's business.
+When in doubt: c11's job stops at the edge of its surfaces, save for the narrow session-resume rail above. What happens inside an agent's process is the agent's business.
 
 ## Default workflow for Lattice tickets: lattice-delegate
 

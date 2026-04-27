@@ -53376,6 +53376,12 @@
             "state": "translated",
             "value": "세션 키"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ключ сесії"
+          }
         }
       }
     },
@@ -53407,6 +53413,12 @@
           }
         },
         "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "sk-ant-sid01-..."
+          }
+        },
+        "uk": {
           "stringUnit": {
             "state": "translated",
             "value": "sk-ant-sid01-..."
@@ -53446,6 +53458,12 @@
             "state": "translated",
             "value": "claude.ai 쿠키에서 가져오기"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "З cookies claude.ai"
+          }
         }
       }
     },
@@ -53481,6 +53499,12 @@
             "state": "translated",
             "value": "조직 ID"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ID організації"
+          }
         }
       }
     },
@@ -53512,6 +53536,12 @@
           }
         },
         "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UUID"
+          }
+        },
+        "uk": {
           "stringUnit": {
             "state": "translated",
             "value": "UUID"
@@ -53551,6 +53581,12 @@
             "state": "translated",
             "value": "claude.ai 네트워크 요청에서 가져오기"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "З мережевих запитів claude.ai"
+          }
         }
       }
     },
@@ -53585,6 +53621,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Claude.ai 상태"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Стан Claude.ai"
           }
         }
       }
@@ -53621,6 +53663,12 @@
             "state": "translated",
             "value": "액세스 토큰"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Токен доступу"
+          }
         }
       }
     },
@@ -53652,6 +53700,12 @@
           }
         },
         "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "eyJhbGciOi..."
+          }
+        },
+        "uk": {
           "stringUnit": {
             "state": "translated",
             "value": "eyJhbGciOi..."
@@ -53691,6 +53745,12 @@
             "state": "translated",
             "value": "실행: jq -r .tokens.access_token < ~/.codex/auth.json"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Виконайте: jq -r .tokens.access_token < ~/.codex/auth.json"
+          }
         }
       }
     },
@@ -53726,6 +53786,12 @@
             "state": "translated",
             "value": "계정 ID (선택 사항)"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ID акаунта (необов'язково)"
+          }
         }
       }
     },
@@ -53757,6 +53823,12 @@
           }
         },
         "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "abcd-1234-..."
+          }
+        },
+        "uk": {
           "stringUnit": {
             "state": "translated",
             "value": "abcd-1234-..."
@@ -53796,6 +53868,12 @@
             "state": "translated",
             "value": "실행: jq -r .tokens.account_id < ~/.codex/auth.json (비어 있으면 그대로 두세요)"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Виконайте: jq -r .tokens.account_id < ~/.codex/auth.json (залиште порожнім, якщо немає)"
+          }
         }
       }
     },
@@ -53830,6 +53908,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Codex 상태"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Стан Codex"
           }
         }
       }
@@ -53866,6 +53950,12 @@
             "state": "translated",
             "value": "키체인 오류 (상태 %lld)."
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Помилка Keychain (статус %lld)."
+          }
         }
       }
     },
@@ -53900,6 +53990,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "저장된 자격 증명을 읽을 수 없습니다."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося прочитати збережені облікові дані."
           }
         }
       }
@@ -53936,6 +54032,12 @@
             "state": "translated",
             "value": "자격 증명을 찾을 수 없습니다."
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Облікові дані не знайдено."
+          }
         }
       }
     },
@@ -53970,6 +54072,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "사용할 수 없는 제공자입니다."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Постачальник недоступний."
           }
         }
       }
@@ -54006,6 +54114,12 @@
             "state": "translated",
             "value": "사용량을 가져올 수 없습니다."
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося отримати дані використання."
+          }
         }
       }
     },
@@ -54040,6 +54154,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "요청 시간이 초과되었습니다."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Час очікування запиту минув."
           }
         }
       }
@@ -54076,6 +54196,12 @@
             "state": "translated",
             "value": "저장된 자격 증명을 불러올 수 없습니다."
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося завантажити збережені облікові дані."
+          }
         }
       }
     },
@@ -54110,6 +54236,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "조직 ID가 올바르지 않습니다."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ID організації недійсний."
           }
         }
       }
@@ -54146,6 +54278,12 @@
             "state": "translated",
             "value": "세션 키가 올바르지 않습니다."
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ключ сесії недійсний."
+          }
         }
       }
     },
@@ -54180,6 +54318,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "로그인이 만료되었습니다 (상태 %lld). 세션 키를 다시 입력하세요."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Термін дії входу минув (статус %lld). Введіть ключ сесії знову."
           }
         }
       }
@@ -54216,6 +54360,12 @@
             "state": "translated",
             "value": "Claude가 상태 %lld을(를) 반환했습니다."
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude повернув статус %lld."
+          }
         }
       }
     },
@@ -54250,6 +54400,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Claude에서 예기치 않은 응답이 왔습니다."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Несподівана відповідь від Claude."
           }
         }
       }
@@ -54286,6 +54442,12 @@
             "state": "translated",
             "value": "Claude 사용량 데이터를 읽을 수 없습니다."
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося прочитати дані використання Claude."
+          }
         }
       }
     },
@@ -54320,6 +54482,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Claude에 연결하는 중 네트워크 오류가 발생했습니다."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Мережева помилка під час з'єднання з Claude."
           }
         }
       }
@@ -54356,6 +54524,12 @@
             "state": "translated",
             "value": "액세스 토큰이 올바르지 않습니다."
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Токен доступу недійсний."
+          }
         }
       }
     },
@@ -54390,6 +54564,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "계정 ID가 올바르지 않습니다."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ID акаунта недійсний."
           }
         }
       }
@@ -54426,6 +54606,12 @@
             "state": "translated",
             "value": "로그인이 만료되었습니다 (상태 %lld). 액세스 토큰을 다시 입력하세요."
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Термін дії входу минув (статус %lld). Введіть токен доступу знову."
+          }
         }
       }
     },
@@ -54460,6 +54646,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Codex 사용량 엔드포인트를 찾을 수 없습니다. 계정에 액세스 권한이 없을 수 있습니다."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Кінцеву точку використання Codex не знайдено. Можливо, акаунт не має доступу."
           }
         }
       }
@@ -54496,6 +54688,12 @@
             "state": "translated",
             "value": "Codex가 상태 %lld을(를) 반환했습니다."
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex повернув статус %lld."
+          }
         }
       }
     },
@@ -54530,6 +54728,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Codex에서 예기치 않은 응답이 왔습니다."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Несподівана відповідь від Codex."
           }
         }
       }
@@ -54566,6 +54770,12 @@
             "state": "translated",
             "value": "Codex 사용량 데이터를 읽을 수 없습니다."
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося прочитати дані використання Codex."
+          }
         }
       }
     },
@@ -54600,6 +54810,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Codex에 연결하는 중 네트워크 오류가 발생했습니다."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Мережева помилка під час з'єднання з Codex."
           }
         }
       }
@@ -54636,6 +54852,12 @@
             "state": "translated",
             "value": "계정 추가"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Додати акаунт"
+          }
         }
       }
     },
@@ -54670,6 +54892,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "계정 편집"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Редагувати акаунт"
           }
         }
       }
@@ -54706,6 +54934,12 @@
             "state": "translated",
             "value": "이름"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Назва"
+          }
         }
       }
     },
@@ -54740,6 +54974,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "취소"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скасувати"
           }
         }
       }
@@ -54776,6 +55016,12 @@
             "state": "translated",
             "value": "저장"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Зберегти"
+          }
         }
       }
     },
@@ -54810,6 +55056,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "도움말"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Довідка"
           }
         }
       }
@@ -54846,6 +55098,12 @@
             "state": "translated",
             "value": "AI 사용량 모니터링"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Моніторинг використання AI"
+          }
         }
       }
     },
@@ -54880,6 +55138,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "사용량 막대 색상"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Кольори панелі використання"
           }
         }
       }
@@ -54916,6 +55180,12 @@
             "state": "translated",
             "value": "낮음"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Низький"
+          }
         }
       }
     },
@@ -54950,6 +55220,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "중간"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Середній"
           }
         }
       }
@@ -54986,6 +55262,12 @@
             "state": "translated",
             "value": "높음"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Високий"
+          }
         }
       }
     },
@@ -55020,6 +55302,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "임계값"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Порогові значення"
           }
         }
       }
@@ -55056,6 +55344,12 @@
             "state": "translated",
             "value": "%lld%% 미만은 낮음/중간, %lld%% 미만은 중간/높음."
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Низький/середній нижче %lld%%, середній/високий нижче %lld%%."
+          }
         }
       }
     },
@@ -55090,6 +55384,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "부드러운 보간"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Плавна інтерполяція"
           }
         }
       }
@@ -55126,6 +55426,12 @@
             "state": "translated",
             "value": "기본값으로 재설정"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скинути до стандартних"
+          }
         }
       }
     },
@@ -55160,6 +55466,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "계정 추가"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Додати акаунт"
           }
         }
       }
@@ -55196,6 +55508,12 @@
             "state": "translated",
             "value": "AI 계정 추가"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Додати AI-акаунт"
+          }
         }
       }
     },
@@ -55230,6 +55548,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "편집"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Редагувати"
           }
         }
       }
@@ -55266,6 +55590,12 @@
             "state": "translated",
             "value": "제거"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Видалити"
+          }
         }
       }
     },
@@ -55300,6 +55630,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "세션 %lld%% · 주 %lld%%"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сесія %lld%% · Тиждень %lld%%"
           }
         }
       }
@@ -55336,6 +55672,12 @@
             "state": "translated",
             "value": "알 수 없는 제공자"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Невідомий постачальник"
+          }
         }
       }
     },
@@ -55370,6 +55712,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "이 빌드에서는 사용할 수 없는 제공자입니다. 저장된 자격 증명을 지우려면 계정을 제거하세요."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Цей постачальник недоступний у цій збірці. Видаліть акаунт, щоб очистити збережені облікові дані."
           }
         }
       }
@@ -55406,6 +55754,12 @@
             "state": "translated",
             "value": "이 계정을 제거하시겠습니까?"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Видалити цей акаунт?"
+          }
         }
       }
     },
@@ -55440,6 +55794,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "제거"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Видалити"
           }
         }
       }
@@ -55476,6 +55836,12 @@
             "state": "translated",
             "value": "저장된 자격 증명이 키체인에서 삭제됩니다."
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Збережені облікові дані буде видалено з Keychain."
+          }
         }
       }
     },
@@ -55510,6 +55876,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "취소"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скасувати"
           }
         }
       }
@@ -55546,6 +55918,12 @@
             "state": "translated",
             "value": "계정을 제거할 수 없습니다"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося видалити акаунт"
+          }
         }
       }
     },
@@ -55580,6 +55958,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "확인"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
           }
         }
       }
@@ -55616,6 +56000,12 @@
             "state": "translated",
             "value": "계정이 더 이상 존재하지 않습니다."
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Акаунт більше не існує."
+          }
         }
       }
     },
@@ -55650,6 +56040,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "저장된 자격 증명을 읽을 수 없습니다."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося прочитати збережені облікові дані."
           }
         }
       }
@@ -55686,6 +56082,12 @@
             "state": "translated",
             "value": "키체인 오류입니다."
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Помилка Keychain."
+          }
         }
       }
     },
@@ -55720,6 +56122,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "알 수 없는 오류가 발생했습니다."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сталася невідома помилка."
           }
         }
       }
@@ -55756,6 +56164,12 @@
             "state": "translated",
             "value": "펼치기"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Розгорнути"
+          }
         }
       }
     },
@@ -55790,6 +56204,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "접기"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Згорнути"
           }
         }
       }
@@ -55826,6 +56246,12 @@
             "state": "translated",
             "value": "AI 사용량 패널"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Панель використання AI"
+          }
         }
       }
     },
@@ -55860,6 +56286,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "세션"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сесія"
           }
         }
       }
@@ -55896,6 +56328,12 @@
             "state": "translated",
             "value": "주"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Тиждень"
+          }
         }
       }
     },
@@ -55930,6 +56368,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "상태"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Стан"
           }
         }
       }
@@ -55966,6 +56410,12 @@
             "state": "translated",
             "value": "상태 페이지 열기"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Відкрити сторінку стану"
+          }
         }
       }
     },
@@ -56000,6 +56450,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "상태를 불러오는 중..."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Завантаження стану..."
           }
         }
       }
@@ -56036,6 +56492,12 @@
             "state": "translated",
             "value": "상태를 불러올 수 없습니다."
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося завантажити стан."
+          }
         }
       }
     },
@@ -56070,6 +56532,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "모든 시스템 정상 작동"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Всі системи працюють"
           }
         }
       }
@@ -56106,6 +56574,12 @@
             "state": "translated",
             "value": "점검 중"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Технічне обслуговування"
+          }
         }
       }
     },
@@ -56140,6 +56614,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "경미한 장애"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Незначний інцидент"
           }
         }
       }
@@ -56176,6 +56656,12 @@
             "state": "translated",
             "value": "주요 장애"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Серйозний інцидент"
+          }
         }
       }
     },
@@ -56211,6 +56697,12 @@
             "state": "translated",
             "value": "심각한 장애"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Критичний інцидент"
+          }
         }
       }
     },
@@ -56245,6 +56737,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "지금 새로 고침"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Оновити зараз"
           }
         }
       }

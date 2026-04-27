@@ -380,17 +380,30 @@ extension Workspace {
         return out
     }
 
-    /// Schedule deferred `sendText` of synthesised resume commands for
+    /// Schedule deferred submission of synthesised resume commands for
     /// terminal panels resolved via `pendingRestartCommands`. The dispatch
     /// runs on the main actor after `SessionPersistencePolicy.agentRestartDelay`
-    /// so Ghostty surfaces have time to initialise; the registry contract
-    /// already returns the submit form (trailing `\n`), so `sendText`
-    /// alone is enough to type and submit.
+    /// so Ghostty surfaces have time to initialise.
     ///
-    /// `oldToNewPanelIds` lets the routine remap snapshot panel ids to the
-    /// freshly minted ids when the stable-panel-id rollback flag is set.
-    /// Under default behaviour (`stablePanelIdsEnabled` true) the map is an
-    /// identity and the lookup is the snapshot id directly.
+    /// `Ghostty's text-input path (sendText → ghostty_surface_text) wraps
+    /// input in bracketed-paste markers (`ESC[200~…ESC[201~`). Bracketed
+    /// paste mode is intentionally designed so that embedded `\n`/`\r`
+    /// inside the paste do not auto-execute — zsh ZLE / bash readline
+    /// only execute when a *real* Return keypress arrives outside the
+    /// paste. So sending `<command>\n` (or `<command>\r`) as one paste
+    /// types the command but leaves it sitting at the prompt, which is
+    /// what the operator observed.
+    ///
+    /// The fix is to use `TextBoxSubmit.send(_:via:)` — the same helper
+    /// the inline TextBox uses — which types the trimmed text via the
+    /// paste path, then dispatches a real synthetic Return key event
+    /// (`ghostty_surface_key`) so the line discipline sees an Enter
+    /// outside the bracketed paste and executes.
+    ///
+    /// `oldToNewPanelIds` lets the routine remap snapshot panel ids to
+    /// the freshly minted ids when the stable-panel-id rollback flag is
+    /// set. Under default behaviour (`stablePanelIdsEnabled` true) the
+    /// map is an identity and the lookup is the snapshot id directly.
     private func scheduleAgentRestart(
         from snapshot: SessionWorkspaceSnapshot,
         registry: AgentRestartRegistry,
@@ -407,7 +420,7 @@ extension Workspace {
                 guard let terminalPanel = self.panels[livePanelId] as? TerminalPanel else {
                     continue
                 }
-                terminalPanel.sendText(command)
+                TextBoxSubmit.send(command, via: terminalPanel.surface)
             }
         }
     }

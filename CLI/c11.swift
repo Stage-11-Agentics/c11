@@ -14408,6 +14408,17 @@ struct CMUXTermMain {
     static func main() {
         // CLI tools should ignore SIGPIPE so closed stdout pipes do not terminate the process.
         _ = signal(SIGPIPE, SIG_IGN)
+        NSSetUncaughtExceptionHandler { exception in
+            // NSFileHandle.writeData: raises NSFileHandleOperationException when writing to a
+            // closed pipe. SIGPIPE is already SIG_IGN; treat a broken-pipe write as a clean exit.
+            if exception.name.rawValue == NSFileHandleOperationException {
+                exit(0)
+            }
+            FileHandle.standardError.write(
+                Data("c11: uncaught exception \(exception.name): \(exception.reason ?? "(none)")\n".utf8)
+            )
+            exit(1)
+        }
         mirrorC11CmuxEnv()
         let cli = CMUXCLI(args: CommandLine.arguments)
         do {

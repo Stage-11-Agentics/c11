@@ -943,6 +943,7 @@ private final class WorkspaceRemoteDaemonRPCClient {
 
         process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
         process.arguments = Self.daemonArguments(configuration: configuration, remotePath: remotePath)
+        process.environment = ProcessInfo.processInfo.environment
         process.standardInput = stdinPipe
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
@@ -3217,6 +3218,7 @@ final class WorkspaceRemoteSessionController {
             let stderrPipe = Pipe()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
             process.arguments = reverseRelayArguments(relayPort: relayPort, localRelayPort: localRelayPort)
+            process.environment = ProcessInfo.processInfo.environment
             process.standardInput = FileHandle.nullDevice
             process.standardOutput = FileHandle.nullDevice
             process.standardError = stderrPipe

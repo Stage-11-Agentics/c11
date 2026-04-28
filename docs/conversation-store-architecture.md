@@ -1,9 +1,29 @@
 # Conversation Store Architecture
 
-**Status:** Draft. Awaiting Trident plan review.
-**Owner:** TBD (operator delegates after plan review converges).
+**Status:** v1 implemented; reviewed 2026-04-27 (`notes/trident-review-C11-24-pack-20260427-2343/`); shipping with explicit scope reduction (see "v1 scope vs v1.1" below).
+**Owner:** delegator agent on C11-24.
 **Supersedes:** `notes/session-resume-fix-plan.md` (the C11-24 hot-fix plan, now obsolete).
 **Related:** PR #89 (current C11-24 implementation, shipped in 0.43.0 opt-in / 0.44.0-pre default-on), PR #94 (held release).
+
+## v1 scope vs v1.1 (post-review)
+
+The post-implementation Trident review (2026-04-27) found that the strategy machinery (capture, resume, scrapers, ambiguity policy) is complete and unit-tested but the **production restore path is snapshot-only** in v1: refs that were captured into the snapshot at last clean shutdown resume; refs lost between snapshots do not. The forced pull-scrape pass that would re-discover them on dirty shutdown / first launch ships in v1.1.
+
+**In v1.0 (this plan):**
+- Wrapper-claim → snapshot persistence → snapshot-driven resume across the four kinds (Claude Code, Codex, Opencode, Kimi).
+- `claude-hook session-start` push captures the real id while c11 is alive.
+- Inverted dirty/clean shutdown sentinel; `markAllUnknown` on dirty (post-review fix sequenced after `seedFromSnapshot`).
+- All v2 socket verbs + CLI surface + privacy contract + skill update.
+
+**Deferred to v1.1 (0.45.0+) with explicit TODO markers:**
+- **Forced pull-scrape pass** in `AppDelegate.applicationDidFinishLaunching` after `seedFromSnapshot`. The pieces (`ClaudeCodeScraper`, `CodexScraper`, `strategy.capture(inputs:)`) are built and tested; only the production caller is missing.
+- **`SurfaceActivityTracker` snapshot persistence** (`seed(from:)` / `snapshot()` exist; no callers in `SessionPersistence.swift`). The Codex `mtime ≥ surface lastActivityTimestamp` filter relies on this.
+- **Codex cwd recovery** via bounded JSONL metadata parse — pending privacy-contract design call (the structural Mirror test on `ScrapeCandidate` is built to forbid transcript-bearing fields; opening the JSONL even for first-line metadata needs a guarded carve-out).
+- Workspace partitioning on `c11 conversation list`. v1 stores process-wide; `--workspace` is rejected with a clear error.
+
+The §"Failure modes" table and §"Strategies" table below describe the **v1.1 target behaviour** for completeness; rows that depend on the deferred pull-scrape pass are explicitly marked. Until v1.1, the legacy `AgentRestartRegistry` remains in tree as the kill-switch fallback (`CMUX_DISABLE_CONVERSATION_STORE=1`), so operators don't lose resume capability if v1 regresses.
+
+**Why scope-down rather than wire it up before merge:** the Codex scraper today stamps the surface's cwd into every candidate (`Scrapers/ClaudeCodeScraper.swift:108`), which makes the strategy's `cwd != candCwd` filter a structural no-op. Wiring the pull-scrape pass without first solving cwd recovery would surface "ambiguous, skip" on every restart for every operator with multiple recent Codex sessions — strictly worse than the snapshot-only v1. The privacy-contract design call for cwd parsing is the right gate for v1.1.
 
 ## TL;DR
 
@@ -383,15 +403,17 @@ Where existing socket handlers are sync, they call into the store via a small `T
 
 ## Failure modes and how each is handled
 
+Rows marked **(v1.1)** depend on the deferred forced-pull-scrape pass; in v1.0 the listed v1.1 behaviour does not engage and the store falls back to "no resume for that ref" (legacy `AgentRestartRegistry` behaviour via the kill-switch path).
+
 | Failure | Today | With ConversationStore |
 |---|---|---|
 | Hook fires after shutdown begins | Clears metadata | `isTerminatingApp` check; no transition |
-| Hook env strips `CMUX_SURFACE_ID` | Silently routes to focused | CLI errors out; no write; pull-scrape catches up |
-| TUI crashes before hook fires | No ref captured | Pull-scrape on next autosave catches it |
-| c11 crashes | Snapshot may be stale | `unknown` transition + forced pull-scrape on launch |
-| Two panes same TUI same cwd | "last wins" | Push-id deterministic for Claude; for Codex strategy, multi-candidate triggers ambiguity policy (state → `unknown`, advisory surfaced, no auto-resume) |
+| Hook env strips `CMUX_SURFACE_ID` | Silently routes to focused | CLI errors out; no write; **pull-scrape catches up (v1.1)** |
+| TUI crashes before hook fires | No ref captured | **Pull-scrape on next autosave catches it (v1.1)** |
+| c11 crashes | Snapshot may be stale | `unknown` transition (v1: post-`seedFromSnapshot`); **+ forced pull-scrape on launch (v1.1)** |
+| Two panes same TUI same cwd | "last wins" | Push-id deterministic for Claude (v1: hook fires while alive). **For Codex strategy, multi-candidate triggers ambiguity policy (state → `unknown`, advisory surfaced, no auto-resume) (v1.1, depends on cwd recovery design call).** |
 | Sleep / power-off mid-session | Same as crash | Same as crash |
-| TUI session file deleted out-of-band | Silent stale resume | For Claude: pull-scrape returns nothing → `tombstoned`. For hookless (Codex/Opencode/Kimi): pull-scrape returns nothing → `unknown` (operator clears explicitly) |
+| TUI session file deleted out-of-band | Silent stale resume | **For Claude: pull-scrape returns nothing → `tombstoned`. For hookless (Codex/Opencode/Kimi): pull-scrape returns nothing → `unknown` (operator clears explicitly) (v1.1)** |
 | Wrapper not on PATH (system update) | Silent loss of capture | Wrapper-claim absent → strategy degrades to pull-scrape only; no regression |
 
 ## Testing

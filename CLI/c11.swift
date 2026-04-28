@@ -8650,8 +8650,9 @@ struct CMUXCLI {
               tombstone --kind <k> --id <id> [--reason <text>]
                 Mark the surface's active ref as tombstoned. Operator-
                 initiated; not auto-resumable.
-              list [--surface <id>] [--workspace <id>] [--json]
-                List captured conversations.
+              list [--surface <id>] [--json]
+                List captured conversations. v1 stores process-wide;
+                no workspace partitioning. Filter with --surface.
               get [--surface <id>] [--json]
                 Read the active ref + can_resume + diagnostic_reason for
                 the surface. Use this when debugging "why did this pane
@@ -10626,7 +10627,7 @@ struct CMUXCLI {
                [--cwd <path>] [--reason <text>]
                [--payload <json> | --payload @<path>]
           tombstone --kind <k> --id <id> [--reason <text>]
-          list [--surface <id>] [--workspace <id>] [--json]
+          list [--surface <id>] [--json]
           get [--surface <id>] [--json]
           clear [--surface <id>]
 
@@ -10783,7 +10784,15 @@ struct CMUXCLI {
     ) throws {
         var params: [String: Any] = [:]
         if let s = optionValue(subArgs, name: "--surface") { params["surface_id"] = s }
-        if let w = optionValue(subArgs, name: "--workspace") { params["workspace_id"] = w }
+        // C11-24 review (I3): --workspace is not implemented in v1. The
+        // store doesn't track per-workspace partitioning today; the
+        // server has been silently ignoring `workspace_id` and returning
+        // every conversation across every workspace. Reject explicitly
+        // rather than lying about the filter; revisit in v1.1 if the
+        // store grows workspace partitioning.
+        if optionValue(subArgs, name: "--workspace") != nil {
+            throw CLIError(message: "--workspace is not supported in v1; conversations are stored process-wide. Filter with --surface instead.")
+        }
         let response = try client.sendV2(method: "conversation.list", params: params)
         if jsonOutput || hasFlag(subArgs, name: "--json") {
             print(jsonString(response))

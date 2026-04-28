@@ -21,7 +21,7 @@ c11 conversation push --kind <k> --id <id> --source <hook|scrape|manual>
                       [--cwd <path>] [--reason <text>]
                       [--payload <json> | --payload @<path>]
 c11 conversation tombstone --kind <k> --id <id> [--reason <text>]
-c11 conversation list [--surface <id>] [--workspace <id>] [--json]
+c11 conversation list [--surface <id>] [--json]
 c11 conversation get [--surface <id>] [--json]
 c11 conversation clear [--surface <id>]
 ```
@@ -31,7 +31,7 @@ c11 conversation clear [--surface <id>]
 | `claim` | Wrapper-claim: mint a placeholder ref. Idempotent and conservative — never displaces a real id captured by hook/scrape. |
 | `push` | Hook or operator push of the real id. Source priority: `hook > scrape > manual > wrapperClaim`. |
 | `tombstone` | Mark the surface's active ref as tombstoned. Operator-initiated; not auto-resumable. |
-| `list` | List captured conversations. Use `--json` for structured output. |
+| `list` | List captured conversations (process-wide; v1 has no per-workspace partitioning). Filter with `--surface`. `--json` for structured output. |
 | `get` | Inspect the active ref + `can_resume` + `diagnostic_reason` for a surface. The debugging entry point. |
 | `clear` | Wipe the surface's conversations. Forces a fresh launch on next workspace open. |
 
@@ -62,22 +62,32 @@ Reconciliation rule: latest `capturedAt` wins; on close timestamps, source prior
 
 ## Strategies (v1)
 
-| Kind | Resume tier | Capture | Resume action |
-|------|-------------|---------|---------------|
-| `claude-code` | Strong (push-id deterministic) | SessionStart hook → `c11 conversation push`; pull-scrape `~/.claude/sessions/` as fallback | `claude --dangerously-skip-permissions --resume <id>` (id shell-quoted) |
-| `codex` | Heuristic (cwd + mtime + activity) | Wrapper-claim placeholder → pull-scrape `~/.codex/sessions/*.jsonl` filtered by cwd, mtime ≥ claim, mtime ≥ surface activity | `codex resume <id>` (specific id; never `--last`) |
+| Kind | Resume tier | Capture (v1) | Resume action |
+|------|-------------|--------------|---------------|
+| `claude-code` | Strong (push-id deterministic) | SessionStart hook → `c11 conversation push`. Pull-scrape `~/.claude/sessions/` ships in v1.1. | `claude --dangerously-skip-permissions --resume <id>` (id shell-quoted) |
+| `codex` | Snapshot-only in v1 | Wrapper-claim placeholder → snapshot persists the captured ref → restore consumes it. **Pull-scrape disambiguation lands in v1.1** (see "v1 scope" below). | `codex resume <id>` (specific id; never `--last`) |
 | `opencode` | Fresh-launch only | Wrapper-claim placeholder | `opencode` (process launch) — `.skip` for placeholders |
 | `kimi` | Fresh-launch only | Wrapper-claim placeholder | `kimi` (process launch) — `.skip` for placeholders |
 
-### Codex ambiguity policy
+### v1 scope and v1.1 follow-ups
 
-The motivating bug for the conversation store: two Codex panes opened in the same project both restored to the most-recent global Codex session ("B") instead of their own (`codex resume --last` was order-blind). With the new strategy:
+The strategy machinery is complete (capture, resume, scrapers, ambiguity policy all unit-tested), but **v1 production restore is snapshot-only**: refs that landed in the snapshot at last clean shutdown resume; refs lost between snapshots do not. The forced pull-scrape pass that would re-discover them on dirty shutdown / first launch is a v1.1 follow-up. Tracked items:
+
+- **Pull-scrape pass on launch.** Wire `forcedPullScrapePass()` into `AppDelegate.applicationDidFinishLaunching` after `seedFromSnapshot` so missed Claude SessionStart hooks and Codex placeholder refs get re-classified before `pendingRestartPlans` runs.
+- **`SurfaceActivityTracker` snapshot persistence.** Today the tracker is in-memory only; the Codex `mtime ≥ surface lastActivityTimestamp` filter relies on it but has nothing to compare against on first launch after reboot.
+- **Codex cwd disambiguation.** `CodexScraper` stamps the surface's cwd into every candidate, so the strategy's `cwd != candCwd` filter is structurally a no-op. Real cwd recovery requires parsing the JSONL session metadata (bounded read; privacy-contract review needed before landing).
+
+Until v1.1 lands, the **Codex two-panes-same-cwd** scenario the conversation store was built to fix relies on each pane having captured its own ref into the prior snapshot; if it didn't (e.g., first launch after dirty shutdown, or pane opened post-snapshot), the legacy "most-recent wins" behaviour is the current fallback. Operators who hit this can `c11 conversation clear --surface <id>` to force fresh launches.
+
+### Codex ambiguity policy (deferred to v1.1)
+
+When pull-scrape lands, two Codex panes opened in the same project will be disambiguated as follows:
 
 - Codex pull-scrape filters candidates by cwd + mtime ≥ wrapper-claim time + mtime ≥ surface lastActivityTimestamp.
 - If **more than one** candidate matches the filter, the strategy returns the ref with `state = .unknown`, `id = most-plausible-candidate (newest mtime)`, and a `diagnosticReason` like `"ambiguous: 3 candidates; chose newest"`.
 - `resume()` returns `.skip(reason: "ambiguous")` for `state = .unknown`. Neither pane resumes the other's session; the operator clears via `c11 conversation clear --surface <id>` to force a fresh launch.
 
-The advisory is surfaced via `c11 conversation get`'s `diagnostic_reason` field.
+The advisory is surfaced via `c11 conversation get`'s `diagnostic_reason` field once the pull-scrape pass is wired.
 
 ## Wrapper-claim flow (TUI integrators)
 
@@ -108,9 +118,17 @@ c11 conversation clear
 # Roll back to legacy claude.session_id metadata path (one release window)
 CMUX_DISABLE_CONVERSATION_STORE=1 open -a c11
 
-# List every captured conversation across the workspace
+# List every captured conversation in this c11 process
+# (v1 stores process-wide; no per-workspace partitioning)
 c11 conversation list --json | jq '.conversations[] | {kind, id, state, surface_id}'
 ```
+
+## Landing in v1.1 (0.45.0+)
+
+- **Forced pull-scrape pass** on launch (after snapshot seed) — re-classifies Claude/Codex refs lost between snapshots.
+- **`SurfaceActivityTracker` snapshot persistence** — gives the Codex disambiguation rule a comparison floor across reboots.
+- **Codex cwd recovery** via bounded JSONL metadata parse, gated on a privacy-contract review.
+- Workspace partitioning on `c11 conversation list` (`--workspace` rejected with a clear error in v1).
 
 ## Removed in 0.46.0 / v1.1
 

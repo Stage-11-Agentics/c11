@@ -42,9 +42,11 @@
 		D8C24016A1B2C3D4E5F60718 /* ConversationCodex.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8C24026A1B2C3D4E5F60718 /* ConversationCodex.swift */; };
 		D8C24017A1B2C3D4E5F60718 /* ConversationOpencode.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8C24027A1B2C3D4E5F60718 /* ConversationOpencode.swift */; };
 		D8C24018A1B2C3D4E5F60718 /* ConversationKimi.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8C24028A1B2C3D4E5F60718 /* ConversationKimi.swift */; };
+		D8C24019A1B2C3D4E5F60718 /* SurfaceActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8C24029A1B2C3D4E5F60718 /* SurfaceActivity.swift */; };
 		D8008BF0A1B2C3D4E5F60718 /* WorkspaceSnapshotConverterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8008BF1A1B2C3D4E5F60718 /* WorkspaceSnapshotConverterTests.swift */; };
 		D8009BF0A1B2C3D4E5F60718 /* AgentRestartRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8009BF1A1B2C3D4E5F60718 /* AgentRestartRegistryTests.swift */; };
 		D8C24110A1B2C3D4E5F60718 /* ConversationRefTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8C24120A1B2C3D4E5F60718 /* ConversationRefTests.swift */; };
+		D8C24111A1B2C3D4E5F60718 /* SurfaceActivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8C24121A1B2C3D4E5F60718 /* SurfaceActivityTests.swift */; };
 		C112400A1B2C3D4E5F60718 /* WorkspaceRestartCommandsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C112400B1B2C3D4E5F60718 /* WorkspaceRestartCommandsTests.swift */; };
 		D800ABF0A1B2C3D4E5F60718 /* WorkspaceSnapshotCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = D800ABF1A1B2C3D4E5F60718 /* WorkspaceSnapshotCapture.swift */; };
 		D800BBF0A1B2C3D4E5F60718 /* WorkspaceSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D800BBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotStore.swift */; };
@@ -346,9 +348,11 @@
 		D8C24026A1B2C3D4E5F60718 /* ConversationCodex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ConversationCodex.swift"; path = Conversation/Strategies/Codex.swift; sourceTree = "<group>"; };
 		D8C24027A1B2C3D4E5F60718 /* ConversationOpencode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ConversationOpencode.swift"; path = Conversation/Strategies/Opencode.swift; sourceTree = "<group>"; };
 		D8C24028A1B2C3D4E5F60718 /* ConversationKimi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ConversationKimi.swift"; path = Conversation/Strategies/Kimi.swift; sourceTree = "<group>"; };
+		D8C24029A1B2C3D4E5F60718 /* SurfaceActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "SurfaceActivity.swift"; path = Conversation/SurfaceActivity.swift; sourceTree = "<group>"; };
 		D8008BF1A1B2C3D4E5F60718 /* WorkspaceSnapshotConverterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceSnapshotConverterTests.swift; sourceTree = "<group>"; };
 		D8009BF1A1B2C3D4E5F60718 /* AgentRestartRegistryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRestartRegistryTests.swift; sourceTree = "<group>"; };
 		D8C24120A1B2C3D4E5F60718 /* ConversationRefTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationRefTests.swift; sourceTree = "<group>"; };
+		D8C24121A1B2C3D4E5F60718 /* SurfaceActivityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceActivityTests.swift; sourceTree = "<group>"; };
 		C112400B1B2C3D4E5F60718 /* WorkspaceRestartCommandsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceRestartCommandsTests.swift; sourceTree = "<group>"; };
 		D800ABF1A1B2C3D4E5F60718 /* WorkspaceSnapshotCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceSnapshotCapture.swift; sourceTree = "<group>"; };
 		D800BBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceSnapshotStore.swift; sourceTree = "<group>"; };
@@ -710,6 +714,7 @@
 				D8C24026A1B2C3D4E5F60718 /* ConversationCodex.swift */,
 				D8C24027A1B2C3D4E5F60718 /* ConversationOpencode.swift */,
 				D8C24028A1B2C3D4E5F60718 /* ConversationKimi.swift */,
+				D8C24029A1B2C3D4E5F60718 /* SurfaceActivity.swift */,
 				D800ABF1A1B2C3D4E5F60718 /* WorkspaceSnapshotCapture.swift */,
 				D800BBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotStore.swift */,
 				D8010BF1A1B2C3D4E5F60718 /* WorkspacePlanCapture.swift */,
@@ -924,6 +929,7 @@
 					D8008BF1A1B2C3D4E5F60718 /* WorkspaceSnapshotConverterTests.swift */,
 					D8009BF1A1B2C3D4E5F60718 /* AgentRestartRegistryTests.swift */,
 					D8C24120A1B2C3D4E5F60718 /* ConversationRefTests.swift */,
+					D8C24121A1B2C3D4E5F60718 /* SurfaceActivityTests.swift */,
 					C112400B1B2C3D4E5F60718 /* WorkspaceRestartCommandsTests.swift */,
 					D800CBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotCaptureTests.swift */,
 					D800DBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotRoundTripAcceptanceTests.swift */,
@@ -1122,6 +1128,7 @@
 				D8C24016A1B2C3D4E5F60718 /* ConversationCodex.swift in Sources */,
 				D8C24017A1B2C3D4E5F60718 /* ConversationOpencode.swift in Sources */,
 				D8C24018A1B2C3D4E5F60718 /* ConversationKimi.swift in Sources */,
+				D8C24019A1B2C3D4E5F60718 /* SurfaceActivity.swift in Sources */,
 				D800ABF0A1B2C3D4E5F60718 /* WorkspaceSnapshotCapture.swift in Sources */,
 				D800BBF0A1B2C3D4E5F60718 /* WorkspaceSnapshotStore.swift in Sources */,
 				D8010BF0A1B2C3D4E5F60718 /* WorkspacePlanCapture.swift in Sources */,
@@ -1308,6 +1315,7 @@
 					D8008BF0A1B2C3D4E5F60718 /* WorkspaceSnapshotConverterTests.swift in Sources */,
 					D8009BF0A1B2C3D4E5F60718 /* AgentRestartRegistryTests.swift in Sources */,
 					D8C24110A1B2C3D4E5F60718 /* ConversationRefTests.swift in Sources */,
+					D8C24111A1B2C3D4E5F60718 /* SurfaceActivityTests.swift in Sources */,
 					C112400A1B2C3D4E5F60718 /* WorkspaceRestartCommandsTests.swift in Sources */,
 					D800CBF0A1B2C3D4E5F60718 /* WorkspaceSnapshotCaptureTests.swift in Sources */,
 					D800DBF0A1B2C3D4E5F60718 /* WorkspaceSnapshotRoundTripAcceptanceTests.swift in Sources */,

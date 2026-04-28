@@ -5,8 +5,8 @@
       "layers": [
         {
           "glass": false,
-          "image-name": "c11mux-lattice.png",
-          "name": "c11mux-lattice",
+          "image-name": "c11-lattice.png",
+          "name": "c11-lattice",
           "position": {
             "scale": 1,
             "translation-in-points": [

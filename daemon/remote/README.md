@@ -1,6 +1,8 @@
 # c11d-remote (Go)
 
-Go remote daemon for `c11 ssh` bootstrap, capability negotiation, and remote proxy RPC. It is not in the terminal keystroke hot path.
+Go daemon that runs on the remote side of a `c11 ssh` workspace. Handles bootstrap onto the remote host, capability negotiation with the local app, and proxy RPC for browser/HTTP traffic. Sits well off the terminal keystroke hot path; latency-insensitive by design.
+
+The binary ships pre-built for `darwin/{arm64,amd64}` and `linux/{arm64,amd64}` — no Go toolchain required on the remote host.
 
 ## Commands
 

@@ -20,8 +20,9 @@ GhosttyKit.xcframework
 GhosttyKit.xcframework.bak-*/
 
 # Release artifacts
-GhosttyTabs-*.zip
-cmux-macos.dmg
+c11-macos.dmg
+c11-nightly-macos*.dmg
+c11-notary.zip
 appcast.xml
 
 # Python

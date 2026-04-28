@@ -2208,6 +2208,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var mainWindowControllers: [MainWindowController] = []
     private var startupSessionSnapshot: AppSessionSnapshot?
     private var didPrepareStartupSessionSnapshot = false
+    /// C11-24 review (B2): captured at launch in `applicationDidFinishLaunching`
+    /// and consumed in `prepareStartupSessionSnapshotIfNeeded` *after*
+    /// `seedFromSnapshot` runs, so `markAllUnknown` can never race ahead
+    /// of the bridge seed and let stale .alive/.suspended refs through.
+    private var priorShutdownAtLaunch: ShutdownSentinel.PriorShutdown = .missing
     private var didAttemptStartupSessionRestore = false
     private var isApplyingStartupSessionRestore = false
     private var sessionAutosaveTimer: DispatchSourceTimer?
@@ -2346,15 +2351,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Best-effort — sentinel writes never block launch.
         let bundleId = Bundle.main.bundleIdentifier ?? "com.stage11.c11"
         let priorShutdown = ShutdownSentinel.readPriorShutdown(bundleId: bundleId)
+        // C11-24 review (B2): capture the decision now but defer the
+        // crash-recovery `markAllUnknown` until *after* `seedFromSnapshot`
+        // runs in `prepareStartupSessionSnapshotIfNeeded`. Previously this
+        // dispatched in an unstructured Task that could race ahead of the
+        // synchronous snapshot seed, restoring stale .alive/.suspended
+        // refs the dirty sentinel was meant to invalidate.
+        priorShutdownAtLaunch = priorShutdown
         switch priorShutdown {
         case .clean(let at):
             dlog("shutdown.sentinel prior=clean at=\(at.timeIntervalSince1970)")
         case .dirty(let at):
-            dlog("shutdown.sentinel prior=dirty launchedAt=\(at.map { String($0.timeIntervalSince1970) } ?? "nil") — crash recovery")
-            // Conversation store: walk all known refs to .unknown so the
-            // forthcoming pull-scrape pass reclassifies them. Bulk
-            // operation — no I/O on the actor itself, pure state hop.
-            Task { await ConversationStore.shared.markAllUnknown(reason: "crash recovery (dirty sentinel)") }
+            dlog("shutdown.sentinel prior=dirty launchedAt=\(at.map { String($0.timeIntervalSince1970) } ?? "nil") — crash recovery (deferred to post-seed)")
         case .missing:
             dlog("shutdown.sentinel prior=missing — first launch or sentinel unwritable")
         }
@@ -2939,6 +2947,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // (TODO 0.46.0 / v1.1 in WorkspaceSnapshotConversationBridge).
         if let snapshot, !ConversationStorePolicy.isDisabled {
             WorkspaceSnapshotConversationBridge.seedFromSnapshot(snapshot)
+        }
+        // C11-24 review (B2): now that the snapshot has seeded the store,
+        // act on the prior-shutdown decision captured at launch. On a
+        // dirty sentinel, transition every freshly-seeded ref to
+        // .unknown so panel restore can't auto-resume from stale
+        // .alive/.suspended state. Synchronous bridge so the order is
+        // observable to subsequent restore work on the same dispatch
+        // queue (no Task race against pendingRestartPlans).
+        if case .dirty = priorShutdownAtLaunch, !ConversationStorePolicy.isDisabled {
+            let sema = DispatchSemaphore(value: 0)
+            Task {
+                await ConversationStore.shared.markAllUnknown(reason: "crash recovery (dirty sentinel)")
+                sema.signal()
+            }
+            // Bounded; the actor never blocks on I/O. Matches the
+            // bridge's existing 1s budget.
+            _ = sema.wait(timeout: .now() + 1.0)
         }
     }
 

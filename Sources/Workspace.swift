@@ -326,38 +326,55 @@ extension Workspace {
         }
 
         // C11-24: schedule agent-resume for restored terminal surfaces that
-        // carry a captured session id. The dispatch is deferred so Ghostty
-        // PTYs + their shells have time to come up; `CMUX_DISABLE_AGENT_RESTART=1`
-        // suppresses the whole pass. Layout/metadata/status restore above
-        // is independent — failures here cannot break a normal restore.
-        scheduleAgentRestart(from: snapshot, registry: .phase1, oldToNewPanelIds: oldToNewPanelIds)
+        // carry a ConversationRef in the store. The dispatch is deferred so
+        // Ghostty PTYs + their shells have time to come up;
+        // `CMUX_DISABLE_AGENT_RESTART=1` suppresses the whole pass. Layout/
+        // metadata/status restore above is independent — failures here
+        // cannot break a normal restore.
+        scheduleAgentRestart(
+            from: snapshot,
+            registry: ConversationStrategyRegistry.v1,
+            oldToNewPanelIds: oldToNewPanelIds
+        )
     }
 
-    /// C11-24: collect resume commands for terminal panels that have a
-    /// captured `terminal_type` + `claude.session_id` in their snapshot
-    /// metadata, consulting the supplied registry. Reads directly from
-    /// the panel snapshot rather than the live `SurfaceMetadataStore`
-    /// because the store is rehydrated as part of the same restore pass
-    /// and may not have the values populated at the moment this is called.
+    /// C11-24: collect ResumeActions for terminal panels by consulting the
+    /// `ConversationStore`. Reads via the strategy registry: each panel's
+    /// active ref is handed to its strategy's `resume(ref:)`; the action
+    /// is then executed via `execute(_:on:panelMap:)`.
+    ///
     /// Internal (not private) so unit tests can exercise it without going
     /// through the full live workspace restore path.
-    func pendingRestartCommands(
+    func pendingRestartPlans(
         from snapshot: SessionWorkspaceSnapshot,
-        registry: AgentRestartRegistry
-    ) -> [(panelId: UUID, command: String)] {
+        registry: ConversationStrategyRegistry
+    ) -> [(panelId: UUID, action: ResumeAction)] {
         guard SessionPersistencePolicy.agentRestartOnRestoreEnabled else { return [] }
-        var result: [(panelId: UUID, command: String)] = []
+        var result: [(panelId: UUID, action: ResumeAction)] = []
+        // Synchronous bridge into the actor — this runs once per restore,
+        // not on a hot path.
+        let storeSnapshot: [String: SurfaceConversations] = {
+            var out: [String: SurfaceConversations] = [:]
+            let sema = DispatchSemaphore(value: 0)
+            Task {
+                out = await ConversationStore.shared.snapshot()
+                sema.signal()
+            }
+            _ = sema.wait(timeout: .now() + 1.0)
+            return out
+        }()
         for panelSnapshot in snapshot.panels {
             guard panelSnapshot.type == .terminal else { continue }
-            let meta = Workspace.stringValues(from: panelSnapshot.metadata)
-            let terminalType = meta[SurfaceMetadataKeyName.terminalType]
-            let sessionId = meta[SurfaceMetadataKeyName.claudeSessionId]
-            guard let command = registry.resolveCommand(
-                terminalType: terminalType,
-                sessionId: sessionId,
-                metadata: meta
-            ) else { continue }
-            result.append((panelId: panelSnapshot.id, command: command))
+            let key = panelSnapshot.id.uuidString
+            guard let surface = storeSnapshot[key], let ref = surface.active else {
+                continue
+            }
+            guard let strategy = registry.strategy(forKind: ref.kind) else {
+                continue
+            }
+            let action = strategy.resume(ref: ref)
+            if case .skip = action { continue }
+            result.append((panelId: panelSnapshot.id, action: action))
         }
         return result
     }
@@ -406,22 +423,55 @@ extension Workspace {
     /// map is an identity and the lookup is the snapshot id directly.
     private func scheduleAgentRestart(
         from snapshot: SessionWorkspaceSnapshot,
-        registry: AgentRestartRegistry,
+        registry: ConversationStrategyRegistry,
         oldToNewPanelIds: [UUID: UUID]
     ) {
-        let commands = pendingRestartCommands(from: snapshot, registry: registry)
-        guard !commands.isEmpty else { return }
+        let plans = pendingRestartPlans(from: snapshot, registry: registry)
+        guard !plans.isEmpty else { return }
         DispatchQueue.main.asyncAfter(
             deadline: .now() + SessionPersistencePolicy.agentRestartDelay
         ) { [weak self] in
             guard let self else { return }
-            for (snapshotPanelId, command) in commands {
+            for (snapshotPanelId, action) in plans {
                 let livePanelId = oldToNewPanelIds[snapshotPanelId] ?? snapshotPanelId
-                guard let terminalPanel = self.panels[livePanelId] as? TerminalPanel else {
-                    continue
-                }
-                TextBoxSubmit.send(command, via: terminalPanel.surface)
+                self.executeResumeAction(action, on: livePanelId)
             }
+        }
+    }
+
+    /// Execute a `ResumeAction` against a live terminal panel. Recursive
+    /// for `.composite`; logs `.skip` reasons for diagnostic visibility.
+    /// Main-actor; only called from `scheduleAgentRestart`'s deferred
+    /// dispatch.
+    private func executeResumeAction(_ action: ResumeAction, on panelId: UUID) {
+        switch action {
+        case .typeCommand(let text, let submit):
+            guard let terminalPanel = self.panels[panelId] as? TerminalPanel else { return }
+            if submit {
+                TextBoxSubmit.send(text, via: terminalPanel.surface)
+            } else {
+                terminalPanel.surface.sendText(text)
+            }
+        case .launchProcess(let argv, _):
+            // v1: the in-process runProcess seam doesn't expose env injection
+            // in the same shape as Workspace.runProcess; we synthesise the
+            // typed-command form for argv-based fresh launches and let the
+            // shell parse it. Strategies that supply launchProcess today
+            // (Opencode, Kimi) emit a single-arg argv (the binary name) so
+            // there's no shell-quoting hazard. If multi-arg argv lands
+            // later, switch this to a real subprocess seam.
+            guard let terminalPanel = self.panels[panelId] as? TerminalPanel else { return }
+            let cmdline = argv.map { conversationShellQuote($0) }.joined(separator: " ")
+            TextBoxSubmit.send(cmdline, via: terminalPanel.surface)
+        case .composite(let actions):
+            for sub in actions {
+                executeResumeAction(sub, on: panelId)
+            }
+        case .skip(let reason):
+            #if DEBUG
+            dlog("conversation.resume.skipped panel=\(panelId.uuidString.prefix(8)) reason=\(reason)")
+            #endif
+            _ = reason // silence release-build unused warning
         }
     }
 

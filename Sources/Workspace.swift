@@ -5099,6 +5099,13 @@ final class Workspace: Identifiable, ObservableObject {
     /// Mapping from bonsplit TabID to our Panel instances
     @Published private(set) var panels: [UUID: any Panel] = [:]
 
+    /// Monotonically incrementing token used by the sidebar workspace row to
+    /// observe focus flashes targeting any panel in this workspace. Bumped
+    /// from `triggerFocusFlash(panelId:)` so a single fan-out drives the
+    /// pane content flash, the Bonsplit tab strip flash, and the sidebar
+    /// row pulse together. Visual-only; never affects selection.
+    @Published private(set) var sidebarFlashToken: Int = 0
+
     /// Subscriptions for panel updates (e.g., browser title changes)
     private var panelSubscriptions: [UUID: AnyCancellable] = [:]
 
@@ -8793,8 +8800,21 @@ final class Workspace: Identifiable, ObservableObject {
 
     // MARK: - Flash/Notification Support
 
+    /// Single fan-out for a focus flash. Drives, in order:
+    ///   (a) the targeted panel's pane-content flash (existing behavior),
+    ///   (b) the Bonsplit tab strip — scrolls the matching tab into view and
+    ///       plays a brief pulse on it (visual-only; selection is unchanged),
+    ///   (c) the sidebar workspace row — gentle accent pulse so the operator
+    ///       can locate the workspace at a glance even when viewing another.
+    /// Gated on `NotificationPaneFlashSettings` so disabling the user-facing
+    /// "Pane Flash" toggle silences all three channels consistently.
     func triggerFocusFlash(panelId: UUID) {
+        guard NotificationPaneFlashSettings.isEnabled() else { return }
         panels[panelId]?.triggerFlash()
+        if let tabId = surfaceIdFromPanelId(panelId) {
+            bonsplitController.flashTab(tabId)
+        }
+        sidebarFlashToken &+= 1
     }
 
     func triggerNotificationFocusFlash(
@@ -8802,7 +8822,7 @@ final class Workspace: Identifiable, ObservableObject {
         requiresSplit: Bool = false,
         shouldFocus: Bool = true
     ) {
-        guard let terminalPanel = terminalPanel(for: panelId) else { return }
+        guard terminalPanel(for: panelId) != nil else { return }
         if shouldFocus {
             focusPanel(panelId)
         }
@@ -8810,7 +8830,7 @@ final class Workspace: Identifiable, ObservableObject {
         if requiresSplit && !isSplit {
             return
         }
-        terminalPanel.triggerFlash()
+        triggerFocusFlash(panelId: panelId)
     }
 
     func triggerDebugFlash(panelId: UUID) {

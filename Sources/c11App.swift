@@ -5681,7 +5681,7 @@ struct SettingsView: View {
 
             SettingsCardRow(
                 String(localized: "settings.notifications.paneFlash.title", defaultValue: "Pane Flash"),
-                subtitle: String(localized: "settings.notifications.paneFlash.subtitle", defaultValue: "Briefly flash a blue outline when c11 highlights a pane.")
+                subtitle: String(localized: "settings.notifications.paneFlash.subtitle", defaultValue: "Briefly flash a yellow outline when c11 highlights a pane.")
             ) {
                 Toggle("", isOn: $notificationPaneFlashEnabled)
                     .labelsHidden()

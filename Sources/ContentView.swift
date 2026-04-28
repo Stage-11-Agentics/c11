@@ -8485,7 +8485,8 @@ struct VerticalTabsSidebar: View {
                                     themedRailColor: themedColors.rail,
                                     remoteContextMenuWorkspaceIds: remoteContextMenuTargets.map(\.id),
                                     allRemoteContextMenuTargetsConnecting: !remoteContextMenuTargets.isEmpty && remoteContextMenuTargets.allSatisfy { $0.remoteConnectionState == .connecting },
-                                    allRemoteContextMenuTargetsDisconnected: !remoteContextMenuTargets.isEmpty && remoteContextMenuTargets.allSatisfy { $0.remoteConnectionState == .disconnected }
+                                    allRemoteContextMenuTargetsDisconnected: !remoteContextMenuTargets.isEmpty && remoteContextMenuTargets.allSatisfy { $0.remoteConnectionState == .disconnected },
+                                    sidebarFlashToken: tab.sidebarFlashToken
                                 )
                                 .equatable()
                             }
@@ -10905,6 +10906,11 @@ enum SidebarWorkspaceShortcutHintMetrics {
 // main thread during typing). If you add new properties, update == below.
 // Do NOT add @EnvironmentObject or new @Binding without updating ==.
 // Do NOT remove .equatable() from the ForEach call site in VerticalTabsSidebar.
+//
+// Note on `sidebarFlashToken`: it's a precomputed `let` (Int), threaded from
+// the parent ForEach via `tab.sidebarFlashToken`. Keeping it in `==` is what
+// causes ONLY the targeted workspace's row to re-render (and therefore
+// re-fire its `.onChange`) when a flash arrives — sibling rows skip body.
 private struct TabItemView: View, Equatable {
     // Closures, Bindings, and object references are excluded from ==
     // because they're recreated every parent eval but don't affect rendering.
@@ -10924,7 +10930,8 @@ private struct TabItemView: View, Equatable {
         lhs.themedRailColor?.hexString(includeAlpha: true) == rhs.themedRailColor?.hexString(includeAlpha: true) &&
         lhs.remoteContextMenuWorkspaceIds == rhs.remoteContextMenuWorkspaceIds &&
         lhs.allRemoteContextMenuTargetsConnecting == rhs.allRemoteContextMenuTargetsConnecting &&
-        lhs.allRemoteContextMenuTargetsDisconnected == rhs.allRemoteContextMenuTargetsDisconnected
+        lhs.allRemoteContextMenuTargetsDisconnected == rhs.allRemoteContextMenuTargetsDisconnected &&
+        lhs.sidebarFlashToken == rhs.sidebarFlashToken
     }
 
     // Use plain references instead of @EnvironmentObject to avoid subscribing
@@ -10955,8 +10962,15 @@ private struct TabItemView: View, Equatable {
     let remoteContextMenuWorkspaceIds: [UUID]
     let allRemoteContextMenuTargetsConnecting: Bool
     let allRemoteContextMenuTargetsDisconnected: Bool
+    /// Per-workspace flash signal. Bumped by `Workspace.triggerFocusFlash`
+    /// whenever any panel in the workspace is flashed. The row reacts by
+    /// running a single, gentle pulse in the same accent color used for
+    /// other workspace affordances. Visual-only; never selects.
+    let sidebarFlashToken: Int
     @State private var isHovering = false
     @State private var rowHeight: CGFloat = 1
+    @State private var sidebarFlashOpacity: Double = 0
+    @State private var lastObservedSidebarFlashToken: Int = 0
     @AppStorage(ShortcutHintDebugSettings.sidebarHintXKey) private var sidebarShortcutHintXOffset = ShortcutHintDebugSettings.defaultSidebarHintX
     @AppStorage(ShortcutHintDebugSettings.sidebarHintYKey) private var sidebarShortcutHintYOffset = ShortcutHintDebugSettings.defaultSidebarHintY
     @AppStorage(ShortcutHintDebugSettings.alwaysShowHintsKey) private var alwaysShowShortcutHints = ShortcutHintDebugSettings.defaultAlwaysShowHints
@@ -11494,7 +11508,21 @@ private struct TabItemView: View, Equatable {
                             .offset(x: -1)
                     }
                 }
+                .overlay {
+                    // Sidebar flash pulse. Single, gentle accent fill that
+                    // signals "a panel in this workspace was flashed" without
+                    // shouting from the sidebar. Hit testing is disabled so
+                    // the pulse never intercepts clicks/drags.
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(cmuxAccentColor().opacity(sidebarFlashOpacity))
+                        .allowsHitTesting(false)
+                }
         )
+        .onChange(of: sidebarFlashToken) { _, newValue in
+            guard newValue != lastObservedSidebarFlashToken else { return }
+            lastObservedSidebarFlashToken = newValue
+            runSidebarFlashAnimation(token: newValue)
+        }
         .padding(.horizontal, 6)
         .background {
             GeometryReader { proxy in
@@ -11571,6 +11599,27 @@ private struct TabItemView: View, Equatable {
 
     private func contextMenuLabel(multi: String, single: String, isMulti: Bool) -> String {
         isMulti ? multi : single
+    }
+
+    private func runSidebarFlashAnimation(token: Int) {
+        // Reset to the envelope start in case a prior flash is mid-flight.
+        sidebarFlashOpacity = SidebarFlashPattern.values.first ?? 0
+        for segment in SidebarFlashPattern.segments {
+            DispatchQueue.main.asyncAfter(deadline: .now() + segment.delay) {
+                // Bail if a newer flash superseded this run.
+                guard token == lastObservedSidebarFlashToken else { return }
+                let animation: Animation
+                switch segment.curve {
+                case .easeIn:
+                    animation = .easeIn(duration: segment.duration)
+                case .easeOut:
+                    animation = .easeOut(duration: segment.duration)
+                }
+                withAnimation(animation) {
+                    sidebarFlashOpacity = segment.targetOpacity
+                }
+            }
+        }
     }
 
     private func remoteContextMenuWorkspaces() -> [Workspace] {

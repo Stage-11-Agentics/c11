@@ -7,7 +7,7 @@
 
 ## TL;DR
 
-c11 grows a first-class `Conversation` primitive decoupled from any specific TUI process. Each surface that hosts an agent has one or more `ConversationRef`s persisted across c11 restarts. Per-TUI **strategies** in c11 own how to capture and resume conversations using whatever signals each TUI provides: hooks where available, on-disk file scrape as fallback. Wrappers shrink to "declare the kind." This replaces the per-TUI bespoke wrapper pattern that ships in 0.43.0/0.44.0-pre, fixes the SessionEnd-clears-on-quit race, fixes the codex multi-pane "last wins" collapse, and opens a path to remote/cloud agents and conversation history without re-architecting again.
+c11 grows a first-class `Conversation` primitive decoupled from any specific TUI process. Each surface that hosts an agent has one or more `ConversationRef`s persisted across c11 restarts. Per-TUI **strategies** in c11 own how to capture and resume conversations using whatever signals each TUI provides: hooks where available, on-disk file scrape as fallback. Wrappers shrink to "declare the kind." This replaces the per-TUI bespoke wrapper pattern that ships in 0.43.0/0.44.0-pre, fixes the SessionEnd-clears-on-quit race, replaces codex's `codex resume --last` global lookup with per-pane session-id resume (Claude is push-id deterministic; codex is heuristic with an explicit ambiguity policy for same-cwd cases that aren't yet disambiguable), and opens a path to remote/cloud agents and conversation history without re-architecting again.
 
 ## Why we're doing this
 
@@ -33,7 +33,7 @@ The fix that moves us forward replaces the architecture, not the patch.
 
 - **Approach A: Harden the current pattern.** Skip-clear when `isTerminatingApp` is set; document codex degenerate case more loudly. Cheapest path. Rejected because it does not address the structural problems above; we would re-confront them with the next TUI integration and the next race condition.
 - **Approach B: PTY hibernation (tmux model).** A long-running c11d daemon keeps TUI processes alive across c11 GUI restarts; the GUI re-attaches on launch. Rejected because OS sleep, kernel panic, power loss, or system reboot all kill the daemon and lose every conversation. The point of resume is to survive *those* events.
-- **Approach D: Operator-marked checkpoints.** Explicit user action to checkpoint a conversation. Rejected as the primary mechanism because it puts the burden on the operator for what should be transparent. Worth keeping as a future *additional* mechanism (manual `c11 conversation push --source manual`) on top of the auto pipeline.
+- **Approach C: Operator-marked checkpoints.** Explicit user action to checkpoint a conversation. Rejected as the primary mechanism because it puts the burden on the operator for what should be transparent. Worth keeping as a future *additional* mechanism (manual `c11 conversation push --source manual`) on top of the auto pipeline.
 
 ## Mental model
 
@@ -47,12 +47,13 @@ Surface ──hosts──▶ Conversation ──interpreted-by──▶ Conversa
 
 A surface hosts at most one *active* Conversation at a time (v1). It may carry a history of past Conversations. A Conversation belongs to a kind (`claude-code`, `codex`, `opencode`, `kimi`, `claude-code-cloud`, …) and the kind selects the strategy.
 
-A Strategy is a pair of Swift functions:
+The interpretation layer is split into three roles for testability and concurrency:
 
-- `capture(surface, signals) -> ConversationRef?` — produces the current ref from whatever signals are available right now (push-hook, pull-scrape, wrapper-claim).
-- `resume(surface, ref) -> ResumeAction` — describes how to bring the conversation back when c11 respawns the surface.
+- A **scraper/provider** (per kind) performs bounded filesystem I/O — `stat`, `readdir`, optional bounded structured parse — and returns typed candidate signals. Side-effecting; isolated so it can be mocked.
+- A **strategy** (per kind) is `capture(surface, signals) -> ConversationRef?` and `resume(surface, ref) -> ResumeAction`. Strategies are deterministic given collected signals; they do not perform I/O directly. They take signals from the scraper, push values from hooks, and wrapper-claim values, and emit a `ConversationRef` and a `ResumeAction`.
+- The **`ConversationStore`** owns lifecycle and reconciliation across signal sources under a single transition rule.
 
-Both are pure given their inputs. The strategy is stateless. The `ConversationStore` owns lifecycle.
+The split lets unit tests cover pure reconciliation (store + strategy with synthetic signals) separately from fixture-backed scrape tests (scraper against fixture session-storage layouts).
 
 ## Schema
 
@@ -61,16 +62,20 @@ Both are pure given their inputs. The strategy is stateless. The `ConversationSt
 ```swift
 struct ConversationRef: Codable, Sendable {
     let kind: String                                 // "claude-code", "codex", future…
-    let id: String                                   // Opaque to c11; strategy interprets.
+    let id: String                                   // Opaque to c11; strategy interprets. Validation grammar is per-strategy (see §Per-TUI strategies).
+    let placeholder: Bool                            // True while only a wrapper-claim has been seen and the real id has not been resolved yet. Strategies must replace before any ResumeAction is emitted; resume() returns .skip if placeholder remains true.
     let capturedAt: Date                             // When this ref was last refreshed.
     let capturedVia: CaptureSource                   // hook | scrape | wrapperClaim | manual
-    let state: ConversationState                     // alive | suspended | tombstoned | unknown
+    let state: ConversationState                     // alive | suspended | tombstoned | unknown | unsupported
+    let diagnosticReason: String?                    // Strategy-set short reason populated on every update. Examples: "matched cwd + mtime after claim", "ambiguous: 3 candidates; chose newest", "placeholder only; no session file found yet". Surfaced via `c11 conversation get --json` so operators can answer "why did this pane resume that session?" without instrumentation.
     let payload: [String: PersistedJSONValue]?       // Kind-specific extras (cwd, model, transcript path, …)
 }
 
 enum CaptureSource: String, Codable { case hook, scrape, wrapperClaim, manual }
-enum ConversationState: String, Codable { case alive, suspended, tombstoned, unknown }
+enum ConversationState: String, Codable { case alive, suspended, tombstoned, unknown, unsupported }
 ```
+
+`unsupported` is reserved for refs that arrive in a snapshot whose `kind` is not registered in this binary's strategy registry. The store retains the ref (not tombstoned), skips resume, and surfaces a sidebar advisory; a future c11 release with the strategy can promote it.
 
 ### `ResumeAction` (transient, returned by strategy)
 
@@ -78,11 +83,12 @@ enum ConversationState: String, Codable { case alive, suspended, tombstoned, unk
 enum ResumeAction: Sendable {
     case typeCommand(text: String, submitWithReturn: Bool)
     case launchProcess(argv: [String], env: [String: String])
-    case replayPTY(scrollback: String)
     case composite([ResumeAction])
     case skip(reason: String)
 }
 ```
+
+Every strategy that emits `typeCommand` MUST validate `ConversationRef.id` against a documented grammar (regex or validator) and apply explicit shell-quoting/escaping before interpolation. If the id fails validation or the ref is still a placeholder, the strategy MUST return `.skip(reason:)` rather than synthesizing a command. See §Per-TUI strategies for each kind's grammar. Strategies SHOULD prefer `launchProcess(argv:env:)` over `typeCommand` where the surface model permits, since argv avoids shell parsing entirely.
 
 ### Surface ↔ Conversation mapping (persisted)
 
@@ -99,31 +105,51 @@ This lives separately from `surface.metadata`. Surface metadata stays for surfac
 
 ## Capture
 
-Two signal sources, fused inside the strategy. Push primary, pull as fallback and crash-recovery primary.
+Three signal sources, fused inside the store under per-strategy reconciliation rules. **Push vs pull primacy is per-strategy, not global.** Claude Code is push-primary on the live path because the SessionStart hook reports the real session id. Codex is pull-primary on the live path because it exposes no hook surface; the wrapper-claim mints only a placeholder. Crash recovery is always pull-primary regardless of strategy (push values may be stale and the on-disk file may have advanced).
 
-### Push (primary)
+### Push (primary for hooked TUIs)
 
 When a TUI exposes a lifecycle hook, the wrapper proxies it into c11 via a thin CLI command:
 
 ```
-c11 conversation push --kind <k> --id <id> --source hook [--payload '{...}']
+c11 conversation push --kind <k> --id <id> --source hook [--payload <json> | --payload @<path>]
 ```
+
+`--payload` accepts inline JSON or `@<path>` to read JSON from a file (mirrors the existing `HOOKS_FILE` ergonomics in `Resources/bin/claude` so hook authors writing bash do not have to shell-quote JSON).
 
 The CLI command uses `CMUX_SURFACE_ID` from its env. **It does not fall back to focused-surface** (the fallback is the silent-misroute footgun documented above). Errors out cleanly if `CMUX_SURFACE_ID` is unset. The store writes the ref immediately, marks `capturedVia = .hook`.
 
-### Pull (fallback + crash recovery)
+### Pull (primary for hookless TUIs and crash recovery)
 
-The strategy can scrape the TUI's on-disk session storage on demand:
+A per-kind scraper performs bounded filesystem I/O on demand:
 
-- **At every autosave tick** (lightweight: `stat` the directory, find the most-recently-modified session matching this surface's filter, no I/O on the file unless newer than the cached ref). Cost: one `stat` per TUI per autosave per surface.
-- **At quit** (`applicationWillTerminate`), forced. Captures any session the hook might have missed.
-- **At launch on crash recovery** (no `shutdown_clean` flag found), forced. Replaces any cached push value, since that value may be 100ms stale and the on-disk file may have advanced.
+- **On a dedicated scrape scheduler**, not piggybacked on snapshot autosave. Current `SessionPersistencePolicy.autosaveInterval` is 8 seconds; running an unbounded scrape against a forever-growing `~/.claude/sessions/` or `~/.codex/sessions/` on every autosave is too costly in many-pane workspaces and contends with autosave fingerprinting. The scrape scheduler runs on its own debounced cadence (target ≥ 30 s on the happy path; debounced down on pull-on-demand events).
+- **Bounded by the surface's declared kind only.** A surface declared as `terminal_type=codex` runs only the codex scraper, not all registered strategies. A surface with no declared kind runs no scrape.
+- **Bounded by top-N most-recent files by mtime** within the kind's session directory. The scraper does not scan the entire directory; it reads the directory entries, sorts by mtime, and considers at most the top N (default 16) candidates.
+- **Filename-as-id where possible.** Where a TUI encodes the session id in the filename (Claude does; codex's `<uuid>.jsonl` does), the scraper reads only filename + mtime + size and never opens the file unless content parsing is required.
+- **At quit** (`applicationWillTerminate`), forced one-shot scrape per surface. Captures any session the hook might have missed.
+- **At launch on crash recovery** (no clean-shutdown marker found), forced. Replaces any cached push value.
 
-Reconciliation rule: latest `capturedAt` wins, with source-priority tiebreaker on close timestamps (push > scrape > wrapperClaim > manual). Provenance is recorded so debugging is possible without instrumentation.
+#### Privacy contract for scrape
+
+`~/.claude/sessions/`, `~/.codex/sessions/*.jsonl`, and any future TUI's session storage may contain transcripts (prompts, file paths, model outputs, possibly secrets). The scraper MUST:
+
+- Read metadata only (filename, mtime, size) where the session id is recoverable from metadata.
+- Where structured parse is required (e.g., to pull a session id from the first line of a JSONL), perform a bounded structured parse — header fields only, with an explicit byte cap (default 4 KiB) and explicit field allowlist.
+- NEVER copy transcript text, prompts, or model output into c11 snapshots, the conversation store, the global derived index, diagnostics, or telemetry.
+- NEVER log transcript content. `Diagnostics.log` calls in scraper code are limited to filenames, file sizes, mtimes, candidate counts, and match reasons.
+
+Future strategies inherit this rule; new kinds do not get to relax it without an explicit plan-review-level decision.
 
 ### Wrapper-claim (lowest priority)
 
-The wrapper, at launch, issues `c11 conversation claim --kind <k> --cwd "$PWD"` so the surface has *something* before the TUI fires its first hook. For TUIs that never fire hooks, this is the only push-side signal the strategy ever sees.
+The wrapper, at launch, issues `c11 conversation claim --kind <k> --cwd "$PWD"` so the surface has *something* before the TUI fires its first hook. The store mints a placeholder ref with `placeholder: true`. For TUIs that never fire hooks, this is the only push-side signal the strategy ever sees; the scraper is responsible for replacing the placeholder id with the real one once a candidate session file appears.
+
+Wrapper-claim is **idempotent and conservative**: a wrapper-claim only writes if the existing ref is older AND of equal-or-lower provenance (`wrapperClaim` ≤ existing source). Hooks and scrapes always win over wrapper claims regardless of timestamp. This prevents an operator who types `claude` twice in the same surface from regressing a scrape-confirmed real id back to a placeholder.
+
+### Reconciliation rule
+
+Latest `capturedAt` wins, with source-priority tiebreaker on close timestamps (`hook > scrape > manual > wrapperClaim`). `manual` outranks `wrapperClaim` because explicit operator action should override automatic placeholder claims. Provenance is recorded on every write via `capturedVia` and `diagnosticReason`, so debugging is possible without instrumentation. (Wall-clock timestamps and filesystem mtimes are weak ordering tools under close races; if reconciliation correctness becomes an issue post-v1, escalate to monotonic store-side sequence numbers.)
 
 ## State machine
 
@@ -141,13 +167,12 @@ The wrapper, at launch, issues `c11 conversation claim --kind <k> --cwd "$PWD"` 
                                        │   alive    │
                                        └─────┬──────┘
                                              │
-                                             ├── TUI exits via user `/exit`
-                                             │   (and isTerminatingApp == false)
+                                             ├── TUI process ended
+                                             │   (isTerminatingApp == false)
                                              ▼
                                        ┌────────────┐
-                                       │ tombstoned │  ← do not auto-resume
-                                       └────────────┘
-
+                                       │  unknown   │  ← scrape on next launch
+                                       └────────────┘   reclassifies
                                              │
                                              ├── c11 shutting down (isTerminatingApp)
                                              │   OR c11 crashed
@@ -157,46 +182,77 @@ The wrapper, at launch, issues `c11 conversation claim --kind <k> --cwd "$PWD"` 
                                        └────────────┘
 ```
 
-`unknown` is the resting state when c11 came up after a crash and found a ref it cannot classify. Strategy re-runs pull-scrape, then transitions to `suspended` (re-trustworthy) or `tombstoned` (TUI's session file is gone).
+`unknown` is the resting state when c11 came up after a crash and found a ref it cannot classify, OR when a TUI's lifecycle hook fires "ended" but cannot distinguish user-initiated `/exit` from process crash, terminal kill, or wrapper failure. Strategy re-runs pull-scrape, then transitions to `suspended` (session file present, resumable) or `tombstoned` (session file is gone or operator explicitly ended).
 
-`alive → tombstoned` only fires when the strategy can determine "user explicitly ended this." For claude that's the SessionEnd hook *and* `isTerminatingApp == false`. For codex (no hook), the strategy cannot distinguish; it never tombstones autonomously. It treats every absent-on-restore session-file as `tombstoned`.
+`alive → tombstoned` is the conservative path: only fires when the strategy can determine "user explicitly ended this" *and* preservation is not safer. SessionEnd-from-hook with `isTerminatingApp == false` is **not** sufficient on its own — the hook payload typically does not distinguish user `/exit` from Claude crash, terminal kill, or wrapper failure, and tombstoning on all of these would refuse auto-resume of work the user expected to continue. The store transitions such cases to `unknown` and lets the next-launch scrape make the call. Tombstone fires explicitly via `c11 conversation tombstone --reason <text>` (e.g., from an explicit operator-initiated "end this conversation" UX) or when next-launch scrape confirms the session file is gone. For codex (no hook), the strategy never tombstones autonomously; absent-on-restore session-file transitions to `unknown` (not `tombstoned`), and operators clear via `c11 conversation clear --surface <id>`.
 
 `alive → suspended` fires when c11 starts shutting down. The store walks all surfaces, sets active refs to `suspended`, then the snapshot is written.
 
 ## Crash recovery
 
-**The marker:** c11 writes `~/.c11/runtime/shutdown_clean` (a one-byte file) at the start of `applicationWillTerminate`, deletes it at the end of `applicationDidFinishLaunching`. If on launch the file is absent, we crashed (or sleep-killed, or power-died, or kernel-panicked).
+**The marker:** inverted dirty/clean semantics, scoped per c11 bundle.
+
+- At launch, c11 writes a *dirty* sentinel `~/.c11/runtime/shutdown.<bundle_id>.dirty` containing the launch timestamp.
+- During termination, c11 runs forced final scrape across all surfaces, writes the snapshot synchronously, and **only after** both succeed, replaces the dirty sentinel with `~/.c11/runtime/shutdown.<bundle_id>.clean` containing the clean-shutdown timestamp.
+- On next launch, c11 reads the prior-shutdown sentinel: `.clean` means clean shutdown; `.dirty` (or missing) means crashed/sleep-killed/power-died/kernel-panicked between launch and final-snapshot completion.
+
+Writing the marker only after both forced scrape and snapshot have completed eliminates the false-clean window of the original `shutdown_clean`-at-start design.
+
+Bundle-scoping (`shutdown.<bundle_id>.*`) prevents debug builds, release builds, and concurrent c11 instances from cross-contaminating each other's crash markers. Encoding the clean-shutdown timestamp in the file lets recovery treat snapshots whose `capturedAt` is far from the marker time as crash-recovery candidates even when a `.clean` is present.
 
 **On crash:**
 
 1. Load the most recent snapshot.
 2. For every active ref in the snapshot, transition state to `unknown`.
-3. Run pull-scrape for every `unknown` ref. Update or tombstone based on result.
-4. Proceed with normal restore, including resume.
+3. Run pull-scrape for every `unknown` ref. Update or transition to `tombstoned` only if the session file is gone *and* the strategy is confident (Claude with hook history); otherwise leave at `unknown`.
+4. Proceed with normal restore, including resume only for refs that landed at `suspended`.
 
 The pull-scrape on crash recovery is the "primary source on death." Push values are not trusted until they are fresh again.
 
 ## Per-TUI strategies
 
+The v1 strategies ship in three honest tiers:
+
+1. **Strong resume** — Claude Code. The wrapper injects `--session-id` and the SessionStart hook reports the real id. Identity is deterministic.
+2. **Heuristic resume** — Codex. cwd + mtime + surface activity is heuristic, not deterministic. The strategy ships an explicit ambiguity policy: when more than one candidate session matches the surface filter, **do not auto-resume**; record `diagnosticReason`, set state to `unknown`, surface a sidebar advisory.
+3. **Fresh launch only** — Opencode, Kimi. Their session storage has not been mapped. Wrapper-claim mints a placeholder; resume launches a fresh process.
+
+A merge-blocking fixture-driven test reproduces the 2-pane same-cwd staging-QA failure (the bug the plan exists to fix) and verifies the Codex strategy's behavior under ambiguity.
+
 ### Claude Code
 
-- **Capture push:** SessionStart hook → `c11 conversation push --kind claude-code --id <session_id> --source hook`. Writes the ref with `state = .alive`.
-- **Capture pull:** Scrape `~/.claude/sessions/` (path verified at impl) for the most recent session matching the surface's cwd. The strategy stores cwd in the ref payload to narrow the scrape.
-- **State transitions:** SessionEnd hook fires → `c11 conversation tombstone --kind claude-code --id <session_id> --reason session-end-hook`. The CLI checks `isTerminatingApp` (queryable via socket) and, if true, no-ops. If false, tombstones.
-- **Resume:** `typeCommand("claude --dangerously-skip-permissions --resume <id>", submitWithReturn: true)`.
+- **Capture push:** SessionStart hook → `c11 conversation push --kind claude-code --id <session_id> --source hook`. Writes the ref with `state = .alive`, `placeholder = false`.
+- **Capture pull:** Scrape `~/.claude/sessions/` (path verified at impl) for the most recent session matching the surface's cwd. The strategy stores cwd in the ref payload to narrow the scrape; transcript content is NEVER read (filename + mtime carry the session id).
+- **State transitions:** SessionEnd hook fires → `c11 conversation push --kind claude-code --id <session_id> --source hook --state ended`. The CLI checks `isTerminatingApp` (see below); if true, no-op (preserve ref). If false, transition to `unknown` (not `tombstoned`) — SessionEnd does not distinguish user `/exit` from Claude process crash, terminal kill, or wrapper failure. Next-launch scrape reclassifies.
+- **`isTerminatingApp` query path:** Exposed via the existing socket capabilities/ping response (no new dedicated method); the field is present on every response and can be read by the CLI without an extra round-trip. CLI policy on socket failure: **treat unreachable/timeout as terminating** so we err on the side of preservation, never tombstone on socket-uncertainty. Bounded query timeout: 250 ms. A regression test exercises hook-fires-during-shutdown with a slow/dying socket and verifies the ref is preserved.
+- **Id grammar:** UUID v4 (matches the existing `AgentRestartRegistry` validation). Ids that fail validation cause `resume()` to return `.skip(reason: "invalid id")`.
+- **Resume:** `typeCommand("claude --dangerously-skip-permissions --resume <id>", submitWithReturn: true)` — id is shell-quoted via the strategy's quoting helper before interpolation.
 
 ### Codex
 
-- **Capture push:** Wrapper at launch issues `c11 conversation claim --kind codex --cwd "$PWD"`. The store mints a placeholder id (`<surface-uuid>:<launch-ts>`). No hook surface from codex itself.
-- **Capture pull:** Scrape `~/.codex/sessions/*.jsonl` (path verified at impl). Filter: same cwd as the surface AND modification time ≥ wrapper-claim time AND modification time ≥ surface's last activity timestamp. Picks the matching session id; updates the ref's `id` from placeholder to the real one.
-- **State transitions:** No hook to detect tombstone. Treat absent-on-restore as `tombstoned`.
-- **Resume:** `typeCommand("codex resume <session-id>", submitWithReturn: true)` — the *specific* id, not `--last`. This is the upgrade.
+- **Capture push:** Wrapper at launch issues `c11 conversation claim --kind codex --cwd "$PWD"`. The store mints a ref with `placeholder: true`, `id = "<surface-uuid>:<launch-ts>"` (placeholder format is irrelevant; recognition is via the `placeholder` field, not id parsing). No hook surface from codex itself.
+- **Capture pull:** Scrape `~/.codex/sessions/*.jsonl` (path verified at impl). Filter: same cwd as the surface AND mtime ≥ wrapper-claim time AND mtime ≥ surface's last-activity timestamp (see §Surface activity). Filename pattern `<uuid>.jsonl` carries the session id; the scraper does not parse transcript content.
+- **Ambiguity policy:** if more than one candidate session matches the surface filter, the strategy returns the ref with `state = .unknown`, `placeholder` cleared but `id` left at the most plausible candidate, and a `diagnosticReason` like `"ambiguous: 3 candidates; chose newest"`. `resume()` returns `.skip(reason: "ambiguous")` for `state = .unknown`. A sidebar advisory surfaces the situation; operators clear via `c11 conversation clear --surface <id>` to force a fresh launch.
+- **State transitions:** No hook to detect end. Absent-on-restore session-file transitions to `unknown` (NOT `tombstoned`) — a transient unreadable mount, a cwd path change, or an out-of-band file move would otherwise silently kill resumability. Operators tombstone explicitly.
+- **Id grammar:** UUID v4 (codex session filenames are `<uuid>.jsonl`). Ids that fail validation cause `resume()` to return `.skip(reason: "invalid id")`.
+- **Resume:** `typeCommand("codex resume <session-id>", submitWithReturn: true)` — id is shell-quoted via the strategy's quoting helper before interpolation. The *specific* id, not `--last`.
+
+### Surface activity
+
+The Codex scrape filter relies on a per-surface `lastActivityTimestamp`. Definition for v1:
+
+- Updated by terminal input AND terminal output, debounced to 250 ms.
+- Updated by `c11 conversation claim` (so the wrapper-claim establishes a lower bound).
+- Persisted in the workspace snapshot; survives c11 restarts.
+- Read via the conversation store's strategy-input bundle.
+
+Without this primitive, the Codex disambiguation cannot be tested or implemented. Defining it before strategy implementation is on the merge-blocker list.
 
 ### Opencode
 
-- **Capture push:** Wrapper claim only.
-- **Capture pull:** TBD at impl — opencode's session storage needs reverse engineering. If none exists, strategy is fresh-launch-only.
-- **Resume:** `launchProcess(argv: ["opencode"], env: [:])`.
+- **Capture push:** Wrapper claim only (placeholder ref).
+- **Capture pull:** TBD at impl — opencode's session storage needs reverse engineering. If none exists, strategy is fresh-launch-only and `capture()` returns `nil` (the wrapper claim is left as the only ref).
+- **Resume:** `.skip(reason: "fresh-launch-only")` if `placeholder: true` (no real id ever resolved); otherwise `launchProcess(argv: ["opencode"], env: [:])`.
 
 ### Kimi
 
@@ -204,7 +260,7 @@ Same shape as opencode. Strategy starts as fresh-launch; grows scrape support if
 
 ### Future kinds
 
-A new kind is one Swift file implementing the two functions. No app-wide changes. The `ConversationStrategyRegistry` is a hardcoded enum-shaped struct; we are not building a plugin system.
+A new kind is one Swift strategy file plus one scraper file in `Sources/Conversation/Strategies/` and `Sources/Conversation/Scrapers/`, registered in the `ConversationStrategyRegistry`. CLI help, wrapper packaging in `Resources/bin/`, Localizable strings, and a fixture-backed test are part of "implementing a new kind." The `ConversationStrategyRegistry` is a hardcoded enum-shaped struct; we are not building a plugin system.
 
 ## Wrapper changes
 
@@ -220,30 +276,36 @@ Wrappers shrink to:
 
 The current `c11 claude-hook session-start` collapses to `c11 conversation push --kind claude-code --id <id-from-stdin>`. The `claude-hook` CLI subcommand stays as a thin translator (parses the SessionStart JSON payload, calls `conversation push`) so existing hook configurations keep working. Metadata-writing logic (`claude.session_id` reserved key) moves out.
 
-The codex wrapper gains the `claim` call (the current wrapper omits this; it only sets `terminal_type` via `set-agent`). The `set-agent --type` call stays for sidebar chip rendering and other metadata consumers.
+The codex wrapper gains the `claim` call (the current wrapper omits this; it only sets `terminal_type` via `set-agent`). The `set-agent --type` call stays for sidebar chip rendering and other metadata consumers. The wrapper's existing comment block justifying `codex resume --last` becomes stale once this lands and must be rewritten in the same PR to describe the `c11 conversation claim` flow.
+
+`CMUX_DISABLE_AGENT_RESTART=1` continues to gate **resume execution only**, not capture. The wrapper still issues `c11 conversation claim` regardless; hooks still report; scrapers still run. An operator who turned off auto-resume retains observability (`c11 conversation list/get` still works) for debugging when re-enabling.
 
 ## CLI surface
 
 ```
 c11 conversation claim --kind <k> [--cwd <path>] [--id <id>]
-c11 conversation push --kind <k> --id <id> --source <hook|scrape|manual> [--payload <json>]
+c11 conversation push --kind <k> --id <id> --source <hook|scrape|manual> [--payload <json> | --payload @<path>]
 c11 conversation tombstone --kind <k> --id <id> [--reason <text>]
 c11 conversation list [--surface <id>] [--workspace <id>] [--json]
 c11 conversation get --surface <id> [--json]
 c11 conversation clear --surface <id>
 ```
 
-`list` and `get` are observability for operators and agents. `clear` is the explicit "wipe this surface's conversations" escape hatch.
+`list` and `get` are observability for operators and agents. `get --json` returns the active ref, state, captured source, captured time, payload summary, `diagnosticReason`, and whether a registered strategy can resume it — this is the operator-visible artifact for the wrong-session debugging path that motivated the plan. `clear` is the explicit "wipe this surface's conversations" escape hatch.
+
+`--payload` accepts inline JSON or `@<path>` to read JSON from a file (mirrors the `HOOKS_FILE` ergonomics in `Resources/bin/claude` so hook authors writing bash do not need to shell-quote JSON).
 
 All commands resolve `--surface` from `CMUX_SURFACE_ID` if unset, **without falling back to focused-surface**. If the env var is missing and no flag was given, the command errors out.
 
 ## Snapshot integration
 
-### Per-workspace embedded (source of truth)
+### Per-panel embedded (source of truth)
 
-Every workspace snapshot grows a `surface_conversations: { surface_id: SurfaceConversations }` field alongside the existing `panels` array. On capture, the `ConversationStore` is asked to dump active+history refs for every surface in the workspace; the result writes into the snapshot.
+`SurfaceConversations { active: ConversationRef?, history: [ConversationRef] }` is embedded directly on each `SessionPanelSnapshot`, not as a sibling map keyed by surface id. Embedding makes the conversation follow the panel through `oldToNewPanelIds` remapping naturally, eliminates the orphan-map class of bugs that a sibling map keyed by old surface ids would invite when stable panel ids are disabled, and removes the need for an explicit pruning rule for surfaces that no longer exist.
 
-On restore, the executor reads the field, populates the in-memory `ConversationStore` for the new surfaces, then schedules the resume pass that already exists in `Workspace.scheduleAgentRestart` — but the pass now consults `ConversationStore` + strategy registry instead of the inline `pendingRestartCommands` registry lookup.
+On capture, the `ConversationStore` is asked for active+history refs for each panel and the result is serialized into that panel's snapshot. On restore, the executor reads the field per-panel, populates the in-memory `ConversationStore` for the new surfaces, then schedules the resume pass that already exists in `Workspace.scheduleAgentRestart` — but the pass now consults `ConversationStore` + strategy registry instead of the inline `pendingRestartCommands` registry lookup.
+
+`history: []` is written explicitly as an empty array in v1 (not omitted) for stable `--json` output across v1/v2 and to avoid special-casing in tooling consumers.
 
 ### Global derived index (read-only view)
 
@@ -259,7 +321,7 @@ The Conversation primitive does not appear in the blueprint schema. If we ever s
 
 ## Conversation history
 
-Persisted shape is `SurfaceConversations { active: Ref?, history: [Ref] }`. v1 only ever populates `active`; `history` is empty in writes and ignored on reads.
+Persisted shape is `SurfaceConversations { active: Ref?, history: [Ref] }`. v1 only ever populates `active`; `history` is written as an empty array (not omitted) and ignored on reads.
 
 When we ship history (v1.x or v2):
 
@@ -298,9 +360,6 @@ func execute(_ action: ResumeAction, on panelId: UUID) {
     case .launchProcess(let argv, let env):
         guard let panel = panels[panelId] as? TerminalPanel else { return }
         panel.runProcess(argv, env: env)
-    case .replayPTY(let scrollback):
-        guard let panel = panels[panelId] as? TerminalPanel else { return }
-        panel.surface.appendScrollback(scrollback)
     case .composite(let actions):
         actions.forEach { execute($0, on: panelId) }
     case .skip(let reason):
@@ -315,9 +374,11 @@ The `ConversationStore` is accessed from multiple threads:
 
 - Socket handlers (off-main) on every CLI call (`claim`, `push`, `tombstone`, `list`).
 - Main actor on snapshot read/write at quit + restore.
-- Autosave timer thread on pull-scrape ticks.
+- Scrape scheduler thread on pull-scrape ticks.
 
-Use a serial dispatch queue for store mutations + reads; expose `async` accessors. State transitions are the critical-section boundary; capture/resume strategy calls happen outside the lock.
+**The store is a Swift `actor`.** Idiomatic for state-isolated per-surface map; aligns with c11's gradual move to actor isolation; clean test seam where every CLI call is one `await store.<verb>()`. State transitions are the critical-section boundary by virtue of actor isolation; strategy calls (which are deterministic given collected signals) happen outside the actor — the store hands a strategy a snapshot of inputs, awaits the result, and applies it under isolation.
+
+Where existing socket handlers are sync, they call into the store via a small `Task { await … }` adapter. If a measured hot-path shows the actor introduces latency over the existing socket-handler shape, fall back to a serial dispatch queue with sync accessors as a tracked migration; the choice is documented as `actor` for v1.
 
 ## Failure modes and how each is handled
 
@@ -327,26 +388,37 @@ Use a serial dispatch queue for store mutations + reads; expose `async` accessor
 | Hook env strips `CMUX_SURFACE_ID` | Silently routes to focused | CLI errors out; no write; pull-scrape catches up |
 | TUI crashes before hook fires | No ref captured | Pull-scrape on next autosave catches it |
 | c11 crashes | Snapshot may be stale | `unknown` transition + forced pull-scrape on launch |
-| Two panes same TUI same cwd | "last wins" | Strategy reconciles by per-surface activity timestamp |
+| Two panes same TUI same cwd | "last wins" | Push-id deterministic for Claude; for Codex strategy, multi-candidate triggers ambiguity policy (state → `unknown`, advisory surfaced, no auto-resume) |
 | Sleep / power-off mid-session | Same as crash | Same as crash |
-| TUI session file deleted out-of-band | Silent stale resume | Pull-scrape returns nothing → tombstone |
+| TUI session file deleted out-of-band | Silent stale resume | For Claude: pull-scrape returns nothing → `tombstoned`. For hookless (Codex/Opencode/Kimi): pull-scrape returns nothing → `unknown` (operator clears explicitly) |
 | Wrapper not on PATH (system update) | Silent loss of capture | Wrapper-claim absent → strategy degrades to pull-scrape only; no regression |
 
 ## Testing
 
 - **Unit tests** for each strategy's `capture` and `resume` against fixture session-storage layouts. No live TUIs.
 - **Unit tests** for the state machine: every transition exercised, including the `isTerminatingApp` gate.
-- **Unit tests** for crash recovery: simulate missing `shutdown_clean` flag, verify `unknown` transition + pull-scrape behavior.
+- **Unit tests** for crash recovery: simulate missing/dirty shutdown sentinel, verify `unknown` transition + pull-scrape behavior.
+- **Failure-mode test mapping (1:1 with §Failure modes table).** A `ConversationStoreFailureModeTests.swift` (or equivalent) with one test per row:
+  - `testHookFiresAfterShutdownBegins` (slow/dying socket; verify ref preserved)
+  - `testHookEnvStripsCmuxSurfaceId` (CLI errors out; pull-scrape catches up)
+  - `testTuiCrashesBeforeHookFires` (pull-scrape on next autosave catches it)
+  - `testCrashRecoveryUnknownTransition` (dirty sentinel found; refs → unknown → scrape)
+  - `testTwoPanesSameTuiSameCwd` (Codex ambiguity policy: state→unknown, no auto-resume, advisory surfaced)
+  - `testSleepPowerOffMidSession` (same as crash recovery)
+  - `testTuiSessionFileDeletedOutOfBand` (scrape returns nothing → unknown for hookless, tombstoned for Claude with hook history)
+  - `testWrapperNotOnPath` (wrapper-claim absent → strategy degrades to pull-scrape only; no regression)
+- **Fixture-driven regression test for the staging-QA bug.** `testCodexTwoPanesSameCwd_2026_04_27` (or similar) reproduces the 4-pane Claude/Codex failure that motivated this plan. Merge-blocker.
 - **Integration test** for snapshot round-trip: workspace with N surfaces, each with a different conversation kind, captured + restored, refs match.
-- **Manual QA matrix** (operator-driven): the 4-pane Claude/Codex test that exposed the bug today, plus crash-recovery (`kill -9 c11`), plus mixed-kind workspaces.
+- **Manual QA matrix** (operator-driven): the 4-pane Claude/Codex test, crash-recovery (`kill -9 c11`), mixed-kind workspaces, clean Cmd+Q, hook-fires-during-shutdown, user `/exit` tombstone, wrapper-not-on-PATH degradation.
 
-We do not ship a regression test that lives in `WorkspaceSnapshotRoundTripAcceptanceTests.swift` for the bug observed today; we ship the architecture that makes the bug structurally impossible.
+The architecture is designed to make the staging-QA bug class structurally less likely (push-id where available, ambiguity-aware where not), but identity for hookless TUIs remains heuristic; the fixture-driven regression test is what proves the bug stays fixed.
 
 ## Rollout
 
-- **No migration.** Pre-release software. The existing `claude.session_id` reserved key in surface metadata is dropped. Snapshots in flight that contain it are read once for backward-compat at v1.0 launch (one release window) and dropped from snapshots written after.
-- **No feature flag for the architecture.** The new design is the only design. The current `agentRestartOnRestoreEnabled` policy flag stays as the global on/off (off-by-default with env-var to flip on, until a v1.0 promotion in a later release).
-- **0.44.0 ships with the conversation-store as its marquee feature.** The other 25+ upstream picks ride along. The held PR #94 gets the implementation diff stacked onto its branch (or, more likely, the branch is recreated from main after impl merges to keep history clean). The current 0.44.0 changelog entry for "Claude Code session resume across c11 restarts" gets rewritten to describe the conversation-store version.
+- **One-release backward-compat bridge for `claude.session_id` reserved metadata.** PR #89 has shipped opt-in in 0.43.0 and default-on in 0.44.0-pre, so operators (and Atin's testing rigs) have snapshots where `claude.session_id` is baked into surface metadata. On snapshot read, if `surface.metadata.claude.session_id` is present and the panel's `SurfaceConversations.active` is empty, lift the value into a `ConversationRef(kind: "claude-code", id: <value>, placeholder: false, capturedVia: .scrape, state: .unknown, diagnosticReason: "lifted from legacy claude.session_id metadata")` and run the standard reconcile path. New writes drop the `claude.session_id` metadata key. The bridge is removed in 0.46.0 (or v1.1, whichever ships later). A unit test covers the read-side path.
+- **No feature flag for the architecture itself.** The new design is the only design. The current `agentRestartOnRestoreEnabled` policy flag stays as the global on/off for *resume execution* (off-by-default with env-var to flip on, until a v1.0 promotion in a later release). Capture (claim, push, scrape) runs regardless of the flag — see §Wrapper changes.
+- **Skill update is part of the change, not a follow-up.** Per c11's `CLAUDE.md`, every change to the CLI, socket protocol, metadata schema, or surface-model is incomplete until the skill is updated. The `c11 conversation claim|push|tombstone|list|get|clear` surface, the no-focused-fallback rule, the agent-facing inspection workflow (`c11 conversation get` before debugging resume), and any deprecation note on `claude-hook` MUST land in `skills/c11/SKILL.md` (and adjacent skill files where appropriate) in the same merge as the implementation. Treat the skill update as a merge-blocker.
+- **Release window.** The current 0.44.0 changelog entry for "Claude Code session resume across c11 restarts" needs a rewrite to describe the conversation-store version. Whether the conversation-store rides 0.44.0 as the marquee feature, or is sequenced to 0.45.0+ after the 0.44.0 hot-fix ships, is a release-management decision that the operator owns; see "Open questions" §1 below.
 
 ## Out of scope (do not ship in this work)
 
@@ -361,30 +433,49 @@ We do not ship a regression test that lives in `WorkspaceSnapshotRoundTripAccept
 
 ## Open questions for plan review
 
-These are the calls I want pressure-tested before implementation starts:
+The Trident plan review (2026-04-27, see `conversation-store-architecture-review-pack-2026-04-27T2025/`) resolved most of the original 12 open questions; revisions above bake in the answers. The remaining strategic calls — author-intent or operator-strategy decisions, not architecture decisions — are:
 
-1. **Pull-scrape cadence.** Every autosave tick (~30 s, confirm) per TUI per surface. Is the I/O cost acceptable? Alternative: only at quit + on-demand at every push.
-2. **Tombstone determination for hookless TUIs.** Codex's strategy cannot distinguish tombstone from suspended. Current rule: "absent-on-restore = tombstone." Better signal possible? (Reading codex session-file `last_message_role` to detect "session looked complete"?)
-3. **Hook payload routing.** Should `c11 claude-hook session-start` keep its full handler (existing telemetry breadcrumbs + sessionStore) or fully collapse to `c11 conversation push`? The latter is cleaner; the former preserves the existing breadcrumb taxonomy.
-4. **Strategy resolution at restore.** When the snapshot says `kind = "claude-code-2"` but no strategy is registered, what happens? Skip with `Diagnostics.log` (proposal) or hold the ref in the store and offer a "no strategy" UI? Lean toward skip.
-5. **Wrapper-claim id format.** `<surface-uuid>:<launch-ts>` is suggested. Better placeholder shape? Strategies need to recognize it as "still a placeholder" during pull-scrape so they know to replace.
-6. **`shutdown_clean` location.** `~/.c11/runtime/shutdown_clean` — alternatives (per-c11-instance file, snapshot directory, sentinel inside the snapshot itself)?
-7. **`history` field on disk.** Write as empty array, or omit from JSON? Codable defaults make this near-no-op either way.
-8. **`ResumeAction.replayPTY`.** Premature? No v1 strategy emits it. Could ship without and add when we have a use case.
-9. **Wrapper PATH gating.** Should the wrapper short-circuit when `CMUX_DISABLE_AGENT_RESTART=1`? Today it unconditionally writes the claim regardless of restart policy; the policy only gates the *resume* pass. Cleaner if the wrapper bails too.
-10. **In-flight 0.44.0 changelog rewrite.** The current draft entry for "Claude Code session resume across c11 restarts" (#89) needs a rewrite to describe the conversation-store version. Done at impl time, but plan-review should know to expect it.
-11. **Concurrency model specifics.** Serial dispatch queue is named above; is an actor (Swift concurrency) cleaner here? c11 is gradually moving to actor-isolation; this might be a good place to push that.
-12. **Where does `isTerminatingApp` get queried by the CLI?** New socket method `system.is_terminating`, or piggyback on an existing one? CLI tombstone command needs a way to ask.
+1. **Release window: bundle conversation-store with 0.44.0, or sequence to 0.45.0+?** Standard reviewers tolerate the current "0.44.0 marquee feature" framing but flag the rollout story as too thin. Adversarial-Claude argues forcefully that bundling an architectural rewrite with the held PR #94 + 25 upstream picks is how releases slip 2x and quality dips, and recommends shipping 0.44.0 on the existing C11-24 hotfix and landing the conversation-store in 0.45.0 with proper bake time. Three options:
+   - (a) ship 0.44.0 on C11-24 hotfix, conversation-store in 0.45.0 (lowest risk);
+   - (b) hold 0.44.0 until conversation-store ready, ship together (current implication, highest risk);
+   - (c) pull C11-24 from 0.44.0, ship without resume, conversation-store in 0.45.0 (cleanest conceptually).
+2. **Architecture-level kill switch (`CMUX_DISABLE_CONVERSATION_STORE=1`)?** The plan currently has no architecture-level fallback; the only off-switch is `agentRestartOnRestoreEnabled` which gates execution, not capture/store/scrape. If v1 has bugs in the store itself, there is no rollback short of reverting. Worth a one-release kill switch that falls back to the existing `claude.session_id` reserved-metadata path, double-maintained briefly?
+3. **Defer pull-scrape from v1 entirely (push-only v1, scrape in v1.1)?** Cuts new-bug surface area materially. v1 ships push-only Claude + wrapper-claim Codex; pull-scrape lands in v1.1 once push is rock-solid. Tradeoff: hookless TUIs (Codex same-cwd, opencode, kimi) lose much of the resume value in v1; crash recovery degrades to "use stale push values."
+4. **Hook payload routing.** Should `c11 claude-hook session-start` keep its full handler (existing telemetry breadcrumbs + sessionStore) or fully collapse to `c11 conversation push`? The latter is cleaner; the former preserves the existing breadcrumb taxonomy.
+5. **cmux upstream relationship.** Should the conversation primitive land upstream in `manaflow-ai/cmux`, stay c11-only, or in some hybrid shape? c11's CLAUDE.md is explicit about bidirectional contributions; deciding now avoids divergence cost on shared code.
+6. **Payoff metric.** What metric will tell us the architecture is paying off post-implementation? Number of TUIs successfully integrated? Reduction in resume-failure reports? Add-time per new strategy? One-line answer.
+7. **Namespaced `kind` (`vendor/product[@version]`) at v1.** Forward-compat bet: prevents migration when Claude Code ships a breaking SessionStart payload, when Lattice agents need a kind, when user-defined kinds appear. Cost is ~5 minutes of design now. Default flat strings are fine if we explicitly choose scope over forward-compat.
+
+(See `conversation-store-architecture-review-pack-2026-04-27T2025/synthesis-action.md` §"Surface to user" and §"Evolutionary worth considering" for additional non-architectural items the panel flagged: FSEvents/kqueue instead of polling, agent-facing CLI verbs as a v1 vision, promoting `cwd` to top-level, confidence-scored refs / `ResumePlan`, Lattice binding, public strategy contract, strategy fixture harness, `ConversationState × ResumePolicy` split.)
 
 ## References (current code; line numbers will shift)
 
+### Existing files (modified)
+
 - `Sources/AgentRestartRegistry.swift` — current registry; replaced by per-kind strategies.
 - `Sources/Workspace.swift:336-426` — current `pendingRestartCommands` + `scheduleAgentRestart`; refactored to consume `ResumeAction`.
-- `Sources/AppDelegate.swift:2765-2783` — `applicationShouldTerminate` / `applicationWillTerminate` snapshot capture; gains `shutdown_clean` write.
+- `Sources/AppDelegate.swift:2765-2783` — `applicationShouldTerminate` / `applicationWillTerminate` snapshot capture; gains the inverted dirty/clean shutdown-sentinel write (after final scrape + snapshot).
 - `CLI/c11.swift:13244-13582` — current `runClaudeHook`; refactored to route through `conversation push|claim|tombstone`.
 - `CLI/c11.swift:7238-7266` — current `resolveSurfaceId`; the `nil → focused-fallback` is the source of the env-loss footgun. Fallback removed for the conversation CLI surface; behavior preserved (with deprecation warning) elsewhere if external callers depend on it.
 - `Resources/bin/claude` — current wrapper; rewritten smaller.
-- `Resources/bin/codex` — current wrapper; gains `c11 conversation claim` call.
-- `Sources/SessionPersistence.swift` — snapshot schema; gains `surface_conversations` field.
-- `Sources/WorkspaceSnapshotStore.swift` — snapshot read/write; round-trips the new field.
+- `Resources/bin/codex` — current wrapper; gains `c11 conversation claim` call. The existing comment block justifying `codex resume --last` is rewritten to describe the new flow.
+- `Sources/SessionPersistence.swift` — `SessionPanelSnapshot` schema; gains `surface_conversations: SurfaceConversations` field embedded on each panel.
+- `Sources/WorkspaceSnapshotStore.swift` — snapshot read/write; round-trips the new field; lifts legacy `claude.session_id` metadata into a `ConversationRef` on read for one release window.
+- `skills/c11/SKILL.md` — gains `c11 conversation` documentation, the no-focused-fallback rule, and agent-facing inspection workflow. Merge-blocker.
 - `notes/session-resume-fix-plan.md` — the C11-24 hotfix plan, now obsolete.
+
+### New files
+
+- `Sources/Conversation/Store.swift` — `ConversationStore` (Swift `actor`).
+- `Sources/Conversation/Ref.swift` — `ConversationRef`, `CaptureSource`, `ConversationState`, `SurfaceConversations`.
+- `Sources/Conversation/ResumeAction.swift` — `ResumeAction` enum and executor entry point.
+- `Sources/Conversation/StrategyRegistry.swift` — hardcoded enum-shaped `ConversationStrategyRegistry`.
+- `Sources/Conversation/Strategy.swift` — `ConversationStrategy` protocol + per-strategy id grammar/quoting contract.
+- `Sources/Conversation/Strategies/ClaudeCode.swift` — Claude Code strategy.
+- `Sources/Conversation/Strategies/Codex.swift` — Codex strategy (with ambiguity policy).
+- `Sources/Conversation/Strategies/Opencode.swift` — Opencode strategy (fresh-launch only in v1).
+- `Sources/Conversation/Strategies/Kimi.swift` — Kimi strategy (fresh-launch only in v1).
+- `Sources/Conversation/Scrapers/ClaudeCodeScraper.swift`, `CodexScraper.swift` — bounded I/O providers, mockable for tests.
+- `Sources/Conversation/SurfaceActivity.swift` — per-surface `lastActivityTimestamp` primitive (terminal input + output, debounced).
+- `Tests/ConversationStoreTests/ConversationStoreFailureModeTests.swift` — 1:1 mapping with §Failure modes table.
+- `Tests/ConversationStoreTests/Fixtures/codex/two-panes-same-cwd/` — fixture dir for the staging-QA regression test.

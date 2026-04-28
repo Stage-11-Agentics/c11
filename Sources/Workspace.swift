@@ -494,10 +494,9 @@ extension Workspace {
         }
     }
 
-    /// Execute a `ResumeAction` against a live terminal panel. Recursive
-    /// for `.composite`; logs `.skip` reasons for diagnostic visibility.
-    /// Main-actor; only called from `scheduleAgentRestart`'s deferred
-    /// dispatch.
+    /// Execute a `ResumeAction` against a live terminal panel. Logs `.skip`
+    /// reasons for diagnostic visibility. Main-actor; only called from
+    /// `scheduleAgentRestart`'s deferred dispatch.
     private func executeResumeAction(_ action: ResumeAction, on panelId: UUID) {
         switch action {
         case .typeCommand(let text, let submit):
@@ -506,21 +505,6 @@ extension Workspace {
                 TextBoxSubmit.send(text, via: terminalPanel.surface)
             } else {
                 terminalPanel.surface.sendText(text)
-            }
-        case .launchProcess(let argv, _):
-            // v1: the in-process runProcess seam doesn't expose env injection
-            // in the same shape as Workspace.runProcess; we synthesise the
-            // typed-command form for argv-based fresh launches and let the
-            // shell parse it. Strategies that supply launchProcess today
-            // (Opencode, Kimi) emit a single-arg argv (the binary name) so
-            // there's no shell-quoting hazard. If multi-arg argv lands
-            // later, switch this to a real subprocess seam.
-            guard let terminalPanel = self.panels[panelId] as? TerminalPanel else { return }
-            let cmdline = argv.map { conversationShellQuote($0) }.joined(separator: " ")
-            TextBoxSubmit.send(cmdline, via: terminalPanel.surface)
-        case .composite(let actions):
-            for sub in actions {
-                executeResumeAction(sub, on: panelId)
             }
         case .skip(let reason):
             #if DEBUG

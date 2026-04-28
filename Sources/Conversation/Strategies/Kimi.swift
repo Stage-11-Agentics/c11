@@ -19,7 +19,7 @@ public struct KimiStrategy: ConversationStrategy {
         }
         switch ref.state {
         case .alive, .suspended:
-            return .launchProcess(argv: ["kimi"], env: [:])
+            return .typeCommand(text: conversationShellQuote("kimi"), submitWithReturn: true)
         default:
             return .skip(reason: "state=\(ref.state.rawValue) not auto-resumable")
         }

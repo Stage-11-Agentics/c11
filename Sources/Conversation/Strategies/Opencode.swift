@@ -22,7 +22,7 @@ public struct OpencodeStrategy: ConversationStrategy {
         }
         switch ref.state {
         case .alive, .suspended:
-            return .launchProcess(argv: ["opencode"], env: [:])
+            return .typeCommand(text: conversationShellQuote("opencode"), submitWithReturn: true)
         default:
             return .skip(reason: "state=\(ref.state.rawValue) not auto-resumable")
         }

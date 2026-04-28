@@ -103,13 +103,13 @@ enum ConversationState: String, Codable { case alive, suspended, tombstoned, unk
 ```swift
 enum ResumeAction: Sendable {
     case typeCommand(text: String, submitWithReturn: Bool)
-    case launchProcess(argv: [String], env: [String: String])
-    case composite([ResumeAction])
     case skip(reason: String)
 }
 ```
 
-Every strategy that emits `typeCommand` MUST validate `ConversationRef.id` against a documented grammar (regex or validator) and apply explicit shell-quoting/escaping before interpolation. If the id fails validation or the ref is still a placeholder, the strategy MUST return `.skip(reason:)` rather than synthesizing a command. See §Per-TUI strategies for each kind's grammar. Strategies SHOULD prefer `launchProcess(argv:env:)` over `typeCommand` where the surface model permits, since argv avoids shell parsing entirely.
+Every strategy that emits `typeCommand` MUST validate `ConversationRef.id` against a documented grammar (regex or validator) and apply explicit shell-quoting/escaping before interpolation. If the id fails validation or the ref is still a placeholder, the strategy MUST return `.skip(reason:)` rather than synthesizing a command. See §Per-TUI strategies for each kind's grammar.
+
+`.composite` and `.launchProcess` removed in v1; reintroduce when a strategy demonstrably needs semantics that `.typeCommand` cannot express. The argv-form fresh-launch case (Opencode, Kimi) collapses to `.typeCommand` of the shell-quoted binary name, since v1's executor already routed `.launchProcess` through `TextBoxSubmit.send`.
 
 ### Surface ↔ Conversation mapping (persisted)
 
@@ -273,7 +273,7 @@ Without this primitive, the Codex disambiguation cannot be tested or implemented
 
 - **Capture push:** Wrapper claim only (placeholder ref).
 - **Capture pull:** TBD at impl — opencode's session storage needs reverse engineering. If none exists, strategy is fresh-launch-only and `capture()` returns `nil` (the wrapper claim is left as the only ref).
-- **Resume:** `.skip(reason: "fresh-launch-only")` if `placeholder: true` (no real id ever resolved); otherwise `launchProcess(argv: ["opencode"], env: [:])`.
+- **Resume:** `.skip(reason: "fresh-launch-only")` if `placeholder: true` (no real id ever resolved); otherwise `.typeCommand(text: conversationShellQuote("opencode"), submitWithReturn: true)`.
 
 ### Kimi
 
@@ -354,7 +354,7 @@ No code changes required to v1 to enable this; just do not break the field shape
 
 ## Remote / cloud forward-compat
 
-`ConversationRef.kind` and `ConversationRef.id` are opaque to the store. A future `claude-code-cloud` strategy interprets `id` as a remote conversation URL; its `resume` action might be `launchProcess(argv: ["claude-cloud", "resume", id])` or `typeCommand` of a CLI invocation. The `ConversationStore` does not need to know.
+`ConversationRef.kind` and `ConversationRef.id` are opaque to the store. A future `claude-code-cloud` strategy interprets `id` as a remote conversation URL; its `resume` action would be a `typeCommand` of the appropriate CLI invocation (with shell-quoted id). The `ConversationStore` does not need to know.
 
 The same primitive could host SSH-tunneled remote agents, web-hosted Claude conversations, or future agent services. v1 ships local strategies only; the seam is what matters.
 
@@ -378,11 +378,6 @@ func execute(_ action: ResumeAction, on panelId: UUID) {
         guard let panel = panels[panelId] as? TerminalPanel else { return }
         if submit { TextBoxSubmit.send(text, via: panel.surface) }
         else      { panel.surface.sendText(text) }
-    case .launchProcess(let argv, let env):
-        guard let panel = panels[panelId] as? TerminalPanel else { return }
-        panel.runProcess(argv, env: env)
-    case .composite(let actions):
-        actions.forEach { execute($0, on: panelId) }
     case .skip(let reason):
         Diagnostics.log("conversation.resume.skipped panel=\(panelId) reason=\(reason)")
     }

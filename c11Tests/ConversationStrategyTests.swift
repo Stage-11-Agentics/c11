@@ -253,7 +253,7 @@ final class ConversationStrategyTests: XCTestCase {
         XCTAssertEqual(reason, "fresh-launch-only")
     }
 
-    func testKimiAliveLaunchesProcess() {
+    func testKimiAliveTypesShellQuotedCommand() {
         let strategy = KimiStrategy()
         let ref = ConversationRef(
             kind: "kimi",
@@ -263,11 +263,12 @@ final class ConversationStrategyTests: XCTestCase {
             capturedVia: .hook,
             state: .alive
         )
-        guard case .launchProcess(let argv, _) = strategy.resume(ref: ref) else {
-            XCTFail("expected launchProcess")
+        guard case .typeCommand(let text, let submit) = strategy.resume(ref: ref) else {
+            XCTFail("expected typeCommand")
             return
         }
-        XCTAssertEqual(argv, ["kimi"])
+        XCTAssertEqual(text, "'kimi'")
+        XCTAssertTrue(submit)
     }
 
     // MARK: - Shell-quoting helper

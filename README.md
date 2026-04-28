@@ -1,6 +1,6 @@
 # c11
 
-<p align="center"><b><i>Agent-native Terminal Multiplexing for 10,000x hyperengineers </i></b></p>
+<p align="center"><b><i>Agent-native Terminal Multiplexing for 10,000x hyperengineers</i></b></p>
 
 <p align="center">
   <a href="https://github.com/Stage-11-Agentics/c11/releases/latest/download/c11-macos.dmg">
@@ -76,7 +76,7 @@ agents don't just run inside c11. they reshape your spatial interface as they wo
 
 the operator isn't managing a layout. the agents aren't waiting for instructions. both are first-class. both carve out the space they need and announce themselves. c11 is unopinionated about which side originates which move: splits, resizes, spawns, metadata writes are peers.
 
-in practice, the prompts get ambitious.
+### example prompts to spark the light.
 
 > open Claude Code in our frontend repo on the top-left. on the top-right, another Claude Code in the client repo. bottom-right, the embedded browser pointed at the running client. bottom-left, a terminal streaming stats from the backend.
 
@@ -84,11 +84,19 @@ one sentence. the workspace assembles itself around the intent.
 
 > look across every terminal open right now. remind me what we were working on, and the two or three moves that would be highest leverage in the next fifteen minutes.
 
-the agent reads the spatial layout, the per-surface manifests, the lineage in the tab names, and returns a situation report across the fleet.
+very useful to reorient the user as their coding agent of choice gives them a situation report across the fleet of commanded terminals.
 
 > open our help page in a browser on the top-left. below it, a Claude Code instance to interview me on what could be improved. every time I name an improvement, spin up a new pane on the right and dispatch an agent to work it.
 
 one pane holds the conversation. the fleet grows around it, one sub-agent per issue, each announcing its role to the sidebar.
+
+Of course, this is just the beginning.
+
+<p align="center">
+  <img src="./docs/assets/markdown-surface.png" alt="a c11 workspace with a terminal, a markdown preview surface, and another terminal side by side" />
+  <br>
+  <sub><i>a markdown surface holds a live-rendering preview right next to the terminals writing it. drop a .md file onto a pane and it opens here.</i></sub>
+</p>
 
 ## workspaces.
 
@@ -100,15 +108,11 @@ each pane has 1:N surfaces, or tabs.
 
 each tab can be a terminal (default), browser, or markdown file.
 
-<p align="center">
-  <img src="./docs/assets/markdown-surface.png" alt="a c11 workspace with a terminal, a markdown preview surface, and another terminal side by side" />
-  <br>
-  <sub><i>a markdown surface holds a live-rendering preview right next to the terminals writing it. drop a .md file onto a pane and it opens here.</i></sub>
-</p>
-
 do you see how when you multiply this out, a locked in founder mode hyperengineer can have 50 or more terminals open, across many repos, dynamically spawning, interacting, in whatever their personal style is? once that clicks, we know you won't go back.
 
 cmd-tab roulette, retired.
+
+
 
 ## in-app browser. driveable and displayable.
 
@@ -145,15 +149,7 @@ c11 is a native macOS app: Swift, AppKit, Ghostty under the hood. no daemon, no 
 
 from there, split a pane (`⌘D` horizontal, `⌘⇧D` vertical), open an embedded browser surface from the menu, drop a markdown file onto a pane to preview it. open a second workspace. notice that the first is exactly as it was left.
 
----
 
-## this is for hyperengineers and agents.
-
-c11 is opinionated about who it serves. the setup where three, ten, thirty agents run in parallel across several projects. many threads in motion. hyperengineers and agents both carrying the work. first-class, both.
-
-if that is the shape of the work. welcome in.
-
-if your session is a single Claude Code in a single terminal, c11 will feel like a cathedral around a chair. Terminal.app is good. iTerm is good. Warp is good. use those until you start getting tired of cmd-tabbing between many running agents.
 
 ### a note on hardware.
 
@@ -163,17 +159,7 @@ c11 puts no ceiling on how many terminals, panes, browsers, or files you have op
 
 however, on an 8GB MacBook Air, c11 will happily let you walk yourself right off a performance cliff.
 
----
 
-## two interfaces. one compound actor.
-
-Stage 11 built [Lattice](https://github.com/Stage-11-Agentics/lattice) first: the task interface, where agents and hyperengineers agree on what work is happening. c11 is the control interface: the substrate holding every surface where that work actually happens.
-
-two layers of the same stack. one compound actor moving between them.
-
-a project in flight has many stories running at once. a feature branch. a review branch. a spike branch. each with its own worktree, its own agents, its own thread of reasoning. c11 gives those stories spatial form: one workspace per tree, every surface preserved across sessions. Lattice gives them structural form: tasks, statuses, events that outlive the window.
-
-together they keep the map of the project coherent across parallel stories. without either, one story crowds out the rest.
 
 ## license.
 
@@ -189,7 +175,7 @@ c11 rests on the work of others. [cmux](https://github.com/manaflow-ai/cmux) by 
 
 *c11 is one piece of that substrate. small. load-bearing. the observability of the agents, their ability to customize the space of the human.*
 
-*we believe in building tooling for the benevolent timeline. [come build with us](https://stage11.ai/build-with-us.html).*
+*we believe in building tooling for the benevolent timeline. come build with us.*
 
 ---
 

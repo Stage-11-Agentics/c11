@@ -2,23 +2,38 @@
 # c11 codex wrapper - session-resume capture for codex.
 #
 # When running inside a c11 terminal (CMUX_SURFACE_ID set + socket live),
-# this wrapper marks the surface as terminal_type=codex so that the c11
-# session-restore path types `codex resume --last\n` into this terminal
-# on next c11 launch. Outside c11 (or when the socket is unreachable),
-# it passes through to the real codex binary unchanged.
+# this wrapper:
+#   1. declares the surface as terminal_type=codex (sidebar chip / role
+#      hint), and
+#   2. wrapper-claims a placeholder ConversationRef so c11's conversation
+#      store has *something* to attach to before codex creates its
+#      session file. The Codex strategy's pull-scrape on next workspace
+#      open then matches the surface's cwd + post-claim mtime to resolve
+#      the real session id from `~/.codex/sessions/*.jsonl`. If two
+#      panes share the same cwd, the strategy returns state=unknown +
+#      a sidebar advisory rather than auto-resuming the wrong one
+#      (the staging-QA bug this primitive exists to fix).
 #
-# Why no session-id capture (unlike Claude Code's wrapper)?
+# Outside c11 (or when the socket is unreachable), it passes through to
+# the real codex binary unchanged.
 #
-#   codex 0.124.0 has no `--session-id <id>` flag for forcing a UUID at
-#   start of a new session — codex generates its own. We can't pre-write
-#   `codex.session_id` to metadata before exec the way the claude wrapper
-#   does. Instead we rely on codex's built-in default behaviour: `codex
-#   resume` filters by current working directory unless `--all` is passed,
-#   and `--last` picks the most recent matching session. Combined with c11
-#   restoring each panel's cwd, `codex resume --last` ends up resuming the
-#   right session per panel as long as panels have distinct cwds. The
-#   degenerate case (two codex panels sharing one cwd) resolves to
-#   most-recent — acceptable best-effort.
+# === Why this changed (C11-24, supersedes the codex resume --last note) ===
+# The original wrapper relied on codex's built-in cwd-filter behaviour:
+# `codex resume --last` resumes the most recent session matching the
+# current working directory. That's good enough for a single pane per
+# cwd, but breaks (silently) when two codex panes share a cwd —
+# `--last` picks "B" for both panes, regardless of which session each
+# pane originally hosted. The 2026-04-27 staging-QA failure was
+# exactly this case: two restored codex panes both resumed the global
+# most-recent session.
+#
+# c11 0.44.0+ replaces that pattern with the conversation store:
+# the wrapper claims a placeholder; the c11 ConversationStore + Codex
+# strategy resolve the real id at restore time using cwd + mtime +
+# the surface's lastActivityTimestamp; the workspace-restore path
+# types `codex resume <id>` (specific id, NOT --last). Ambiguous
+# multi-candidate cases skip auto-resume and surface a sidebar advisory
+# instead.
 #
 # See `Resources/bin/claude` for the reference implementation of the
 # session-resume wrapper pattern and the four constraints all wrappers
@@ -88,18 +103,28 @@ self_dir="$(cd "$(dirname "$0")" && pwd)"
 c11_bin="$self_dir/c11"
 [[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
 
-# Best-effort surface-metadata write: mark this surface as a codex
-# terminal so the c11 session-restore registry knows to send
-# `codex resume --last\n` into it on the next launch.
+# (1) Mark the surface as terminal_type=codex (sidebar chip / role hint).
+# (2) Wrapper-claim a placeholder ConversationRef so the conversation
+#     store has *something* to attach to. Idempotent: a second invocation
+#     in the same surface cannot regress a real id back to a placeholder
+#     (ConversationStore.claim is conservative — never displaces a non-
+#     wrapperClaim source).
 #
-# Run in the background so codex startup latency is unaffected;
+# Both run in the background so codex startup latency is unaffected;
 # `disown` so a stale write can't keep the wrapper process alive after
-# `exec` (which is moot since exec replaces this process anyway, but
-# defensive).
+# `exec` (moot since exec replaces this process anyway, but defensive).
 if [[ -n "$c11_bin" ]]; then
     (
         CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
             "$c11_bin" --socket "${CMUX_SOCKET_PATH}" set-agent --type codex \
+            >/dev/null 2>&1
+    ) &
+    disown 2>/dev/null || true
+
+    (
+        CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+            "$c11_bin" --socket "${CMUX_SOCKET_PATH}" \
+            conversation claim --kind codex --cwd "$PWD" \
             >/dev/null 2>&1
     ) &
     disown 2>/dev/null || true

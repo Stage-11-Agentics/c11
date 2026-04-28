@@ -142,6 +142,28 @@ cmux_set_agent_bin="$(cd "$(dirname "$0")" && pwd)/cmux"
 [[ -x "$cmux_set_agent_bin" ]] || cmux_set_agent_bin="$(command -v cmux || true)"
 [[ -n "$cmux_set_agent_bin" ]] && cmux_set_agent_bg "$cmux_set_agent_bin"
 
+# C11-24: wrapper-claim a placeholder ConversationRef so c11's conversation
+# store has *something* to attach to before the SessionStart hook fires
+# (or, if Claude crashes before the hook, the wrapper-claim establishes
+# the lower bound for the next-launch pull-scrape filter).
+#
+# Idempotent and conservative — ConversationStore.claim never displaces a
+# non-wrapperClaim source, so a second invocation in the same surface
+# cannot regress a real id back to a placeholder.
+#
+# Background; disown so the wrapper exec doesn't wait on it.
+c11_conversation_claim_bg() {
+    local cli="$1"
+    (
+        CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+            "$cli" --socket "${CMUX_SOCKET_PATH}" \
+            conversation claim --kind claude-code --cwd "$PWD" \
+            >/dev/null 2>&1
+    ) &
+    disown 2>/dev/null || true
+}
+[[ -n "$cmux_set_agent_bin" ]] && c11_conversation_claim_bg "$cmux_set_agent_bin"
+
 # Build hooks settings JSON.
 # Claude Code merges --settings additively with the user's own settings.json.
 # - SessionStart/Stop/Notification: existing lifecycle hooks

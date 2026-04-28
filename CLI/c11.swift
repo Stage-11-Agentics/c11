@@ -13821,7 +13821,10 @@ struct CMUXCLI {
                             "id": trimmed,
                             "source": "hook",
                             "state": "ended",
-                            "reason": "SessionEnd (TUI exited; reclassify on next launch)"
+                            // C11-24 review (B3): server-side handler reads
+                            // `diagnostic_reason`. Sending bare `reason` here
+                            // dropped the SessionEnd context silently.
+                            "diagnostic_reason": "SessionEnd (TUI exited; reclassify on next launch)"
                         ]
                         if !workspaceId.isEmpty {
                             params["workspace_id"] = workspaceId

@@ -447,10 +447,10 @@ extension Workspace {
         return out
     }
 
-    /// Schedule deferred submission of synthesised resume commands for
-    /// terminal panels resolved via `pendingRestartCommands`. The dispatch
-    /// runs on the main actor after `SessionPersistencePolicy.agentRestartDelay`
-    /// so Ghostty surfaces have time to initialise.
+    /// Schedule deferred submission of `ResumeAction`s for terminal panels
+    /// resolved via `pendingRestartPlans`. The dispatch runs on the main
+    /// actor after `SessionPersistencePolicy.agentRestartDelay` so Ghostty
+    /// surfaces have time to initialise.
     ///
     /// `Ghostty's text-input path (sendText → ghostty_surface_text) wraps
     /// input in bracketed-paste markers (`ESC[200~…ESC[201~`). Bracketed

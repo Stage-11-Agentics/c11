@@ -2931,7 +2931,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard !didPrepareStartupSessionSnapshot else { return }
         didPrepareStartupSessionSnapshot = true
         guard SessionRestorePolicy.shouldAttemptRestore() else { return }
-        startupSessionSnapshot = SessionPersistenceStore.load()
+        let snapshot = SessionPersistenceStore.load()
+        startupSessionSnapshot = snapshot
+        // C11-24: seed ConversationStore from the loaded snapshot before
+        // any panel restore runs. Native field wins; legacy
+        // claude.session_id metadata is lifted for one release window
+        // (TODO 0.46.0 / v1.1 in WorkspaceSnapshotConversationBridge).
+        if let snapshot, !ConversationStorePolicy.isDisabled {
+            WorkspaceSnapshotConversationBridge.seedFromSnapshot(snapshot)
+        }
     }
 
     private func persistedWindowGeometry(

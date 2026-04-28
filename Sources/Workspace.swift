@@ -670,6 +670,27 @@ extension Workspace {
             }
         }
 
+        // C11-24: capture the surface's ConversationRefs into the panel
+        // snapshot. Sync bridge from the actor — capture is rare and
+        // bounded. SurfaceConversations(active: nil, history: []) for
+        // surfaces with no captured conversation; the empty history is
+        // written explicitly so downstream tooling has a stable shape.
+        var surfaceConversations: SurfaceConversations? = nil
+        if !ConversationStorePolicy.isDisabled {
+            let sema = DispatchSemaphore(value: 0)
+            var captured: SurfaceConversations = .empty
+            Task {
+                captured = await ConversationStore.shared
+                    .conversations(for: panelId.uuidString)
+                sema.signal()
+            }
+            _ = sema.wait(timeout: .now() + 0.5)
+            // Always emit the field for terminal surfaces — empty history
+            // is part of the v1 contract.
+            if panel.panelType == .terminal {
+                surfaceConversations = captured
+            }
+        }
         return SessionPanelSnapshot(
             id: panelId,
             type: panel.panelType,
@@ -685,7 +706,8 @@ extension Workspace {
             browser: browserSnapshot,
             markdown: markdownSnapshot,
             metadata: persistedMetadata,
-            metadataSources: persistedMetadataSources
+            metadataSources: persistedMetadataSources,
+            surfaceConversations: surfaceConversations
         )
     }
 

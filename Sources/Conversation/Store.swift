@@ -25,7 +25,30 @@ public actor ConversationStore {
     /// - per-workspace partitioning would require duplicate seed/snapshot
     ///   code paths for no isolation benefit (surface IDs are app-unique).
     public static let shared = ConversationStore()
+}
 
+/// Architecture-level kill switch (`CMUX_DISABLE_CONVERSATION_STORE=1`).
+/// When set in the app's launch environment, c11 falls back to the
+/// legacy `claude.session_id` reserved-metadata path (the bridge
+/// already understands it); the new wrapper-claim/push/scrape paths
+/// no-op.
+///
+/// **Removed in 0.46.0 / v1.1** alongside the legacy metadata bridge.
+/// Tracked TODO marker.
+public enum ConversationStorePolicy {
+    /// True iff the env var is set to a truthy value.
+    public static var isDisabled: Bool {
+        guard let raw = ProcessInfo.processInfo.environment["CMUX_DISABLE_CONVERSATION_STORE"] else {
+            return false
+        }
+        switch raw.trimmingCharacters(in: .whitespaces).lowercased() {
+        case "1", "true", "yes", "on": return true
+        default: return false
+        }
+    }
+}
+
+extension ConversationStore {
     // MARK: - Read
 
     public func conversations(for surfaceId: String) -> SurfaceConversations {

@@ -359,6 +359,25 @@ struct SessionPanelSnapshot: Codable, Sendable {
     /// Parallel sidecar: per-key `(source, ts)` record preserving the
     /// precedence chain across restarts. See `PersistedMetadataSource`.
     var metadataSources: [String: PersistedMetadataSource]?
+
+    /// C11-24: per-surface ConversationRefs for the active conversation
+    /// (and v1.x history). Embedded directly on the panel snapshot so the
+    /// conversation follows the panel through `oldToNewPanelIds` remapping
+    /// naturally. Optional for backcompat with pre-C11-24 snapshots; the
+    /// read-side bridge in `WorkspaceSnapshotConversationBridge` lifts
+    /// legacy `claude.session_id` reserved metadata into a ConversationRef
+    /// for one release window (removed in 0.46.0 / v1.1).
+    ///
+    /// `history: []` is written explicitly as an empty array (not omitted)
+    /// for stable JSON output across v1/v2.
+    var surfaceConversations: SurfaceConversations? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case id, type, title, customTitle, directory, isPinned,
+             isManuallyUnread, gitBranch, listeningPorts, ttyName,
+             terminal, browser, markdown, metadata, metadataSources
+        case surfaceConversations = "surface_conversations"
+    }
 }
 
 enum SessionSplitOrientation: String, Codable, Sendable {

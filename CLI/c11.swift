@@ -13608,39 +13608,33 @@ struct CMUXCLI {
                     cwd: parsedInput.cwd,
                     pid: claudePid
                 )
-                // CMUX-37 Phase 1: also write `claude.session_id` to the
-                // surface metadata so `c11 restore` + the Phase 1 restart
-                // registry can synthesise `cc --resume <id>` on restore.
-                // Best-effort: a missing socket (Claude running outside a
-                // c11 surface) follows the existing advisory pattern —
-                // the outer claude-hook dispatch already absorbs
-                // connectivity errors; we double-wrap here so the
-                // sessionStore write succeeds even if another CLIError
-                // bubbles up from the metadata path.
+                // C11-24 conversation store: route the SessionStart id
+                // into ConversationStore via conversation.push. Replaces
+                // the older claude.session_id reserved-metadata write
+                // (which raced SessionEnd on Cmd+Q). The legacy
+                // claude.session_id reserved key is no longer written
+                // here; the read-side bridge in WorkspaceSnapshotStore
+                // continues to recognise it for one-release backcompat
+                // (snapshots from 0.43.0/0.44.0-pre).
                 let trimmedSessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmedSessionId.isEmpty, !surfaceId.isEmpty {
-                    // `Sources/WorkspaceMetadataKeys.swift` is linked into
-                    // both the c11 app target and the c11-cli target, so the
-                    // reserved-key constant has one spelling in one place.
-                    let metadata: [String: Any] = [
-                        SurfaceMetadataKeyName.claudeSessionId: trimmedSessionId
-                    ]
-                    var params: [String: Any] = [
+                    var pushParams: [String: Any] = [
                         "surface_id": surfaceId,
-                        "metadata": metadata,
-                        "mode": "merge",
-                        "source": "explicit"
+                        "kind": "claude-code",
+                        "id": trimmedSessionId,
+                        "source": "hook",
+                        "state": "alive"
                     ]
-                    if !workspaceId.isEmpty {
-                        params["workspace_id"] = workspaceId
+                    if let cwd = parsedInput.cwd, !cwd.isEmpty {
+                        pushParams["cwd"] = cwd
                     }
                     do {
-                        _ = try client.sendV2(method: "surface.set_metadata", params: params)
-                        telemetry.breadcrumb("claude-hook.session-id.metadata-write.ok")
+                        _ = try client.sendV2(method: "conversation.push", params: pushParams)
+                        telemetry.breadcrumb("claude-hook.conversation.push.ok")
                     } catch let error as CLIError where isAdvisoryHookConnectivityError(error) {
-                        telemetry.breadcrumb("claude-hook.session-id.metadata-write.skipped")
+                        telemetry.breadcrumb("claude-hook.conversation.push.skipped")
                     } catch {
-                        telemetry.breadcrumb("claude-hook.session-id.metadata-write.failed")
+                        telemetry.breadcrumb("claude-hook.conversation.push.failed")
                     }
                 }
             }
@@ -13792,28 +13786,54 @@ struct CMUXCLI {
                 _ = try? clearClaudeStatus(client: client, workspaceId: workspaceId)
                 _ = try? sendV1Command("clear_agent_pid claude_code --tab=\(workspaceId)", client: client)
                 _ = try? sendV1Command("clear_notifications --tab=\(workspaceId)", client: client)
-                // C11-24: clear `claude.session_id` from the surface metadata
-                // so a subsequent c11 restart doesn't auto-resume an
-                // already-ended session. `terminal_type` stays — it's a
-                // per-surface configuration ("this surface is a claude
-                // terminal"), not a per-session pointer.
+                // C11-24: SessionEnd race fix.
+                //
+                // The legacy code path here cleared `claude.session_id`
+                // from surface metadata — but on Cmd+Q, c11 kills
+                // terminals → claude exits → SessionEnd fires →
+                // metadata cleared, racing the snapshot capture. By
+                // next launch, per-surface session ids were gone (one
+                // of the bugs this primitive was built to fix).
+                //
+                // New semantics: query is_terminating_app via
+                // system.ping (250 ms bounded). If the app is
+                // terminating, NO-OP (preserve the ref so resume on
+                // next launch still works). If not, push state="ended"
+                // → store maps to .unknown so next-launch scrape
+                // reclassifies (the hook can't distinguish user
+                // /exit from Claude crash, terminal kill, or wrapper
+                // failure; tombstoning unconditionally would refuse
+                // auto-resume of work the user expected to continue).
+                //
+                // CLI policy on socket failure: treat unreachable /
+                // timeout as terminating, so we err on preservation,
+                // never tombstone on socket-uncertainty.
                 let surfaceId = consumedSession.surfaceId
-                if !surfaceId.isEmpty {
-                    var params: [String: Any] = [
-                        "surface_id": surfaceId,
-                        "keys": [SurfaceMetadataKeyName.claudeSessionId],
-                        "source": "explicit"
-                    ]
-                    if !workspaceId.isEmpty {
-                        params["workspace_id"] = workspaceId
-                    }
-                    do {
-                        _ = try client.sendV2(method: "surface.clear_metadata", params: params)
-                        telemetry.breadcrumb("claude-hook.session-id.metadata-clear.ok")
-                    } catch let error as CLIError where isAdvisoryHookConnectivityError(error) {
-                        telemetry.breadcrumb("claude-hook.session-id.metadata-clear.skipped")
-                    } catch {
-                        telemetry.breadcrumb("claude-hook.session-id.metadata-clear.failed")
+                let isTerminating = isAppCurrentlyTerminating(client: client, telemetry: telemetry)
+                if isTerminating {
+                    telemetry.breadcrumb("claude-hook.session-end.skipped-during-shutdown")
+                } else if let sessionId = parsedInput.sessionId, !surfaceId.isEmpty {
+                    let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        var params: [String: Any] = [
+                            "surface_id": surfaceId,
+                            "kind": "claude-code",
+                            "id": trimmed,
+                            "source": "hook",
+                            "state": "ended",
+                            "reason": "SessionEnd (TUI exited; reclassify on next launch)"
+                        ]
+                        if !workspaceId.isEmpty {
+                            params["workspace_id"] = workspaceId
+                        }
+                        do {
+                            _ = try client.sendV2(method: "conversation.push", params: params)
+                            telemetry.breadcrumb("claude-hook.session-end.ended.ok")
+                        } catch let error as CLIError where isAdvisoryHookConnectivityError(error) {
+                            telemetry.breadcrumb("claude-hook.session-end.ended.skipped")
+                        } catch {
+                            telemetry.breadcrumb("claude-hook.session-end.ended.failed")
+                        }
                     }
                 }
             }
@@ -14070,6 +14090,32 @@ struct CMUXCLI {
             return cwd
         }
         return nil
+    }
+
+    /// C11-24: query `is_terminating_app` on `system.ping` with a 250 ms
+    /// bounded timeout. CLI policy: treat unreachable/timeout as
+    /// terminating so SessionEnd errs on preservation and never
+    /// tombstones a ref the operator expected to resume.
+    private func isAppCurrentlyTerminating(
+        client: SocketClient,
+        telemetry: CLISocketSentryTelemetry
+    ) -> Bool {
+        do {
+            let response = try client.sendV2(method: "system.ping")
+            if let flag = response["is_terminating_app"] as? Bool {
+                if flag { telemetry.breadcrumb("claude-hook.is-terminating.true") }
+                return flag
+            }
+            // Field absent on older builds — be conservative.
+            telemetry.breadcrumb("claude-hook.is-terminating.field-absent")
+            return false
+        } catch let error as CLIError where isAdvisoryHookConnectivityError(error) {
+            telemetry.breadcrumb("claude-hook.is-terminating.unreachable-treated-as-terminating")
+            return true
+        } catch {
+            telemetry.breadcrumb("claude-hook.is-terminating.error-treated-as-terminating")
+            return true
+        }
     }
 
     private func summarizeClaudeHookStop(

@@ -2028,7 +2028,16 @@ class TerminalController {
         return withSocketCommandPolicy(commandKey: method, isV2: true) {
             switch method {
         case "system.ping":
-            return v2Ok(id: id, result: ["pong": true])
+            // is_terminating_app: C11-24 — exposed so the claude-hook
+            // CLI can query "is the app shutting down?" in 250 ms before
+            // deciding whether to skip-clear during SessionEnd. Read off
+            // the AppDelegate (single shared instance, BoolGet semantics
+            // — no synchronisation needed since the field flips once
+            // and never back).
+            return v2Ok(id: id, result: [
+                "pong": true,
+                "is_terminating_app": (AppDelegate.shared?.isTerminatingApp ?? false)
+            ])
         case "system.capabilities":
             return v2Ok(id: id, result: v2Capabilities())
 

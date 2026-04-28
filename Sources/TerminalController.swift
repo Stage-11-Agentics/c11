@@ -2193,6 +2193,20 @@ class TerminalController {
             return v2Result(id: id, self.v2SurfaceClearHistory(params: params))
         case "surface.trigger_flash":
             return v2Result(id: id, self.v2SurfaceTriggerFlash(params: params))
+        // C11-24 conversation store
+        case "conversation.claim":
+            return v2Result(id: id, self.v2ConversationClaim(params: params))
+        case "conversation.push":
+            return v2Result(id: id, self.v2ConversationPush(params: params))
+        case "conversation.tombstone":
+            return v2Result(id: id, self.v2ConversationTombstone(params: params))
+        case "conversation.list":
+            return v2Result(id: id, self.v2ConversationList(params: params))
+        case "conversation.get":
+            return v2Result(id: id, self.v2ConversationGet(params: params))
+        case "conversation.clear":
+            return v2Result(id: id, self.v2ConversationClear(params: params))
+
         case "surface.set_metadata":
             return v2Result(id: id, self.v2SurfaceSetMetadata(params: params))
         case "surface.get_metadata":
@@ -8194,6 +8208,260 @@ class TerminalController {
         case .dismissed:
             return .ok(["result": "dismissed"])
         }
+    }
+
+    // MARK: - V2 Conversation Methods (C11-24)
+
+    /// Strict surface UUID resolution for conversation commands.
+    /// **No focused-fallback** — see plan §"CLI surface" and the env-loss
+    /// footgun the architecture exists to fix.
+    private func v2ResolveSurfaceForConversation(
+        params: [String: Any]
+    ) -> Result<UUID, V2CallResult> {
+        guard let surfaceId = v2UUID(params, "surface_id") else {
+            return .failure(.err(
+                code: "missing_surface",
+                message: "surface_id required (no focused-fallback for conversation commands)",
+                data: nil
+            ))
+        }
+        return .success(surfaceId)
+    }
+
+    /// Synchronous bridge into the `ConversationStore` actor. Each call
+    /// hops onto a Task and waits via a semaphore so the v2 dispatch
+    /// thread (off-main) gets a result before returning. The store is
+    /// a Swift actor so internal state-transitions are isolated; we only
+    /// need this bridge because v2 handlers are sync.
+    ///
+    /// Bounded timeout (2 s); the actor never blocks on I/O so a hang
+    /// here would mean a deadlock somewhere unrelated.
+    private func conversationStoreSync<T>(
+        _ body: @escaping (ConversationStore) async -> T
+    ) -> T? {
+        let store = ConversationStore.shared
+        var result: T?
+        let sema = DispatchSemaphore(value: 0)
+        Task {
+            result = await body(store)
+            sema.signal()
+        }
+        if sema.wait(timeout: .now() + 2.0) == .success {
+            return result
+        }
+        return nil
+    }
+
+    private func v2ConversationClaim(params: [String: Any]) -> V2CallResult {
+        guard let kind = v2String(params, "kind"), !kind.isEmpty else {
+            return .err(code: "invalid_kind", message: "kind required", data: nil)
+        }
+        let surfaceResult = v2ResolveSurfaceForConversation(params: params)
+        guard case .success(let surfaceId) = surfaceResult else {
+            if case .failure(let err) = surfaceResult { return err }
+            return .err(code: "internal_error", message: "surface resolution", data: nil)
+        }
+        let cwd = v2String(params, "cwd")
+        let placeholder = v2String(params, "placeholder_id")
+            ?? "wrapper-claim:\(surfaceId.uuidString):\(Int(Date().timeIntervalSince1970))"
+
+        let result = conversationStoreSync { store in
+            await store.claim(
+                surfaceId: surfaceId.uuidString,
+                kind: kind,
+                cwd: cwd,
+                placeholderId: placeholder
+            )
+        }
+        // Bump the surface activity timestamp; the wrapper-claim establishes
+        // the lower bound used by the Codex scrape filter.
+        SurfaceActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
+        guard let ref = result else {
+            return .err(code: "internal_error", message: "store timeout", data: nil)
+        }
+        return .ok([
+            "surface_id": surfaceId.uuidString,
+            "kind": ref.kind,
+            "id": ref.id,
+            "placeholder": ref.placeholder,
+            "captured_via": ref.capturedVia.rawValue,
+            "state": ref.state.rawValue
+        ])
+    }
+
+    private func v2ConversationPush(params: [String: Any]) -> V2CallResult {
+        guard let kind = v2String(params, "kind"), !kind.isEmpty else {
+            return .err(code: "invalid_kind", message: "kind required", data: nil)
+        }
+        guard let id = v2String(params, "id"), !id.isEmpty else {
+            return .err(code: "invalid_id", message: "id required", data: nil)
+        }
+        guard let sourceStr = v2String(params, "source"),
+              let source = CaptureSource(rawValue: sourceStr) else {
+            return .err(code: "invalid_source",
+                        message: "source must be one of hook, scrape, manual, wrapperClaim",
+                        data: nil)
+        }
+        // Validate id grammar against the strategy if registered.
+        let registry = ConversationStrategyRegistry.v1
+        if let strategy = registry.strategy(forKind: kind), !strategy.isValidId(id) {
+            return .err(code: "invalid_id_grammar",
+                        message: "id does not match the \(kind) strategy's grammar",
+                        data: ["kind": kind])
+        }
+        let surfaceResult = v2ResolveSurfaceForConversation(params: params)
+        guard case .success(let surfaceId) = surfaceResult else {
+            if case .failure(let err) = surfaceResult { return err }
+            return .err(code: "internal_error", message: "surface resolution", data: nil)
+        }
+        let cwd = v2String(params, "cwd")
+        let reason = v2String(params, "diagnostic_reason")
+        let stateRaw = v2String(params, "state") ?? "alive"
+        let state: ConversationState
+        switch stateRaw.lowercased() {
+        case "ended": state = .unknown // SessionEnd → unknown; next-launch scrape reclassifies
+        case "alive": state = .alive
+        case "suspended": state = .suspended
+        case "tombstoned": state = .tombstoned
+        case "unknown": state = .unknown
+        case "unsupported": state = .unsupported
+        default: state = .alive
+        }
+        let payload = (params["payload"] as? [String: Any]).map { dict -> [String: PersistedJSONValue] in
+            var out: [String: PersistedJSONValue] = [:]
+            for (k, v) in dict {
+                if let s = v as? String { out[k] = .string(s) }
+                else if let n = v as? NSNumber { out[k] = .number(n.doubleValue) }
+                else if let b = v as? Bool { out[k] = .bool(b) }
+            }
+            return out
+        }
+
+        let ref = conversationStoreSync { store in
+            await store.push(
+                surfaceId: surfaceId.uuidString,
+                kind: kind,
+                id: id,
+                source: source,
+                cwd: cwd,
+                state: state,
+                diagnosticReason: reason,
+                payload: payload
+            )
+        }
+        SurfaceActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
+        guard let ref else {
+            return .err(code: "internal_error", message: "store timeout", data: nil)
+        }
+        return .ok([
+            "surface_id": surfaceId.uuidString,
+            "kind": ref.kind,
+            "id": ref.id,
+            "captured_via": ref.capturedVia.rawValue,
+            "state": ref.state.rawValue
+        ])
+    }
+
+    private func v2ConversationTombstone(params: [String: Any]) -> V2CallResult {
+        let surfaceResult = v2ResolveSurfaceForConversation(params: params)
+        guard case .success(let surfaceId) = surfaceResult else {
+            if case .failure(let err) = surfaceResult { return err }
+            return .err(code: "internal_error", message: "surface resolution", data: nil)
+        }
+        let reason = v2String(params, "reason")
+        _ = conversationStoreSync { store -> Void in
+            await store.tombstone(surfaceId: surfaceId.uuidString, reason: reason)
+        }
+        return .ok([
+            "surface_id": surfaceId.uuidString,
+            "result": "tombstoned"
+        ])
+    }
+
+    private func v2ConversationList(params: [String: Any]) -> V2CallResult {
+        let snap = conversationStoreSync { store in
+            await store.snapshot()
+        } ?? [:]
+        let surfaceFilter = v2UUID(params, "surface_id")
+        var entries: [[String: Any]] = []
+        for (sid, surfaceConv) in snap {
+            if let f = surfaceFilter, sid != f.uuidString { continue }
+            if let active = surfaceConv.active {
+                entries.append([
+                    "surface_id": sid,
+                    "kind": active.kind,
+                    "id": active.id,
+                    "placeholder": active.placeholder,
+                    "captured_via": active.capturedVia.rawValue,
+                    "state": active.state.rawValue,
+                    "captured_at": active.capturedAt.timeIntervalSince1970,
+                    "diagnostic_reason": v2OrNull(active.diagnosticReason),
+                    "cwd": v2OrNull(active.cwd)
+                ])
+            }
+        }
+        return .ok(["conversations": entries])
+    }
+
+    private func v2ConversationGet(params: [String: Any]) -> V2CallResult {
+        let surfaceResult = v2ResolveSurfaceForConversation(params: params)
+        guard case .success(let surfaceId) = surfaceResult else {
+            if case .failure(let err) = surfaceResult { return err }
+            return .err(code: "internal_error", message: "surface resolution", data: nil)
+        }
+        let surfaceConv = conversationStoreSync { store in
+            await store.conversations(for: surfaceId.uuidString)
+        }
+        guard let surfaceConv else {
+            return .err(code: "internal_error", message: "store timeout", data: nil)
+        }
+        var out: [String: Any] = [
+            "surface_id": surfaceId.uuidString,
+            "active": NSNull(),
+            "can_resume": false,
+            "history": surfaceConv.history.map { conversationRefAsDict($0) }
+        ]
+        if let active = surfaceConv.active {
+            out["active"] = conversationRefAsDict(active)
+            let registry = ConversationStrategyRegistry.v1
+            if let strategy = registry.strategy(forKind: active.kind) {
+                if case .skip = strategy.resume(ref: active) {
+                    out["can_resume"] = false
+                } else {
+                    out["can_resume"] = true
+                }
+            }
+        }
+        return .ok(out)
+    }
+
+    private func v2ConversationClear(params: [String: Any]) -> V2CallResult {
+        let surfaceResult = v2ResolveSurfaceForConversation(params: params)
+        guard case .success(let surfaceId) = surfaceResult else {
+            if case .failure(let err) = surfaceResult { return err }
+            return .err(code: "internal_error", message: "surface resolution", data: nil)
+        }
+        _ = conversationStoreSync { store -> Void in
+            await store.clear(surfaceId: surfaceId.uuidString)
+        }
+        SurfaceActivityTracker.shared.clear(surfaceId: surfaceId.uuidString)
+        return .ok([
+            "surface_id": surfaceId.uuidString,
+            "result": "cleared"
+        ])
+    }
+
+    private func conversationRefAsDict(_ ref: ConversationRef) -> [String: Any] {
+        return [
+            "kind": ref.kind,
+            "id": ref.id,
+            "placeholder": ref.placeholder,
+            "cwd": v2OrNull(ref.cwd),
+            "captured_at": ref.capturedAt.timeIntervalSince1970,
+            "captured_via": ref.capturedVia.rawValue,
+            "state": ref.state.rawValue,
+            "diagnostic_reason": v2OrNull(ref.diagnosticReason)
+        ]
     }
 
     // MARK: - V2 Notification Methods

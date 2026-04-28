@@ -2633,6 +2633,13 @@ struct CMUXCLI {
                 windowOverride: windowId
             )
 
+        case "conversation":
+            try runConversationCommand(
+                commandArgs: commandArgs,
+                client: client,
+                jsonOutput: jsonOutput
+            )
+
         case "claude-hook":
             cliTelemetry.breadcrumb("claude-hook.dispatch")
             do {
@@ -8617,6 +8624,47 @@ struct CMUXCLI {
 
             Trigger the app-active handler used by notification focus tests.
             """
+        case "conversation":
+            return """
+            Usage: c11 conversation <subcommand> [flags]
+
+            Manage per-surface ConversationRefs (the C11-24 conversation
+            store). Each surface hosts at most one active ConversationRef
+            keyed by an opaque, per-kind id. The store survives c11
+            restarts and is consulted at restore time to synthesise the
+            resume command.
+
+            Subcommands:
+              claim --kind <k> [--cwd <path>] [--id <id>]
+                Wrapper-claim: mint a placeholder ref. Idempotent and
+                conservative — never displaces a real id captured by
+                hook/scrape.
+              push --kind <k> --id <id> --source <hook|scrape|manual>
+                   [--state <alive|suspended|tombstoned|unknown|ended>]
+                   [--cwd <path>] [--reason <text>]
+                   [--payload <json> | --payload @<path>]
+                Hook or operator push of the real id. Source priority:
+                hook > scrape > manual > wrapperClaim.
+                --payload accepts inline JSON or @<path> (mirrors HOOKS_FILE
+                ergonomics in Resources/bin/claude).
+              tombstone --kind <k> --id <id> [--reason <text>]
+                Mark the surface's active ref as tombstoned. Operator-
+                initiated; not auto-resumable.
+              list [--surface <id>] [--workspace <id>] [--json]
+                List captured conversations.
+              get [--surface <id>] [--json]
+                Read the active ref + can_resume + diagnostic_reason for
+                the surface. Use this when debugging "why did this pane
+                resume that session?" — diagnostic_reason explains the
+                strategy's decision.
+              clear [--surface <id>]
+                Wipe the surface's conversations. Forces a fresh launch
+                on next workspace open.
+
+            Surface resolution: --surface flag, else $CMUX_SURFACE_ID env
+            var. There is NO focused-surface fallback (the silent-misroute
+            footgun the architecture exists to avoid).
+            """
         case "claude-hook":
             return """
             Usage: c11 claude-hook <session-start|active|stop|idle|notification|notify|prompt-submit> [flags]
@@ -10529,6 +10577,263 @@ struct CMUXCLI {
                 let reason = (reasons[key] as? String) ?? "not_applied"
                 print("  \(key): skipped (\(reason))")
             }
+        }
+    }
+
+    /// `c11 conversation <claim|push|tombstone|list|get|clear>` — wraps the
+    /// `conversation.*` v2 socket methods.
+    ///
+    /// Per the C11-24 plan: every verb resolves `--surface` from
+    /// `CMUX_SURFACE_ID` if unset. **No focused-fallback** — that path is
+    /// the silent-misroute footgun the architecture exists to fix. If the
+    /// env var is missing and no flag was given, error out cleanly.
+    private func runConversationCommand(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool
+    ) throws {
+        let subcommand = commandArgs.first?.lowercased() ?? "help"
+        let subArgs = Array(commandArgs.dropFirst())
+
+        switch subcommand {
+        case "claim":
+            try runConversationClaim(subArgs: subArgs, client: client, jsonOutput: jsonOutput)
+        case "push":
+            try runConversationPush(subArgs: subArgs, client: client, jsonOutput: jsonOutput)
+        case "tombstone":
+            try runConversationTombstone(subArgs: subArgs, client: client, jsonOutput: jsonOutput)
+        case "list":
+            try runConversationList(subArgs: subArgs, client: client, jsonOutput: jsonOutput)
+        case "get":
+            try runConversationGet(subArgs: subArgs, client: client, jsonOutput: jsonOutput)
+        case "clear":
+            try runConversationClear(subArgs: subArgs, client: client, jsonOutput: jsonOutput)
+        case "help", "--help", "-h":
+            print(conversationUsage())
+        default:
+            throw CLIError(message: "Unknown conversation subcommand: \(subcommand)")
+        }
+    }
+
+    private func conversationUsage() -> String {
+        return """
+        Usage: c11 conversation <subcommand> [flags]
+
+        Subcommands:
+          claim --kind <k> [--cwd <path>] [--id <id>]
+          push --kind <k> --id <id> --source <hook|scrape|manual>
+               [--state <alive|suspended|tombstoned|unknown|ended>]
+               [--cwd <path>] [--reason <text>]
+               [--payload <json> | --payload @<path>]
+          tombstone --kind <k> --id <id> [--reason <text>]
+          list [--surface <id>] [--workspace <id>] [--json]
+          get [--surface <id>] [--json]
+          clear [--surface <id>]
+
+        --surface defaults to $CMUX_SURFACE_ID. There is NO focused-surface
+        fallback; commands error out if the env var is missing and no flag
+        was given.
+        """
+    }
+
+    /// Resolve `--surface` strictly — env-var or flag, no focused fallback.
+    /// Returns the raw surface handle; the server resolves it to a UUID.
+    private func resolveConversationSurface(_ args: [String]) throws -> String {
+        if let raw = optionValue(args, name: "--surface") {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        if let envRaw = ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !envRaw.isEmpty {
+            return envRaw
+        }
+        throw CLIError(message: "missing_surface: --surface flag or CMUX_SURFACE_ID env var required (no focused-fallback)")
+    }
+
+    /// `--payload <json>` or `--payload @<path>` (mirrors HOOKS_FILE in
+    /// Resources/bin/claude). Returns parsed JSON object or nil.
+    private func readConversationPayload(_ args: [String]) throws -> [String: Any]? {
+        guard let raw = optionValue(args, name: "--payload") else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let jsonText: String
+        if trimmed.hasPrefix("@") {
+            let path = String(trimmed.dropFirst())
+            do {
+                jsonText = try String(contentsOfFile: path, encoding: .utf8)
+            } catch {
+                throw CLIError(message: "payload_file_unreadable: \(path): \(error.localizedDescription)")
+            }
+        } else {
+            jsonText = trimmed
+        }
+        guard let data = jsonText.data(using: .utf8) else {
+            throw CLIError(message: "invalid_json: --payload is not valid UTF-8")
+        }
+        let obj = try? JSONSerialization.jsonObject(with: data, options: [])
+        guard let dict = obj as? [String: Any] else {
+            throw CLIError(message: "invalid_json: --payload must be a JSON object")
+        }
+        return dict
+    }
+
+    private func runConversationClaim(
+        subArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool
+    ) throws {
+        guard let kind = optionValue(subArgs, name: "--kind"),
+              !kind.isEmpty else {
+            throw CLIError(message: "claim requires --kind <kind>")
+        }
+        let surface = try resolveConversationSurface(subArgs)
+        var params: [String: Any] = [
+            "surface_id": surface,
+            "kind": kind
+        ]
+        if let cwd = optionValue(subArgs, name: "--cwd") { params["cwd"] = cwd }
+        if let id = optionValue(subArgs, name: "--id") { params["placeholder_id"] = id }
+        let payload = try client.sendV2(method: "conversation.claim", params: params)
+        if jsonOutput {
+            print(jsonString(payload))
+        } else {
+            print("OK conversation.claim kind=\(kind) surface=\(surface)")
+        }
+    }
+
+    private func runConversationPush(
+        subArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool
+    ) throws {
+        guard let kind = optionValue(subArgs, name: "--kind"),
+              !kind.isEmpty else {
+            throw CLIError(message: "push requires --kind <kind>")
+        }
+        guard let id = optionValue(subArgs, name: "--id"),
+              !id.isEmpty else {
+            throw CLIError(message: "push requires --id <id>")
+        }
+        guard let source = optionValue(subArgs, name: "--source"),
+              !source.isEmpty else {
+            throw CLIError(message: "push requires --source <hook|scrape|manual>")
+        }
+        let surface = try resolveConversationSurface(subArgs)
+        var params: [String: Any] = [
+            "surface_id": surface,
+            "kind": kind,
+            "id": id,
+            "source": source
+        ]
+        if let state = optionValue(subArgs, name: "--state") { params["state"] = state }
+        if let cwd = optionValue(subArgs, name: "--cwd") { params["cwd"] = cwd }
+        if let reason = optionValue(subArgs, name: "--reason") { params["diagnostic_reason"] = reason }
+        if let payloadObj = try readConversationPayload(subArgs) {
+            params["payload"] = payloadObj
+        }
+        let response = try client.sendV2(method: "conversation.push", params: params)
+        if jsonOutput {
+            print(jsonString(response))
+        } else {
+            print("OK conversation.push kind=\(kind) surface=\(surface) source=\(source)")
+        }
+    }
+
+    private func runConversationTombstone(
+        subArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool
+    ) throws {
+        guard let kind = optionValue(subArgs, name: "--kind"),
+              !kind.isEmpty else {
+            throw CLIError(message: "tombstone requires --kind <kind>")
+        }
+        guard let id = optionValue(subArgs, name: "--id"),
+              !id.isEmpty else {
+            throw CLIError(message: "tombstone requires --id <id>")
+        }
+        let surface = try resolveConversationSurface(subArgs)
+        var params: [String: Any] = [
+            "surface_id": surface,
+            "kind": kind,
+            "id": id
+        ]
+        if let reason = optionValue(subArgs, name: "--reason") { params["reason"] = reason }
+        let response = try client.sendV2(method: "conversation.tombstone", params: params)
+        if jsonOutput {
+            print(jsonString(response))
+        } else {
+            print("OK conversation.tombstone kind=\(kind) surface=\(surface)")
+        }
+    }
+
+    private func runConversationList(
+        subArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool
+    ) throws {
+        var params: [String: Any] = [:]
+        if let s = optionValue(subArgs, name: "--surface") { params["surface_id"] = s }
+        if let w = optionValue(subArgs, name: "--workspace") { params["workspace_id"] = w }
+        let response = try client.sendV2(method: "conversation.list", params: params)
+        if jsonOutput || hasFlag(subArgs, name: "--json") {
+            print(jsonString(response))
+            return
+        }
+        let entries = response["conversations"] as? [[String: Any]] ?? []
+        if entries.isEmpty {
+            print("(no conversations)")
+            return
+        }
+        for entry in entries {
+            let kind = entry["kind"] as? String ?? "?"
+            let id = entry["id"] as? String ?? "?"
+            let state = entry["state"] as? String ?? "?"
+            let surface = entry["surface_id"] as? String ?? "?"
+            print("\(surface)  \(kind)  \(id)  [\(state)]")
+        }
+    }
+
+    private func runConversationGet(
+        subArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool
+    ) throws {
+        let surface = try resolveConversationSurface(subArgs)
+        let params: [String: Any] = ["surface_id": surface]
+        let response = try client.sendV2(method: "conversation.get", params: params)
+        if jsonOutput || hasFlag(subArgs, name: "--json") {
+            print(jsonString(response))
+            return
+        }
+        guard let active = response["active"] as? [String: Any] else {
+            print("(no conversation for surface)")
+            return
+        }
+        let kind = active["kind"] as? String ?? "?"
+        let id = active["id"] as? String ?? "?"
+        let state = active["state"] as? String ?? "?"
+        let source = active["captured_via"] as? String ?? "?"
+        let reason = active["diagnostic_reason"] as? String ?? ""
+        let resumable = (response["can_resume"] as? Bool) ?? false
+        print("kind=\(kind) id=\(id) state=\(state) source=\(source) resumable=\(resumable)")
+        if !reason.isEmpty {
+            print("reason: \(reason)")
+        }
+    }
+
+    private func runConversationClear(
+        subArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool
+    ) throws {
+        let surface = try resolveConversationSurface(subArgs)
+        let params: [String: Any] = ["surface_id": surface]
+        let response = try client.sendV2(method: "conversation.clear", params: params)
+        if jsonOutput {
+            print(jsonString(response))
+        } else {
+            print("OK conversation.clear surface=\(surface)")
         }
     }
 

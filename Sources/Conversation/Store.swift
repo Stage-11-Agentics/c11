@@ -18,6 +18,14 @@ public actor ConversationStore {
 
     public init() {}
 
+    /// Process-wide singleton. Held outside `Workspace` because:
+    /// - the CLI dispatcher resolves surface IDs across all workspaces,
+    /// - the snapshot store reads/writes refs without going through a
+    ///   specific workspace,
+    /// - per-workspace partitioning would require duplicate seed/snapshot
+    ///   code paths for no isolation benefit (surface IDs are app-unique).
+    public static let shared = ConversationStore()
+
     // MARK: - Read
 
     public func conversations(for surfaceId: String) -> SurfaceConversations {

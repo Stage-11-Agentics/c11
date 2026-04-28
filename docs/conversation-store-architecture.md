@@ -61,14 +61,15 @@ The split lets unit tests cover pure reconciliation (store + strategy with synth
 
 ```swift
 struct ConversationRef: Codable, Sendable {
-    let kind: String                                 // "claude-code", "codex", future…
+    let kind: String                                 // "claude-code", "codex", future… Flat strings; namespacing deferred until we hit a real collision.
     let id: String                                   // Opaque to c11; strategy interprets. Validation grammar is per-strategy (see §Per-TUI strategies).
     let placeholder: Bool                            // True while only a wrapper-claim has been seen and the real id has not been resolved yet. Strategies must replace before any ResumeAction is emitted; resume() returns .skip if placeholder remains true.
+    let cwd: String?                                 // Working directory at capture time. Universal for local-process software-engineering agents and load-bearing for the Codex scrape filter; promoted to core for type-safety and `c11 conversation list --cwd` ergonomics. Nil for cloud/remote/MCP strategies that don't have a meaningful cwd.
     let capturedAt: Date                             // When this ref was last refreshed.
     let capturedVia: CaptureSource                   // hook | scrape | wrapperClaim | manual
     let state: ConversationState                     // alive | suspended | tombstoned | unknown | unsupported
     let diagnosticReason: String?                    // Strategy-set short reason populated on every update. Examples: "matched cwd + mtime after claim", "ambiguous: 3 candidates; chose newest", "placeholder only; no session file found yet". Surfaced via `c11 conversation get --json` so operators can answer "why did this pane resume that session?" without instrumentation.
-    let payload: [String: PersistedJSONValue]?       // Kind-specific extras (cwd, model, transcript path, …)
+    let payload: [String: PersistedJSONValue]?       // Kind-specific extras (model, transcript path, git_branch, …). cwd is NOT in payload — it's promoted to core above.
 }
 
 enum CaptureSource: String, Codable { case hook, scrape, wrapperClaim, manual }
@@ -440,17 +441,13 @@ c11 succeeds at this work when an operator can close a c11 window with **15 tabs
 
 The Trident plan review (2026-04-27, see `conversation-store-architecture-review-pack-2026-04-27T2025/`) resolved most of the original 12 open questions; revisions above bake in the answers. Operator decisions on the surfaced strategic calls (S1–S11):
 
-- **Resolved (applied above):** ship the work in 0.44.0 with the conversation-store as marquee feature (S1); add a `CMUX_DISABLE_CONVERSATION_STORE=1` architecture-level kill switch for the v1 release window (S2); keep pull-scrape in v1, do not defer to v1.1 (S3); progressive-discoverability skill update (S6); stay agnostic to Lattice — this is c11 infrastructure, not Lattice-bound (S9); do not land this primitive upstream in cmux, stays c11-only (S10); success metric defined above (S11).
+- **Resolved (applied above):** ship the work in 0.44.0 with the conversation-store as marquee feature (S1); add a `CMUX_DISABLE_CONVERSATION_STORE=1` architecture-level kill switch for the v1 release window (S2); keep pull-scrape in v1, do not defer to v1.1 (S3); polling for v1 scrape (not FSEvents/kqueue — revisit in v1.x if scrape latency becomes a felt problem) (S4); flat `kind` strings, defer namespacing (S5); progressive-discoverability skill update (S6); promote `cwd` to core `ConversationRef` (universal, load-bearing for Codex scrape filter), keep `git_branch` in payload (S7); skip confidence-scored refs / `ResumePlan` for v1 — `state = .unknown` + `diagnosticReason` already cover the "don't auto-resume the uncertain ones" case (S8); stay agnostic to Lattice — this is c11 infrastructure, not Lattice-bound (S9); do not land this primitive upstream in cmux, stays c11-only (S10); success metric defined above (S11).
 
-The remaining strategic calls (still open):
+The remaining strategic call (still open):
 
-1. **Hook payload routing.** Should `c11 claude-hook session-start` keep its full handler (existing telemetry breadcrumbs + sessionStore) or fully collapse to `c11 conversation push`? The latter is cleaner; the former preserves the existing breadcrumb taxonomy. (Was original Q3, not addressed by Trident.)
-2. **FSEvents / kqueue vs polling for scrape.** (S4 from Trident review — pros/cons pending operator review.)
-3. **Namespaced `kind`** (`vendor/product[@version]`) vs flat strings. (S5 from Trident review — pending.)
-4. **Promote `cwd` (and possibly `git_branch`) into core `ConversationRef` vs leave in `payload`.** (S7 — pending.)
-5. **Confidence-scored refs / `ResumePlan` wrapper with `confidence: Double, reason: String, warnings: [String]`.** (S8 — pending.)
+1. **Hook payload routing.** Should `c11 claude-hook session-start` keep its full handler (existing telemetry breadcrumbs + sessionStore) or fully collapse to `c11 conversation push`? The latter is cleaner; the former preserves the existing breadcrumb taxonomy. (Original Q3; can be decided at impl time.)
 
-(See `conversation-store-architecture-review-pack-2026-04-27T2025/synthesis-action.md` §"Evolutionary worth considering" for three additional ideas worth a future look: public strategy-integration contract doc (E1), strategy fixture harness as a deliberate compounding tool (E2), `ConversationState × ResumePolicy` split (E3).)
+(See `conversation-store-architecture-review-pack-2026-04-27T2025/synthesis-action.md` §"Evolutionary worth considering" for three ideas worth a future look: public strategy-integration contract doc (E1), strategy fixture harness as a deliberate compounding tool (E2), `ConversationState × ResumePolicy` split (E3).)
 
 ## References (current code; line numbers will shift)
 

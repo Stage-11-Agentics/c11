@@ -90,7 +90,7 @@ Before launching a new tagged run, clean up any older tags you started in this s
 ./scripts/prune-tags.sh --keep <tag>   # protect an additional tag
 ```
 
-Running tags are auto-protected.
+Running tags are auto-protected. A weekly launchd job (`scripts/launchd/com.stage11.c11-prune-tags.plist`) runs `--yes` automatically; reach for manual prune when you want space back sooner.
 
 ## Debug event log
 

@@ -48,6 +48,7 @@ tests/visual_report.html
 # Local scratch (screenshots, etc.)
 tmp/
 tmp-*/
+artifacts/openai-cua-runs/
 
 # Claude Code per-session state and agent scratch worktrees
 .claude/scheduled_tasks.lock

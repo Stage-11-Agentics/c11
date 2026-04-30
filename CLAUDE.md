@@ -36,6 +36,25 @@ c11's value to an agent is **the skill** — `skills/c11/SKILL.md` plus the peer
 
 **Therefore:** every change to the CLI, socket protocol, metadata schema, or surface model is incomplete until the skill is updated to match. If you add a command, add it to the skill. If you rename a command, rename it in the skill. If you change defaults, update the examples. The skill is the contract; let it rot and agents get worse at using c11. Invest there first, not last.
 
+## Computer use is a maintainer validation skill, not the c11 operating skill
+
+There are two different genres here; do not blur them:
+
+- **Agent operating skill (`c11`).** Teaches an agent inside c11 how to use the room: split panes, open surfaces, target handles, report status, drive browser/markdown surfaces, and compose its own working environment.
+- **Maintainer validation skill (`c11-computer-use`, planned).** Teaches a maintainer/developer agent how to test c11 as a product through the real macOS UI: screenshots, clicks, keyboard focus, pane readability, visual recovery, and user-path validation.
+
+The distinction matters. Socket/CLI commands are excellent for setup, orchestration, recovery, and deterministic oracle checks, but they do not prove that a human-visible workflow works. Computer use should validate behaviors that are visual, spatial, focus-sensitive, pointer-driven, or human-ergonomic.
+
+When validating c11 with computer use:
+
+- Launch only tagged builds (`./scripts/reload.sh --tag <tag>` and `./scripts/launch-tagged-automation.sh <tag>`). Never launch an untagged `c11 DEV.app`.
+- Use the socket as setup/oracle infrastructure, not as a substitute for the UI path being tested.
+- Capture screenshots and scenario artifacts for claims about visible behavior.
+- Inspect `c11 tree --no-layout` before calling a run successful. If important panes are too small for a human to read, rebalance them and treat that as part of the validation, not cleanup.
+- Prefer repeatable harness scenarios for comparisons across providers. Manual computer-use runs are useful, but they should feed back into reusable scenarios and skill guidance.
+
+The lesson from the OpenAI CUA runner work: "it executed" is not enough. If the resulting workspace is hard for the operator to read, the validation found a product/workflow issue worth preserving.
+
 ## Principle: unopinionated about the terminal
 
 c11 is **host and primitive, not configurator.** It provides surfaces, panes, a socket, a CLI, and a metadata seam — all scoped to c11's own runtime. The operator's tenant config files (`~/.claude/settings.json`, `~/.codex/*`, `~/.kimi/*`, shell rc files, etc.) are off-limits: c11 never reaches in to install hooks, persist configuration, or inject behavior into any TUI's on-disk state.

@@ -1,6 +1,6 @@
 # OpenAI Codex Computer Use Plan
 
-Status: planning artifact only. No runner implementation has started in this branch.
+Status: implementation started. The initial provider-neutral Swift macOS adapter and OpenAI-specific Python runner live under `tools/computer-use/`.
 
 Branch/worktree:
 
@@ -36,6 +36,8 @@ Official references:
 - Codex app Computer Use: `https://developers.openai.com/codex/app/computer-use`
 - API Computer Use guide: `https://developers.openai.com/api/docs/guides/tools-computer-use`
 - CUA sample app: `https://github.com/openai/openai-cua-sample-app`
+
+Implementation note: the runner targets the current GA Responses API `computer` tool shape: `tools=[{"type": "computer"}]`, `computer_call` outputs, and follow-up `computer_call_output` items sent with `previous_response_id`.
 
 ## Non-goals
 
@@ -418,6 +420,8 @@ Deliverables:
 - JSON action/result schema.
 - Local artifact screenshots.
 
+Implementation status: initial adapter added at `tools/computer-use/mac-adapter`. It also includes `launch`, frontmost bundle guardrails for input, `double_click`, `move`, `drag`, and `scroll`.
+
 Validation:
 
 - Run `doctor`.
@@ -439,6 +443,8 @@ Deliverables:
 - Run artifacts.
 - `launch-window` scenario.
 
+Implementation status: initial runner added at `tools/computer-use/openai-runner`. It discovers `OPENAI_API_KEY` from the environment only, writes ignored artifact bundles, and handles current Responses API computer calls.
+
 Validation:
 
 - Complete Scenario 1 against tagged c11.
@@ -452,6 +458,8 @@ Deliverables:
 - Socket oracle integration with `C11_SOCKET`/`CMUX_SOCKET`.
 - Scenario definitions for launch, split, focus/type.
 - Failure bundles with screenshots, logs, socket snapshots, and model trace.
+
+Implementation status: `doctor`, `smoke`, `launch-window`, `create-split`, and `focus-and-type` CLI paths are implemented. Socket usage is limited to launch/oracle/artifact capture.
 
 Validation:
 
@@ -575,4 +583,3 @@ Start Phase 1 and Phase 2:
 2. Implement the provider-neutral Swift mac adapter `doctor` and `observe` commands.
 3. Launch tagged c11 with `openai-cua` and capture the first window screenshot.
 4. Add the OpenAI runner only after the local screenshot/action loop is reliable.
-

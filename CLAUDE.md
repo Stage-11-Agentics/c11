@@ -48,6 +48,9 @@ The distinction matters. Socket/CLI commands are excellent for setup, orchestrat
 When validating c11 with computer use:
 
 - Launch only tagged builds (`./scripts/reload.sh --tag <tag>` and `./scripts/launch-tagged-automation.sh <tag>`). Never launch an untagged `c11 DEV.app`.
+- Default handoff is a fresh c11 surface running interactive Codex: create a new terminal pane/surface, run `codex --yolo`, then send a file-backed expert prompt. Do not use `codex exec` for watched validation panes.
+- The expert prompt should name the target tagged app/window, the scenario, success criteria, safety boundaries, artifact expectations, and the caller's workspace/surface refs so Codex can report back with `c11 send` or leave a readable result for `read-screen`.
+- This pattern is cross-agent: Claude Code can delegate visual validation to Codex, and Codex can delegate a clean computer-use pass to another Codex surface. Keep the handoff explicit so the validation context is fresh and inspectable.
 - Use the socket as setup/oracle infrastructure, not as a substitute for the UI path being tested.
 - Capture screenshots and scenario artifacts for claims about visible behavior.
 - Inspect `c11 tree --no-layout` before calling a run successful. If important panes are too small for a human to read, rebalance them and treat that as part of the validation, not cleanup.

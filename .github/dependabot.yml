@@ -11,3 +11,20 @@ updates:
       - "dependencies"
       - "github-actions"
     open-pull-requests-limit: 5
+
+  - package-ecosystem: "npm"
+    directory: "/web"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "web"
+    labels:
+      - "dependencies"
+      - "web"
+    open-pull-requests-limit: 10
+    groups:
+      web-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"

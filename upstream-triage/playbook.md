@@ -67,3 +67,25 @@ Resolve recipes for recurring conflict shapes. Add an entry whenever a non-obvio
 **Why:** Xcode auto-generates these and merges them poorly. The actual content (translated strings) almost never has semantic conflicts; it's the JSON structure that fights.
 
 **Last seen:** (pattern from divergence map; not yet exercised)
+
+---
+
+## Modify/delete conflict — file doesn't exist on c11
+
+**When you see:** probe reports `STATUS=conflict` with `git status` showing `DU <path>` (deleted-by-us, updated-by-them) on a file that c11/main does not contain. Often the only conflicting "file" in an otherwise small PR.
+
+**Diagnose:**
+
+1. `git ls-tree main:<path>` — if it returns nothing, c11/main genuinely doesn't have the file.
+2. `git log --all --format='%h %ai %s' -- <path> | head` — find the upstream commit that *introduced* the file. That commit's PR is the dependency.
+3. Walk back: `gh search prs --repo manaflow-ai/cmux 'in:title <feature-name>'` to confirm the dependency PR.
+
+**Apply:**
+
+Mark the PR **NEEDS-HUMAN** with a clear note: "Depends on upstream PR #<dep>, which introduced `<path>`. To import, either import #<dep> first, or skip both."
+
+**Do not** auto-import the dependency — that's a judgment call for the operator. A single-file PR that turns into a five-PR import chain is a meaningful scope change.
+
+**Why:** c11 forks the upstream tree at a moment in time and follows selectively. Any upstream PR that modifies a file introduced *after* the merge-base will fail this way. The pattern is going to be very common during catch-up — most upstream PRs after April 2026 modify code that didn't exist at our merge-base.
+
+**Last seen:** PR #3405 (2026-05-01) — modifies `Resources/opencode-plugin.js`, which was introduced upstream in PR #3057 (2026-04-26). c11 doesn't have the file or the Feed sidebar feature.

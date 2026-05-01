@@ -6435,19 +6435,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Module 4: opens a new terminal surface in the active main window and sends
     /// `c11 install <tui>` to run the installer interactively (with TTY confirm).
     /// Focus-intent: raises the window and creates a visible surface per the spec.
-    func openIntegrationInstallSurface(tui: String) {
-        guard let context = preferredMainWindowContextForWorkspaceCreation(event: nil, debugSource: "menu.integrations") else {
-            return
-        }
-        if let window = context.window ?? windowForMainWindowId(context.windowId) {
-            setActiveMainWindow(window)
-            bringToFront(window)
-        }
-        let workspace = context.tabManager.addWorkspace(select: true, autoWelcomeIfNeeded: false)
-        let safeName = tui.replacingOccurrences(of: "\"", with: "")
-        sendTextWhenReady("c11 install \(safeName)\n", to: workspace)
-    }
-
     @objc func applyUpdateIfAvailable(_ sender: Any?) {
         updateViewModel.overrideState = nil
         updateController.installUpdate()
@@ -11991,8 +11978,6 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
     private let clearAllItem = NSMenuItem(title: String(localized: "statusMenu.clearAll", defaultValue: "Clear All"), action: nil, keyEquivalent: "")
     private let checkForUpdatesItem = NSMenuItem(title: String(localized: "menu.checkForUpdates", defaultValue: "Check for Updates…"), action: nil, keyEquivalent: "")
     private let preferencesItem = NSMenuItem(title: String(localized: "menu.preferences", defaultValue: "Preferences…"), action: nil, keyEquivalent: "")
-    private let integrationsItem = NSMenuItem(title: String(localized: "menu.integrations", defaultValue: "Integrations"), action: nil, keyEquivalent: "")
-    private let integrationsSubmenu = NSMenu(title: String(localized: "menu.integrations", defaultValue: "Integrations"))
     private let quitItem = NSMenuItem(title: String(localized: "menu.quitCmux", defaultValue: "Quit c11"), action: nil, keyEquivalent: "")
 
     private var notificationItems: [NSMenuItem] = []
@@ -12024,7 +12009,7 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
             button.imagePosition = .imageOnly
             button.imageScaling = .scaleProportionallyDown
             button.image = MenuBarIconRenderer.makeImage(unreadCount: 0)
-            button.toolTip = "cmux"
+            button.toolTip = "c11"
         }
 
         notificationsCancellable = notificationStore.$notifications
@@ -12080,68 +12065,13 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        integrationsItem.submenu = integrationsSubmenu
-        rebuildIntegrationsSubmenu()
-        menu.addItem(integrationsItem)
-
-        menu.addItem(.separator())
-
         quitItem.target = self
         quitItem.action = #selector(quitAction)
         menu.addItem(quitItem)
     }
 
-    private func rebuildIntegrationsSubmenu() {
-        integrationsSubmenu.removeAllItems()
-        let tuis: [(id: String, displayName: String)] = [
-            ("claude-code", "Claude Code"),
-            ("codex", "Codex"),
-            ("opencode", "OpenCode"),
-            ("kimi", "Kimi")
-        ]
-        let installedSet = currentInstalledIntegrations()
-        for tui in tuis {
-            let installed = installedSet.contains(tui.id)
-            let glyph = installed ? "✓ " : ""
-            let title = "\(glyph)Install \(tui.displayName)…"
-            let item = NSMenuItem(title: title, action: #selector(installIntegrationAction(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = tui.id
-            if installed {
-                item.toolTip = String(localized: "menu.integrations.installed", defaultValue: "Already installed — running again will re-apply or update")
-            } else {
-                item.toolTip = String(localized: "menu.integrations.install", defaultValue: "Opens a new terminal tab and runs c11 install")
-            }
-            integrationsSubmenu.addItem(item)
-        }
-    }
-
-    /// Reads filesystem markers without touching the running cmux socket.
-    /// Non-focus-stealing — this runs every time the menu opens.
-    private func currentInstalledIntegrations() -> Set<String> {
-        let home = NSHomeDirectory()
-        let paths: [(id: String, config: String)] = [
-            ("claude-code", "\(home)/.claude/settings.json"),
-            ("codex", "\(home)/.codex/config.toml"),
-            ("opencode", "\(home)/.config/opencode/opencode.json"),
-            ("kimi", "\(home)/.kimi/config.toml")
-        ]
-        var installed: Set<String> = []
-        for entry in paths {
-            guard let data = try? Data(contentsOf: URL(fileURLWithPath: entry.config)),
-                  let text = String(data: data, encoding: .utf8) else {
-                continue
-            }
-            if text.contains("c11mux-v1") {
-                installed.insert(entry.id)
-            }
-        }
-        return installed
-    }
-
     func menuWillOpen(_ menu: NSMenu) {
         refreshUI()
-        rebuildIntegrationsSubmenu()
     }
 
     func refreshForDebugControls() {
@@ -12182,12 +12112,41 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
 
         if let button = statusItem.button {
             button.image = MenuBarIconRenderer.makeImage(unreadCount: displayedUnreadCount)
-            button.toolTip = displayedUnreadCount == 0
-                ? "cmux"
-                : displayedUnreadCount == 1
-                    ? "cmux: " + String(localized: "statusMenu.tooltip.unread.one", defaultValue: "1 unread notification")
-                    : "cmux: " + String(localized: "statusMenu.tooltip.unread.other", defaultValue: "\(displayedUnreadCount) unread notifications")
+            button.toolTip = makeStatusItemTooltip(displayedUnreadCount: displayedUnreadCount)
         }
+    }
+
+    private func makeStatusItemTooltip(displayedUnreadCount: Int) -> String {
+        if displayedUnreadCount == 0 {
+            return "c11"
+        }
+
+        let countLine: String = displayedUnreadCount == 1
+            ? "c11: " + String(localized: "statusMenu.tooltip.unread.one", defaultValue: "1 unread notification")
+            : "c11: " + String(localized: "statusMenu.tooltip.unread.other", defaultValue: "\(displayedUnreadCount) unread notifications")
+
+        let titleSummary = unreadTabTitleSummary(maxItems: maxInlineNotificationItems)
+        return titleSummary.isEmpty ? countLine : countLine + "\n" + titleSummary
+    }
+
+    private func unreadTabTitleSummary(maxItems: Int) -> String {
+        var seen: Set<String> = []
+        var ordered: [String] = []
+        for notification in notificationStore.notifications {
+            guard !notification.isRead else { continue }
+            let raw = AppDelegate.shared?.tabTitle(for: notification.tabId)
+            let title = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !title.isEmpty else { continue }
+            if seen.insert(title).inserted {
+                ordered.append(title)
+            }
+        }
+        let visible = ordered.prefix(maxItems)
+        var summary = visible.joined(separator: " · ")
+        if ordered.count > visible.count {
+            summary += " …"
+        }
+        return summary
     }
 
     private func applyShortcut(_ shortcut: StoredShortcut, to item: NSMenuItem) {
@@ -12257,11 +12216,6 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
 
     @objc private func preferencesAction() {
         onOpenPreferences()
-    }
-
-    @objc private func installIntegrationAction(_ sender: NSMenuItem) {
-        guard let tui = sender.representedObject as? String else { return }
-        AppDelegate.shared?.openIntegrationInstallSurface(tui: tui)
     }
 
     @objc private func quitAction() {
@@ -12459,7 +12413,7 @@ enum MenuBarBuildHintFormatter {
     ) -> String? {
         guard isDebugBuild else { return nil }
         let normalized = appName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let prefix = "cmux DEV"
+        let prefix = "c11 DEV"
         guard normalized.hasPrefix(prefix) else { return "Build: DEV" }
 
         let suffix = String(normalized.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -12628,7 +12582,7 @@ enum MenuBarIconRenderer {
         image.lockFocus()
         defer { image.unlockFocus() }
 
-        let glyphRect = NSRect(x: 1.2, y: 1.5, width: 11.6, height: 15.0)
+        let glyphRect = NSRect(x: 1.0, y: 1.0, width: 11.0, height: 11.0)
         drawGlyph(in: glyphRect)
 
         if let text = badgeText {
@@ -12640,11 +12594,13 @@ enum MenuBarIconRenderer {
     }
 
     private static func drawGlyph(in rect: NSRect) {
-        // Match the canonical cmux center-mark path from Icon Center Image Artwork.svg.
-        let srcMinX: CGFloat = 384.0
-        let srcMinY: CGFloat = 255.0
-        let srcWidth: CGFloat = 369.0
-        let srcHeight: CGFloat = 513.0
+        // Open-Center Plus: four-fold cardinal cross silhouette derived from the
+        // c11 app icon, with a centered square window cut out so the four arms
+        // meet at the inner corners of a hub-ring.
+        let srcMinX: CGFloat = 0
+        let srcMinY: CGFloat = 0
+        let srcWidth: CGFloat = 100
+        let srcHeight: CGFloat = 100
 
         func map(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
             let nx = (x - srcMinX) / srcWidth
@@ -12656,14 +12612,27 @@ enum MenuBarIconRenderer {
         }
 
         let path = NSBezierPath()
-        path.move(to: map(384.0, 255.0))
-        path.line(to: map(753.0, 511.5))
-        path.line(to: map(384.0, 768.0))
-        path.line(to: map(384.0, 654.0))
-        path.line(to: map(582.692, 511.5))
-        path.line(to: map(384.0, 369.0))
+        path.move(to: map(33, 0))
+        path.line(to: map(67, 0))
+        path.line(to: map(67, 33))
+        path.line(to: map(100, 33))
+        path.line(to: map(100, 67))
+        path.line(to: map(67, 67))
+        path.line(to: map(67, 100))
+        path.line(to: map(33, 100))
+        path.line(to: map(33, 67))
+        path.line(to: map(0, 67))
+        path.line(to: map(0, 33))
+        path.line(to: map(33, 33))
         path.close()
 
+        path.move(to: map(33, 33))
+        path.line(to: map(33, 67))
+        path.line(to: map(67, 67))
+        path.line(to: map(67, 33))
+        path.close()
+
+        path.windingRule = .evenOdd
         NSColor.black.setFill()
         path.fill()
     }

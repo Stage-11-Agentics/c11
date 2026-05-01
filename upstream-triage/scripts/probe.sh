@@ -169,7 +169,7 @@ if [[ "$PARENT_COUNT" -gt 1 ]]; then
   CHERRY_ARGS+=("-m" "1")
 fi
 
-if git cherry-pick "${CHERRY_ARGS[@]}" "$MERGE_SHA" >/tmp/probe-${PR}.log 2>&1; then
+if git cherry-pick ${CHERRY_ARGS[@]+"${CHERRY_ARGS[@]}"} "$MERGE_SHA" >/tmp/probe-${PR}.log 2>&1; then
   # Cherry-pick succeeded with no conflicts.
   # But: if the result is empty (no diff vs main), treat as empty.
   if git diff --quiet HEAD~1 HEAD 2>/dev/null; then

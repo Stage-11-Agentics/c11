@@ -1,91 +1,110 @@
 # Playbook
 
-Resolve recipes for recurring conflict shapes. Add an entry whenever a non-obvious resolution might come up again. Skip entries that are obvious or one-shot.
+Adaptation patterns the agent uses when bringing upstream cmux PRs into c11. Add an entry whenever a non-obvious pattern comes up that's likely to recur. Skip entries that are obvious or one-shot.
+
+These are not conflict-resolution recipes. They're knowledge the agent carries about *how upstream changes typically land in c11*. The agent reads these every run.
 
 **Entry format:**
 
 ```markdown
 ## <short title>
 
-**When you see:** <conflict pattern>
+**When you see:** <upstream change shape that triggers this pattern>
 
-**Apply:** <the resolution recipe, in steps>
+**Adapt by:** <how to land the change on c11 — written as agent guidance, not a script>
 
-**Why:** <the underlying reason — what about c11 makes this conflict shape recur>
+**Why:** <what about c11 makes this pattern recur — the underlying divergence>
 
 **Last seen:** <PR# / date>
 ```
 
 ---
 
-## cmux → c11 rename
+## cmux → c11 entry-point rename
 
-**When you see:** an upstream PR touches `Sources/cmuxApp.swift` or `CLI/cmux.swift`. Direct cherry-pick will fail (file doesn't exist on c11) or recreate stale paths.
+**When you see:** an upstream PR touches `Sources/cmuxApp.swift` or `CLI/cmux.swift`. These files don't exist on c11 — they were renamed to `Sources/c11App.swift` and `CLI/c11.swift` during the fork's identity change.
 
-**Apply:**
+**Adapt by:**
 
-1. Run the probe normally. Note the failure mode (`error: <path>: does not exist in index` is the typical signal).
-2. Fetch the diff: `git show <merge-commit> -- Sources/cmuxApp.swift CLI/cmux.swift`
-3. Translate paths: re-apply the diff to `Sources/c11App.swift` / `CLI/c11.swift` instead. The simplest approach is `git show <sha> -- <old-path> | sed 's|<old-path>|<new-path>|g' | git apply -3`.
-4. If the translated apply succeeds, stage and commit using the original PR's author and message: `git commit --author="$ORIG_AUTHOR" -m "[upstream #<N>] <orig-title>"`.
-5. If the translated apply has hunk failures, the upstream change touches code that's been rewritten on c11 — fall back to NEEDS-HUMAN, do not guess.
+1. Read the upstream diff against the cmux file. Understand what it changes — a new SwiftUI scene, a new command, a config refactor, etc.
+2. Apply the same change to the c11 equivalent (`Sources/c11App.swift` / `CLI/c11.swift`). The class/struct names already differ (`c11App` vs `cmuxApp`); preserve c11's naming throughout.
+3. If the upstream change references other identifiers that have been renamed (e.g., a method name that changed), translate those references too.
+4. Cherry-pick will fail here — don't try to coerce it. Rewrite is the right path.
 
-**Why:** c11 renamed the entry-point files when the project name changed. The code identity is the same; the path is not. This will keep recurring forever — the rename is permanent.
+**Why:** c11 renamed the entry-point files when the project name changed. The code identity is the same; the path and a few identifiers are not. Permanent divergence, not catch-up-able.
 
-**Last seen:** (none yet — pattern observed during initial divergence map seeding 2026-05-01)
-
----
-
-## Xcode project file conflicts
-
-**When you see:** any cherry-pick conflict in `GhosttyTabs.xcodeproj/project.pbxproj`.
-
-**Apply:**
-
-1. **Do not** try to hand-merge `pbxproj` content. The format is positional and one-character mistakes break the project.
-2. If the upstream change is purely *adding* file references (most common): take ours (`git checkout --ours GhosttyTabs.xcodeproj/project.pbxproj`), then add the new source files manually via Xcode (or the appropriate script), then `git add` and continue.
-3. If the upstream change is structural (target settings, build phases): NEEDS-HUMAN. The c11 Stage-11 Sentry config and target IDs are baked in here.
-4. Stage the resolution: `git add GhosttyTabs.xcodeproj/project.pbxproj` then `git cherry-pick --continue`.
-
-**Why:** c11 has 48 commits worth of changes here — Stage-11 Sentry config, c11 target rename, additional file references. Most upstream pbxproj changes are file-list additions, which can be replayed by adding the files Xcode-side.
-
-**Last seen:** (pattern from divergence map; not yet exercised)
+**Last seen:** —
 
 ---
 
-## String catalog merges (`.xcstrings`)
+## Xcode project file (`pbxproj`) changes
 
-**When you see:** conflict in `Resources/Localizable.xcstrings` or `Resources/InfoPlist.xcstrings`.
+**When you see:** an upstream PR adds, removes, or moves entries in `GhosttyTabs.xcodeproj/project.pbxproj`.
 
-**Apply:**
+**Adapt by:**
 
-1. These files are JSON; conflicts usually appear as overlapping key additions.
-2. Take ours, then re-apply the upstream change: `git checkout --ours <file>`, then `git show <sha> -- <file> | git apply --3way -`.
-3. If still conflicting, open the file and manually merge the new keys at the JSON level — the conflicts are almost always *additive*.
-4. Run a build locally to confirm the JSON is still valid; if you can't build, at minimum run `python3 -c 'import json; json.load(open("<file>"))'` to validate.
+- **If upstream is just adding new source files:** identify the new files. In c11, the simplest reliable path is to add them via Xcode (or its scripting equivalent) so the file references and build phase memberships are wired correctly. Don't hand-edit `pbxproj` JSON-style — its format is positional and brittle.
+- **If upstream is changing target settings, signing, build configurations:** stop. c11 has Stage-11 Sentry, c11 target rename, and signing identity baked into its pbxproj. These are intentional divergence. Surface to the operator before touching.
+- **If upstream is moving file groups around:** judge whether c11's organization should follow. Often it shouldn't — c11 has its own sub-organization (Panels/, Theme/, etc.). Do the file additions, skip the reorganization.
 
-**Why:** Xcode auto-generates these and merges them poorly. The actual content (translated strings) almost never has semantic conflicts; it's the JSON structure that fights.
+**Why:** 48 of c11's unique commits touch this file. Most are c11-specific (Sentry, target renames, additional source files for c11-only features). Upstream pbxproj churn is mostly file-list additions, which can be replayed by adding the files Xcode-side without merging the pbxproj diff.
 
-**Last seen:** (pattern from divergence map; not yet exercised)
+**Last seen:** —
 
 ---
 
-## Modify/delete conflict — file doesn't exist on c11
+## String catalog (`.xcstrings`) changes
 
-**When you see:** probe reports `STATUS=conflict` with `git status` showing `DU <path>` (deleted-by-us, updated-by-them) on a file that c11/main does not contain. Often the only conflicting "file" in an otherwise small PR.
+**When you see:** an upstream PR adds or modifies entries in `Resources/Localizable.xcstrings` or `Resources/InfoPlist.xcstrings`.
+
+**Adapt by:**
+
+1. These files are JSON; the change is almost always *additive* (new keys for new strings).
+2. If the strings are for upstream-only features (Feed sidebar, OpenCode plugin, etc.) and c11 isn't importing those features → skip the string additions.
+3. If the strings are for shared features (theme picker, settings) → take ours, then merge in the new keys at the JSON level. Validate with `python3 -c 'import json; json.load(open("<file>"))'`.
+4. Don't try to merge with `git checkout --ours` followed by `git apply` — the JSON structure conflicts more than the actual key contents do, and the apply will spuriously fail.
+
+**Why:** Xcode auto-generates these and they merge poorly. The semantic content (the localized strings themselves) is rarely in real conflict — only the surrounding JSON structure is.
+
+**Last seen:** —
+
+---
+
+## Modify/delete — file doesn't exist on c11
+
+**When you see:** the upstream PR modifies a file that c11/main does not contain. The probe reports `STATUS=conflict` with `git status` showing `DU <path>` (deleted-by-us, updated-by-them).
 
 **Diagnose:**
 
-1. `git ls-tree main:<path>` — if it returns nothing, c11/main genuinely doesn't have the file.
+1. `git ls-tree main:<path>` — confirms c11/main doesn't have it.
 2. `git log --all --format='%h %ai %s' -- <path> | head` — find the upstream commit that *introduced* the file. That commit's PR is the dependency.
-3. Walk back: `gh search prs --repo manaflow-ai/cmux 'in:title <feature-name>'` to confirm the dependency PR.
+3. Read the introducing PR's title — that names the upstream feature this PR builds on.
 
-**Apply:**
+**Adapt by:**
 
-Mark the PR **NEEDS-HUMAN** with a clear note: "Depends on upstream PR #<dep>, which introduced `<path>`. To import, either import #<dep> first, or skip both."
+In almost every case, this is a **NEEDS-HUMAN** call. The upstream PR depends on a feature c11 hasn't imported. Importing this PR alone leaves a dangling reference; importing the whole feature chain is a meaningful scope expansion.
 
-**Do not** auto-import the dependency — that's a judgment call for the operator. A single-file PR that turns into a five-PR import chain is a meaningful scope change.
+The agent should:
+1. Surface the dependency clearly: "PR #<N> modifies `<file>`, introduced upstream in PR #<dep> (<feature>). c11 doesn't have this feature. To import, import #<dep> first or skip both."
+2. **Not** silently bring the file over. That makes c11 carry orphan code with no caller, and obscures the dependency from the operator.
+3. If the operator chooses to import the feature chain, that becomes a separate triage session with its own scope.
 
-**Why:** c11 forks the upstream tree at a moment in time and follows selectively. Any upstream PR that modifies a file introduced *after* the merge-base will fail this way. The pattern is going to be very common during catch-up — most upstream PRs after April 2026 modify code that didn't exist at our merge-base.
+**Why:** c11 selectively follows upstream; it never sees most upstream PRs at the time they're merged. Any upstream PR that builds on a post-merge-base feature will fail this way. Going to be common during catch-up.
 
-**Last seen:** PR #3405 (2026-05-01) — modifies `Resources/opencode-plugin.js`, which was introduced upstream in PR #3057 (2026-04-26). c11 doesn't have the file or the Feed sidebar feature.
+**Last seen:** PR #3405 (2026-05-01) — modified `Resources/opencode-plugin.js`, introduced in PR #3057 (2026-04-26).
+
+---
+
+## Submodule pointer changes
+
+**When you see:** an upstream PR bumps `vendor/bonsplit`, `ghostty`, or another submodule, often via `.gitmodules` changes.
+
+**Adapt by:**
+
+1. Check whether c11 tracks the same submodule remote. If c11 has its own fork of the submodule (e.g., `homebrew-c11` instead of `homebrew-cmux`), the URL change doesn't apply.
+2. If the remote is shared, the bump is usually safe — but verify via `git submodule update --remote --merge` after applying.
+3. Don't import upstream's `.gitmodules` wholesale; c11 has divergence in submodule URLs that must be preserved.
+
+**Why:** c11 maintains its own homebrew tap (`homebrew-c11`) and may track different submodule revisions for vendored deps. `.gitmodules` is on the divergence map's skip list for this reason.
+
+**Last seen:** —

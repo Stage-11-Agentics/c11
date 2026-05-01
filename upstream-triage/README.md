@@ -61,6 +61,6 @@ These get updated by the agent at the end of each run. Without them, every sessi
 - **Live engagement.** The operator drives the sweep with the agent; the agent surfaces decisions in real time. Easy + yes / easy + no fly through; moderate / hard pause for nod.
 - **Local execution.** No cron yet. Cloud agent later.
 - **One c11 PR per upstream PR.** CI on the c11 PR catches build/test breakage.
-- **Computer-use validation for user-visible imports.** The c11 computer-use harness (`tools/computer-use/c11-cu`) drives a tagged build to confirm the imported feature works and looks right. Internal-only changes (refactors, build config) skip this step — CI is enough.
+- **Computer-use validation for user-visible imports.** The OpenAI CUA harness (`tools/computer-use/`, currently on `feat/openai-cua-runner` branch) drives a tagged c11 build via OpenAI Responses API to confirm the imported feature works and looks right. Internal-only changes (refactors, build config) skip this step — CI is enough. Harness needs to land on main before validation kicks in.
 - **Agent escalates before pushing on non-trivial adaptations.** Clean cherry-pick lands without check-in; rewrite or scope-cut surfaces first.
 - **No auto-merge.** Operator merges every c11 PR.

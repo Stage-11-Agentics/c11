@@ -3009,6 +3009,7 @@ enum SettingsNavigationTarget: String {
     case browserImport
     case textBoxInput
     case keyboardShortcuts
+    case aiUsage
 }
 
 enum SettingsNavigationRequest {
@@ -4310,6 +4311,8 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
             return .input
         case .keyboardShortcuts:
             return .keyboardShortcuts
+        case .aiUsage:
+            return .agentsAutomation
         }
     }
 }
@@ -4417,6 +4420,15 @@ struct SettingsView: View {
     @State private var isResettingSettings = false
     @State private var workspaceTabDefaultEntries = WorkspaceTabColorSettings.defaultPaletteWithOverrides()
     @State private var workspaceTabCustomColors = WorkspaceTabColorSettings.customColors()
+
+    @StateObject private var aiUsageStore = AIUsageAccountStore.shared
+    @StateObject private var aiUsagePoller = AIUsagePoller.shared
+    @StateObject private var aiUsageColorSettings = AIUsageColorSettings.shared
+    @State private var aiUsageEditorRequest: AIUsageEditorRequest?
+    @State private var aiUsageAccountToRemove: AIUsageAccount?
+    @State private var showAIUsageRemoveConfirmation = false
+    @State private var aiUsageRemoveError: String?
+    @State private var showAIUsageRemoveError = false
 
     private var selectedWorkspacePlacement: NewWorkspacePlacement {
         NewWorkspacePlacement(rawValue: newWorkspacePlacement) ?? WorkspacePlacementSettings.defaultPlacement
@@ -4951,6 +4963,81 @@ struct SettingsView: View {
             Button(String(localized: "common.ok", defaultValue: "OK"), role: .cancel) {}
         } message: {
             Text(notificationCustomSoundErrorAlertMessage)
+        }
+        .sheet(item: $aiUsageEditorRequest) { request in
+            AIUsageEditorSheet(
+                provider: request.provider,
+                editingAccount: request.account,
+                onClose: { aiUsageEditorRequest = nil }
+            )
+        }
+        .confirmationDialog(
+            String(
+                localized: "aiusage.remove.confirm.title",
+                defaultValue: "Remove this account?"
+            ),
+            isPresented: $showAIUsageRemoveConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(
+                String(
+                    localized: "aiusage.remove.confirm.action",
+                    defaultValue: "Remove"
+                ),
+                role: .destructive
+            ) {
+                guard let target = aiUsageAccountToRemove else { return }
+                Task { @MainActor in
+                    do {
+                        try await aiUsageStore.remove(id: target.id)
+                    } catch let error as AIUsageStoreError {
+                        aiUsageRemoveError = error.errorDescription
+                        showAIUsageRemoveError = true
+                    } catch let error as LocalizedError {
+                        aiUsageRemoveError = error.errorDescription
+                        showAIUsageRemoveError = true
+                    } catch {
+                        aiUsageRemoveError = String(
+                            localized: "aiusage.remove.error.unknown",
+                            defaultValue: "An unknown error occurred."
+                        )
+                        showAIUsageRemoveError = true
+                    }
+                    aiUsageAccountToRemove = nil
+                }
+            }
+            Button(
+                String(
+                    localized: "aiusage.remove.cancel",
+                    defaultValue: "Cancel"
+                ),
+                role: .cancel
+            ) {
+                aiUsageAccountToRemove = nil
+            }
+        } message: {
+            Text(String(
+                localized: "aiusage.remove.confirm.body",
+                defaultValue: "The saved credentials will be deleted from Keychain."
+            ))
+        }
+        .alert(
+            String(
+                localized: "aiusage.remove.error.title",
+                defaultValue: "Could not remove account"
+            ),
+            isPresented: $showAIUsageRemoveError
+        ) {
+            Button(String(
+                localized: "aiusage.remove.error.ok",
+                defaultValue: "OK"
+            )) {
+                aiUsageRemoveError = nil
+            }
+        } message: {
+            if let aiUsageRemoveError {
+                Text(aiUsageRemoveError)
+            }
         }
     }
 
@@ -5954,6 +6041,16 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var agentsAutomationSettingsPage: some View {
+        AIUsageSettingsSection(
+            store: aiUsageStore,
+            poller: aiUsagePoller,
+            colorSettings: aiUsageColorSettings,
+            editorRequest: $aiUsageEditorRequest,
+            accountToRemove: $aiUsageAccountToRemove,
+            showRemoveConfirmation: $showAIUsageRemoveConfirmation
+        )
+        .id(SettingsNavigationTarget.aiUsage)
+
         SettingsSectionHeader(title: String(localized: "settings.section.agentSkills", defaultValue: "Agent Skills"))
         SettingsCard {
             AgentSkillsSettingsSection()
@@ -6309,6 +6406,7 @@ struct SettingsView: View {
         textBoxShortcutBehavior = TextBoxInputSettings.defaultShortcutBehavior.rawValue
         WorkspaceTabColorSettings.reset()
         reloadWorkspaceTabColorSettings()
+        AIUsageColorSettings.shared.resetToDefaults()
         shortcutResetToken = UUID()
         DispatchQueue.main.async { isResettingSettings = false }
     }
@@ -6388,7 +6486,7 @@ private struct SettingsTitleLeadingInsetReader: NSViewRepresentable {
     }
 }
 
-private struct SettingsSectionHeader: View {
+struct SettingsSectionHeader: View {
     let title: String
 
     var body: some View {
@@ -6400,7 +6498,7 @@ private struct SettingsSectionHeader: View {
     }
 }
 
-private struct SettingsCard<Content: View>: View {
+struct SettingsCard<Content: View>: View {
     @ViewBuilder let content: Content
 
     init(@ViewBuilder content: () -> Content) {
@@ -6422,7 +6520,7 @@ private struct SettingsCard<Content: View>: View {
     }
 }
 
-private struct SettingsCardRow<Trailing: View>: View {
+struct SettingsCardRow<Trailing: View>: View {
     let title: String
     let subtitle: String?
     let controlWidth: CGFloat?
@@ -6538,7 +6636,7 @@ private extension View {
     }
 }
 
-private struct SettingsCardDivider: View {
+struct SettingsCardDivider: View {
     var body: some View {
         Rectangle()
             .fill(Color(nsColor: NSColor.separatorColor).opacity(0.5))

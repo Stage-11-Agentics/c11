@@ -246,7 +246,30 @@
 				D7203BF0A1B2C3D4E5F60719 /* MailboxULID.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7103BF1A1B2C3D4E5F60718 /* MailboxULID.swift */; };
 				D7206BF0A1B2C3D4E5F60719 /* MailboxEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7106BF1A1B2C3D4E5F60718 /* MailboxEnvelope.swift */; };
 				D7113BF0A1B2C3D4E5F60718 /* MailboxDispatcherGCTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7113BF1A1B2C3D4E5F60718 /* MailboxDispatcherGCTests.swift */; };
-		/* End PBXBuildFile section */
+				C1100B1B7530E1FEBB72074C /* AIUsageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100A1B7530E1FEBB72074C /* AIUsageProvider.swift */; };
+		C1100BB22F2C7143F56AAF88 /* AIUsageAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100AB22F2C7143F56AAF88 /* AIUsageAccount.swift */; };
+		C1100BDBE3520D6CFB59CFB6 /* AIUsageRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100ADBE3520D6CFB59CFB6 /* AIUsageRegistry.swift */; };
+		C1100BCE11A0B1C2D3E4F5601 /* C11AppOwnedError.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100ACE11A0B1C2D3E4F5601 /* C11AppOwnedError.swift */; };
+		C1100B4CD6E3A6EB06D171B0 /* AIUsageKeychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100A4CD6E3A6EB06D171B0 /* AIUsageKeychain.swift */; };
+		C1100B2BB5264B0DF795D21B /* AIUsageAccountStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100A2BB5264B0DF795D21B /* AIUsageAccountStore.swift */; };
+		C1101BF93615667CBD8BF65E /* AIUsageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1101AF93615667CBD8BF65E /* AIUsageTests.swift */; };
+		C1100B6EC16A925E06722B3B /* AIUsageHTTP.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100A6EC16A925E06722B3B /* AIUsageHTTP.swift */; };
+		C1100BF249B721A99F1BE49F /* AIUsageISO8601DateParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100AF249B721A99F1BE49F /* AIUsageISO8601DateParser.swift */; };
+		C1100B50192E29F0E1E8542E /* AIUsageStatusPagePoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100A50192E29F0E1E8542E /* AIUsageStatusPagePoller.swift */; };
+		C1100B1965FA05805AB79CFF /* AIUsagePoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100A1965FA05805AB79CFF /* AIUsagePoller.swift */; };
+		C1100B100678083910E4DF1E /* ClaudeAIProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100A100678083910E4DF1E /* ClaudeAIProvider.swift */; };
+		C1100B4097A2C8952ADB9F99 /* ClaudeAIUsageFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100A4097A2C8952ADB9F99 /* ClaudeAIUsageFetcher.swift */; };
+		C1100BA3BF5E1234CD567890 /* ClaudeLocalUsageFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100AA3BF5E1234CD567890 /* ClaudeLocalUsageFetcher.swift */; };
+		C1100B77DEEF1F9C6A53D360 /* CodexAIProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100A77DEEF1F9C6A53D360 /* CodexAIProvider.swift */; };
+		C1100B8F1E2D3C4B5A697801 /* CodexLocalUsageFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100A8F1E2D3C4B5A697801 /* CodexLocalUsageFetcher.swift */; };
+		C1100B71B4FFDCC1138A307E /* AIUsageColorSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100A71B4FFDCC1138A307E /* AIUsageColorSettings.swift */; };
+		C1100BDC5326DFC9FA51AD5B /* AIUsageResetLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100ADC5326DFC9FA51AD5B /* AIUsageResetLabel.swift */; };
+		C1100B53D8585C30017B58BE /* AIUsageStatusRanking.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100A53D8585C30017B58BE /* AIUsageStatusRanking.swift */; };
+		C1100BB7F4555D05AB8B64DD /* AIUsageEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100AB7F4555D05AB8B64DD /* AIUsageEditorSheet.swift */; };
+		C1100B001BE7499E96E4CA87 /* AIUsagePopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100A001BE7499E96E4CA87 /* AIUsagePopover.swift */; };
+		C1100B6579C2D31ED7329302 /* AIUsageSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100A6579C2D31ED7329302 /* AIUsageSettingsSection.swift */; };
+		C1100B1D5910073D00E8364D /* AIUsageFooterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1100A1D5910073D00E8364D /* AIUsageFooterView.swift */; };
+/* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		A5001020 /* Embed Frameworks */ = {
@@ -535,6 +558,30 @@
 			D7111BF1A1B2C3D4E5F60718 /* StdinMailboxHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/StdinMailboxHandler.swift; sourceTree = "<group>"; };
 			D7112BF1A1B2C3D4E5F60718 /* StdinHandlerFormattingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StdinHandlerFormattingTests.swift; sourceTree = "<group>"; };
 			D7113BF1A1B2C3D4E5F60718 /* MailboxDispatcherGCTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailboxDispatcherGCTests.swift; sourceTree = "<group>"; };
+		C1100A1B7530E1FEBB72074C /* AIUsageProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/AIUsageProvider.swift; sourceTree = "<group>"; };
+		C1100AB22F2C7143F56AAF88 /* AIUsageAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/AIUsageAccount.swift; sourceTree = "<group>"; };
+		C1100ADBE3520D6CFB59CFB6 /* AIUsageRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/AIUsageRegistry.swift; sourceTree = "<group>"; };
+		C1100ACE11A0B1C2D3E4F5601 /* C11AppOwnedError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Errors/C11AppOwnedError.swift; sourceTree = "<group>"; };
+		C1100A4CD6E3A6EB06D171B0 /* AIUsageKeychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/AIUsageKeychain.swift; sourceTree = "<group>"; };
+		C1100A2BB5264B0DF795D21B /* AIUsageAccountStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/AIUsageAccountStore.swift; sourceTree = "<group>"; };
+		C1101AF93615667CBD8BF65E /* AIUsageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsageTests.swift; sourceTree = "<group>"; };
+		C1100A6EC16A925E06722B3B /* AIUsageHTTP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/AIUsageHTTP.swift; sourceTree = "<group>"; };
+		C1100AF249B721A99F1BE49F /* AIUsageISO8601DateParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/AIUsageISO8601DateParser.swift; sourceTree = "<group>"; };
+		C1100A50192E29F0E1E8542E /* AIUsageStatusPagePoller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/AIUsageStatusPagePoller.swift; sourceTree = "<group>"; };
+		C1100A1965FA05805AB79CFF /* AIUsagePoller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/AIUsagePoller.swift; sourceTree = "<group>"; };
+		C1100A100678083910E4DF1E /* ClaudeAIProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/ClaudeAIProvider.swift; sourceTree = "<group>"; };
+		C1100A4097A2C8952ADB9F99 /* ClaudeAIUsageFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/ClaudeAIUsageFetcher.swift; sourceTree = "<group>"; };
+		C1100AA3BF5E1234CD567890 /* ClaudeLocalUsageFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/ClaudeLocalUsageFetcher.swift; sourceTree = "<group>"; };
+		C1100A77DEEF1F9C6A53D360 /* CodexAIProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/CodexAIProvider.swift; sourceTree = "<group>"; };
+		C1100A2D57A5AF939185B8EB /* CodexAIUsageFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/CodexAIUsageFetcher.swift; sourceTree = "<group>"; };
+		C1100A8F1E2D3C4B5A697801 /* CodexLocalUsageFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/CodexLocalUsageFetcher.swift; sourceTree = "<group>"; };
+		C1100A71B4FFDCC1138A307E /* AIUsageColorSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/AIUsageColorSettings.swift; sourceTree = "<group>"; };
+		C1100ADC5326DFC9FA51AD5B /* AIUsageResetLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/UI/AIUsageResetLabel.swift; sourceTree = "<group>"; };
+		C1100A53D8585C30017B58BE /* AIUsageStatusRanking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/UI/AIUsageStatusRanking.swift; sourceTree = "<group>"; };
+		C1100AB7F4555D05AB8B64DD /* AIUsageEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/UI/AIUsageEditorSheet.swift; sourceTree = "<group>"; };
+		C1100A001BE7499E96E4CA87 /* AIUsagePopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/UI/AIUsagePopover.swift; sourceTree = "<group>"; };
+		C1100A6579C2D31ED7329302 /* AIUsageSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/UI/AIUsageSettingsSection.swift; sourceTree = "<group>"; };
+		C1100A1D5910073D00E8364D /* AIUsageFooterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsage/UI/AIUsageFooterView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -651,7 +698,27 @@
 			A5001041 /* Sources */ = {
 				isa = PBXGroup;
 				children = (
-					A5001011 /* c11App.swift */,
+					
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				C1100A1D5910073D00E8364D /* AIUsageFooterView.swift */,C1100A6579C2D31ED7329302 /* AIUsageSettingsSection.swift */,C1100A001BE7499E96E4CA87 /* AIUsagePopover.swift */,C1100AB7F4555D05AB8B64DD /* AIUsageEditorSheet.swift */,C1100A53D8585C30017B58BE /* AIUsageStatusRanking.swift */,C1100ADC5326DFC9FA51AD5B /* AIUsageResetLabel.swift */,C1100A71B4FFDCC1138A307E /* AIUsageColorSettings.swift */,C1100A2D57A5AF939185B8EB /* CodexAIUsageFetcher.swift */,C1100A77DEEF1F9C6A53D360 /* CodexAIProvider.swift */,C1100A8F1E2D3C4B5A697801 /* CodexLocalUsageFetcher.swift */,C1100A4097A2C8952ADB9F99 /* ClaudeAIUsageFetcher.swift */,C1100AA3BF5E1234CD567890 /* ClaudeLocalUsageFetcher.swift */,C1100A100678083910E4DF1E /* ClaudeAIProvider.swift */,C1100A1965FA05805AB79CFF /* AIUsagePoller.swift */,C1100A50192E29F0E1E8542E /* AIUsageStatusPagePoller.swift */,C1100AF249B721A99F1BE49F /* AIUsageISO8601DateParser.swift */,C1100A6EC16A925E06722B3B /* AIUsageHTTP.swift */,C1100A2BB5264B0DF795D21B /* AIUsageAccountStore.swift */,C1100A4CD6E3A6EB06D171B0 /* AIUsageKeychain.swift */,C1100ADBE3520D6CFB59CFB6 /* AIUsageRegistry.swift */,C1100AB22F2C7143F56AAF88 /* AIUsageAccount.swift */,C1100A1B7530E1FEBB72074C /* AIUsageProvider.swift */,C1100ACE11A0B1C2D3E4F5601 /* C11AppOwnedError.swift */,A5001011 /* c11App.swift */,
 					A5001012 /* ContentView.swift */,
 					9AD52285508B1D6A9875E7B3 /* SidebarSelectionState.swift */,
 					B9000017A1B2C3D4E5F60719 /* WindowDragHandleView.swift */,
@@ -832,7 +899,8 @@
 			F1000003A1B2C3D4E5F60718 /* c11Tests */ = {
 				isa = PBXGroup;
 				children = (
-					F2000001A1B2C3D4E5F60718 /* UpdatePillReleaseVisibilityTests.swift */,
+					
+				C1101AF93615667CBD8BF65E /* AIUsageTests.swift */,F2000001A1B2C3D4E5F60718 /* UpdatePillReleaseVisibilityTests.swift */,
 					F3000001A1B2C3D4E5F60718 /* CJKIMEInputTests.swift */,
 					F4000001A1B2C3D4E5F60718 /* GhosttyConfigTests.swift */,
 					F5000001A1B2C3D4E5F60718 /* SessionPersistenceTests.swift */,
@@ -1053,7 +1121,27 @@
 				isa = PBXSourcesBuildPhase;
 				buildActionMask = 2147483647;
 				files = (
-					A5001001 /* c11App.swift in Sources */,
+					
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				
+				C1100B1D5910073D00E8364D /* AIUsageFooterView.swift in Sources */,C1100B6579C2D31ED7329302 /* AIUsageSettingsSection.swift in Sources */,C1100B001BE7499E96E4CA87 /* AIUsagePopover.swift in Sources */,C1100BB7F4555D05AB8B64DD /* AIUsageEditorSheet.swift in Sources */,C1100B53D8585C30017B58BE /* AIUsageStatusRanking.swift in Sources */,C1100BDC5326DFC9FA51AD5B /* AIUsageResetLabel.swift in Sources */,C1100B71B4FFDCC1138A307E /* AIUsageColorSettings.swift in Sources */,C1100B77DEEF1F9C6A53D360 /* CodexAIProvider.swift in Sources */,C1100B8F1E2D3C4B5A697801 /* CodexLocalUsageFetcher.swift in Sources */,C1100B4097A2C8952ADB9F99 /* ClaudeAIUsageFetcher.swift in Sources */,C1100BA3BF5E1234CD567890 /* ClaudeLocalUsageFetcher.swift in Sources */,C1100B100678083910E4DF1E /* ClaudeAIProvider.swift in Sources */,C1100B1965FA05805AB79CFF /* AIUsagePoller.swift in Sources */,C1100B50192E29F0E1E8542E /* AIUsageStatusPagePoller.swift in Sources */,C1100BF249B721A99F1BE49F /* AIUsageISO8601DateParser.swift in Sources */,C1100B6EC16A925E06722B3B /* AIUsageHTTP.swift in Sources */,C1100B2BB5264B0DF795D21B /* AIUsageAccountStore.swift in Sources */,C1100B4CD6E3A6EB06D171B0 /* AIUsageKeychain.swift in Sources */,C1100BDBE3520D6CFB59CFB6 /* AIUsageRegistry.swift in Sources */,C1100BB22F2C7143F56AAF88 /* AIUsageAccount.swift in Sources */,C1100B1B7530E1FEBB72074C /* AIUsageProvider.swift in Sources */,C1100BCE11A0B1C2D3E4F5601 /* C11AppOwnedError.swift in Sources */,A5001001 /* c11App.swift in Sources */,
 					A5001002 /* ContentView.swift in Sources */,
 					E62155868BB29FEB5DAAAF25 /* SidebarSelectionState.swift in Sources */,
 					B9000018A1B2C3D4E5F60719 /* WindowDragHandleView.swift in Sources */,
@@ -1195,7 +1283,8 @@
 				isa = PBXSourcesBuildPhase;
 				buildActionMask = 2147483647;
 				files = (
-					F2000000A1B2C3D4E5F60718 /* UpdatePillReleaseVisibilityTests.swift in Sources */,
+					
+				C1101BF93615667CBD8BF65E /* AIUsageTests.swift in Sources */,F2000000A1B2C3D4E5F60718 /* UpdatePillReleaseVisibilityTests.swift in Sources */,
 					F3000000A1B2C3D4E5F60718 /* CJKIMEInputTests.swift in Sources */,
 					F4000000A1B2C3D4E5F60718 /* GhosttyConfigTests.swift in Sources */,
 					F5000000A1B2C3D4E5F60718 /* SessionPersistenceTests.swift in Sources */,

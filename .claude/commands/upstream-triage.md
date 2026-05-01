@@ -42,6 +42,10 @@ Parse `$ARGUMENTS`:
 
 If `$ARGUMENTS` is empty, ask the user what they want to triage. Default suggestion: `--since <date 2-3 weeks back> --state all --dry-run`.
 
+## Validation
+
+For any user-visible import, run the c11 computer-use harness (`tools/computer-use/c11-cu`, currently on the `computer-use-harness` branch) against a tagged build before declaring the c11 PR ready. Skip validation for purely internal changes (refactors, build config, agent-instruction docs). Attach the verdict to the c11 PR body. See RUNBOOK.md §6b for the full procedure.
+
 ## Hard rules
 
 - Working tree must be clean for any apply step. If main is dirty, prefer running in a worktree (`git worktree add /tmp/c11-triage main`); if you must stash, get explicit operator OK first.
@@ -51,6 +55,7 @@ If `$ARGUMENTS` is empty, ask the user what they want to triage. Default suggest
 - One PR at a time — sequential, not parallel.
 - Escalate before push when the c11 PR will visibly differ from upstream (rewrite, partial import, scope change). Surface the difference in the PR body so the operator never wonders why the diff doesn't match.
 - For open PRs: flag in the PR body that upstream may evolve or abandon — the import is a snapshot.
+- Announce before running the computer-use harness — the cursor will move on the operator's live desktop.
 
 ## After the run
 

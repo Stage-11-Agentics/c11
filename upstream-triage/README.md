@@ -58,8 +58,9 @@ These get updated by the agent at the end of each run. Without them, every sessi
 
 ## Scope of v1
 
-- **Manual invocation only.** No cron yet. We build trust before automating.
-- **Local execution.** Cloud agent later.
-- **One c11 PR per upstream PR.** CI on the c11 PR is the build verification — the agent doesn't build locally.
-- **Agent escalates before pushing on non-trivial adaptations.** A clean cherry-pick can land without a check-in; a rewrite that touches multiple files or alters intent gets surfaced first.
+- **Live engagement.** The operator drives the sweep with the agent; the agent surfaces decisions in real time. Easy + yes / easy + no fly through; moderate / hard pause for nod.
+- **Local execution.** No cron yet. Cloud agent later.
+- **One c11 PR per upstream PR.** CI on the c11 PR catches build/test breakage.
+- **Computer-use validation for user-visible imports.** The c11 computer-use harness (`tools/computer-use/c11-cu`) drives a tagged build to confirm the imported feature works and looks right. Internal-only changes (refactors, build config) skip this step — CI is enough.
+- **Agent escalates before pushing on non-trivial adaptations.** Clean cherry-pick lands without check-in; rewrite or scope-cut surfaces first.
 - **No auto-merge.** Operator merges every c11 PR.

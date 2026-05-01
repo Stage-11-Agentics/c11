@@ -105,6 +105,8 @@ For **easy + clear-yes** PRs, no scope note is required. Just land them. Batch t
 
 Choose the path matching the JUDGE step.
 
+After APPLY, before REPORT, run **VALIDATE** for any user-visible feature change.
+
 **Cherry-pick (clean or with conflict resolution):**
 
 ```bash
@@ -128,6 +130,40 @@ Choose the path matching the JUDGE step.
 
 Either path ends with: branch pushed, c11 PR opened, agent does *not* merge.
 
+### 6b. VALIDATE — drive the feature in c11.app via computer-use
+
+For any import that touches user-visible behavior (UI, settings, panels, terminal, browser surfaces, sidebar, menus, hotkeys), the agent runs the **c11 computer-use harness** to confirm the imported feature actually works *and looks right* in a real c11 build before declaring the PR ready.
+
+The harness lives at `tools/computer-use/` (CLI: `c11-cu`). It uses Anthropic's Computer Use API (Claude Opus 4.7 + `computer_20251124`) to drive a tagged c11 build with real mouse, keystrokes, and screenshots. See `tools/computer-use/README.md` for setup; key commands:
+
+```bash
+c11-cu probe                                       # confirm permissions and harness wiring are healthy
+c11-cu task --tag <build-tag> --prompt <prompt>   # run a validation task; outputs transcript + screenshots
+```
+
+**When to validate (and when to skip):**
+
+- **Validate** — UI changes, new settings, sidebar/panel work, hotkeys, menus, browser/terminal surface behavior. Anything an operator would feel.
+- **Skip validate** — purely internal refactors, dependency bumps, build/CI config, agent-instruction docs, comment-only changes. CI catches breakage; computer-use adds no signal.
+
+**How to validate:**
+
+1. Build the c11 PR's branch as a tagged dev build.
+2. Compose a validation prompt that names the feature and the path the operator would take to use it. Pull the language from the upstream PR body when useful.
+3. Run `c11-cu task` with the prompt. The harness produces a transcript + screenshots in `runs/<run-id>/`.
+4. Read the harness's verdict. Either:
+   - **Pass** — the feature works and looks right. Note this in the c11 PR body and proceed to REPORT.
+   - **Fail** — the import has a real problem. Investigate; either fix on the same branch and re-validate, or escalate as NEEDS-HUMAN if the fix is beyond scope.
+5. Attach the validation outcome to the c11 PR — either as a body section ("## Validation") or as a comment, including a link/path to the run artifacts.
+
+**Operational notes:**
+
+- The harness drives the operator's live desktop in v1. The agent should announce before running so the operator isn't surprised by the cursor moving.
+- Don't validate trivial (purely internal) changes — the harness time isn't free and adds no signal.
+- If `c11-cu probe` fails, fix the harness setup before continuing the sweep — don't ship un-validated UI changes silently.
+
+> **Status note:** as of 2026-05-01, `tools/computer-use/` lives on the `computer-use-harness` branch, not on c11/main. Either merge that branch first, or run `c11-cu` from a checkout of the `computer-use-harness` branch in a sibling worktree. Both work; the merge is cleaner.
+
 ### 7. REPORT
 
 Append a block to `triage-log/<YYYY-MM-DD>.md` for every PR processed:
@@ -143,7 +179,9 @@ Append a block to `triage-log/<YYYY-MM-DD>.md` for every PR processed:
 - **Files (upstream):** <count>, +<add> -<del>
 - **c11 PR:** <link if opened, else —>
 - **Approach:** <one sentence>
+- **Validation:** pass / fail / skipped (internal-only) / skipped (no harness)
 - **Notes:** <reasoning, links to playbook entries used, dependencies surfaced>
+- **Validation run:** <path or run-id, only when applicable>
 ```
 
 For **easy + yes** sweeps, batch the entries — one shared block can cover several PRs if they were all cherry-pick clean.

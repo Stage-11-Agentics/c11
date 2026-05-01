@@ -130,39 +130,57 @@ After APPLY, before REPORT, run **VALIDATE** for any user-visible feature change
 
 Either path ends with: branch pushed, c11 PR opened, agent does *not* merge.
 
-### 6b. VALIDATE — drive the feature in c11.app via computer-use
+### 6b. VALIDATE — drive the feature in c11.app via the OpenAI CUA harness
 
-For any import that touches user-visible behavior (UI, settings, panels, terminal, browser surfaces, sidebar, menus, hotkeys), the agent runs the **c11 computer-use harness** to confirm the imported feature actually works *and looks right* in a real c11 build before declaring the PR ready.
+For any import that touches user-visible behavior (UI, settings, panels, terminal, browser surfaces, sidebar, menus, hotkeys), the agent runs the **OpenAI CUA harness** to confirm the imported feature actually works *and looks right* in a real c11 build before declaring the PR ready.
 
-The harness lives at `tools/computer-use/` (CLI: `c11-cu`). It uses Anthropic's Computer Use API (Claude Opus 4.7 + `computer_20251124`) to drive a tagged c11 build with real mouse, keystrokes, and screenshots. See `tools/computer-use/README.md` for setup; key commands:
+The harness has two parts, both at `tools/computer-use/`:
+
+- `mac-adapter/` — Swift CLI (`cua-mac-adapter`) for window discovery, screenshots, and input events on macOS.
+- `openai-runner/` — Python runner (`openai_cua_runner`) using OpenAI Responses API's `computer` tool, with pre-baked scenarios (`launch-window`, `create-split`, `focus-and-type`, etc.).
+
+It drives a tagged c11 DEV build (default bundle id `com.stage11.c11.debug.openai.cua`, default app path `~/Library/Developer/Xcode/DerivedData/c11-openai-cua/Build/Products/Debug/c11 DEV openai-cua.app`).
+
+Key commands (run from c11 repo root):
 
 ```bash
-c11-cu probe                                       # confirm permissions and harness wiring are healthy
-c11-cu task --tag <build-tag> --prompt <prompt>   # run a validation task; outputs transcript + screenshots
+# Build the mac adapter (one-time, then on adapter changes):
+swift build --package-path tools/computer-use/mac-adapter
+
+# Confirm permissions and harness wiring:
+PYTHONPATH=tools/computer-use/openai-runner python3 -m openai_cua_runner doctor --tag openai-cua
+
+# Run a pre-baked scenario (with --build to rebuild the tagged c11 app first):
+PYTHONPATH=tools/computer-use/openai-runner python3 -m openai_cua_runner scenario <name> --tag openai-cua --build
+
+# Run a custom validation task:
+PYTHONPATH=tools/computer-use/openai-runner python3 -m openai_cua_runner smoke --tag openai-cua --prompt "<validation prompt>"
 ```
+
+The runner reads `OPENAI_API_KEY` from the environment. Artifacts (transcripts, screenshots) write to `artifacts/openai-cua-runs/`.
 
 **When to validate (and when to skip):**
 
 - **Validate** — UI changes, new settings, sidebar/panel work, hotkeys, menus, browser/terminal surface behavior. Anything an operator would feel.
-- **Skip validate** — purely internal refactors, dependency bumps, build/CI config, agent-instruction docs, comment-only changes. CI catches breakage; computer-use adds no signal.
+- **Skip validate** — purely internal refactors, dependency bumps, build/CI config, agent-instruction docs, comment-only changes. CI catches breakage; CUA adds no signal.
 
 **How to validate:**
 
-1. Build the c11 PR's branch as a tagged dev build.
-2. Compose a validation prompt that names the feature and the path the operator would take to use it. Pull the language from the upstream PR body when useful.
-3. Run `c11-cu task` with the prompt. The harness produces a transcript + screenshots in `runs/<run-id>/`.
-4. Read the harness's verdict. Either:
+1. Build the c11 PR's branch as a tagged DEV build via `./scripts/reload.sh --tag openai-cua` (or pass `--build` to the runner).
+2. Compose a validation prompt that names the feature and the path the operator would take to use it. Pull the language from the upstream PR body when useful. If a pre-baked scenario fits, use it.
+3. Run the appropriate runner command. The harness produces a transcript + screenshots in `artifacts/openai-cua-runs/`.
+4. Read the verdict:
    - **Pass** — the feature works and looks right. Note this in the c11 PR body and proceed to REPORT.
-   - **Fail** — the import has a real problem. Investigate; either fix on the same branch and re-validate, or escalate as NEEDS-HUMAN if the fix is beyond scope.
+   - **Fail** — the import has a real problem. Either fix on the same branch and re-validate, or escalate as NEEDS-HUMAN if the fix is beyond scope.
 5. Attach the validation outcome to the c11 PR — either as a body section ("## Validation") or as a comment, including a link/path to the run artifacts.
 
 **Operational notes:**
 
-- The harness drives the operator's live desktop in v1. The agent should announce before running so the operator isn't surprised by the cursor moving.
+- The harness drives the operator's live desktop. The agent must announce before running so the operator isn't surprised by the cursor moving.
 - Don't validate trivial (purely internal) changes — the harness time isn't free and adds no signal.
-- If `c11-cu probe` fails, fix the harness setup before continuing the sweep — don't ship un-validated UI changes silently.
+- If `doctor` fails, fix the harness setup before continuing the sweep — don't ship un-validated UI changes silently.
 
-> **Status note:** as of 2026-05-01, `tools/computer-use/` lives on the `computer-use-harness` branch, not on c11/main. Either merge that branch first, or run `c11-cu` from a checkout of the `computer-use-harness` branch in a sibling worktree. Both work; the merge is cleaner.
+> **Status note:** as of 2026-05-01, the OpenAI CUA harness lives on the `feat/openai-cua-runner` branch (4 commits ahead of an older main, deletes some files that have since been added). It needs to be rebased onto current main and merged before the sweep can use validation. Until then, validation is `skipped (no harness)` — the operator's live review is the only safety net for UI behavior. Plan to merge before the first user-visible PR import lands.
 
 ### 7. REPORT
 

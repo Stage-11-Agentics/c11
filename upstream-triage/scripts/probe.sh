@@ -89,7 +89,7 @@ fi
 # --- gather PR metadata ---
 
 # Fetch PR info. Tolerate transient gh failures with a clear error.
-PR_JSON="$(gh pr view "$PR" --repo "$UPSTREAM_REPO" --json mergeCommit,state,mergedAt,title 2>/dev/null || echo '')"
+PR_JSON="$(gh pr view "$PR" --repo "$UPSTREAM_REPO" --json mergeCommit,state,mergedAt,title,headRefOid,baseRefName 2>/dev/null || echo '')"
 if [[ -z "$PR_JSON" ]]; then
   echo "STATUS=error"
   echo "BRANCH="
@@ -98,50 +98,88 @@ if [[ -z "$PR_JSON" ]]; then
 fi
 
 MERGE_SHA="$(printf '%s' "$PR_JSON" | python3 -c 'import json,sys;d=json.load(sys.stdin);mc=d.get("mergeCommit");print(mc["oid"] if mc else "")')"
+HEAD_OID="$(printf '%s' "$PR_JSON" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("headRefOid","") or "")')"
+BASE_REF="$(printf '%s' "$PR_JSON" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("baseRefName","") or "main")')"
 PR_STATE="$(printf '%s' "$PR_JSON" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("state",""))')"
 PR_TITLE="$(printf '%s' "$PR_JSON" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("title",""))')"
 
-if [[ -z "$MERGE_SHA" ]]; then
-  echo "STATUS=error"
-  echo "BRANCH="
-  echo "DETAIL=PR ${PR} has no merge commit (state=${PR_STATE})"
-  exit 1
+# Pick the SHA we'll apply.
+# - If the PR was merged, use the merge commit.
+# - Otherwise (open or closed-not-merged), use the head commit and we'll
+#   cherry-pick the range from its merge-base with the PR's base branch.
+APPLY_MODE=""
+APPLY_SHA=""
+if [[ -n "$MERGE_SHA" ]]; then
+  APPLY_MODE="merge-commit"
+  APPLY_SHA="$MERGE_SHA"
+else
+  if [[ -z "$HEAD_OID" ]]; then
+    echo "STATUS=error"
+    echo "BRANCH="
+    echo "DETAIL=PR ${PR} has neither mergeCommit nor headRefOid (state=${PR_STATE})"
+    exit 1
+  fi
+  APPLY_MODE="range"
+  APPLY_SHA="$HEAD_OID"
 fi
 
-# --- ensure we have the merge commit locally ---
+# --- ensure we have the necessary commits locally ---
 
-if ! git cat-file -e "${MERGE_SHA}^{commit}" 2>/dev/null; then
-  # Fetch upstream main first; if still missing, fetch the specific commit.
+# Fetch the PR's head ref via the GitHub PR refspec — works for both open and merged PRs.
+if ! git cat-file -e "${APPLY_SHA}^{commit}" 2>/dev/null; then
+  git fetch upstream "pull/${PR}/head:refs/upstream-prs/pr-${PR}" >/dev/null 2>&1 || true
   git fetch upstream main >/dev/null 2>&1 || true
-  if ! git cat-file -e "${MERGE_SHA}^{commit}" 2>/dev/null; then
-    git fetch upstream "$MERGE_SHA" >/dev/null 2>&1 || {
+  if ! git cat-file -e "${APPLY_SHA}^{commit}" 2>/dev/null; then
+    git fetch upstream "$APPLY_SHA" >/dev/null 2>&1 || {
       echo "STATUS=error"
       echo "BRANCH="
-      echo "DETAIL=could not fetch merge commit ${MERGE_SHA} from upstream"
+      echo "DETAIL=could not fetch ${APPLY_MODE} sha ${APPLY_SHA} from upstream"
       exit 1
     }
   fi
 fi
 
-# --- already-applied check ---
-
-# If the merge commit is already reachable from main, nothing to do.
-if git merge-base --is-ancestor "$MERGE_SHA" HEAD 2>/dev/null; then
-  echo "STATUS=empty"
-  echo "BRANCH="
-  echo "DETAIL=merge commit ${MERGE_SHA} already in main"
-  exit 0
+# For range mode, we also need the merge-base with the PR's base branch.
+RANGE_BASE=""
+if [[ "$APPLY_MODE" == "range" ]]; then
+  if ! git rev-parse --verify "upstream/${BASE_REF}" >/dev/null 2>&1; then
+    git fetch upstream "$BASE_REF" >/dev/null 2>&1 || true
+  fi
+  RANGE_BASE="$(git merge-base "$APPLY_SHA" "upstream/${BASE_REF}" 2>/dev/null || echo '')"
+  if [[ -z "$RANGE_BASE" ]]; then
+    echo "STATUS=error"
+    echo "BRANCH="
+    echo "DETAIL=could not find merge-base of ${APPLY_SHA} with upstream/${BASE_REF}"
+    exit 1
+  fi
 fi
 
-# Check via cherry-pick equivalence too — a squash-merge or rebase might have
-# brought the patch in under a different SHA.
-# git cherry returns lines starting with '-' for upstream commits already in HEAD.
-CHERRY="$(git cherry HEAD "$MERGE_SHA" "${MERGE_SHA}^" 2>/dev/null | head -1 || echo '')"
-if [[ "$CHERRY" == -* ]]; then
-  echo "STATUS=empty"
-  echo "BRANCH="
-  echo "DETAIL=patch ${MERGE_SHA} equivalent already in main (cherry detected)"
-  exit 0
+# --- already-applied check ---
+
+if [[ "$APPLY_MODE" == "merge-commit" ]]; then
+  if git merge-base --is-ancestor "$APPLY_SHA" HEAD 2>/dev/null; then
+    echo "STATUS=empty"
+    echo "BRANCH="
+    echo "DETAIL=merge commit ${APPLY_SHA} already in main"
+    exit 0
+  fi
+  CHERRY="$(git cherry HEAD "$APPLY_SHA" "${APPLY_SHA}^" 2>/dev/null | head -1 || echo '')"
+  if [[ "$CHERRY" == -* ]]; then
+    echo "STATUS=empty"
+    echo "BRANCH="
+    echo "DETAIL=patch ${APPLY_SHA} equivalent already in main (cherry detected)"
+    exit 0
+  fi
+else
+  # Range mode: if every commit in (RANGE_BASE..APPLY_SHA] is already in HEAD,
+  # treat as empty. Use git cherry to detect.
+  REMAINING="$(git cherry HEAD "$APPLY_SHA" "$RANGE_BASE" 2>/dev/null | grep -c '^+' || echo 0)"
+  if [[ "$REMAINING" == "0" ]]; then
+    echo "STATUS=empty"
+    echo "BRANCH="
+    echo "DETAIL=all commits in ${RANGE_BASE}..${APPLY_SHA} equivalent already in main"
+    exit 0
+  fi
 fi
 
 # Capture original ref so we can restore it on cleanup paths.
@@ -162,18 +200,27 @@ git checkout -b "$BRANCH" main >/dev/null 2>&1
 
 # --- attempt cherry-pick ---
 
-# Determine if the merge commit is a merge (multiple parents).
-PARENT_COUNT="$(git cat-file -p "$MERGE_SHA" | grep -c '^parent ')"
+# Build the cherry-pick spec.
+# - merge-commit mode: a single commit, with -m 1 if it has multiple parents.
+# - range mode: every commit in (RANGE_BASE..APPLY_SHA].
 CHERRY_ARGS=()
-if [[ "$PARENT_COUNT" -gt 1 ]]; then
-  CHERRY_ARGS+=("-m" "1")
+CHERRY_TARGET=""
+if [[ "$APPLY_MODE" == "merge-commit" ]]; then
+  PARENT_COUNT="$(git cat-file -p "$APPLY_SHA" | grep -c '^parent ')"
+  if [[ "$PARENT_COUNT" -gt 1 ]]; then
+    CHERRY_ARGS+=("-m" "1")
+  fi
+  CHERRY_TARGET="$APPLY_SHA"
+else
+  CHERRY_TARGET="${RANGE_BASE}..${APPLY_SHA}"
 fi
 
-if git cherry-pick ${CHERRY_ARGS[@]+"${CHERRY_ARGS[@]}"} "$MERGE_SHA" >/tmp/probe-${PR}.log 2>&1; then
-  # Cherry-pick succeeded with no conflicts.
-  # But: if the result is empty (no diff vs main), treat as empty.
-  if git diff --quiet HEAD~1 HEAD 2>/dev/null; then
-    git reset --hard HEAD~1 >/dev/null 2>&1
+if git cherry-pick ${CHERRY_ARGS[@]+"${CHERRY_ARGS[@]}"} "$CHERRY_TARGET" >/tmp/probe-${PR}.log 2>&1; then
+  # Cherry-pick succeeded.
+  # Empty-result check: count new commits and verify there's a real diff vs main.
+  NEW_COMMITS="$(git rev-list --count main..HEAD 2>/dev/null || echo 0)"
+  if [[ "$NEW_COMMITS" == "0" ]] || git diff --quiet "main..HEAD" 2>/dev/null; then
+    git reset --hard main >/dev/null 2>&1
     git checkout "$ORIGINAL_REF" >/dev/null 2>&1
     git branch -D "$BRANCH" >/dev/null 2>&1
     echo "STATUS=empty"
@@ -183,7 +230,11 @@ if git cherry-pick ${CHERRY_ARGS[@]+"${CHERRY_ARGS[@]}"} "$MERGE_SHA" >/tmp/prob
   fi
   echo "STATUS=clean"
   echo "BRANCH=$BRANCH"
-  echo "DETAIL=cherry-pick clean: ${PR_TITLE}"
+  if [[ "$APPLY_MODE" == "merge-commit" ]]; then
+    echo "DETAIL=cherry-pick clean: ${PR_TITLE}"
+  else
+    echo "DETAIL=cherry-pick clean (range, ${NEW_COMMITS} commits): ${PR_TITLE}"
+  fi
   exit 0
 fi
 

@@ -4,116 +4,95 @@ Strategic plan for closing the gap between c11 and upstream cmux.
 
 ## The problem
 
-c11's last shared commit with upstream is `53910919` from 2026-03-18. Upstream has merged ~900+ PRs since then, many building on foundational features that don't yet exist on c11.
+c11's last shared commit with upstream is `53910919` from 2026-03-18. Upstream has merged ~900+ PRs since then, and there are ~30+ open PRs at any given time. Most recent upstream PRs depend on foundational features that don't yet exist on c11.
 
-A naive forward-triage hits a recurring failure mode: an upstream PR modifies a file c11 doesn't have because the file was introduced by an earlier upstream PR c11 hasn't imported. PR #3405 was the first concrete case (modifies `Resources/opencode-plugin.js`, introduced upstream in PR #3057).
+A naive forward-triage hits a recurring failure mode: an upstream PR modifies a file c11 doesn't have, because the file was introduced by an earlier upstream PR c11 hasn't imported. PR #3405 was the first concrete case (modified `Resources/opencode-plugin.js`, introduced upstream in PR #3057).
 
-## The approach
+## The approach: forward sweep first, foundations emerge from the work
 
-Rather than process every upstream PR forward in time, identify the **foundational feature PRs** c11 wants, import each one as a focused multi-PR session ("feature catch-up"), then resume forward-triage from a much closer base.
+Don't pre-curate a foundations list. Instead:
 
-Each feature catch-up is its own small project:
-1. The agent reads the foundational PR + its in-tree follow-ons end-to-end.
-2. The agent + operator decide together how the feature should land in c11 (sometimes 1:1, sometimes adapted to fit c11's panel system, sometimes split into stages).
-3. The result is one or a small number of c11 PRs that bring the feature in coherently — not a 1:1 replay of every upstream commit along the way.
+1. **Run forward-triage sweeps** on recent upstream PRs (e.g. `--since 2026-04-15 --state all`).
+2. The agent runs each PR through EVALUATE → READ → LOCATE → JUDGE.
+3. **Easy + yes PRs land** as quick wins (Atin's preferred work shape).
+4. **Hard + yes PRs surface their dependencies** — when a probe hits the modify/delete pattern, the missing-on-c11 file points at the foundation upstream introduced.
+5. **The foundations list builds itself** from these surfaced dependencies. We only chase a foundation when at least one downstream PR we want is blocked on it.
 
-This is a different shape from daily triage. Daily triage is "small change → small PR." Feature catch-up is "feature → feature."
+This is the difference between "guess which upstream features matter" and "let the actual work tell us." We end up importing only the foundations that block desirable downstream work, and the order is naturally driven by what we want to land.
 
-## Candidate foundations (initial seed list)
+## Naming
 
-Sampled from upstream merged PRs since 2026-03-18, filtered to feature-introducing titles. **This is a starting point, not a final list — every entry needs an operator yes/no/defer call.**
+A unit of work is a **PR import** (or **upstream PR import** in c11 docs). We import individual PRs — open or closed, merged or unmerged — through the same skill (`/upstream-triage`).
 
-### Agent & Feed system
+A **foundation** is a PR import that unblocks one or more downstream PRs. The label emerges from triage; it's not a property the PR has on its own.
 
-- [ ] **#3057 — Add Feed sidebar + cmux feed-hook + OpenCode plugin (workstream MVP)** (2026-04-26)
-  - The dependency that blocked PR #3405. Foundational for any Feed-related upstream import.
-  - c11 status: not present. Operator decision: import / skip / defer.
-- [ ] **#3252 — Add iMessage mode for agent prompts** (2026-04-30) — likely depends on Feed
-- [ ] **#3405 — Bridge OpenCode plan approvals into Feed** (2026-05-01) — blocked on #3057
-- [ ] Any Feed follow-ons between 3057 and 3405
+## Triage axes
 
-### Settings rework
+Every PR gets two assessments:
 
-- [ ] **#3024 — Add unified config settings utility window** (2026-04-20)
-- [ ] **#3244 — Add settings sidebar shell** (2026-04-29)
-- [ ] **#2514 — Add Claude Binary Path setting** (2026-04-01)
-- [ ] **#3400 — Consolidate sidebar settings** (2026-05-01) — likely depends on #3244
-- [ ] Operator decision: c11 may already have a divergent settings approach. Adapt or skip the whole stack.
+- **EVALUATE** — does c11 want this functionality? `yes / no / maybe`
+- **DIFFICULTY** — how hard to bring over? `easy / moderate / hard`
 
-### Dock TUI
+| | Easy | Moderate | Hard |
+|---|---|---|---|
+| **Want it** | ship it (often no scope check) | scope agreement, then ship | focused session, scope agreement |
+| **Maybe** | just do it (low cost to revert) | surface to operator | defer until clear yes |
+| **Skip** | skip | skip | skip |
 
-- [ ] **#3217 — Add Dock sidebar TUI controls** (2026-04-29)
-- [ ] **#3366 — Require explicit Dock config** (2026-04-30)
-- [ ] **#3376 — Add Dock documentation page** (2026-05-01)
-- [ ] **#3393 — Improve Dock agent prompt docs** (2026-05-01)
+The bias is toward **easy + yes** — those are the quick wins that build momentum. Hard work is deferred to dedicated sessions with their own scope agreements.
 
-### Sessions panel
+## Suspected foundations (informational; verify by triage)
 
-- [ ] **#2936 — Add Sessions panel to right sidebar** (2026-04-17)
-- [ ] **#3396 — Search Codex rollout content from sessions sidebar** (2026-05-01)
+These were sampled from upstream merged PRs since 2026-03-18. Listed here as **starting hypotheses** for what the foundations *might* be — but the actual foundation list is built by forward-sweep evidence, not this list.
 
-### File explorer sidebar
+If a forward-triage run hits a modify/delete blocked by one of these, we promote it to "foundation we want to chase." If no downstream PRs we care about depend on it, we never need to import it.
 
-- [ ] **#1963 — Add Finder-like file explorer sidebar with SSH support** (2026-04-13)
-- [ ] **#3139 — Add sidebar file preview panels** (2026-04-30)
+### Possible foundations
 
-### Task Manager / Snapshots
+- **#3057** — Add Feed sidebar + cmux feed-hook + OpenCode plugin (2026-04-26). Already confirmed as the dependency for #3405.
+- **#3024** — Add unified config settings utility window (2026-04-20).
+- **#3244** — Add settings sidebar shell (2026-04-29).
+- **#3217** — Add Dock sidebar TUI controls (2026-04-29).
+- **#2936** — Add Sessions panel to right sidebar (2026-04-17).
+- **#1963** — Add Finder-like file explorer sidebar with SSH support (2026-04-13).
+- **#3290** — Add top snapshots and Task Manager window (2026-04-30).
+- **#3181** — Add menu bar only mode (2026-04-27).
 
-- [ ] **#3290 — Add top snapshots and Task Manager window** (2026-04-30)
+### Possible quick-win imports (probably easy + yes)
 
-### Menu bar only mode
+These looked self-contained when sampled — small enough that they may land clean even at the current divergence level. Good candidates for the first forward-sweep run.
 
-- [ ] **#3181 — Add menu bar only mode** (2026-04-27)
+- **#2293** — Add Match Terminal Background sidebar setting.
+- **#2282** — Add copy-on-select setting.
+- **#2389** — Add a system-wide hotkey to show and hide cmux windows.
+- **#2475** — Add editable workspace descriptions.
+- **#3329** — Add hover tooltips to workspace and pane tabs.
+- **#3334** — Allow keyboard shortcuts to be unbound.
 
-### Workspace / CLI features
+### Skip candidates (probably evaluate=no)
 
-- [ ] **#2475 — Add editable workspace descriptions** (2026-04-03)
-- [ ] **#2916 — Add `--layout` to workspace.create for programmatic split layouts** (2026-04-16)
-- [ ] **#3084 — Add configurable cmux.json workspace and tab bar actions** (2026-04-23)
-- [ ] **#2389 — Add a system-wide hotkey to show and hide cmux windows** (2026-04-07)
+These look cmux-specific or don't fit c11's direction. The agent should still call EVALUATE on each, but these are likely skips.
 
-### Agent integrations
+- README / docs / blog post additions.
+- Korean localization (#1811).
+- AGPL + commercial dual-licensing changes (#2021) — c11 is its own license decision.
+- cmux-specific marketing or product PRs.
 
-- [ ] **#2103 — Add Codex CLI hooks integration** (2026-03-25)
-- [ ] **#2087 — Add `cmux omo` command for oh-my-openagent integration** (2026-03-26)
-- [ ] **#2619 — Add cmux omx and cmux omc agent integrations** (2026-04-06)
-- [ ] **#2717 — Add Cursor and Gemini CLI agent integrations + setup-hooks** (2026-04-09)
+## How to drive
 
-### Browser pane
+The first forward-sweep run is the action item. From a clean c11 worktree:
 
-- [ ] **#2660 — Add passkey, WebAuthn, and FIDO2 support to browser pane** (2026-04-07)
-- [ ] **#3256 — Add cmux browser disable switch** (2026-04-29)
-- [ ] **#2373 — Add React Grab inject button to browser toolbar** (2026-03-31)
+```
+/upstream-triage --since 2026-04-15 --state all --dry-run
+```
 
-### Misc
+Dry-run produces a triage table without applying anything. Operator scans the table, redirects the agent on any obvious miscalls, then runs again without `--dry-run` to land the easy+yes work. Hard cases stay in the triage log for focused sessions.
 
-- [ ] **#2293 — Add Match Terminal Background sidebar setting** (2026-03-28)
-- [ ] **#2282 — Add copy-on-select setting** (2026-03-30)
-- [ ] **#2127 — Cmd+N workspace creation crash regression coverage** (2026-03-25)
-
-## How to use this list
-
-1. **Curate.** Operator walks the list and marks each `[y]` (import), `[n]` (skip), or `[?]` (defer / needs more thought). Comment with reasoning if useful.
-2. **Sequence.** Once curated, the `[y]` items get an order. Default to date order; override when a later PR is a better fit for c11 (e.g. c11 may want #3400 "Consolidate sidebar settings" without first importing the original sidebar split).
-3. **Drive each catch-up.** For each foundation marked `[y]`:
-   - Open a focused `/upstream-triage` session named after the feature.
-   - Read the foundation PR + every follow-on that builds on it (use `git log --all -- <key-path>` to find them).
-   - Decide with the operator: import as one c11 PR, or split into stages?
-   - Author the c11 import. The agent does the writing; the operator nods on scope and approach.
-4. **Resume forward triage** from the new base once the major catch-ups are landed.
-
-## Selection criteria — when to mark `[y]`
-
-A foundation is worth importing if:
-
-- It's a feature c11 wants (not a cmux-specific direction c11 has chosen to deviate from).
-- Multiple later upstream PRs build on it (importing it unblocks a chain).
-- The cost to import is bounded — a multi-thousand-line refactor that conflicts with c11's panel system may not be worth it even if c11 wants the feature.
-
-Mark `[n]` when c11 already has its own equivalent (e.g., c11's panel system likely subsumes some upstream "sidebar X" features), or when the feature's a direction c11 isn't taking.
-
-Mark `[?]` when you don't have enough context to decide yet.
+After the first sweep we'll know:
+- What fraction of recent upstream is actually easy at the current divergence.
+- Which foundations are surfacing as real blockers (not just hypotheses).
+- Where the divergence map and playbook need new entries.
 
 ## Status
 
-- 2026-05-01: initial list seeded by sampling upstream merged PRs since merge-base. **Uncurated.** First operator pass needed before any catch-up sessions run.
+- 2026-05-01: catchup plan reframed around forward-sweep discovery. Initial hypotheses listed for context, not as a curated queue. **First forward-sweep run not yet executed.**

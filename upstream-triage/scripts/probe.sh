@@ -59,12 +59,20 @@ if [[ -n "$(git status --porcelain)" ]]; then
   exit 1
 fi
 
-# Must be on main (or detached from it).
-CURRENT_BRANCH="$(git symbolic-ref --quiet --short HEAD || echo '')"
-if [[ "$CURRENT_BRANCH" != "main" ]]; then
+# HEAD must point at the tip of origin/main. Branch name is incidental
+# (worktrees may be detached or use a different branch name pointing at main).
+HEAD_SHA="$(git rev-parse HEAD)"
+ORIGIN_MAIN_SHA="$(git rev-parse origin/main 2>/dev/null || echo '')"
+if [[ -z "$ORIGIN_MAIN_SHA" ]]; then
   echo "STATUS=error"
   echo "BRANCH="
-  echo "DETAIL=must run from main branch (current: ${CURRENT_BRANCH:-detached})"
+  echo "DETAIL=origin/main not found; run: git fetch origin"
+  exit 1
+fi
+if [[ "$HEAD_SHA" != "$ORIGIN_MAIN_SHA" ]]; then
+  echo "STATUS=error"
+  echo "BRANCH="
+  echo "DETAIL=HEAD ($HEAD_SHA) is not at origin/main tip ($ORIGIN_MAIN_SHA)"
   exit 1
 fi
 

@@ -756,6 +756,12 @@
             "state": "translated",
             "value": "Новое рабочее пространство c11 здесь"
           }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нова робоча область c11 тут"
+          }
         }
       }
     },
@@ -796,6 +802,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Новое окно c11 здесь"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нове вікно c11 тут"
           }
         }
       }

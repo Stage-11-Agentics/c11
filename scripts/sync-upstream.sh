@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# sync-upstream.sh — help keep c11mux in sync with manaflow-ai/cmux.
+# sync-upstream.sh — help keep c11 in sync with manaflow-ai/cmux.
 #
 # Does the mechanical parts of an upstream sync:
 #   1. Verifies we're on main.
 #   2. Fetches upstream (including tags).
 #   3. Shows diverged commits and per-file change summary, bucketed into
-#      "hotspot" files (where c11mux diverges on purpose) vs the rest.
+#      "hotspot" files (where c11 diverges on purpose) vs the rest.
 #   4. Optionally attempts `git merge upstream/main --no-commit --no-ff`.
 #   5. Reports conflicts (if any) and exits — no auto-resolution.
 #
@@ -18,7 +18,7 @@ UPSTREAM_REMOTE="${UPSTREAM_REMOTE:-upstream}"
 UPSTREAM_BRANCH="${UPSTREAM_BRANCH:-main}"
 LOCAL_BRANCH="${LOCAL_BRANCH:-main}"
 
-# Hotspot files — where c11mux intentionally differs from cmux.
+# Hotspot files — where c11 intentionally differs from cmux.
 # Keep in sync with docs/upstream-sync.md.
 HOTSPOTS=(
   "Resources/Info.plist"

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Generate docs/assets/c11mux-header.png.
+"""Generate docs/assets/c11-header.png.
 
 720x240 void-surface header. Gold spike on the left, a faint gold rule,
-and the word 'c11mux' set in JetBrains Mono Medium at ~80px on the right.
+and the word 'c11' set in JetBrains Mono Medium at ~80px on the right.
 Falls back to a system bold monospace face if JetBrains Mono is not
 installed on the build machine — the PNG is a rendered artifact, not a
 source-of-truth string, so the visual register matters more than the
@@ -17,7 +17,7 @@ import sys
 from PIL import Image, ImageDraw, ImageFont
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(REPO, "docs", "assets", "c11mux-header.png")
+OUT = os.path.join(REPO, "docs", "assets", "c11-header.png")
 
 W, H = 720, 240
 SURFACE = (10, 10, 10, 255)
@@ -87,7 +87,7 @@ def main() -> int:
 
     # Wordmark
     font = _load_font(80)
-    text = "c11mux"
+    text = "c11"
     bbox = draw.textbbox((0, 0), text, font=font)
     tw = bbox[2] - bbox[0]
     th = bbox[3] - bbox[1]

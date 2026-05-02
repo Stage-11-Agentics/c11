@@ -1,6 +1,6 @@
 # c11 Charter
 
-Captured from the c11 feature-brainstorm dialogue, 2026-04-16. This document is the canonical record of what c11 is, what it becomes beyond the rename, and the initial feature scope. The rename-surface agent may decompose this into `docs/c11mux-identity.md` and updates to `ROADMAP.md` at its discretion.
+Captured from the c11 feature-brainstorm dialogue, 2026-04-16. This document is the canonical record of what c11 is, what it becomes beyond the rename, and the initial feature scope. The rename-surface agent may decompose this into `docs/c11-identity.md` and updates to `ROADMAP.md` at its discretion.
 
 ---
 
@@ -33,7 +33,7 @@ This keeps c11's surface area small, its mutation cost low, and its identity cle
 
 ## Distribution posture
 
-- **Public fork, Stage 11 branded.** Lives on Stage 11's public GitHub, ships via homebrew tap (`stage11/c11mux` or similar).
+- **Public fork, Stage 11 branded.** Lives on Stage 11's public GitHub, ships via homebrew tap (`stage11/c11` or similar).
 - **Credit upstream.** Top of README acknowledges manaflow-ai/cmux as the origin; we are an explicit fork.
 - **Regular upstream pulls.** Cadence TBD but not lazy — we want manaflow-ai's velocity on core terminal/browser work.
 - **Upstream our general-purpose wins when appropriate.** Not everything stays in the fork — features that would benefit all cmux users (e.g., richer socket API for pane metadata) are good candidates to contribute back.
@@ -63,7 +63,7 @@ c11 identifies which agent TUI is running in each pane — Claude Code, Codex, K
 
 Each pane can carry an open-ended JSON metadata object that agents can read and write over the socket.
 
-- **New socket commands:** `surface.get_metadata`, `surface.set_metadata`, `surface.clear_metadata`. Full wire format in `docs/c11mux-module-2-metadata-spec.md`.
+- **New socket commands:** `surface.get_metadata`, `surface.set_metadata`, `surface.clear_metadata`. Wire format described in `skills/c11/references/metadata.md`.
 - **Delivery model:** Pull-on-demand only. No pub/sub. Consumers query when they want the current state. (Push/subscribe is in the parking lot — add only if consumer count grows to justify it.)
 - **Schema:** Fully open-ended body, with a small reserved namespace of canonical keys the sidebar can render when present: `role`, `status`, `task`, `model`, `progress`. Agents put anything else alongside these.
 - **Consumers:** Lattice and future Stage 11 tooling. c11 stays a transport — it does not interpret the payload beyond rendering the canonical keys.
@@ -88,7 +88,7 @@ Each pane's sidebar entry shows the detected-or-declared agent with a small icon
 ### 5. Stage 11 brand identity
 
 - Custom app icon aligned with the void/gold aesthetic from `company/brand/visual-aesthetic.md`.
-- Custom bundle name (`c11mux`, bundle ID `com.stage11.c11mux` — sibling agent is handling the rename mechanics).
+- Custom bundle name (`c11`, bundle ID `com.stage11.c11`).
 - Default color palette tuned for Stage 11 look. Users can still apply their own Ghostty terminal themes; the c11 default gives Stage 11 operators the intended look for free.
 
 ### 6. Markdown surface polish
@@ -152,7 +152,7 @@ Named so they're recoverable without having to re-derive them. None of these are
 ## Open questions
 
 - **Upstream pull cadence.** Weekly? Biweekly? On-signal? Not decided.
-- **Homebrew tap name.** Probably `stage11/c11mux`; not confirmed.
+- **Homebrew tap name.** Probably `stage11/c11`; not confirmed.
 - **Integration installer UX.** Menubar item + CLI command is decided; the exact confirmation-diff UX is not.
 - **Branding specifics.** The Stage 11 visual aesthetic is canonical; the specific icon design and palette mapping for c11 are still open.
 

@@ -1,6 +1,7 @@
 # c11 Consolidation Notes — M1–M8 onto features/c11mux-1-8
 
 **Date:** 2026-04-16
+**Note:** Branch names below are preserved as-of the consolidation; the project was later renamed from `c11mux` to `c11`, but the integration work happened under the original branch names.
 **Scope:** Consolidate six parallel module branches (M1, M3+M6, M4, M5, M7, M8) plus a new canonical M2 substrate onto the integration branch `features/c11mux-1-8`, removing a three-way divergence of the Module 2 (per-surface metadata) implementation so the fork builds green as one integrated result.
 
 ## Why this work was needed

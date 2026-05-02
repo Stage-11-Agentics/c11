@@ -7,8 +7,8 @@ tagged Debug app is running:
 ./scripts/reload.sh --tag m10-pane-interaction
 ```
 
-Tagged socket: `/tmp/c11mux-debug-m10-pane-interaction.sock`
-Tagged log: `/tmp/c11mux-debug-m10-pane-interaction.log`
+Tagged socket: `/tmp/c11-debug-m10-pane-interaction.sock`
+Tagged log: `/tmp/c11-debug-m10-pane-interaction.log`
 
 ## Matrix
 

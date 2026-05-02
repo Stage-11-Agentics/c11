@@ -238,7 +238,7 @@ Every chrome surface in c11, where its color comes from today, and what M1–M3 
 **Persistence**:
 
 - `@Published var customColor: String?` on `Workspace` (`Sources/Workspace.swift:4883`) — in-memory only; no `@AppStorage`.
-- Serialized as `SessionWorkspaceSnapshot.customColor` (`Sources/SessionPersistence.swift:385`) in the autosaved JSON snapshot (`~/.config/com.stage11.c11mux/session-com.stage11.c11mux.json`).
+- Serialized as `SessionWorkspaceSnapshot.customColor` (`Sources/SessionPersistence.swift:385`) in the autosaved JSON snapshot (`~/.config/com.stage11.c11/session-com.stage11.c11.json`).
 - Palette defaults + overrides + user customs live in `UserDefaults`: `workspaceTabColor.defaultOverrides` (dict) and `workspaceTabColor.customColors` (array), keys at `Sources/TabManager.swift:246-247`, getters/setters at `:399-417`.
 
 **Read / render sites** (exhaustive — only sidebar today):
@@ -285,7 +285,7 @@ Plus up to 24 user customs and per-name overrides.
 
 1. `Workspace.init(...)` accepts no `customColor`; the field is set on restore via `setCustomColor(snapshot.customColor)` at `Workspace.swift:256`.
 2. `Workspace.snapshot()` (via `SessionWorkspaceSnapshot` build site) emits `customColor: customColor` into the JSON snapshot (`SessionPersistence.swift` builders).
-3. `SessionPersistenceStore` writes `session-com.stage11.c11mux.json` every 8s (`defaultSnapshotFileURL`), which round-trips the field.
+3. `SessionPersistenceStore` writes `session-com.stage11.c11.json` every 8s (`defaultSnapshotFileURL`), which round-trips the field.
 
 ### 5.5 Proposal — gaining subtle prevalence (M2)
 
@@ -861,7 +861,7 @@ Each milestone is independently mergeable, independently useful, and ships as on
 - `Sources/Theme/ThemeRoleRegistry.swift` — single source of truth for every role, its default value, owning surface, and fallback (§3).
 - `Sources/Theme/ThemeManager.swift` — singleton `@MainActor` class; exposes `active: C11muxTheme`, `resolve<T>(_ role: ThemeRole, context: ThemeContext) -> T?`, per-section publishers, `version: UInt64`.
 - `Resources/c11-themes/stage11.toml` — built-in default.
-- OSLog subsystem: `com.stage11.c11mux`, categories: `theme.engine`, `theme.loader`, `theme.resolver`.
+- OSLog subsystem: `com.stage11.c11`, categories: `theme.engine`, `theme.loader`, `theme.resolver`.
 - `c11Tests/C11muxThemeLoaderTests.swift`, `c11Tests/ThemedValueResolutionTests.swift`, `c11Tests/TomlSubsetParserFuzzTests.swift`, `c11Tests/ThemeResolverBenchmarks.swift`.
 
 **Tests (M1a, all automated, CI-visible)**:

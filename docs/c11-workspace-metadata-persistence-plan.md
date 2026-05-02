@@ -6,7 +6,7 @@
 - **Phase 2 (shared markdown helpers) — likely no-op;** verify at Phase 3 start.
 - **Phase 5 (docs) — follows.**
 
-**Related:** [M7 title bar amendment](./c11mux-module-7-expandable-title-bar-amendment.md). Phase 3 reuses M7's module-scope `sanitizeDescriptionMarkdown` and `titleBarMarkdownTheme` helpers from `Sources/SurfaceTitleBarView.swift`.
+**Related:** Phase 3 reuses M7's module-scope `sanitizeDescriptionMarkdown` and `titleBarMarkdownTheme` helpers from `Sources/SurfaceTitleBarView.swift` (M7 spec since removed).
 
 ---
 
@@ -360,8 +360,8 @@ Same test-seam discipline as Phase 3 — `WorkspaceIconView` is the testable sur
 
 ## Phase 5 — Documentation and polish
 
-- Add `workspace.metadata` canonical keys to whichever reference doc lists M-module canonical keys (check `docs/c11mux-module-2-*` or equivalent; if none exists, note that in the plan).
-- Update the top-level c11 skill (`skills/cmux/SKILL.md`) with the new CLI commands.
+- Add `workspace.metadata` canonical keys to `skills/c11/references/metadata.md` (or wherever the canonical metadata reference lives at the time).
+- Update the top-level c11 skill (`skills/c11/SKILL.md`) with the new CLI commands.
 - Add a short "workspace metadata" section to the c11 reference docs.
 
 ---

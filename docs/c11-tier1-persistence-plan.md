@@ -313,12 +313,11 @@ out of scope to fix wholesale. For this plan:
 
 ### M2 spec amendment
 
-`docs/c11mux-module-2-metadata-spec.md:21` currently states *"In-memory only.
+The original M2 metadata spec (since removed) stated *"In-memory only.
 Consumers that need durability persist externally."* This plan supersedes
-that line. Land a small amendment doc
-(`docs/c11mux-module-2-metadata-spec-amendment-tier1.md`) when Phase 2 ships,
-updating the M2 spec to reflect durable persistence and pointing at this
-plan.
+that line; durable persistence behavior should be documented inline with
+the metadata code or in `skills/c11/references/metadata.md` when Phase 2
+ships.
 
 ### Phase 2 tests
 
@@ -578,8 +577,8 @@ to run the scan) is deferred. See Appendix.
   trust line this plan is not ready to defend.
 - The `CMUX_DISABLE_SESSION_INDEX=1` opt-out above is the enforcement
   mechanism.
-- Document the transcript-read behavior in `docs/c11mux-privacy.md` (new,
-  short) when Phase 4 ships.
+- Document the transcript-read behavior in a short `docs/c11-privacy.md` (new)
+  when Phase 4 ships.
 
 ### Cross-agent generalization
 

@@ -2,13 +2,11 @@
 """M5 channel identity — verifies the running bundle reports the right
 channel and bundle identifier via `system.brand`.
 
-Spec: docs/c11mux-module-5-brand-identity-spec.md §"Channel identity".
-
 The channel must be derivable from the bundle identifier suffix:
-  com.stage11.c11mux              -> stable
-  com.stage11.c11mux.debug.<tag>  -> dev
-  com.stage11.c11mux.nightly      -> nightly
-  com.stage11.c11mux.staging      -> staging
+  com.stage11.c11              -> stable
+  com.stage11.c11.debug.<tag>  -> dev
+  com.stage11.c11.nightly      -> nightly
+  com.stage11.c11.staging      -> staging
 
 Launch contexts (reload.sh --tag / reloads.sh / CI nightly) are not
 launched from this test; it asserts whatever instance is currently
@@ -29,7 +27,7 @@ from cmux import cmux, cmuxError
 SOCKET_PATH = os.environ.get("CMUX_SOCKET", "/tmp/cmux-debug.sock")
 
 IDENTIFIER_RE = re.compile(
-    r"^com\.stage11\.c11mux(\.(?P<suffix>debug(\.[A-Za-z0-9_.-]+)?|nightly|staging))?$"
+    r"^com\.stage11\.c11(\.(?P<suffix>debug(\.[A-Za-z0-9_.-]+)?|nightly|staging))?$"
 )
 
 EXPECTED_CHANNEL_BY_SUFFIX = {
@@ -79,7 +77,7 @@ def main() -> int:
     if not IDENTIFIER_RE.match(identifier):
         _fail(
             f"CFBundleIdentifier {identifier!r} does not match "
-            f"^com.stage11.c11mux(.debug(.<tag>)?|.nightly|.staging)?$"
+            f"^com.stage11.c11(.debug(.<tag>)?|.nightly|.staging)?$"
         )
 
     expected = _expected_channel(identifier)
@@ -94,8 +92,8 @@ def main() -> int:
         _fail(f"CFBundleIconName must be one of {sorted(valid_icons)}; got {icon_name!r}")
 
     display_name = str(bundle.get("display_name") or "")
-    if not display_name.startswith("c11mux"):
-        _fail(f"CFBundleDisplayName must start with 'c11mux'; got {display_name!r}")
+    if not display_name.startswith("c11"):
+        _fail(f"CFBundleDisplayName must start with 'c11'; got {display_name!r}")
 
     print(
         f"PASS: channel={channel} for bundle={identifier} icon={icon_name} "

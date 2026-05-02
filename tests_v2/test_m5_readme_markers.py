@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""M5 README markers — asserts the c11mux README carries the brand-identity
+"""M5 README markers — asserts the c11 README carries the brand-identity
 header, tagline, fork-acknowledgment marker, and license marker.
 
 README is a rendered artifact for humans, not source-code metadata; the
 testing-policy clause that forbids grepping source code to assert string
-existence does not apply here. Spec: docs/c11mux-module-5-brand-identity-spec.md
-(§"README snapshot").
+existence does not apply here.
 """
 
 from __future__ import annotations
@@ -29,10 +28,10 @@ def main() -> int:
 
     text = readme.read_text(encoding="utf-8")
 
-    # 1. First 5 non-empty lines contain the canonical h1.
+    # 1. First 5 non-empty lines contain the canonical h1 ("# c11" markdown).
     first_lines = [line for line in text.splitlines()[:5]]
-    if not any('<h1 align="center">c11mux</h1>' in line for line in first_lines):
-        _fail("README.md first 5 lines must contain <h1 align=\"center\">c11mux</h1>")
+    if not any(line.strip() == "# c11" for line in first_lines):
+        _fail('README.md first 5 lines must contain the "# c11" markdown header')
 
     # 2. Tagline appears exactly once.
     tagline = "the Stage 11 terminal multiplexer for AI coding agents"

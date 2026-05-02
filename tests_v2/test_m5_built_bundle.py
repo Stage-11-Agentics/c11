@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 """M5 built-bundle artifact assertions.
 
-Spec: docs/c11mux-module-5-brand-identity-spec.md §"Built-bundle
-artifact assertions".
-
 Reads the Debug build's .app bundle produced by `./scripts/reload.sh
 --tag <tag>` (or CI equivalent). No source-tree reads. Assertions:
 
  1. CFBundleIdentifier matches the channel-suffix regex.
- 2. CFBundleDisplayName starts with 'c11mux'.
+ 2. CFBundleDisplayName starts with 'c11'.
  3. CFBundleIconName in {AppIcon, AppIcon-Debug, AppIcon-Nightly,
     AppIcon-Staging}.
  4. CFBundleShortVersionString matches ^\\d+\\.\\d+\\.\\d+$.
@@ -36,7 +33,7 @@ import sys
 from pathlib import Path
 
 IDENTIFIER_RE = re.compile(
-    r"^com\.stage11\.c11mux(\.(debug(\.[A-Za-z0-9_.-]+)?|nightly|staging))?$"
+    r"^com\.stage11\.c11(\.(debug(\.[A-Za-z0-9_.-]+)?|nightly|staging))?$"
 )
 VALID_ICON_NAMES = {"AppIcon", "AppIcon-Debug", "AppIcon-Nightly", "AppIcon-Staging"}
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
@@ -55,16 +52,16 @@ def _fail(msg: str) -> None:
 
 
 def _find_app_bundle() -> Path | None:
-    """Locate a built c11mux .app bundle. Prefer tagged debug builds in
-    /tmp/cmux-*, then DerivedData."""
+    """Locate a built c11 .app bundle. Prefer tagged debug builds in
+    /tmp/c11-*, then DerivedData."""
     env_override = os.environ.get("CMUX_APP_BUNDLE")
     if env_override and Path(env_override).is_dir():
         return Path(env_override)
 
     candidates: list[Path] = []
     patterns = [
-        "/tmp/cmux-*/Build/Products/Debug/c11mux*.app",
-        os.path.expanduser("~/Library/Developer/Xcode/DerivedData/cmux-*/Build/Products/Debug/c11mux*.app"),
+        "/tmp/c11-*/Build/Products/Debug/c11*.app",
+        os.path.expanduser("~/Library/Developer/Xcode/DerivedData/c11-*/Build/Products/Debug/c11*.app"),
     ]
     for pat in patterns:
         for p in glob.glob(pat):
@@ -100,7 +97,7 @@ def main() -> int:
     app = _find_app_bundle()
     if app is None:
         return _skip(
-            "No c11mux .app bundle found in /tmp/cmux-*/ or DerivedData. "
+            "No c11 .app bundle found in /tmp/c11-*/ or DerivedData. "
             "Build with ./scripts/reload.sh --tag <tag> first."
         )
 
@@ -115,10 +112,10 @@ def main() -> int:
     if not IDENTIFIER_RE.match(identifier):
         _fail(
             f"CFBundleIdentifier {identifier!r} does not match "
-            f"^com.stage11.c11mux(.debug(.<tag>)?|.nightly|.staging)?$"
+            f"^com.stage11.c11(.debug(.<tag>)?|.nightly|.staging)?$"
         )
-    if not display_name.startswith("c11mux"):
-        _fail(f"CFBundleDisplayName must start with 'c11mux'; got {display_name!r}")
+    if not display_name.startswith("c11"):
+        _fail(f"CFBundleDisplayName must start with 'c11'; got {display_name!r}")
     if icon_name not in VALID_ICON_NAMES:
         _fail(f"CFBundleIconName must be in {sorted(VALID_ICON_NAMES)}; got {icon_name!r}")
     if not VERSION_RE.match(short_version):

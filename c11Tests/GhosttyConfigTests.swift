@@ -315,14 +315,14 @@ final class GhosttyConfigTests: XCTestCase {
         try withTemporaryAppSupportDirectory { appSupportDirectory in
             let releaseConfigURL = try writeAppSupportConfig(
                 appSupportDirectory: appSupportDirectory,
-                bundleIdentifier: "com.stage11.c11mux",
+                bundleIdentifier: "com.stage11.c11",
                 filename: "config",
                 contents: "font-size = 13\n"
             )
 
             XCTAssertEqual(
                 GhosttyApp.cmuxAppSupportConfigURLs(
-                    currentBundleIdentifier: "com.stage11.c11mux.debug",
+                    currentBundleIdentifier: "com.stage11.c11.debug",
                     appSupportDirectory: appSupportDirectory
                 ),
                 [releaseConfigURL]
@@ -334,20 +334,20 @@ final class GhosttyConfigTests: XCTestCase {
         try withTemporaryAppSupportDirectory { appSupportDirectory in
             _ = try writeAppSupportConfig(
                 appSupportDirectory: appSupportDirectory,
-                bundleIdentifier: "com.stage11.c11mux",
+                bundleIdentifier: "com.stage11.c11",
                 filename: "config",
                 contents: "font-size = 13\n"
             )
             let currentConfigURL = try writeAppSupportConfig(
                 appSupportDirectory: appSupportDirectory,
-                bundleIdentifier: "com.stage11.c11mux.debug.issue-829",
+                bundleIdentifier: "com.stage11.c11.debug.issue-829",
                 filename: "config.ghostty",
                 contents: "font-size = 14\n"
             )
 
             XCTAssertEqual(
                 GhosttyApp.cmuxAppSupportConfigURLs(
-                    currentBundleIdentifier: "com.stage11.c11mux.debug.issue-829",
+                    currentBundleIdentifier: "com.stage11.c11.debug.issue-829",
                     appSupportDirectory: appSupportDirectory
                 ),
                 [currentConfigURL]
@@ -359,7 +359,7 @@ final class GhosttyConfigTests: XCTestCase {
         try withTemporaryAppSupportDirectory { appSupportDirectory in
             _ = try writeAppSupportConfig(
                 appSupportDirectory: appSupportDirectory,
-                bundleIdentifier: "com.stage11.c11mux",
+                bundleIdentifier: "com.stage11.c11",
                 filename: "config",
                 contents: "font-size = 13\n"
             )
@@ -377,14 +377,14 @@ final class GhosttyConfigTests: XCTestCase {
         try withTemporaryAppSupportDirectory { appSupportDirectory in
             _ = try writeAppSupportConfig(
                 appSupportDirectory: appSupportDirectory,
-                bundleIdentifier: "com.stage11.c11mux",
+                bundleIdentifier: "com.stage11.c11",
                 filename: "config.ghostty",
                 contents: ""
             )
 
             XCTAssertTrue(
                 GhosttyApp.cmuxAppSupportConfigURLs(
-                    currentBundleIdentifier: "com.stage11.c11mux.debug",
+                    currentBundleIdentifier: "com.stage11.c11.debug",
                     appSupportDirectory: appSupportDirectory
                 ).isEmpty
             )
@@ -1789,7 +1789,7 @@ final class SocketControlSettingsTests: XCTestCase {
             environment: [
                 "CMUX_SOCKET_PATH": "/tmp/cmux-debug-issue-153-tmux-compat.sock",
             ],
-            bundleIdentifier: "com.stage11.c11mux",
+            bundleIdentifier: "com.stage11.c11",
             isDebugBuild: false,
             probeStableDefaultPathEntry: { _ in .missing }
         )
@@ -1802,7 +1802,7 @@ final class SocketControlSettingsTests: XCTestCase {
             environment: [
                 "CMUX_SOCKET_PATH": "/tmp/cmux-debug-issue-153-tmux-compat.sock",
             ],
-            bundleIdentifier: "com.stage11.c11mux.nightly",
+            bundleIdentifier: "com.stage11.c11.nightly",
             isDebugBuild: false,
             probeStableDefaultPathEntry: { _ in .missing }
         )
@@ -1815,7 +1815,7 @@ final class SocketControlSettingsTests: XCTestCase {
             environment: [
                 "CMUX_SOCKET_PATH": "/tmp/cmux-debug-my-tag.sock",
             ],
-            bundleIdentifier: "com.stage11.c11mux.debug.my-tag",
+            bundleIdentifier: "com.stage11.c11.debug.my-tag",
             isDebugBuild: false
         )
 
@@ -1827,7 +1827,7 @@ final class SocketControlSettingsTests: XCTestCase {
             environment: [
                 "CMUX_SOCKET_PATH": "/tmp/cmux-staging-my-tag.sock",
             ],
-            bundleIdentifier: "com.stage11.c11mux.staging.my-tag",
+            bundleIdentifier: "com.stage11.c11.staging.my-tag",
             isDebugBuild: false
         )
 
@@ -1840,7 +1840,7 @@ final class SocketControlSettingsTests: XCTestCase {
                 "CMUX_SOCKET_PATH": "/tmp/cmux-debug-forced.sock",
                 "CMUX_ALLOW_SOCKET_OVERRIDE": "1",
             ],
-            bundleIdentifier: "com.stage11.c11mux",
+            bundleIdentifier: "com.stage11.c11",
             isDebugBuild: false,
             probeStableDefaultPathEntry: { _ in .missing }
         )
@@ -1851,7 +1851,7 @@ final class SocketControlSettingsTests: XCTestCase {
     func testDefaultSocketPathByChannel() {
         XCTAssertEqual(
             SocketControlSettings.defaultSocketPath(
-                bundleIdentifier: "com.stage11.c11mux",
+                bundleIdentifier: "com.stage11.c11",
                 isDebugBuild: false,
                 probeStableDefaultPathEntry: { _ in .missing }
             ),
@@ -1859,7 +1859,7 @@ final class SocketControlSettingsTests: XCTestCase {
         )
         XCTAssertEqual(
             SocketControlSettings.defaultSocketPath(
-                bundleIdentifier: "com.stage11.c11mux.nightly",
+                bundleIdentifier: "com.stage11.c11.nightly",
                 isDebugBuild: false,
                 probeStableDefaultPathEntry: { _ in .missing }
             ),
@@ -1867,7 +1867,7 @@ final class SocketControlSettingsTests: XCTestCase {
         )
         XCTAssertEqual(
             SocketControlSettings.defaultSocketPath(
-                bundleIdentifier: "com.stage11.c11mux.debug.tag",
+                bundleIdentifier: "com.stage11.c11.debug.tag",
                 isDebugBuild: false,
                 probeStableDefaultPathEntry: { _ in .missing }
             ),
@@ -1875,7 +1875,7 @@ final class SocketControlSettingsTests: XCTestCase {
         )
         XCTAssertEqual(
             SocketControlSettings.defaultSocketPath(
-                bundleIdentifier: "com.stage11.c11mux.staging.tag",
+                bundleIdentifier: "com.stage11.c11.staging.tag",
                 isDebugBuild: false,
                 probeStableDefaultPathEntry: { _ in .missing }
             ),
@@ -1885,7 +1885,7 @@ final class SocketControlSettingsTests: XCTestCase {
 
     func testStableReleaseFallsBackToUserScopedSocketWhenStablePathOwnedByDifferentUser() {
         let path = SocketControlSettings.defaultSocketPath(
-            bundleIdentifier: "com.stage11.c11mux",
+            bundleIdentifier: "com.stage11.c11",
             isDebugBuild: false,
             currentUserID: 501,
             probeStableDefaultPathEntry: { _ in .socket(ownerUserID: 0) }
@@ -1896,7 +1896,7 @@ final class SocketControlSettingsTests: XCTestCase {
 
     func testStableReleaseFallsBackToUserScopedSocketWhenStablePathIsBlockedByNonSocketEntry() {
         let path = SocketControlSettings.defaultSocketPath(
-            bundleIdentifier: "com.stage11.c11mux",
+            bundleIdentifier: "com.stage11.c11",
             isDebugBuild: false,
             currentUserID: 501,
             probeStableDefaultPathEntry: { _ in .other(ownerUserID: 501) }
@@ -1909,7 +1909,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertTrue(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: [:],
-                bundleIdentifier: "com.stage11.c11mux.debug",
+                bundleIdentifier: "com.stage11.c11.debug",
                 isDebugBuild: true
             )
         )
@@ -1919,7 +1919,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertFalse(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: ["CMUX_TAG": "tests-v1"],
-                bundleIdentifier: "com.stage11.c11mux.debug",
+                bundleIdentifier: "com.stage11.c11.debug",
                 isDebugBuild: true
             )
         )
@@ -1929,7 +1929,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertFalse(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: [:],
-                bundleIdentifier: "com.stage11.c11mux.debug.tests-v1",
+                bundleIdentifier: "com.stage11.c11.debug.tests-v1",
                 isDebugBuild: true
             )
         )
@@ -1939,7 +1939,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertFalse(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: [:],
-                bundleIdentifier: "com.stage11.c11mux.debug",
+                bundleIdentifier: "com.stage11.c11.debug",
                 isDebugBuild: false
             )
         )
@@ -1949,7 +1949,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertFalse(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: ["XCTestConfigurationFilePath": "/tmp/fake.xctestconfiguration"],
-                bundleIdentifier: "com.stage11.c11mux.debug",
+                bundleIdentifier: "com.stage11.c11.debug",
                 isDebugBuild: true
             )
         )
@@ -1959,7 +1959,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertFalse(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: ["XCInjectBundle": "/tmp/fake.xctest"],
-                bundleIdentifier: "com.stage11.c11mux.debug",
+                bundleIdentifier: "com.stage11.c11.debug",
                 isDebugBuild: true
             )
         )
@@ -1969,7 +1969,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertFalse(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: ["DYLD_INSERT_LIBRARIES": "/usr/lib/libXCTestBundleInject.dylib"],
-                bundleIdentifier: "com.stage11.c11mux.debug",
+                bundleIdentifier: "com.stage11.c11.debug",
                 isDebugBuild: true
             )
         )
@@ -1981,7 +1981,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertFalse(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: ["CMUX_UI_TEST_MODE": "1"],
-                bundleIdentifier: "com.stage11.c11mux.debug",
+                bundleIdentifier: "com.stage11.c11.debug",
                 isDebugBuild: true
             )
         )

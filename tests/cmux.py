@@ -52,7 +52,7 @@ _LAST_SOCKET_PATH_FILES = [
     os.path.join(_APP_SUPPORT_DIR, "last-socket-path"),
     "/tmp/cmux-last-socket-path",
 ]
-_DEFAULT_DEBUG_BUNDLE_ID = "com.stage11.c11mux.debug"
+_DEFAULT_DEBUG_BUNDLE_ID = "com.stage11.c11.debug"
 
 
 def _sanitize_tag_slug(raw: str) -> str:

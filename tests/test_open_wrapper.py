@@ -131,7 +131,7 @@ exit 0
 
         env = os.environ.copy()
         env["CMUX_SOCKET_PATH"] = "/tmp/cmux-open-wrapper-test.sock"
-        env["CMUX_BUNDLE_ID"] = "com.stage11.c11mux.debug.test"
+        env["CMUX_BUNDLE_ID"] = "com.stage11.c11.debug.test"
         env["CMUX_OPEN_WRAPPER_SYSTEM_OPEN"] = str(system_open)
         env["CMUX_OPEN_WRAPPER_DEFAULTS"] = str(defaults)
         env["FAKE_OPEN_LOG"] = str(open_log)

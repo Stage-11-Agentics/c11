@@ -3,7 +3,7 @@ import Foundation
 
 final class AutomationSocketUITests: XCTestCase {
     private var socketPath = ""
-    private let defaultsDomain = "com.stage11.c11mux.debug"
+    private let defaultsDomain = "com.stage11.c11.debug"
     private let modeKey = "socketControlMode"
     private let legacyKey = "socketControlEnabled"
     private let launchTag = "ui-tests-automation-socket"

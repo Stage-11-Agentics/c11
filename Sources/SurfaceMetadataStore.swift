@@ -8,7 +8,8 @@ import Foundation
 /// Canonical-key namespace (c11 Module 2).
 /// String constants for the canonical metadata keys rendered in the sidebar
 /// and title bar. Non-canonical keys accept any JSON value and are opaque to
-/// c11. See `docs/c11mux-module-2-metadata-spec.md`.
+/// c11. See `skills/c11/references/metadata.md` for the canonical-key
+/// reference used by agents.
 public enum MetadataKey {
     public static let role = "role"
     public static let status = "status"

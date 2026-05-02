@@ -3090,7 +3090,7 @@ private struct AboutPanelView: View {
 
             VStack(alignment: .center, spacing: 32) {
                 VStack(alignment: .center, spacing: 8) {
-                    Text(String(localized: "about.appName", defaultValue: "c11mux"))
+                    Text(String(localized: "about.appName", defaultValue: "c11"))
                         .bold()
                         .font(.title)
                     Text(String(localized: "about.forkAttribution", defaultValue: "A Stage 11 Agentics fork of cmux by manaflow-ai"))

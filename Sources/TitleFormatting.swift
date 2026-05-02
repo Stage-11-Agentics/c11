@@ -2,10 +2,10 @@ import Foundation
 
 /// Module 7 — title formatting helpers.
 ///
-/// Pure helper for the sidebar-tab-label truncation rule defined in
-/// `docs/c11mux-module-7-title-bar-spec.md` § "Sidebar truncation rule".
-/// Used by the workspace sidebar, bonsplit tab labels, and M8's floor-plan
-/// pane-box selected-tab line.
+/// Pure helper for the sidebar-tab-label truncation rule (25-grapheme cap,
+/// token-boundary truncation with U+2026 ellipsis). Used by the workspace
+/// sidebar, bonsplit tab labels, and M8's floor-plan pane-box selected-tab
+/// line.
 public enum TitleFormatting {
     /// Character cap for sidebar-tab-label truncation (grapheme clusters).
     public static let sidebarLabelCharCap = 25

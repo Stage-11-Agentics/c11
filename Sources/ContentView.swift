@@ -43,7 +43,7 @@ func sidebarActiveForegroundNSColor(
 }
 
 // c11 brand accent. Stage 11 is void-dominant; accent is a single gold
-// regardless of appearance. See `BrandColors` and docs/c11mux-module-5-brand-identity-spec.md.
+// regardless of appearance. See `BrandColors`.
 func cmuxAccentNSColor(for colorScheme: ColorScheme) -> NSColor {
     _ = colorScheme
     return BrandColors.gold

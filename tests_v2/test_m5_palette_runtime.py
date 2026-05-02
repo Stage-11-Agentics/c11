@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """M5 runtime palette assertions.
 
-Spec: docs/c11mux-module-5-brand-identity-spec.md §"Runtime palette
-assertions". Asks the running cmux instance (tagged debug) for
-`system.brand` and verifies the palette, accent hex, and font family
-resolve to the brand canon.
+Asks the running c11 instance (tagged debug) for `system.brand` and
+verifies the palette, accent hex, and font family resolve to the
+brand canon.
 
 The test needs a live debug instance's socket. If none is reachable it
 SKIPs rather than failing — `tests_v2/` runs headless under CI and local

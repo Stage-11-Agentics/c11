@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """M5 16px icon readability gate (blocking).
 
-Spec: docs/c11mux-module-5-brand-identity-spec.md §"16px readability gate (blocking)".
-
 Runs against the 1x 16x16 PNG the icon generator produced at
 Assets.xcassets/AppIcon.appiconset/16.png, which is the same file the
 xcasset compiler consumes when building the app bundle. Asserts:

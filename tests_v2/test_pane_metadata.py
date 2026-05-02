@@ -11,8 +11,8 @@ Verifies the pane-metadata RPC family added in Phase 2:
 - CLI `--surface` + `--pane` together → usage error
 
 No UI assertions — this is a mechanism-layer test. Requires a running
-c11mux instance; set CMUX_SOCKET to target a tagged build's socket
-(e.g. /tmp/c11mux-debug-cmux-11-phase2.sock).
+c11 instance; set CMUX_SOCKET to target a tagged build's socket
+(e.g. /tmp/c11-debug-<tag>.sock).
 """
 
 from __future__ import annotations

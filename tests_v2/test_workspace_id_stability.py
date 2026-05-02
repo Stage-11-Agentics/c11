@@ -6,7 +6,7 @@ Creates a handful of workspaces, then uses the debug-only
 `debug.session.round_trip_workspaces` socket command to snapshot-and-restore
 the whole `TabManager` in place. Workspace UUIDs must survive the round-trip
 so external consumers (Lattice, CLI, scripted tests) can safely cache
-`(workspace_id, surface_id)` tuples across c11mux restarts.
+`(workspace_id, surface_id)` tuples across c11 restarts.
 
 Notes:
 - Requires a DEBUG cmux build. The `debug.session.round_trip_workspaces`

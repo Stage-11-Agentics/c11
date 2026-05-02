@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared helpers for c11mux Module 1 (TUI auto-detection) tests_v2 suite.
+"""Shared helpers for c11 Module 1 (TUI auto-detection) tests_v2 suite.
 
 The heuristic inspects each surface's TTY via `ps -t <ttys>` and classifies the
 foreground process by its `comm` field. Since we can't rely on a test box having

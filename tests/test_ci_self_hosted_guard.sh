@@ -2,7 +2,7 @@
 # Regression test originally for https://github.com/manaflow-ai/cmux/issues/385.
 # Ensures paid/gated CI jobs (macos-15-xlarge, billed) are never run for
 # cross-repo fork pull requests — the fork guard `if:` clause must remain.
-# For the Stage-11-Agentics/c11mux fork, the paid runner is macos-15-xlarge.
+# For the Stage-11-Agentics/c11 fork, the paid runner is macos-15-xlarge.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"

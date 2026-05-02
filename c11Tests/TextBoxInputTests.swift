@@ -377,7 +377,7 @@ final class TextBoxAppDetectionTests: XCTestCase {
         XCTAssertFalse(TextBoxAppDetection.codex.matches(terminalTitle: "zsh"))
     }
 
-    // MARK: Metadata-first detection (c11mux SurfaceMetadataStore)
+    // MARK: Metadata-first detection (SurfaceMetadataStore)
 
     func testMetadataClaudeCodeDetectedRegardlessOfTitle() {
         XCTAssertTrue(

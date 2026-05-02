@@ -6,7 +6,7 @@ Creates a mix of terminal / browser / markdown surfaces in a new workspace,
 then uses the debug-only `debug.session.round_trip` socket command to
 snapshot-and-restore the workspace in place. Panel UUIDs must survive the
 round-trip so external consumers (Lattice, CLI, scripted tests) can safely
-cache them across c11mux restarts.
+cache them across c11 restarts.
 
 Notes:
 - Requires a DEBUG cmux build. The `debug.session.round_trip` method is

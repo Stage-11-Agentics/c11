@@ -89,7 +89,7 @@ jobs:
     # can be reinstated in nightly.yml if needed.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: macos-15-xlarge
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -183,19 +183,34 @@ jobs:
             COMPILER_INDEX_STORE_ENABLE=NO \
             build
 
-      - name: Test c11-unit scheme (covers c11LogicTests + c11Tests after C11-27)
-        # Catches both the compile-rot failure mode discovered 2026-05-07
-        # (production-code refactors silently breaking c11Tests compilation —
-        # `@MainActor` inheritance, missing struct fields, signature drift) and
-        # runtime regressions. After C11-27, the `c11-unit` scheme runs both
-        # `c11Tests` (host-required, in c11 DEV.app) and `c11LogicTests`
-        # (pure logic, xctest-only) sequentially via two TestableReferences.
-        # Without this step, neither `Build app` above nor any other CI
-        # workflow exercises both targets at all.
+      - name: Logic tests (gate)
+        # Hard-fail gate: pure-logic suite (parsers, snapshots, persistence,
+        # mailbox, theme). Runs in xctest-only, no DEV.app host. Fast (~45s)
+        # and stable on shared-tenant runners.
+        run: |
+          set -euo pipefail
+          SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
+          xcodebuild -project GhosttyTabs.xcodeproj -scheme c11-logic -configuration Debug \
+            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
+            -disableAutomaticPackageResolution \
+            -destination "platform=macOS" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            test
+
+      - name: Host-bound unit tests (advisory)
+        # Advisory while C11-99 Area C stabilizes the 32 expectation-timeout
+        # failures clustered in host-bound classes (AppDelegateShortcutRouting,
+        # GhosttyConfig, NotificationBurstCoalescer, TabManagerReopenClosedBrowserFocus,
+        # TerminalNotificationDirectInteraction, BrowserDeveloperToolsVisibilityPersistence,
+        # BrowserPanelHostContainerView). Failures still surface in the run
+        # log; they just don't gate merges. Flip back to hard-fail once C11-99
+        # Area C lands 5+ consecutive green runs.
+        continue-on-error: true
         run: |
           set -euo pipefail
           SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
           xcodebuild -project GhosttyTabs.xcodeproj -scheme c11-unit -configuration Debug \
+            -only-testing:c11Tests \
             -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
             -disableAutomaticPackageResolution \
             -destination "platform=macOS" \

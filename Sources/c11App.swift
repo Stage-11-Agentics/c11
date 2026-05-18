@@ -486,8 +486,16 @@ struct cmuxApp: App {
                 .keyboardShortcut("p", modifiers: [.command, .shift])
             }
 
-            // C11-41: Remove the (dead) Help menu macOS draws by default.
-            CommandGroup(replacing: .help) { }
+            // AppKit auto-injects a Help menu (with its search field) whenever
+            // there isn't one — and reliably suppressing it from a SwiftUI app
+            // is an open battle. Embrace the slot instead: put a real action
+            // here so the menu earns its space. About c11 doubles as the app's
+            // identity card and a useful answer to "what is this thing?"
+            CommandGroup(replacing: .help) {
+                Button(String(localized: "menu.help.about", defaultValue: "About c11")) {
+                    showAboutPanel()
+                }
+            }
 
             // C11-41 Edit menu: Find items go flat (match Safari/Mail/Notes).
             CommandGroup(after: .textEditing) {

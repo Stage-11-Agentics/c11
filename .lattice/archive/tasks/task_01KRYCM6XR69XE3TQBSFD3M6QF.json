@@ -1,0 +1,46 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 1,
+  "complexity": null,
+  "created_at": "2026-05-18T20:32:18Z",
+  "created_by": "agent:claude-opus-4-7",
+  "custom_fields": {},
+  "description": "Diagnose and fix the 32 `XCTestExpectation` 1-second-timeout failures in `c11Tests` so the host-bound scheme can return to hard-fail status in CI. Parent: C11-98. Sibling: CI unblock ticket (makes c11-unit advisory until this completes).\n\n**Failing-test clusters** (per audit, recurring across 4+ post-PR-#164 main builds):\n- `AppDelegateShortcutRoutingTests` \u2014 multiple, starting at `c11Tests/AppDelegateShortcutRoutingTests.swift:2323`\n- `GhosttyConfigTests` (`c11Tests/GhosttyConfigTests.swift:1576, 1696`)\n- `NotificationBurstCoalescerTests`\n- `TabManagerReopenClosedBrowserFocusTests` (`c11Tests/TabManagerUnitTests.swift:974`)\n- `TerminalNotificationDirectInteractionTests`\n- `BrowserDeveloperToolsVisibilityPersistenceTests`\n- `BrowserPanelHostContainerViewTests`\n\n**Plus** the one outlier: `AppDelegateShortcutRoutingTests.testMinimalModeUsesZeroTopSafeAreaForMainWindowContentView` at `c11Tests/AppDelegateShortcutRoutingTests.swift:878-912` \u2014 104-123s wall time (vs 10.5s for the next-slowest test). Quarantined in the CI-unblock ticket; needs real fix here.\n\n**Approach**\n1. Pull the full failure list from any recent CI run via `gh run view --log` + the `-resultBundlePath` artifact. Add `-resultBundlePath` to `scripts/test-unit-local.sh` (from the runnability ticket) and to CI for ongoing visibility.\n2. For each failing test: decide between (a) raise the expectation timeout from 1s to 5-10s if the wait is legitimate, (b) replace polling/timer-based waits with deterministic notification observers, (c) move the test to `c11LogicTests` if it doesn't actually need the host, (d) quarantine with `XCTSkip` and Lattice link if the test design is wrong.\n3. Profile the 104s slow test with `sample(1)`:\n   ```bash\n   scripts/test-unit-local.sh -only-testing:c11Tests/AppDelegateShortcutRoutingTests/testMinimalModeUsesZeroTopSafeAreaForMainWindowContentView \\\n     -resultBundlePath /tmp/slow-test.xcresult &\n   sleep 30\n   sample $(pgrep -n xctest) 5 -file /tmp/c11-unit-sample.txt\n   ```\n   Determine what `createMainWindow` (`Sources/AppDelegate.swift:6269`) actually does for 100s. Likely SwiftUI scene graph + responder swizzle install \u2014 fixing it benefits production launch latency too (relevant to C11-1 hang investigation).\n4. Re-enable the quarantined slow test once the actual fix is in.\n\n**Acceptance**\n- c11-unit step in CI green on `main` for 5+ consecutive runs\n- CI flips `c11-unit` from `continue-on-error: true` back to hard-fail (removes the advisory flag)\n- Quarantined slow test re-enabled\n- AAR comment on this ticket covering what was actually broken \u2014 most likely a class of timing assumption that's wrong on shared-tenant CI runners (this insight is portable to future test design)\n\n**Soft dependency on** local-runnability ticket \u2014 strongly recommended to land first so the owner can iterate without 10-min CI roundtrips.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KRYCM6XR69XE3TQBSFD3M6QF",
+  "last_event_id": "ev_01KRYD6352FHT4EW5YDW3DSWKW",
+  "last_status_changed_at": "2026-05-18T20:32:18Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-05-18T20:32:39Z",
+      "created_by": "agent:claude-opus-4-7",
+      "note": null,
+      "target_task_id": "task_01KRYCJGPG13GS6H01TGNH1V8H",
+      "type": "subtask_of"
+    },
+    {
+      "created_at": "2026-05-18T20:32:50Z",
+      "created_by": "agent:claude-opus-4-7",
+      "note": null,
+      "target_task_id": "task_01KRYCKJ3KX94D107R2ST9K5AV",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-101",
+  "status": "backlog",
+  "tags": [
+    "ci",
+    "test-stability",
+    "xctest"
+  ],
+  "title": "c11Tests stabilization: triage 32 expectation timeouts + profile slow test",
+  "type": "task",
+  "updated_at": "2026-05-18T20:42:04Z",
+  "urgency": null
+}

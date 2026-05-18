@@ -1,0 +1,39 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 1,
+  "complexity": null,
+  "created_at": "2026-05-18T20:32:33Z",
+  "created_by": "agent:claude-opus-4-7",
+  "custom_fields": {},
+  "description": "Workflow / scripts / docs housekeeping surfaced by the audit. Parent: C11-98. Independent of the other three children.\n\n**Workflow tightening**\n1. `.github/workflows/update-homebrew.yml` \u2014 add `timeout-minutes: 10` (currently inherits GitHub's 6h default).\n2. `scripts/sparkle_generate_appcast.sh:19-20` \u2014 flip default `DOWNLOAD_URL_PREFIX` and `RELEASE_NOTES_URL` from `manaflow-ai/cmux` to `Stage-11-Agentics/c11`, OR require explicit envs (no default). Today `release.yml` exports the correct values so production is fine; the risk is a human regenerating an appcast locally and silently pointing at the wrong fork.\n3. `scripts/bump-version.sh:28` \u2014 when invoked for a release tag, hard-fail when the Sparkle-floor curl returns 0 bytes (instead of silently falling back to `LATEST_RELEASE_BUILD=\"\"`). The whole point of PR #153 was to prevent shipping a build number lower than the published floor.\n\n**Decisions** (write outcome as a comment on this ticket before implementing)\n4. `.github/workflows/claude.yml` \u2014 pin floating action tags (`actions/checkout@v6`, `anthropics/claude-code-action@v1`) to SHAs and add the missing `CLAUDE_CODE_OAUTH_TOKEN` secret, OR delete the workflow. It has never been invoked.\n5. `.github/workflows/test-e2e.yml:212` \u2014 rename the hardcoded `cmuxUITests` scheme reference to the current scheme + fix the launch path, OR delete the workflow. Last 3 dispatches failed.\n\n**Docs**\n6. `code/c11/CLAUDE.md` \"Ghostty submodule workflow\" section \u2014 update \"push to `manaflow`\" \u2192 \"push to `stage11`\" (the actual remote name in the checkout; CLAUDE.md doc-drift).\n\n**Acceptance**\n- Three workflow tightening changes shipped (1, 2, 3)\n- Decisions 4 + 5 written on this ticket and acted on either way (no half-deleted, half-kept state)\n- CLAUDE.md ghostty section reflects the real remote layout\n\n**Not in scope** \u2014 adding explicit `ARCHS=\"arm64 x86_64\"` to `release.yml`. Audit confirmed the shipped DMG is already universal via pbxproj defaults; the addition is belt-and-braces, not a fix, and falls outside this hygiene pass.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KRYCMNE9ZQ35VG8QHCAZCM1Q",
+  "last_event_id": "ev_01KRYD63547SKZ4HWNF34EM67B",
+  "last_status_changed_at": "2026-05-18T20:32:33Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-05-18T20:32:39Z",
+      "created_by": "agent:claude-opus-4-7",
+      "note": null,
+      "target_task_id": "task_01KRYCJGPG13GS6H01TGNH1V8H",
+      "type": "subtask_of"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-102",
+  "status": "backlog",
+  "tags": [
+    "ci",
+    "hygiene",
+    "docs"
+  ],
+  "title": "Workflow hygiene: timeout, sparkle defaults, bump-version, claude.yml/test-e2e.yml decisions, docs",
+  "type": "task",
+  "updated_at": "2026-05-18T20:42:04Z",
+  "urgency": null
+}

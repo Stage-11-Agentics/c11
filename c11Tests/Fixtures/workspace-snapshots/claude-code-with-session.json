@@ -21,9 +21,9 @@
         "kind": "terminal",
         "title": "cc :: driver",
         "metadata": {
-          "terminal_type":     { "string": "claude-code" },
-          "model":             { "string": "claude-opus-4-7" },
-          "claude.session_id": { "string": "abc12345-ef67-890a-bcde-f0123456789a" }
+          "terminal_type":     "claude-code",
+          "model":             "claude-opus-4-7",
+          "claude.session_id": "abc12345-ef67-890a-bcde-f0123456789a"
         }
       }
     ]

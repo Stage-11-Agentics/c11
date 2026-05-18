@@ -486,7 +486,10 @@ final class WorkspaceSnapshotCaptureTests: XCTestCase {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("c11-snapshot-tests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
+        // Resolve `/var/folders/...` → `/private/var/folders/...` so path-equality
+        // assertions in the suite (e.g. `testStoreListSurfacesMalformedJSONAsUnreadableRow`)
+        // match the resolved form FileManager enumeration returns.
+        return url.resolvingSymlinksInPath()
     }
 
     private func sampleEnvelope(

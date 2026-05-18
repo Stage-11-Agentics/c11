@@ -254,7 +254,10 @@ final class CLIHealthRuntimeTests: XCTestCase {
         let dir = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("c11-health-runtime-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
+        // Resolve `/var/folders/...` → `/private/var/folders/...` so the path
+        // passed to `redactHomePath(_:home:)` matches the resolved form
+        // FileManager enumeration returns for the same files.
+        return dir.resolvingSymlinksInPath()
     }
 
     private func scaffoldAllRails(in home: URL) throws {

@@ -1,7 +1,7 @@
 {
   "assigned_to": "agent:claude-opus-4-7-tcc-mig",
   "branch_links": [],
-  "comment_count": 4,
+  "comment_count": 5,
   "complexity": null,
   "created_at": "2026-05-07T17:43:48Z",
   "created_by": "agent:claude-opus-4-7-tcc-mig",
@@ -21,14 +21,14 @@
     }
   ],
   "id": "task_01KR1RKR6K9FBZZCGF275A67XP",
-  "last_event_id": "ev_01KRS1NCFQ05DG7MZ03DWTSHSG",
+  "last_event_id": "ev_01KRY5X1J8A7VM0DVPASM23JM7",
   "last_status_changed_at": "2026-05-16T18:44:30Z",
   "linked_files": [],
   "priority": "medium",
   "relationships_out": [],
   "reopened_count": 0,
   "schema_version": 1,
-  "short_id": "C11-34",
+  "short_id": "C11-44",
   "status": "done",
   "tags": [
     "tcc",
@@ -40,6 +40,6 @@
   ],
   "title": "Debug-bundle isolation: legacy-prefs migration masks TCCPrimer + welcome on dev builds",
   "type": "bug",
-  "updated_at": "2026-05-16T18:44:30Z",
+  "updated_at": "2026-05-18T18:34:48Z",
   "urgency": null
 }

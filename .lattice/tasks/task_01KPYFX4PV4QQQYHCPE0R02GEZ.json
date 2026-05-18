@@ -3,7 +3,7 @@
   "branch_links": [],
   "cmux_surface": "BABFCBF8-AE7E-49B0-8AAC-ED9C2014DC9D",
   "cmux_workspace": "48438BFA-8D65-468D-8174-5BC2CD9F93A0",
-  "comment_count": 7,
+  "comment_count": 8,
   "complexity": null,
   "created_at": "2026-04-24T00:58:13Z",
   "created_by": "agent:claude-opus-4-7",
@@ -48,7 +48,7 @@
     }
   ],
   "id": "task_01KPYFX4PV4QQQYHCPE0R02GEZ",
-  "last_event_id": "ev_01KQ09R2SFCD0ZP1W3B52ESZF3",
+  "last_event_id": "ev_01KRY5X0HRGND5ZKQVQPXK7ESF",
   "last_status_changed_at": "2026-04-24T17:49:05Z",
   "linked_files": [],
   "priority": "medium",
@@ -63,7 +63,7 @@
   ],
   "reopened_count": 0,
   "schema_version": 1,
-  "short_id": "C11-13",
+  "short_id": "C11-42",
   "status": "done",
   "tags": [
     "messaging",
@@ -73,6 +73,6 @@
   ],
   "title": "Inter-agent messaging primitive: mailbox + pluggable delivery handlers",
   "type": "task",
-  "updated_at": "2026-04-24T17:49:05Z",
+  "updated_at": "2026-05-18T18:34:47Z",
   "urgency": null
 }

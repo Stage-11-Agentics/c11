@@ -1,7 +1,7 @@
 {
   "assigned_to": null,
   "branch_links": [],
-  "comment_count": 0,
+  "comment_count": 1,
   "complexity": null,
   "created_at": "2026-05-07T02:21:03Z",
   "created_by": "agent:overnight-c11-16",
@@ -10,7 +10,7 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KR03T4TS6QBYGG6Y7VXZNTA3",
-  "last_event_id": "ev_01KR03TH7H1BJQKAMCZ1QEYN0W",
+  "last_event_id": "ev_01KRY5X0S8CDHHVNYDE10Y5B3X",
   "last_status_changed_at": "2026-05-07T02:21:03Z",
   "linked_files": [],
   "priority": "medium",
@@ -25,11 +25,11 @@
   ],
   "reopened_count": 0,
   "schema_version": 1,
-  "short_id": "C11-33",
+  "short_id": "C11-43",
   "status": "backlog",
   "tags": null,
   "title": "Legacy-migration masks TCC primer on dev machines with cmux history",
   "type": "bug",
-  "updated_at": "2026-05-07T02:21:15Z",
+  "updated_at": "2026-05-18T18:34:47Z",
   "urgency": null
 }

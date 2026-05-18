@@ -11646,25 +11646,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func stripHelpMenuItem() {
-        NSApp.helpMenu = nil
-        guard let mainMenu = NSApp.mainMenu else {
-#if DEBUG
-            dlog("helpstrip mainMenu=nil")
-#endif
-            return
-        }
-#if DEBUG
-        let titles = mainMenu.items.map { "\($0.title)|sub=\($0.submenu?.title ?? "nil")" }.joined(separator: ",")
-        dlog("helpstrip titles=\(titles)")
-#endif
-        var removed = 0
+        guard let mainMenu = NSApp.mainMenu else { return }
         for item in mainMenu.items where item.submenu?.title == "Help" || item.title == "Help" {
             mainMenu.removeItem(item)
-            removed += 1
         }
-#if DEBUG
-        dlog("helpstrip removed=\(removed)")
-#endif
     }
 
     private func installGhosttySettingsMenuItem() {

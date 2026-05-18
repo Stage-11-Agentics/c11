@@ -8,46 +8,104 @@ import XCTest
 
 final class DefaultAgentConfigTests: XCTestCase {
 
-    // MARK: - Codable round-trip
+    // MARK: - factory defaults
 
-    func testBashIsDefault() {
-        XCTAssertEqual(DefaultAgentConfig.bash.agentType, .bash)
-        XCTAssertEqual(DefaultAgentConfig.bash.envOverrides, [:])
+    func testFactoryDefaultsHaveAllAgents() {
+        let cfg = DefaultAgentConfig.factory
+        XCTAssertEqual(cfg.defaultAgent, .claudeCode)
+        for type in AgentType.allCases {
+            XCTAssertNotNil(cfg.agents[type], "missing entry for \(type)")
+        }
     }
 
+    func testFactoryClaudeCommandIncludesDangerouslySkipPermissions() {
+        let entry = AgentConfig.factory(for: .claudeCode)
+        XCTAssertEqual(entry.command, "claude --dangerously-skip-permissions")
+        XCTAssertEqual(entry.initialPrompt, "load the c11 skill")
+    }
+
+    func testFactoryCodexCommandIncludesYolo() {
+        let entry = AgentConfig.factory(for: .codex)
+        XCTAssertEqual(entry.command, "codex --yolo")
+        XCTAssertEqual(entry.initialPrompt, "load the c11 skill")
+    }
+
+    func testFactoryCustomHasEmptyDefaults() {
+        let entry = AgentConfig.factory(for: .custom)
+        XCTAssertEqual(entry.command, "")
+        XCTAssertEqual(entry.initialPrompt, "")
+    }
+
+    func testAgentTypeAllCasesDoesNotIncludeBash() {
+        for type in AgentType.allCases {
+            XCTAssertNotEqual(type.rawValue, "bash", "bash must not be a Default Agent option")
+        }
+    }
+
+    // MARK: - Codable round-trip
+
     func testCodableRoundTripPreservesEveryField() throws {
-        let cfg = DefaultAgentConfig(
-            agentType: .claudeCode,
-            customCommand: "",
-            model: "claude-opus-4-7",
-            extraArgs: "--dangerously-skip-permissions",
-            initialPrompt: "follow the implementation plan",
-            cwdMode: .fixed,
-            fixedCwd: "/tmp/work",
-            envOverrides: ["FOO": "bar", "BAZ": "qux"]
-        )
+        var agents: [AgentType: AgentConfig] = [:]
+        agents[.claudeCode] = AgentConfig(command: "claude foo", initialPrompt: "load skill", envOverridesText: "K=V")
+        agents[.codex] = AgentConfig(command: "codex --yolo", initialPrompt: "", envOverridesText: "")
+        let cfg = DefaultAgentConfig(defaultAgent: .codex, agents: agents)
         let data = try JSONEncoder().encode(cfg)
         let decoded = try JSONDecoder().decode(DefaultAgentConfig.self, from: data)
-        XCTAssertEqual(decoded, cfg)
+        XCTAssertEqual(decoded.defaultAgent, .codex)
+        XCTAssertEqual(decoded.agents[.claudeCode]?.command, "claude foo")
+        XCTAssertEqual(decoded.agents[.claudeCode]?.initialPrompt, "load skill")
+        XCTAssertEqual(decoded.agents[.claudeCode]?.envOverridesText, "K=V")
+        XCTAssertEqual(decoded.agents[.codex]?.command, "codex --yolo")
     }
 
     func testLenientDecodeFillsMissingFields() throws {
-        let json = #"{"agentType":"claude-code"}"#
+        let json = #"{"defaultAgent":"codex"}"#
         let data = Data(json.utf8)
         let decoded = try JSONDecoder().decode(DefaultAgentConfig.self, from: data)
-        XCTAssertEqual(decoded.agentType, .claudeCode)
-        XCTAssertEqual(decoded.model, "")
-        XCTAssertEqual(decoded.extraArgs, "")
-        XCTAssertEqual(decoded.cwdMode, .inherit)
-        XCTAssertEqual(decoded.envOverrides, [:])
+        XCTAssertEqual(decoded.defaultAgent, .codex)
+        XCTAssertTrue(decoded.agents.isEmpty)
     }
 
-    func testCorruptDataFallsBackToBash() throws {
-        let json = #"{"agentType":"not-a-real-type"}"#
+    func testCorruptDefaultAgentFallsBackToClaude() throws {
+        let json = #"{"defaultAgent":"not-a-real-type"}"#
         let data = Data(json.utf8)
         let decoded = try JSONDecoder().decode(DefaultAgentConfig.self, from: data)
-        // Unknown agent type falls back to bash via the lenient decoder.
-        XCTAssertEqual(decoded.agentType, .bash)
+        XCTAssertEqual(decoded.defaultAgent, .claudeCode)
+    }
+
+    // MARK: - envMap parsing
+
+    func testEnvMapParsesKeyValueLines() {
+        let entry = AgentConfig(command: "", initialPrompt: "", envOverridesText: """
+        FOO=bar
+        BAZ=qux quux
+        """)
+        XCTAssertEqual(entry.envMap, ["FOO": "bar", "BAZ": "qux quux"])
+    }
+
+    func testEnvMapSkipsBlankLinesAndComments() {
+        let entry = AgentConfig(command: "", initialPrompt: "", envOverridesText: """
+
+        # a comment
+        FOO=bar
+
+        # trailing comment
+        BAZ=qux
+        """)
+        XCTAssertEqual(entry.envMap, ["FOO": "bar", "BAZ": "qux"])
+    }
+
+    func testEnvMapTrimsKeyWhitespace() {
+        let entry = AgentConfig(command: "", initialPrompt: "", envOverridesText: "  FOO  = bar  ")
+        XCTAssertEqual(entry.envMap, ["FOO": "bar"])
+    }
+
+    func testEnvMapSkipsLinesMissingEquals() {
+        let entry = AgentConfig(command: "", initialPrompt: "", envOverridesText: """
+        FOO
+        BAR=baz
+        """)
+        XCTAssertEqual(entry.envMap, ["BAR": "baz"])
     }
 
     // MARK: - UserDefaults store
@@ -59,38 +117,56 @@ final class DefaultAgentConfigTests: XCTestCase {
         return (DefaultAgentConfigStore(defaults: defaults), defaults)
     }
 
-    func testStoreReturnsBashWhenEmpty() {
+    func testStoreReturnsFactoryWhenEmpty() {
         let (store, _) = makeStore()
-        XCTAssertEqual(store.current, .bash)
+        XCTAssertEqual(store.current.defaultAgent, .claudeCode)
+        XCTAssertEqual(store.current.config(for: .claudeCode).command, "claude --dangerously-skip-permissions")
+        XCTAssertEqual(store.current.config(for: .claudeCode).initialPrompt, "load the c11 skill")
     }
 
-    func testStoreRoundTripsSavedConfig() {
-        let (store, _) = makeStore()
-        let cfg = DefaultAgentConfig(
-            agentType: .codex,
-            customCommand: "",
-            model: "",
-            extraArgs: "--yolo",
-            initialPrompt: "",
-            cwdMode: .inherit,
-            fixedCwd: "",
-            envOverrides: [:]
-        )
-        store.save(cfg)
-        XCTAssertEqual(store.current, cfg)
-    }
-
-    func testStoreResetClearsValue() {
-        let (store, _) = makeStore()
-        store.save(.bash)
-        store.reset()
-        XCTAssertEqual(store.current, .bash)
-    }
-
-    func testStoreReturnsBashOnGarbageData() {
+    func testStoreReturnsFactoryOnGarbageData() {
         let (store, defaults) = makeStore()
         defaults.set(Data("not json".utf8), forKey: DefaultAgentConfigStore.defaultsKey)
-        XCTAssertEqual(store.current, .bash)
+        XCTAssertEqual(store.current.defaultAgent, .claudeCode)
+    }
+
+    func testStoreSetDefaultAgentPersists() {
+        let (store, _) = makeStore()
+        store.setDefaultAgent(.kimi)
+        XCTAssertEqual(store.current.defaultAgent, .kimi)
+        // Other agents should retain their factory configs.
+        XCTAssertEqual(store.current.config(for: .claudeCode).command, "claude --dangerously-skip-permissions")
+    }
+
+    func testStoreUpdateMutatesOneAgentOnly() {
+        let (store, _) = makeStore()
+        store.update(.codex) { entry in
+            entry.command = "codex --custom"
+            entry.initialPrompt = ""
+        }
+        XCTAssertEqual(store.current.config(for: .codex).command, "codex --custom")
+        XCTAssertEqual(store.current.config(for: .codex).initialPrompt, "")
+        // Claude config untouched.
+        XCTAssertEqual(store.current.config(for: .claudeCode).command, "claude --dangerously-skip-permissions")
+    }
+
+    func testStoreResetWipesBackToFactory() {
+        let (store, _) = makeStore()
+        store.setDefaultAgent(.kimi)
+        store.update(.claudeCode) { $0.command = "claude bogus" }
+        store.reset()
+        XCTAssertEqual(store.current.defaultAgent, .claudeCode)
+        XCTAssertEqual(store.current.config(for: .claudeCode).command, "claude --dangerously-skip-permissions")
+    }
+
+    func testStoreFillsMissingAgentsWithFactory() throws {
+        let (store, defaults) = makeStore()
+        // Write a partial blob — only the default-agent field set.
+        let partial = #"{"defaultAgent":"codex","agents":{}}"#
+        defaults.set(Data(partial.utf8), forKey: DefaultAgentConfigStore.defaultsKey)
+        XCTAssertEqual(store.current.defaultAgent, .codex)
+        // Missing agents are filled with factory.
+        XCTAssertEqual(store.current.config(for: .claudeCode).command, "claude --dangerously-skip-permissions")
     }
 
     // MARK: - Project config discovery
@@ -106,19 +182,13 @@ final class DefaultAgentConfigTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: tmp) }
         let dotDir = tmp.appendingPathComponent(".c11", isDirectory: true)
         try FileManager.default.createDirectory(at: dotDir, withIntermediateDirectories: true)
-        let cfg = DefaultAgentConfig(
-            agentType: .claudeCode,
-            customCommand: "",
-            model: "claude-haiku-4-5-20251001",
-            extraArgs: "",
-            initialPrompt: "",
-            cwdMode: .inherit,
-            fixedCwd: "",
-            envOverrides: [:]
-        )
-        let data = try JSONEncoder().encode(cfg)
-        try data.write(to: dotDir.appendingPathComponent("agents.json"))
-        XCTAssertEqual(DefaultAgentProjectConfig.find(from: tmp.path), cfg)
+        var agents: [AgentType: AgentConfig] = [:]
+        agents[.codex] = AgentConfig(command: "codex --custom-project", initialPrompt: "", envOverridesText: "")
+        let cfg = DefaultAgentConfig(defaultAgent: .codex, agents: agents)
+        try JSONEncoder().encode(cfg).write(to: dotDir.appendingPathComponent("agents.json"))
+        let found = DefaultAgentProjectConfig.find(from: tmp.path)
+        XCTAssertEqual(found?.defaultAgent, .codex)
+        XCTAssertEqual(found?.agents[.codex]?.command, "codex --custom-project")
     }
 
     func testProjectConfigFindWalksUpward() throws {
@@ -128,18 +198,9 @@ final class DefaultAgentConfigTests: XCTestCase {
         try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
         let dotDir = tmp.appendingPathComponent(".c11", isDirectory: true)
         try FileManager.default.createDirectory(at: dotDir, withIntermediateDirectories: true)
-        let cfg = DefaultAgentConfig(
-            agentType: .codex,
-            customCommand: "",
-            model: "",
-            extraArgs: "--yolo",
-            initialPrompt: "",
-            cwdMode: .inherit,
-            fixedCwd: "",
-            envOverrides: [:]
-        )
+        let cfg = DefaultAgentConfig.factory
         try JSONEncoder().encode(cfg).write(to: dotDir.appendingPathComponent("agents.json"))
-        XCTAssertEqual(DefaultAgentProjectConfig.find(from: nested.path), cfg)
+        XCTAssertNotNil(DefaultAgentProjectConfig.find(from: nested.path))
     }
 
     func testProjectConfigFindIgnoresMalformedFile() throws {
@@ -160,7 +221,6 @@ final class DefaultAgentConfigTests: XCTestCase {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("DefaultAgentConfigTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        // Resolve symlinks so .c11 lookups match what `find` standardizes.
         return URL(fileURLWithPath: url.resolvingSymlinksInPath().path, isDirectory: true)
     }
 }

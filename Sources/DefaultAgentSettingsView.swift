@@ -1,19 +1,14 @@
 import SwiftUI
 import Combine
 
-/// View-model for the Settings panel's "Default terminal agent" section.
-/// Loads from `DefaultAgentConfigStore.shared` on init and writes back on every
-/// edit. The store reads from UserDefaults; project `.c11/agents.json` is *not*
-/// edited here — that file is operator-authored.
+/// View-model for the "default agent" Settings section.
 @MainActor
 final class DefaultAgentSettingsViewModel: ObservableObject {
-    @Published var agentType: DefaultAgentConfig.AgentType
-    @Published var customCommand: String
-    @Published var model: String
-    @Published var extraArgs: String
+    @Published var defaultAgent: AgentType
+    @Published var editingAgent: AgentType
+    @Published var command: String
     @Published var initialPrompt: String
-    @Published var cwdMode: DefaultAgentConfig.CwdMode
-    @Published var fixedCwd: String
+    @Published var envOverridesText: String
 
     private let store: DefaultAgentConfigStore
     private var cancellables: Set<AnyCancellable> = []
@@ -22,176 +17,184 @@ final class DefaultAgentSettingsViewModel: ObservableObject {
     init(store: DefaultAgentConfigStore = .shared) {
         self.store = store
         let cfg = store.current
-        self.agentType = cfg.agentType
-        self.customCommand = cfg.customCommand
-        self.model = cfg.model
-        self.extraArgs = cfg.extraArgs
-        self.initialPrompt = cfg.initialPrompt
-        self.cwdMode = cfg.cwdMode
-        self.fixedCwd = cfg.fixedCwd
+        let active = cfg.defaultAgent
+        let entry = cfg.config(for: active)
+        self.defaultAgent = active
+        self.editingAgent = active
+        self.command = entry.command
+        self.initialPrompt = entry.initialPrompt
+        self.envOverridesText = entry.envOverridesText
 
-        // Persist on any field change. Env overrides aren't editable in the UI
-        // for now — operators set them via `.c11/agents.json` or workspace
-        // metadata. We preserve whatever the store currently has.
-        $agentType.dropFirst().sink { [weak self] _ in self?.persist() }.store(in: &cancellables)
-        $customCommand.dropFirst().sink { [weak self] _ in self?.persist() }.store(in: &cancellables)
-        $model.dropFirst().sink { [weak self] _ in self?.persist() }.store(in: &cancellables)
-        $extraArgs.dropFirst().sink { [weak self] _ in self?.persist() }.store(in: &cancellables)
-        $initialPrompt.dropFirst().sink { [weak self] _ in self?.persist() }.store(in: &cancellables)
-        $cwdMode.dropFirst().sink { [weak self] _ in self?.persist() }.store(in: &cancellables)
-        $fixedCwd.dropFirst().sink { [weak self] _ in self?.persist() }.store(in: &cancellables)
+        $defaultAgent.dropFirst().sink { [weak self] new in
+            guard let self else { return }
+            self.store.setDefaultAgent(new)
+            self.editingAgent = new
+        }.store(in: &cancellables)
+
+        $editingAgent.dropFirst().sink { [weak self] new in
+            self?.loadFields(for: new)
+        }.store(in: &cancellables)
+
+        $command.dropFirst().sink { [weak self] _ in self?.persistFields() }.store(in: &cancellables)
+        $initialPrompt.dropFirst().sink { [weak self] _ in self?.persistFields() }.store(in: &cancellables)
+        $envOverridesText.dropFirst().sink { [weak self] _ in self?.persistFields() }.store(in: &cancellables)
     }
 
-    private func persist() {
+    private func loadFields(for agent: AgentType) {
+        suppressSave = true
+        defer { suppressSave = false }
+        let entry = store.current.config(for: agent)
+        command = entry.command
+        initialPrompt = entry.initialPrompt
+        envOverridesText = entry.envOverridesText
+    }
+
+    private func persistFields() {
         guard !suppressSave else { return }
-        let preservedEnv = store.current.envOverrides
-        store.save(DefaultAgentConfig(
-            agentType: agentType,
-            customCommand: customCommand,
-            model: model,
-            extraArgs: extraArgs,
+        let captured = editingAgent
+        let snapshot = AgentConfig(
+            command: command,
             initialPrompt: initialPrompt,
-            cwdMode: cwdMode,
-            fixedCwd: fixedCwd,
-            envOverrides: preservedEnv
-        ))
+            envOverridesText: envOverridesText
+        )
+        store.update(captured) { $0 = snapshot }
     }
 
-    /// Preview of the command that will run. Useful sanity check for the
-    /// operator authoring a flag string.
-    var commandPreview: String {
-        if agentType == .bash {
-            return String(localized: "settings.defaultAgent.preview.bash",
-                          defaultValue: "(bash — no startup command)")
-        }
-        return DefaultAgentResolver.buildCommand(for: DefaultAgentConfig(
-            agentType: agentType,
-            customCommand: customCommand,
-            model: model,
-            extraArgs: extraArgs,
-            initialPrompt: initialPrompt,
-            cwdMode: cwdMode,
-            fixedCwd: fixedCwd,
-            envOverrides: [:]
-        ))
+    /// Reset all fields for the currently-edited agent to factory defaults.
+    func resetEditingAgent() {
+        suppressSave = true
+        let factory = AgentConfig.factory(for: editingAgent)
+        command = factory.command
+        initialPrompt = factory.initialPrompt
+        envOverridesText = factory.envOverridesText
+        suppressSave = false
+        store.update(editingAgent) { $0 = factory }
     }
 }
 
-private extension DefaultAgentConfig.AgentType {
-    var displayName: String {
-        switch self {
-        case .bash:
-            return String(localized: "settings.defaultAgent.type.bash", defaultValue: "Bash (no agent)")
-        case .claudeCode:
-            return String(localized: "settings.defaultAgent.type.claudeCode", defaultValue: "Claude Code")
-        case .codex:
-            return String(localized: "settings.defaultAgent.type.codex", defaultValue: "Codex")
-        case .kimi:
-            return String(localized: "settings.defaultAgent.type.kimi", defaultValue: "Kimi")
-        case .opencode:
-            return String(localized: "settings.defaultAgent.type.opencode", defaultValue: "OpenCode")
-        case .custom:
-            return String(localized: "settings.defaultAgent.type.custom", defaultValue: "Custom")
-        }
-    }
-}
-
-private extension DefaultAgentConfig.CwdMode {
-    var displayName: String {
-        switch self {
-        case .inherit:
-            return String(localized: "settings.defaultAgent.cwd.inherit", defaultValue: "Inherit from parent pane")
-        case .fixed:
-            return String(localized: "settings.defaultAgent.cwd.fixed", defaultValue: "Fixed path")
-        }
-    }
-}
-
-/// Self-contained Settings section for the C11-14 default terminal agent.
-/// Wedged into the Agents & Automation page from `c11App.swift`.
 struct DefaultAgentSettingsSection: View {
     @StateObject private var vm = DefaultAgentSettingsViewModel()
+    @State private var showEnvOverrides = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Picker(selection: $vm.agentType) {
-                ForEach(DefaultAgentConfig.AgentType.allCases) { type in
-                    Text(type.displayName).tag(type)
-                }
-            } label: {
-                Text(String(localized: "settings.defaultAgent.type.label", defaultValue: "Agent type"))
-            }
-            .pickerStyle(.menu)
-            .accessibilityIdentifier("DefaultAgentTypePicker")
-
-            if vm.agentType != .bash {
-                if vm.agentType == .custom {
-                    TextField(
-                        String(localized: "settings.defaultAgent.customCommand.label", defaultValue: "Custom command"),
-                        text: $vm.customCommand,
-                        prompt: Text(String(localized: "settings.defaultAgent.customCommand.placeholder", defaultValue: "/usr/local/bin/myagent"))
-                    )
-                    .textFieldStyle(.roundedBorder)
-                }
-
-                TextField(
-                    String(localized: "settings.defaultAgent.model.label", defaultValue: "Model"),
-                    text: $vm.model,
-                    prompt: Text(String(localized: "settings.defaultAgent.model.placeholder", defaultValue: "claude-opus-4-7"))
-                )
-                .textFieldStyle(.roundedBorder)
-
-                TextField(
-                    String(localized: "settings.defaultAgent.extraArgs.label", defaultValue: "Extra arguments"),
-                    text: $vm.extraArgs,
-                    prompt: Text(String(localized: "settings.defaultAgent.extraArgs.placeholder", defaultValue: "--dangerously-skip-permissions"))
-                )
-                .textFieldStyle(.roundedBorder)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(String(localized: "settings.defaultAgent.initialPrompt.label", defaultValue: "Initial prompt (optional)"))
-                        .font(.callout)
-                    TextEditor(text: $vm.initialPrompt)
-                        .frame(minHeight: 60, maxHeight: 120)
-                        .font(.system(.body, design: .monospaced))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 4)
-                                .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                        )
-                }
-
-                Picker(selection: $vm.cwdMode) {
-                    ForEach(DefaultAgentConfig.CwdMode.allCases) { mode in
-                        Text(mode.displayName).tag(mode)
+        VStack(alignment: .leading, spacing: 14) {
+            // Tier 1 — which agent the A button launches.
+            HStack(spacing: 8) {
+                Text(String(localized: "settings.defaultAgent.picker.label",
+                            defaultValue: "default agent"))
+                    .font(.callout)
+                Picker("", selection: $vm.defaultAgent) {
+                    ForEach(AgentType.allCases) { type in
+                        Text(type.displayName).tag(type)
                     }
-                } label: {
-                    Text(String(localized: "settings.defaultAgent.cwd.label", defaultValue: "Working directory"))
                 }
+                .labelsHidden()
                 .pickerStyle(.menu)
+                .fixedSize()
+                .accessibilityIdentifier("DefaultAgentPicker")
+                Spacer()
+            }
 
-                if vm.cwdMode == .fixed {
-                    TextField(
-                        String(localized: "settings.defaultAgent.fixedCwd.label", defaultValue: "Fixed path"),
-                        text: $vm.fixedCwd,
-                        prompt: Text(String(localized: "settings.defaultAgent.fixedCwd.placeholder", defaultValue: "/Users/you/Projects"))
-                    )
+            Divider()
+
+            // Tier 2 — per-agent configuration.
+            Text(perAgentHeading(for: vm.editingAgent))
+                .font(.headline)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(String(localized: "settings.defaultAgent.command.label", defaultValue: "command"))
+                    .font(.callout)
+                TextField("", text: $vm.command)
                     .textFieldStyle(.roundedBorder)
-                }
+                    .font(.system(.body, design: .monospaced))
+                    .accessibilityIdentifier("DefaultAgentCommandField")
+                Text(commandHelp(for: vm.editingAgent))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(String(localized: "settings.defaultAgent.preview.label", defaultValue: "Command preview"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(vm.commandPreview)
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 4)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.secondary.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(String(localized: "settings.defaultAgent.initialPrompt.label", defaultValue: "initial prompt"))
+                    .font(.callout)
+                TextEditor(text: $vm.initialPrompt)
+                    .frame(minHeight: 38, maxHeight: 90)
+                    .font(.system(.body, design: .monospaced))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                    )
+                    .accessibilityIdentifier("DefaultAgentInitialPromptField")
+                Text(String(localized: "settings.defaultAgent.initialPrompt.help",
+                            defaultValue: "optional. given to the agent immediately after it boots."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            // Env overrides — DisclosureGroup misbehaves inside the SettingsCard
+            // padding, so we build the same affordance from a plain Button so
+            // the chevron + label are unambiguously clickable.
+            envOverridesDisclosure
+
+            HStack {
+                Spacer()
+                Button(String(localized: "settings.defaultAgent.reset",
+                              defaultValue: "reset agent to defaults")) {
+                    vm.resetEditingAgent()
                 }
+                .controlSize(.small)
             }
         }
+    }
+
+    private var envOverridesDisclosure: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    showEnvOverrides.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: showEnvOverrides ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .frame(width: 10)
+                    Text(String(localized: "settings.defaultAgent.env.disclosure",
+                                defaultValue: "environment overrides — advanced users only"))
+                        .font(.callout)
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("DefaultAgentEnvDisclosureButton")
+
+            if showEnvOverrides {
+                TextEditor(text: $vm.envOverridesText)
+                    .frame(minHeight: 60, maxHeight: 120)
+                    .font(.system(.body, design: .monospaced))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                    )
+                    .accessibilityIdentifier("DefaultAgentEnvField")
+                Text(String(localized: "settings.defaultAgent.env.help",
+                            defaultValue: "one KEY=value per line. injected into the agent's process. leave empty unless you know why you want it."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: - Per-agent string helpers
+
+    private func perAgentHeading(for agent: AgentType) -> String {
+        let format = String(localized: "settings.defaultAgent.subheading.format",
+                            defaultValue: "Agent %@")
+        return String(format: format, locale: Locale.current, agent.displayName)
+    }
+
+    private func commandHelp(for agent: AgentType) -> String {
+        let format = String(localized: "settings.defaultAgent.command.help.format",
+                            defaultValue: "the shell line that runs when we launch the %@ agent. you can include any parameters to match your specification.")
+        return String(format: format, locale: Locale.current, agent.displayName)
     }
 }

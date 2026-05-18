@@ -1,152 +1,65 @@
 import Foundation
 
-/// Workspace-level override carried as workspace metadata.
-struct WorkspaceAgentOverride: Equatable {
-    /// Forces bash regardless of any other configuration.
-    var useBash: Bool
-    /// If non-nil, replaces the user-default config entirely.
-    var inlineConfig: DefaultAgentConfig?
-
-    static let none = WorkspaceAgentOverride(useBash: false, inlineConfig: nil)
-}
-
-/// The fully-resolved decision for a new terminal: what command (if any) to
-/// run, what environment overrides to apply, and what working directory to
-/// switch to.
-struct ResolvedAgent: Equatable {
-    /// Command string passed to the terminal's startup hook. `nil` ⇒ no command
-    /// (pristine bash / login shell), preserving the historical behavior.
-    let command: String?
+/// The fully-resolved decision for launching an agent into a terminal panel.
+/// `command` is what gets typed into the shell once the panel is ready;
+/// `initialPrompt` (if non-empty) is delivered after launch via a second
+/// `sendText`; `envOverrides` are passed at panel construction.
+struct ResolvedAgentLaunch: Equatable {
+    let command: String
+    let initialPrompt: String
     let envOverrides: [String: String]
-    /// `nil` ⇒ inherit whatever cwd the terminal would otherwise use.
-    let workingDirectory: String?
-
-    static let bash = ResolvedAgent(command: nil, envOverrides: [:], workingDirectory: nil)
 }
 
-enum DefaultAgentResolverError: Error, Equatable {
-    case unknownAgentName(String)
-}
-
-/// Pure resolver. No I/O; callers pass in the user default + project config +
-/// workspace override and the resolver picks a winner.
+/// Pure resolver. No I/O; callers pass in the merged user default + project
+/// config and the resolver picks the right per-agent entry, then materializes
+/// the launch command (with optional positional-arg prompt for claude-code).
 enum DefaultAgentResolver {
 
-    /// Precedence (highest wins):
+    /// Resolve the launch shape for a specific agent. Project config (if any)
+    /// wins over user default for that agent's entry; the chosen `defaultAgent`
+    /// at the project level wins over the user-level pick when nothing is
+    /// passed explicitly.
     ///
-    /// 1. `forceBash` (the `--bash` CLI flag) → always bash.
-    /// 2. `explicitAgent` (`--agent <name>`): only `"default"` is recognized in
-    ///    this first cut. Any other name throws `.unknownAgentName`.
-    ///    `"default"` falls through to step 3+ but treats `agentType == .bash`
-    ///    as bash.
-    /// 3. `workspaceOverride.useBash` → bash.
-    /// 4. `workspaceOverride.inlineConfig` → that config.
-    /// 5. `projectConfig` → that config.
-    /// 6. `userDefault` → that config.
-    /// 7. If the chosen config's `agentType == .bash` → bash.
+    /// `explicitAgent` is the override knob used by the A-button right-click
+    /// menu and the socket CLI: pass `nil` to honor the configured default,
+    /// or a specific type to launch that one.
     static func resolve(
-        explicitAgent: String?,
-        forceBash: Bool,
-        workspaceOverride: WorkspaceAgentOverride,
+        explicitAgent: AgentType?,
         userDefault: DefaultAgentConfig,
         projectConfig: DefaultAgentConfig?
-    ) throws -> ResolvedAgent {
-        if forceBash { return .bash }
+    ) -> (agent: AgentType, launch: ResolvedAgentLaunch) {
+        let agent = explicitAgent
+            ?? projectConfig?.defaultAgent
+            ?? userDefault.defaultAgent
 
-        if let name = explicitAgent {
-            let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            guard normalized == "default" else {
-                throw DefaultAgentResolverError.unknownAgentName(name)
-            }
-        }
+        // Project-level per-agent config beats user-level for the chosen agent.
+        let chosenConfig: AgentConfig =
+            projectConfig?.agents[agent]
+            ?? userDefault.config(for: agent)
 
-        if workspaceOverride.useBash { return .bash }
-
-        let chosen: DefaultAgentConfig
-        if let inline = workspaceOverride.inlineConfig {
-            chosen = inline
-        } else if let project = projectConfig {
-            chosen = project
-        } else {
-            chosen = userDefault
-        }
-
-        if chosen.agentType == .bash {
-            return .bash
-        }
-
-        let command = buildCommand(for: chosen)
-        let workingDirectory: String?
-        switch chosen.cwdMode {
-        case .inherit:
-            workingDirectory = nil
-        case .fixed:
-            let trimmed = chosen.fixedCwd.trimmingCharacters(in: .whitespacesAndNewlines)
-            workingDirectory = trimmed.isEmpty ? nil : trimmed
-        }
-        return ResolvedAgent(
+        let command = buildCommand(agent: agent, config: chosenConfig)
+        return (agent, ResolvedAgentLaunch(
             command: command,
-            envOverrides: chosen.envOverrides,
-            workingDirectory: workingDirectory
-        )
+            initialPrompt: chosenConfig.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines),
+            envOverrides: chosenConfig.envMap
+        ))
     }
 
-    /// Build the shell command string for a non-bash config. The returned
-    /// string is intended to be **typed into the user's login shell** (via
-    /// `TerminalPanel.sendText`), not handed to Ghostty's startup-command
-    /// hook — that way interactive TUIs keep a live stdin and quitting the
-    /// agent leaves the shell available, matching the existing
-    /// `AgentLauncherSettings.launchAgentSurface` and welcome-workspace
-    /// patterns.
-    ///
-    /// Initial-prompt delivery:
-    /// - `claude-code`: appended as a single-quoted positional argument
-    ///   (`claude … 'prompt'`). `claude` accepts an initial prompt that way.
-    /// - All other agents: `initialPrompt` is preserved in the persisted
-    ///   config but **not** auto-appended. Different TUIs have different
-    ///   contracts (codex specifically ignores piped stdin and needs a
-    ///   post-ready file-reference) and we ship per-agent prompt delivery in
-    ///   a follow-up rather than guessing. Operators who want it today can
-    ///   include it inline via `extraArgs`.
-    ///
+    /// Build the shell command line for an agent's config. For claude-code, an
+    /// initial prompt is appended as a single-quoted positional argument
+    /// (claude accepts that). For other agents the prompt is delivered via a
+    /// separate post-launch sendText so each TUI's input contract is honored.
     /// Visible for testing.
-    static func buildCommand(for cfg: DefaultAgentConfig) -> String {
-        let binary: String
-        switch cfg.agentType {
-        case .bash:
-            return ""
-        case .claudeCode:
-            binary = "claude"
-        case .codex:
-            binary = "codex"
-        case .kimi:
-            binary = "kimi"
-        case .opencode:
-            binary = "opencode"
-        case .custom:
-            binary = cfg.customCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+    static func buildCommand(agent: AgentType, config: AgentConfig) -> String {
+        let base = config.command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !base.isEmpty else { return "" }
+        if agent == .claudeCode {
+            let prompt = config.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !prompt.isEmpty {
+                return "\(base) \(shellQuote(prompt))"
+            }
         }
-
-        var parts: [String] = []
-        if !binary.isEmpty {
-            parts.append(binary)
-        }
-        let model = cfg.model.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !model.isEmpty {
-            parts.append("--model")
-            parts.append(shellQuote(model))
-        }
-        let extra = cfg.extraArgs.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !extra.isEmpty {
-            parts.append(extra)
-        }
-
-        let prompt = cfg.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !prompt.isEmpty && cfg.agentType == .claudeCode {
-            parts.append(shellQuote(prompt))
-        }
-
-        return parts.joined(separator: " ")
+        return base
     }
 
     /// Single-quote a value for /bin/sh, escaping embedded single quotes via

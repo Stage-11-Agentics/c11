@@ -56438,43 +56438,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "environment overrides — advanced"
+            "value": "environment overrides — advanced users only"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "環境変数の上書き — 上級者向け"
+            "value": "環境変数の上書き — 上級者専用"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "перевизначення середовища — для досвідчених"
+            "value": "перевизначення середовища — лише для досвідчених"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "환경 변수 재정의 — 고급 사용자용"
+            "value": "환경 변수 재정의 — 고급 사용자 전용"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "环境变量覆盖 — 高级用户"
+            "value": "环境变量覆盖 — 仅限高级用户"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "環境變數覆寫 — 進階使用者"
+            "value": "環境變數覆寫 — 僅限進階使用者"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "переопределения окружения — для опытных пользователей"
+            "value": "переопределения окружения — только для опытных пользователей"
           }
         }
       }

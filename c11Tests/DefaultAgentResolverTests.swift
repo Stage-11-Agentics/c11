@@ -8,316 +8,171 @@ import XCTest
 
 final class DefaultAgentResolverTests: XCTestCase {
 
-    // MARK: - fixtures
-
-    private let claudeDefault = DefaultAgentConfig(
-        agentType: .claudeCode,
-        customCommand: "",
-        model: "claude-opus-4-7",
-        extraArgs: "--dangerously-skip-permissions",
-        initialPrompt: "",
-        cwdMode: .inherit,
-        fixedCwd: "",
-        envOverrides: [:]
-    )
-
-    private let codexProject = DefaultAgentConfig(
-        agentType: .codex,
-        customCommand: "",
-        model: "",
-        extraArgs: "--yolo",
-        initialPrompt: "",
-        cwdMode: .inherit,
-        fixedCwd: "",
-        envOverrides: ["CODEX_PROJECT": "1"]
-    )
-
     // MARK: - precedence
 
-    func testForceBashAlwaysWins() throws {
-        let result = try DefaultAgentResolver.resolve(
+    func testResolvesUserDefaultWhenNoProjectConfig() {
+        let user = DefaultAgentConfig.factory
+        let (agent, launch) = DefaultAgentResolver.resolve(
             explicitAgent: nil,
-            forceBash: true,
-            workspaceOverride: .none,
-            userDefault: claudeDefault,
-            projectConfig: codexProject
-        )
-        XCTAssertEqual(result, .bash)
-    }
-
-    func testForceBashBeatsExplicitAgent() throws {
-        let result = try DefaultAgentResolver.resolve(
-            explicitAgent: "default",
-            forceBash: true,
-            workspaceOverride: WorkspaceAgentOverride(useBash: false, inlineConfig: codexProject),
-            userDefault: claudeDefault,
-            projectConfig: codexProject
-        )
-        XCTAssertEqual(result, .bash)
-    }
-
-    func testWorkspaceUseBashBeatsProjectAndUser() throws {
-        let result = try DefaultAgentResolver.resolve(
-            explicitAgent: nil,
-            forceBash: false,
-            workspaceOverride: WorkspaceAgentOverride(useBash: true, inlineConfig: nil),
-            userDefault: claudeDefault,
-            projectConfig: codexProject
-        )
-        XCTAssertEqual(result, .bash)
-    }
-
-    func testWorkspaceInlineBeatsProject() throws {
-        // The resolver still accepts an inlineConfig override (reserved for a
-        // follow-up that exposes per-workspace inline config via metadata or
-        // workspace blueprint). C11-14 first PR only wires `useBash`.
-        let inline = DefaultAgentConfig(
-            agentType: .kimi,
-            customCommand: "",
-            model: "",
-            extraArgs: "",
-            initialPrompt: "",
-            cwdMode: .inherit,
-            fixedCwd: "",
-            envOverrides: [:]
-        )
-        let result = try DefaultAgentResolver.resolve(
-            explicitAgent: nil,
-            forceBash: false,
-            workspaceOverride: WorkspaceAgentOverride(useBash: false, inlineConfig: inline),
-            userDefault: claudeDefault,
-            projectConfig: codexProject
-        )
-        XCTAssertEqual(result.command, "kimi")
-    }
-
-    func testProjectBeatsUser() throws {
-        let result = try DefaultAgentResolver.resolve(
-            explicitAgent: nil,
-            forceBash: false,
-            workspaceOverride: .none,
-            userDefault: claudeDefault,
-            projectConfig: codexProject
-        )
-        XCTAssertEqual(result.command, "codex --yolo")
-        XCTAssertEqual(result.envOverrides, ["CODEX_PROJECT": "1"])
-    }
-
-    func testUserDefaultUsedWhenNoOtherSource() throws {
-        let result = try DefaultAgentResolver.resolve(
-            explicitAgent: nil,
-            forceBash: false,
-            workspaceOverride: .none,
-            userDefault: claudeDefault,
+            userDefault: user,
             projectConfig: nil
         )
-        XCTAssertEqual(result.command, "claude --model 'claude-opus-4-7' --dangerously-skip-permissions")
+        XCTAssertEqual(agent, .claudeCode)
+        XCTAssertEqual(launch.command, "claude --dangerously-skip-permissions 'load the c11 skill'")
     }
 
-    func testBashAgentTypeInUserDefaultFallsThrough() throws {
-        let result = try DefaultAgentResolver.resolve(
+    func testProjectConfigDefaultAgentBeatsUserDefault() {
+        let user = DefaultAgentConfig.factory
+        var projectAgents: [AgentType: AgentConfig] = [:]
+        projectAgents[.codex] = AgentConfig(command: "codex --custom", initialPrompt: "", envOverridesText: "")
+        let project = DefaultAgentConfig(defaultAgent: .codex, agents: projectAgents)
+        let (agent, launch) = DefaultAgentResolver.resolve(
             explicitAgent: nil,
-            forceBash: false,
-            workspaceOverride: .none,
-            userDefault: .bash,
-            projectConfig: nil
+            userDefault: user,
+            projectConfig: project
         )
-        XCTAssertEqual(result, .bash)
+        XCTAssertEqual(agent, .codex)
+        XCTAssertEqual(launch.command, "codex --custom")
     }
 
-    func testExplicitAgentDefaultIsAccepted() throws {
-        let result = try DefaultAgentResolver.resolve(
-            explicitAgent: "default",
-            forceBash: false,
-            workspaceOverride: .none,
-            userDefault: claudeDefault,
-            projectConfig: nil
+    func testProjectConfigPerAgentBeatsUserPerAgent() {
+        // Even when project + user agree on default agent, project's per-agent
+        // override should be used.
+        var userAgents = DefaultAgentConfig.factory.agents
+        userAgents[.codex] = AgentConfig(command: "codex --user-version", initialPrompt: "", envOverridesText: "")
+        let user = DefaultAgentConfig(defaultAgent: .codex, agents: userAgents)
+
+        var projectAgents: [AgentType: AgentConfig] = [:]
+        projectAgents[.codex] = AgentConfig(command: "codex --project-version", initialPrompt: "", envOverridesText: "")
+        let project = DefaultAgentConfig(defaultAgent: .codex, agents: projectAgents)
+
+        let (agent, launch) = DefaultAgentResolver.resolve(
+            explicitAgent: nil,
+            userDefault: user,
+            projectConfig: project
         )
-        XCTAssertEqual(result.command, "claude --model 'claude-opus-4-7' --dangerously-skip-permissions")
+        XCTAssertEqual(agent, .codex)
+        XCTAssertEqual(launch.command, "codex --project-version")
     }
 
-    func testExplicitAgentDefaultTrimmedAndCaseInsensitive() throws {
-        let result = try DefaultAgentResolver.resolve(
-            explicitAgent: "  DEFAULT  ",
-            forceBash: false,
-            workspaceOverride: .none,
-            userDefault: claudeDefault,
+    func testExplicitAgentBeatsBothProjectAndUserDefault() {
+        let user = DefaultAgentConfig.factory  // default = claude
+        let (agent, launch) = DefaultAgentResolver.resolve(
+            explicitAgent: .kimi,
+            userDefault: user,
             projectConfig: nil
         )
-        XCTAssertEqual(result.command, "claude --model 'claude-opus-4-7' --dangerously-skip-permissions")
+        XCTAssertEqual(agent, .kimi)
+        XCTAssertEqual(launch.command, "kimi")
     }
 
-    func testUnknownExplicitAgentThrows() {
-        XCTAssertThrowsError(
-            try DefaultAgentResolver.resolve(
-                explicitAgent: "claude-opus",
-                forceBash: false,
-                workspaceOverride: .none,
-                userDefault: claudeDefault,
-                projectConfig: nil
-            )
-        ) { error in
-            XCTAssertEqual(error as? DefaultAgentResolverError, .unknownAgentName("claude-opus"))
-        }
+    func testProjectConfigFallsBackToUserPerAgentWhenProjectMissingAgent() {
+        var userAgents = DefaultAgentConfig.factory.agents
+        userAgents[.kimi] = AgentConfig(command: "kimi --user-flag", initialPrompt: "", envOverridesText: "")
+        let user = DefaultAgentConfig(defaultAgent: .claudeCode, agents: userAgents)
+
+        // Project changes default to kimi but doesn't provide a kimi config.
+        let project = DefaultAgentConfig(defaultAgent: .kimi, agents: [:])
+
+        let (agent, launch) = DefaultAgentResolver.resolve(
+            explicitAgent: nil,
+            userDefault: user,
+            projectConfig: project
+        )
+        XCTAssertEqual(agent, .kimi)
+        XCTAssertEqual(launch.command, "kimi --user-flag")
     }
 
     // MARK: - command builder
 
-    func testBuildCommandClaudeWithModelAndArgs() {
-        let cfg = DefaultAgentConfig(
-            agentType: .claudeCode,
-            customCommand: "",
-            model: "claude-opus-4-7",
-            extraArgs: "--dangerously-skip-permissions",
+    func testBuildCommandClaudeAppendsInitialPromptAsPositional() {
+        let cfg = AgentConfig(
+            command: "claude --dangerously-skip-permissions",
+            initialPrompt: "load the c11 skill",
+            envOverridesText: ""
+        )
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions 'load the c11 skill'"
+        )
+    }
+
+    func testBuildCommandClaudeWithoutInitialPromptOmitsPositional() {
+        let cfg = AgentConfig(
+            command: "claude --dangerously-skip-permissions",
             initialPrompt: "",
-            cwdMode: .inherit,
-            fixedCwd: "",
-            envOverrides: [:]
+            envOverridesText: ""
         )
         XCTAssertEqual(
-            DefaultAgentResolver.buildCommand(for: cfg),
-            "claude --model 'claude-opus-4-7' --dangerously-skip-permissions"
-        )
-    }
-
-    func testBuildCommandCodexNoModel() {
-        let cfg = DefaultAgentConfig(
-            agentType: .codex,
-            customCommand: "",
-            model: "",
-            extraArgs: "--yolo",
-            initialPrompt: "",
-            cwdMode: .inherit,
-            fixedCwd: "",
-            envOverrides: [:]
-        )
-        XCTAssertEqual(DefaultAgentResolver.buildCommand(for: cfg), "codex --yolo")
-    }
-
-    func testBuildCommandCustomBinary() {
-        let cfg = DefaultAgentConfig(
-            agentType: .custom,
-            customCommand: "/usr/local/bin/myagent --foo",
-            model: "",
-            extraArgs: "--bar",
-            initialPrompt: "",
-            cwdMode: .inherit,
-            fixedCwd: "",
-            envOverrides: [:]
-        )
-        XCTAssertEqual(
-            DefaultAgentResolver.buildCommand(for: cfg),
-            "/usr/local/bin/myagent --foo --bar"
-        )
-    }
-
-    func testBuildCommandClaudeWithInitialPromptAppendsPositional() {
-        let cfg = DefaultAgentConfig(
-            agentType: .claudeCode,
-            customCommand: "",
-            model: "claude-opus-4-7",
-            extraArgs: "",
-            initialPrompt: "read the plan and follow it",
-            cwdMode: .inherit,
-            fixedCwd: "",
-            envOverrides: [:]
-        )
-        XCTAssertEqual(
-            DefaultAgentResolver.buildCommand(for: cfg),
-            "claude --model 'claude-opus-4-7' 'read the plan and follow it'"
-        )
-    }
-
-    func testBuildCommandEscapesSingleQuoteInPrompt() {
-        let cfg = DefaultAgentConfig(
-            agentType: .claudeCode,
-            customCommand: "",
-            model: "",
-            extraArgs: "",
-            initialPrompt: "don't stop",
-            cwdMode: .inherit,
-            fixedCwd: "",
-            envOverrides: [:]
-        )
-        // Standard sh single-quote escape: don't  → 'don'\''t'
-        XCTAssertEqual(
-            DefaultAgentResolver.buildCommand(for: cfg),
-            #"claude 'don'\''t stop'"#
+            DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions"
         )
     }
 
     func testBuildCommandCodexIgnoresInitialPrompt() {
-        // Codex/kimi/opencode don't get auto-prompt — they have different
-        // delivery contracts. Operators can put it in extraArgs if they want.
-        let cfg = DefaultAgentConfig(
-            agentType: .codex,
-            customCommand: "",
-            model: "",
-            extraArgs: "--yolo",
-            initialPrompt: "follow the plan",
-            cwdMode: .inherit,
-            fixedCwd: "",
-            envOverrides: [:]
+        // Non-claude agents preserve the prompt in config but don't auto-append.
+        let cfg = AgentConfig(
+            command: "codex --yolo",
+            initialPrompt: "load the c11 skill",
+            envOverridesText: ""
         )
-        XCTAssertEqual(DefaultAgentResolver.buildCommand(for: cfg), "codex --yolo")
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .codex, config: cfg),
+            "codex --yolo"
+        )
+    }
+
+    func testBuildCommandEscapesSingleQuoteInPrompt() {
+        let cfg = AgentConfig(
+            command: "claude",
+            initialPrompt: "don't stop",
+            envOverridesText: ""
+        )
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
+            #"claude 'don'\''t stop'"#
+        )
+    }
+
+    func testBuildCommandWithEmptyBaseReturnsEmpty() {
+        let cfg = AgentConfig(command: "  ", initialPrompt: "anything", envOverridesText: "")
+        XCTAssertEqual(DefaultAgentResolver.buildCommand(agent: .custom, config: cfg), "")
+    }
+
+    func testBuildCommandCustomAgent() {
+        let cfg = AgentConfig(command: "/usr/local/bin/myagent --foo", initialPrompt: "", envOverridesText: "")
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .custom, config: cfg),
+            "/usr/local/bin/myagent --foo"
+        )
     }
 
     func testShellQuoteEmpty() {
         XCTAssertEqual(DefaultAgentResolver.shellQuote(""), "''")
     }
 
-    // MARK: - cwd resolution
-
-    func testCwdInheritReturnsNil() throws {
-        let result = try DefaultAgentResolver.resolve(
-            explicitAgent: nil,
-            forceBash: false,
-            workspaceOverride: .none,
-            userDefault: claudeDefault,
-            projectConfig: nil
-        )
-        XCTAssertNil(result.workingDirectory)
+    func testShellQuoteEscapesSingleQuote() {
+        XCTAssertEqual(DefaultAgentResolver.shellQuote("a'b"), "'a'\\''b'")
     }
 
-    func testCwdFixedSetsWorkingDirectory() throws {
-        let cfg = DefaultAgentConfig(
-            agentType: .claudeCode,
-            customCommand: "",
-            model: "",
-            extraArgs: "",
-            initialPrompt: "",
-            cwdMode: .fixed,
-            fixedCwd: "/tmp/work",
-            envOverrides: [:]
-        )
-        let result = try DefaultAgentResolver.resolve(
-            explicitAgent: nil,
-            forceBash: false,
-            workspaceOverride: .none,
-            userDefault: cfg,
-            projectConfig: nil
-        )
-        XCTAssertEqual(result.workingDirectory, "/tmp/work")
-    }
+    // MARK: - env passthrough
 
-    func testCwdFixedWithEmptyPathFallsBackToNil() throws {
-        let cfg = DefaultAgentConfig(
-            agentType: .claudeCode,
-            customCommand: "",
-            model: "",
-            extraArgs: "",
+    func testEnvOverridesFlowToResolved() {
+        var userAgents = DefaultAgentConfig.factory.agents
+        userAgents[.claudeCode] = AgentConfig(
+            command: "claude",
             initialPrompt: "",
-            cwdMode: .fixed,
-            fixedCwd: "   ",
-            envOverrides: [:]
+            envOverridesText: "ANTHROPIC_BASE_URL=https://example.com\nFOO=bar"
         )
-        let result = try DefaultAgentResolver.resolve(
+        let user = DefaultAgentConfig(defaultAgent: .claudeCode, agents: userAgents)
+        let (_, launch) = DefaultAgentResolver.resolve(
             explicitAgent: nil,
-            forceBash: false,
-            workspaceOverride: .none,
-            userDefault: cfg,
+            userDefault: user,
             projectConfig: nil
         )
-        XCTAssertNil(result.workingDirectory)
+        XCTAssertEqual(launch.envOverrides, [
+            "ANTHROPIC_BASE_URL": "https://example.com",
+            "FOO": "bar",
+        ])
     }
 }

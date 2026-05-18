@@ -2463,6 +2463,14 @@ class TerminalController {
         case "new_surface":
             return newSurface(args)
 
+        // C11-14: read/write the default agent + per-agent configuration. Same
+        // store the Settings UI binds to; live updates fan out via UserDefaults.
+        case "default_agent":
+            return defaultAgentCommand(args)
+
+        case "agent_config":
+            return agentConfigCommand(args)
+
         case "close_surface":
             return closeSurface(args)
 
@@ -15358,23 +15366,16 @@ class TerminalController {
     private func newSplit(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
-        // Tokenize once so --bash can appear in any position after the
-        // required direction arg. Direction is the first non-flag token.
-        // (C11-14 `--agent <name>` is reserved for the named-presets follow-up.)
-        let tokens = args.split(separator: " ").map(String.init)
-        var direction: SplitDirection? = nil
-        var panelArg: String = ""
-        var forceBash = false
-        for token in tokens {
-            if token == "--bash" {
-                forceBash = true
-            } else if direction == nil, let parsed = parseSplitDirection(token) {
-                direction = parsed
-            } else if panelArg.isEmpty {
-                panelArg = token
-            }
+        let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = trimmed.split(separator: " ", maxSplits: 1).map(String.init)
+        guard !parts.isEmpty else {
+            return "ERROR: Invalid direction. Use left, right, up, or down."
         }
-        guard let direction else {
+
+        let directionArg = parts[0]
+        let panelArg = parts.count > 1 ? parts[1] : ""
+
+        guard let direction = parseSplitDirection(directionArg) else {
             return "ERROR: Invalid direction. Use left, right, up, or down."
         }
 
@@ -15402,18 +15403,7 @@ class TerminalController {
                 return
             }
 
-            // C11-14: resolve the default-terminal-agent decision.
-            let agentOverride = tab.resolveAgentForNewSurface(
-                forceBash: forceBash,
-                cwd: tab.resolverCwdForNewSurface()
-            )
-
-            if let newPanelId = tabManager.newSplit(
-                tabId: tabId,
-                surfaceId: targetSurface,
-                direction: direction,
-                agentOverride: agentOverride
-            ) {
+            if let newPanelId = tabManager.newSplit(tabId: tabId, surfaceId: targetSurface, direction: direction) {
                 result = "OK \(newPanelId.uuidString)"
             }
         }) != nil else {
@@ -17176,13 +17166,11 @@ class TerminalController {
     private func newPane(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
-        // Parse arguments: --type=terminal|browser --direction=left|right|up|down --url=... --bash
-        // (C11-14 `--agent <name>` is reserved for the named-presets follow-up.)
+        // Parse arguments: --type=terminal|browser --direction=left|right|up|down --url=...
         var panelType: PanelType = .terminal
         var direction: SplitDirection = .right
         var url: URL? = nil
         var invalidDirection = false
-        var forceBash = false
 
         let parts = args.split(separator: " ")
         for part in parts {
@@ -17200,8 +17188,6 @@ class TerminalController {
             } else if partStr.hasPrefix("--url=") {
                 let urlStr = String(partStr.dropFirst(6))
                 url = URL(string: urlStr)
-            } else if partStr == "--bash" {
-                forceBash = true
             }
         }
 
@@ -17221,15 +17207,6 @@ class TerminalController {
                 return
             }
 
-            // C11-14: resolve the default-terminal-agent decision before
-            // splitting. Only applies to terminal splits.
-            let agentOverride: ResolvedAgent? = (panelType == .terminal)
-                ? tab.resolveAgentForNewSurface(
-                    forceBash: forceBash,
-                    cwd: tab.resolverCwdForNewSurface()
-                )
-                : nil
-
             let newPanelId: UUID?
             if panelType == .browser {
                 newPanelId = tab.newBrowserSplit(
@@ -17244,8 +17221,7 @@ class TerminalController {
                     from: focusedPanelId,
                     orientation: orientation,
                     insertFirst: insertFirst,
-                    focus: focus,
-                    agentOverride: agentOverride
+                    focus: focus
                 )?.id
             }
 
@@ -18729,12 +18705,10 @@ class TerminalController {
     private func newSurface(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
-        // Parse arguments: --type=terminal|browser --pane=<pane_id> --url=... --bash
-        // (C11-14 `--agent <name>` is reserved for the named-presets follow-up.)
+        // Parse arguments: --type=terminal|browser --pane=<pane_id> --url=...
         var panelType: PanelType = .terminal
         var paneArg: String? = nil
         var url: URL? = nil
-        var forceBash = false
 
         let parts = args.split(separator: " ")
         for part in parts {
@@ -18747,8 +18721,6 @@ class TerminalController {
             } else if partStr.hasPrefix("--url=") {
                 let urlStr = String(partStr.dropFirst(6))
                 url = URL(string: urlStr)
-            } else if partStr == "--bash" {
-                forceBash = true
             }
         }
 
@@ -18780,24 +18752,11 @@ class TerminalController {
                 return
             }
 
-            // C11-14: resolve the default-terminal-agent decision before
-            // creating the surface. Only applies to terminal surfaces.
-            let agentOverride: ResolvedAgent? = (panelType == .terminal)
-                ? tab.resolveAgentForNewSurface(
-                    forceBash: forceBash,
-                    cwd: tab.resolverCwdForNewSurface()
-                )
-                : nil
-
             let newPanelId: UUID?
             if panelType == .browser {
                 newPanelId = tab.newBrowserSurface(inPane: targetPaneId, url: url, focus: focus)?.id
             } else {
-                newPanelId = tab.newTerminalSurface(
-                    inPane: targetPaneId,
-                    focus: focus,
-                    agentOverride: agentOverride
-                )?.id
+                newPanelId = tab.newTerminalSurface(inPane: targetPaneId, focus: focus)?.id
             }
 
             if let id = newPanelId {
@@ -18805,6 +18764,158 @@ class TerminalController {
             }
         }
         return result
+    }
+
+    // MARK: - C11-14 default-agent socket commands
+
+    /// `default_agent get`                              → prints current default agent type
+    /// `default_agent set <type>`                       → sets default
+    /// `default_agent launch [--agent <type>] [--pane <id>]` → mimics A button click
+    private func defaultAgentCommand(_ args: String) -> String {
+        let tokens = args.split(separator: " ").map(String.init)
+        guard let sub = tokens.first else {
+            return "ERROR: usage: default_agent {get|set <type>|launch [--agent <type>] [--pane <id>]}"
+        }
+
+        switch sub {
+        case "get":
+            return "OK \(DefaultAgentConfigStore.shared.current.defaultAgent.rawValue)"
+
+        case "set":
+            guard tokens.count == 2, let agent = AgentType(rawValue: tokens[1]) else {
+                let valid = AgentType.allCases.map(\.rawValue).joined(separator: ", ")
+                return "ERROR: usage: default_agent set <type> — valid types: \(valid)"
+            }
+            DefaultAgentConfigStore.shared.setDefaultAgent(agent)
+            return "OK \(agent.rawValue)"
+
+        case "launch":
+            var explicitAgent: AgentType? = nil
+            var paneArg: String? = nil
+            var i = 1
+            while i < tokens.count {
+                let t = tokens[i]
+                if t == "--agent", i + 1 < tokens.count {
+                    guard let parsed = AgentType(rawValue: tokens[i + 1]) else {
+                        return "ERROR: unknown agent type: \(tokens[i + 1])"
+                    }
+                    explicitAgent = parsed
+                    i += 2
+                } else if t == "--pane", i + 1 < tokens.count {
+                    paneArg = tokens[i + 1]
+                    i += 2
+                } else {
+                    i += 1
+                }
+            }
+
+            guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
+            var result = "ERROR: Failed to launch agent"
+            v2MainSync {
+                guard let tabId = tabManager.selectedTabId,
+                      let tab = tabManager.tabs.first(where: { $0.id == tabId }) else {
+                    return
+                }
+                let paneIds = tab.bonsplitController.allPaneIds
+                let resolvedPane: PaneID?
+                if let paneArg {
+                    if let uuid = UUID(uuidString: paneArg) {
+                        resolvedPane = paneIds.first(where: { $0.id == uuid })
+                    } else if let idx = Int(paneArg), idx >= 0, idx < paneIds.count {
+                        resolvedPane = paneIds[idx]
+                    } else {
+                        resolvedPane = nil
+                    }
+                } else {
+                    resolvedPane = tab.bonsplitController.focusedPaneId
+                }
+                guard let pane = resolvedPane else {
+                    result = "ERROR: Pane not found"
+                    return
+                }
+                tab.launchAgentSurface(inPane: pane, explicitAgent: explicitAgent)
+                result = "OK"
+            }
+            return result
+
+        default:
+            return "ERROR: unknown subcommand '\(sub)'. usage: default_agent {get|set|launch}"
+        }
+    }
+
+    /// `agent_config get <type>`                        → prints JSON: { command, initial_prompt, env_overrides }
+    /// `agent_config set <type> [--command "..."] [--initial-prompt "..."] [--env-overrides "KEY=val\nKEY=val"] [--reset]`
+    private func agentConfigCommand(_ args: String) -> String {
+        // Tokenize quoted-args style so multi-word values work.
+        let tokens = tokenizeArgs(args)
+        guard let sub = tokens.first else {
+            return "ERROR: usage: agent_config {get <type>|set <type> [--command \"…\"] [--initial-prompt \"…\"] [--env-overrides \"…\"] [--reset]}"
+        }
+
+        switch sub {
+        case "get":
+            guard tokens.count == 2, let agent = AgentType(rawValue: tokens[1]) else {
+                return "ERROR: usage: agent_config get <type>"
+            }
+            let entry = DefaultAgentConfigStore.shared.current.config(for: agent)
+            struct Out: Encodable {
+                let command: String
+                let initialPrompt: String
+                let envOverrides: String
+                enum CodingKeys: String, CodingKey {
+                    case command, initialPrompt = "initial_prompt", envOverrides = "env_overrides"
+                }
+            }
+            let out = Out(
+                command: entry.command,
+                initialPrompt: entry.initialPrompt,
+                envOverrides: entry.envOverridesText
+            )
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            guard let data = try? encoder.encode(out),
+                  let json = String(data: data, encoding: .utf8) else {
+                return "ERROR: failed to encode config"
+            }
+            return "OK \(json)"
+
+        case "set":
+            guard tokens.count >= 2, let agent = AgentType(rawValue: tokens[1]) else {
+                return "ERROR: usage: agent_config set <type> [flags]"
+            }
+            var newCommand: String? = nil
+            var newPrompt: String? = nil
+            var newEnv: String? = nil
+            var reset = false
+            var i = 2
+            while i < tokens.count {
+                let t = tokens[i]
+                if t == "--command", i + 1 < tokens.count {
+                    newCommand = tokens[i + 1]; i += 2
+                } else if t == "--initial-prompt", i + 1 < tokens.count {
+                    newPrompt = tokens[i + 1]; i += 2
+                } else if t == "--env-overrides", i + 1 < tokens.count {
+                    newEnv = tokens[i + 1]; i += 2
+                } else if t == "--reset" {
+                    reset = true; i += 1
+                } else {
+                    return "ERROR: unknown flag '\(t)'"
+                }
+            }
+            if reset {
+                DefaultAgentConfigStore.shared.update(agent) { $0 = .factory(for: agent) }
+                return "OK reset"
+            }
+            DefaultAgentConfigStore.shared.update(agent) { entry in
+                if let v = newCommand { entry.command = v }
+                if let v = newPrompt { entry.initialPrompt = v }
+                if let v = newEnv { entry.envOverridesText = v }
+            }
+            return "OK"
+
+        default:
+            return "ERROR: unknown subcommand '\(sub)'. usage: agent_config {get|set}"
+        }
     }
 
     deinit {

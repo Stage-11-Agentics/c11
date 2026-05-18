@@ -1,232 +1,153 @@
-# C11-14: Default terminal agent: launch a configured agent on new-terminal
+# C11-14: Default agent — what the per-pane A button launches
 
-Let the operator configure a **default terminal agent** for new terminal surfaces. When set, 'new terminal' boots directly into that agent (claude, codex, kimi, opencode, …) with a configured parameter set instead of dropping into bash. The bash experience is still available via an explicit 'new bash terminal' action.
+Single canonical setting for the A-button-launched agent, with c11's skill files lifted to a peer section. Terminals remain bash; the A button is the agent path. One way to do a given action.
 
 ## Motivation
 
-Surfaced while orchestrating C11-13: the delegator was launched via `claude --dangerously-skip-permissions` and quietly booted on Sonnet 4.6 because no `--model` was passed. The operator had no way to say 'every claude I launch in c11 should be Opus 4.7' without editing every prompt or wrapper. Most operators open dozens of terminals a day and want the same agent in the same shape every time.
+Surfaced while orchestrating C11-13: the delegator was launched via `claude --dangerously-skip-permissions` and quietly booted on Sonnet 4.6 because no `--model` was passed. More broadly, the operator had no single home for "what every agent I launch in c11 should be." `AgentLauncherSettings` partially served this for the A button, but its UI was thin (a picker only) and it didn't compose with project-level overrides or initial prompts.
 
-## Scope (first PR — confirmed with operator 2026-05-16)
+## Scope (final shape, ratified by the operator after two rounds of UX iteration)
 
-**In scope:**
+**In scope (delivered in this PR):**
 
-- Single editable default agent config (not multiple named presets — those are a follow-up).
-- Per-project `.c11/agents.json` override (project beats user).
-- Initial-prompt-on-launch field.
-- Per-workspace override via workspace metadata.
-- CLI flags `--agent` and `--bash` on `new-split`, `new-pane`, `new-surface`.
-- "New bash terminal" menu action that bypasses the default.
-- Settings panel section "Default terminal agent" with form fields for: agent type, model, extra args, initial prompt, cwd inherit/fixed, env overrides.
-- Localization of all new English strings + xcstrings sync for ja/uk/ko/zh-Hans/zh-Hant/ru.
-- Logic-only tests via `c11-logic` scheme: codec round-trip, resolution function under all precedence cases, project-config discovery.
+- New top-level Settings page **Agents** with the `a.circle` sidebar icon — matches the per-pane A button glyph so operators learn the correlation visually.
+- **`c11 skills`** section (renamed from the old "Agent Skills") moved above default agent. Helper text clarifies these are c11's skill files installed into each agent's skill folder (Claude Code, Codex, …).
+- **`default agent`** section with:
+  - Single picker `default agent: [Claude Code ▾]` over the five agent types (claude-code, codex, kimi, opencode, custom). Bash is intentionally not an option — terminals are the bash path.
+  - Per-agent subsection labeled `Agent Claude Code` / `Agent Codex` / … with three fields:
+    - `command` — editable shell line. Factory defaults: `claude --dangerously-skip-permissions`, `codex --yolo`, `kimi`, `opencode`, empty for custom. Per-agent help text reads `the shell line that runs when we launch the <agent name> agent. you can include any parameters to match your specification.`
+    - `initial prompt` — optional. Factory default for every built-in agent: `load the c11 skill`. Help: `optional. given to the agent immediately after it boots.`
+    - `▸ environment overrides — advanced users only` — disclosure triangle (custom Button + chevron because SwiftUI's `DisclosureGroup` misbehaved inside the c11 `SettingsCard`). Collapsed by default. Multi-line `KEY=value` editor; parsed at use time.
+  - `reset agent to defaults` button per-agent.
+- Agent-scoped notes above the card: `the A button on every pane launches this. new terminal still opens bash. drop a .c11/agents.json in any repo to override these settings for terminals opened there.`
+- **Per-project override** via `.c11/agents.json` at the repo root (walked upward from cwd, bounded 64 levels). File shape matches the user-level JSON blob.
+- **Right-click on the per-pane A button** shows the five agent types; selecting one updates the same `defaultAgent` field the Settings picker writes — operators can switch the default from inside a workspace without opening Settings.
+- **`AgentLauncherSettings` enum is gone.** All call sites (Workspace.launchAgentSurface, the tab-bar tooltip, AppDelegate workspace-plan launch path) read from `DefaultAgentConfigStore.shared` instead. One canonical store, no parallel UIs.
+- **Socket / CLI**: agents are first-class operators of this surface. New commands:
+  - `c11 default_agent get` — print current default agent type.
+  - `c11 default_agent set <type>` — change default; validates type.
+  - `c11 default_agent launch [--agent <type>] [--pane <id>]` — equivalent to clicking A; explicit agent overrides default for one launch.
+  - `c11 agent_config get <type>` — emits JSON `{ command, initial_prompt, env_overrides }`.
+  - `c11 agent_config set <type> [--command "…"] [--initial-prompt "…"] [--env-overrides "…"] [--reset]` — per-field updates or factory reset.
+- **`Automation` Settings page** (renamed from "Agents & Automation"): holds the leftover Permissions, Socket Access, and Agent Integrations sections.
+- 37 logic-only tests via the `c11-logic` scheme. Codec, factory defaults, store mutations, project-config discovery, resolver precedence (explicit agent > project default > user default; project per-agent > user per-agent), command builder (claude-code appends initial prompt as a single-quoted positional argument; other agents preserve the prompt in config but don't auto-append), sh-safe single-quote escape.
+- All new user-visible strings localized in brand voice (lowercase-leaning, action-verb-first, no em-dashes) and translated for ja / uk / ko / zh-Hans / zh-Hant / ru via `scripts/c11-14-add-localizations.py` (idempotent).
 
-**Deferred (open questions, follow-up tickets):**
+**Deferred (explicit follow-ups):**
 
 - Multiple named presets (`claude-opus`, `claude-haiku`, `codex-yolo` …).
-- Sub-agent lineage composition (does the default apply to sibling surfaces spawned by a delegator?).
-- A Settings UI for per-workspace override (this PR exposes per-workspace override via workspace metadata only; UI follows in a follow-up).
+- Sub-agent lineage composition (does the default apply to sibling surfaces a delegator spawns?).
+- Per-agent post-ready prompt delivery for codex / kimi / opencode (claude-code gets it via positional arg; others have varying TUI input contracts and we don't fake it with a herestring).
+- Workspace-level UI for forcing bash or a specific agent (the workspace metadata key `default_agent_use_bash` from an earlier iteration was dropped — terminals are bash, agents are the A button, no per-workspace fork needed yet).
 
 ## Design
 
-### Data model — `DefaultAgentConfig`
+### Data model
 
-A single `Codable` struct, persisted as a JSON blob in UserDefaults (user-level) and read from `.c11/agents.json` (project-level). Project beats user.
+`AgentType` enum (top-level, replaces the local `AgentLauncherSettings.Kind`):
+
+```swift
+enum AgentType: String, Codable, CaseIterable, Identifiable {
+    case claudeCode = "claude-code"
+    case codex
+    case kimi
+    case opencode
+    case custom
+
+    var displayName: String { … }   // localized
+    var factoryCommand: String { … } // built-in default
+    var factoryInitialPrompt: String { … } // "load the c11 skill" for everything except custom
+}
+```
+
+`AgentConfig` (per-agent slot):
+
+```swift
+struct AgentConfig: Codable, Equatable {
+    var command: String
+    var initialPrompt: String
+    var envOverridesText: String   // multi-line KEY=value
+    var envMap: [String: String] { … } // parsed at use time
+}
+```
+
+`DefaultAgentConfig` (the whole thing):
 
 ```swift
 struct DefaultAgentConfig: Codable, Equatable {
-    enum AgentType: String, Codable, CaseIterable {
-        case bash
-        case claudeCode = "claude-code"
-        case codex
-        case kimi
-        case opencode
-        case custom
-    }
-    enum CwdMode: String, Codable {
-        case inherit       // use TerminalController-computed cwd (default)
-        case fixed         // use `fixedCwd`
-    }
-
-    var agentType: AgentType   // .bash means "fall through to bash"
-    var customCommand: String  // used when agentType == .custom
-    var model: String          // free text; passed as `--model <value>` (or per-agent flag) when non-empty
-    var extraArgs: String      // free-text additional flags, appended as-is
-    var initialPrompt: String  // optional; piped via `<<<` if non-empty
-    var cwdMode: CwdMode
-    var fixedCwd: String       // used when cwdMode == .fixed
-    var envOverrides: [String: String]
+    var defaultAgent: AgentType
+    var agents: [AgentType: AgentConfig]
 }
 ```
 
-**File locations:**
+Singleton: `DefaultAgentConfigStore.shared`, backed by UserDefaults key `defaultTerminalAgentConfig.v2`. (v1 was the herestring-era shape from an earlier iteration — the feature has never been released so there is no migration.) The store auto-fills missing per-agent entries from factory at read time, so older / partial blobs don't break.
 
-- `Sources/DefaultAgentConfig.swift` — model + UserDefaults persistence helper (`DefaultAgentConfigStore.shared`).
-- `Sources/DefaultAgentResolver.swift` — pure resolution function.
-- `Sources/DefaultAgentProjectConfig.swift` — walks up from cwd looking for `.c11/agents.json`.
+### Resolver
 
-### Per-project `.c11/agents.json` discovery
+`DefaultAgentResolver.resolve(explicitAgent:, userDefault:, projectConfig:) -> (AgentType, ResolvedAgentLaunch)`:
 
-Walk up from cwd looking for `.c11/agents.json` (priority over user default). Mirrors the existing `WorkspaceBlueprintStore` walk pattern. File format identical to the UserDefaults JSON blob.
+1. Pick the agent: `explicitAgent` > `projectConfig?.defaultAgent` > `userDefault.defaultAgent`.
+2. Pick the per-agent config: `projectConfig?.agents[agent]` > `userDefault.config(for: agent)`.
+3. Build the launch command. For `claude-code` with a non-empty initial prompt, the prompt is appended as a single-quoted positional argument (`claude --dangerously-skip-permissions 'load the c11 skill'` — claude accepts that shape). For other agents the prompt is preserved in config but not auto-appended; operators who want it can include it inline via `command`.
+4. Return env overrides parsed from the `KEY=value` lines.
 
-If the file exists and parses, it wins; otherwise fall back to user default.
+### Launch path
 
-### Resolution function — `DefaultAgentResolver.resolve(...)`
+`Workspace.launchAgentSurface(inPane:explicitAgent:)`:
 
-```swift
-struct ResolvedAgent {
-    let command: String?       // nil → bash (no initialCommand)
-    let envOverrides: [String: String]
-    let workingDirectory: String?  // nil → inherit
-}
+1. Resolve via the function above. `projectConfig` is found by walking up from the focused panel's cwd (`Workspace.resolverCwdForAgentLaunch()`).
+2. Create a new terminal panel via `newTerminalSurface(inPane:startupEnvironment:)`. Env from the resolver flows into Ghostty as additional environment at process spawn.
+3. After the panel exists, `panel.sendText(command + "\n")` — same queue-until-ready pattern as the welcome workspace. Bash receives the launch command and execs the agent.
 
-static func resolve(
-    explicitAgent: String?,     // from `--agent <name>` flag
-    forceBash: Bool,            // from `--bash` flag
-    workspaceOverride: WorkspaceAgentOverride,
-    userDefault: DefaultAgentConfig,
-    projectConfig: DefaultAgentConfig?
-) throws -> ResolvedAgent
-```
-
-**Precedence (highest wins):**
-
-1. `--bash` → `command = nil` (always bash, period).
-2. `--agent <name>` → for now, only `default` is recognized; others reserved for follow-up. Unknown name → throw.
-3. workspace metadata `workspace.use_bash` = `true` → bash.
-4. workspace metadata `workspace.default_agent_inline` (Codable JSON) → use that config.
-5. project `.c11/agents.json` → use that config.
-6. user default → use that config.
-7. If the chosen config's `agentType == .bash` → bash (initialCommand = nil).
-
-Command builder for non-bash types:
-- claude-code: `claude` + (model? `--model 'model'` : '') + (extraArgs) + (initialPrompt? `<<< 'prompt'` : '')
-- codex: `codex` + same shape
-- kimi / opencode: same shape (binary name + args)
-- custom: `customCommand` + (extraArgs) + (initialPrompt as `<<<` here-string)
-
-The wrappers under `Resources/bin/` already handle session-id capture; we don't touch them.
-
-### CLI flags
-
-Add `--agent=<name>` and `--bash` parsing to:
-
-- `TerminalController.newSurface(_:)` at TerminalController.swift:18697
-- `TerminalController.newSplit(_:)` at TerminalController.swift:15358
-- `TerminalController.newPane(_:)` at TerminalController.swift:17158
-
-Default (no flags) = consult precedence chain. With `--bash`, always bash. With `--agent=default`, use the precedence chain's resolved non-bash config.
-
-### Workspace plumbing
-
-Extend `Workspace.newTerminalSurface(...)` and `Workspace.newTerminalSplit(...)` to accept an optional `agentOverride: ResolvedAgent?` parameter. When non-nil, replace `remoteTerminalStartupCommand` and add env overrides + working dir. When nil, use the current behavior.
-
-`TabManager.newSurface()` gains an optional `forceBash:` and consults `DefaultAgentResolver` internally for menu-driven creation.
+The bash / Ghostty startup-command path is preserved for remote-relay startup commands (`remoteTerminalStartupCommand()`); agent launches sit on top of that, not in place of it.
 
 ### Settings UI
 
-New `SettingsNavigationTarget.defaultTerminalAgent` case. The page is a single `Form` with:
+`Sources/DefaultAgentSettingsView.swift` — self-contained `DefaultAgentSettingsSection` view with a `DefaultAgentSettingsViewModel` that:
 
-- Agent type picker (Bash, Claude Code, Codex, Kimi, OpenCode, Custom).
-- Model text field.
-- Extra arguments text field.
-- Initial prompt multiline text area.
-- Cwd mode picker (Inherit, Fixed) + conditional fixed-path field.
-- Env overrides editable list (rows of key + value).
-- Custom command text field (visible when agent type == Custom).
+- Binds the picker to the store's `defaultAgent` field. Switching the picker writes through immediately and also flips the visible per-agent fields to that agent.
+- Loads per-agent fields from the store on `editingAgent` changes. Persists field edits back via `store.update(_:_:)`.
+- The env disclosure uses a plain `Button` with chevron + `if showEnvOverrides { … }` because `DisclosureGroup` was misbehaving inside the c11 `SettingsCard` wrapper (the screenshot showed the editor rendered while the chevron read collapsed).
 
-All strings via `String(localized:)`. Persist via `DefaultAgentConfigStore.shared.save(_:)` on change.
+### Sidebar split
 
-### Menu wiring
+`SettingsPage` gets a new `case agents` (icon `a.circle`, second in the order after `general`) and renames `agentsAutomation → automation`. The page builder splits into two:
 
-Add **"New Bash Terminal"** menu item in `c11App.swift` (near the existing "New Surface" block) that calls into the bash path. The existing "New Surface" / "Split Right" / "Split Down" items resolve via the precedence chain.
+- `agentsSettingsPage`: c11 skills, then default agent.
+- `automationSettingsPage`: permissions, socket access, agent integrations (unchanged content, separate home).
 
-### Per-workspace override
+### Tests
 
-A workspace can carry one of two metadata keys:
+`c11Tests/DefaultAgentConfigTests.swift` + `c11Tests/DefaultAgentResolverTests.swift` — 37 logic-only tests on the `c11-logic` scheme. Cover factory defaults, lenient decode, env parsing (blank lines, comments, whitespace), store mutations including the "fills missing agents with factory" path, project-config discovery (present, missing, malformed, deep walk), resolver precedence, command-builder per agent type, sh-safe single-quote escaping. Registered in both `c11Tests` and `c11LogicTests` source build phases via `scripts/c11-14-register-files.rb` (idempotent).
 
-- `workspace.use_bash` = `"true"` → forces bash regardless of user default.
-- `workspace.default_agent_inline` = JSON blob of `DefaultAgentConfig` → overrides user default.
+## Plan-review history
 
-Set via the existing `c11 set-metadata --workspace <id> --key <key> --value <value>`. No UI for this in the first PR; documented in release notes / skill.
+The original plan (UserDefaults JSON blob + bash-default-on-T-button + `--bash` flag + herestring stdin for the prompt) was reshaped twice based on plan-review feedback and operator UX redlines:
 
-### Localization
+- **v1 plan-review (triple, claude + codex) returned FAIL** on launch semantics. Fix: switched from Ghostty `initialCommand` startup hook to post-ready `sendText`. Dropped the `<<<` herestring (closed-stdin footgun for interactive TUIs). Pinned shell-quoting model. Reconciled with `AgentLauncherSettings` (initially kept side-by-side; ultimately replaced entirely). Dropped `--agent` CLI flag (named presets deferred).
+- **Operator UX iteration** (2026-05-17→18): drop bash from the default-agent picker (T is for terminals, A is for agents — one way to do a given action). Drop the working-directory + model + extra-args fields; the launch command is the whole shell line and the operator authors it. Make per-agent heading `Agent <name>`. Make env overrides advanced-users-only and properly clickable. Move c11 skills above default agent. Promote Agents to its own Settings page with the `a.circle` icon. Default the initial-prompt field to `load the c11 skill` so first-launch agents already know about c11.
 
-All new strings via `String(localized:)` with English `defaultValue:`. After implementation, a translator sub-agent syncs `Resources/Localizable.xcstrings` for ja, uk, ko, zh-Hans, zh-Hant, ru.
+The shape that landed is materially different from the original plan — and materially better. Plan-review caught the launch-semantics issues that would have shipped subtly broken behavior; the operator UX rounds collapsed five fields into two and gave the feature a proper sidebar home.
 
-### Tests (c11-logic only)
+## Files
 
-`c11Tests/DefaultAgentConfigTests.swift` and `c11Tests/DefaultAgentResolverTests.swift` (logic target):
+| File | Change |
+|------|--------|
+| `Sources/DefaultAgentConfig.swift` | model + store (new shape: `AgentType` + `AgentConfig` + `DefaultAgentConfig`) |
+| `Sources/DefaultAgentResolver.swift` | resolver + command builder |
+| `Sources/DefaultAgentProjectConfig.swift` | `.c11/agents.json` upward walk |
+| `Sources/DefaultAgentSettingsView.swift` | Settings section view + view-model |
+| `Sources/c11App.swift` | new `agents` Settings page + sidebar entry + page builder split; old `AgentLauncherSettings` enum + section deleted |
+| `Sources/Workspace.swift` | `launchAgentSurface` reads from new store; right-click menu reads/writes new store; tooltip updated |
+| `Sources/AppDelegate.swift` | workspace-plan launch path reads from new resolver |
+| `Sources/TerminalController.swift` | new socket commands `default_agent` + `agent_config` |
+| `Resources/Localizable.xcstrings` | new strings (en + ja/uk/ko/zh-Hans/zh-Hant/ru) |
+| `c11Tests/DefaultAgentConfigTests.swift` | 23 tests (factory, codec, env, store, project discovery) |
+| `c11Tests/DefaultAgentResolverTests.swift` | 14 tests (precedence, command builder, escaping, env passthrough) |
+| `scripts/c11-14-register-files.rb` | idempotent xcodeproj membership for new sources + tests |
+| `scripts/c11-14-add-localizations.py` | idempotent string-catalog authoring |
 
-- Codec round-trip.
-- Resolver precedence under all 7 source combinations.
-- Project config discovery: file present → parsed; file missing → nil; malformed JSON → nil; deep nested cwd walks upward.
-- Command builder: covers each agent type, with/without model, with/without initialPrompt, with/without extraArgs, single-quote escaping in initial prompt.
-- Cwd resolution: inherit → nil, fixed → path, fixed-empty → nil.
+## Out of scope
 
-UI/event-path code (Settings view, menu items, CLI flag plumbing) is exercised via the standard `xcodebuild build` + tagged-reload iteration loop and validated via CI's `c11-unit` scheme on the PR.
-
-## File-level change list
-
-| File | Change | New / Modify |
-|------|--------|--------------|
-| `Sources/DefaultAgentConfig.swift` | model + UserDefaults store | New |
-| `Sources/DefaultAgentResolver.swift` | resolution function + command builder | New |
-| `Sources/DefaultAgentProjectConfig.swift` | `.c11/agents.json` walk | New |
-| `Sources/DefaultAgentSettingsView.swift` | Settings UI page | New |
-| `Sources/c11App.swift` | wire SettingsNavigationTarget + page + menu item | Modify |
-| `Sources/TerminalController.swift` | `--agent` / `--bash` parsing in newSplit/newPane/newSurface | Modify |
-| `Sources/Workspace.swift` | accept agent override in newTerminalSurface/Split | Modify |
-| `Sources/TabManager.swift` | `forceBash:` in newSurface, propagate override | Modify |
-| `Resources/Localizable.xcstrings` | English entries (translator pass after impl) | Modify |
-| `c11Tests/DefaultAgentConfigTests.swift` | codec + persistence + project-config tests | New |
-| `c11Tests/DefaultAgentResolverTests.swift` | resolver precedence + builder + cwd tests | New |
-| `scripts/c11-14-register-files.rb` | idempotent xcodeproj registration | New |
-
-## Implementation order
-
-1. **Data model + resolver + tests** (logic-only, no UI). Get the core right first; CI can run logic tests locally via `c11-logic` scheme. ✅
-2. **CLI flag parsing**. Add `--agent` / `--bash` to all three socket handlers. Wire to the resolver.
-3. **Workspace plumbing**. Thread the resolved command/env/cwd through `Workspace.newTerminalSurface` and `newTerminalSplit`.
-4. **Menu wiring**. Add "New Bash Terminal" item + connect.
-5. **Settings UI**. Add the page; bind to the store.
-6. **Localization sync**. Translator sub-agent.
-7. **PR**. Open via gh, paste URL.
-
-## Out of scope (explicit, surfaced in PR body)
-
-- Multiple named presets — follow-up.
-- Sub-agent lineage composition — follow-up.
-- Per-workspace UI — follow-up; this PR exposes the override only via workspace metadata + CLI.
-- `c11 install <tui>` — explicitly rejected by CLAUDE.md (c11 is unopinionated about TUI config); we do not write into `~/.claude/`, `~/.codex/`, etc.
-
-## Risk register
-
-- **Typing-latency hot paths** (`WindowTerminalHostView.hitTest`, `TabItemView`, `TerminalSurface.forceRefresh`). None of this work touches them. No new allocations on the keystroke path.
-- **Socket command threading**. CLI parsing is pure string work, off-main. The actual terminal creation goes through `v2MainSync` as today.
-- **Localization regression**. Six translations need syncing; the translator sub-agent pattern is well-established.
-- **Tests must run via `c11-logic` scheme locally**. Per CLAUDE.md, never run `xcodebuild test` on the host scheme locally; the full host suite goes to CI.
-- **Submodule pointer**. The c11 main's `vendor/bonsplit` SHA is `f765de29` — keep the submodule synced (the working tree was checked out at an earlier SHA initially and produced compile errors that vanished after `git submodule update`).
-
-## Notes on the abandoned branches
-
-- `c11-14/phase-1-followup` (PR #78, merged 2026-04-26) and `c11-14/stage-3-full-primitive` (local-only, base in old main) carried the C11-14 prefix but were CMUX-37 workspace-snapshot work, not default-terminal-agent work. The ticket was orphaned in commit `ec4e69472`. Starting fresh from `main` on branch `c11-14/default-terminal-agent`.
-
-## Plan-review v1 response (2026-05-16)
-
-Auto-fired triple plan-review verdict: FAIL (plan-level). Concrete issues addressed in-implementation rather than via plan rewrite + re-review:
-
-- **CRITICAL — herestring stdin for interactive TUIs**: launch mechanism switched from Ghostty `initialCommand` startup hook to `TerminalPanel.sendText(command + "\n")` *after* the panel is created. Matches the existing `AgentLauncherSettings.launchAgentSurface` + welcome-workspace pattern: the operator's login shell stays alive, the agent runs as a child, quitting the agent leaves the shell. Initial-prompt herestring removed: claude-code appends `initialPrompt` as a single-quoted positional argument; other agents preserve the field in config but do not auto-append (different TUIs have different delivery contracts — codex specifically ignores piped stdin per CLAUDE.md). Operators who want a per-agent prompt today can put it inline via `extraArgs`.
-- **CRITICAL — test-target placement**: `scripts/c11-14-register-files.rb` adds the new test files to **both** `c11Tests` and `c11LogicTests` source phases. `xcodebuild -scheme c11-logic` includes them. Verified locally via the c11-logic scheme.
-- **CRITICAL — shell quoting**: execution model pinned to **shell-string-shaped** (passed via `sendText` into the login shell, which is the existing `AgentLauncherSettings` contract). `extraArgs: String` is parsed by the shell as the operator typed it. `model` is single-quoted; `initialPrompt` (claude-code path only) is single-quoted with the standard `'\''` escape. Tests cover spaces, embedded single quotes, empty fields.
-- **MAJOR — AgentLauncherSettings reconciliation**: kept separate as a deliberate UX call. The "A" button is a per-pane quick-launch shortcut (operator clicks A → instant agent in that pane). DefaultAgentConfig is "what every new terminal opens with." The settings card carries a note explicitly distinguishing them. Unification into one canonical agent-default model is a follow-up.
-- **MAJOR — remote-terminal interaction**: policy pinned. `Workspace.newTerminalSurface`/`newTerminalSplit` still pass `remoteTerminalStartupCommand()` to the Ghostty startup hook. The agent command (when non-nil) is delivered via `sendText` *after* the relay startup command runs, so remote workspaces compose: relay first, then operator's agent. `trackRemoteTerminalSurface` continues to fire only when `initialCommand != nil` (i.e. only for the relay path), which is the historical behavior.
-- **MAJOR — `newTerminalSurfaceInFocusedPane` plumbing**: extended to take `agentOverride: ResolvedAgent? = nil`. The menu's "New Terminal" path now resolves via the workspace before calling `newTerminalSurfaceInFocusedPane(focus:agentOverride:)`.
-- **MAJOR — `--agent` semantics**: dropped from the first PR. Only `--bash` is wired on `new-split`, `new-pane`, `new-surface`. The resolver still accepts `explicitAgent: String?` (and the test for "default" / unknown names is preserved) for the named-presets follow-up.
-- **MAJOR — cwd disambiguation**: every call path uses the same `Workspace.resolverCwdForNewSurface()` (focused panel's directory → workspace `currentDirectory` → process cwd). Documented inline.
-- **MINOR — JSON-in-metadata blob**: dropped `workspace.default_agent_inline`. Only `workspace.default_agent_use_bash` is recognized; richer inline workspace config is a follow-up (likely via `.c11/blueprints/`-style file rather than a metadata string).
-- **MINOR — `.cmux/agents.json` legacy**: intentionally NOT checked. This feature is c11-only.
-- **MINOR — `CwdMode` resolver collapse**: documented. The two-field shape (`cwdMode` + `fixedCwd`) is preserved in the Settings UI layer for clean form ergonomics; `DefaultAgentResolver.resolve(...)` collapses them to a single `workingDirectory: String?` for downstream code.
-- **MINOR — menu wording**: "New Bash Terminal" lands as a fourth Button alongside "New Terminal", "New Browser", "New Markdown". No keyboard shortcut in this PR (avoids collision with any future shift-cmd-T binding).
-- **MINOR — AgentDetector / AgentChip / AgentRestartRegistry**: launched-agent processes are detected via the normal AgentDetector path; the existing `Resources/bin/claude` wrapper calls `c11 set-agent` and provides session-id capture. No new code needed here. Manual chip + restart validation lands during PR review.
-
-The plan-review's CRITICAL findings around launch semantics turned out to be the most important — they reshaped the implementation from "pass a shell command to the terminal as a startup hook" (which would have broken every interactive TUI in subtle ways) to "open a login shell, then type the launch command into it." That's the right shape and matches what already works elsewhere in c11.
+- `c11 install <tui>` — rejected by design (c11 stays unopinionated about TUI config; we don't write into `~/.claude/`, `~/.codex/`, …).
+- A workspace-level "force bash" or "force claude" override — fell out of scope when T was confirmed as always-bash. Per-project `.c11/agents.json` already covers the repo-tagged use case.

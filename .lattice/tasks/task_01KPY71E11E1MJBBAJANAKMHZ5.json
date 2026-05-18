@@ -28,10 +28,25 @@
       "id": "art_01KRSB8H4RC55WPJXGB0MW58J2",
       "role": "review",
       "source_type": "artifact"
+    },
+    {
+      "id": "art_01KRSB9ZB2EM9S32RBE7ZN000T",
+      "role": "review-individual",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KRSB9ZDZ584SJDGNKZT6JDFD",
+      "role": "review-individual",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KRSBD8SKVATPNWV28SNRK7ZY",
+      "role": "plan-review",
+      "source_type": "artifact"
     }
   ],
   "id": "task_01KPY71E11E1MJBBAJANAKMHZ5",
-  "last_event_id": "ev_01KRSB8H4VCT9BPVCVSJQPKCB8",
+  "last_event_id": "ev_01KRSBD8SNRVMAC75370P3AFSM",
   "last_status_changed_at": "2026-05-16T21:31:50Z",
   "linked_files": [],
   "priority": "low",
@@ -43,6 +58,6 @@
   "tags": null,
   "title": "Default terminal agent: launch a configured agent on new-terminal",
   "type": "task",
-  "updated_at": "2026-05-16T21:32:15Z",
+  "updated_at": "2026-05-16T21:34:50Z",
   "urgency": null
 }

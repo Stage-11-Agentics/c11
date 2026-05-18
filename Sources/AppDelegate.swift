@@ -2084,6 +2084,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var splitButtonTooltipRefreshScheduled = false
     private var ghosttyConfigObserver: NSObjectProtocol?
     private var appearanceObservation: NSKeyValueObservation?
+    private var helpMenuStripObserver: NSObjectProtocol?
+    private var helpMenuSink: NSMenu?
     private var ghosttyGotoSplitLeftShortcut: StoredShortcut?
     private var ghosttyGotoSplitRightShortcut: StoredShortcut?
     private var ghosttyGotoSplitUpShortcut: StoredShortcut?
@@ -2508,6 +2510,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         NSWindow.allowsAutomaticWindowTabbing = false
         disableNativeTabbingShortcut()
         installGhosttySettingsMenuItem()
+        removeHelpMenu()
         if !isRunningUnderXCTest {
             configureUserNotifications()
             installMenuBarVisibilityObserver()
@@ -5971,7 +5974,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             injected.workspace.title = trimmed
         }
         if launchAgent {
-            let command = AgentLauncherSettings.current().shellCommand
+            let userDefault = DefaultAgentConfigStore.shared.current
+            let projectConfig = DefaultAgentProjectConfig.find(from: workingDirectory)
+            let resolved = DefaultAgentResolver.resolve(
+                explicitAgent: nil,
+                userDefault: userDefault,
+                projectConfig: projectConfig
+            )
+            let command = resolved.launch.command
             if let idx = injected.surfaces.firstIndex(where: { surface in
                 surface.kind == .terminal && (surface.command?.isEmpty ?? true)
             }) {
@@ -11615,6 +11625,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 disableMenuItemShortcut(in: submenu, action: action)
             }
         }
+    }
+
+    // SwiftUI's `CommandGroup(replacing: .help) { }` empties the Help menu's
+    // contents but AppKit still injects a Help menu with the auto-search
+    // field whenever NSApp.helpMenu is nil. Suppress that auto-injection by
+    // assigning a non-nil dummy menu, and strip any Help container SwiftUI
+    // hands us on every applicationDidUpdate tick.
+    private func removeHelpMenu() {
+        if helpMenuSink == nil { helpMenuSink = NSMenu(title: "") }
+        NSApp.helpMenu = helpMenuSink
+        stripHelpMenuItem()
+        helpMenuStripObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didUpdateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.stripHelpMenuItem()
+        }
+    }
+
+    private func stripHelpMenuItem() {
+        NSApp.helpMenu = nil
+        guard let mainMenu = NSApp.mainMenu else {
+#if DEBUG
+            dlog("helpstrip mainMenu=nil")
+#endif
+            return
+        }
+#if DEBUG
+        let titles = mainMenu.items.map { "\($0.title)|sub=\($0.submenu?.title ?? "nil")" }.joined(separator: ",")
+        dlog("helpstrip titles=\(titles)")
+#endif
+        var removed = 0
+        for item in mainMenu.items where item.submenu?.title == "Help" || item.title == "Help" {
+            mainMenu.removeItem(item)
+            removed += 1
+        }
+#if DEBUG
+        dlog("helpstrip removed=\(removed)")
+#endif
     }
 
     private func installGhosttySettingsMenuItem() {

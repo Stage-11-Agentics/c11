@@ -25,6 +25,14 @@
     <MacroExpansion>
       <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="A5001050" BuildableName="c11.app" BlueprintName="c11" ReferencedContainer="container:GhosttyTabs.xcodeproj"/>
     </MacroExpansion>
+    <EnvironmentVariables>
+      <!-- C11-99 Area B: belt-and-braces alongside the SocketControlSettings
+           runtime guard. CMUX_TAG forces the XCTest host onto its own
+           /tmp/c11-debug-local-xctest.sock instead of the shared
+           /tmp/c11-debug.sock the operator's c11 DEV.app owns. Survives
+           even if a future scheme caller bypasses the runtime guard. -->
+      <EnvironmentVariable key="CMUX_TAG" value="local-xctest" isEnabled="YES"/>
+    </EnvironmentVariables>
   </TestAction>
   <LaunchAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.DebuggerFoundation.Launcher.LLDB" launchStyle="0" useCustomWorkingDirectory="NO" ignoresPersistentStateOnLaunch="YES" debugDocumentVersioning="YES" allowLocationSimulation="YES">
     <BuildableProductRunnable runnableDebuggingMode="0">

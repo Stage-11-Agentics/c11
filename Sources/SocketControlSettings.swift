@@ -426,14 +426,25 @@ struct SocketControlSettings {
         bundleIdentifier: String? = Bundle.main.bundleIdentifier,
         isDebugBuild: Bool = SocketControlSettings.isDebugBuild,
         currentUserID: uid_t = getuid(),
-        probeStableDefaultPathEntry: (String) -> StableDefaultSocketPathEntry = inspectStableDefaultSocketPathEntry
+        probeStableDefaultPathEntry: (String) -> StableDefaultSocketPathEntry = inspectStableDefaultSocketPathEntry,
+        processIdentifier: pid_t = getpid()
     ) -> String {
-        let fallback = defaultSocketPath(
+        var fallback = defaultSocketPath(
             bundleIdentifier: bundleIdentifier,
             isDebugBuild: isDebugBuild,
             currentUserID: currentUserID,
             probeStableDefaultPathEntry: probeStableDefaultPathEntry
         )
+
+        // C11-99 Area B: when launched by xcodebuild test, the XCTest host runs as the
+        // untagged c11 DEV.app (bundle id com.stage11.c11.debug) and would otherwise
+        // bind /tmp/c11-debug.sock — the same path the operator's running c11 DEV.app
+        // uses. On teardown the test host unlinks the socket, killing the operator's
+        // c11 socket. Detect XCTest via XCTestConfigurationFilePath and isolate per-PID.
+        if environment["XCTestConfigurationFilePath"] != nil,
+           fallback == "/tmp/c11-debug.sock" {
+            fallback = "/tmp/c11-test-\(processIdentifier).sock"
+        }
 
         if let taggedDebugPath = taggedDebugSocketPath(
             bundleIdentifier: bundleIdentifier,

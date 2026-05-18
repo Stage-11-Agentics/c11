@@ -139,7 +139,12 @@ c11 has two unit-test targets. The split is the whole point of C11-27.
 
   Expected wall time on a warm cache: around 30 seconds, dominated by `xcodebuild`'s ~10–15 s of inherent overhead rather than test execution (the test phase itself is ~5–10 s for 74 tests). Compare to the host scheme's ~35 s, where most of the gap is the DEV.app launch. **First invocation after a clean checkout pays the c11 app build cost** (multi-minute) because `c11-logic` depends on the `c11` target — Strategy B needs `c11.debug.dylib` available for the test bundle's `BUNDLE_LOADER` + rpath. Subsequent warm-build runs are ~30 s. Use this for any iteration on Mailbox, Theme, Workspace snapshot, Health parser, CLI runtime, persistence, and parser code.
 
-- **`c11Tests` (scheme: `c11-unit`)** — host-required. Spawns a `c11 DEV.app` XCTest host whose main thread is monopolized for ~22 s and whose window beachballs until the run completes (per the 2026-05-15 PR #164 incident — confirmed not to affect the operator's main c11 process, only the freshly-spawned test host). **Do not run locally.** Send to CI via GitHub Actions. The `c11-unit` scheme builds both targets but its TestAction runs both `c11Tests` and `c11LogicTests` sequentially in one invocation.
+- **`c11Tests` (scheme: `c11-unit`)** — host-required. Spawns a `c11 DEV.app` XCTest host whose main thread is monopolized for ~22 s and whose window beachballs until the run completes. The host previously stomped the operator's running c11 by binding (and on teardown, unlinking) `/tmp/c11-debug.sock`; C11-99 Area B added a per-PID socket guard in `SocketControlSettings.socketPath()` keyed on `XCTestConfigurationFilePath`, plus a `CMUX_TAG=local-xctest` env var on the scheme's TestAction, plus a `scripts/test-unit-local.sh` wrapper that exports a per-PID `CMUX_SOCKET_PATH`. **Use `scripts/test-unit-local.sh` for local c11-unit iteration** — it's safe to run with `/Applications/c11.app` and a `c11 DEV.app` already running. CI still drives the full host-bound suite via `ci.yml`. The `c11-unit` scheme builds both targets but its TestAction runs both `c11Tests` and `c11LogicTests` sequentially in one invocation.
+
+  ```
+  scripts/test-unit-local.sh                                             # full c11-unit
+  scripts/test-unit-local.sh -only-testing:c11Tests/<Class>/<test>       # narrow slice
+  ```
 
   Schemes that build c11-unit (or `c11-ci`) without the `test` action are safe — they only compile.
 

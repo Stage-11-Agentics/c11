@@ -681,3 +681,77 @@ final class SkillInstallerPackageVersionTests: XCTestCase {
         XCTAssertEqual(packages.first?.version, "7")
     }
 }
+
+// MARK: - C11-99 Area B: XCTest socket-path isolation
+
+/// Covers the `socketPath()` resolver behavior when launched by `xcodebuild
+/// test`. The XCTest host runs as the untagged c11 DEV.app (bundle id
+/// `com.stage11.c11.debug`) with a clean environment — no `CMUX_TAG`, no
+/// `CMUX_SOCKET_PATH`. Without isolation, the resolver returned the shared
+/// `/tmp/c11-debug.sock` path the operator's running c11 DEV.app already owned;
+/// on test-host teardown the socket file was `unlink()`'d, killing the
+/// operator's socket. C11-99 Area B added a per-PID fallback gated on
+/// `XCTestConfigurationFilePath` being in env.
+final class SocketControlSettingsXCTestIsolationTests: XCTestCase {
+    private static let xctestEnv = ["XCTestConfigurationFilePath": "/tmp/some-xctest-config.xctestconfiguration"]
+
+    func testUntaggedDebugHostUnderXCTestReturnsPerPIDSocket() {
+        let path = SocketControlSettings.socketPath(
+            environment: Self.xctestEnv,
+            bundleIdentifier: "com.stage11.c11.debug",
+            isDebugBuild: true,
+            processIdentifier: 12345
+        )
+        XCTAssertEqual(path, "/tmp/c11-test-12345.sock")
+    }
+
+    func testUntaggedDebugHostWithoutXCTestStillUsesSharedDebugSocket() {
+        let path = SocketControlSettings.socketPath(
+            environment: [:],
+            bundleIdentifier: "com.stage11.c11.debug",
+            isDebugBuild: true,
+            processIdentifier: 12345
+        )
+        XCTAssertEqual(path, "/tmp/c11-debug.sock")
+    }
+
+    func testTaggedDebugHostUnderXCTestStillHonorsTaggedPath() {
+        let env = Self.xctestEnv.merging(["CMUX_TAG": "scenario"]) { current, _ in current }
+        let path = SocketControlSettings.socketPath(
+            environment: env,
+            bundleIdentifier: "com.stage11.c11.debug",
+            isDebugBuild: true,
+            processIdentifier: 12345
+        )
+        XCTAssertEqual(path, "/tmp/c11-debug-scenario.sock")
+    }
+
+    func testExplicitSocketOverrideUnderXCTestStillWins() {
+        let env = Self.xctestEnv.merging([
+            "CMUX_SOCKET_PATH": "/tmp/c11-test-explicit.sock",
+            "CMUX_ALLOW_SOCKET_OVERRIDE": "1"
+        ]) { current, _ in current }
+        let path = SocketControlSettings.socketPath(
+            environment: env,
+            bundleIdentifier: "com.stage11.c11.debug",
+            isDebugBuild: true,
+            processIdentifier: 12345
+        )
+        XCTAssertEqual(path, "/tmp/c11-test-explicit.sock")
+    }
+
+    func testStableBundleUnderXCTestDoesNotForcePerPIDFallback() {
+        // The stable bundle resolves to ~/Library/Application Support/c11/...
+        // not the shared /tmp/c11-debug.sock, so the XCTest guard is a no-op
+        // for that path. Production c11.app launched under XCTest stays put.
+        let path = SocketControlSettings.socketPath(
+            environment: Self.xctestEnv,
+            bundleIdentifier: "com.stage11.c11",
+            isDebugBuild: false,
+            probeStableDefaultPathEntry: { _ in .missing },
+            processIdentifier: 12345
+        )
+        XCTAssertNotEqual(path, "/tmp/c11-test-12345.sock")
+        XCTAssertNotEqual(path, "/tmp/c11-debug.sock")
+    }
+}

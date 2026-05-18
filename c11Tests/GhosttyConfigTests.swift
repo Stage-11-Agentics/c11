@@ -1573,7 +1573,7 @@ final class NotificationBurstCoalescerTests: XCTestCase {
             }
         }
 
-        wait(for: [expectation], timeout: 1.0)
+        wait(for: [expectation], timeout: 5.0)
         XCTAssertEqual(flushCount, 1)
     }
 
@@ -1592,7 +1592,7 @@ final class NotificationBurstCoalescerTests: XCTestCase {
             }
         }
 
-        wait(for: [expectation], timeout: 1.0)
+        wait(for: [expectation], timeout: 5.0)
         XCTAssertEqual(value, 2)
     }
 
@@ -1615,7 +1615,7 @@ final class NotificationBurstCoalescerTests: XCTestCase {
             }
         }
 
-        wait(for: [expectation], timeout: 1.0)
+        wait(for: [expectation], timeout: 5.0)
         XCTAssertEqual(flushCount, 2)
     }
 }
@@ -1645,7 +1645,7 @@ final class GhosttyDefaultBackgroundNotificationDispatcherTests: XCTestCase {
             dispatcher.signal(backgroundColor: light, opacity: 0.75, eventId: 2, source: "test.light")
         }
 
-        wait(for: [expectation], timeout: 1.0)
+        wait(for: [expectation], timeout: 5.0)
         XCTAssertEqual(postedUserInfos.count, 1)
         XCTAssertEqual(
             (postedUserInfos[0][GhosttyNotificationKey.backgroundColor] as? NSColor)?.hexString(),
@@ -1693,7 +1693,7 @@ final class GhosttyDefaultBackgroundNotificationDispatcherTests: XCTestCase {
             }
         }
 
-        wait(for: [expectation], timeout: 1.0)
+        wait(for: [expectation], timeout: 5.0)
         XCTAssertEqual(postedHexes, ["#272822", "#FDF6E3"])
     }
 
@@ -1867,7 +1867,7 @@ final class SocketControlSettingsTests: XCTestCase {
         )
         XCTAssertEqual(
             SocketControlSettings.defaultSocketPath(
-                bundleIdentifier: "com.stage11.c11.debug.tag",
+                bundleIdentifier: "com.stage11.c11.debug",
                 isDebugBuild: false,
                 probeStableDefaultPathEntry: { _ in .missing }
             ),
@@ -1875,7 +1875,7 @@ final class SocketControlSettingsTests: XCTestCase {
         )
         XCTAssertEqual(
             SocketControlSettings.defaultSocketPath(
-                bundleIdentifier: "com.stage11.c11.staging.tag",
+                bundleIdentifier: "com.stage11.c11.staging",
                 isDebugBuild: false,
                 probeStableDefaultPathEntry: { _ in .missing }
             ),

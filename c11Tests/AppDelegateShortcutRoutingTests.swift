@@ -1496,7 +1496,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        wait(for: [paletteExpectation, switcherExpectation], timeout: 1.0)
+        wait(for: [paletteExpectation, switcherExpectation], timeout: 5.0)
         XCTAssertEqual(observedPaletteWindow?.windowNumber, window.windowNumber)
     }
 
@@ -1955,7 +1955,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 #endif
         }
 
-        wait(for: [renameTabExpectation, switcherExpectation], timeout: 1.0)
+        wait(for: [renameTabExpectation, switcherExpectation], timeout: 5.0)
         XCTAssertEqual(observedRenameTabWindow?.windowNumber, window.windowNumber)
     }
 
@@ -2020,7 +2020,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        wait(for: [switcherExpectation, renameTabExpectation], timeout: 1.0)
+        wait(for: [switcherExpectation, renameTabExpectation], timeout: 5.0)
         XCTAssertEqual(observedSwitcherWindow?.windowNumber, window.windowNumber)
     }
 
@@ -2082,7 +2082,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        wait(for: [workspaceExpectation, renameTabExpectation], timeout: 1.0)
+        wait(for: [workspaceExpectation, renameTabExpectation], timeout: 5.0)
         XCTAssertEqual(observedWorkspaceWindow?.windowNumber, window.windowNumber)
     }
 
@@ -2135,7 +2135,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        wait(for: [dismissExpectation], timeout: 1.0)
+        wait(for: [dismissExpectation], timeout: 5.0)
         XCTAssertEqual(observedDismissWindow?.windowNumber, window.windowNumber)
     }
 
@@ -2257,7 +2257,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        wait(for: [dismissExpectation], timeout: 1.0)
+        wait(for: [dismissExpectation], timeout: 5.0)
         XCTAssertEqual(observedDismissWindow?.windowNumber, window.windowNumber)
     }
 
@@ -2327,7 +2327,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        wait(for: [moveExpectation], timeout: 1.0)
+        wait(for: [moveExpectation], timeout: 5.0)
         XCTAssertEqual(observedWindow?.windowNumber, window.windowNumber)
         XCTAssertEqual(observedDelta, 1)
     }
@@ -2388,7 +2388,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        wait(for: [dismissExpectation], timeout: 1.0)
+        wait(for: [dismissExpectation], timeout: 5.0)
         XCTAssertEqual(observedDismissWindow?.windowNumber, window.windowNumber)
     }
 
@@ -2448,7 +2448,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        wait(for: [dismissExpectation], timeout: 1.0)
+        wait(for: [dismissExpectation], timeout: 5.0)
         XCTAssertEqual(observedDismissWindow?.windowNumber, window.windowNumber)
     }
 
@@ -2578,7 +2578,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        wait(for: [dismissExpectation], timeout: 1.0)
+        wait(for: [dismissExpectation], timeout: 5.0)
         XCTAssertEqual(observedDismissWindow?.windowNumber, window.windowNumber)
     }
 

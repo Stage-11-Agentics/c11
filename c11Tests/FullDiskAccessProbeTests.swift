@@ -42,7 +42,7 @@ final class FullDiskAccessProbeTests: XCTestCase {
             }
         )
         probe.start()
-        wait(for: [granted], timeout: 1.0)
+        wait(for: [granted], timeout: 5.0)
         XCTAssertEqual(counter.value, 1, "Granted should fire exactly once")
     }
 

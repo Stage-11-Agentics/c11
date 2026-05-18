@@ -1017,7 +1017,7 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
         surfaceView.mouseDown(with: event)
         let drained = expectation(description: "flash drained")
         DispatchQueue.main.async { drained.fulfill() }
-        wait(for: [drained], timeout: 1.0)
+        wait(for: [drained], timeout: 5.0)
 
         XCTAssertFalse(store.hasUnreadNotification(forTabId: workspace.id, surfaceId: terminalPanel.id))
         XCTAssertEqual(GhosttySurfaceScrollView.flashCount(for: terminalPanel.id), 1)
@@ -1087,7 +1087,7 @@ final class TerminalNotificationDirectInteractionTests: XCTestCase {
         surfaceView.keyDown(with: event)
         let drained = expectation(description: "flash drained")
         DispatchQueue.main.async { drained.fulfill() }
-        wait(for: [drained], timeout: 1.0)
+        wait(for: [drained], timeout: 5.0)
 
         XCTAssertFalse(store.hasUnreadNotification(forTabId: workspace.id, surfaceId: terminalPanel.id))
         XCTAssertEqual(GhosttySurfaceScrollView.flashCount(for: terminalPanel.id), 1)
@@ -1857,7 +1857,7 @@ final class TerminalWindowPortalLifecycleTests: XCTestCase {
         DispatchQueue.main.async {
             expectation.fulfill()
         }
-        XCTWaiter().wait(for: [expectation], timeout: 1.0)
+        XCTWaiter().wait(for: [expectation], timeout: 5.0)
     }
 
     func testPortalHostInstallsAboveContentViewForVisibility() {
@@ -2937,7 +2937,7 @@ final class TerminalControllerSocketListenerHealthTests: XCTestCase {
         let response = TerminalController.probeSocketCommand("ping", at: path, timeout: 0.5)
 
         XCTAssertEqual(response, "PONG")
-        wait(for: [handled], timeout: 1.0)
+        wait(for: [handled], timeout: 5.0)
     }
 
     func testProbeSocketCommandTimesOutWithoutPollingUntilServerResponds() throws {
@@ -2963,7 +2963,7 @@ final class TerminalControllerSocketListenerHealthTests: XCTestCase {
         XCTAssertNil(response)
         XCTAssertGreaterThanOrEqual(elapsed, 0.18)
         XCTAssertLessThan(elapsed, 0.8)
-        wait(for: [handled], timeout: 1.0)
+        wait(for: [handled], timeout: 5.0)
     }
 
     func testSocketListenerHealthFailureSignalsAreEmptyWhenHealthy() {

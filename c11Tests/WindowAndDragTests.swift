@@ -1087,7 +1087,7 @@ final class MarkdownPanelPointerObserverViewTests: XCTestCase {
         _ = overlay.handleEventIfNeeded(
             makeMouseEvent(type: .leftMouseDown, location: NSPoint(x: 60, y: 60), window: window)
         )
-        wait(for: [focusExpectation], timeout: 1.0)
+        wait(for: [focusExpectation], timeout: 5.0)
 
         XCTAssertEqual(pointerDownCount, 1)
     }

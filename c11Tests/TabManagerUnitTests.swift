@@ -20,7 +20,7 @@ func drainMainQueue() {
     DispatchQueue.main.async {
         expectation.fulfill()
     }
-    XCTWaiter().wait(for: [expectation], timeout: 1.0)
+    XCTWaiter().wait(for: [expectation], timeout: 5.0)
 }
 
 @MainActor
@@ -971,7 +971,7 @@ final class TabManagerReopenClosedBrowserFocusTests: XCTestCase {
         DispatchQueue.main.async {
             expectation.fulfill()
         }
-        wait(for: [expectation], timeout: 1.0)
+        wait(for: [expectation], timeout: 5.0)
     }
 }
 

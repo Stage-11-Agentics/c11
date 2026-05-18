@@ -169,15 +169,15 @@ c11 has two unit-test targets. The split is the whole point of C11-27.
 
 ## Ghostty submodule workflow
 
-Ghostty changes must be committed in the `ghostty` submodule and pushed to the `manaflow-ai/ghostty` fork. Keep `docs/ghostty-fork.md` up to date with any fork changes and conflict notes.
+Ghostty changes must be committed in the `ghostty` submodule and pushed to the `Stage-11-Agentics/ghostty` fork. Keep `docs/ghostty-fork.md` up to date with any fork changes and conflict notes.
 
 ```bash
 cd ghostty
-git remote -v  # origin = upstream, manaflow = fork
+git remote -v  # origin = upstream (manaflow-ai/ghostty), stage11 = fork (Stage-11-Agentics/ghostty)
 git checkout -b <branch>
 git add <files>
 git commit -m "..."
-git push manaflow <branch>
+git push stage11 <branch>
 ```
 
 To keep the fork up to date with upstream:
@@ -187,7 +187,7 @@ cd ghostty
 git fetch origin
 git checkout main
 git merge origin/main
-git push manaflow main
+git push stage11 main
 ```
 
 Then update the parent repo with the new submodule SHA:

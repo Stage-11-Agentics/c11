@@ -17,9 +17,10 @@ name: Mailbox parity
 #
 # Out of scope (follow-up): launching a real c11 app on a virtual
 # display and running the Python parity test against its socket. The
-# app-launch wiring lives in `test-e2e.yml` (manual dispatch) and
-# requires ffmpeg + TCC grants — too heavy to fire on every push for
-# the byte-level lock this workflow owns.
+# host-driven UI test harness was removed in C11-99 Area D (the
+# `test-e2e.yml` workflow had been bit-rotted against a renamed
+# scheme); the byte-level lock this workflow owns is too narrow to
+# justify rebuilding the ffmpeg + TCC harness on every push.
 
 on:
   push:

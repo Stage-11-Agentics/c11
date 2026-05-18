@@ -201,6 +201,30 @@ Additional notes on the polling signal:
 
 The claude PATH wrapper at `Resources/bin/claude` is a **grandfathered, Claude Code-specific concession** — c11 does not write to any TUI's persistent config, and will not install analogous wrappers for codex, kimi, or opencode. The host is deliberately unopinionated about the terminal: c11 provides the surface, the socket, and the skill file; what an agent does with them is the agent's business. For every TUI except Claude Code, the skill-driven self-reporting path above is how status gets populated — there is no installer, no config-writing, no hook injection performed by c11.
 
+## Per-agent launch quirks
+
+`$C11_DEFAULT_AGENT_LAUNCH` (set in every c11 shell at spawn time) abstracts the launch command across agent types, so the main skill can teach one pattern that works for whichever agent the operator has chosen. The per-agent gotchas worth knowing before you spawn:
+
+### claude-code
+
+- **Wrapper on PATH.** Inside a c11 surface, `claude` resolves to `Resources/bin/claude`, a PATH-scoped wrapper that injects the session id and hook settings so the sidebar gets `claude_code` status. The launch command stored in `$C11_DEFAULT_AGENT_LAUNCH` always invokes this wrapper.
+- **Never `claude -p`.** Headless mode breaks the auth chain; sub-agents cannot self-report. The default-agent resolver uses `claude --dangerously-skip-permissions`, which is the interactive form.
+- **Multi-claude polling deadlock.** `c11 list-status` aggregates per workspace; a second claude in the same workspace makes the `claude_code` row never settle on `Idle`, deadlocking any `until ... grep Idle` poll. Use the one-shot argv pattern (Ready-state handoff above) when any sibling claude is in flight.
+
+### codex
+
+- **Use `codex --yolo`, not `codex exec`.** `codex exec` is headless and non-interactive, appropriate only for background jobs whose output will be read after completion. For a visible c11 surface where the operator should be able to watch or take over, `codex --yolo` is the right invocation.
+- **No PATH wrapper.** codex does not get a c11 wrapper. The sub-agent self-reports sidebar status by calling `c11 set-status` / `c11 set-metadata` from its own lifecycle, following instructions in the c11 skill it loads at session start.
+
+### opencode, kimi, others
+
+- **No PATH wrapper.** Like codex, status comes from skill-driven self-reporting. If an agent hasn't been taught to self-report, the sidebar won't show status for it; that is expected, not a bug.
+- **Launch command is operator-configured** under Settings → Agents & Automation → Agent Launcher Button. The resolver materializes whatever the operator chose into `$C11_DEFAULT_AGENT_LAUNCH` at shell-spawn time. Preference changes only take effect on newly-spawned shells, not already-running ones.
+
+### Banner-string scraping is always wrong
+
+Do not regex `c11 read-screen` output for `❯`, `> `, `Welcome to Claude Code`, `Claude Code v`, or any other prompt or banner string. They drift across releases and produce silent stalls. Use one-shot argv delivery, or poll a status row when it is safe to do so.
+
 ## Agent-to-agent communication
 
 Sub-agents can `c11 send` directly into each other's terminals — no orchestrator relay required.

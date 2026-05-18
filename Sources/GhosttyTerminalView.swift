@@ -3183,6 +3183,27 @@ final class TerminalSurface: Identifiable, ObservableObject {
             setManagedEnvironmentValue("CMUX_BUNDLE_ID", bundleId)
         }
 
+        // C11_DEFAULT_AGENT_LAUNCH lets the skill teach a single sub-agent launch
+        // pattern (`exec $C11_DEFAULT_AGENT_LAUNCH`) regardless of which agent the
+        // operator picked. Resolved per shell at spawn time; preference changes
+        // only affect newly-spawned shells, not already-running ones.
+        do {
+            let resolverCwd: String = {
+                if let wd = workingDirectory, !wd.isEmpty { return wd }
+                return FileManager.default.homeDirectoryForCurrentUser.path
+            }()
+            let userDefault = DefaultAgentConfigStore.shared.current
+            let projectConfig = DefaultAgentProjectConfig.find(from: resolverCwd)
+            let resolved = DefaultAgentResolver.resolve(
+                explicitAgent: nil,
+                userDefault: userDefault,
+                projectConfig: projectConfig
+            )
+            if !resolved.launch.command.isEmpty {
+                setManagedEnvironmentValue("C11_DEFAULT_AGENT_LAUNCH", resolved.launch.command)
+            }
+        }
+
         // Port range for this workspace (base/range snapshotted once per app session)
         do {
             let startPort = Self.sessionPortBase + portOrdinal * Self.sessionPortRangeSize

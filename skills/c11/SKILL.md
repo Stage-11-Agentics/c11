@@ -1,32 +1,28 @@
 ---
 name: c11
 version: 1
-description: c11 — Stage 11's native macOS terminal multiplexer built as infrastructure for the Spike. Use when (1) session starts inside c11 (env var CMUX_SHELL_INTEGRATION=1), (2) creating pane splits, surfaces, or workspaces, (3) sending text or commands to another surface, (4) launching or orchestrating sub-agents in sibling panes, (5) declaring agent identity or writing the surface manifest, (6) reading surface contents or spatial layout via `c11 tree`, (7) setting surface title or description, (8) reporting progress via sidebar status/log/progress, (9) using the embedded browser for web validation (preferred over Chrome MCP when inside c11), (10) any c11-specific command or troubleshooting question. Auto-load whenever c11 is detected in the environment.
+description: c11 is a native macOS terminal multiplexer. Load this skill anytime any of the following attributes are hit: (1) session is inside c11 (`C11_SHELL_INTEGRATION=1`), (2) working with panes, surfaces, workspaces, splits, or tabs, (3) sending text or commands to another surface, (4) launching or orchestrating sub-agents, (5) declaring agent identity, setting title/description, or reporting sidebar status, (6) using the embedded browser or markdown surfaces, (7) any c11-specific command or troubleshooting question. When in doubt, load it.
 ---
 
 # c11
 
-**c11** is Stage 11's fork of [cmux](https://github.com/manaflow-ai/cmux), a macOS-native reinterpretation of `tmux` rebuilt on [Ghostty](https://ghostty.org). The lineage matters: tmux ergonomics — panes, splits, persistent sessions — land as first-class AppKit surfaces, and the terminal underneath is a GPU-accelerated renderer, not a font-pushing TTY widget.
+**c11** is a terminal multiplexer that enables an individual hyperengineer operator to handle many terminals via spatial organization and organization across tabs, many tabs to a given pane, which is like a display area, many panes to a given workspace, and many workspaces to a given window, and potentially even multiple windows per C11 app.
 
-**c11 is infrastructure for the [Spike](https://stage11.ai/spike).** The spike is the compound actor — human:digital, operator:model — a human navigating a shifting capability surface as a single entity. c11 is the room that actor works in.
+The primary way for new work to be is for each workspace to be one specific repo or project or work item. And the default behavior when creating new terminals is to create new surfaces in the existing pane unless otherwise noted.
 
-The goal is narrow and deliberate: be best-in-class for the hyperengineer — the operator running extensive terminal-based LLM coding agents in parallel — and for the agents themselves. Wherever the work happens. Terrestrial, orbital, or elsewhere — the interface is the same. That is who this tool is for. Everything else is scaffolding.
+Agents are first-class here: every surface declares its own identity, title, and description, and reports status to the sidebar via the `c11` CLI. This skill teaches that operating model.
 
-c11 is not an intelligence layer. The opinion about what agents *do* lives upstairs — Lattice, Mycelium, the rest of the Stage 11 stack. c11 is host and primitive: terminal, browser, and markdown surfaces; workspaces, panes, tabs; notifications; one CLI and socket API for every seam. The binary is `c11`. The app is `c11`.
-
-The binary is `c11`. Commands below use that name.
+Browser and markdown are first-class surface types alongside terminals — see the sibling `c11-browser` and `c11-markdown` skills.
 
 ## Detect c11
 
-Check `CMUX_SHELL_INTEGRATION`. If set to `1`, you are inside c11; use native workflows (splits, embedded browser, `c11 set-metadata`) instead of Chrome MCP or plain `open`.
+Check `C11_SHELL_INTEGRATION`. If set to `1`, you are inside c11; use native workflows (splits, embedded browser, `c11 set-metadata`) instead of Chrome MCP or plain `open`.
 
 ```bash
-[ "$CMUX_SHELL_INTEGRATION" = "1" ] && echo "in c11" || echo "not in c11"
+[ "$C11_SHELL_INTEGRATION" = "1" ] && echo "in c11" || echo "not in c11"
 ```
 
-Going forward `C11_SHELL_INTEGRATION=1` is also set alongside the legacy `CMUX_SHELL_INTEGRATION` marker; either variable is a valid detection signal.
-
-Other env vars available to child processes: `CMUX_WORKSPACE_ID`, `CMUX_SURFACE_ID`, `CMUX_TAB_ID`, `CMUX_SOCKET_PATH`, `CMUX_SOCKET_PASSWORD`. The spawning shell may also set `CMUX_AGENT_TYPE`, `CMUX_AGENT_MODEL`, and `CMUX_AGENT_TASK` to pre-seed agent declaration — read once at surface start. `C11_*` variants are the primary names going forward; the `CMUX_*` names continue to work via dual-read.
+Other env vars available to child processes: `C11_WORKSPACE_ID`, `C11_SURFACE_ID`, `C11_TAB_ID`, `C11_SOCKET_PATH`, `C11_SOCKET_PASSWORD`. The spawning shell may also set `C11_AGENT_TYPE`, `C11_AGENT_MODEL`, and `C11_AGENT_TASK` to pre-seed agent declaration — read once at surface start.
 
 ## Concepts
 
@@ -45,21 +41,21 @@ At session start — always, in this order:
 c11 identify                                                        # Your workspace/surface/pane refs (JSON)
 c11 tree                                                            # Spatial layout of the current workspace + hierarchical listing
 c11 set-agent --type claude-code --model claude-opus-4-7            # Declare terminal_type + model (mandatory)
-c11 rename-tab       --surface "$CMUX_SURFACE_ID" "<your role>"     # Title — what this surface is (mandatory)
-c11 set-description  --surface "$CMUX_SURFACE_ID" "<why it's open>" # Description — what you're doing right now (mandatory)
+c11 rename-tab       --surface "$C11_SURFACE_ID" "<your role>"      # Title — what this surface is (mandatory)
+c11 set-description  --surface "$C11_SURFACE_ID" "<why it's open>"  # Description — what you're doing right now (mandatory)
 ```
 
-> **Binary bug (as of 2026-04-18):** `CMUX_TAB_ID` is exported equal to the workspace UUID, not the tab UUID. Bare `c11 rename-tab "<role>"` (and any other tab-scoped command that defaults to `CMUX_TAB_ID`) errors with `not_found: Tab not found`. Always pass `--surface "$CMUX_SURFACE_ID"` for tab-scoped commands (`rename-tab`, `set-title`, `set-description`) until this is fixed — `CMUX_SURFACE_ID` itself is correct.
+> **Binary bug (as of 2026-04-18):** `C11_TAB_ID` is exported equal to the workspace UUID, not the tab UUID. Bare `c11 rename-tab "<role>"` (and any other tab-scoped command that defaults to `C11_TAB_ID`) errors with `not_found: Tab not found`. Always pass `--surface "$C11_SURFACE_ID"` for tab-scoped commands (`rename-tab`, `set-title`, `set-description`) until this is fixed — `C11_SURFACE_ID` itself is correct.
 
-Also populate `role`, `task`, and `status` via `c11 set-metadata` **if known** from the opening message or environment (e.g. the user references a ticket ID, or `CMUX_AGENT_TASK` is set). Skip when unknown — don't guess.
+Also populate `role`, `task`, and `status` via `c11 set-metadata` **if known** from the opening message or environment (e.g. the user references a ticket ID, or `C11_AGENT_TASK` is set). Skip when unknown — don't guess.
 
 **Title and description are both mandatory at orientation — not optional, not "if you have time," not "only for orchestrated sub-agents."** Every agent in every pane sets both, every time. The sidebar is the operator's only view into a room full of parallel agents; a surface that doesn't announce what it is *and* why it's open is invisible. The *Title and description* section below covers **what** to write; this section is about **when**: immediately, before touching the work.
 
 Solo-agent orientation looks like this:
 
 ```bash
-c11 rename-tab       --surface "$CMUX_SURFACE_ID" "TICKET-42 Plan"
-c11 set-description  --surface "$CMUX_SURFACE_ID" "Planning the migration off the legacy auth middleware. Drafting a stepwise approach; no code changes yet."
+c11 rename-tab       --surface "$C11_SURFACE_ID" "TICKET-42 Plan"
+c11 set-description  --surface "$C11_SURFACE_ID" "Planning the migration off the legacy auth middleware. Drafting a stepwise approach; no code changes yet."
 ```
 
 **An unnamed, undescribed tab is an unidentifiable agent.** Name your tab immediately, even when working solo. Key word first, 2–4 words, under 25 characters (the sidebar truncates from the right): `c11 rename-tab "TICKET-42 Plan"` survives; `"Planning TICKET-42"` truncates to `"Planning TICK…"`.
@@ -70,68 +66,16 @@ c11 set-description  --surface "$CMUX_SURFACE_ID" "Planning the migration off th
 
 **If the user's opening message is absent or ambiguous, ask before orienting.** This aligns with the global "dialogue" norm — don't silently rename a tab `"Explore"` just to have something in the sidebar. A direct request ("fix this bug", "what is X called") is not ambiguous; proceed with the request and run orientation in the same turn.
 
-### Declaring your agent (details)
+### Declaring your agent
 
-`c11 set-agent` writes the canonical `terminal_type` and `model` keys so the sidebar, title bar, and `c11 tree` output all know what kind of agent you are.
+`c11 set-agent` writes `terminal_type` and `model` to the surface manifest:
 
 ```bash
 c11 set-agent --type claude-code --model claude-opus-4-7
 c11 set-agent --type codex --task lat-412
 ```
 
-Supported `--type` values include `claude-code`, `codex`, `kimi`, `opencode`. Any kebab-case string is accepted for unrecognized agents — the sidebar will render a generic chip.
-
-If c11's integration was installed for your TUI via `c11 install <tui>`, the declaration fires automatically at every session start. Call it anyway — `set-agent` is idempotent and guards against the integration not being installed.
-
-You can also declare via env vars set in the spawning shell: `CMUX_AGENT_TYPE`, `CMUX_AGENT_MODEL`, `CMUX_AGENT_TASK`. Read once at surface start.
-
-> When inside Claude Code, `claude.session_id` is populated automatically by the `c11 claude-hook session-start` handler — no agent action required. It becomes the anchor `c11 restore` uses to resume the session via `cc --resume <id>`.
-
-## The surface manifest
-
-Every surface carries a **surface manifest** — an open-ended JSON document that declares what the surface is, what it's doing, and anything else agents or tools want to advertise about it. Agents read and write it over the socket via `c11 get-metadata` / `c11 set-metadata`. c11 renders a small set of canonical keys in the sidebar and title bar, and leaves every other field opaque for Lattice, Mycelium, and third-party tools to define their own keyspace on top.
-
-Think of the manifest as the extension point for c11: the host provides the surface and the transport; anyone can stake out their own keys.
-
-```bash
-# Write
-c11 set-metadata --json '{"role":"reviewer","task":"lat-412","progress":0.4}'
-c11 set-metadata --key status --value "running"
-c11 set-metadata --key progress --value 0.6 --type number
-
-# Read
-c11 get-metadata                        # full blob
-c11 get-metadata --key role --key task
-c11 get-metadata --sources              # include provenance (who wrote each key, when)
-
-# Clear
-c11 clear-metadata --key task
-c11 clear-metadata                      # clear everything (explicit source only)
-```
-
-> **Always pass `--surface "$CMUX_SURFACE_ID"` explicitly on surface-write commands** — `set-metadata`, `set-agent`, `set-title`, `set-description`, `rename-tab`, `clear-metadata`, etc. The env-var default is only safe on c11 binaries built after the `fix/set-metadata-env-default` fix; older binaries silently write to whatever surface the *operator* is focused on, which in a multi-surface workspace means you'll stomp a peer agent's metadata instead of your own. Defensive form costs one flag and works on every c11 version.
->
-> ```bash
-> c11 set-metadata --surface "$CMUX_SURFACE_ID" --key status --value "running"
-> c11 set-title    --surface "$CMUX_SURFACE_ID" "TICKET-42 :: Impl"
-> ```
-
-**Canonical keys** (typed, rendered, size-capped):
-
-| Key | Type | Renders |
-|-----|------|---------|
-| `role` | string (kebab-case, ≤64) | sidebar label |
-| `status` | string (≤32) | sidebar pill |
-| `task` | string (≤128) | sidebar monospace tag |
-| `model` | string (kebab-case, ≤64) | sidebar chip |
-| `progress` | number 0.0–1.0 | sidebar progress bar |
-| `terminal_type` | kebab-case string (≤32) | sidebar chip |
-| `title` | string (≤256) | title bar + sidebar tab label |
-| `description` | markdown subset (≤2048) | title bar expanded region |
-
-Non-canonical keys are free-form — the blob is your app's transport. Per-surface cap is 64 KiB; pull-on-demand only (no subscribe in v1).
-
-**Precedence**: `explicit > declare > osc > heuristic`. `c11 set-metadata` writes as `explicit` and always wins. Heuristic auto-detection never overwrites a declared or explicit value.
+Common types: `claude-code`, `codex`, `kimi`, `opencode`. Any kebab-case string is accepted. Inside Claude Code, `claude.session_id` is populated automatically by the wrapper.
 
 ## Targeting
 
@@ -148,7 +92,7 @@ c11 send-key --workspace workspace:2 --surface surface:5 enter
 
 When talking to your own surface, omit both — env vars default them correctly.
 
-**`send` and `send-key` now require explicit surface targeting.** Callers outside a c11 shell integration context must pass `--surface`. The `CMUX_SURFACE_ID` env var satisfies the requirement for callers already inside a c11 surface. Passing `--window` alone is not sufficient — the command errors rather than falling back to whatever surface happens to be focused in that window.
+**`send` and `send-key` now require explicit surface targeting.** Callers outside a c11 shell integration context must pass `--surface`. The `C11_SURFACE_ID` env var satisfies the requirement for callers already inside a c11 surface. Passing `--window` alone is not sufficient — the command errors rather than falling back to whatever surface happens to be focused in that window.
 
 ## Send text to a surface
 
@@ -302,6 +246,52 @@ Panes (the split-tree leaves a surface lives in) carry their own free-form JSON 
 - **Same `::` rules as surface titles.** Parent first, short segments, sibling workers skip the chain (see the *Orient first* and *Lineage in titles and descriptions* sections above — don't duplicate conventions across layers). When you `--title "Parent :: Child"` on `c11 new-split` / `new-pane`, the seeded value flows through the same persistence path as an explicit write.
 - **On `/clear` (context reset), ask before renaming.** An agent that drops context inherits the pane title it had before the reset. If the next task is unrelated, ask the operator whether to rename the pane rather than silently replacing the breadcrumb — the prior lineage was load-bearing for someone. c11 installs no `/clear` hook; this is guidance, not automation.
 
+## The surface manifest
+
+Every surface carries a **surface manifest** — an open-ended JSON document that declares what the surface is, what it's doing, and anything else agents or tools want to advertise about it. Agents read and write it over the socket via `c11 get-metadata` / `c11 set-metadata`. c11 renders a small set of canonical keys in the sidebar and title bar, and leaves every other field opaque for Lattice, Mycelium, and third-party tools to define their own keyspace on top.
+
+Think of the manifest as the extension point for c11: the host provides the surface and the transport; anyone can stake out their own keys.
+
+```bash
+# Write
+c11 set-metadata --json '{"role":"reviewer","task":"lat-412","progress":0.4}'
+c11 set-metadata --key status --value "running"
+c11 set-metadata --key progress --value 0.6 --type number
+
+# Read
+c11 get-metadata                        # full blob
+c11 get-metadata --key role --key task
+c11 get-metadata --sources              # include provenance (who wrote each key, when)
+
+# Clear
+c11 clear-metadata --key task
+c11 clear-metadata                      # clear everything (explicit source only)
+```
+
+> **Always pass `--surface "$C11_SURFACE_ID"` explicitly on surface-write commands** — `set-metadata`, `set-agent`, `set-title`, `set-description`, `rename-tab`, `clear-metadata`, etc. The env-var default is only safe on c11 binaries built after the `fix/set-metadata-env-default` fix; older binaries silently write to whatever surface the *operator* is focused on, which in a multi-surface workspace means you'll stomp a peer agent's metadata instead of your own. Defensive form costs one flag and works on every c11 version.
+>
+> ```bash
+> c11 set-metadata --surface "$C11_SURFACE_ID" --key status --value "running"
+> c11 set-title    --surface "$C11_SURFACE_ID" "TICKET-42 :: Impl"
+> ```
+
+**Canonical keys** (typed, rendered, size-capped):
+
+| Key | Type | Renders |
+|-----|------|---------|
+| `role` | string (kebab-case, ≤64) | sidebar label |
+| `status` | string (≤32) | sidebar pill |
+| `task` | string (≤128) | sidebar monospace tag |
+| `model` | string (kebab-case, ≤64) | sidebar chip |
+| `progress` | number 0.0–1.0 | sidebar progress bar |
+| `terminal_type` | kebab-case string (≤32) | sidebar chip |
+| `title` | string (≤256) | title bar + sidebar tab label |
+| `description` | markdown subset (≤2048) | title bar expanded region |
+
+Non-canonical keys are free-form — the blob is your app's transport. Per-surface cap is 64 KiB; pull-on-demand only (no subscribe in v1).
+
+**Precedence**: `explicit > declare > osc > heuristic`. `c11 set-metadata` writes as `explicit` and always wins. Heuristic auto-detection never overwrites a declared or explicit value.
+
 ## Sidebar reporting
 
 Sidebar metadata commands give fast feedback without touching the JSON blob:
@@ -351,73 +341,35 @@ Treat `flash_state` as a forward-compatible enum — future c11 versions may add
 
 ## Launching sub-agents
 
-Use **`claude --dangerously-skip-permissions`** — never bare `claude` (stalls on approvals) or `claude -p` (headless, breaks the auth chain):
+When you spawn a sub-agent, give it its own c11 surface (`c11 new-split` or `c11 new-pane`) and launch the agent inside that surface. The operator gets full observability through c11 (sidebar status, title and description, screen content), and the sub-agent runs as a full-fledged interactive instance instead of a headless detached process.
 
-- `claude -p` (headless) breaks the auth chain; sub-agents can't self-report.
-- Plain `claude` stalls on permission approvals.
-- `claude --dangerously-skip-permissions` in an interactive pane inherits c11 env vars, preserves the auth chain, and skips approvals. Sub-agents can `c11 set-status`, `c11 log`, `c11 set-progress` freely.
-
-> **`claude` on PATH is the c11 wrapper.** Inside a c11 surface, `claude` resolves to `Resources/bin/claude` — a PATH-scoped wrapper that injects session-id and hook settings so the sidebar gets `claude_code` status. Always invoke `claude --dangerously-skip-permissions` explicitly in anything you send to a pane.
-
-For **Codex** in a visible c11 surface, launch the interactive TUI with `codex --yolo`, not `codex exec`. `codex exec` is headless/non-interactive and is only appropriate for background jobs whose output will be read after completion; it is the wrong tool when the operator should be able to watch, inspect, or take over the agent in c11.
+The launch command for the operator's chosen default agent is exported as `$C11_DEFAULT_AGENT_LAUNCH` in every c11 shell. Use it directly so the same skill works whether the operator's default is claude-code, codex, opencode, kimi, or anything else they configure:
 
 ```bash
-c11 send --workspace $WS --surface $SURF "cd /path && codex --yolo \"Read /tmp/lat-xxx-prompt.md and follow the instructions.\""
+c11 send --workspace $WS --surface $SURF "cd /path && $C11_DEFAULT_AGENT_LAUNCH"
 c11 send-key --workspace $WS --surface $SURF enter
 ```
 
-**Preferred launch — one-shot prompt via claude argv.** Write the prompt to a file first, then launch `claude --dangerously-skip-permissions` with a short positional argument that tells it to read the file. It boots and submits the initial message in one step, so there is no ready-state race to solve:
+If the env var is missing (older c11, or the shell was spawned before the operator set a default), fall back to `c11 default-agent launch`, which prints the same command. The env var reflects the operator's preference at the moment the shell was spawned; preference changes take effect on newly-spawned shells, not already-running ones.
+
+### Delivering a prompt at launch
+
+Stage the prompt to a file and pass its path as a positional argument so the agent boots and submits in one step. No polling, no ready-state race:
 
 ```bash
-# 1. Stage the prompt (complex content → file; shell escaping in `c11 send` is brittle)
 cat > /tmp/lat-xxx-prompt.md <<'EOF'
 [full prompt here]
 EOF
 
-# 2. One-shot launch
-c11 send --workspace $WS --surface $SURF "cd /path && claude --dangerously-skip-permissions \"Read /tmp/lat-xxx-prompt.md and follow the instructions.\""
+c11 send --workspace $WS --surface $SURF "cd /path && $C11_DEFAULT_AGENT_LAUNCH \"Read /tmp/lat-xxx-prompt.md and follow the instructions.\""
 c11 send-key --workspace $WS --surface $SURF enter
 ```
 
-This is the default pattern for all orchestrated sub-agent launches. No polling, no sleep, no screen-scraping.
+This is the default pattern for orchestrated sub-agent launches.
 
-**Two-call launch — only when you need to interact post-boot.** Launch `claude --dangerously-skip-permissions` bare, wait for the sidebar `claude_code` status to hit `Idle` (the c11 claude wrapper emits it), then send additional input:
+> **Spawning a second instance of your own agent type is the polling-deadlock case.** Two-call launches that wait for the sidebar to settle on `Idle` are workspace-scoped, so a second claude (or second codex, etc.) in the same workspace makes the status row never decisively report idle and the loop hangs. Default to the one-shot pattern above. Before reaching for two-call polling or any agent-specific quirk (the claude wrapper, codex `--yolo` vs `exec`, banner-string scraping), check [`references/orchestration.md#per-agent-launch-quirks`](references/orchestration.md#per-agent-launch-quirks).
 
-```bash
-c11 send --workspace $WS --surface $SURF "cd /path && claude --dangerously-skip-permissions"
-c11 send-key --workspace $WS --surface $SURF enter
-until c11 list-status --workspace $WS 2>/dev/null | grep -q '^claude_code=Idle '; do sleep 1; done
-c11 send --workspace $WS --surface $SURF "Read /tmp/prompt.md and follow the instructions."
-c11 send-key --workspace $WS --surface $SURF enter
-```
-
-> **Multi-claude gotcha:** `c11 list-status` is **workspace-scoped**; `--surface` is silently ignored. The `claude_code=Running|Idle` row reflects activity across every Claude Code surface in the workspace, not the one you're targeting. With two or more claudes running in the same workspace (the common orchestration case — planner + triage + impl, or orchestrator + sub-agent), the row never decisively reports `Idle` and the `until` loop deadlocks. Prefer the one-shot pattern above when any sibling claude is in flight. Polling is only safe when your target is the sole claude in the workspace.
-
-**Never screen-scrape `c11 read-screen` for `❯`, `> `, `Welcome to Claude Code`, `Claude Code v`, or any other banner string** — those drift across Claude Code releases and fail silently. See [references/orchestration.md](references/orchestration.md) for the full pattern including tab-naming conventions and agent-to-agent handoffs.
-
-## Web validation
-
-When in c11, prefer the embedded browser over Chrome MCP (`mcp__claude-in-chrome__*`). It is lighter, integrated into the workspace, and does not create stray Chrome windows.
-
-- Preview: `open <url>` or `open <file>` — reuses the browser surface automatically.
-- Interact: `c11 browser click`, `c11 browser snapshot`, `c11 browser fill`, etc.
-
-Reach for Chrome MCP only when **not** in c11 or when a Chrome-specific feature is required. See the `c11-browser` sibling skill for the full automation API.
-
-### Opening a browser pane on a local service
-
-If the browser pane targets a local daemon (e.g. `lattice dashboard`, a dev server), start the daemon **before** creating the browser pane — otherwise the browser loads an error page and won't auto-refresh when the service comes up later. If you do have to open the pane first, reload it once the listener is live:
-
-```bash
-c11 browser --surface <surface> reload
-```
-
-**Don't pipe daemon launches to `head`, `tail`, or any finite reader.** When the reader exits, the daemon gets SIGPIPE and dies mid-start. Detach cleanly instead:
-
-```bash
-nohup lattice dashboard --port 8799 > /tmp/lattice-dashboard.log 2>&1 &
-disown
-```
+**Never screen-scrape `c11 read-screen` for prompt characters or banner strings.** They drift across releases and fail silently. See [`references/orchestration.md`](references/orchestration.md) for full multi-agent orchestration patterns.
 
 ## Inter-agent messaging (mailbox)
 
@@ -487,9 +439,9 @@ c11 mailbox recv --peek     # list + print only
 **Opting in to stdin delivery.** Stdin delivery is per-recipient and off by default. Set `mailbox.delivery` on the surface that should auto-receive — it is a **comma-separated string** (not a JSON array), and the only handlers registered today are `stdin` and `silent`:
 
 ```bash
-c11 set-metadata --surface "$CMUX_SURFACE_ID" --key mailbox.delivery --value stdin --type string
+c11 set-metadata --surface "$C11_SURFACE_ID" --key mailbox.delivery --value stdin --type string
 # multiple handlers run in order on the same envelope:
-c11 set-metadata --surface "$CMUX_SURFACE_ID" --key mailbox.delivery --value stdin,silent --type string
+c11 set-metadata --surface "$C11_SURFACE_ID" --key mailbox.delivery --value stdin,silent --type string
 ```
 
 Writing the value as JSON (e.g. `--type json --value '["stdin"]'`) is the canonical footgun: the dispatcher splits the stringified blob on commas, doesn't match the literal token `["stdin"]` against `{stdin, silent}`, and silently registers zero handlers — the envelope still lands in the inbox, but the framed block never reaches the PTY. Use `--type string` with the bare token(s) above.
@@ -513,6 +465,30 @@ c11 mailbox inbox-dir                           # absolute path of your inbox
 - **No `body_ref` read-through.** The schema accepts the field and the dispatcher stores it; reading external bodies is the recipient's job for now.
 - **At-least-once is steady-state only.** Envelopes sitting in `_outbox/` when c11 restarts do get picked up on next start. But if c11 is killed *between* moving an envelope into `_processing/` and finishing the inbox copy, the envelope is stranded there until Stage 3 ships the `_processing/` recovery sweep. Callers that care about crash-window durability should pair with reply-chain retries or application-level tracking until then.
 - **No per-surface inbox cap.** Stage 3 adds this alongside the crash-recovery sweep.
+
+## Web validation
+
+When in c11, prefer the embedded browser over Chrome MCP (`mcp__claude-in-chrome__*`). It is lighter, integrated into the workspace, and does not create stray Chrome windows.
+
+- Preview: `open <url>` or `open <file>` — reuses the browser surface automatically.
+- Interact: `c11 browser click`, `c11 browser snapshot`, `c11 browser fill`, etc.
+
+Reach for Chrome MCP only when **not** in c11 or when a Chrome-specific feature is required. See the `c11-browser` sibling skill for the full automation API.
+
+### Opening a browser pane on a local service
+
+If the browser pane targets a local daemon (e.g. `lattice dashboard`, a dev server), start the daemon **before** creating the browser pane — otherwise the browser loads an error page and won't auto-refresh when the service comes up later. If you do have to open the pane first, reload it once the listener is live:
+
+```bash
+c11 browser --surface <surface> reload
+```
+
+**Don't pipe daemon launches to `head`, `tail`, or any finite reader.** When the reader exits, the daemon gets SIGPIPE and dies mid-start. Detach cleanly instead:
+
+```bash
+nohup lattice dashboard --port 8799 > /tmp/lattice-dashboard.log 2>&1 &
+disown
+```
 
 ## Workspace persistence
 

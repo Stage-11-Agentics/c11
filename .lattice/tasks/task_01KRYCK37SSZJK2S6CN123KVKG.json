@@ -1,7 +1,7 @@
 {
   "assigned_to": null,
   "branch_links": [],
-  "comment_count": 1,
+  "comment_count": 2,
   "complexity": null,
   "created_at": "2026-05-18T20:31:42Z",
   "created_by": "agent:claude-opus-4-7",
@@ -10,7 +10,7 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KRYCK37SSZJK2S6CN123KVKG",
-  "last_event_id": "ev_01KRYD6B7SYYM0Q5R27Y9VSVSB",
+  "last_event_id": "ev_01KRYEWY3BWKHNZBH7P54D99FR",
   "last_status_changed_at": "2026-05-18T20:31:42Z",
   "linked_files": [],
   "priority": "high",
@@ -26,6 +26,6 @@
   ],
   "title": "c11 CI + test pipeline restore (4 work areas, parallelizable)",
   "type": "task",
-  "updated_at": "2026-05-18T20:42:13Z",
+  "updated_at": "2026-05-18T21:12:01Z",
   "urgency": null
 }

@@ -33,8 +33,12 @@ These keys have a defined shape and render in the sidebar or title bar. Any writ
 | `terminal_type` | string | kebab-case, ≤ 32 chars | sidebar chip. Canonical values: `claude-code`, `codex`, `kimi`, `opencode`, `shell`, `unknown`. Open-ended. |
 | `title` | string | plain text, ≤ 256 chars | title bar + sidebar tab label (truncated) |
 | `description` | string | Markdown subset (bold/italic, inline `code`, lists, headings, blockquotes, links, rules — no images, fenced code, or tables), ≤ 2048 chars | title bar expanded region |
+| `worktree` | string | ≤ 128 chars (basename) | sidebar chip with colored-dot prefix. Only rendered when the surface's cwd is inside a *linked* git worktree (`git worktree add ...`). Color is a stable hash of the absolute worktree path. **Derived** — written by c11 runtime, not by agents. |
+| `branch` | string | ≤ 64 chars (branch name, `(detached @ <short-sha>)`, or `(no branch)`) | sidebar chip. Renders for main checkouts and linked worktrees. Dimmed for branch ∈ {`main`, `master`, `trunk`}. **Derived** — written by c11 runtime, not by agents. |
 
-**Sidebar rendering order** when present: `model` → `terminal_type` → `role` → `status` → `task` → `progress`. `title` and `description` render in the title bar, not the sidebar — the sidebar tab label is a truncated projection of `title`.
+**Sidebar rendering order** when present: `model` → `terminal_type` → `role` → `status` → `task` → `progress` → `worktree` + `branch` chips row. `title` and `description` render in the title bar, not the sidebar — the sidebar tab label is a truncated projection of `title`.
+
+**Worktree + branch chips (C11-104).** Both keys are projections of `cwd` + gitfs state — agents should not write them directly. They are computed off-main by c11's OSC 7 cwd-update handler and rendered automatically. Inside a submodule, both the superproject context and the submodule context render as two stacked rows. Settings → Sidebar → Workspace Metadata → "Show worktree/branch chips" gates the entire row (default on, live-toggleable).
 
 **Non-canonical keys are yours.** Any JSON value, any key shape. The blob is Lattice's transport, your app's transport, your orchestrator's transport — c11 does not interpret non-canonical content.
 
@@ -170,6 +174,7 @@ Every canonical key's value carries a parallel `metadata_sources[key]` record de
 | Value | Writer | Notes |
 |-------|--------|-------|
 | `heuristic` | c11 internal process-tree scan (M1) | Best-effort auto-detection. Never overwrites higher-precedence values. |
+| `derived` | c11 internal projections of ground-truth state (M-C11-104) | System-computed from cwd, gitfs, or other ambient state. Agents do not write `derived` keys directly; they're recomputed on state change. Ranks above `heuristic`, below `osc`. |
 | `osc` | Terminal emulator OSC 0/1/2 sequence (M7) | Writes `title` only. Newer OSC writes overwrite older `osc` writes. |
 | `declare` | Agent declaration (`c11 set-agent`, env vars) | Explicit agent self-identification. |
 | `explicit` | User CLI (`c11 set-metadata`, `c11 set-title`, inline edit) | Highest precedence; user intent wins. |
@@ -177,12 +182,13 @@ Every canonical key's value carries a parallel `metadata_sources[key]` record de
 ### Precedence chain
 
 ```
-explicit > declare > osc > heuristic
+explicit > declare > osc > derived > heuristic
 ```
 
 - **`explicit` always wins.** `c11 set-metadata` overwrites any prior value.
-- **`declare` overwrites `osc` and `heuristic`**, not `explicit`.
-- **`osc` overwrites `heuristic`** and older `osc`, not `declare` or `explicit`.
+- **`declare` overwrites `osc`, `derived`, and `heuristic`**, not `explicit`.
+- **`osc` overwrites `derived` and `heuristic`** and older `osc`, not `declare` or `explicit`.
+- **`derived` overwrites `heuristic`**, not `osc`/`declare`/`explicit`. Used for worktree/branch chips (C11-104).
 - **`heuristic` only writes when the key is unset or current source is `heuristic`.**
 
 A write that fails the precedence check returns `ok: true` with `result.applied[key]: false` and `result.reasons[key]: "lower_precedence"`. The current value is left untouched.

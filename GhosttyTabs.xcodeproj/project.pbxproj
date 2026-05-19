@@ -150,6 +150,13 @@
 		A5C101A8 /* WorkspaceCloseOverlayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B8 /* WorkspaceCloseOverlayController.swift */; };
 		A5C101A9 /* WorkspaceCloseOverlayHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C101B9 /* WorkspaceCloseOverlayHostView.swift */; };
 		A5C11005 /* AgentChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C11006 /* AgentChip.swift */; };
+		C11104B01 /* GitContextResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11104F01 /* GitContextResolver.swift */; };
+		C11104B02 /* WorktreeColorPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11104F02 /* WorktreeColorPalette.swift */; };
+		C11104B03 /* WorktreeChipModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11104F03 /* WorktreeChipModel.swift */; };
+		C11104B04 /* WorktreeChipsRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11104F04 /* WorktreeChipsRow.swift */; };
+		C11104B05 /* GitContextResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11104F05 /* GitContextResolverTests.swift */; };
+		C11104B06 /* WorktreeChipProjectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11104F06 /* WorktreeChipProjectorTests.swift */; };
+		C11104B07 /* MetadataDerivedPrecedenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11104F07 /* MetadataDerivedPrecedenceTests.swift */; };
 		A5C11007 /* AgentChipBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C11008 /* AgentChipBadge.swift */; };
 		A5C36003 /* StatusBarButtonDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C36013 /* StatusBarButtonDisplay.swift */; };
 		A5F1001001A1B2C3D4E5F001 /* ThemedValueAST.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F001 /* ThemedValueAST.swift */; };
@@ -463,6 +470,13 @@
 		A5C101B9 /* WorkspaceCloseOverlayHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/WorkspaceCloseOverlayHostView.swift; sourceTree = "<group>"; };
 		A5C102B0 /* PaneInteractionRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneInteractionRuntimeTests.swift; sourceTree = "<group>"; };
 		A5C11006 /* AgentChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentChip.swift; sourceTree = "<group>"; };
+		C11104F01 /* GitContextResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Metadata/GitContextResolver.swift; sourceTree = "<group>"; };
+		C11104F02 /* WorktreeColorPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sidebar/WorktreeColorPalette.swift; sourceTree = "<group>"; };
+		C11104F03 /* WorktreeChipModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sidebar/WorktreeChipModel.swift; sourceTree = "<group>"; };
+		C11104F04 /* WorktreeChipsRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sidebar/WorktreeChipsRow.swift; sourceTree = "<group>"; };
+		C11104F05 /* GitContextResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitContextResolverTests.swift; sourceTree = "<group>"; };
+		C11104F06 /* WorktreeChipProjectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorktreeChipProjectorTests.swift; sourceTree = "<group>"; };
+		C11104F07 /* MetadataDerivedPrecedenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataDerivedPrecedenceTests.swift; sourceTree = "<group>"; };
 		A5C11008 /* AgentChipBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentChipBadge.swift; sourceTree = "<group>"; };
 		A5C36013 /* StatusBarButtonDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBar/StatusBarButtonDisplay.swift; sourceTree = "<group>"; };
 		A5C36031 /* StatusBarButtonDisplayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarButtonDisplayTests.swift; sourceTree = "<group>"; };
@@ -779,6 +793,10 @@
 				A5001416 /* Workspace.swift */,
 				A5C11006 /* AgentChip.swift */,
 				A5C11008 /* AgentChipBadge.swift */,
+				C11104F01 /* GitContextResolver.swift */,
+				C11104F02 /* WorktreeColorPalette.swift */,
+				C11104F03 /* WorktreeChipModel.swift */,
+				C11104F04 /* WorktreeChipsRow.swift */,
 				A5001417 /* WorkspaceContentView.swift */,
 				A5001014 /* GhosttyConfig.swift */,
 				A5001015 /* GhosttyTerminalView.swift */,
@@ -1038,6 +1056,9 @@
 				3BF9D5EC78046EDA9B54AC68 /* DefaultAgentConfigTests.swift */,
 				8F39832E954005AB276046A4 /* DefaultAgentResolverTests.swift */,
 				C9B78D8232EFC5CF6A718EA7 /* StateDirectoryMigrationTests.swift */,
+				C11104F05 /* GitContextResolverTests.swift */,
+				C11104F06 /* WorktreeChipProjectorTests.swift */,
+				C11104F07 /* MetadataDerivedPrecedenceTests.swift */,
 			);
 			path = c11Tests;
 			sourceTree = "<group>";
@@ -1345,6 +1366,9 @@
 				B8C573A037A27127A9F04EF5 /* DefaultAgentConfigTests.swift in Sources */,
 				629F9C54FEC34F811A25CC65 /* DefaultAgentResolverTests.swift in Sources */,
 				EC224F7B0F7E77A981DFEC5A /* StateDirectoryMigrationTests.swift in Sources */,
+				C11104B05 /* GitContextResolverTests.swift in Sources */,
+				C11104B06 /* WorktreeChipProjectorTests.swift in Sources */,
+				C11104B07 /* MetadataDerivedPrecedenceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1364,6 +1388,10 @@
 				A5001521 /* PostHogAnalytics.swift in Sources */,
 				A5001406 /* Workspace.swift in Sources */,
 				A5C11005 /* AgentChip.swift in Sources */,
+				C11104B01 /* GitContextResolver.swift in Sources */,
+				C11104B02 /* WorktreeColorPalette.swift in Sources */,
+				C11104B03 /* WorktreeChipModel.swift in Sources */,
+				C11104B04 /* WorktreeChipsRow.swift in Sources */,
 				A5C11007 /* AgentChipBadge.swift in Sources */,
 				A5001407 /* WorkspaceContentView.swift in Sources */,
 				A5001004 /* GhosttyConfig.swift in Sources */,

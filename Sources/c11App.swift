@@ -3273,6 +3273,8 @@ private struct SidebarDebugView: View {
     @AppStorage("sidebarCornerRadius") private var sidebarCornerRadius = 0.0
     @AppStorage("sidebarBlurOpacity") private var sidebarBlurOpacity = 1.0
     @AppStorage(SidebarBranchLayoutSettings.key) private var sidebarBranchVerticalLayout = SidebarBranchLayoutSettings.defaultVerticalLayout
+    /// C11-104 — single master toggle for the derived worktree+branch chips.
+    @AppStorage("sidebarShowWorktreeChips") private var sidebarShowWorktreeChips = true
     @AppStorage(ShortcutHintDebugSettings.sidebarHintXKey) private var sidebarShortcutHintXOffset = ShortcutHintDebugSettings.defaultSidebarHintX
     @AppStorage(ShortcutHintDebugSettings.sidebarHintYKey) private var sidebarShortcutHintYOffset = ShortcutHintDebugSettings.defaultSidebarHintY
     @AppStorage(ShortcutHintDebugSettings.titlebarHintXKey) private var titlebarShortcutHintXOffset = ShortcutHintDebugSettings.defaultTitlebarHintX
@@ -3411,6 +3413,22 @@ private struct SidebarDebugView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Toggle("Render branch list vertically", isOn: $sidebarBranchVerticalLayout)
                         Text("When enabled, each branch appears on its own line in the sidebar.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Divider()
+                        // C11-104 — single master toggle for the
+                        // derived worktree + branch chips. Default on.
+                        Toggle(
+                            String(
+                                localized: "settings.sidebar.showWorktreeChips.title",
+                                defaultValue: "Show worktree/branch chips"
+                            ),
+                            isOn: $sidebarShowWorktreeChips
+                        )
+                        Text(String(
+                            localized: "settings.sidebar.showWorktreeChips.description",
+                            defaultValue: "When enabled, each workspace row shows the current worktree (colored dot prefix) and branch — derived from cwd and gitfs, no agent action needed."
+                        ))
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }

@@ -691,6 +691,10 @@ class TabManager: ObservableObject {
         let branch: String?
         let isDirty: Bool
         let pullRequest: WorkspacePullRequestSnapshot
+        /// C11-104 — resolved worktree + branch context for the sidebar
+        /// chips, computed on the same off-main probe pass so we do not
+        /// fork additional git invocations on the hot path.
+        let gitContext: ResolvedGitContext?
     }
 
     private struct CommandResult {
@@ -1657,6 +1661,23 @@ class TabManager: ObservableObject {
             break
         }
 
+        // C11-104 — apply the resolved worktree+branch context.
+        // Path:
+        //   1. workspace.panelGitContexts (fast path for the sidebar).
+        //   2. SurfaceMetadataStore.setInternal(.derived) for `worktree`
+        //      and `branch` so external readers (c11 get-metadata,
+        //      future Lattice queries) see the same data without
+        //      reaching into Workspace internals.
+        workspace.updatePanelGitContext(
+            panelId: probeKey.panelId,
+            context: snapshot.gitContext
+        )
+        applyDerivedWorktreeBranchMetadata(
+            workspaceId: probeKey.workspaceId,
+            surfaceId: probeKey.panelId,
+            context: snapshot.gitContext
+        )
+
 #if DEBUG
         let branchLabel = snapshot.branch ?? "none"
         let prLabel: String = {
@@ -1694,19 +1715,33 @@ class TabManager: ObservableObject {
     private nonisolated static func initialWorkspaceGitMetadataSnapshot(
         for directory: String
     ) -> InitialWorkspaceGitMetadataSnapshot {
+        // C11-104 — resolve the worktree/branch chip context first.
+        // Runs the same off-main probe queue; the resolver itself
+        // shells out to `git rev-parse` with a bounded timeout. We
+        // resolve here unconditionally because the resolver also
+        // handles the "no git" case (returns nil) which we want to
+        // capture even when the legacy branch probe also returns nil.
+        let gitContext = GitContextResolver.resolve(cwd: directory)
+
         let branch = normalizedBranchName(runGitCommand(directory: directory, arguments: ["branch", "--show-current"]))
         guard let branch else {
             return InitialWorkspaceGitMetadataSnapshot(
                 branch: nil,
                 isDirty: false,
-                pullRequest: .notFound
+                pullRequest: .notFound,
+                gitContext: gitContext
             )
         }
 
         let statusOutput = runGitCommand(directory: directory, arguments: ["status", "--porcelain", "-uno"])
         let isDirty = !(statusOutput?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
         let pullRequest = workspacePullRequestSnapshot(directory: directory, branch: branch)
-        return InitialWorkspaceGitMetadataSnapshot(branch: branch, isDirty: isDirty, pullRequest: pullRequest)
+        return InitialWorkspaceGitMetadataSnapshot(
+            branch: branch,
+            isDirty: isDirty,
+            pullRequest: pullRequest,
+            gitContext: gitContext
+        )
     }
 
     private nonisolated static func runGitCommand(directory: String, arguments: [String]) -> String? {
@@ -2364,6 +2399,71 @@ class TabManager: ObservableObject {
             workspaceId: tabId,
             panelId: surfaceId,
             reason: "branchChange"
+        )
+    }
+
+    /// C11-104 — write the resolved worktree/branch labels into the
+    /// surface manifest with source `.derived`. Called from the
+    /// off-main probe apply step (already on the main actor via the
+    /// Task hop in `scheduleWorkspaceGitMetadataRefresh`). External
+    /// callers should NOT invoke this directly — it's keyed off the
+    /// resolver output.
+    private func applyDerivedWorktreeBranchMetadata(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        context: ResolvedGitContext?
+    ) {
+        let store = SurfaceMetadataStore.shared
+
+        guard let context else {
+            store.setInternal(
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                key: MetadataKey.worktree,
+                value: "",
+                source: .derived
+            )
+            store.setInternal(
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                key: MetadataKey.branch,
+                value: "",
+                source: .derived
+            )
+            return
+        }
+
+        let worktreeValue: String
+        switch context.outer {
+        case .mainCheckout:
+            worktreeValue = ""
+        case .linkedWorktree(let basename, _, _):
+            worktreeValue = basename
+        }
+
+        let branchValue: String
+        switch context.outer {
+        case .mainCheckout(let branch), .linkedWorktree(_, _, let branch):
+            switch branch {
+            case .attached(let name): branchValue = name
+            case .detached(let sha):  branchValue = "(detached @ \(sha))"
+            case .unknown:            branchValue = ""
+            }
+        }
+
+        store.setInternal(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId,
+            key: MetadataKey.worktree,
+            value: worktreeValue,
+            source: .derived
+        )
+        store.setInternal(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId,
+            key: MetadataKey.branch,
+            value: branchValue,
+            source: .derived
         )
     }
 

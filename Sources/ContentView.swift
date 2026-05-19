@@ -8411,6 +8411,10 @@ struct VerticalTabsSidebar: View {
     private var workspacePresentationMode = WorkspacePresentationModeSettings.defaultMode.rawValue
     @AppStorage(ChromeScaleSettings.presetKey)
     private var chromeScalePresetRaw = ChromeScaleSettings.defaultPreset.rawValue
+    /// C11-104 — single master toggle for the worktree+branch chips row.
+    /// Default on; operators not running multi-worktree workflows can hide.
+    @AppStorage("sidebarShowWorktreeChips")
+    private var sidebarShowWorktreeChips = true
 
     /// Space at top of sidebar for traffic light buttons
     private let trafficLightPadding: CGFloat = 28
@@ -8533,6 +8537,22 @@ struct VerticalTabsSidebar: View {
                                         sources: sources
                                     )
                                 }()
+                                // C11-104: precompute worktree+branch chips
+                                // for the focused surface. Reads the resolver
+                                // output directly from the workspace's
+                                // `panelGitContexts` (populated by the
+                                // off-main probe in TabManager).
+                                let worktreeChipRows: [WorktreeChipRow] = {
+                                    guard sidebarShowWorktreeChips,
+                                          let focusedId = tab.focusedPanelId else {
+                                        return []
+                                    }
+                                    let context = tab.panelGitContexts[focusedId] ?? nil
+                                    return WorktreeChipProjector.project(
+                                        context,
+                                        settingsEnabled: true
+                                    )
+                                }()
                                 // C11-25: read the focused surface's most recent CPU/RSS
                                 // sample as a precomputed `let`. The sampler's revision is
                                 // observed at the struct level so this re-evaluates at the
@@ -8549,6 +8569,7 @@ struct VerticalTabsSidebar: View {
                                     index: index,
                                     isActive: isActive,
                                     agentChip: agentChip,
+                                    worktreeChipRows: worktreeChipRows,
                                     surfaceMetricsSample: surfaceMetricsSample,
                                     workspaceShortcutDigit: WorkspaceShortcutMapper.commandDigitForWorkspace(
                                         at: index,
@@ -11014,6 +11035,7 @@ private struct TabItemView: View, Equatable {
         lhs.index == rhs.index &&
         lhs.isActive == rhs.isActive &&
         lhs.agentChip == rhs.agentChip &&
+        lhs.worktreeChipRows == rhs.worktreeChipRows &&
         TabItemView.surfaceMetricsEqual(lhs.surfaceMetricsSample, rhs.surfaceMetricsSample) &&
         lhs.workspaceShortcutDigit == rhs.workspaceShortcutDigit &&
         lhs.canCloseWorkspace == rhs.canCloseWorkspace &&
@@ -11075,6 +11097,11 @@ private struct TabItemView: View, Equatable {
     let index: Int
     let isActive: Bool
     let agentChip: AgentChip?
+    /// C11-104: precomputed worktree/branch chip rows for the focused
+    /// surface. Empty when the setting is disabled or the surface is
+    /// not in a git directory. Keeping the projection upstream means
+    /// the TabItemView body does zero IO/git work.
+    let worktreeChipRows: [WorktreeChipRow]
     /// C11-25: most recent CPU/RSS sample for the workspace's focused
     /// surface, or nil when no PID is registered (terminals — pending
     /// the TTY → child PID resolver follow-up).
@@ -11488,6 +11515,19 @@ private struct TabItemView: View, Equatable {
                             .accessibilityIdentifier("SidebarTabSurfaceMetrics")
                     }
                 }
+                .padding(.top, 1)
+            }
+
+            // C11-104 — worktree + branch chips. Renders when the master
+            // toggle is on AND the resolver returned context for this
+            // surface. The projection is precomputed upstream so the
+            // body stays cheap.
+            if !worktreeChipRows.isEmpty {
+                WorktreeChipsRow(
+                    rows: worktreeChipRows,
+                    foreground: activeSecondaryColor(0.85),
+                    secondary: activeSecondaryColor(0.7)
+                )
                 .padding(.top, 1)
             }
 

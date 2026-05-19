@@ -40,7 +40,7 @@ These keys have a defined shape and render in the sidebar or title bar. Any writ
 
 **Worktree + branch chips (C11-104).** Both keys are projections of `cwd` + gitfs state — agents should not write them directly. They are computed off-main by `GitContextDeriver` on cwd updates (the `report_pwd` socket path) and rendered automatically. Inside a submodule, both the superproject context and the submodule context render as two stacked rows. Settings → Sidebar → "Show worktree + branch chips in sidebar" (preserved `sidebarShowBranchDirectory` AppStorage key — the legacy text branch+directory row was retired in C11-104 v2) gates the entire row (default on, live-toggleable). The branch chip carries a `*` suffix when the working tree is dirty.
 
-### `MetadataDeriver` seam (C11-104 v2)
+### `MetadataDeriver` seam
 
 c11 derives several pieces of metadata from ground-truth ambient state (cwd, gitfs, …). The minimal protocol seam:
 
@@ -51,7 +51,27 @@ public protocol MetadataDeriver: Sendable {
 }
 ```
 
-`GitContextDeriver` is the first implementation, wrapping `GitContextResolver.resolve(...)`. `DerivationCoordinator` runs derivers off-main on a shared `userInitiated` queue and hops back to the main actor with the result; apply-side guards (gen-token + expected-cwd check) live in the caller (currently `TabManager.applyWorkspaceGitMetadataSnapshot`). New derivers (host / SSH target, container, kubectl, AWS profile) drop in via the same seam.
+`GitContextDeriver` is the first implementation, wrapping `GitContextResolver.resolve(...)`. New derivers (host / SSH target, container, kubectl, AWS profile, Lattice task) drop in via the same seam.
+
+**Production wiring.** Two pieces of this seam are wired differently in production:
+
+- **`GitContextResolverCache` is load-bearing.** `TabManager.initialWorkspaceGitMetadataSnapshot(for:)` calls `GitContextResolver.resolveCached(cwd:cache:...)` against the process-wide `TabManager.gitContextResolverCache` static. The cache key is `(cwd, mtime(headPath), mtime(superHeadPath?))`. The superproject mtime is included for submodule cwds so a superproject branch change while the submodule HEAD is stable still invalidates the combined outer+inner context. `nil`, `.stale`, and `.notInRepo` results bypass the cache entirely so a recovered worktree / `git init` / repaired HEAD is picked up on the next resolve.
+- **`DerivationCoordinator` is a forward seam.** Its `run<D: MetadataDeriver>(...)` runs derivers off-main on its own queue and hops back to the main actor with the result. The existing `initialWorkspaceGitProbeQueue` in `TabManager` already provides off-main scheduling + gen-token cancellation + expected-cwd guards, so the coordinator's async-completes-on-main shape is redundant for the git-context path. It stays here as the integration point for a future multi-deriver fan-out where its async/main contract pays off.
+
+#### How to add a `MetadataDeriver`
+
+Once you have a second-or-later ground-truth source you want surfaced on the manifest, follow this contract:
+
+1. **Conform to `MetadataDeriver`.** Implementation runs **off-main** — open with `dispatchPrecondition(condition: .notOnQueue(.main))`. The associated `Output` type can be anything `Sendable`; consumers downstream of you handle the projection to canonical / non-canonical metadata keys.
+2. **Pick a cache key.** Most ground-truth sources are mtime-pollable. Reuse `GitContextResolverCache.Key`'s shape (`(cwd, primaryMtime, secondaryMtime?)`) or build your own keyed cache alongside `GitContextResolverCache`. If your source has no cheap invalidation signal (e.g., AWS profile, kubectl context), prefer a short TTL over no cache at all. `FSEvents` is the structural upgrade path once polling becomes a bottleneck — TODO comment in `GitContextResolverCache` flags this for the eventual rewrite.
+3. **Bypass-cache the boundary states.** `nil` / "no value" / "unknown" / "stale" / "timeout" outer states must NOT be cached — the user can recover from each in seconds, and a sticky negative result would feel broken. Skip-counters in `GitContextResolverCache` (`_skipsStale`, `_skipsNoHead`, `_skipsNotInRepo`) are the reference pattern for tracking each bypass reason.
+4. **Use `source: .derived` on the write path.** Writes go through `SurfaceMetadataStore.shared.setInternal(workspaceId:surfaceId:key:value:source: .derived)`. Never call the v2 socket `set_metadata` handler from inside c11 — that path rejects `.derived` for external CLI / IPC callers and would silently no-op for you too.
+5. **Exclude `derived` keys from snapshot capture.** `PersistedMetadata.encodeValues(..., sources:)` and `PersistedMetadata.encodeSources(...)` filter `.derived` entries when both halves are passed; thread the `sources` dict through wherever your new derived key is captured so workspace snapshots don't pickle ephemeral values.
+6. **Add a projector** if the new value renders in the sidebar or title bar. `WorktreeChipProjector` (in `Sources/Sidebar/WorktreeChipModel.swift`) is the reference: pure value-types in, pure value-types out, no SwiftUI / AppKit — testable in `c11LogicTests` without a host.
+7. **Write tests in `c11Tests/` with `c11LogicTests` membership.** Test the deriver against stub runners / filesystem probes (see `GitContextResolverTests` + `GitContextResolverCacheWiringTests`); test the projector against constructed values; test the apply path through `SurfaceMetadataStore.setInternal` + `getMetadata`. Skip integration tests against the real socket loop unless you're testing the protocol contract itself — the store-level tests cover what matters.
+8. **Document.** Update this section's "first implementation" line if your deriver supersedes the reference, and add a one-liner at the top of the new deriver's source file explaining what it derives, on what cadence, and with what cache semantics.
+
+Reference implementation: `GitContextDeriver` + `GitContextResolverCache` + `WorktreeChipProjector` + `applyDerivedWorktreeBranchMetadata` (`TabManager`) + `MetadataDerivedPrecedenceTests` + `GitContextResolverCacheWiringTests`.
 
 **Non-canonical keys are yours.** Any JSON value, any key shape. The blob is Lattice's transport, your app's transport, your orchestrator's transport — c11 does not interpret non-canonical content.
 

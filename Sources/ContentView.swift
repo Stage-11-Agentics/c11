@@ -4669,9 +4669,14 @@ struct ContentView: View {
             return Text(title).foregroundColor(.primary)
         }
 
+        // Build a flat AttributedString rather than accumulating Text + Text.
+        // Repeated `result = result + Text(...)` produces a recursive
+        // ConcatenatedTextStorage tree whose `resolve` is depth-N recursive;
+        // a highly fragmented match pattern (long title, alternating runs)
+        // blows the render-thread stack at SwiftUI resolve time (C11-26).
         let chars = Array(title)
         var index = 0
-        var result = Text("")
+        var attributed = AttributedString()
 
         while index < chars.count {
             let isMatched = matchedIndices.contains(index)
@@ -4680,16 +4685,13 @@ struct ContentView: View {
                 end += 1
             }
 
-            let segment = String(chars[index..<end])
-            if isMatched {
-                result = result + Text(segment).foregroundColor(.blue)
-            } else {
-                result = result + Text(segment).foregroundColor(.primary)
-            }
+            var run = AttributedString(String(chars[index..<end]))
+            run.foregroundColor = isMatched ? .blue : .primary
+            attributed.append(run)
             index = end
         }
 
-        return result
+        return Text(attributed)
     }
 
     private func commandPaletteTrailingLabel(for command: CommandPaletteCommand) -> CommandPaletteTrailingLabel? {

@@ -1016,6 +1016,16 @@ class TabManager: ObservableObject {
     private var workspaceGitProbeGenerationByKey: [WorkspaceGitProbeKey: UUID] = [:]
     private var workspaceGitProbeTimersByKey: [WorkspaceGitProbeKey: [DispatchSourceTimer]] = [:]
 
+    /// (C11-106) Process-wide cache for `GitContextResolver` results,
+    /// shared across all workspaces and surfaces. Reads/writes are
+    /// internally locked (`@unchecked Sendable` with an NSLock), so
+    /// it is safe to share across the `initialWorkspaceGitProbeQueue`
+    /// and any future ad-hoc derivation queues. Lifecycle is tied
+    /// to the TabManager singleton; on workspace deletion the cache
+    /// entries naturally expire via LRU eviction since no further
+    /// resolve will refresh them.
+    nonisolated(unsafe) static let gitContextResolverCache = GitContextResolverCache(capacity: 256)
+
     // Recent tab history for back/forward navigation (like browser history)
     private var tabHistory: [UUID] = []
     private var historyIndex: Int = -1
@@ -1721,7 +1731,16 @@ class TabManager: ObservableObject {
         // resolve here unconditionally because the resolver also
         // handles the "no git" case (returns nil) which we want to
         // capture even when the legacy branch probe also returns nil.
-        let gitContext = GitContextResolver.resolve(cwd: directory)
+        //
+        // (C11-106) Goes through `resolveCached` so repeat probes
+        // against a stable HEAD don't re-shell to git. The cache is
+        // keyed on `(cwd, mtime(headPath), mtime(superHeadPath?))`;
+        // see `GitContextResolver.resolveCached` for the full policy
+        // (linked worktrees, submodules, nil-result bypass, etc.).
+        let gitContext = GitContextResolver.resolveCached(
+            cwd: directory,
+            cache: Self.gitContextResolverCache
+        )
 
         let branch = normalizedBranchName(runGitCommand(directory: directory, arguments: ["branch", "--show-current"]))
         guard let branch else {

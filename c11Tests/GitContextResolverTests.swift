@@ -292,6 +292,11 @@ final class GitContextResolverTests: XCTestCase {
 
     // MARK: - AC12: Cache invalidates on .git/HEAD mtime change
 
+    // (C11-106) Cache-class-level tests. Production cache wiring +
+    // submodule + nil-result tests live in
+    // GitContextResolverCacheWiringTests.swift (separate file because
+    // they exercise the production `resolveCached` entry point and a
+    // submodule fixture deserves its own setup).
     func testCacheHitDoesNotReinvokeRunner() {
         let cwd = "/tmp/cached"
         let runner = FakeGitRunner()
@@ -307,20 +312,21 @@ final class GitContextResolverTests: XCTestCase {
         let key = GitContextResolverCache.Key(cwd: cwd, headMtime: mtime)
 
         if cache.get(key) == nil {
-            let value = resolveOffMain(cwd: cwd, runner: runner, fs: fs)
+            guard let value = resolveOffMain(cwd: cwd, runner: runner, fs: fs) else {
+                XCTFail("expected a resolved value")
+                return
+            }
             cache.set(key, value: value)
         }
         let first = runner.invocations.count
         XCTAssertGreaterThan(first, 0)
 
-        // Second lookup with the same key → cache hit. The outer
-        // optional means "present in cache"; the inner is the resolver
-        // result. We expect a present-and-non-nil mainCheckout entry.
-        guard let cached = cache.get(key), let resolved = cached else {
+        // Second lookup with the same key → cache hit.
+        guard let cached = cache.get(key) else {
             XCTFail("expected cache hit")
             return
         }
-        XCTAssertEqual(resolved.outer, .mainCheckout(branch: .attached("main")))
+        XCTAssertEqual(cached.outer, .mainCheckout(branch: .attached("main")))
         XCTAssertEqual(runner.invocations.count, first, "cache hit must not invoke the runner")
     }
 
@@ -338,7 +344,10 @@ final class GitContextResolverTests: XCTestCase {
         let t1 = Date(timeIntervalSince1970: 1000)
         let key1 = GitContextResolverCache.Key(cwd: cwd, headMtime: t1)
 
-        let v1 = resolveOffMain(cwd: cwd, runner: runner, fs: fs)
+        guard let v1 = resolveOffMain(cwd: cwd, runner: runner, fs: fs) else {
+            XCTFail("expected first resolution to succeed")
+            return
+        }
         cache.set(key1, value: v1)
         let beforeChange = runner.invocations.count
 
@@ -347,7 +356,10 @@ final class GitContextResolverTests: XCTestCase {
         let key2 = GitContextResolverCache.Key(cwd: cwd, headMtime: t2)
         XCTAssertNil(cache.get(key2), "different mtime must miss")
 
-        let v2 = resolveOffMain(cwd: cwd, runner: runner, fs: fs)
+        guard let v2 = resolveOffMain(cwd: cwd, runner: runner, fs: fs) else {
+            XCTFail("expected re-resolution to succeed")
+            return
+        }
         cache.set(key2, value: v2)
         XCTAssertGreaterThan(
             runner.invocations.count, beforeChange,
@@ -525,15 +537,15 @@ final class GitContextResolverTests: XCTestCase {
 
     func testCacheEvictsOldestEntriesPastCapacity() {
         let cache = GitContextResolverCache(capacity: 2)
-        let k1 = GitContextResolverCache.Key(cwd: "/a", headMtime: nil)
-        let k2 = GitContextResolverCache.Key(cwd: "/b", headMtime: nil)
-        let k3 = GitContextResolverCache.Key(cwd: "/c", headMtime: nil)
-        cache.set(k1, value: nil)
-        cache.set(k2, value: nil)
-        cache.set(k3, value: nil)
+        let mtime = Date(timeIntervalSince1970: 1000)
+        let value = ResolvedGitContext(outer: .mainCheckout(branch: .attached("main")))
+        let k1 = GitContextResolverCache.Key(cwd: "/a", headMtime: mtime)
+        let k2 = GitContextResolverCache.Key(cwd: "/b", headMtime: mtime)
+        let k3 = GitContextResolverCache.Key(cwd: "/c", headMtime: mtime)
+        cache.set(k1, value: value)
+        cache.set(k2, value: value)
+        cache.set(k3, value: value)
         XCTAssertEqual(cache.count, 2)
-        // `cache.get` returns Optional<Optional<ResolvedGitContext>>.
-        // The outer nil means "not in cache" — that's what eviction yields.
         XCTAssertTrue(cache.get(k1) == nil, "oldest entry must have been evicted")
         XCTAssertTrue(cache.get(k2) != nil)
         XCTAssertTrue(cache.get(k3) != nil)

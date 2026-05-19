@@ -12,11 +12,20 @@ import Foundation
 /// and hops back to the main actor with the result. Apply-side
 /// gen-token + expected-cwd guards live in the caller — `TabManager`
 /// already implements them for the existing probe path
-/// (`applyWorkspaceGitMetadataSnapshot`). The coordinator is
-/// intentionally lightweight in this PR; full integration with the
-/// staggered TabManager probe is deferred (the current implementation
-/// continues to call `GitContextResolver.resolve` directly from
-/// `initialWorkspaceGitMetadataSnapshot`).
+/// (`applyWorkspaceGitMetadataSnapshot`).
+///
+/// (C11-106) Production status: `DerivationCoordinator` is a
+/// **forward seam, not load-bearing in production.** The cache layer
+/// (`GitContextResolverCache` + `GitContextResolver.resolveCached`)
+/// is wired into `TabManager.initialWorkspaceGitMetadataSnapshot(for:)`
+/// directly because the existing `initialWorkspaceGitProbeQueue`
+/// already provides the off-main scheduling + cancellation that the
+/// coordinator's async-completes-on-main shape would duplicate. The
+/// coordinator stays here as the integration point for future
+/// multi-deriver fan-out (host/SSH target, container, kubectl, AWS
+/// profile, Lattice task). Adding a second deriver flips the cost
+/// balance: see `skills/c11/references/metadata.md` § "How to add a
+/// MetadataDeriver" for the contract a new deriver must satisfy.
 
 public protocol MetadataDeriver: Sendable {
     /// Each deriver returns its own value type — git returns
@@ -179,10 +188,26 @@ public struct DefaultFileSystemProbe: FileSystemProbe {
 
 /// Process-backed runner. Bounded by a soft timeout to avoid stalling
 /// the background queue if git ever hangs.
+///
+/// (C11-106) Defaults remain unchanged from C11-104 — `/usr/bin/env`
+/// invokes the real `git` binary on PATH with a 5-second timeout. The
+/// `executable` + `argPrefix` constructor params exist purely so AC14
+/// tests can substitute a deterministic slow command (e.g.
+/// `/bin/sh -c 'sleep …'`) without forking the production code path.
+/// The 5-second timeout is the v2 SPEC's amended value — see PR body
+/// for the SPEC-amendment note replacing the original 2s suggestion.
 public struct ProcessGitRunner: GitRunner {
+    public let executable: String
+    public let argPrefix: [String]
     public let timeout: TimeInterval
 
-    public init(timeout: TimeInterval = 5.0) {
+    public init(
+        executable: String = "/usr/bin/env",
+        argPrefix: [String] = ["git"],
+        timeout: TimeInterval = 5.0
+    ) {
+        self.executable = executable
+        self.argPrefix = argPrefix
         self.timeout = timeout
     }
 
@@ -190,8 +215,8 @@ public struct ProcessGitRunner: GitRunner {
         let process = Process()
         let stdout = Pipe()
         let stderr = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["git"] + args
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = argPrefix + args
         process.currentDirectoryURL = URL(fileURLWithPath: cwd)
         process.standardOutput = stdout
         process.standardError = stderr
@@ -506,46 +531,197 @@ public enum GitContextResolver {
         }
         return absolutePath(of: raw, relativeTo: cwd)
     }
+
+    /// (C11-106) Cache-aware variant of `resolve(...)`. This is the
+    /// **production entry point** wired into
+    /// `TabManager.initialWorkspaceGitMetadataSnapshot(for:)`. The
+    /// underlying `resolve(...)` remains the test-friendly direct
+    /// path.
+    ///
+    /// Cache policy (C11-106 B2 + B3):
+    ///   - Key = `(cwd, mtime(headPath), mtime(superHeadPath?))`. For
+    ///     a submodule cwd, the superproject HEAD mtime is included
+    ///     so a superproject branch change invalidates the combined
+    ///     outer+inner context even when the inner submodule HEAD is
+    ///     stable.
+    ///   - `nil` results, `.stale` outer, and `.notInRepo` outer
+    ///     bypass the cache entirely. A `git init` / `git worktree
+    ///     add` / repaired HEAD is therefore picked up on the very
+    ///     next resolve, not on cache TTL.
+    ///   - Missing `headPath` (git can't resolve the HEAD path at
+    ///     all) OR missing mtime (the file doesn't exist) also
+    ///     bypass the cache for the same reason.
+    ///
+    /// Threading: same contract as `resolve(...)` — must run off the
+    /// main thread. `GitContextResolverCache` is internally
+    /// thread-safe (NSLock); the cache itself can therefore be
+    /// shared across surfaces and queues, but the caller still
+    /// reserves the right to choose its scheduling queue. In
+    /// production (`TabManager`), this is invoked on
+    /// `initialWorkspaceGitProbeQueue`.
+    public static func resolveCached(
+        cwd: String,
+        cache: GitContextResolverCache,
+        runner: GitRunner = ProcessGitRunner(),
+        fileSystem: FileSystemProbe = DefaultFileSystemProbe()
+    ) -> ResolvedGitContext? {
+        dispatchPrecondition(condition: .notOnQueue(.main))
+
+        // Build the cache key from the resolved HEAD path mtime. If
+        // git can't resolve the HEAD path or the file is missing,
+        // skip the cache entirely (B3 nil-result policy).
+        guard let resolvedHead = headPath(forCwd: cwd, runner: runner),
+              let headMtime = fileSystem.mtime(atPath: resolvedHead) else {
+            cache.recordSkipNoHead()
+            return resolve(cwd: cwd, runner: runner, fileSystem: fileSystem)
+        }
+
+        // For submodules: include the superproject's HEAD mtime in
+        // the key. This is the v2 SPEC § B2 correctness fix. If
+        // the superproject HEAD path is unavailable or its mtime
+        // can't be read, we set the field to `nil` — the key still
+        // disambiguates from non-submodule resolutions, and a
+        // subsequent superproject HEAD mtime change re-resolves on
+        // its own when the cwd's own HEAD mtime advances (covers
+        // the common case of `git checkout` updating both at once).
+        var superHeadMtime: Date? = nil
+        if let superRoot = runner.run(
+            cwd: cwd,
+            args: ["rev-parse", "--show-superproject-working-tree"]
+        ), !superRoot.isEmpty,
+           let superHead = headPath(forCwd: superRoot, runner: runner),
+           let m = fileSystem.mtime(atPath: superHead) {
+            superHeadMtime = m
+        }
+
+        let key = GitContextResolverCache.Key(
+            cwd: cwd,
+            headMtime: headMtime,
+            superHeadMtime: superHeadMtime
+        )
+
+        if let cached = cache.get(key) {
+            return cached
+        }
+        cache.recordMiss()
+
+        let resolved = resolve(cwd: cwd, runner: runner, fileSystem: fileSystem)
+
+        // B3: don't cache nil / .stale / .notInRepo.
+        guard let resolved else {
+            cache.recordSkipNotInRepo()
+            return nil
+        }
+        switch resolved.outer {
+        case .stale:
+            cache.recordSkipStale()
+            return resolved
+        case .notInRepo:
+            cache.recordSkipNotInRepo()
+            return resolved
+        case .mainCheckout, .linkedWorktree:
+            cache.set(key, value: resolved)
+            return resolved
+        }
+    }
 }
 
-/// Cache for resolver results keyed by `(cwd, headMtime)`.
+/// Cache for resolver results keyed by `(cwd, headMtime, superHeadMtime?)`.
 ///
-/// Lives on the off-main probe queue alongside `GitContextResolver`.
-/// LRU evicts at `capacity`. Cache invalidation is implicit: a cwd
-/// change yields a different key, and a `.git/HEAD` mtime change
-/// (post-checkout, post-rename) yields a different key.
+/// Lives on the off-main probe queue alongside `GitContextResolver`. LRU
+/// evicts at `capacity`. Cache invalidation is implicit:
+///   - cwd change → different key.
+///   - `.git/HEAD` mtime change (post-checkout, post-rename) → different key.
+///   - Inside a submodule, the superproject's HEAD mtime is *also*
+///     part of the key (C11-106 B2 fix). A superproject branch
+///     change while the submodule HEAD is stable invalidates the
+///     combined outer+inner context.
+///
+/// **What the cache stores.** The cache only stores results whose
+/// outer is `.mainCheckout` or `.linkedWorktree`. `.stale`, `.notInRepo`,
+/// and nil results bypass the cache entirely (C11-106 B3 policy) so a
+/// recovered worktree / `git init` / repaired HEAD is picked up on the
+/// next resolve.
+///
+/// TODO(c11-followup): FSEvents-based invalidation is the structural
+/// replacement for mtime polling. See plan-review pack
+/// `.lattice/orchestration/c11-106/c11-106-plan-review-pack-2026-05-19T0935/`
+/// § S3. Out of scope for C11-106.
 public final class GitContextResolverCache: @unchecked Sendable {
     public struct Key: Hashable, Sendable {
         public let cwd: String
-        public let headMtime: Date?
-        public init(cwd: String, headMtime: Date?) {
+        public let headMtime: Date
+        /// Superproject HEAD mtime when `cwd` is inside a submodule;
+        /// `nil` when there is no superproject. Including it in the
+        /// key keeps the submodule-combined context invalidated when
+        /// the outer (superproject) HEAD changes even if the inner
+        /// (submodule) HEAD is stable — C11-106 v2 SPEC § B2.
+        public let superHeadMtime: Date?
+        public init(cwd: String, headMtime: Date, superHeadMtime: Date? = nil) {
             self.cwd = cwd
             self.headMtime = headMtime
+            self.superHeadMtime = superHeadMtime
         }
     }
 
     private let capacity: Int
-    private var entries: [Key: ResolvedGitContext?] = [:]
+    private var entries: [Key: ResolvedGitContext] = [:]
     private var order: [Key] = []
     private let lock = NSLock()
+
+    // MARK: - Diagnostic counters (C11-106 E3, DEBUG-only readers)
+    // Internal so the resolver and tests can bump them; readers below
+    // are DEBUG-gated. Production never reads these — they exist for
+    // future observability work and to surface cache hit-rate during
+    // local debugging.
+    internal var _hits: Int = 0
+    internal var _misses: Int = 0
+    internal var _skipsStale: Int = 0       // .stale results bypass cache
+    internal var _skipsNoHead: Int = 0       // headPath / mtime unavailable
+    internal var _skipsNotInRepo: Int = 0    // nil-result / .notInRepo bypass
 
     public init(capacity: Int = 256) {
         self.capacity = max(1, capacity)
     }
 
-    public func get(_ key: Key) -> ResolvedGitContext?? {
+    /// Look up `key`. Returns the cached non-nil result, or nil for
+    /// "not in cache." Cache hits bump recency. `(C11-106)` The
+    /// return type is `ResolvedGitContext?` — non-nil means "cache
+    /// hit, here's the value"; nil means "cache miss, caller must
+    /// resolve."
+    public func get(_ key: Key) -> ResolvedGitContext? {
         lock.lock()
         defer { lock.unlock() }
         guard let cached = entries[key] else { return nil }
-        // Bump recency.
         if let idx = order.firstIndex(of: key) {
             order.remove(at: idx)
             order.append(key)
         }
-        return .some(cached)
+        _hits += 1
+        return cached
     }
 
-    public func set(_ key: Key, value: ResolvedGitContext?) {
+    /// Store a non-nil resolver result. Callers MUST NOT pass
+    /// `.stale` or `.notInRepo` outer values — those are bypass
+    /// states (C11-106 B3). The runtime caller checks; this method
+    /// asserts in DEBUG to catch regressions.
+    public func set(_ key: Key, value: ResolvedGitContext) {
+        #if DEBUG
+        switch value.outer {
+        case .mainCheckout, .linkedWorktree:
+            break
+        case .stale, .notInRepo:
+            assertionFailure("GitContextResolverCache.set called with non-cacheable outer \(value.outer); caller must short-circuit per C11-106 B3 policy.")
+            return
+        }
+        #else
+        switch value.outer {
+        case .mainCheckout, .linkedWorktree:
+            break
+        case .stale, .notInRepo:
+            return
+        }
+        #endif
         lock.lock()
         defer { lock.unlock() }
         if entries[key] == nil {
@@ -561,11 +737,40 @@ public final class GitContextResolverCache: @unchecked Sendable {
         }
     }
 
+    internal func recordMiss() {
+        lock.lock()
+        defer { lock.unlock() }
+        _misses += 1
+    }
+
+    internal func recordSkipStale() {
+        lock.lock()
+        defer { lock.unlock() }
+        _skipsStale += 1
+    }
+
+    internal func recordSkipNoHead() {
+        lock.lock()
+        defer { lock.unlock() }
+        _skipsNoHead += 1
+    }
+
+    internal func recordSkipNotInRepo() {
+        lock.lock()
+        defer { lock.unlock() }
+        _skipsNotInRepo += 1
+    }
+
     public func clear() {
         lock.lock()
         defer { lock.unlock() }
         entries.removeAll()
         order.removeAll()
+        _hits = 0
+        _misses = 0
+        _skipsStale = 0
+        _skipsNoHead = 0
+        _skipsNotInRepo = 0
     }
 
     public var count: Int {
@@ -573,4 +778,31 @@ public final class GitContextResolverCache: @unchecked Sendable {
         defer { lock.unlock() }
         return entries.count
     }
+
+    #if DEBUG
+    /// Diagnostic snapshot (C11-106 E3). DEBUG-only so production has
+    /// no observability surface to mis-rely on — pair this with `dlog`
+    /// when investigating cache behavior.
+    public struct DiagnosticSnapshot: Equatable {
+        public let hits: Int
+        public let misses: Int
+        public let skipsStale: Int
+        public let skipsNoHead: Int
+        public let skipsNotInRepo: Int
+        public let entryCount: Int
+    }
+
+    public func diagnosticSnapshot() -> DiagnosticSnapshot {
+        lock.lock()
+        defer { lock.unlock() }
+        return DiagnosticSnapshot(
+            hits: _hits,
+            misses: _misses,
+            skipsStale: _skipsStale,
+            skipsNoHead: _skipsNoHead,
+            skipsNotInRepo: _skipsNotInRepo,
+            entryCount: entries.count
+        )
+    }
+    #endif
 }

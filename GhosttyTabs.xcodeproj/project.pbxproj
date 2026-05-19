@@ -155,9 +155,13 @@
 		C11104B02 /* WorktreeColorPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11104F02 /* WorktreeColorPalette.swift */; };
 		C11104B03 /* WorktreeChipModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11104F03 /* WorktreeChipModel.swift */; };
 		C11104B04 /* WorktreeChipsRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11104F04 /* WorktreeChipsRow.swift */; };
+		C11106S01 /* SocketMetadataSourceValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11106S01F /* SocketMetadataSourceValidator.swift */; };
 		C11104B05 /* GitContextResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11104F05 /* GitContextResolverTests.swift */; };
 		C11104B06 /* WorktreeChipProjectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11104F06 /* WorktreeChipProjectorTests.swift */; };
 		C11104B07 /* MetadataDerivedPrecedenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11104F07 /* MetadataDerivedPrecedenceTests.swift */; };
+		C11106B01 /* GitContextResolverCacheWiringTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11106F01 /* GitContextResolverCacheWiringTests.swift */; };
+		C11106B02 /* ProcessGitRunnerTimeoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11106F02 /* ProcessGitRunnerTimeoutTests.swift */; };
+		C11106B03 /* SocketDerivedSourceRejectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11106F03 /* SocketDerivedSourceRejectionTests.swift */; };
 		A5C11007 /* AgentChipBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C11008 /* AgentChipBadge.swift */; };
 		A5C36003 /* StatusBarButtonDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C36013 /* StatusBarButtonDisplay.swift */; };
 		A5F1001001A1B2C3D4E5F001 /* ThemedValueAST.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F001 /* ThemedValueAST.swift */; };
@@ -475,9 +479,13 @@
 		C11104F02 /* WorktreeColorPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sidebar/WorktreeColorPalette.swift; sourceTree = "<group>"; };
 		C11104F03 /* WorktreeChipModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sidebar/WorktreeChipModel.swift; sourceTree = "<group>"; };
 		C11104F04 /* WorktreeChipsRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sidebar/WorktreeChipsRow.swift; sourceTree = "<group>"; };
+		C11106S01F /* SocketMetadataSourceValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Metadata/SocketMetadataSourceValidator.swift; sourceTree = "<group>"; };
 		C11104F05 /* GitContextResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitContextResolverTests.swift; sourceTree = "<group>"; };
 		C11104F06 /* WorktreeChipProjectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorktreeChipProjectorTests.swift; sourceTree = "<group>"; };
 		C11104F07 /* MetadataDerivedPrecedenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataDerivedPrecedenceTests.swift; sourceTree = "<group>"; };
+		C11106F01 /* GitContextResolverCacheWiringTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitContextResolverCacheWiringTests.swift; sourceTree = "<group>"; };
+		C11106F02 /* ProcessGitRunnerTimeoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessGitRunnerTimeoutTests.swift; sourceTree = "<group>"; };
+		C11106F03 /* SocketDerivedSourceRejectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocketDerivedSourceRejectionTests.swift; sourceTree = "<group>"; };
 		A5C11008 /* AgentChipBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentChipBadge.swift; sourceTree = "<group>"; };
 		A5C36013 /* StatusBarButtonDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBar/StatusBarButtonDisplay.swift; sourceTree = "<group>"; };
 		A5C36031 /* StatusBarButtonDisplayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarButtonDisplayTests.swift; sourceTree = "<group>"; };
@@ -796,6 +804,7 @@
 				A5C11006 /* AgentChip.swift */,
 				A5C11008 /* AgentChipBadge.swift */,
 				C11104F01 /* GitContextResolver.swift */,
+				C11106S01F /* SocketMetadataSourceValidator.swift */,
 				C11104F02 /* WorktreeColorPalette.swift */,
 				C11104F03 /* WorktreeChipModel.swift */,
 				C11104F04 /* WorktreeChipsRow.swift */,
@@ -1062,6 +1071,9 @@
 				C11104F05 /* GitContextResolverTests.swift */,
 				C11104F06 /* WorktreeChipProjectorTests.swift */,
 				C11104F07 /* MetadataDerivedPrecedenceTests.swift */,
+				C11106F01 /* GitContextResolverCacheWiringTests.swift */,
+				C11106F02 /* ProcessGitRunnerTimeoutTests.swift */,
+				C11106F03 /* SocketDerivedSourceRejectionTests.swift */,
 			);
 			path = c11Tests;
 			sourceTree = "<group>";
@@ -1372,6 +1384,9 @@
 				C11104B05 /* GitContextResolverTests.swift in Sources */,
 				C11104B06 /* WorktreeChipProjectorTests.swift in Sources */,
 				C11104B07 /* MetadataDerivedPrecedenceTests.swift in Sources */,
+				C11106B01 /* GitContextResolverCacheWiringTests.swift in Sources */,
+				C11106B02 /* ProcessGitRunnerTimeoutTests.swift in Sources */,
+				C11106B03 /* SocketDerivedSourceRejectionTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1392,6 +1407,7 @@
 				A5001406 /* Workspace.swift in Sources */,
 				A5C11005 /* AgentChip.swift in Sources */,
 				C11104B01 /* GitContextResolver.swift in Sources */,
+				C11106S01 /* SocketMetadataSourceValidator.swift in Sources */,
 				C11104B02 /* WorktreeColorPalette.swift in Sources */,
 				C11104B03 /* WorktreeChipModel.swift in Sources */,
 				C11104B04 /* WorktreeChipsRow.swift in Sources */,

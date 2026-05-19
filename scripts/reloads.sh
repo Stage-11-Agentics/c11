@@ -228,6 +228,7 @@ if [[ "$WMO" -eq 0 ]]; then
 fi
 XCODEBUILD_ARGS+=(build)
 
+echo "[reloads.sh] xcodebuild ${XCODEBUILD_ARGS[*]}"
 xcodebuild "${XCODEBUILD_ARGS[@]}"
 sleep 0.2
 

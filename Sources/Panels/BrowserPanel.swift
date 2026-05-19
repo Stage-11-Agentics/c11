@@ -2780,6 +2780,15 @@ final class BrowserPanel: Panel, ObservableObject {
                     url: url
                 )
             } else {
+                // Seed `currentURL` synchronously so snapshot capture (and
+                // any caller that reads the omnibar/url before WebKit has
+                // fired its first KVO callback) sees the requested URL.
+                // The `url` observer in `setupObservers` will overwrite this
+                // with the live WKWebView URL once navigation actually
+                // resolves (handling redirects/normalizations). Matches the
+                // hibernate branch above; closes the C11-99 Area C round-trip
+                // gap where workspace snapshot wrote nil for SurfaceSpec.url.
+                self.currentURL = url
                 shouldRenderWebView = true
                 navigate(to: url)
             }

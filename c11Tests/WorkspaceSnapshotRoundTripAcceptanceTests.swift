@@ -257,14 +257,9 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
     /// still receives `cc --resume <session-id>`.
     func testCaptureAndRestoreBrowserFirstLayout() throws {
         try skipIfReleaseBuild()
-        // C11-99 Area C: real round-trip regression — browser surface `url` is
-        // dropped on the apply → capture → restore path while the Markdown
-        // sibling (`filePath`) survives. The capture writes back nil for
-        // `SurfaceSpec.url`, so the test's `url == "https://example.com"`
-        // assertion at line 346 hits `("nil") is not equal to ...`. Fix
-        // belongs in `WorkspacePlanCapture` (or whatever browser-panel walker
-        // it delegates to) — re-enable after that lands as a follow-up.
-        try XCTSkipIf(true, "C11-99 Area C: capture drops browser surface url; fix in follow-up.")
+        // C11-99 Area C: fixed in BrowserPanel.init by seeding `currentURL`
+        // synchronously to the requested URL so snapshot capture sees the
+        // value before the WKWebView KVO observer has a chance to fire.
         try runMixedFirstFixtureRoundTrip(
             fixtureName: "browser-first-mixed",
             firstSurfaceId: "docs",

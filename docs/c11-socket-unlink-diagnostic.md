@@ -1,16 +1,22 @@
 # Socket-unlink diagnostic — C11-105 runbook
 
-This runbook walks an operator (or future agent) through reproducing the bug filed in **Lattice C11-105**: the prod c11.app's socket file at `~/Library/Application Support/c11/c11.sock` is unlinked from the filesystem while the prod process is still alive and bound to that path in the kernel. Net effect: every `c11 <command>` returns "Socket not found" until either (a) the operator runs **Cmd+Shift+P → Restart CLI Listener** (the workaround), or (b) the prod c11.app is restarted (which on a machine still affected by C11-103 also wipes the workspace state — two bugs compound).
+This runbook covers the kqueue-based diagnostic tool that ships alongside the **C11-105** fix. The original symptom — prod c11.app's socket at `~/Library/Application Support/c11/c11.sock` unlinked from the filesystem while the prod process stayed alive in-kernel — turned out to be local `xcodebuild -scheme c11-logic test` runs: `TerminalControllerSocketSecurityTests` was a `c11LogicTests` target member, and its `setUp()` called `TerminalController.shared.stop()`, which unlinked a default-initialized stable-default path. The three-part fix (test target moved back to `c11Tests`, `TerminalController.socketPath` defaults to `""` with a non-empty `unlink` guard, `.cmuxOnly` → `.c11Only` hygiene) lives in the rest of this PR.
 
-The original C11-105 description hypothesized that **tagged debug-build shutdown** was the culprit. A source-grep of `Sources/` did not find a matching unlink call near any shutdown path, so the hypothesis is unconfirmed. This runbook + tool exists to **name the actual unlinker empirically**.
+## Why the tool still ships
 
-## What ships with this PR
+The original C11-105 description guessed at "tagged debug-build shutdown" as the culprit. That guess was wrong, but the tool that was built to *empirically name the culprit* turned out to be load-bearing — it would have caught the actual mechanism in one repro and is the right defense against any future unlink source (Sparkle, an Xcode test fixture not yet audited, a third-party tool, a regression). Retained as a canary; do not assume the C11-105 fix closes the door forever.
 
-- `tools/socket-watcher/` — a standalone SwiftPM package containing `c11-socket-watcher`, a kqueue-based file watcher.
+## What ships in `tools/socket-watcher/`
+
+- `c11-socket-watcher` — a standalone SwiftPM-built binary using kqueue `EVFILT_VNODE` (`NOTE_DELETE | NOTE_RENAME | NOTE_REVOKE`). On each event, shells out to `lsof -U` and `ps -axww` (filtered to `c11|cmux`) and emits one JSON Lines record. After delete it pivots to a parent-directory `NOTE_WRITE` watch and re-arms when the file reappears, so multiple bounces are captured in one run.
 - This runbook.
 - A pointer in `code/c11/CLAUDE.md` Pitfalls.
 
-The fix follows on a separate ticket once the watcher names the culprit.
+## When to reach for this
+
+- The "Socket not found" symptom re-appears with the fix landed — confirm via this watcher that the unlinker is NOT a recurrence of the `c11LogicTests` mechanism before chasing other hypotheses.
+- A different file disappears unexpectedly from `~/Library/Application Support/c11/` — point the watcher at it.
+- You're chasing a Sparkle / xcodebuild / third-party tool that may be touching the socket directory.
 
 ## Building & starting the watcher
 
@@ -44,36 +50,38 @@ The same watcher can survive multiple bounces — useful when reproducing scenar
 
 Run the scenarios below in order. Stop as soon as a delete event appears in the watcher's output; the `lsof` + `ps` snapshot at that timestamp names the suspect.
 
-### Scenario 1 — tagged debug-build dance (primary hypothesis)
+### Scenario 1 — confirmed historical cause: `c11-logic` test runs
 
-This is the scenario described in the C11-105 ticket. The hypothesis is that `c11 DEV <tag>.app`'s shutdown path includes a cleanup step that unlinks the stable default socket path even when the debug build bound elsewhere.
+> **Pre-fix only.** This reproduction works against any commit before the C11-105 fix landed. On the fix branch (and forward), the test setUp no longer touches the prod socket, so this scenario emits no `delete` event. Keep it documented for historical clarity and as a guard against regressions in the fix.
+
+`TerminalControllerSocketSecurityTests` was a member of the `c11LogicTests` target. Its `setUp()` calls `TerminalController.shared.stop()`, and the singleton's `socketPath` defaulted to `SocketControlSettings.stableDefaultSocketPath`. Result: every local `c11-logic` run unlinked the prod c11's bind dentry while its FD stayed live in-kernel.
 
 ```bash
-# In a separate terminal:
-./scripts/reload.sh --tag c11-105-repro
-# Wait for the tagged DEV build to launch. Use it normally for a few seconds
-# — open a workspace, split a pane, type at the prompt — to ensure it has
-# fully initialized any socket cleanup state.
-# Then quit it:
-osascript -e 'tell application "c11 DEV c11-105-repro" to quit'
-# (or click the dock icon → Quit, or Cmd+Q from the foreground window)
+# In a separate terminal, with the watcher running and prod c11 alive:
+xcodebuild -project GhosttyTabs.xcodeproj -scheme c11-logic \
+  -configuration Debug -destination "platform=macOS" test
 ```
 
-Watch the JSON Lines log for a `delete` event timestamped at or just after the quit. The `lsof` rows tell you which c11/cmux processes had the prod socket path (or its inode) open at that moment. The `ps` rows catalog every c11/cmux process alive at the unlink. The unlinker is almost always one of the rows in `ps`; the `lsof` rows narrow it further.
+Watch the JSON Lines log for a `delete` event timestamped within seconds of the test action starting. The `ps` snapshot will name a Swift XCTest host process whose argv mentions `c11LogicTests.xctest`.
 
-### Scenario 2 — Sparkle update simulation (optional)
+### Scenario 2 — tagged debug-build dance (original hypothesis, not the actual cause)
 
-If Scenario 1 produces nothing, the Sparkle updater is the next-most-suspect (the symptom on 2026-05-18 included `last-socket-path` being repeatedly rewritten to `/var/folders/.../T/csec-cmux-*.sock` paths, which look like Sparkle staging paths). The simplest poke:
+The original C11-105 description guessed this was the mechanism; it isn't. Still useful as a control: a clean run here should produce **no** `delete` event, confirming the tagged-build shutdown path is innocent.
+
+```bash
+./scripts/reload.sh --tag c11-105-repro
+osascript -e 'tell application "c11 DEV c11-105-repro" to quit'
+```
+
+If you do see a `delete` event in this scenario, that's news — file a new ticket; the fix shipped under this PR did not cover it.
+
+### Scenario 3 — Sparkle update simulation (optional)
+
+The Sparkle updater is the next-most-suspect (the 2026-05-18 forensics included `last-socket-path` being repeatedly rewritten to `/var/folders/.../T/csec-cmux-*.sock` paths — but those turned out to be tempfiles generated by the `c11LogicTests` test itself, not Sparkle). The simplest poke:
 
 1. With a tagged DEV build running, trigger an in-app update check from the Help menu.
 2. If a staged update exists, accept it and watch the apply / relaunch cycle.
 3. Look for a `delete` event correlated with the relaunch.
-
-(This scenario is involved; skip unless Scenario 1 produces nothing and you have time.)
-
-### Scenario 3 — xcodebuild test runs (optional, low-priority)
-
-Some `c11-unit` or `c11Tests` runs spawn a transient `c11 DEV.app` XCTest host process. The host quits when the run completes. If the watcher captures a `delete` correlated with `xcodebuild test` finishing, that points at the test-host's shutdown path rather than user-initiated quits. **Do not run this scenario locally if the operator's prod c11 is busy** — the test-host briefly monopolizes the main thread of its own process, and we've already documented an incident where this beachballed the host window (see `CLAUDE.md` Testing policy). CI is the safer venue.
 
 ### Scenario 4 — operator hits "Restart CLI Listener" (control)
 
@@ -108,24 +116,26 @@ jq -r 'select(.event=="delete") | .ps' < /tmp/c11-socket-watch.jsonl | head -1
 
 The `ps` rows list every c11/cmux process alive at the unlink. Cross-reference PIDs in `lsof` to figure out which of those processes had the socket open. The unlinker is almost always a process whose `etime` shows it was about to quit (long-running) or just started (Sparkle staging).
 
-## Filing the follow-up fix ticket
+## Filing a new ticket if the watcher catches a different unlinker
 
-Once the watcher names the culprit, file a new Lattice ticket with the template:
+The C11-105 fix closes the `c11LogicTests` mechanism. If the watcher fires a `delete` event from a different source, file a fresh Lattice ticket with the template:
 
 ```
 Title: C11-XXX: <process-name> unlinks prod c11's socket on <event>
 
-Symptom: from the C11-105 description (link).
+Symptom: same observable as C11-105 — "Socket not found" with prod c11 alive
+and bound per `lsof`. The C11-105 mechanism (c11LogicTests stop()) is fixed,
+so this is a new source.
 
-Mechanism (now confirmed): <PID/process> unlinks <path> during <scenario>.
+Mechanism: <PID/process> unlinks <path> during <scenario>.
 Watcher log attached.
 
-Fix shape: <propose the same options C11-105 had — debug builds skip cleanup,
-unlink-with-self-stat verify, prod c11 self-heal — picking based on the
-mechanism>.
+Fix shape: <depends on the source — Sparkle gets a sandbox-aware skip,
+xcodebuild test fixtures get tighter isolation, third-party tool gets a
+defense-in-depth in c11 itself>.
 ```
 
-Attach the JSON-Lines log as an artifact and link to C11-105. Close C11-105 once the fix lands (the diagnostic ticket stays open as the harness; the fix ticket is the actionable follow-up).
+Attach the JSON-Lines log as an artifact and link to C11-105 for the historical mechanism.
 
 ## Tests
 

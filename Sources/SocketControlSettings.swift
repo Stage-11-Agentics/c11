@@ -6,7 +6,7 @@ import Security
 
 enum SocketControlMode: String, CaseIterable, Identifiable {
     case off
-    case cmuxOnly
+    case c11Only
     case automation
     case password
     /// Full open access (all local users/processes) with no ancestry or password gate.
@@ -14,13 +14,16 @@ enum SocketControlMode: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    static var uiCases: [SocketControlMode] { [.off, .cmuxOnly, .automation, .password, .allowAll] }
+    static var uiCases: [SocketControlMode] { [.off, .c11Only, .automation, .password, .allowAll] }
 
+    // Localization keys retain the legacy `socketControl.cmuxOnly.*` names so
+    // translations across the six shipping locales survive the Swift rename;
+    // chase the key rename in a separate hygiene pass.
     var displayName: String {
         switch self {
         case .off:
             return String(localized: "socketControl.off.name", defaultValue: "Off")
-        case .cmuxOnly:
+        case .c11Only:
             return String(localized: "socketControl.cmuxOnly.name", defaultValue: "c11 processes only")
         case .automation:
             return String(localized: "socketControl.automation.name", defaultValue: "Automation mode")
@@ -35,7 +38,7 @@ enum SocketControlMode: String, CaseIterable, Identifiable {
         switch self {
         case .off:
             return String(localized: "socketControl.off.description", defaultValue: "Disable the local control socket.")
-        case .cmuxOnly:
+        case .c11Only:
             return String(localized: "socketControl.cmuxOnly.description", defaultValue: "Only processes started inside c11 terminals can send commands.")
         case .automation:
             return String(localized: "socketControl.automation.description", defaultValue: "Allow external local automation clients from this macOS user (no ancestry check).")
@@ -50,7 +53,7 @@ enum SocketControlMode: String, CaseIterable, Identifiable {
         switch self {
         case .allowAll:
             return 0o666
-        case .off, .cmuxOnly, .automation, .password:
+        case .off, .c11Only, .automation, .password:
             return 0o600
         }
     }
@@ -327,8 +330,11 @@ struct SocketControlSettings {
         switch normalizeMode(raw) {
         case "off":
             return .off
-        case "cmuxonly":
-            return .cmuxOnly
+        // "cmuxonly" remains here so persisted UserDefaults values from
+        // pre-rename builds still migrate forward; "c11only" is the new
+        // canonical form written by `migrateMode` (see c11App.swift).
+        case "c11only", "cmuxonly":
+            return .c11Only
         case "automation":
             return .automation
         case "password":
@@ -351,7 +357,7 @@ struct SocketControlSettings {
     }
 
     static var defaultMode: SocketControlMode {
-        return .cmuxOnly
+        return .c11Only
     }
 
     private static var isDebugBuild: Bool {
@@ -664,7 +670,7 @@ struct SocketControlSettings {
             if let overrideMode = envOverrideMode(environment: environment) {
                 return overrideMode
             }
-            return userMode == .off ? .cmuxOnly : userMode
+            return userMode == .off ? .c11Only : userMode
         }
 
         if let overrideMode = envOverrideMode(environment: environment) {

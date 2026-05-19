@@ -51,7 +51,11 @@ class TerminalController {
         isTerminatingApp = value
     }
 
-    private nonisolated(unsafe) var socketPath = SocketControlSettings.stableDefaultSocketPath
+    // Empty until `start(...)` binds. Initializing to the stable default would
+    // make `stop()` unlink that shared path even in a never-started controller
+    // — the C11-105 production unlink mechanism. See `stop()` for the matching
+    // empty-path guard.
+    private nonisolated(unsafe) var socketPath = ""
     private nonisolated(unsafe) var serverSocket: Int32 = -1
     private nonisolated(unsafe) var isRunning = false
     private nonisolated(unsafe) var acceptLoopAlive = false
@@ -63,7 +67,7 @@ class TerminalController {
     private nonisolated let listenerStateLock = NSLock()
     private var clientHandlers: [Int32: Thread] = [:]
     private var tabManager: TabManager?
-    private var accessMode: SocketControlMode = .cmuxOnly
+    private var accessMode: SocketControlMode = .c11Only
     private let myPid = getpid()
     private nonisolated(unsafe) static var socketCommandPolicyDepth: Int = 0
     private nonisolated(unsafe) static var socketCommandFocusAllowanceStack: [Bool] = []
@@ -256,6 +260,23 @@ class TerminalController {
             return snapshot.socketPath
         }
         return preferredPath
+    }
+
+    /// Test seam: the raw `socketPath` field without any
+    /// running/preferred-path fallback. Used by C11-105 regression tests to
+    /// assert a never-started controller does not carry a shared default
+    /// that `stop()` would unlink.
+    var socketPathSnapshot: String {
+        withListenerState { socketPath }
+    }
+
+    /// Test seam: construct a fresh, never-started `TerminalController` whose
+    /// fields are at their default-init values. The production code path
+    /// always uses `TerminalController.shared`; this exists only so C11-105
+    /// regression tests can observe the default state without rebinding the
+    /// shared singleton mid-process.
+    static func makeForTesting() -> TerminalController {
+        TerminalController()
     }
 
     private nonisolated func shouldContinueAcceptLoop(generation: UInt64) -> Bool {
@@ -1177,10 +1198,17 @@ class TerminalController {
         if socketToClose >= 0 {
             close(socketToClose)
         }
-        unlink(socketPathToUnlink)
+        // Skip the unlink when we never bound a path. Calling unlink on the
+        // stable default while a sibling c11 process owns that bind point is
+        // the C11-105 production bug — the dentry is removed under the live
+        // owner, leaving every `c11 <cmd>` reporting "Socket not found".
+        if !socketPathToUnlink.isEmpty {
+            unlink(socketPathToUnlink)
+        }
     }
 
     private nonisolated func unlinkSocketPathIfListenerStillInactive(_ path: String) {
+        guard !path.isEmpty else { return }
         let shouldUnlink = withListenerState {
             Self.shouldUnlinkSocketPathAfterAcceptLoopCleanup(
                 pathMatches: socketPath == path,
@@ -1591,15 +1619,15 @@ class TerminalController {
     private func handleClient(_ socket: Int32, peerPid: pid_t? = nil) {
         defer { close(socket) }
 
-        // In cmuxOnly mode, verify the connecting process is a descendant of cmux.
+        // In c11Only mode, verify the connecting process is a descendant of c11.
         // In allowAll mode (env-var only), skip the ancestry check.
-        if accessMode == .cmuxOnly {
+        if accessMode == .c11Only {
             // Use pre-captured peer PID if available (captured in accept loop before
             // the peer can disconnect), falling back to live lookup.
             let pid = peerPid ?? getPeerPid(socket)
             if let pid {
                 guard isDescendant(pid) else {
-                    let msg = "ERROR: Access denied — only processes started inside cmux can connect\n"
+                    let msg = "ERROR: Access denied — only processes started inside c11 can connect\n"
                     msg.withCString { ptr in _ = write(socket, ptr, strlen(ptr)) }
                     return
                 }

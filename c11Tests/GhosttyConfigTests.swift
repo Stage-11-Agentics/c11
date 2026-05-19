@@ -1751,7 +1751,9 @@ final class RecentlyClosedBrowserStackTests: XCTestCase {
 final class SocketControlSettingsTests: XCTestCase {
     func testMigrateModeSupportsExpandedSocketModes() {
         XCTAssertEqual(SocketControlSettings.migrateMode("off"), .off)
-        XCTAssertEqual(SocketControlSettings.migrateMode("cmuxOnly"), .cmuxOnly)
+        XCTAssertEqual(SocketControlSettings.migrateMode("c11Only"), .c11Only)
+        // Pre-rename UserDefaults values must still migrate forward.
+        XCTAssertEqual(SocketControlSettings.migrateMode("cmuxOnly"), .c11Only)
         XCTAssertEqual(SocketControlSettings.migrateMode("automation"), .automation)
         XCTAssertEqual(SocketControlSettings.migrateMode("password"), .password)
         XCTAssertEqual(SocketControlSettings.migrateMode("allow-all"), .allowAll)
@@ -1763,7 +1765,7 @@ final class SocketControlSettingsTests: XCTestCase {
 
     func testSocketModePermissions() {
         XCTAssertEqual(SocketControlMode.off.socketFilePermissions, 0o600)
-        XCTAssertEqual(SocketControlMode.cmuxOnly.socketFilePermissions, 0o600)
+        XCTAssertEqual(SocketControlMode.c11Only.socketFilePermissions, 0o600)
         XCTAssertEqual(SocketControlMode.automation.socketFilePermissions, 0o600)
         XCTAssertEqual(SocketControlMode.password.socketFilePermissions, 0o600)
         XCTAssertEqual(SocketControlMode.allowAll.socketFilePermissions, 0o666)

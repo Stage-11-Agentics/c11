@@ -2654,23 +2654,16 @@ class TabManager: ObservableObject {
             }
             return
         }
-        // Anchor on the currently-displayed workspace when it is itself part
-        // of the close set (per delegator decision): consistent with the
-        // previous window-modal NSAlert behavior, avoids flash-cycling
-        // across the multi-select. When the displayed workspace is NOT in
-        // the close set (sidebar multi-select can exclude the focused tab),
-        // fall through to the first workspace in the close set so the
-        // overlay never renders on a workspace that isn't being closed.
-        // The plan listing in the message tells the user exactly which
-        // workspaces are about to close — the anchor only matters for
-        // *where* the overlay is mounted.
-        let host: Workspace? = {
-            if let selected = selectedWorkspace,
-               workspaces.contains(where: { $0.id == selected.id }) {
-                return selected
-            }
-            return workspaces.first
-        }()
+        // Anchor on the currently-displayed workspace so the overlay always
+        // mounts on a visible content area. Off-screen workspaces are
+        // isHidden=true (perf #127); their anchor view doesn't report a
+        // window-coord frame, so mounting on one strands the runtime active
+        // with no card visible (operator sees a no-op). The plan listing in
+        // `plan.message` names every workspace being closed, so anchoring
+        // away from the close set doesn't lose context. Fall back to the
+        // first workspace in the close set only when there's no selection
+        // at all.
+        let host: Workspace? = selectedWorkspace ?? workspaces.first
         guard let host else { return }
         Task { @MainActor [weak self] in
             let accepted = await host.presentConfirmCloseWorkspace(
@@ -2853,9 +2846,17 @@ class TabManager: ObservableObject {
             // content area only, with a centered confirm/cancel card. Lands above
             // portal-hosted terminal/browser content via themeFrame mount. Sidebar
             // stays visible. Plan §3.1, §3.3.
-            Task { @MainActor [weak self, weak workspace] in
-                guard let self, let workspace else { return }
-                let accepted = await workspace.presentConfirmCloseWorkspace(
+            //
+            // Host vs target: off-screen workspaces are isHidden=true (perf #127),
+            // so their anchor view doesn't report a window-coord frame and the
+            // overlay controller bails on `guard let anchor`. Mounting on the
+            // currently-selected workspace guarantees the card is visible; the
+            // dialog message already names the workspace being closed, so the
+            // operator still knows what they're confirming.
+            let host = selectedWorkspace ?? workspace
+            Task { @MainActor [weak self, weak workspace, weak host] in
+                guard let self, let workspace, let host else { return }
+                let accepted = await host.presentConfirmCloseWorkspace(
                     title: title,
                     message: message,
                     source: .local

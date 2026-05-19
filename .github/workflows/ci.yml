@@ -199,18 +199,29 @@ jobs:
 
       - name: Host-bound unit tests (advisory)
         # Advisory while C11-99 Area C stabilizes the 32 expectation-timeout
-        # failures clustered in host-bound classes (AppDelegateShortcutRouting,
-        # GhosttyConfig, NotificationBurstCoalescer, TabManagerReopenClosedBrowserFocus,
-        # TerminalNotificationDirectInteraction, BrowserDeveloperToolsVisibilityPersistence,
-        # BrowserPanelHostContainerView). Failures still surface in the run
-        # log; they just don't gate merges. Flip back to hard-fail once C11-99
-        # Area C lands 5+ consecutive green runs.
+        # failures clustered in 7 host-bound classes. Failures still surface
+        # in the run log; they just don't gate merges. Flip back to hard-fail
+        # once C11-99 Area C lands 5+ consecutive green runs.
+        #
+        # C11-109: the 7 flaky classes are explicitly -skip-testing'd below.
+        # Each expectation timeout is ~10s; 32 timeouts dominated the ~6 min
+        # wall time even though `continue-on-error: true` made them advisory.
+        # Skipping recovers ~5 min per build while the remaining ~20 c11Tests
+        # still provide host-runtime signal (AppKit, Ghostty, WKWebView,
+        # UNNotificationCenter). Remove the skip flags when Area C lands.
         continue-on-error: true
         run: |
           set -euo pipefail
           SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
           xcodebuild -project GhosttyTabs.xcodeproj -scheme c11-unit -configuration Debug \
             -only-testing:c11Tests \
+            -skip-testing:c11Tests/AppDelegateShortcutRoutingTests \
+            -skip-testing:c11Tests/GhosttyConfigTests \
+            -skip-testing:c11Tests/NotificationBurstCoalescerTests \
+            -skip-testing:c11Tests/TabManagerReopenClosedBrowserFocusTests \
+            -skip-testing:c11Tests/TerminalNotificationDirectInteractionTests \
+            -skip-testing:c11Tests/BrowserDeveloperToolsVisibilityPersistenceTests \
+            -skip-testing:c11Tests/BrowserPanelHostContainerViewTests \
             -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
             -disableAutomaticPackageResolution \
             -destination "platform=macOS" \

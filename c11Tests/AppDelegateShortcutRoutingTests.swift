@@ -876,12 +876,15 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
     }
 
     func testMinimalModeUsesZeroTopSafeAreaForMainWindowContentView() throws {
-        // TODO(C11-99 Area C): re-enable once `createMainWindow` is profiled
-        // and the 100+ second runtime is reduced. This single test was 22%
-        // of total c11Tests wall time (104-123s vs 10.5s for the next slowest)
-        // and pushed CI past its 15-min timeout. Quarantined by Area A to
-        // restore CI signal; Area C owns the underlying fix.
-        try XCTSkipIf(true, "Quarantined under C11-99 Area C: createMainWindow takes 100+s, pushes c11Tests past CI timeout")
+        // Re-enabled by the Info.plist UTExportedTypeDeclarations addition for
+        // `com.splittabbar.{tabitem,tabtransfer}` — that eliminated 500+
+        // cascading runtime warnings (375 "Type was expected to be declared"
+        // UTType warnings + 125 SwiftUI "Publishing changes from within view
+        // updates" warnings) the test accumulated during `createMainWindow`.
+        // On Apple Silicon the warning collection is microsecond-cheap (test
+        // ran in 2.5s pre-fix); on shared-tenant `macos-15-xlarge` CI runners
+        // the same warning collection ballooned the test to 100-123s. Per-test
+        // runtime is 1.57s locally after the fix.
 
         guard let appDelegate = AppDelegate.shared else {
             XCTFail("Expected AppDelegate.shared")

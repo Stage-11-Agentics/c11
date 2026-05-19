@@ -8271,8 +8271,13 @@ class TerminalController {
         // this gate, an agent could write `source=derived` and claim
         // their values are system-computed, nullifying the meaning
         // of the precedence tier.
-        if source == .derived {
-            return .err(code: "invalid_source", message: "source 'derived' is reserved for c11-internal writers", data: nil)
+        //
+        // (C11-106 AC16) Logic moved to SocketMetadataSourceValidator
+        // so the rejection contract is exercised in
+        // c11Tests/SocketDerivedSourceRejectionTests.swift without
+        // standing up a full socket frame loop.
+        if let rejection = SocketMetadataSourceValidator.externalRejectionMessage(for: source) {
+            return .err(code: rejection.code, message: rejection.message, data: nil)
         }
 
         guard let resolved = v2ResolveSurfaceForMetadata(params: params) else {
@@ -8394,8 +8399,13 @@ class TerminalController {
         // this gate, an agent could write `source=derived` and claim
         // their values are system-computed, nullifying the meaning
         // of the precedence tier.
-        if source == .derived {
-            return .err(code: "invalid_source", message: "source 'derived' is reserved for c11-internal writers", data: nil)
+        //
+        // (C11-106 AC16) Logic moved to SocketMetadataSourceValidator
+        // so the rejection contract is exercised in
+        // c11Tests/SocketDerivedSourceRejectionTests.swift without
+        // standing up a full socket frame loop.
+        if let rejection = SocketMetadataSourceValidator.externalRejectionMessage(for: source) {
+            return .err(code: rejection.code, message: rejection.message, data: nil)
         }
 
         guard let resolved = v2ResolveSurfaceForMetadata(params: params) else {
@@ -9150,8 +9160,13 @@ class TerminalController {
         // this gate, an agent could write `source=derived` and claim
         // their values are system-computed, nullifying the meaning
         // of the precedence tier.
-        if source == .derived {
-            return .err(code: "invalid_source", message: "source 'derived' is reserved for c11-internal writers", data: nil)
+        //
+        // (C11-106 AC16) Logic moved to SocketMetadataSourceValidator
+        // so the rejection contract is exercised in
+        // c11Tests/SocketDerivedSourceRejectionTests.swift without
+        // standing up a full socket frame loop.
+        if let rejection = SocketMetadataSourceValidator.externalRejectionMessage(for: source) {
+            return .err(code: rejection.code, message: rejection.message, data: nil)
         }
 
         guard let resolved = v2ResolvePaneForMetadata(params: params) else {
@@ -9247,8 +9262,13 @@ class TerminalController {
         // this gate, an agent could write `source=derived` and claim
         // their values are system-computed, nullifying the meaning
         // of the precedence tier.
-        if source == .derived {
-            return .err(code: "invalid_source", message: "source 'derived' is reserved for c11-internal writers", data: nil)
+        //
+        // (C11-106 AC16) Logic moved to SocketMetadataSourceValidator
+        // so the rejection contract is exercised in
+        // c11Tests/SocketDerivedSourceRejectionTests.swift without
+        // standing up a full socket frame loop.
+        if let rejection = SocketMetadataSourceValidator.externalRejectionMessage(for: source) {
+            return .err(code: rejection.code, message: rejection.message, data: nil)
         }
 
         guard let resolved = v2ResolvePaneForMetadata(params: params) else {

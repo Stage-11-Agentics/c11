@@ -145,20 +145,15 @@ c11 read-screen [--lines <n>] [--scrollback]
 c11 read-screen --workspace workspace:2 --surface surface:3 --lines 50
 
 # Send text to a terminal
-c11 send "echo hello"                # Types text — does NOT submit
-c11 send "npm test\n"                # \n sends Enter, \r also sends Enter, \t sends Tab
-c11 send-key enter                   # Send a keypress directly
-c11 send --workspace workspace:2 --surface surface:3 "ls\n"
+c11 send "echo hello"                # Types text AND submits (default behavior)
+c11 send --no-submit "cd /tmp/"      # Types text only, no Return — for partial-line construction
+c11 send-key enter                   # Send a keypress directly (no text)
+c11 send --workspace workspace:2 --surface surface:3 "ls"
 ```
 
-**`c11 send` does NOT auto-submit.** Include `\n` or call `c11 send-key enter` separately.
+**`c11 send` auto-submits by default.** After typing the text, a synthetic Return is dispatched on the same @MainActor turn, so the receiving TUI sees the line as one user turn. Pass `--no-submit` only when you want to type into the prompt without executing — typically to build a partial line across multiple sends, or to stage text before the operator hits Enter manually.
 
-**`\n` gotcha from Claude Code's Bash tool:** the newline is stripped before reaching c11. Always send the text, then `send-key enter` as two separate calls:
-
-```bash
-c11 send --workspace $WS --surface $SURF "your command"
-c11 send-key --workspace $WS --surface $SURF enter
-```
+Background: `\n` in `c11 send` is stripped by Claude Code's Bash tool before it ever reaches c11, so the old "include \n or call send-key enter" rule silently failed every time agents missed the follow-up. Auto-submit closes that gap. The two-call pattern is preserved via `--no-submit` for the rare partial-line case.
 
 ## Per-surface metadata
 
@@ -267,7 +262,7 @@ Consent is always requested before any write. The installer also installs the c1
 - **Browser commands fail with "not a browser"** — you're targeting a terminal surface. Find the browser surface ref with `c11 tree` and pass `--surface <ref>`.
 - **Commands do nothing** — check `CMUX_SOCKET_PATH` matches the running instance. Default is `/tmp/cmux.sock`; tagged debug builds use `/tmp/cmux-debug-<tag>.sock`. (`C11_SOCKET_PATH` is the primary name going forward; `CMUX_SOCKET_PATH` still works.)
 - **Surface doesn't respond after creation** — it may not be initialized. Run `c11 select-workspace --workspace workspace:N && sleep 2` to trigger the layout pass.
-- **Sub-agent can't call `c11`** — happens with `claude -p` (headless). Interactive `claude --dangerously-skip-permissions` launched via `c11 send "claude --dangerously-skip-permissions\n"` + `send-key enter` maintains the auth chain.
+- **Sub-agent can't call `c11`** — happens with `claude -p` (headless). Interactive `claude --dangerously-skip-permissions` launched via `c11 send "claude --dangerously-skip-permissions"` (auto-submits) maintains the auth chain.
 - **Metadata write returns `applied: false` with `lower_precedence`** — a higher-precedence source already owns that key. See [metadata.md](metadata.md) precedence table.
 
 ## Notes

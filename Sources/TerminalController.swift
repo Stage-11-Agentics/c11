@@ -7546,6 +7546,15 @@ class TerminalController {
         guard let text = params["text"] as? String else {
             return .err(code: "invalid_params", message: "Missing text", data: nil)
         }
+        // C11-108: `submit` defaults to true so `c11 send "..."` types the text AND
+        // submits it in one call. Callers building a partial line that should not
+        // execute (e.g. typing `cd ` then more) pass `submit: false` (CLI:
+        // `--no-submit`) and follow with explicit `c11 send-key enter` when ready.
+        // For an attached surface, the synthetic Return fires on the same @MainActor
+        // turn that delivered the text. For the queueing fallback (surface not yet
+        // attached) the trailing `\r` is appended to the queued payload so the
+        // flush on attach submits the line.
+        let submit = v2Bool(params, "submit") ?? true
 
         let phaseASema = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var phaseAOutcome: SurfaceSendPhaseAOutcome = .err(.err(code: "internal_error", message: "Failed to send text", data: nil))
@@ -7590,6 +7599,9 @@ class TerminalController {
                 defer { phaseBSema.signal() }
                 if let liveSurface = resolved.terminalPanel.surface.surface {
                     sendSocketText(text, surface: liveSurface)
+                    if submit {
+                        _ = sendNamedKey(liveSurface, keyName: "enter")
+                    }
                     // Ensure we present a new frame after injecting input so snapshot-based tests
                     // (and socket-driven agents) can observe the updated terminal without requiring
                     // a focus change to trigger a draw.
@@ -7597,17 +7609,19 @@ class TerminalController {
                     attachedAtPhaseB = true
                 } else {
                     // Surface was torn down between Phase A and Phase B. Fall through to
-                    // the pending queue as a last resort.
-                    resolved.terminalPanel.sendText(text)
+                    // the pending queue as a last resort. Append \r when submit is on
+                    // so the queue flush submits the line on attach.
+                    resolved.terminalPanel.sendText(submit ? text + "\r" : text)
                 }
             }
             phaseBSema.wait()
             queued = !attachedAtPhaseB
         } else {
             // Surface not available within 2s (e.g., terminal not yet attached to any window).
-            // Fall back to the pending queue as a last resort.
+            // Fall back to the pending queue as a last resort. Same submit-aware append
+            // as the teardown fallback above.
             Task { @MainActor in
-                resolved.terminalPanel.sendText(text)
+                resolved.terminalPanel.sendText(submit ? text + "\r" : text)
                 phaseBSema.signal()
             }
             phaseBSema.wait()

@@ -103,9 +103,8 @@ Use **`claude --dangerously-skip-permissions`** — never bare `claude` (stalls 
 c11 new-split right
 # → returns surface:NNN
 
-# 2. Launch claude
+# 2. Launch claude (c11 send auto-submits — single call)
 c11 send --workspace $WS --surface $SURF "claude --dangerously-skip-permissions"
-c11 send-key --workspace $WS --surface $SURF enter
 
 # 3. Wait for claude to be ready (see polling section), then name the tab with lineage
 #    (parent first, `::` separator — see Tab naming above)
@@ -116,13 +115,11 @@ Clearing lint errors in src/ before the feature branch merges."
 # 4. Declare what this agent is (so the sidebar chip, title bar, and tree all reflect identity)
 c11 set-agent --workspace $WS --surface $SURF --type claude-code --model claude-opus-4-7
 
-# 5. Send the prompt — always as two calls (send, then send-key enter).
-#    Tell the sub-agent its parent so it can preserve the chain on self-updates.
+# 5. Send the prompt. Tell the sub-agent its parent so it can preserve the chain on self-updates.
 c11 send --workspace $WS --surface $SURF "Your tab title is already set to 'Login Button :: Lint Fixes' — preserve that prefix. Now: fix all lint errors in src/"
-c11 send-key --workspace $WS --surface $SURF enter
 ```
 
-**Why two-call send:** `\n` in `c11 send` is stripped by Claude Code's Bash tool before reaching c11, so the command sits unsent on the sub-agent's prompt line. Always pair `send` with a separate `send-key enter`.
+**One-call send.** `c11 send` auto-submits by default; the synthetic Return is dispatched on the same @MainActor turn as the text. The old two-call pattern (`send` then `send-key enter`) is no longer needed for "deliver a message and submit." Pass `--no-submit` only when you genuinely want to type without executing (e.g., staging a partial line across multiple calls).
 
 ### Spawning multiple panes at once
 
@@ -134,7 +131,6 @@ for ROLE in plan impl review; do
   SURF=$(c11 new-split right | awk '{print $2}')
   c11 rename-tab --workspace $WS --surface $SURF "$ROLE"
   c11 send       --workspace $WS --surface $SURF "claude --dangerously-skip-permissions \"<prompt>\""
-  c11 send-key   --workspace $WS --surface $SURF enter
 done
 ```
 
@@ -150,9 +146,8 @@ cat > /tmp/agent-prompt.md <<'EOF'
 [complex prompt with backticks, code blocks, etc.]
 EOF
 
-# 2. Tell the agent to read it
+# 2. Tell the agent to read it (c11 send auto-submits — single call)
 c11 send --workspace $WS --surface $SURF "Read /tmp/agent-prompt.md and follow the instructions."
-c11 send-key --workspace $WS --surface $SURF enter
 ```
 
 ## Ready-state handoff
@@ -171,7 +166,6 @@ EOF
 
 # One-shot launch — claude consumes the short argv instruction, which points it at the file
 c11 send --workspace $WS --surface $SURF "cd /path && claude --dangerously-skip-permissions \"Read /tmp/agent-prompt.md and follow the instructions.\""
-c11 send-key --workspace $WS --surface $SURF enter
 ```
 
 This is the default for orchestrated sub-agents. No polling, no sleep, no screen-scraping. Works regardless of how many other Claude Code surfaces are in the workspace.
@@ -184,7 +178,6 @@ When you need claude interactive first (e.g. to send follow-up messages over the
 # Wait for claude to reach Idle before sending the prompt
 until c11 list-status --workspace $WS 2>/dev/null | grep -q '^claude_code=Idle '; do sleep 1; done
 c11 send --workspace $WS --surface $SURF "Read /tmp/prompt.md and follow the instructions."
-c11 send-key --workspace $WS --surface $SURF enter
 ```
 
 Supported status values: `Idle` (prompt waiting), `Running` (processing a turn), `Needs input` (permission/dialog), plus opt-in verbose tool descriptions. Values are `TitleCase`. The trailing space in the grep anchors the match to just `Idle`.
@@ -231,7 +224,6 @@ Sub-agents can `c11 send` directly into each other's terminals — no orchestrat
 
 ```bash
 c11 send --workspace workspace:N --surface surface:M "The number is 42"
-c11 send-key --workspace workspace:N --surface surface:M enter
 ```
 
 This is a powerful primitive for handoffs: agent A finishes a step, writes its result to agent B's terminal.

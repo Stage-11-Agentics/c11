@@ -2428,6 +2428,7 @@ struct CMUXCLI {
         case "send":
             let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
             let (sfArg, rem1) = parseOption(rem0, name: "--surface")
+            let (noSubmit, rem2) = parseBoolFlag(rem1, name: "--no-submit")
             let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
             // Require explicit surface targeting. Shell-integrated callers inside a c11
@@ -2438,10 +2439,10 @@ struct CMUXCLI {
                 || ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] != nil else {
                 throw CLIError(message: "send requires --surface <id|ref> (or run inside a c11 surface so CMUX_SURFACE_ID is set)")
             }
-            let rawText = rem1.dropFirst(rem1.first == "--" ? 1 : 0).joined(separator: " ")
+            let rawText = rem2.dropFirst(rem2.first == "--" ? 1 : 0).joined(separator: " ")
             guard !rawText.isEmpty else { throw CLIError(message: "send requires text") }
             let text = unescapeSendText(rawText)
-            var params: [String: Any] = ["text": text]
+            var params: [String: Any] = ["text": text, "submit": !noSubmit]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
@@ -2473,14 +2474,15 @@ struct CMUXCLI {
         case "send-panel":
             let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
             let (panelArg, rem1) = parseOption(rem0, name: "--panel")
+            let (noSubmit, rem2) = parseBoolFlag(rem1, name: "--no-submit")
             let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             guard let panelArg else {
                 throw CLIError(message: "send-panel requires --panel")
             }
-            let rawText = rem1.dropFirst(rem1.first == "--" ? 1 : 0).joined(separator: " ")
+            let rawText = rem2.dropFirst(rem2.first == "--" ? 1 : 0).joined(separator: " ")
             guard !rawText.isEmpty else { throw CLIError(message: "send-panel requires text") }
             let text = unescapeSendText(rawText)
-            var params: [String: Any] = ["text": text]
+            var params: [String: Any] = ["text": text, "submit": !noSubmit]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(panelArg, client: client, workspaceHandle: wsId)
@@ -10704,6 +10706,28 @@ struct CMUXCLI {
 
     private func hasFlag(_ args: [String], name: String) -> Bool {
         args.contains(name)
+    }
+
+    /// Extract a boolean flag, returning (present, remaining). Respects `--` terminator
+    /// so callers that join the remainder as text don't accidentally treat a post-`--`
+    /// occurrence of `name` as the flag.
+    private func parseBoolFlag(_ args: [String], name: String) -> (Bool, [String]) {
+        var present = false
+        var remaining: [String] = []
+        var pastTerminator = false
+        for arg in args {
+            if arg == "--" {
+                pastTerminator = true
+                remaining.append(arg)
+                continue
+            }
+            if !pastTerminator, arg == name {
+                present = true
+                continue
+            }
+            remaining.append(arg)
+        }
+        return (present, remaining)
     }
 
     /// CMUX-10: client-side hex validation for `--color`. The socket re-validates

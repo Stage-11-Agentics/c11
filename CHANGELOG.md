@@ -6,6 +6,33 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.49.0] - 2026-05-19
+
+Stability + ergonomics release. Headline: **worktree and branch chips on every workspace's sidebar row** make git context visible at a glance — the operator running parallel worktrees never has to read `cwd` to know which workspace is on which branch. Underneath, the long-running C11-105 mystery is closed out: the c11 CLI socket no longer goes unreachable while the app is alive. State-directory migration from c11mux gets a per-entry merge so mixed-state homes survive. `c11 send` learns to submit by default — agents that drop the `send-key enter` follow-up no longer leave messages stranded in the recipient's input box. Workspace snapshots now persist browser surface URLs across restore. Terminal links pick up an Opt+click escape hatch to the system browser. Update pill opens its popover on the first click. And the close-workspace confirm overlay actually shows up when the target workspace is off-screen.
+
+### Added
+
+- **Worktree and branch sidebar chips on every workspace.** The sidebar surfaces each workspace's current git branch alongside a worktree indicator, color-hinted so worktrees are visually distinct from the main checkout. The operator running parallel worktrees no longer has to read `cwd` to know which workspace is on which branch. ([#181](https://github.com/Stage-11-Agentics/c11/pull/181))
+- **Opt+click on a terminal link forces the system default browser.** Adds an Option/Alt modifier override at the `GHOSTTY_ACTION_OPEN_URL` routing site so a single click can bypass `BrowserLinkOpenSettings` (cmuxBrowser default, host whitelist, regex patterns) and open externally. `Cmd+click` behavior is unchanged. ([e45489764](https://github.com/Stage-11-Agentics/c11/commit/e45489764))
+
+### Changed
+
+- **`c11 send` now submits by default.** The previous behavior typed text into the recipient's PTY but never appended Return — every sender had to follow up with `c11 send-key enter`, and agents missed the second call repeatedly in practice. The text would land in the recipient's input box and sit unsubmitted, blocking the workflow. `send` now types AND submits in one call. Pass `--no-submit` when you genuinely want to type without executing (partial-line construction, staging text before manual Enter). The matching skill examples collapse from two calls to one. ([#185](https://github.com/Stage-11-Agentics/c11/pull/185))
+- **State-directory migration is now per-entry, not blanket-copy.** Users with both a legacy `~/.c11mux/` state dir and a partial `~/.c11/` from earlier sessions used to get one or the other; the migration now merges entry-by-entry so neither side overwrites the other. ([#179](https://github.com/Stage-11-Agentics/c11/pull/179))
+- **Default agent prompt now orients new sub-agents before the c11 skill loads.** Sub-agents launched into a c11 surface get a brief orientation pass (workspace/surface refs, role context) up front so the first turn isn't spent rediscovering the environment. ([#178](https://github.com/Stage-11-Agentics/c11/pull/178))
+- **Update pill opens its popover on the first click for background-detected updates.** Previously a background-detected update required two clicks: one to "wake" the pill, one to actually open. Now opens directly on first click. ([ff2711b6d](https://github.com/Stage-11-Agentics/c11/commit/ff2711b6d))
+
+### Fixed
+
+- **CLI socket no longer goes unreachable while the app is still alive (C11-105).** Root cause: `TerminalControllerSocketSecurityTests.swift` was a member of the `c11LogicTests` target despite living in `c11Tests/` on disk. Its `setUp` calls `TerminalController.shared.stop()`, and `TerminalController.socketPath` was default-initialized to the stable production socket path — so any local `xcodebuild -scheme c11-logic test` run would `unlink()` the prod c11's bind dentry while its FD stayed live in-kernel. Symptom: every `c11 <cmd>` errored with `Socket not found at ~/Library/Application Support/c11/c11.sock` even though the app process was running and the UI / panes / agents were fully interactive. The fix moves the test back into `c11Tests`, empties the field's default, and gates `stop()`'s unlink on a non-empty path. A kqueue diagnostic remains in `tools/socket-watcher/` as a canary for any future unlink source. ([#180](https://github.com/Stage-11-Agentics/c11/pull/180))
+- **Workspace snapshots now persist browser surface URLs across restore.** `SurfaceSpec.url` was dropped in `WorkspacePlanCapture` so any browser pane restored from a snapshot landed on a blank new-tab. The capture now round-trips the URL alongside the rest of the surface spec and the previously-disabled `testCaptureAndRestoreBrowserFirstLayout` is re-enabled in CI. ([#184](https://github.com/Stage-11-Agentics/c11/pull/184))
+- **Close-workspace confirm overlay actually shows up when the target workspace is off-screen.** Off-screen workspaces are `isHidden=true` (the perf #127 visibility gate); their `AnchorView` does not report a window-coord frame, so the overlay controller bailed silently and the operator saw "I clicked Close, nothing happened." The host-vs-target split now anchors the overlay on the currently-displayed workspace; the dialog message already names the workspace being closed, so the anchor change doesn't lose context.
+- **Bonsplit drag-and-drop UTTypes are now declared in `Info.plist`.** Resolves the runtime warning "Type was expected to be declared and exported in the Info.plist" emitted on every Bonsplit `UTType(exportedAs:)` construction. Cheap on Apple Silicon, expensive on shared-tenant CI runners — fix also unblocks a slow test that the warning storm was paging over its timeout. ([#182](https://github.com/Stage-11-Agentics/c11/pull/182))
+
+### Built and shipped by
+
+Stage 11 Agentics. Operator:agent, fused.
+
 ## [0.48.0] - 2026-05-18
 
 Feature release. Headline: **default terminal agent** — a workspace-scoped + user-scoped resolver so the A-button on every new terminal opens the right tool for the job (claude, codex, gemini, kimi, raw shell) without the operator picking each time. Alongside it, a second menu-bar pass: the File menu now leads with New Workspace (the real entry point for new work), Open Folder retires, New Window moves to View where it sits with the rest of the chrome toggles, Close Other Tabs lands in Pane where the verb actually applies, and the Browse panel inside New Workspace now offers the New Folder affordance so starting a workspace can include creating its directory. Plus: About c11 inside Help, Full Disk Access auto-detect, faster workspace switching, tab close X moved to the left.

@@ -21,13 +21,13 @@ final class DefaultAgentConfigTests: XCTestCase {
     func testFactoryClaudeCommandIncludesDangerouslySkipPermissions() {
         let entry = AgentConfig.factory(for: .claudeCode)
         XCTAssertEqual(entry.command, "claude --dangerously-skip-permissions")
-        XCTAssertEqual(entry.initialPrompt, "load the c11 skill")
+        XCTAssertEqual(entry.initialPrompt, "you are operating inside a c11 workspace. load the skill.")
     }
 
     func testFactoryCodexCommandIncludesYolo() {
         let entry = AgentConfig.factory(for: .codex)
         XCTAssertEqual(entry.command, "codex --yolo")
-        XCTAssertEqual(entry.initialPrompt, "load the c11 skill")
+        XCTAssertEqual(entry.initialPrompt, "you are operating inside a c11 workspace. load the skill.")
     }
 
     func testFactoryCustomHasEmptyDefaults() {
@@ -121,7 +121,7 @@ final class DefaultAgentConfigTests: XCTestCase {
         let (store, _) = makeStore()
         XCTAssertEqual(store.current.defaultAgent, .claudeCode)
         XCTAssertEqual(store.current.config(for: .claudeCode).command, "claude --dangerously-skip-permissions")
-        XCTAssertEqual(store.current.config(for: .claudeCode).initialPrompt, "load the c11 skill")
+        XCTAssertEqual(store.current.config(for: .claudeCode).initialPrompt, "you are operating inside a c11 workspace. load the skill.")
     }
 
     func testStoreReturnsFactoryOnGarbageData() {

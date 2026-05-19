@@ -48,7 +48,7 @@ enum AgentType: String, Codable, CaseIterable, Identifiable {
     var factoryInitialPrompt: String {
         switch self {
         case .custom: return ""
-        default:      return "load the c11 skill"
+        default:      return "you are operating inside a c11 workspace. load the skill."
         }
     }
 }
@@ -132,7 +132,7 @@ struct DefaultAgentConfig: Codable, Equatable {
     }
 
     /// Factory shape: claude-code is the default, every agent pre-filled with
-    /// its built-in command + "load the c11 skill".
+    /// its built-in command + the c11-orientation prompt.
     static let factory: DefaultAgentConfig = {
         var agents: [AgentType: AgentConfig] = [:]
         for type in AgentType.allCases {

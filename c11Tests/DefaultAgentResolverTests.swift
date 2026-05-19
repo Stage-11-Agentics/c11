@@ -18,7 +18,7 @@ final class DefaultAgentResolverTests: XCTestCase {
             projectConfig: nil
         )
         XCTAssertEqual(agent, .claudeCode)
-        XCTAssertEqual(launch.command, "claude --dangerously-skip-permissions 'load the c11 skill'")
+        XCTAssertEqual(launch.command, "claude --dangerously-skip-permissions 'you are operating inside a c11 workspace. load the skill.'")
     }
 
     func testProjectConfigDefaultAgentBeatsUserDefault() {
@@ -88,12 +88,12 @@ final class DefaultAgentResolverTests: XCTestCase {
     func testBuildCommandClaudeAppendsInitialPromptAsPositional() {
         let cfg = AgentConfig(
             command: "claude --dangerously-skip-permissions",
-            initialPrompt: "load the c11 skill",
+            initialPrompt: "you are operating inside a c11 workspace. load the skill.",
             envOverridesText: ""
         )
         XCTAssertEqual(
             DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
-            "claude --dangerously-skip-permissions 'load the c11 skill'"
+            "claude --dangerously-skip-permissions 'you are operating inside a c11 workspace. load the skill.'"
         )
     }
 
@@ -113,7 +113,7 @@ final class DefaultAgentResolverTests: XCTestCase {
         // Non-claude agents preserve the prompt in config but don't auto-append.
         let cfg = AgentConfig(
             command: "codex --yolo",
-            initialPrompt: "load the c11 skill",
+            initialPrompt: "you are operating inside a c11 workspace. load the skill.",
             envOverridesText: ""
         )
         XCTAssertEqual(

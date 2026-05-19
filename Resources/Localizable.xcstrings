@@ -32382,6 +32382,100 @@
         }
       }
     },
+    "settings.app.showWorktreeBranchChips": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show worktree + branch chips in sidebar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイドバーにワークツリー + ブランチのチップを表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在侧边栏显示工作树和分支标签"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在側邊欄顯示工作樹與分支標籤"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사이드바에 워크트리 + 브랜치 칩 표시"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показывать чипы worktree и ветки в боковой панели"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показувати чіпи worktree та гілки у бічній панелі"
+          }
+        }
+      }
+    },
+    "settings.app.showWorktreeBranchChips.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Render worktree (colored-dot prefix) and branch chips on each workspace row — derived from cwd and gitfs."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各ワークスペース行にワークツリー（色付きドットのプレフィックス）とブランチのチップを表示します。cwd と gitfs から導出されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在每个工作区行上渲染工作树（彩色圆点前缀）和分支标签,由 cwd 与 gitfs 派生。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在每個工作區列上渲染工作樹（彩色圓點前綴）與分支標籤,由 cwd 與 gitfs 派生。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "각 워크스페이스 행에 워크트리(컬러 점 접두사)와 브랜치 칩을 표시해요. cwd와 gitfs에서 파생됩니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показывать чипы worktree (с цветной точкой-префиксом) и ветки в каждой строке рабочего пространства; вычисляются из cwd и gitfs."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показувати чіпи worktree (з кольоровою крапкою-префіксом) та гілки у кожному рядку робочого простору; обчислюються з cwd та gitfs."
+          }
+        }
+      }
+    },
     "settings.app.sidebarBranchLayout": {
       "extractionState": "manual",
       "localizations": {

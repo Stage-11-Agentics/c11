@@ -10,6 +10,7 @@ NAME_SET=0
 BUNDLE_SET=0
 DERIVED_SET=0
 TAG=""
+WMO=0
 LAST_SOCKET_PATH_DIR="$HOME/Library/Application Support/c11"
 LAST_SOCKET_PATH_FILE="${LAST_SOCKET_PATH_DIR}/last-socket-path"
 
@@ -33,6 +34,9 @@ Options:
   --name <app name>      Override app display/bundle name.
   --bundle-id <id>       Override bundle identifier.
   --derived-data <path>  Override derived data path.
+  --wmo                  Use wholemodule Swift compilation (prod parity).
+                         Default is incremental for faster local iteration.
+                         Recommended before tag push to catch WMO-only bugs.
   -h, --help             Show this help.
 EOF
 }
@@ -94,6 +98,10 @@ while [[ $# -gt 0 ]]; do
       DERIVED_SET=1
       shift 2
       ;;
+    --wmo)
+      WMO=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -139,6 +147,14 @@ fi
 # Staging is built for running, not for IDE navigation; the indexer output
 # would only be useful if we ever edited against this build in Xcode.
 XCODEBUILD_ARGS+=(COMPILER_INDEX_STORE_ENABLE=NO)
+# Default to incremental Swift compilation. Wholemodule is faster for a
+# single binary's runtime perf but slower to compile on each iteration.
+# Pass --wmo for the rare staging build that needs prod parity (e.g. the
+# build right before a tag push, to catch WMO-only regressions like the
+# 0.47.0 New Workspace dialog issue).
+if [[ "$WMO" -eq 0 ]]; then
+  XCODEBUILD_ARGS+=(SWIFT_COMPILATION_MODE=incremental)
+fi
 XCODEBUILD_ARGS+=(build)
 
 xcodebuild "${XCODEBUILD_ARGS[@]}"

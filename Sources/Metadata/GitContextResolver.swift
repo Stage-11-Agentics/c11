@@ -100,12 +100,31 @@ public enum BranchValue: Equatable, Sendable {
     /// Worktree pointing at a deleted branch, or any other "git couldn't
     /// name a ref" degraded state. Rendered as "(no branch)" in the
     /// sidebar — never thrown.
-    case unknown
+    ///
+    /// (C11-106) Renamed from `.unknown` to match the v2 SPEC's
+    /// `BranchValue.noBranch` case name. Behavior is unchanged.
+    case noBranch
 }
 
 public enum GitContextKind: Equatable, Sendable {
     case mainCheckout(branch: BranchValue)
     case linkedWorktree(basename: String, absolutePath: String, branch: BranchValue)
+    /// (C11-106) Reserved for future explicit "cwd is not under a git
+    /// tree" signals — the existing nil-`ResolvedGitContext` semantic
+    /// still represents this case in production today, so the resolver
+    /// does not construct `.notInRepo` directly. Future derivers and
+    /// callers that want an explicit non-Optional return path can use
+    /// this case without changing the type signature.
+    case notInRepo
+    /// (C11-106) Returned when `git rev-parse --git-path HEAD` resolves
+    /// to a path that does not exist on disk — typical cause is a
+    /// sibling pane running `git worktree remove`, which prunes the
+    /// linked worktree's `.git/worktrees/<name>/HEAD` while the cwd
+    /// directory may remain. The sidebar treats this the same as
+    /// `.notInRepo` (chips clear); the cache MUST NOT store `.stale`
+    /// results so that a recreated worktree is picked up on the next
+    /// resolution.
+    case stale
 }
 
 public struct GitSubmoduleContext: Equatable, Sendable {
@@ -235,6 +254,17 @@ public enum GitContextResolver {
         dispatchPrecondition(condition: .notOnQueue(.main))
         guard !cwd.isEmpty, fileSystem.fileExists(atPath: cwd) else {
             return nil
+        }
+
+        // (C11-106) `.stale` detection per v2 SPEC I6: if git resolves
+        // a HEAD path but the file is missing on disk, the worktree
+        // pointer was pruned (typical cause: `git worktree remove`
+        // from a sibling pane). Return `.stale` so the sidebar can
+        // clear chips and the cache wrapper can avoid storing the
+        // result.
+        if let resolvedHead = headPath(forCwd: cwd, runner: runner),
+           !fileSystem.fileExists(atPath: resolvedHead) {
+            return ResolvedGitContext(outer: .stale, inner: nil)
         }
 
         // Step 1: superproject probe — runs first so that for any cwd
@@ -433,8 +463,9 @@ public enum GitContextResolver {
             return .detached(shortSHA: short)
         }
         // Worktree pointing at a deleted branch, broken HEAD, or other
-        // graceful-degrade case.
-        return .unknown
+        // graceful-degrade case. (C11-106: renamed from `.unknown` to
+        // `.noBranch` to match the v2 SPEC.)
+        return .noBranch
     }
 
     /// Middle-truncate a branch label so the canonical metadata cap is

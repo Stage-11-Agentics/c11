@@ -118,20 +118,44 @@ final class WorktreeChipProjectorTests: XCTestCase {
         XCTAssertTrue(rows[1].worktree?.isSubmodule ?? false)
     }
 
-    // MARK: - AC9: Unknown branch renders fallback
+    // MARK: - AC9: `noBranch` (renamed from `.unknown` in C11-106) renders fallback
 
-    func testUnknownBranchRendersNoBranch() {
+    func testNoBranchRendersNoBranchFallback() {
         let context = ResolvedGitContext(
             outer: .linkedWorktree(
                 basename: "wt",
                 absolutePath: "/p",
-                branch: .unknown
+                branch: .noBranch
             )
         )
         let rows = WorktreeChipProjector.project(context, settingsEnabled: true)
         XCTAssertEqual(rows[0].branch.label, "(no branch)")
         XCTAssertFalse(rows[0].branch.isDimmed)
         XCTAssertFalse(rows[0].branch.isDetached)
+    }
+
+    // MARK: - AC10 + new states: `.notInRepo` / `.stale` suppress the chip row
+
+    func testNotInRepoOuterProducesEmptyRows() {
+        let context = ResolvedGitContext(outer: .notInRepo, inner: nil)
+        XCTAssertEqual(WorktreeChipProjector.project(context, settingsEnabled: true), [])
+    }
+
+    func testStaleOuterProducesEmptyRows() {
+        let context = ResolvedGitContext(outer: .stale, inner: nil)
+        XCTAssertEqual(WorktreeChipProjector.project(context, settingsEnabled: true), [])
+    }
+
+    func testStaleOuterDropsAnyInnerSubmoduleSurrogate() {
+        // Defensive: even if some future code path constructs a
+        // ResolvedGitContext with a stale outer + a non-nil inner,
+        // the projector must not surface the inner submodule row
+        // alone — it would be visually meaningless without an outer.
+        let context = ResolvedGitContext(
+            outer: .stale,
+            inner: GitSubmoduleContext(name: "ghostty", absolutePath: "/p/g", branch: .attached("g"))
+        )
+        XCTAssertEqual(WorktreeChipProjector.project(context, settingsEnabled: true), [])
     }
 
     // MARK: - AC7: Nil context produces empty array

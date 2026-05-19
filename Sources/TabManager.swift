@@ -2439,6 +2439,12 @@ class TabManager: ObservableObject {
             worktreeValue = ""
         case .linkedWorktree(let basename, _, _):
             worktreeValue = basename
+        case .notInRepo, .stale:
+            // (C11-106) Both states clear the worktree value. Same
+            // observable result as the nil-context branch handled
+            // above; the explicit cases compile-check that future
+            // enum additions are considered here too.
+            worktreeValue = ""
         }
 
         let branchValue: String
@@ -2447,8 +2453,10 @@ class TabManager: ObservableObject {
             switch branch {
             case .attached(let name): branchValue = name
             case .detached(let sha):  branchValue = "(detached @ \(sha))"
-            case .unknown:            branchValue = ""
+            case .noBranch:           branchValue = ""
             }
+        case .notInRepo, .stale:
+            branchValue = ""
         }
 
         store.setInternal(

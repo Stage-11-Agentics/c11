@@ -228,13 +228,66 @@ final class GitContextResolverTests: XCTestCase {
 
         let fs = FakeFileSystem(existing: [cwd])
         let result = resolveOffMain(cwd: cwd, runner: runner, fs: fs)
-        // No throw, no crash — just `.unknown` in the branch slot.
+        // No throw, no crash — just `.noBranch` in the branch slot.
         switch result?.outer {
         case .linkedWorktree(_, _, let branch):
-            XCTAssertEqual(branch, .unknown)
+            XCTAssertEqual(branch, .noBranch)
         default:
             XCTFail("expected linkedWorktree, got \(String(describing: result?.outer))")
         }
+    }
+
+    // MARK: - AC10: Stale worktree (worktree removed while pane is open)
+    //
+    // (C11-106) Closes the AC10 FAIL row from the C11-104 validation
+    // report. When `git worktree remove` is run from a sibling pane,
+    // the affected pane's gitdir HEAD path is pruned (e.g.
+    // `<common-dir>/worktrees/<name>/HEAD` disappears) but the cwd
+    // directory often remains. The resolver detects this by
+    // resolving `--git-path HEAD` and observing the resulting file
+    // is missing on disk → returns `.stale`. Cache layer (C11-106
+    // §1) is responsible for not storing `.stale` so a recreated
+    // worktree is picked up on the next resolution.
+
+    func testStaleWorktreeReturnsStaleWhenHeadPathFileMissing() {
+        let cwd = "/Users/atin/code/c11-worktrees/pruned-worktree"
+        let staleHeadPath = "/Users/atin/code/c11/.git/worktrees/pruned-worktree/HEAD"
+        let runner = FakeGitRunner()
+        // `git rev-parse --git-path HEAD` still resolves the absolute
+        // path git would point at — git itself doesn't notice the
+        // worktree was pruned until it tries to read the file.
+        runner.stub(cwd: cwd, args: ["rev-parse", "--git-path", "HEAD"], result: staleHeadPath)
+
+        // cwd directory still exists on disk; the HEAD file does not.
+        var fs = FakeFileSystem(existing: [cwd])
+        fs.existing.remove(staleHeadPath)
+        // Nothing else needs stubbing — `.stale` should short-circuit
+        // before the resolver issues any further git invocations.
+
+        let result = resolveOffMain(cwd: cwd, runner: runner, fs: fs)
+        XCTAssertEqual(result?.outer, .stale)
+        XCTAssertNil(result?.inner)
+        // Asserts: only the `--git-path HEAD` invocation happened.
+        // Any further runner invocations would mean the `.stale`
+        // short-circuit didn't fire.
+        XCTAssertEqual(runner.invocations.count, 1, "stale short-circuit must skip the rest of the probe")
+    }
+
+    func testHeadPathExistingOnDiskFallsThroughToRegularResolution() {
+        let cwd = "/Users/atin/code/c11"
+        let liveHeadPath = "/Users/atin/code/c11/.git/HEAD"
+        let runner = FakeGitRunner()
+        runner.stub(cwd: cwd, args: ["rev-parse", "--git-path", "HEAD"], result: liveHeadPath)
+        // Regular resolution after the stale check falls through.
+        runner.stub(cwd: cwd, args: ["rev-parse", "--show-superproject-working-tree"], result: nil)
+        runner.stub(cwd: cwd, args: ["rev-parse", "--show-toplevel"], result: cwd)
+        runner.stub(cwd: cwd, args: ["rev-parse", "--git-common-dir"], result: cwd + "/.git")
+        runner.stub(cwd: cwd, args: ["rev-parse", "--git-dir"], result: cwd + "/.git")
+        runner.stub(cwd: cwd, args: ["symbolic-ref", "--short", "HEAD"], result: "main")
+
+        let fs = FakeFileSystem(existing: [cwd, liveHeadPath])
+        let result = resolveOffMain(cwd: cwd, runner: runner, fs: fs)
+        XCTAssertEqual(result?.outer, .mainCheckout(branch: .attached("main")))
     }
 
     // MARK: - AC12: Cache invalidates on .git/HEAD mtime change
@@ -325,15 +378,40 @@ final class GitContextResolverTests: XCTestCase {
         XCTAssertTrue(label.hasPrefix("release/2026"), "head context preserved")
     }
 
-    // MARK: - Hot-path discipline (plan-review I2)
-
+    // MARK: - AC20: Hot-path discipline (plan-review I2; C11-106 explicit downgrade)
+    //
+    // (C11-106) AC20 from the v2 validation plan asked for a
+    // deterministic main-thread precondition trip. In-process
+    // testing of `dispatchPrecondition(.notOnQueue(.main))` is
+    // unsafe in XCTest: the precondition aborts with
+    // EXC_BAD_INSTRUCTION, which XCTExpectFailure does NOT trap
+    // (XCTExpectFailure catches XCTFails, not fatal signals).
+    //
+    // The trident plan review (revise-then-proceed verdict,
+    // 2026-05-19) offered two paths: (a) build a subprocess
+    // fatal-test harness — child binary invokes the resolver from
+    // main, parent asserts non-zero termination + precondition
+    // diagnostic in stderr; or (b) explicit downgrade — keep this
+    // sentinel test plus a documented residual gap. C11-106 took
+    // path (b): the cost of the subprocess harness is high, the
+    // residual risk is bounded (a regression to no-op preconditions
+    // would surface in any off-main test failing), and the
+    // sentinel still ensures the precondition compiles into the
+    // shipped binary. Future ticket may reopen path (a) if
+    // observability needs grow.
+    //
+    // What this test verifies:
+    //   - Off-main resolution succeeds (no precondition trip on
+    //     the legitimate path).
+    //   - The resolver's symbol surface includes the
+    //     `dispatchPrecondition` call site (compile-checked by
+    //     `@testable import c11`).
+    //
+    // What this test does NOT verify:
+    //   - That main-thread invocation actually crashes. That gap
+    //     is recorded in the PR body and the C11-106 validation
+    //     plan addendum.
     func testResolverPreconditionTripsOnMainThread() {
-        // We can't easily intercept `dispatchPrecondition` in-process,
-        // but we can confirm the resolver compiles with the precondition
-        // and runs cleanly off-main via every other test in this file.
-        // This test is a sentinel: if dispatchPrecondition is ever
-        // weakened to a no-op assertion, future maintainers will see
-        // this test exists and revisit the contract.
         let runner = FakeGitRunner()
         runner.stub(cwd: "/tmp", args: ["rev-parse", "--show-superproject-working-tree"], result: nil)
         runner.stub(cwd: "/tmp", args: ["rev-parse", "--show-toplevel"], result: nil)

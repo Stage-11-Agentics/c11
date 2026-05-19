@@ -69,7 +69,12 @@ public enum WorktreeChipProjector {
         guard settingsEnabled else { return [] }
         guard let context else { return [] }
 
-        let outerRow = projectOuter(context.outer, isDirty: isDirty)
+        guard let outerRow = projectOuter(context.outer, isDirty: isDirty) else {
+            // `.notInRepo` / `.stale` outer — chip row is suppressed.
+            // Submodule inner is meaningless without the outer, so skip
+            // the whole render even if `context.inner` is set.
+            return []
+        }
         guard let inner = context.inner else {
             return [outerRow]
         }
@@ -82,7 +87,7 @@ public enum WorktreeChipProjector {
 
     // MARK: - Internal
 
-    static func projectOuter(_ kind: GitContextKind, isDirty: Bool = false) -> WorktreeChipRow {
+    static func projectOuter(_ kind: GitContextKind, isDirty: Bool = false) -> WorktreeChipRow? {
         switch kind {
         case .mainCheckout(let branch):
             return WorktreeChipRow(
@@ -100,6 +105,13 @@ public enum WorktreeChipProjector {
                 branch: projectBranch(branch, isDirty: isDirty),
                 indent: .none
             )
+        case .notInRepo, .stale:
+            // (C11-106) Both states clear the chip row — same observable
+            // behavior as a nil `ResolvedGitContext` from outer code.
+            // `.stale` is distinguished from `.notInRepo` only for
+            // diagnostics (cache hit/miss bookkeeping); the projector
+            // treats them identically.
+            return nil
         }
     }
 
@@ -128,7 +140,7 @@ public enum WorktreeChipProjector {
                 isDimmed: false,
                 isDetached: true
             )
-        case .unknown:
+        case .noBranch:
             return BranchChip(label: "(no branch)\(suffix)", isDimmed: false, isDetached: false)
         }
     }

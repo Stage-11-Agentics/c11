@@ -488,8 +488,10 @@ final class WorkspaceSnapshotCaptureTests: XCTestCase {
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         // Resolve `/var/folders/...` → `/private/var/folders/...` so path-equality
         // assertions in the suite (e.g. `testStoreListSurfacesMalformedJSONAsUnreadableRow`)
-        // match the resolved form FileManager enumeration returns.
-        return url.resolvingSymlinksInPath()
+        // match the resolved form FileManager enumeration returns. NSString's
+        // variant resolves macOS's `/var` → `/private/var` symlink; the URL
+        // method does not.
+        return URL(fileURLWithPath: (url.path as NSString).resolvingSymlinksInPath, isDirectory: true)
     }
 
     private func sampleEnvelope(

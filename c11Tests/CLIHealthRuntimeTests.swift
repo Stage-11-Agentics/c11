@@ -256,8 +256,10 @@ final class CLIHealthRuntimeTests: XCTestCase {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         // Resolve `/var/folders/...` → `/private/var/folders/...` so the path
         // passed to `redactHomePath(_:home:)` matches the resolved form
-        // FileManager enumeration returns for the same files.
-        return dir.resolvingSymlinksInPath()
+        // FileManager enumeration returns for the same files. NSString's
+        // variant resolves macOS's `/var` → `/private/var` symlink; the URL
+        // method does not.
+        return URL(fileURLWithPath: (dir.path as NSString).resolvingSymlinksInPath, isDirectory: true)
     }
 
     private func scaffoldAllRails(in home: URL) throws {

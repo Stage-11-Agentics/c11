@@ -170,13 +170,23 @@ enum MailboxLayout {
 /// its URL. Idempotent and thread-safe; cross-process safety is best-effort
 /// via `moveItem`'s atomicity.
 ///
-/// Migration steps (only when legacy exists and current does not):
-///   1. `moveItem` `~/Library/Application Support/c11mux` →
-///      `~/Library/Application Support/c11` (atomic on same volume).
-///   2. Create a relative symlink at the legacy path pointing at `c11`,
-///      so downgraded older binaries continue to find their state.
-///      The symlink can be dropped in a later release once the downgrade
-///      window has closed; see `docs/c11-state-dir-rename-plan.md`.
+/// Migration shape: when legacy (`~/Library/Application Support/c11mux`) exists,
+/// merge its entries into current (`~/Library/Application Support/c11`),
+/// creating current first if necessary. Per-entry policy is `c11/` wins on
+/// same-name collision; the `workspaces/` subdir is recursed one level so
+/// per-workspace UUID directories present only in legacy still come over.
+/// After the merge, if legacy is empty, replace it with a relative symlink
+/// pointing at `c11` so downgraded older binaries continue to find their
+/// state. The symlink can be dropped in a later release once the downgrade
+/// window has closed; see `docs/c11-state-dir-rename-plan.md`.
+///
+/// The pre-C11-103 implementation rebuilt the dir with a single atomic rename
+/// and bailed when both paths already existed. That left dogfooders who had
+/// run tagged debug builds (which pre-create `c11/`) stranded on an empty
+/// session after the prod rename release landed, because the migration was
+/// a no-op and the prod build wrote a fresh empty snapshot. The per-entry
+/// merge fixes that case at the cost of whole-dir atomicity, which the
+/// `didRun` latch + per-entry `moveItem` atomicity make a non-issue.
 enum StateDirectoryMigration {
     static let legacyName = "c11mux"
     static let currentName = "c11"
@@ -184,38 +194,179 @@ enum StateDirectoryMigration {
     private static let lock = NSLock()
     private static var didRun = false
 
-    static func ensureMigrated(fileManager: FileManager = .default) {
+    /// Performs the legacy → current merge once per process. The `appSupport`
+    /// parameter is a testing seam (matches the convention used by
+    /// `SessionPersistence.defaultSnapshotFileURL`); production callers leave
+    /// it nil and accept the user-domain Application Support directory.
+    static func ensureMigrated(
+        fileManager: FileManager = .default,
+        appSupport: URL? = nil
+    ) {
         lock.lock()
         defer { lock.unlock() }
         if didRun { return }
         didRun = true
 
-        guard let appSupport = fileManager.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first else {
+        let resolvedAppSupport: URL
+        if let appSupport {
+            resolvedAppSupport = appSupport
+        } else {
+            // Defensive: when no override is supplied AND the process is an
+            // xctest host, bail without touching real Application Support.
+            // `c11Tests` and `c11LogicTests` indirectly invoke this path via
+            // `SessionPersistence.defaultSnapshotFileURL` and friends; without
+            // this guard a passing test on a dogfooder's machine could merge
+            // their actual session state. Tests that need to exercise the
+            // migration must pass an explicit `appSupport:` temp-dir override.
+            if isRunningUnderXCTest() { return }
+            guard let discovered = fileManager.urls(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask
+            ).first else {
+                return
+            }
+            resolvedAppSupport = discovered
+        }
+
+        let legacyURL = resolvedAppSupport.appendingPathComponent(legacyName, isDirectory: true)
+        let currentURL = resolvedAppSupport.appendingPathComponent(currentName, isDirectory: true)
+
+        // Fresh install (legacy never existed): nothing to do.
+        guard fileManager.fileExists(atPath: legacyURL.path) else { return }
+
+        mergeLegacyIntoCurrent(
+            legacyURL: legacyURL,
+            currentURL: currentURL,
+            fileManager: fileManager
+        )
+
+        // Drop the now-empty legacy dir and replace with a relative symlink so
+        // downgraded older binaries still resolve their state. If collisions
+        // kept entries in legacy, leave it alone — retiring the legacy path is
+        // a future release.
+        if isDirectoryEmpty(at: legacyURL, fileManager: fileManager) {
+            do {
+                try fileManager.removeItem(at: legacyURL)
+                try fileManager.createSymbolicLink(
+                    atPath: legacyURL.path,
+                    withDestinationPath: currentName
+                )
+            } catch {
+                logFailure(stage: "replace legacy with symlink", error: error)
+            }
+        }
+    }
+
+    /// Clears the `didRun` latch. Tests use this to run the migration
+    /// multiple times against fresh temp-dir fixtures within a single process.
+    static func resetForTests() {
+        lock.lock()
+        defer { lock.unlock() }
+        didRun = false
+    }
+
+    private static func mergeLegacyIntoCurrent(
+        legacyURL: URL,
+        currentURL: URL,
+        fileManager: FileManager
+    ) {
+        do {
+            try fileManager.createDirectory(
+                at: currentURL,
+                withIntermediateDirectories: true
+            )
+        } catch {
+            logFailure(stage: "create current dir", error: error)
             return
         }
 
-        let legacyURL = appSupport.appendingPathComponent(legacyName, isDirectory: true)
-        let currentURL = appSupport.appendingPathComponent(currentName, isDirectory: true)
-
-        // Fresh install (neither exists) or already migrated (current exists)
-        // or co-existing (both exist, leave alone): nothing to do.
-        let legacyExists = fileManager.fileExists(atPath: legacyURL.path)
-        let currentExists = fileManager.fileExists(atPath: currentURL.path)
-        guard legacyExists, !currentExists else { return }
-
+        let entries: [String]
         do {
-            try fileManager.moveItem(at: legacyURL, to: currentURL)
-            try fileManager.createSymbolicLink(
-                atPath: legacyURL.path,
-                withDestinationPath: currentName
-            )
+            entries = try fileManager.contentsOfDirectory(atPath: legacyURL.path)
         } catch {
-            FileHandle.standardError.write(Data(
-                "c11: state-directory migration failed: \(error.localizedDescription)\n".utf8
-            ))
+            logFailure(stage: "list legacy entries", error: error)
+            return
         }
+
+        for entry in entries {
+            let legacyEntryURL = legacyURL.appendingPathComponent(entry)
+            let currentEntryURL = currentURL.appendingPathComponent(entry)
+
+            if entry == MailboxLayout.workspacesDirectoryName,
+               fileManager.fileExists(atPath: currentEntryURL.path) {
+                mergeWorkspacesShallow(
+                    legacyWorkspacesURL: legacyEntryURL,
+                    currentWorkspacesURL: currentEntryURL,
+                    fileManager: fileManager
+                )
+                continue
+            }
+
+            if fileManager.fileExists(atPath: currentEntryURL.path) {
+                // Same-name collision: current wins. Leave legacy in place.
+                continue
+            }
+
+            do {
+                try fileManager.moveItem(at: legacyEntryURL, to: currentEntryURL)
+            } catch {
+                logFailure(stage: "move \(entry)", error: error)
+            }
+        }
+    }
+
+    private static func mergeWorkspacesShallow(
+        legacyWorkspacesURL: URL,
+        currentWorkspacesURL: URL,
+        fileManager: FileManager
+    ) {
+        let workspaces: [String]
+        do {
+            workspaces = try fileManager.contentsOfDirectory(atPath: legacyWorkspacesURL.path)
+        } catch {
+            logFailure(stage: "list legacy workspaces", error: error)
+            return
+        }
+
+        for workspace in workspaces {
+            let legacyEntryURL = legacyWorkspacesURL.appendingPathComponent(workspace)
+            let currentEntryURL = currentWorkspacesURL.appendingPathComponent(workspace)
+            if fileManager.fileExists(atPath: currentEntryURL.path) {
+                continue
+            }
+            do {
+                try fileManager.moveItem(at: legacyEntryURL, to: currentEntryURL)
+            } catch {
+                logFailure(stage: "move workspaces/\(workspace)", error: error)
+            }
+        }
+    }
+
+    private static func isDirectoryEmpty(at url: URL, fileManager: FileManager) -> Bool {
+        guard let entries = try? fileManager.contentsOfDirectory(atPath: url.path) else {
+            return false
+        }
+        return entries.isEmpty
+    }
+
+    private static func logFailure(stage: String, error: Error) {
+        FileHandle.standardError.write(Data(
+            "c11: state-directory migration: \(stage) failed: \(error.localizedDescription)\n".utf8
+        ))
+    }
+
+    /// Detects when this process is running as an XCTest host. Mirrors the
+    /// signals used by `SessionRestorePolicy` and `AppDelegate` so behavior
+    /// stays consistent across modules that need to skip side-effects in
+    /// tests.
+    private static func isRunningUnderXCTest() -> Bool {
+        let env = ProcessInfo.processInfo.environment
+        if env["XCTestConfigurationFilePath"] != nil { return true }
+        if env["XCTestBundlePath"] != nil { return true }
+        if env["XCTestSessionIdentifier"] != nil { return true }
+        if env["XCInjectBundle"] != nil { return true }
+        if env["XCInjectBundleInto"] != nil { return true }
+        if env["DYLD_INSERT_LIBRARIES"]?.contains("libXCTest") == true { return true }
+        return false
     }
 }

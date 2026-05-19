@@ -38,7 +38,20 @@ These keys have a defined shape and render in the sidebar or title bar. Any writ
 
 **Sidebar rendering order** when present: `model` → `terminal_type` → `role` → `status` → `task` → `progress` → `worktree` + `branch` chips row. `title` and `description` render in the title bar, not the sidebar — the sidebar tab label is a truncated projection of `title`.
 
-**Worktree + branch chips (C11-104).** Both keys are projections of `cwd` + gitfs state — agents should not write them directly. They are computed off-main by c11's OSC 7 cwd-update handler and rendered automatically. Inside a submodule, both the superproject context and the submodule context render as two stacked rows. Settings → Sidebar → Workspace Metadata → "Show worktree/branch chips" gates the entire row (default on, live-toggleable).
+**Worktree + branch chips (C11-104).** Both keys are projections of `cwd` + gitfs state — agents should not write them directly. They are computed off-main by `GitContextDeriver` on cwd updates (the `report_pwd` socket path) and rendered automatically. Inside a submodule, both the superproject context and the submodule context render as two stacked rows. Settings → Sidebar → "Show worktree + branch chips in sidebar" (preserved `sidebarShowBranchDirectory` AppStorage key — the legacy text branch+directory row was retired in C11-104 v2) gates the entire row (default on, live-toggleable). The branch chip carries a `*` suffix when the working tree is dirty.
+
+### `MetadataDeriver` seam (C11-104 v2)
+
+c11 derives several pieces of metadata from ground-truth ambient state (cwd, gitfs, …). The minimal protocol seam:
+
+```swift
+public protocol MetadataDeriver: Sendable {
+    associatedtype Output: Sendable
+    func derive(cwd: String) -> Output?
+}
+```
+
+`GitContextDeriver` is the first implementation, wrapping `GitContextResolver.resolve(...)`. `DerivationCoordinator` runs derivers off-main on a shared `userInitiated` queue and hops back to the main actor with the result; apply-side guards (gen-token + expected-cwd check) live in the caller (currently `TabManager.applyWorkspaceGitMetadataSnapshot`). New derivers (host / SSH target, container, kubectl, AWS profile) drop in via the same seam.
 
 **Non-canonical keys are yours.** Any JSON value, any key shape. The blob is Lattice's transport, your app's transport, your orchestrator's transport — c11 does not interpret non-canonical content.
 

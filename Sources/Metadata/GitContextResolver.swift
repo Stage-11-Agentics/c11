@@ -1,5 +1,88 @@
 import Foundation
 
+/// C11-104 — `MetadataDeriver` protocol seam (E1 reframe per the
+/// trident plan-review). The idea: c11 will accumulate several
+/// derived metadata sources over time (worktree/branch from gitfs;
+/// host / SSH target; container; kubectl context; AWS profile; …).
+/// A tiny uniform interface lets the next deriver land in a day, not
+/// a week.
+///
+/// `GitContextDeriver` is the first concrete deriver. A
+/// `DerivationCoordinator` runs derivers off-main on a shared queue
+/// and hops back to the main actor with the result. Apply-side
+/// gen-token + expected-cwd guards live in the caller — `TabManager`
+/// already implements them for the existing probe path
+/// (`applyWorkspaceGitMetadataSnapshot`). The coordinator is
+/// intentionally lightweight in this PR; full integration with the
+/// staggered TabManager probe is deferred (the current implementation
+/// continues to call `GitContextResolver.resolve` directly from
+/// `initialWorkspaceGitMetadataSnapshot`).
+
+public protocol MetadataDeriver: Sendable {
+    /// Each deriver returns its own value type — git returns
+    /// `ResolvedGitContext`; a future host deriver returns its own.
+    associatedtype Output: Sendable
+
+    /// Run off-main. Implementations MUST trap main-thread invocation
+    /// with `dispatchPrecondition(condition: .notOnQueue(.main))` so
+    /// a typing-latency regression is caught at runtime.
+    func derive(cwd: String) -> Output?
+}
+
+/// Concrete deriver wrapping `GitContextResolver.resolve`. A struct
+/// (not a singleton) so each coordinator can hold its own runner /
+/// filesystem / timeout configuration without contention.
+public struct GitContextDeriver: MetadataDeriver {
+    public let runner: GitRunner
+    public let fileSystem: FileSystemProbe
+
+    public init(
+        runner: GitRunner = ProcessGitRunner(),
+        fileSystem: FileSystemProbe = DefaultFileSystemProbe()
+    ) {
+        self.runner = runner
+        self.fileSystem = fileSystem
+    }
+
+    public func derive(cwd: String) -> ResolvedGitContext? {
+        return GitContextResolver.resolve(
+            cwd: cwd,
+            runner: runner,
+            fileSystem: fileSystem
+        )
+    }
+}
+
+/// Lightweight coordinator that runs a deriver off-main on a known
+/// queue and hops back to main with the result. Future expansion:
+/// gen-token + expected-cwd guard pattern (currently lives in
+/// `TabManager.applyWorkspaceGitMetadataSnapshot`).
+public enum DerivationCoordinator {
+    /// Shared background queue. Distinct label from the legacy
+    /// `initialWorkspaceGitProbeQueue` so failures can be traced
+    /// per-mechanism; both run at `.userInitiated`.
+    public static let queue = DispatchQueue(
+        label: "com.stage11.c11.metadata-derivers",
+        qos: .userInitiated
+    )
+
+    /// Run a deriver off-main and call `completion` on the main
+    /// actor with its output.
+    public static func run<D: MetadataDeriver>(
+        deriver: D,
+        cwd: String,
+        completion: @escaping @Sendable (D.Output?) -> Void
+    ) {
+        dispatchPrecondition(condition: .notOnQueue(queue))
+        queue.async {
+            let result = deriver.derive(cwd: cwd)
+            DispatchQueue.main.async {
+                completion(result)
+            }
+        }
+    }
+}
+
 /// C11-104 — derived sidebar metadata for "which worktree + which branch."
 ///
 /// `GitContextResolver` runs `git rev-parse` against a cwd off the main

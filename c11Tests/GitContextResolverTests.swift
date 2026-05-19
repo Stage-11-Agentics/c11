@@ -343,6 +343,39 @@ final class GitContextResolverTests: XCTestCase {
         XCTAssertNil(result, "not-in-git returns nil; precondition allows off-main resolution")
     }
 
+    // MARK: - DerivationCoordinator + MetadataDeriver seam (v2 amendment 2)
+
+    func testGitContextDeriverConformsToMetadataDeriver() {
+        // Compile-time conformance check. If `GitContextDeriver`
+        // ever stops conforming to `MetadataDeriver`, this test
+        // stops compiling.
+        let _: any MetadataDeriver = GitContextDeriver()
+    }
+
+    func testDerivationCoordinatorRunsDeriverOffMainAndCompletesOnMain() {
+        let cwd = "/tmp/coordinator-test"
+        let runner = FakeGitRunner()
+        runner.stub(cwd: cwd, args: ["rev-parse", "--show-superproject-working-tree"], result: nil)
+        runner.stub(cwd: cwd, args: ["rev-parse", "--show-toplevel"], result: cwd)
+        runner.stub(cwd: cwd, args: ["rev-parse", "--git-common-dir"], result: cwd + "/.git")
+        runner.stub(cwd: cwd, args: ["rev-parse", "--git-dir"], result: cwd + "/.git")
+        runner.stub(cwd: cwd, args: ["symbolic-ref", "--short", "HEAD"], result: "main")
+        let fs = FakeFileSystem(existing: [cwd])
+        let deriver = GitContextDeriver(runner: runner, fileSystem: fs)
+
+        let expectation = XCTestExpectation(description: "coordinator completes on main")
+        nonisolated(unsafe) var receivedOnMain = false
+        nonisolated(unsafe) var result: ResolvedGitContext?
+        DerivationCoordinator.run(deriver: deriver, cwd: cwd) { value in
+            receivedOnMain = Thread.isMainThread
+            result = value
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 5.0)
+        XCTAssertTrue(receivedOnMain, "completion must hop to main")
+        XCTAssertEqual(result?.outer, .mainCheckout(branch: .attached("main")))
+    }
+
     // MARK: - Cache eviction (LRU)
 
     func testCacheEvictsOldestEntriesPastCapacity() {

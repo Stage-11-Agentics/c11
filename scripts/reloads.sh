@@ -136,6 +136,9 @@ if [[ -z "$TAG" ]]; then
     PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"
   )
 fi
+# Staging is built for running, not for IDE navigation; the indexer output
+# would only be useful if we ever edited against this build in Xcode.
+XCODEBUILD_ARGS+=(COMPILER_INDEX_STORE_ENABLE=NO)
 XCODEBUILD_ARGS+=(build)
 
 xcodebuild "${XCODEBUILD_ARGS[@]}"

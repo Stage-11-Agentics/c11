@@ -103,7 +103,7 @@ Use **`claude --dangerously-skip-permissions`** — never bare `claude` (stalls 
 c11 new-split right
 # → returns surface:NNN
 
-# 2. Launch claude (c11 send auto-submits — single call)
+# 2. Launch claude
 c11 send --workspace $WS --surface $SURF "claude --dangerously-skip-permissions"
 
 # 3. Wait for claude to be ready (see polling section), then name the tab with lineage
@@ -119,7 +119,7 @@ c11 set-agent --workspace $WS --surface $SURF --type claude-code --model claude-
 c11 send --workspace $WS --surface $SURF "Your tab title is already set to 'Login Button :: Lint Fixes' — preserve that prefix. Now: fix all lint errors in src/"
 ```
 
-**One-call send.** `c11 send` auto-submits by default; the synthetic Return is dispatched on the same @MainActor turn as the text. The old two-call pattern (`send` then `send-key enter`) is no longer needed for "deliver a message and submit." Pass `--no-submit` only when you genuinely want to type without executing (e.g., staging a partial line across multiple calls).
+**One-call send.** `c11 send` types the text and dispatches a synthetic Return on the same turn, so the receiving TUI sees one user turn. Pass `--no-submit` to type without executing (e.g., staging a partial line across multiple calls).
 
 ### Spawning multiple panes at once
 
@@ -146,7 +146,7 @@ cat > /tmp/agent-prompt.md <<'EOF'
 [complex prompt with backticks, code blocks, etc.]
 EOF
 
-# 2. Tell the agent to read it (c11 send auto-submits — single call)
+# 2. Tell the agent to read it
 c11 send --workspace $WS --surface $SURF "Read /tmp/agent-prompt.md and follow the instructions."
 ```
 

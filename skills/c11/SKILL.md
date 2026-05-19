@@ -102,11 +102,9 @@ c11 send --no-submit "cd /tmp/"         # Types text only — no Return; for par
 c11 send-key enter                      # Send a keypress directly (no text)
 ```
 
-`c11 send` auto-submits by default: after typing the text it dispatches a synthetic Return. The previous two-call pattern (`send` then `send-key enter`) is no longer needed for the common case of "deliver a message and submit." Pass `--no-submit` only when you genuinely want to type into the prompt without executing — e.g. building a multi-step partial line, or staging text before the user hits Enter manually.
+`c11 send` types the text and dispatches a synthetic Return on the same turn, so the receiving TUI sees one user turn. Pass `--no-submit` when you want to type into the prompt without executing — building a partial line across multiple calls, or staging text before the operator hits Enter manually.
 
-Why the default flipped: `\n` is stripped when `c11 send` is called from Claude Code's Bash tool, so the old pattern silently failed any time agents forgot the second call. Auto-submit closes that gap: the synthetic Return is dispatched on the same @MainActor turn as the text, so the line is always delivered to the receiving TUI as one user turn.
-
-For complex prompts (backticks, code blocks, multi-line), deliver via temp file and tell the receiving agent to `Read /tmp/prompt.md` — shell escaping through `c11 send` is brittle even with auto-submit.
+For complex prompts (backticks, code blocks, multi-line), deliver via temp file and tell the receiving agent to `Read /tmp/prompt.md` — shell escaping through `c11 send` is brittle.
 
 **Text is positional, not `--text`.** `c11 send` accepts only `--workspace` and `--surface` flags; the message is the trailing positional argument. Writing `--text "foo"` silently types the literal string `--text` into the terminal because the parser takes `--text` as the positional and `foo` as a stray extra arg. Same shape applies to `c11 set-status`, `c11 log`, and any other CLI that documents text as a positional.
 

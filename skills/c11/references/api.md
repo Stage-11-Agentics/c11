@@ -151,9 +151,7 @@ c11 send-key enter                   # Send a keypress directly (no text)
 c11 send --workspace workspace:2 --surface surface:3 "ls"
 ```
 
-**`c11 send` auto-submits by default.** After typing the text, a synthetic Return is dispatched on the same @MainActor turn, so the receiving TUI sees the line as one user turn. Pass `--no-submit` only when you want to type into the prompt without executing — typically to build a partial line across multiple sends, or to stage text before the operator hits Enter manually.
-
-Background: `\n` in `c11 send` is stripped by Claude Code's Bash tool before it ever reaches c11, so the old "include \n or call send-key enter" rule silently failed every time agents missed the follow-up. Auto-submit closes that gap. The two-call pattern is preserved via `--no-submit` for the rare partial-line case.
+**`c11 send` types the text and submits.** A synthetic Return is dispatched on the same turn as the text, so the receiving TUI sees one user turn. Pass `--no-submit` to type into the prompt without executing — typically to build a partial line across multiple sends, or to stage text before the operator hits Enter manually.
 
 ## Per-surface metadata
 
@@ -262,7 +260,7 @@ Consent is always requested before any write. The installer also installs the c1
 - **Browser commands fail with "not a browser"** — you're targeting a terminal surface. Find the browser surface ref with `c11 tree` and pass `--surface <ref>`.
 - **Commands do nothing** — check `CMUX_SOCKET_PATH` matches the running instance. Default is `/tmp/cmux.sock`; tagged debug builds use `/tmp/cmux-debug-<tag>.sock`. (`C11_SOCKET_PATH` is the primary name going forward; `CMUX_SOCKET_PATH` still works.)
 - **Surface doesn't respond after creation** — it may not be initialized. Run `c11 select-workspace --workspace workspace:N && sleep 2` to trigger the layout pass.
-- **Sub-agent can't call `c11`** — happens with `claude -p` (headless). Interactive `claude --dangerously-skip-permissions` launched via `c11 send "claude --dangerously-skip-permissions"` (auto-submits) maintains the auth chain.
+- **Sub-agent can't call `c11`** — happens with `claude -p` (headless). Interactive `claude --dangerously-skip-permissions` launched via `c11 send "claude --dangerously-skip-permissions"` maintains the auth chain.
 - **Metadata write returns `applied: false` with `lower_precedence`** — a higher-precedence source already owns that key. See [metadata.md](metadata.md) precedence table.
 
 ## Notes

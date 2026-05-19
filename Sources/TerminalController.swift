@@ -8238,6 +8238,14 @@ class TerminalController {
         guard let source = MetadataSource(rawValue: sourceStr) else {
             return .err(code: "invalid_source", message: "source must be one of: explicit, declare, osc, heuristic", data: nil)
         }
+        // C11-104 v2 (B5a) — `derived` is reserved for c11-internal
+        // writers. External socket/CLI clients are rejected. Without
+        // this gate, an agent could write `source=derived` and claim
+        // their values are system-computed, nullifying the meaning
+        // of the precedence tier.
+        if source == .derived {
+            return .err(code: "invalid_source", message: "source 'derived' is reserved for c11-internal writers", data: nil)
+        }
 
         guard let resolved = v2ResolveSurfaceForMetadata(params: params) else {
             return .err(code: "surface_not_found", message: "Surface not found", data: nil)
@@ -8352,6 +8360,14 @@ class TerminalController {
         let sourceStr = (v2String(params, "source") ?? "explicit").lowercased()
         guard let source = MetadataSource(rawValue: sourceStr) else {
             return .err(code: "invalid_source", message: "source must be one of: explicit, declare, osc, heuristic", data: nil)
+        }
+        // C11-104 v2 (B5a) — `derived` is reserved for c11-internal
+        // writers. External socket/CLI clients are rejected. Without
+        // this gate, an agent could write `source=derived` and claim
+        // their values are system-computed, nullifying the meaning
+        // of the precedence tier.
+        if source == .derived {
+            return .err(code: "invalid_source", message: "source 'derived' is reserved for c11-internal writers", data: nil)
         }
 
         guard let resolved = v2ResolveSurfaceForMetadata(params: params) else {
@@ -9101,6 +9117,14 @@ class TerminalController {
         guard let source = MetadataSource(rawValue: sourceStr) else {
             return .err(code: "invalid_source", message: "source must be one of: explicit, declare, osc, heuristic", data: nil)
         }
+        // C11-104 v2 (B5a) — `derived` is reserved for c11-internal
+        // writers. External socket/CLI clients are rejected. Without
+        // this gate, an agent could write `source=derived` and claim
+        // their values are system-computed, nullifying the meaning
+        // of the precedence tier.
+        if source == .derived {
+            return .err(code: "invalid_source", message: "source 'derived' is reserved for c11-internal writers", data: nil)
+        }
 
         guard let resolved = v2ResolvePaneForMetadata(params: params) else {
             return .err(code: "pane_not_found", message: "Pane not found", data: nil)
@@ -9189,6 +9213,14 @@ class TerminalController {
         let sourceStr = (v2String(params, "source") ?? "explicit").lowercased()
         guard let source = MetadataSource(rawValue: sourceStr) else {
             return .err(code: "invalid_source", message: "source must be one of: explicit, declare, osc, heuristic", data: nil)
+        }
+        // C11-104 v2 (B5a) — `derived` is reserved for c11-internal
+        // writers. External socket/CLI clients are rejected. Without
+        // this gate, an agent could write `source=derived` and claim
+        // their values are system-computed, nullifying the meaning
+        // of the precedence tier.
+        if source == .derived {
+            return .err(code: "invalid_source", message: "source 'derived' is reserved for c11-internal writers", data: nil)
         }
 
         guard let resolved = v2ResolvePaneForMetadata(params: params) else {

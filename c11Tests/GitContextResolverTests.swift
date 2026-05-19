@@ -343,6 +343,73 @@ final class GitContextResolverTests: XCTestCase {
         XCTAssertNil(result, "not-in-git returns nil; precondition allows off-main resolution")
     }
 
+    // MARK: - Submodule display-name fallback chain (v2 amendment 3)
+
+    func testSubmoduleNameFallsBackToBasenameWhenNoGitmodules() {
+        // When `.gitmodules` lookup returns nil AND the path-from-
+        // superproject-root is computable, the path is used (richer
+        // disambiguation than basename for nested submodules).
+        let superCwd = "/tmp/super"
+        let subCwd = "/tmp/super/ghostty"
+        let runner = FakeGitRunner()
+        runner.stub(cwd: subCwd, args: ["rev-parse", "--show-superproject-working-tree"], result: superCwd)
+        runner.stub(cwd: superCwd, args: ["rev-parse", "--show-toplevel"], result: superCwd)
+        runner.stub(cwd: superCwd, args: ["rev-parse", "--git-common-dir"], result: superCwd + "/.git")
+        runner.stub(cwd: superCwd, args: ["rev-parse", "--git-dir"], result: superCwd + "/.git")
+        runner.stub(cwd: superCwd, args: ["symbolic-ref", "--short", "HEAD"], result: "main")
+        runner.stub(cwd: subCwd, args: ["rev-parse", "--show-toplevel"], result: subCwd)
+        runner.stub(cwd: subCwd, args: ["symbolic-ref", "--short", "HEAD"], result: "ghostty-main")
+        // `.gitmodules` config lookup returns nil → fallback to
+        // path-from-superproject-root.
+        let fs = FakeFileSystem(existing: [subCwd])
+        let result = resolveOffMain(cwd: subCwd, runner: runner, fs: fs)
+        // Path-from-superproject-root is "ghostty" which happens to
+        // equal the basename in this trivial case. The richer test
+        // below covers the nested case where they diverge.
+        XCTAssertEqual(result?.inner?.name, "ghostty")
+    }
+
+    func testSubmoduleNamePrefersConfiguredGitmodulesEntry() {
+        let superCwd = "/tmp/super"
+        let subCwd = "/tmp/super/vendor/bonsplit"
+        let runner = FakeGitRunner()
+        runner.stub(cwd: subCwd, args: ["rev-parse", "--show-superproject-working-tree"], result: superCwd)
+        runner.stub(cwd: superCwd, args: ["rev-parse", "--show-toplevel"], result: superCwd)
+        runner.stub(cwd: superCwd, args: ["rev-parse", "--git-common-dir"], result: superCwd + "/.git")
+        runner.stub(cwd: superCwd, args: ["rev-parse", "--git-dir"], result: superCwd + "/.git")
+        runner.stub(cwd: superCwd, args: ["symbolic-ref", "--short", "HEAD"], result: "main")
+        runner.stub(cwd: subCwd, args: ["rev-parse", "--show-toplevel"], result: subCwd)
+        runner.stub(cwd: subCwd, args: ["symbolic-ref", "--short", "HEAD"], result: "bonsplit-main")
+        // .gitmodules lookup returns a configured name "Bonsplit" mapped to
+        // the relative path "vendor/bonsplit". The configured name wins.
+        runner.stub(
+            cwd: superCwd,
+            args: ["config", "-f", ".gitmodules", "--get-regexp", #"submodule\..*\.path"#],
+            result: "submodule.Bonsplit.path vendor/bonsplit"
+        )
+        let fs = FakeFileSystem(existing: [subCwd])
+        let result = resolveOffMain(cwd: subCwd, runner: runner, fs: fs)
+        XCTAssertEqual(result?.inner?.name, "Bonsplit")
+    }
+
+    func testSubmoduleNameFallsBackToRelativePathWhenGitmodulesAbsent() {
+        let superCwd = "/tmp/super"
+        let subCwd = "/tmp/super/vendor/bonsplit"
+        let runner = FakeGitRunner()
+        runner.stub(cwd: subCwd, args: ["rev-parse", "--show-superproject-working-tree"], result: superCwd)
+        runner.stub(cwd: superCwd, args: ["rev-parse", "--show-toplevel"], result: superCwd)
+        runner.stub(cwd: superCwd, args: ["rev-parse", "--git-common-dir"], result: superCwd + "/.git")
+        runner.stub(cwd: superCwd, args: ["rev-parse", "--git-dir"], result: superCwd + "/.git")
+        runner.stub(cwd: superCwd, args: ["symbolic-ref", "--short", "HEAD"], result: "main")
+        runner.stub(cwd: subCwd, args: ["rev-parse", "--show-toplevel"], result: subCwd)
+        runner.stub(cwd: subCwd, args: ["symbolic-ref", "--short", "HEAD"], result: "bonsplit-main")
+        // No `.gitmodules` lookup stubbed → falls back to relative path.
+        let fs = FakeFileSystem(existing: [subCwd])
+        let result = resolveOffMain(cwd: subCwd, runner: runner, fs: fs)
+        XCTAssertEqual(result?.inner?.name, "vendor/bonsplit",
+                       "fallback chain prefers path-from-superproject-root over basename for nested submodules")
+    }
+
     // MARK: - DerivationCoordinator + MetadataDeriver seam (v2 amendment 2)
 
     func testGitContextDeriverConformsToMetadataDeriver() {

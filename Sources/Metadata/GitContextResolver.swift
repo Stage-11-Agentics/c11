@@ -315,13 +315,106 @@ public enum GitContextResolver {
         ), !toplevel.isEmpty else {
             return nil
         }
-        let name = (toplevel as NSString).lastPathComponent
+        let superprojectRoot = runner.run(
+            cwd: cwd,
+            args: ["rev-parse", "--show-superproject-working-tree"]
+        )
+        let name = resolveSubmoduleName(
+            submoduleToplevel: toplevel,
+            superprojectRoot: superprojectRoot,
+            runner: runner
+        )
         let branch = resolveBranch(cwd: cwd, runner: runner)
         return GitSubmoduleContext(
             name: name,
             absolutePath: toplevel,
             branch: branch
         )
+    }
+
+    /// Submodule display-name fallback chain (plan-review v2):
+    ///   1. `.gitmodules` configured submodule name (the
+    ///      `[submodule "<name>"]` section header in
+    ///      `<superproject>/.gitmodules`).
+    ///   2. Path from the superproject root (e.g., `vendor/bonsplit`).
+    ///   3. Basename of the submodule's working tree (e.g.,
+    ///      `bonsplit`).
+    static func resolveSubmoduleName(
+        submoduleToplevel: String,
+        superprojectRoot: String?,
+        runner: GitRunner
+    ) -> String {
+        let basename = (submoduleToplevel as NSString).lastPathComponent
+
+        guard let superprojectRoot, !superprojectRoot.isEmpty else {
+            return basename
+        }
+
+        // Path-from-superproject-root.
+        let relativePath = relativePathFromSuperproject(
+            superprojectRoot: superprojectRoot,
+            submoduleToplevel: submoduleToplevel
+        )
+
+        // Try `.gitmodules` configured name. The submodule.<name>.path
+        // entry maps the configured name to the relative path. We
+        // look up by relative path and pull the section name.
+        if let relative = relativePath,
+           let configured = configuredSubmoduleName(
+               superprojectRoot: superprojectRoot,
+               relativePath: relative,
+               runner: runner
+           ) {
+            return configured
+        }
+
+        if let relative = relativePath, !relative.isEmpty {
+            return relative
+        }
+        return basename
+    }
+
+    static func relativePathFromSuperproject(
+        superprojectRoot: String,
+        submoduleToplevel: String
+    ) -> String? {
+        let superNorm = (superprojectRoot as NSString).standardizingPath
+        let subNorm = (submoduleToplevel as NSString).standardizingPath
+        let withSlash = superNorm.hasSuffix("/") ? superNorm : superNorm + "/"
+        guard subNorm.hasPrefix(withSlash) else { return nil }
+        let rel = String(subNorm.dropFirst(withSlash.count))
+        return rel.isEmpty ? nil : rel
+    }
+
+    static func configuredSubmoduleName(
+        superprojectRoot: String,
+        relativePath: String,
+        runner: GitRunner
+    ) -> String? {
+        // `git config -f .gitmodules --get-regexp 'submodule\..*\.path'`
+        // returns lines like `submodule.vendor/bonsplit.path vendor/bonsplit`.
+        // Caveat: configured names can contain dots, so the regex above
+        // is greedy. Match against the trailing value (relative path)
+        // and pull the section name in between.
+        guard let output = runner.run(
+            cwd: superprojectRoot,
+            args: ["config", "-f", ".gitmodules", "--get-regexp", #"submodule\..*\.path"#]
+        ) else {
+            return nil
+        }
+        for line in output.split(separator: "\n") {
+            let parts = line.split(separator: " ", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { continue }
+            let key = parts[0]
+            let value = parts[1]
+            guard value == relativePath else { continue }
+            // key is `submodule.<name>.path` — strip `submodule.`
+            // prefix and `.path` suffix.
+            guard key.hasPrefix("submodule.") && key.hasSuffix(".path") else { continue }
+            let trimmed = String(key.dropFirst("submodule.".count).dropLast(".path".count))
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return nil
     }
 
     static func resolveBranch(cwd: String, runner: GitRunner) -> BranchValue {

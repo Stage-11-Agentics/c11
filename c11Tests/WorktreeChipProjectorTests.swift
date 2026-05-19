@@ -147,6 +147,44 @@ final class WorktreeChipProjectorTests: XCTestCase {
         XCTAssertEqual(WorktreeChipProjector.project(context, settingsEnabled: false), [])
     }
 
+    // MARK: - Dirty marker (AC25 — preserved from legacy UX)
+
+    func testDirtyWorkingTreeAppendsStarToBranchChip() {
+        let context = ResolvedGitContext(outer: .mainCheckout(branch: .attached("feature/x")))
+        let rows = WorktreeChipProjector.project(context, settingsEnabled: true, isDirty: true)
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows[0].branch.label, "feature/x*")
+    }
+
+    func testCleanWorkingTreeDoesNotAppendStar() {
+        let context = ResolvedGitContext(outer: .mainCheckout(branch: .attached("feature/x")))
+        let rows = WorktreeChipProjector.project(context, settingsEnabled: true, isDirty: false)
+        XCTAssertEqual(rows[0].branch.label, "feature/x")
+    }
+
+    func testDirtyDetachedHeadAppendsStarAfterClosingParen() {
+        let context = ResolvedGitContext(
+            outer: .mainCheckout(branch: .detached(shortSHA: "abc1234"))
+        )
+        let rows = WorktreeChipProjector.project(context, settingsEnabled: true, isDirty: true)
+        XCTAssertEqual(rows[0].branch.label, "(detached @ abc1234)*")
+    }
+
+    func testSubmoduleInnerRowDoesNotInheritDirty() {
+        let context = ResolvedGitContext(
+            outer: .mainCheckout(branch: .attached("main")),
+            inner: GitSubmoduleContext(
+                name: "ghostty",
+                absolutePath: "/super/ghostty",
+                branch: .attached("ghostty-main")
+            )
+        )
+        let rows = WorktreeChipProjector.project(context, settingsEnabled: true, isDirty: true)
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertEqual(rows[0].branch.label, "main*", "outer carries dirty marker")
+        XCTAssertEqual(rows[1].branch.label, "ghostty-main", "inner row has no dirty marker")
+    }
+
     // MARK: - Linked worktree carries dot prefix
 
     func testLinkedWorktreeCarriesColoredDot() {

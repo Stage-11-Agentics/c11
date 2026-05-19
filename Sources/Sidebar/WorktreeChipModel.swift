@@ -56,29 +56,38 @@ public enum WorktreeChipProjector {
     /// Project a resolved context into chip rows for the sidebar.
     /// Returns an empty array when the chip row should not render
     /// (settings disabled, no git context).
+    ///
+    /// `isDirty` preserves the legacy dirty-marker UX (branch chip
+    /// gets a `*` suffix when the working tree has uncommitted
+    /// changes) — sourced from `Workspace.panelGitBranches[surfaceId]
+    /// .isDirty` upstream.
     public static func project(
         _ context: ResolvedGitContext?,
-        settingsEnabled: Bool
+        settingsEnabled: Bool,
+        isDirty: Bool = false
     ) -> [WorktreeChipRow] {
         guard settingsEnabled else { return [] }
         guard let context else { return [] }
 
-        let outerRow = projectOuter(context.outer)
+        let outerRow = projectOuter(context.outer, isDirty: isDirty)
         guard let inner = context.inner else {
             return [outerRow]
         }
+        // Inner row's dirty state is the submodule's own working tree
+        // — a future addition. For now the outer surface's dirty bit
+        // governs the outer row only.
         let innerRow = projectInner(inner)
         return [outerRow, innerRow]
     }
 
     // MARK: - Internal
 
-    static func projectOuter(_ kind: GitContextKind) -> WorktreeChipRow {
+    static func projectOuter(_ kind: GitContextKind, isDirty: Bool = false) -> WorktreeChipRow {
         switch kind {
         case .mainCheckout(let branch):
             return WorktreeChipRow(
                 worktree: nil,
-                branch: projectBranch(branch),
+                branch: projectBranch(branch, isDirty: isDirty),
                 indent: .none
             )
         case .linkedWorktree(let basename, let absolutePath, let branch):
@@ -88,7 +97,7 @@ public enum WorktreeChipProjector {
             )
             return WorktreeChipRow(
                 worktree: chip,
-                branch: projectBranch(branch),
+                branch: projectBranch(branch, isDirty: isDirty),
                 indent: .none
             )
         }
@@ -107,19 +116,20 @@ public enum WorktreeChipProjector {
         )
     }
 
-    static func projectBranch(_ branch: BranchValue) -> BranchChip {
+    static func projectBranch(_ branch: BranchValue, isDirty: Bool = false) -> BranchChip {
+        let suffix = isDirty ? "*" : ""
         switch branch {
         case .attached(let name):
             let isMainish = mainBranchNames.contains(name)
-            return BranchChip(label: name, isDimmed: isMainish, isDetached: false)
+            return BranchChip(label: "\(name)\(suffix)", isDimmed: isMainish, isDetached: false)
         case .detached(let sha):
             return BranchChip(
-                label: "(detached @ \(sha))",
+                label: "(detached @ \(sha))\(suffix)",
                 isDimmed: false,
                 isDetached: true
             )
         case .unknown:
-            return BranchChip(label: "(no branch)", isDimmed: false, isDetached: false)
+            return BranchChip(label: "(no branch)\(suffix)", isDimmed: false, isDetached: false)
         }
     }
 }

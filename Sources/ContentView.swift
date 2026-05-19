@@ -8411,10 +8411,11 @@ struct VerticalTabsSidebar: View {
     private var workspacePresentationMode = WorkspacePresentationModeSettings.defaultMode.rawValue
     @AppStorage(ChromeScaleSettings.presetKey)
     private var chromeScalePresetRaw = ChromeScaleSettings.defaultPreset.rawValue
-    /// C11-104 — single master toggle for the worktree+branch chips row.
-    /// Default on; operators not running multi-worktree workflows can hide.
-    @AppStorage("sidebarShowWorktreeChips")
-    private var sidebarShowWorktreeChips = true
+    /// C11-104 v2 — chip row is gated by the preserved
+    /// `sidebarShowBranchDirectory` key (existing user prefs survive
+    /// the legacy-row → chip-row migration).
+    @AppStorage("sidebarShowBranchDirectory")
+    private var sidebarShowBranchDirectory = true
 
     /// Space at top of sidebar for traffic light buttons
     private let trafficLightPadding: CGFloat = 28
@@ -8537,20 +8538,25 @@ struct VerticalTabsSidebar: View {
                                         sources: sources
                                     )
                                 }()
-                                // C11-104: precompute worktree+branch chips
-                                // for the focused surface. Reads the resolver
-                                // output directly from the workspace's
-                                // `panelGitContexts` (populated by the
-                                // off-main probe in TabManager).
+                                // C11-104 v2: precompute worktree+branch
+                                // chips for the focused surface. Reads the
+                                // resolver output directly from the
+                                // workspace's `panelGitContexts` (populated
+                                // by the off-main probe in TabManager).
+                                // Branch chip's dirty marker comes from the
+                                // existing `panelGitBranches[surfaceId].isDirty`
+                                // signal so the legacy UX is preserved.
                                 let worktreeChipRows: [WorktreeChipRow] = {
-                                    guard sidebarShowWorktreeChips,
+                                    guard sidebarShowBranchDirectory,
                                           let focusedId = tab.focusedPanelId else {
                                         return []
                                     }
                                     let context = tab.panelGitContexts[focusedId] ?? nil
+                                    let isDirty = tab.panelGitBranches[focusedId]?.isDirty ?? false
                                     return WorktreeChipProjector.project(
                                         context,
-                                        settingsEnabled: true
+                                        settingsEnabled: true,
+                                        isDirty: isDirty
                                     )
                                 }()
                                 // C11-25: read the focused surface's most recent CPU/RSS
@@ -11378,39 +11384,13 @@ private struct TabItemView: View, Equatable {
         let latestNotificationSubtitle = latestNotificationText
         let effectiveSubtitle = latestNotificationSubtitle
         let detailVisibility = visibleAuxiliaryDetails
-        let orderedPanelIds: [UUID]? = (detailVisibility.showsBranchDirectory || detailVisibility.showsPullRequests)
+        // C11-104 v2 — branch+directory text-line precomputes retired.
+        // The new chip render (precomputed upstream in
+        // `VerticalTabsSidebar`, passed in via `worktreeChipRows`)
+        // replaces them.
+        let orderedPanelIds: [UUID]? = detailVisibility.showsPullRequests
             ? tab.sidebarOrderedPanelIds()
             : nil
-        let compactGitBranchSummaryText: String? = {
-            guard detailVisibility.showsBranchDirectory,
-                  !sidebarBranchVerticalLayout,
-                  sidebarShowGitBranch,
-                  let orderedPanelIds else {
-                return nil
-            }
-            return gitBranchSummaryText(orderedPanelIds: orderedPanelIds)
-        }()
-        let compactDirectorySummaryText: String? = {
-            guard detailVisibility.showsBranchDirectory,
-                  !sidebarBranchVerticalLayout,
-                  let orderedPanelIds else {
-                return nil
-            }
-            return directorySummaryText(orderedPanelIds: orderedPanelIds)
-        }()
-        let compactBranchDirectoryRow = branchDirectoryRow(
-            gitSummary: compactGitBranchSummaryText,
-            directorySummary: compactDirectorySummaryText
-        )
-        let branchDirectoryLines: [VerticalBranchDirectoryLine] = {
-            guard detailVisibility.showsBranchDirectory,
-                  sidebarBranchVerticalLayout,
-                  let orderedPanelIds else {
-                return []
-            }
-            return verticalBranchDirectoryLines(orderedPanelIds: orderedPanelIds)
-        }()
-        let branchLinesContainBranch = sidebarShowGitBranch && branchDirectoryLines.contains { $0.branch != nil }
         let pullRequestRows: [PullRequestDisplay] = {
             guard detailVisibility.showsPullRequests, let orderedPanelIds else { return [] }
             return pullRequestDisplays(orderedPanelIds: orderedPanelIds)
@@ -11602,59 +11582,10 @@ private struct TabItemView: View, Equatable {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
-            // Branch + directory row
-            if detailVisibility.showsBranchDirectory {
-                if sidebarBranchVerticalLayout {
-                    if !branchDirectoryLines.isEmpty {
-                        HStack(alignment: .top, spacing: 3) {
-                            if sidebarShowGitBranchIcon, branchLinesContainBranch {
-                                Image(systemName: "arrow.triangle.branch")
-                                    .font(.system(size: chromeTokens.sidebarWorkspaceAccessory))
-                                    .foregroundColor(activeSecondaryColor(0.6))
-                            }
-                            VStack(alignment: .leading, spacing: 1) {
-                                ForEach(Array(branchDirectoryLines.enumerated()), id: \.offset) { _, line in
-                                    HStack(spacing: 3) {
-                                        if let branch = line.branch {
-                                            Text(branch)
-                                                .font(.system(size: chromeTokens.sidebarWorkspaceMetadata, design: .monospaced))
-                                                .foregroundColor(activeSecondaryColor(0.75))
-                                                .lineLimit(1)
-                                                .truncationMode(.tail)
-                                        }
-                                        if line.branch != nil, line.directory != nil {
-                                            Image(systemName: "circle.fill")
-                                                .font(.system(size: chromeTokens.sidebarWorkspaceBranchDot))
-                                                .foregroundColor(activeSecondaryColor(0.6))
-                                                .padding(.horizontal, 1)
-                                        }
-                                        if let directory = line.directory {
-                                            Text(directory)
-                                                .font(.system(size: chromeTokens.sidebarWorkspaceMetadata, design: .monospaced))
-                                                .foregroundColor(activeSecondaryColor(0.75))
-                                                .lineLimit(1)
-                                                .truncationMode(.tail)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else if let dirRow = compactBranchDirectoryRow {
-                    HStack(spacing: 3) {
-                        if sidebarShowGitBranchIcon, compactGitBranchSummaryText != nil {
-                            Image(systemName: "arrow.triangle.branch")
-                                .font(.system(size: chromeTokens.sidebarWorkspaceAccessory))
-                                .foregroundColor(activeSecondaryColor(0.6))
-                        }
-                        Text(dirRow)
-                            .font(.system(size: chromeTokens.sidebarWorkspaceMetadata, design: .monospaced))
-                            .foregroundColor(activeSecondaryColor(0.75))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                }
-            }
+            // C11-104 v2 — Branch + Directory row retired. The
+            // worktree+branch chip row above replaces it. The toggle
+            // key `sidebarShowBranchDirectory` is preserved (existing
+            // user prefs survive) and now gates the chip row.
 
             // Pull request rows
             if detailVisibility.showsPullRequests, !pullRequestRows.isEmpty {
@@ -12366,84 +12297,12 @@ private struct TabItemView: View, Equatable {
     // latestNotificationText is now passed as a parameter from the parent view
     // to avoid subscribing to notificationStore changes in every TabItemView.
 
-    private func branchDirectoryRow(
-        gitSummary: String?,
-        directorySummary: String?
-    ) -> String? {
-        var parts: [String] = []
-
-        if let gitSummary {
-            parts.append(gitSummary)
-        }
-
-        if let directorySummary {
-            parts.append(directorySummary)
-        }
-
-        let result = parts.joined(separator: " · ")
-        return result.isEmpty ? nil : result
-    }
-
-    private func gitBranchSummaryText(orderedPanelIds: [UUID]) -> String? {
-        let lines = gitBranchSummaryLines(orderedPanelIds: orderedPanelIds)
-        guard !lines.isEmpty else { return nil }
-        return lines.joined(separator: " | ")
-    }
-
-    private func gitBranchSummaryLines(orderedPanelIds: [UUID]) -> [String] {
-        tab.sidebarGitBranchesInDisplayOrder(orderedPanelIds: orderedPanelIds).map { branch in
-            "\(branch.branch)\(branch.isDirty ? "*" : "")"
-        }
-    }
-
-    private struct VerticalBranchDirectoryLine {
-        let branch: String?
-        let directory: String?
-    }
-
-    private func verticalBranchDirectoryLines(orderedPanelIds: [UUID]) -> [VerticalBranchDirectoryLine] {
-        let entries = tab.sidebarBranchDirectoryEntriesInDisplayOrder(orderedPanelIds: orderedPanelIds)
-        let home = SidebarPathFormatter.homeDirectoryPath
-        return entries.compactMap { entry in
-            let branchText: String? = {
-                guard sidebarShowGitBranch, let branch = entry.branch else { return nil }
-                return "\(branch)\(entry.isDirty ? "*" : "")"
-            }()
-
-            let directoryText: String? = {
-                guard let directory = entry.directory else { return nil }
-                let shortened = SidebarPathFormatter.shortenedPath(directory, homeDirectoryPath: home)
-                return shortened.isEmpty ? nil : shortened
-            }()
-
-            switch (branchText, directoryText) {
-            case let (branch?, directory?):
-                return VerticalBranchDirectoryLine(branch: branch, directory: directory)
-            case let (branch?, nil):
-                return VerticalBranchDirectoryLine(branch: branch, directory: nil)
-            case let (nil, directory?):
-                return VerticalBranchDirectoryLine(branch: nil, directory: directory)
-            default:
-                return nil
-            }
-        }
-    }
-
-    private func directorySummaryText(orderedPanelIds: [UUID]) -> String? {
-        guard !tab.panels.isEmpty else { return nil }
-        let home = SidebarPathFormatter.homeDirectoryPath
-        var seen: Set<String> = []
-        var entries: [String] = []
-        for panelId in orderedPanelIds {
-            let directory = tab.panelDirectories[panelId] ?? tab.currentDirectory
-            let shortened = SidebarPathFormatter.shortenedPath(directory, homeDirectoryPath: home)
-            guard !shortened.isEmpty else { continue }
-            if seen.insert(shortened).inserted {
-                entries.append(shortened)
-            }
-        }
-        return entries.isEmpty ? nil : entries.joined(separator: " | ")
-    }
+    // C11-104 v2 — retired:
+    //   branchDirectoryRow, gitBranchSummaryText, gitBranchSummaryLines,
+    //   VerticalBranchDirectoryLine, verticalBranchDirectoryLines,
+    //   directorySummaryText
+    // The chip render in `WorktreeChipsRow` (precomputed upstream in
+    // `VerticalTabsSidebar`) replaces these.
 
     private struct PullRequestDisplay: Identifiable {
         let id: String

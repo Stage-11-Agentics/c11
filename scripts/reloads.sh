@@ -11,6 +11,7 @@ BUNDLE_SET=0
 DERIVED_SET=0
 TAG=""
 WMO=0
+UNIVERSAL=0
 LAST_SOCKET_PATH_DIR="$HOME/Library/Application Support/c11"
 LAST_SOCKET_PATH_FILE="${LAST_SOCKET_PATH_DIR}/last-socket-path"
 
@@ -34,6 +35,10 @@ Options:
   --name <app name>      Override app display/bundle name.
   --bundle-id <id>       Override bundle identifier.
   --derived-data <path>  Override derived data path.
+  --universal            Build a universal (arm64 + x86_64) binary.
+                         Default is arm64-only for faster local iteration.
+                         Use this for x86_64-specific checks; combine with
+                         --wmo for full prod parity before a tag push.
   --wmo                  Use wholemodule Swift compilation (prod parity).
                          Default is incremental for faster local iteration.
                          Recommended before tag push to catch WMO-only bugs.
@@ -102,6 +107,10 @@ while [[ $# -gt 0 ]]; do
       WMO=1
       shift
       ;;
+    --universal)
+      UNIVERSAL=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -143,6 +152,13 @@ if [[ -z "$TAG" ]]; then
     INFOPLIST_KEY_CFBundleDisplayName="$APP_NAME"
     PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"
   )
+fi
+# On Apple Silicon the x86_64 slice of a universal build is dead weight at
+# iteration time and roughly doubles the Swift compile cost. CI's release.yml
+# still produces universal because it invokes xcodebuild without these
+# overrides; pass --universal here to catch x86_64-only issues locally.
+if [[ "$UNIVERSAL" -eq 0 ]]; then
+  XCODEBUILD_ARGS+=(ARCHS=arm64 ONLY_ACTIVE_ARCH=YES)
 fi
 # Staging is built for running, not for IDE navigation; the indexer output
 # would only be useful if we ever edited against this build in Xcode.

@@ -2319,8 +2319,11 @@ struct ContentView: View {
                 Spacer()
 
             }
-            .frame(height: 28)
-            .padding(.top, 2)
+            // HStack fills the titlebar height and the text centers within it.
+            // Dropping the explicit frame(height: 28) + .padding(.top, 2) (which
+            // sat the content 30pt tall in a 32pt outer, with the implicit
+            // bottom space stacking against the 1pt bottom border so the text
+            // read as bottom-heavy) lets the 13pt bold text sit symmetrically.
             .padding(.leading, (isFullScreen && !sidebarState.isVisible) ? 8 : (sidebarState.isVisible ? 12 : titlebarLeadingInset + CGFloat(debugTitlebarLeadingExtra)))
             .padding(.trailing, 8)
         }
@@ -8420,6 +8423,13 @@ struct VerticalTabsSidebar: View {
     /// Space at top of sidebar for traffic light buttons
     private let trafficLightPadding: CGFloat = 28
     private let tabRowSpacing: CGFloat = 2
+    /// Extra clearance between the traffic-light strip and the first
+    /// workspace row so the row's selection highlight clears the
+    /// `SidebarTopScrim` gradient. The scrim is `trafficLightPadding + 20`
+    /// tall and its bottom 20pt is the soft fade; we need the first row
+    /// to begin at least ~12pt past the scrim's center to keep the
+    /// rounded top corners legible.
+    private let firstRowTopInset: CGFloat = 12
     private let hiddenTitlebarControlsLeadingInset: CGFloat = 72
 
     private var isMinimalMode: Bool {
@@ -8505,9 +8515,14 @@ struct VerticalTabsSidebar: View {
             GeometryReader { proxy in
                 ScrollView {
                     VStack(spacing: 0) {
-                        // Space for traffic lights / fullscreen controls
+                        // Space for traffic lights / fullscreen controls.
+                        // Includes `firstRowTopInset` so the first row's
+                        // highlight rounded-rect clears the `SidebarTopScrim`
+                        // gradient below — without it the scrim is still
+                        // ~40% opaque where the top corner lands and the
+                        // highlight reads as if the corner is cut off.
                         Spacer()
-                            .frame(height: trafficLightPadding)
+                            .frame(height: trafficLightPadding + firstRowTopInset)
 
                         LazyVStack(spacing: tabRowSpacing) {
                             ForEach(Array(tabManager.tabs.enumerated()), id: \.element.id) { index, tab in

@@ -20,7 +20,12 @@ final class DescriptionSanitizerTests: XCTestCase {
     func testStripsFencedCodeBlock() {
         let input = "line\n```swift\ncode\n```\nafter"
         let output = sanitizeDescriptionMarkdown(input)
-        XCTAssertEqual(output, "line\n\nafter")
+        // The sanitizer removes both fence lines AND the content between them
+        // (see Sources/SurfaceTitleBarView.swift:246-254), then joins the
+        // remaining lines with single newlines — so "line" and "after" end up
+        // separated by one newline, not two. The earlier expectation predated
+        // the current join-then-collapse implementation.
+        XCTAssertEqual(output, "line\nafter")
     }
 
     func testStripsTableRows() {

@@ -6,6 +6,19 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.49.1] - 2026-05-19
+
+Patch release. Two correctness follow-ups to v0.49.0: a SwiftUI render-thread crash from a `Text + Text` concat path in the workspace chrome, and a restored-session execution bug where `c11 restore` typed the resume command into the recipient surface's prompt but never submitted it.
+
+### Fixed
+
+- **`Text + Text` recursion no longer blows the render-thread stack.** A concat path in the workspace chrome (sidebar + pane interaction card) recursed through SwiftUI's `Text + Text` operator deeply enough to overflow the render thread on some configurations, taking the window down. Switched the construction to a flattened form. ([#195](https://github.com/Stage-11-Agentics/c11/pull/195))
+- **`c11 restore` now actually executes the resume command on restored surfaces.** `TerminalSurface.sendText` wraps every write in bracketed-paste markers (`ESC[200~ … ESC[201~`), so any embedded `\n` or `\r` is treated as data by zsh ZLE / bash readline / TUI raw-mode handlers and never submits. Session restore was typing the `claude --resume <id>` command into the prompt and then leaving it stranded — every restored Claude Code surface came up showing the resume line waiting for the operator to press Enter. The restart-registry executor now dispatches a real Return outside the bracketed-paste sequence so the command actually runs. ([7cb87a5e6](https://github.com/Stage-11-Agentics/c11/commit/7cb87a5e6))
+
+### Built and shipped by
+
+Stage 11 Agentics. Operator:agent, fused.
+
 ## [0.49.0] - 2026-05-19
 
 Stability + ergonomics release. Headline: **worktree and branch chips on every workspace's sidebar row** make git context visible at a glance — the operator running parallel worktrees never has to read `cwd` to know which workspace is on which branch. Underneath, the long-running C11-105 mystery is closed out: the c11 CLI socket no longer goes unreachable while the app is alive. State-directory migration from c11mux gets a per-entry merge so mixed-state homes survive. `c11 send` learns to submit by default — agents that drop the `send-key enter` follow-up no longer leave messages stranded in the recipient's input box. Workspace snapshots now persist browser surface URLs across restore. Terminal links pick up an Opt+click escape hatch to the system browser. Update pill opens its popover on the first click. And the close-workspace confirm overlay actually shows up when the target workspace is off-screen.

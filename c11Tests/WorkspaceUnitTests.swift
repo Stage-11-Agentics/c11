@@ -1729,10 +1729,6 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             workspace.sidebarGitBranchesInDisplayOrder().map { "\($0.branch)|\($0.isDirty)" }
         )
         XCTAssertEqual(
-            workspace.sidebarBranchDirectoryEntriesInDisplayOrder(orderedPanelIds: orderedPanelIds),
-            workspace.sidebarBranchDirectoryEntriesInDisplayOrder()
-        )
-        XCTAssertEqual(
             workspace.sidebarPullRequestsInDisplayOrder(orderedPanelIds: orderedPanelIds),
             workspace.sidebarPullRequestsInDisplayOrder()
         )

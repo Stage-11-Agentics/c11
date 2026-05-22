@@ -194,7 +194,10 @@ final class AgentSkillsModel: ObservableObject {
 
     func revealPrimarySkillInFinder() {
         guard let url = primarySkillURL else { return }
-        revealInFinder(url: url)
+        // Open the skills folder itself so the operator sees the SKILL.md
+        // files. activateFileViewerSelecting reveals the folder from its
+        // parent — one level too high to be useful here.
+        NSWorkspace.shared.open(url)
     }
 
     private func formatInstallMessage(result: SkillInstallerApplyResult) -> String {

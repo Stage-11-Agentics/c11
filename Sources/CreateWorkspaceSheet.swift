@@ -560,7 +560,7 @@ struct CreateWorkspaceSheet: View {
             Text(String(localized: "createWorkspace.defaultLayouts", defaultValue: "Default layouts"))
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(BrandColors.whiteSwiftUI)
-            ScrollView(.horizontal, showsIndicators: false) {
+            DragScrollView {
                 HStack(spacing: 10) {
                     ForEach(starterEntries) { entry in
                         blueprintCard(entry, showLetters: true)
@@ -568,6 +568,7 @@ struct CreateWorkspaceSheet: View {
                 }
                 .padding(.vertical, 2)
             }
+            .frame(height: 110)
         }
     }
 
@@ -639,7 +640,7 @@ struct CreateWorkspaceSheet: View {
                 .font(.system(size: 11))
                 .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.4))
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
+                DragScrollView {
                     HStack(spacing: 10) {
                         ForEach(savedEntries) { entry in
                             blueprintCard(entry, showLetters: false)
@@ -647,6 +648,7 @@ struct CreateWorkspaceSheet: View {
                     }
                     .padding(.vertical, 2)
                 }
+                .frame(height: 110)
                 Text(
                     String(
                         format: String(
@@ -1217,4 +1219,76 @@ private struct OutlineShapeIcon: View {
 extension BrandColors {
     static var surface2SwiftUI: Color { Color(red: 0.12, green: 0.12, blue: 0.135) }
     static var surface3SwiftUI:  Color { Color(red: 0.175, green: 0.175, blue: 0.196) }
+}
+
+// MARK: - Horizontal scroll with click-and-drag
+
+/// Horizontal scroll container that supports click-and-drag panning in
+/// addition to the usual trackpad/scroll-wheel gestures. Wraps the SwiftUI
+/// content in an `NSScrollView` and attaches an `NSPanGestureRecognizer` so
+/// mouse users can grab the strip and drag.
+private struct DragScrollView<Content: View>: NSViewRepresentable {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.hasHorizontalScroller = false
+        scrollView.hasVerticalScroller = false
+        scrollView.horizontalScrollElasticity = .allowed
+        scrollView.verticalScrollElasticity = .none
+        scrollView.usesPredominantAxisScrolling = false
+        scrollView.scrollerStyle = .overlay
+        scrollView.autohidesScrollers = true
+
+        let hosting = NSHostingView(rootView: content)
+        hosting.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.documentView = hosting
+
+        if let documentView = scrollView.documentView, let contentView = scrollView.contentView as NSClipView? {
+            NSLayoutConstraint.activate([
+                documentView.topAnchor.constraint(equalTo: contentView.topAnchor),
+                documentView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+                documentView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            ])
+        }
+
+        let pan = NSPanGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handlePan(_:))
+        )
+        pan.delaysPrimaryMouseButtonEvents = false
+        scrollView.addGestureRecognizer(pan)
+        context.coordinator.scrollView = scrollView
+        return scrollView
+    }
+
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        if let hosting = nsView.documentView as? NSHostingView<Content> {
+            hosting.rootView = content
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator: NSObject {
+        weak var scrollView: NSScrollView?
+
+        @objc func handlePan(_ gesture: NSPanGestureRecognizer) {
+            guard let sv = scrollView else { return }
+            let translation = gesture.translation(in: sv)
+            let origin = sv.contentView.bounds.origin
+            let docWidth = sv.documentView?.bounds.width ?? 0
+            let viewWidth = sv.contentView.bounds.width
+            let maxX = max(0, docWidth - viewWidth)
+            let nextX = min(maxX, max(0, origin.x - translation.x))
+            sv.contentView.scroll(to: NSPoint(x: nextX, y: origin.y))
+            sv.reflectScrolledClipView(sv.contentView)
+            gesture.setTranslation(.zero, in: sv)
+        }
+    }
 }

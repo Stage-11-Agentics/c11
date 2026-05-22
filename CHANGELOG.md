@@ -6,6 +6,23 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.49.2] - 2026-05-21
+
+Single-fix patch release for a Japanese / Chinese IME regression reported against 0.49.x. Korean IME behaviour is unchanged.
+
+### Fixed
+
+- **Japanese / Chinese IME Enter no longer leaks into the underlying TUI.** Confirming a Japanese (Hiragana) or Chinese (Pinyin) IME conversion with Return was forwarding a second Return into the terminal surface, so TUIs like Claude Code interpreted the conversion-confirm as a submit. Root cause: `shouldSendCommittedIMEConfirmKey` was returning `true` for any post-composition Return; it now matches upstream cmux by gating the extra Return on a Korean-only input-source check (Korean two-set IMEs commit+execute in a single Enter; Japanese / Chinese require a second Enter). ([#197](https://github.com/Stage-11-Agentics/c11/pull/197) — thanks [@hummer98](https://github.com/hummer98) for the report and the upstream diff bisection!)
+
+### Thanks to 2 contributors!
+
+- [@BenevolentFutures](https://github.com/BenevolentFutures)
+- [@hummer98](https://github.com/hummer98)
+
+### Built and shipped by
+
+Stage 11 Agentics. Operator:agent, fused.
+
 ## [0.49.1] - 2026-05-19
 
 Patch release. Two correctness follow-ups to v0.49.0: a SwiftUI render-thread crash from a `Text + Text` concat path in the workspace chrome, and a restored-session execution bug where `c11 restore` typed the resume command into the recipient surface's prompt but never submitted it.

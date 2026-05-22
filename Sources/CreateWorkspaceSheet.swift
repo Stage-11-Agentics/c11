@@ -171,9 +171,7 @@ struct CreateWorkspaceSheet: View {
             header
             baseDirectorySection
             workspaceNameSection
-            defaultLayoutsSection
-            blueprintLegend
-            customBlueprintsSection
+            layoutsSection
             footer
         }
         .padding(24)
@@ -553,33 +551,66 @@ struct CreateWorkspaceSheet: View {
         }
     }
 
-    // MARK: - Default layouts (horizontal scroll, letter cells)
+    // MARK: - Layouts (one consolidated row: defaults + custom blueprints)
 
-    private var defaultLayoutsSection: some View {
+    private var layoutsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(String(localized: "createWorkspace.defaultLayouts", defaultValue: "Default layouts"))
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(BrandColors.whiteSwiftUI)
+            HStack(spacing: 8) {
+                Text(String(localized: "createWorkspace.layouts", defaultValue: "Layouts"))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(BrandColors.whiteSwiftUI)
+                Button {
+                    helpPopoverOpen.toggle()
+                } label: {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.55))
+                }
+                .buttonStyle(.plain)
+                .help(String(
+                    localized: "createWorkspace.customBlueprints.helpHint",
+                    defaultValue: "What is a custom blueprint?"
+                ))
+                .popover(isPresented: $helpPopoverOpen, arrowEdge: .bottom) {
+                    helpPopoverContent
+                }
+                Spacer()
+            }
+
             DragScrollView {
-                HStack(spacing: 10) {
+                HStack(spacing: 12) {
                     ForEach(starterEntries) { entry in
                         blueprintCard(entry, showLetters: true)
                     }
+                    if !savedEntries.isEmpty {
+                        Rectangle()
+                            .fill(BrandColors.ruleSwiftUI)
+                            .frame(width: 1, height: 130)
+                            .padding(.horizontal, 4)
+                    }
+                    ForEach(savedEntries) { entry in
+                        blueprintCard(entry, showLetters: false)
+                    }
                 }
-                .padding(.vertical, 2)
+                .padding(.vertical, 4)
+                .padding(.horizontal, 2)
             }
-            .frame(height: 110)
-        }
-    }
+            .frame(height: 200)
 
-    private var blueprintLegend: some View {
-        HStack(spacing: 12) {
-            legendBadge("A", String(localized: "createWorkspace.legend.agent", defaultValue: "agent"))
-            legendBadge("T", String(localized: "createWorkspace.legend.terminal", defaultValue: "terminal"))
-            legendBadge("B", String(localized: "createWorkspace.legend.browser", defaultValue: "browser"))
-            legendBadge("M", String(localized: "createWorkspace.legend.markdown", defaultValue: "markdown"))
+            HStack(spacing: 12) {
+                Spacer()
+                legendBadge("A", String(localized: "createWorkspace.legend.agent", defaultValue: "agent"))
+                legendBadge("T", String(localized: "createWorkspace.legend.terminal", defaultValue: "terminal"))
+                legendBadge("B", String(localized: "createWorkspace.legend.browser", defaultValue: "browser"))
+                legendBadge("M", String(localized: "createWorkspace.legend.markdown", defaultValue: "markdown"))
+            }
+
+            if let loadFailureMessage {
+                Text(loadFailureMessage)
+                    .font(.system(size: 10))
+                    .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.5))
+            }
         }
-        .padding(.top, -4)
     }
 
     @ViewBuilder
@@ -601,72 +632,6 @@ struct CreateWorkspaceSheet: View {
             Text(word)
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.5))
-        }
-    }
-
-    // MARK: - Custom blueprints (horizontal scroll, no letters in v1)
-
-    private var customBlueprintsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text(String(
-                    localized: "createWorkspace.customBlueprints",
-                    defaultValue: "Custom blueprints"
-                ))
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(BrandColors.whiteSwiftUI)
-                Button {
-                    helpPopoverOpen.toggle()
-                } label: {
-                    Image(systemName: "info.circle")
-                        .font(.system(size: 12))
-                        .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.55))
-                }
-                .buttonStyle(.plain)
-                .help(String(
-                    localized: "createWorkspace.customBlueprints.helpHint",
-                    defaultValue: "What is a custom blueprint?"
-                ))
-                .popover(isPresented: $helpPopoverOpen, arrowEdge: .bottom) {
-                    helpPopoverContent
-                }
-            }
-
-            if savedEntries.isEmpty {
-                Text(String(
-                    localized: "createWorkspace.customBlueprints.empty",
-                    defaultValue: "No custom blueprints yet."
-                ))
-                .font(.system(size: 11))
-                .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.4))
-            } else {
-                DragScrollView {
-                    HStack(spacing: 10) {
-                        ForEach(savedEntries) { entry in
-                            blueprintCard(entry, showLetters: false)
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
-                .frame(height: 110)
-                Text(
-                    String(
-                        format: String(
-                            localized: "createWorkspace.customBlueprints.count",
-                            defaultValue: "%d blueprints"
-                        ),
-                        savedEntries.count
-                    )
-                )
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.35))
-            }
-
-            if let loadFailureMessage {
-                Text(loadFailureMessage)
-                    .font(.system(size: 10))
-                    .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.5))
-            }
         }
     }
 
@@ -718,42 +683,44 @@ struct CreateWorkspaceSheet: View {
             selectionId = entry.id
             CreateWorkspaceLastLayout.save(entry.id)
         } label: {
-            VStack(spacing: 6) {
+            VStack(alignment: .center, spacing: 10) {
                 if showLetters, let topology = entry.shape.letterTopology {
                     LetterCellIcon(topology: topology)
-                        .frame(width: 84, height: 50)
+                        .frame(width: 132, height: 78)
                 } else {
                     OutlineShapeIcon(shape: entry.shape)
-                        .frame(width: 84, height: 50)
+                        .frame(width: 132, height: 78)
                 }
                 Text(entry.label)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(BrandColors.whiteSwiftUI)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 if let description = entry.description {
                     Text(description)
-                        .font(.system(size: 10))
-                        .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.5))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                        .font(.system(size: 11))
+                        .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.55))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                Spacer(minLength: 0)
             }
-            .frame(width: 140)
-            .padding(.vertical, 10)
-            .padding(.horizontal, 8)
+            .frame(width: 176, height: 168, alignment: .top)
+            .padding(.vertical, 14)
+            .padding(.horizontal, 12)
             .background(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 10)
                     .fill(isSelected ? BrandColors.goldFaintSwiftUI : BrandColors.surface2SwiftUI)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 10)
                     .stroke(
                         isSelected ? BrandColors.goldSwiftUI : BrandColors.ruleSwiftUI,
-                        lineWidth: isSelected ? 1 : 0.5
+                        lineWidth: isSelected ? 1.5 : 0.5
                     )
             )
-            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .contentShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
     }
@@ -1056,7 +1023,7 @@ private struct BlueprintEntry: Identifiable {
             label: String(localized: "createWorkspace.starter.single.label", defaultValue: "Single"),
             description: String(
                 localized: "createWorkspace.starter.single.description",
-                defaultValue: "Single terminal."
+                defaultValue: "One terminal pane filling the workspace."
             ),
             fileName: "basic-terminal",
             shape: .oneColumn
@@ -1066,50 +1033,20 @@ private struct BlueprintEntry: Identifiable {
             label: String(localized: "createWorkspace.starter.twoColumns.label", defaultValue: "Two columns"),
             description: String(
                 localized: "createWorkspace.starter.twoColumns.description",
-                defaultValue: "Two terminals split side by side."
+                defaultValue: "Two terminals split side by side. Agent left, terminal right."
             ),
             fileName: "side-by-side",
             shape: .twoColumns
-        ),
-        Definition(
-            starterId: "starter:three-columns",
-            label: String(localized: "createWorkspace.starter.threeColumns.label", defaultValue: "Three columns"),
-            description: String(
-                localized: "createWorkspace.starter.threeColumns.description",
-                defaultValue: "Three terminals side by side."
-            ),
-            fileName: "three-column",
-            shape: .threeColumns
         ),
         Definition(
             starterId: "starter:quad",
             label: String(localized: "createWorkspace.starter.quad.label", defaultValue: "2 × 2"),
             description: String(
                 localized: "createWorkspace.starter.quad.description",
-                defaultValue: "Four terminals in a 2 × 2 grid."
+                defaultValue: "Four terminal panes in a 2 × 2 grid. Agent in the top-left."
             ),
             fileName: "quad-terminal",
             shape: .quad
-        ),
-        Definition(
-            starterId: "starter:two-by-three",
-            label: String(localized: "createWorkspace.starter.twoByThree.label", defaultValue: "2 × 3"),
-            description: String(
-                localized: "createWorkspace.starter.twoByThree.description",
-                defaultValue: "Six terminals in 2 columns, 3 rows."
-            ),
-            fileName: "two-by-three",
-            shape: .twoByThree
-        ),
-        Definition(
-            starterId: "starter:six",
-            label: String(localized: "createWorkspace.starter.threeByTwo.label", defaultValue: "3 × 2"),
-            description: String(
-                localized: "createWorkspace.starter.threeByTwo.description",
-                defaultValue: "Six terminals in 3 columns, 2 rows."
-            ),
-            fileName: "six-terminal",
-            shape: .sixGrid
         ),
     ]
 
@@ -1121,10 +1058,7 @@ private struct BlueprintEntry: Identifiable {
 enum BlueprintShape {
     case oneColumn
     case twoColumns
-    case threeColumns
     case quad
-    case twoByThree
-    case sixGrid
     case custom
 
     /// Returns the cell topology (rows of letter cells) for default-layout
@@ -1136,23 +1070,10 @@ enum BlueprintShape {
             return LetterTopology(rows: [["A"]])
         case .twoColumns:
             return LetterTopology(rows: [["A", "T"]])
-        case .threeColumns:
-            return LetterTopology(rows: [["A", "T", "T"]])
         case .quad:
             return LetterTopology(rows: [
                 ["A", "T"],
                 ["T", "T"],
-            ])
-        case .twoByThree:
-            return LetterTopology(rows: [
-                ["A", "T"],
-                ["T", "T"],
-                ["T", "T"],
-            ])
-        case .sixGrid:
-            return LetterTopology(rows: [
-                ["A", "T", "T"],
-                ["T", "T", "T"],
             ])
         case .custom:
             return nil
@@ -1223,10 +1144,12 @@ extension BrandColors {
 
 // MARK: - Horizontal scroll with click-and-drag
 
-/// Horizontal scroll container that supports click-and-drag panning in
-/// addition to the usual trackpad/scroll-wheel gestures. Wraps the SwiftUI
-/// content in an `NSScrollView` and attaches an `NSPanGestureRecognizer` so
-/// mouse users can grab the strip and drag.
+/// Horizontal scroll container that supports click-and-drag panning alongside
+/// trackpad/scroll-wheel gestures. The drag handling uses an application-level
+/// NSEvent monitor (more robust than NSPanGestureRecognizer, which has been
+/// observed to wedge after a scroll-wheel event interrupts its state machine).
+/// A visible horizontal scrollbar is always shown so the affordance is
+/// explicit even before the user attempts to scroll.
 private struct DragScrollView<Content: View>: NSViewRepresentable {
     let content: Content
 
@@ -1237,13 +1160,13 @@ private struct DragScrollView<Content: View>: NSViewRepresentable {
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
         scrollView.drawsBackground = false
-        scrollView.hasHorizontalScroller = false
+        scrollView.hasHorizontalScroller = true
         scrollView.hasVerticalScroller = false
         scrollView.horizontalScrollElasticity = .allowed
         scrollView.verticalScrollElasticity = .none
         scrollView.usesPredominantAxisScrolling = false
         scrollView.scrollerStyle = .overlay
-        scrollView.autohidesScrollers = true
+        scrollView.autohidesScrollers = false
 
         let hosting = NSHostingView(rootView: content)
         hosting.translatesAutoresizingMaskIntoConstraints = false
@@ -1257,13 +1180,8 @@ private struct DragScrollView<Content: View>: NSViewRepresentable {
             ])
         }
 
-        let pan = NSPanGestureRecognizer(
-            target: context.coordinator,
-            action: #selector(Coordinator.handlePan(_:))
-        )
-        pan.delaysPrimaryMouseButtonEvents = false
-        scrollView.addGestureRecognizer(pan)
         context.coordinator.scrollView = scrollView
+        context.coordinator.installMonitor()
         return scrollView
     }
 
@@ -1273,22 +1191,94 @@ private struct DragScrollView<Content: View>: NSViewRepresentable {
         }
     }
 
+    static func dismantleNSView(_ nsView: NSScrollView, coordinator: Coordinator) {
+        coordinator.removeMonitor()
+    }
+
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     final class Coordinator: NSObject {
         weak var scrollView: NSScrollView?
+        private var monitor: Any?
+        private var pressLocation: NSPoint?
+        private var lastLocation: NSPoint?
+        private var didPan = false
+        private let threshold: CGFloat = 4
 
-        @objc func handlePan(_ gesture: NSPanGestureRecognizer) {
-            guard let sv = scrollView else { return }
-            let translation = gesture.translation(in: sv)
-            let origin = sv.contentView.bounds.origin
-            let docWidth = sv.documentView?.bounds.width ?? 0
-            let viewWidth = sv.contentView.bounds.width
-            let maxX = max(0, docWidth - viewWidth)
-            let nextX = min(maxX, max(0, origin.x - translation.x))
-            sv.contentView.scroll(to: NSPoint(x: nextX, y: origin.y))
-            sv.reflectScrolledClipView(sv.contentView)
-            gesture.setTranslation(.zero, in: sv)
+        deinit { removeMonitor() }
+
+        func removeMonitor() {
+            if let m = monitor {
+                NSEvent.removeMonitor(m)
+                monitor = nil
+            }
+        }
+
+        func installMonitor() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(
+                matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
+            ) { [weak self] event in
+                guard let self else { return event }
+                return self.process(event)
+            }
+        }
+
+        private func process(_ event: NSEvent) -> NSEvent? {
+            guard let sv = scrollView,
+                  let window = sv.window,
+                  event.window === window else {
+                return event
+            }
+            let pointInSv = sv.convert(event.locationInWindow, from: nil)
+            let inside = sv.bounds.contains(pointInSv)
+
+            switch event.type {
+            case .leftMouseDown:
+                if inside {
+                    pressLocation = event.locationInWindow
+                    lastLocation = event.locationInWindow
+                    didPan = false
+                } else {
+                    pressLocation = nil
+                    lastLocation = nil
+                    didPan = false
+                }
+                return event
+
+            case .leftMouseDragged:
+                guard let start = pressLocation, let last = lastLocation else {
+                    return event
+                }
+                let dx = event.locationInWindow.x - start.x
+                let dy = event.locationInWindow.y - start.y
+                if !didPan && hypot(dx, dy) > threshold {
+                    didPan = true
+                }
+                if didPan {
+                    let stepDx = event.locationInWindow.x - last.x
+                    let origin = sv.contentView.bounds.origin
+                    let docWidth = sv.documentView?.bounds.width ?? 0
+                    let viewWidth = sv.contentView.bounds.width
+                    let maxX = max(0, docWidth - viewWidth)
+                    let nextX = min(maxX, max(0, origin.x - stepDx))
+                    sv.contentView.scroll(to: NSPoint(x: nextX, y: origin.y))
+                    sv.reflectScrolledClipView(sv.contentView)
+                    lastLocation = event.locationInWindow
+                    return nil
+                }
+                return event
+
+            case .leftMouseUp:
+                let panned = didPan
+                pressLocation = nil
+                lastLocation = nil
+                didPan = false
+                return panned ? nil : event
+
+            default:
+                return event
+            }
         }
     }
 }

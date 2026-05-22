@@ -58271,43 +58271,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Single terminal."
+            "value": "One terminal pane filling the workspace."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ターミナル 1 つ。"
+            "value": "ワークスペース全体を埋めるターミナルペイン 1 つ。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Один термінал."
+            "value": "Одна термінальна панель, що заповнює робочий простір."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "터미널 하나."
+            "value": "워크스페이스를 채우는 터미널 패널 하나."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "单个终端。"
+            "value": "一个填满工作区的终端窗格。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "單個終端機。"
+            "value": "一個填滿工作區的終端機窗格。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Один терминал."
+            "value": "Одна терминальная панель, заполняющая рабочее пространство."
           }
         }
       }
@@ -58647,43 +58647,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Four terminals in a 2 × 2 grid."
+            "value": "Four terminal panes in a 2 × 2 grid. Agent in the top-left."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ターミナル 4 つを 2 × 2 グリッドで。"
+            "value": "ターミナル 4 つを 2 × 2 グリッドで。左上にエージェント。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Чотири термінали в сітці 2 × 2."
+            "value": "Чотири термінальні панелі в сітці 2 × 2. Агент у верхньому лівому куті."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "터미널 4개를 2 × 2 격자로."
+            "value": "터미널 4개를 2 × 2 격자로. 왼쪽 상단에 에이전트."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "四个终端，2 × 2 网格。"
+            "value": "四个终端窗格，2 × 2 网格。代理在左上角。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "四個終端機，2 × 2 格線。"
+            "value": "四個終端機窗格，2 × 2 格線。代理在左上角。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Четыре терминала в сетке 2 × 2."
+            "value": "Четыре терминальные панели в сетке 2 × 2. Агент в левом верхнем углу."
           }
         }
       }
@@ -58778,6 +58778,147 @@
           "stringUnit": {
             "state": "translated",
             "value": "Запустить вашего стандартного агента-программиста в первой панели"
+          }
+        }
+      }
+    },
+    "createWorkspace.layouts": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Layouts"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レイアウト"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Розкладки"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "레이아웃"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "布局"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "版面"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Макеты"
+          }
+        }
+      }
+    },
+    "createWorkspace.starter.twoColumns.label": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Two columns"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2 カラム"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Дві колонки"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "두 컬럼"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "两栏"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "兩欄"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Две колонки"
+          }
+        }
+      }
+    },
+    "createWorkspace.starter.twoColumns.description": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Two terminals split side by side. Agent left, terminal right."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターミナル 2 つを横並びで分割。左にエージェント、右にターミナル。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Два термінали поруч. Агент ліворуч, термінал праворуч."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "터미널 두 개를 나란히 분할. 왼쪽 에이전트, 오른쪽 터미널."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "两个终端并排分割。左侧代理，右侧终端。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "兩個終端機並排分割。左側代理，右側終端機。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Два терминала бок о бок. Агент слева, терминал справа."
           }
         }
       }

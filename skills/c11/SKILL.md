@@ -47,6 +47,23 @@ c11 set-description  --surface "$C11_SURFACE_ID" "<why it's open>"  # Descriptio
 
 > **Binary bug (as of 2026-04-18):** `C11_TAB_ID` is exported equal to the workspace UUID, not the tab UUID. Bare `c11 rename-tab "<role>"` (and any other tab-scoped command that defaults to `C11_TAB_ID`) errors with `not_found: Tab not found`. Always pass `--surface "$C11_SURFACE_ID"` for tab-scoped commands (`rename-tab`, `set-title`, `set-description`) until this is fixed — `C11_SURFACE_ID` itself is correct.
 
+> **Harness footgun: `$C11_SURFACE_ID` may be empty in agent-harness subprocesses.** Some harnesses (notably Claude Code's `Bash` tool) spawn subprocesses without inheriting c11 shell-integration env vars — `$C11_SURFACE_ID`, `$C11_TAB_ID`, and `$C11_WORKSPACE_ID` are empty strings even when `C11_SHELL_INTEGRATION=1` triggered the skill load. The CLI does **not** reject `--surface ""`: it silently defaults to whichever surface is *currently focused* in the workspace, which is usually a peer agent's tab. The `OK` envelope looks identical to a successful write; the only tell is that the response's `tab=` does not match your `caller.tab_ref`.
+>
+> **Defense:** at session start, capture your refs from `c11 identify --json` once and use the **literal refs** for every surface- or tab-scoped write going forward — `--surface surface:7`, not `--surface "$C11_SURFACE_ID"`.
+>
+> ```bash
+> # Cache once.
+> eval "$(c11 identify --json | python3 -c 'import json,sys
+> d=json.load(sys.stdin)["caller"]
+> print(f"C11_MY_SURFACE={d[\"surface_ref\"]}; C11_MY_WORKSPACE={d[\"workspace_ref\"]}; C11_MY_TAB={d[\"tab_ref\"]}")')"
+>
+> # Use the cached values.
+> c11 rename-tab       --surface "$C11_MY_SURFACE" "<your role>"
+> c11 set-description  --surface "$C11_MY_SURFACE" "<why it's open>"
+> ```
+>
+> After the first write, verify with `c11 get-titlebar-state --surface "$C11_MY_SURFACE"` and confirm the title appears on the surface marked `◀ here` in `c11 tree --no-layout`. The same caution applies to `set-metadata`, `set-status`, `set-agent`, `clear-metadata`, `trigger-flash`, and any other surface- or tab-scoped command.
+
 Also populate `role`, `task`, and `status` via `c11 set-metadata` **if known** from the opening message or environment (e.g. the user references a ticket ID, or `C11_AGENT_TASK` is set). Skip when unknown — don't guess.
 
 **Title and description are both mandatory at orientation — not optional, not "if you have time," not "only for orchestrated sub-agents."** Every agent in every pane sets both, every time. The sidebar is the operator's only view into a room full of parallel agents; a surface that doesn't announce what it is *and* why it's open is invisible. The *Title and description* section below covers **what** to write; this section is about **when**: immediately, before touching the work.
@@ -370,27 +387,44 @@ Treat `flash_state` as a forward-compatible enum — future c11 versions may add
 
 When you spawn a sub-agent, give it its own c11 surface (`c11 new-split` or `c11 new-pane`) and launch the agent inside that surface. The operator gets full observability through c11 (sidebar status, title and description, screen content), and the sub-agent runs as a full-fledged interactive instance instead of a headless detached process.
 
-The launch command for the operator's chosen default agent is exported as `$C11_DEFAULT_AGENT_LAUNCH` in every c11 shell. Use it directly so the same skill works whether the operator's default is claude-code, codex, opencode, kimi, or anything else they configure:
-
-```bash
-c11 send --workspace $WS --surface $SURF "cd /path && $C11_DEFAULT_AGENT_LAUNCH"
-```
-
-`c11 send` submits automatically; the launch line executes in one call. If the env var is missing (older c11, or the shell was spawned before the operator set a default), fall back to `c11 default-agent launch`, which prints the same command. The env var reflects the operator's preference at the moment the shell was spawned; preference changes take effect on newly-spawned shells, not already-running ones.
-
-### Delivering a prompt at launch
-
-Stage the prompt to a file and pass its path as a positional argument so the agent boots and submits in one step. No polling, no ready-state race:
+**Use `c11 default-agent launch --in-surface <ref>` to do the launch.** It is the canonical programmatic path: c11 owns the per-TUI prompt-delivery contract (claude-code positional, post-ready sendText for codex/opencode/kimi), so the same call works regardless of which agent the operator has configured. No shell interpolation, no per-TUI branching in caller code.
 
 ```bash
 cat > /tmp/lat-xxx-prompt.md <<'EOF'
 [full prompt here]
 EOF
 
-c11 send --workspace $WS --surface $SURF "cd /path && $C11_DEFAULT_AGENT_LAUNCH \"Read /tmp/lat-xxx-prompt.md and follow the instructions.\""
+# Step 1: create the surface (terminal pane the agent will live in).
+c11 new-split right
+
+# Step 2: launch the agent into the new surface with the bootstrap prompt.
+# Inspect `c11 tree --no-layout` (or the response from new-pane) to get the
+# new surface's ref.
+c11 default-agent launch \
+    --in-surface surface:5 \
+    --cwd /path/to/project \
+    --prompt-file /tmp/lat-xxx-prompt.md
 ```
 
-This is the default pattern for orchestrated sub-agent launches.
+`--prompt-file` is preferred over `--prompt "..."` for anything non-trivial: c11 reads the file and delivers it as-is, no caller-side shell escaping.
+
+The operator's configured default agent is launched unless `--agent <type>` overrides for this call only. Preference changes (Settings → Default Agent) take effect for the next launch — no shell respawn required.
+
+### Fallback: `$C11_DEFAULT_AGENT_LAUNCH`
+
+For ad-hoc shell composition (not the primary path for orchestrated launches), every c11 shell exports `$C11_DEFAULT_AGENT_LAUNCH` — the bare launcher command for the configured default agent, with no initial prompt baked in. Sibling `$C11_DEFAULT_AGENT_SEED_PROMPT` carries the operator's configured first-message string when set.
+
+```bash
+# Launches the agent with no prompt. Submit one yourself if needed.
+c11 send --workspace $WS --surface $SURF "cd /path && $C11_DEFAULT_AGENT_LAUNCH"
+
+# Reproduce the A-button's first-message shape (claude-code only — other
+# TUIs ignore positional prompts).
+c11 send --workspace $WS --surface $SURF \
+    "cd /path && $C11_DEFAULT_AGENT_LAUNCH \"$C11_DEFAULT_AGENT_SEED_PROMPT\""
+```
+
+Reach for these env vars when the c11 binary's launcher CLI is the wrong fit (e.g., piping the launcher line through another process). For orchestrated sub-agent launches, prefer `c11 default-agent launch` — it works uniformly across all configured agent types and isn't sensitive to which TUI is the default.
 
 ### Pin the sub-agent's base
 

@@ -175,4 +175,90 @@ final class DefaultAgentResolverTests: XCTestCase {
             "FOO": "bar",
         ])
     }
+
+    // MARK: - bareCommand
+
+    // The env-var export path uses bareCommand to avoid baking the operator's
+    // configured seed prompt into the value callers compose into shell lines.
+    // If bareCommand started picking up the seed, the C11_DEFAULT_AGENT_LAUNCH
+    // shell-interpolation pattern in the c11 skill would silently drop any
+    // caller-appended positional argument (claude takes only the first).
+
+    func testBareCommandOmitsClaudeInitialPrompt() {
+        let user = DefaultAgentConfig.factory
+        let (_, launch) = DefaultAgentResolver.resolve(
+            explicitAgent: nil,
+            userDefault: user,
+            projectConfig: nil
+        )
+        XCTAssertEqual(launch.bareCommand, "claude --dangerously-skip-permissions")
+        XCTAssertEqual(launch.initialPrompt, "you are operating inside a c11 workspace. load the skill.")
+        // The baked form still ships on `command` for the A-button path.
+        XCTAssertEqual(
+            launch.command,
+            "claude --dangerously-skip-permissions 'you are operating inside a c11 workspace. load the skill.'"
+        )
+    }
+
+    func testBareCommandMatchesCommandWhenNoInitialPrompt() {
+        var userAgents = DefaultAgentConfig.factory.agents
+        userAgents[.claudeCode] = AgentConfig(
+            command: "claude --dangerously-skip-permissions",
+            initialPrompt: "",
+            envOverridesText: ""
+        )
+        let user = DefaultAgentConfig(defaultAgent: .claudeCode, agents: userAgents)
+        let (_, launch) = DefaultAgentResolver.resolve(
+            explicitAgent: nil,
+            userDefault: user,
+            projectConfig: nil
+        )
+        XCTAssertEqual(launch.bareCommand, "claude --dangerously-skip-permissions")
+        XCTAssertEqual(launch.command, "claude --dangerously-skip-permissions")
+    }
+
+    func testBareCommandForNonClaudeAgent() {
+        // Non-claude agents never bake the prompt into `command`, so `command`
+        // and `bareCommand` should match (modulo trimming).
+        let user = DefaultAgentConfig.factory
+        let (_, launch) = DefaultAgentResolver.resolve(
+            explicitAgent: .codex,
+            userDefault: user,
+            projectConfig: nil
+        )
+        XCTAssertEqual(launch.bareCommand, "codex --yolo")
+        XCTAssertEqual(launch.command, "codex --yolo")
+        // The prompt is still surfaced for non-claude agents — the launch
+        // delivery path is what differs (post-ready sendText vs positional).
+        XCTAssertEqual(launch.initialPrompt, "you are operating inside a c11 workspace. load the skill.")
+    }
+
+    func testBareCommandTrimsWhitespace() {
+        var userAgents = DefaultAgentConfig.factory.agents
+        userAgents[.claudeCode] = AgentConfig(
+            command: "  claude --dangerously-skip-permissions  ",
+            initialPrompt: "",
+            envOverridesText: ""
+        )
+        let user = DefaultAgentConfig(defaultAgent: .claudeCode, agents: userAgents)
+        let (_, launch) = DefaultAgentResolver.resolve(
+            explicitAgent: nil,
+            userDefault: user,
+            projectConfig: nil
+        )
+        XCTAssertEqual(launch.bareCommand, "claude --dangerously-skip-permissions")
+    }
+
+    func testBareCommandEmptyForCustomWithNoCommand() {
+        var userAgents = DefaultAgentConfig.factory.agents
+        userAgents[.custom] = AgentConfig(command: "", initialPrompt: "", envOverridesText: "")
+        let user = DefaultAgentConfig(defaultAgent: .custom, agents: userAgents)
+        let (_, launch) = DefaultAgentResolver.resolve(
+            explicitAgent: nil,
+            userDefault: user,
+            projectConfig: nil
+        )
+        XCTAssertEqual(launch.bareCommand, "")
+        XCTAssertEqual(launch.command, "")
+    }
 }

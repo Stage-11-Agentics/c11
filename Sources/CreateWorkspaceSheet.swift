@@ -562,16 +562,18 @@ struct CreateWorkspaceSheet: View {
                 Button {
                     helpPopoverOpen.toggle()
                 } label: {
-                    Image(systemName: "info.circle")
-                        .font(.system(size: 12))
-                        .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.55))
+                    Image(systemName: "info.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.7))
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help(String(
                     localized: "createWorkspace.customBlueprints.helpHint",
                     defaultValue: "What is a custom blueprint?"
                 ))
-                .popover(isPresented: $helpPopoverOpen, arrowEdge: .bottom) {
+                .popover(isPresented: $helpPopoverOpen, arrowEdge: .top) {
                     helpPopoverContent
                 }
                 Spacer()
@@ -1048,6 +1050,16 @@ private struct BlueprintEntry: Identifiable {
             fileName: "quad-terminal",
             shape: .quad
         ),
+        Definition(
+            starterId: "starter:two-by-three",
+            label: String(localized: "createWorkspace.starter.twoByThree.label", defaultValue: "2 × 3"),
+            description: String(
+                localized: "createWorkspace.starter.twoByThree.description",
+                defaultValue: "Six terminal panes in 2 columns, 3 rows. External 27-inch+ monitor suggested."
+            ),
+            fileName: "two-by-three",
+            shape: .twoByThree
+        ),
     ]
 
     static let starterIds: [String] = starterDefinitions.map(\.starterId)
@@ -1059,6 +1071,7 @@ enum BlueprintShape {
     case oneColumn
     case twoColumns
     case quad
+    case twoByThree
     case custom
 
     /// Returns the cell topology (rows of letter cells) for default-layout
@@ -1073,6 +1086,12 @@ enum BlueprintShape {
         case .quad:
             return LetterTopology(rows: [
                 ["A", "T"],
+                ["T", "T"],
+            ])
+        case .twoByThree:
+            return LetterTopology(rows: [
+                ["A", "T"],
+                ["T", "T"],
                 ["T", "T"],
             ])
         case .custom:

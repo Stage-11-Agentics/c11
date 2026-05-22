@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "name": "two-by-three",
+  "description": "Six terminals in 2 columns, 3 rows",
+  "plan": {
+    "version": 1,
+    "workspace": {},
+    "layout": {
+      "type": "split",
+      "split": {
+        "orientation": "vertical",
+        "dividerPosition": 0.3333333333333333,
+        "first": {
+          "type": "split",
+          "split": {
+            "orientation": "horizontal",
+            "dividerPosition": 0.5,
+            "first": {
+              "type": "pane",
+              "pane": { "surfaceIds": ["s1"] }
+            },
+            "second": {
+              "type": "pane",
+              "pane": { "surfaceIds": ["s2"] }
+            }
+          }
+        },
+        "second": {
+          "type": "split",
+          "split": {
+            "orientation": "vertical",
+            "dividerPosition": 0.5,
+            "first": {
+              "type": "split",
+              "split": {
+                "orientation": "horizontal",
+                "dividerPosition": 0.5,
+                "first": {
+                  "type": "pane",
+                  "pane": { "surfaceIds": ["s3"] }
+                },
+                "second": {
+                  "type": "pane",
+                  "pane": { "surfaceIds": ["s4"] }
+                }
+              }
+            },
+            "second": {
+              "type": "split",
+              "split": {
+                "orientation": "horizontal",
+                "dividerPosition": 0.5,
+                "first": {
+                  "type": "pane",
+                  "pane": { "surfaceIds": ["s5"] }
+                },
+                "second": {
+                  "type": "pane",
+                  "pane": { "surfaceIds": ["s6"] }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "surfaces": [
+      { "id": "s1", "kind": "terminal" },
+      { "id": "s2", "kind": "terminal" },
+      { "id": "s3", "kind": "terminal" },
+      { "id": "s4", "kind": "terminal" },
+      { "id": "s5", "kind": "terminal" },
+      { "id": "s6", "kind": "terminal" }
+    ]
+  }
+}

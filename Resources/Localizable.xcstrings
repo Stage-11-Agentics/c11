@@ -58459,43 +58459,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Six terminals in 2 columns, 3 rows."
+            "value": "Six terminal panes in 2 columns, 3 rows. External 27-inch+ monitor suggested."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ターミナル 6 つを 2 カラム 3 行で。"
+            "value": "ターミナル 6 つを 2 カラム 3 行で。27 インチ以上の外部モニター推奨。"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Шість терміналів у 2 колонки, 3 рядки."
+            "value": "Шість термінальних панелей у 2 колонки, 3 рядки. Рекомендовано зовнішній монітор 27 дюймів і більше."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "터미널 6개를 2열 3행으로."
+            "value": "터미널 6개를 2열 3행으로. 27인치 이상 외부 모니터 권장."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "六个终端，2 列 3 行。"
+            "value": "六个终端窗格，2 列 3 行。建议使用 27 英寸以上的外部显示器。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "六個終端機，2 欄 3 列。"
+            "value": "六個終端機窗格，2 欄 3 列。建議使用 27 吋以上的外接顯示器。"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Шесть терминалов в 2 колонки, 3 строки."
+            "value": "Шесть терминальных панелей в 2 колонки, 3 строки. Рекомендуется внешний монитор 27 дюймов и больше."
           }
         }
       }

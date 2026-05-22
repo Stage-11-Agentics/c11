@@ -6,6 +6,18 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.49.3] - 2026-05-22
+
+Single-fix patch release: offscreen helper surfaces created via `c11 new-surface --no-focus` now actually start a PTY, instead of silently producing a zombie surface that swallows every `c11 send` byte.
+
+### Fixed
+
+- **`c11 new-surface --no-focus` no longer produces a zombie surface that swallows `c11 send` bytes.** `surface.create` was missing from `focusIntentV2Methods`, so `v2FocusAllowed` clamped `focus` to `false` regardless of the `--no-focus` flag's intent. The tab landed without selection, SwiftUI never mounted the cell, AppKit never moved the view into a window, and `attachToView`'s `view.window != nil` guard kept `ghostty_surface_t` nil — every subsequent `c11 send` queued bytes that never reached a shell. The fix is a minimal port of upstream cmux PR #4233 (`5cb4715a8`): install the view in a borderless, alpha-zero, mouse-ignoring helper window long enough for `ghostty_surface_new` to succeed, then swap to the real portal window when AppKit eventually mounts the view. Unblocks every lattice-orchestrator pattern and every socket-driven script that creates offscreen surfaces. ([#199](https://github.com/Stage-11-Agentics/c11/pull/199))
+
+### Built and shipped by
+
+Stage 11 Agentics. Operator:agent, fused.
+
 ## [0.49.2] - 2026-05-21
 
 Single-fix patch release for a Japanese / Chinese IME regression reported against 0.49.x. Korean IME behaviour is unchanged.

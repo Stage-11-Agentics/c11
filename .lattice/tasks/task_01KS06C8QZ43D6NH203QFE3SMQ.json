@@ -1,0 +1,49 @@
+{
+  "assigned_to": {
+    "agent_type": "delegator",
+    "base_name": "C11-106-D1",
+    "framework": "claude-code",
+    "model": "claude-opus-4-7",
+    "name": "C11-106-D1-1",
+    "serial": 1,
+    "session": "sess_01KS06SSN5BGBQV8PX13YQV11M"
+  },
+  "branch_links": [],
+  "comment_count": 4,
+  "complexity": "medium",
+  "created_at": "2026-05-19T13:21:36Z",
+  "created_by": "agent:orchestrator-c11-104",
+  "custom_fields": {},
+  "description": "## Follow-up to C11-104 (PR #181)\n\nPR #181 merged at `2b1be4220` on 2026-05-19. The Phase 4 Result Validator audit produced 22 PASS / 6 PARTIAL / 4 FAIL / 1 CANNOT_VERIFY against the 30-AC validation plan. Merge gate was **clear** (no user-visible regressions); these are the gaps to close in a follow-up PR.\n\nFull audit at `.lattice/orchestration/c11-104/validation-report.md`. Spec source: C11-104 \u00a7 \"Refined SPEC + decisions v2 (2026-05-19, post-trident-review)\".\n\n## Scope\n\n### 1. Wire `DerivationCoordinator` + `GitContextResolverCache` into production OR explicitly document them as forward-looking-only\n\nThe biggest drift. Both classes exist and are unit-tested in isolation, but `TabManager.swift:1724` calls `GitContextResolver.resolve(cwd:)` directly \u2014 no cache, no coordinator. The E1 reframe is half-realized.\n\nTwo acceptable resolutions:\n\n- **Wire it in for real.** `TabManager.initialWorkspaceGitMetadataSnapshot` calls `DerivationCoordinator.run` against `[GitContextDeriver]`; coordinator handles the cache. Cache key = `(cwd, mtime(headPath))` where `headPath = git rev-parse --git-path HEAD` (this works correctly for linked worktrees and submodules \u2014 the v2 spec section B2 fix). Then add the linked-worktree + submodule fixture tests that AC12 specified.\n- **Document seam as forward-looking-only.** Update `skills/c11/references/metadata.md` to state explicitly: \"`MetadataDeriver` and `DerivationCoordinator` exist as forward seams for future derivers (host/SSH target, container, kubectl, AWS profile). The current `GitContextDeriver` is invoked directly via `GitContextResolver.resolve(cwd:)` from `TabManager`; the coordinator path is not yet load-bearing.\" Mark the cache + coordinator classes with a doc-comment to the same effect so the next agent doesn't think they're load-bearing.\n\nThe first is the \"right\" answer per the v2 spec; the second is acceptable if the operator decides the seam is enough for now and the cache wiring deserves its own ticket. **Recommendation: wire it in.** The cost is modest (~50-100 lines of glue + the two cache invalidation tests).\n\n### 2. Add the four missing tests the v2 validation plan called for\n\nThese were specified in `validation-plan.md` v2 but not implemented:\n\n- **AC14** \u2014 Git subprocess timeout. Stub `git` with a sleep > timeout, run resolver, assert defined timeout result, assert no hung queue. Also: settle the 2s-vs-5s question (spec said 2s; impl is 5s).\n- **AC16** \u2014 Socket `set_metadata` rejection. Send a `set_metadata` frame with `source=derived` from a non-internal-caller path; assert `invalid_source` error. The rejection code IS present at `Sources/TerminalController.swift:8246-8248, 8368-8370, 9124-9126, 9221-9223` \u2014 just no test exercising it.\n- **AC17** \u2014 Socket `get-metadata --key worktree`/`--key branch` returns derived values. Populate via the coordinator, query via the socket get path, assert values match. By construction this works; the test is the missing piece.\n- **AC20** \u2014 Deterministic main-thread precondition trip. Either `XCTExpectFailure` around a main-thread invocation, or precondition-fatal test pattern. The current sentinel test only verifies off-main succeeds; it doesn't verify main-thread crashes.\n\n### 3. Decide enum case naming: `.stale` / `.notInRepo` / `.noBranch` vs. the current `nil` / `.unknown` proxies\n\nThe v2 SPEC said `BranchValue.noBranch`, `GitContextKind.notInRepo`, `GitContextKind.stale`. Implementation uses `nil` and `.unknown`. User-visible behavior matches the SPEC; the enum naming doesn't. Two acceptable resolutions:\n\n- Rename the implementation enum cases to match the SPEC (`BranchValue.noBranch`, add `GitContextKind.notInRepo` + `.stale`).\n- Rewrite the SPEC \u00a7 \"Refined SPEC + decisions v2\" to reflect the `nil` / `.unknown` shape.\n\n**Recommendation: rename the implementation.** The SPEC's case names are more self-documenting and the cost is a search-and-replace + the AC10 stale test (below).\n\n### 4. Add `.stale` state + AC10 test for the worktree-removed case\n\nCurrently when `git worktree remove` is run from another pane, the affected pane's chips either (a) clear if cwd directory is gone, or (b) stick with the last cached value if cwd directory remains. The SPEC said: introduce a `.stale` `GitContextKind` case; deriver returns `.stale` when resolved gitdir/HEAD path is missing; chip clears.\n\nThis was explicitly deferred in PR #181's \"v2 deferred\" section. Decide whether to pick it up here or leave as a known-deferred edge case.\n\n### 5. Confirm + delete dead code\n\nAfter AC24 retired the legacy text branch+directory row, the following may be unused:\n\n- `Workspace.orderedUniqueBranchDirectoryEntries()`\n- `tab.sidebarBranchDirectoryEntriesInDisplayOrder` callers\n- Any helpers downstream of those\n\nGrep for callers; if confirmed dead, delete. (If anything still calls them \u2014 e.g., for a non-sidebar consumer \u2014 leave alone and document.)\n\n### 6. Optional polish (operator's call)\n\n- **Timeout 5s \u2192 2s** (per v2 SPEC I3). The 5s default is conservative; the SPEC's 2s was tighter for snappy UI. If you want the tighter bound, update + test.\n- **Dim opacity \u2192 ThemeKey-backed** (per v2 SPEC M6). Currently hardcoded `0.55` at `Sources/Sidebar/WorktreeChipsRow.swift:73`. Replace with `ThemeKey.chipTextDimmedOpacityLight` (default 0.65) and `chipTextDimmedOpacityDark` (default 0.55), exposed to theme JSON. PR body acknowledged this as v2-deferred.\n\n### 7. Validation plan hygiene\n\nAnnotate the v2 validation plan in-place (or a v3 section) to note which ACs were deferred-then-resolved-here. The next round shouldn't re-discover these as fresh blockers.\n\n## Out of scope\n\n- AC19 (restore-warmpath snapshot pre-paint). Real follow-up but separate ticket \u2014 touches workspace restore lifecycle.\n- AC31\u2013AC33 (operator post-merge smoke). Operator runs at their convenience; not a delegator task.\n- Anything that would change the user-visible sidebar render compared to what shipped in #181.\n\n## Acceptance criteria for this follow-up PR\n\n1. `GitContextResolverCache` and `DerivationCoordinator` are either (a) invoked by `TabManager`'s production probe path, with cache-invalidation tests that use linked-worktree + submodule fixtures, OR (b) documented in code + skill reference as forward-looking-only.\n2. AC14, AC16, AC17, AC20 tests exist in `c11Tests/` with `c11LogicTests` target membership.\n3. Enum case naming matches the SPEC OR the SPEC is updated to match (decision recorded in PR body).\n4. Optional but recommended: `.stale` state + AC10 test; dead code in Workspace.swift cleaned up.\n5. CI green; no regressions in `c11-logic` or `compat-tests`.\n6. PR body links to this ticket and to PR #181; describes which AC numbers it closes.\n\n## References\n\n- C11-104 (parent): `task_01KRYWXX6ECSCVRGFTYYA594HK`\n- PR #181 (merged): https://github.com/Stage-11-Agentics/c11/pull/181\n- Validation report: `.lattice/orchestration/c11-104/validation-report.md`\n- v2 SPEC: inside C11-104 description, \u00a7 \"Refined SPEC + decisions v2\"\n- Trident plan-review pack (for the upstream reasoning): `.lattice/orchestration/c11-104/c11-104-plan-review-pack-2026-05-18T2228/`",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KS06C8QZ43D6NH203QFE3SMQ",
+  "last_event_id": "ev_01KS0B5YBGZQWSEE13AX5RQ8RT",
+  "last_status_changed_at": "2026-05-19T14:45:25Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-05-19T13:22:01Z",
+      "created_by": "agent:orchestrator-c11-104",
+      "note": null,
+      "target_task_id": "task_01KRYWXX6ECSCVRGFTYYA594HK",
+      "type": "spawned_by"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-106",
+  "status": "review",
+  "tags": [
+    "ui",
+    "sidebar",
+    "metadata",
+    "worktree",
+    "follow-up"
+  ],
+  "title": "C11-104 follow-ups: wire DerivationCoordinator + missing tests + enum naming",
+  "type": "task",
+  "updated_at": "2026-05-19T14:45:31Z",
+  "urgency": null
+}

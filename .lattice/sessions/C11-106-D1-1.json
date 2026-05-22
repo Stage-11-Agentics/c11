@@ -1,0 +1,14 @@
+{
+  "agent_type": "delegator",
+  "base_name": "C11-106-D1",
+  "framework": "claude-code",
+  "last_active": "2026-05-19T14:45:31Z",
+  "model": "claude-opus-4-7",
+  "name": "C11-106-D1-1",
+  "parent": "human:atin",
+  "prompt": "c11-106-followups",
+  "serial": 1,
+  "session": "sess_01KS06SSN5BGBQV8PX13YQV11M",
+  "started_at": "2026-05-19T13:28:59Z",
+  "status": "active"
+}

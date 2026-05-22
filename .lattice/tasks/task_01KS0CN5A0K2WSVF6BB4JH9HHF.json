@@ -1,0 +1,38 @@
+{
+  "assigned_to": "agent:claude-cli",
+  "branch_links": [],
+  "comment_count": 2,
+  "complexity": null,
+  "created_at": "2026-05-19T15:11:18Z",
+  "created_by": "agent:claude-cli",
+  "custom_fields": {},
+  "description": "Apply four xcodebuild improvements to scripts/reloads.sh (staging build script) on M-series Macs:\n\n1. Skip x86_64 by default. Add ARCHS=arm64 ONLY_ACTIVE_ARCH=YES; --universal opt-out flag. Production release.yml stays universal.\n\n2. Stable derived-data path per branch family. release/* tags share /tmp/c11-staging-release/; c11-* share /tmp/c11-staging-c11/; default fallback otherwise. Add HEAD sanity check + --clean flag (current per-tag dir behavior = always clean).\n\n3. (Item 3 from spec was deliberately dropped \u2014 operator chose to skip package/macro validation flags.)\n\n4. COMPILER_INDEX_STORE_ENABLE=NO for staging.\n\n5. SWIFT_COMPILATION_MODE=incremental for staging; --wmo (or --release-mode) opt-out for the rare staging build that needs full WMO parity (e.g. last build before tag push, to catch WMO-only regressions like 0.47.0 New Workspace dialog).\n\nAcceptance criteria:\n- No-flag build: arm64-only, incremental, no index store, shared derived-data dir.\n- --universal: universal binary still produced.\n- --clean: wipes derived-data dir before build.\n- --wmo: switches to wholemodule.\n- Resulting c11 STAGING app launches and basics (window, sidebar, terminal pane) work.\n- release.yml + nightly.yml untouched.\n\nExpected headline: cold staging build ~6-10min \u2192 ~3-5min; warm rebuild ~6min \u2192 <60s.",
+  "done_at": "2026-05-19T15:38:59Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01KS0E7V415H554YV7CFN4H3AA",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KS0E7V415H554YV7CFN4H3A9",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KS0CN5A0K2WSVF6BB4JH9HHF",
+  "last_event_id": "ev_01KS0E7V415H554YV7CFN4H3AD",
+  "last_status_changed_at": "2026-05-19T15:38:59Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-110",
+  "status": "done",
+  "tags": null,
+  "title": "Staging build perf: arm64-only, shared derived-data, no index store, incremental swift",
+  "type": "chore",
+  "updated_at": "2026-05-19T15:38:59Z",
+  "urgency": null
+}

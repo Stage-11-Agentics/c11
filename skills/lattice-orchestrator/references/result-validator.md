@@ -62,6 +62,30 @@ c11 send-key --workspace $WS --surface $RV_SURF enter
    - **Partial** — some sub-criteria pass, others don't. List which.
    - **Blocked** — verification couldn't run for a reason that ISN'T "needs merged tree" (e.g., the PR was never opened, the artifact is missing). Describe the block.
 
+### Parallelize per-row verification with the `Agent` tool when the plan is non-trivial
+
+Per-row verification is independent — each row reads its named artifact and runs its named method. **When the plan has more than ~6 rows and the rows cluster naturally (web-UI rows, runtime rows, provider rows, etc.), parallelize via Claude Code's `Agent` tool** — NOT via new c11 surfaces. Agent sub-spawns are sub-second; new c11 surfaces are seconds-to-minutes and add operational complexity (cwd inheritance bugs, allocator wedges, title-stomping). The right primitive for parallel-fanout-then-merge within a single role is in-process sub-agents.
+
+Concrete pattern:
+
+```
+# Stay sequential when the plan is small (~6 rows or fewer) — coordination overhead dominates.
+# Otherwise:
+
+# 1. Group rows into 3-5 independent buckets (by area, OR just by ticket cluster).
+# 2. Spawn one sub-agent per bucket via the Agent tool. Each gets:
+#    - the bucket's rows verbatim from validation-plan.md
+#    - the same artifact-resolution + verification-method protocol described above
+#    - a prompt to return a structured per-row result table (pass/fail/partial/blocked + evidence)
+# 3. The parent Validator collects sub-agent results, writes them into the report, and writes the
+#    cross-cutting "Drift from BUILDPLAN.md" and "Recommendations" sections itself — those need
+#    the whole tree in one mind.
+```
+
+The Validator stays the singleton report-writer. The sub-agents are temporary fan-out workers. Don't stress the parallelization if the bucketing is awkward; sequential is fine for small plans.
+
+**Do NOT use `c11 new-surface` for this.** That's the wrong primitive at this scope — its cost model is built for long-lived delegator surfaces, not transient per-row verification.
+
 **`runnable_at: post-merge-smoke` rows are NOT walked here.** Collect them verbatim into the report's § "Operator smoke-pass checklist" (template below). They're the operator's post-merge pass — your job is to stage them, not run them. If you find yourself wanting to attempt one anyway because it "should be easy," resist: cross-applying multiple open PRs to a single tree pre-merge is exactly the `PARTIAL-INSPECTION` shape the two-track plan exists to prevent.
 
 **Don't invent rows.** If the run produced behavior the validation plan didn't anticipate, note it in the "Drift" section of the report — don't silently add a row. The Architect's plan is the audit contract.

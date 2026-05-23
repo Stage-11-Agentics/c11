@@ -2862,6 +2862,15 @@ class TabManager: ObservableObject {
                 defaultValue: "This will close the workspace \u{201C}%@\u{201D} and all of its panes."
             )
             let message = String(format: format, locale: .current, displayName)
+            // Off-screen workspaces are isHidden=true (perf #127), so their anchor
+            // view doesn't report a window-coord frame and the overlay would bail
+            // on `guard let anchor`. When the operator clicks the X on a background
+            // tab we first switch selection to that workspace so it becomes the
+            // visible one; the confirm card then mounts on the workspace being
+            // closed, matching what the dialog references. (C11-117)
+            if selectedTabId != workspace.id {
+                selectWorkspace(workspace)
+            }
             // Test seam: synchronous handler short-circuits the overlay flow so
             // unit tests can exercise the close path without a window.
             if let handler = workspaceCloseConfirmationHandler {
@@ -2873,17 +2882,9 @@ class TabManager: ObservableObject {
             // content area only, with a centered confirm/cancel card. Lands above
             // portal-hosted terminal/browser content via themeFrame mount. Sidebar
             // stays visible. Plan §3.1, §3.3.
-            //
-            // Host vs target: off-screen workspaces are isHidden=true (perf #127),
-            // so their anchor view doesn't report a window-coord frame and the
-            // overlay controller bails on `guard let anchor`. Mounting on the
-            // currently-selected workspace guarantees the card is visible; the
-            // dialog message already names the workspace being closed, so the
-            // operator still knows what they're confirming.
-            let host = selectedWorkspace ?? workspace
-            Task { @MainActor [weak self, weak workspace, weak host] in
-                guard let self, let workspace, let host else { return }
-                let accepted = await host.presentConfirmCloseWorkspace(
+            Task { @MainActor [weak self, weak workspace] in
+                guard let self, let workspace else { return }
+                let accepted = await workspace.presentConfirmCloseWorkspace(
                     title: title,
                     message: message,
                     source: .local

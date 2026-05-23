@@ -189,6 +189,66 @@ final class TabManagerCloseWorkspacesWithConfirmationTests: XCTestCase {
         XCTAssertEqual(manager.tabs.map(\.title), ["Alpha", "Beta"])
     }
 
+    func testCloseWorkspaceWithConfirmationOnBackgroundTabFocusesItBeforePrompting() {
+        // C11-117: clicking the X on a background sidebar tab must select that
+        // workspace before the close-confirm overlay is shown, so the dialog
+        // mounts on the workspace being closed rather than the previously-visible
+        // one.
+        let envKey = "CMUX_UI_TEST_FORCE_CONFIRM_CLOSE_WORKSPACE"
+        setenv(envKey, "1", 1)
+        defer { unsetenv(envKey) }
+
+        let manager = TabManager()
+        let foreground = manager.tabs[0]
+        let background = manager.addWorkspace()
+        manager.selectWorkspace(foreground)
+        XCTAssertEqual(manager.selectedTabId, foreground.id)
+
+        var selectedTabIdWhenPrompted: UUID?
+        manager.workspaceCloseConfirmationHandler = { [weak manager] _, _ in
+            selectedTabIdWhenPrompted = manager?.selectedTabId
+            return false
+        }
+
+        manager.closeWorkspaceWithConfirmation(background)
+
+        XCTAssertEqual(
+            selectedTabIdWhenPrompted,
+            background.id,
+            "Expected the background tab to be selected before the confirmation prompt fires"
+        )
+        XCTAssertEqual(manager.selectedTabId, background.id)
+        XCTAssertEqual(
+            manager.tabs.map(\.id),
+            [foreground.id, background.id],
+            "Both workspaces remain because the operator cancelled"
+        )
+    }
+
+    func testCloseWorkspaceWithConfirmationOnForegroundTabKeepsSelection() {
+        // The foreground-tab case is the no-op: selection already matches, the
+        // confirm prompt fires once, and selection stays unchanged.
+        let envKey = "CMUX_UI_TEST_FORCE_CONFIRM_CLOSE_WORKSPACE"
+        setenv(envKey, "1", 1)
+        defer { unsetenv(envKey) }
+
+        let manager = TabManager()
+        let foreground = manager.tabs[0]
+        _ = manager.addWorkspace()
+        XCTAssertEqual(manager.selectedTabId, foreground.id)
+
+        var promptCount = 0
+        manager.workspaceCloseConfirmationHandler = { _, _ in
+            promptCount += 1
+            return false
+        }
+
+        manager.closeWorkspaceWithConfirmation(foreground)
+
+        XCTAssertEqual(promptCount, 1)
+        XCTAssertEqual(manager.selectedTabId, foreground.id)
+    }
+
     func testCloseCurrentWorkspaceWithConfirmationUsesSidebarMultiSelection() {
         let manager = TabManager()
         let second = manager.addWorkspace()

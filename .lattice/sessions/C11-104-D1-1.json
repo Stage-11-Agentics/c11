@@ -1,0 +1,14 @@
+{
+  "agent_type": "delegate",
+  "base_name": "C11-104-D1",
+  "framework": "claude-code",
+  "last_active": "2026-05-19T12:42:10Z",
+  "model": "claude-opus-4-7",
+  "name": "C11-104-D1-1",
+  "parent": "human:atin",
+  "prompt": "C11-104 sidebar chips",
+  "serial": 1,
+  "session": "sess_01KRZ0KF4CP9YS7N4N9Z36P9XF",
+  "started_at": "2026-05-19T02:21:26Z",
+  "status": "active"
+}

@@ -1,0 +1,90 @@
+{
+  "started_at": "2026-05-06T22:46:57Z",
+  "orchestrator_surface": "surface:9",
+  "orchestrator_workspace": "workspace:2",
+  "overnight_workspace": "workspace:3",
+  "in_flight": {},
+  "research": {
+    "C11-1": {
+      "ulid": "task_01KPP7QBZ3NJMXS4C9NA2XW01X",
+      "research_pane": "pane:13",
+      "research_surf": "surface:15",
+      "ws": "workspace:3",
+      "done_marker": "/Users/atin/Projects/Stage11/code/c11/notes/overnight-meta/c11-1-research-done.txt",
+      "deliverable": "/Users/atin/Projects/Stage11/code/c11/notes/c11-1-recommendation-2026-05-06.md",
+      "status": "done",
+      "finished_at": "2026-05-06T22:59:00Z"
+    }
+  },
+  "wait_list": [],
+  "completed": [
+    {
+      "ticket": "C11-17",
+      "status": "review",
+      "pr": "https://github.com/Stage-11-Agentics/c11/pull/136",
+      "completed_at": "2026-05-06T23:57:12Z"
+    },
+    {
+      "ticket": "C11-16",
+      "status": "review",
+      "pr": "https://github.com/Stage-11-Agentics/c11/pull/138",
+      "completed_at": "2026-05-07T02:12:33Z",
+      "validate_note": "Codex Test 1 fail traced to legacy preference migration (not a C11-16 defect); operator can re-validate on clean machine"
+    },
+    {
+      "ticket": "C11-30",
+      "status": "review",
+      "pr": "https://github.com/Stage-11-Agentics/c11/pull/139",
+      "completed_at": "2026-05-07T02:37:33Z",
+      "validate_note": "PASS-WITH-NOTES (Codex Validate Path 1 anomaly addressed; PR body documents)"
+    },
+    {
+      "ticket": "C11-18",
+      "status": "review",
+      "pr": "https://github.com/Stage-11-Agentics/c11/pull/142",
+      "completed_at": "2026-05-07T03:09:41Z",
+      "validate_note": "Validate PASS at 02:59; path-b diagnostics-only PR per Plan"
+    },
+    {
+      "ticket": "C11-24",
+      "status": "review",
+      "pr": "https://github.com/Stage-11-Agentics/c11/pull/143",
+      "completed_at": "2026-05-07T03:13:04Z",
+      "validate_note": "Validate short-circuited; tagged build came up after delegator launched it inline; Codex validate proceeded"
+    },
+    {
+      "ticket": "C11-4",
+      "status": "review",
+      "pr": "https://github.com/Stage-11-Agentics/c11/pull/144",
+      "completed_at": "2026-05-07T03:53:22Z",
+      "validate_note": "Build-only xcodebuild was running when operator requested expedited handoff; full Impl-phase build was green; CI will run authoritative build+test"
+    }
+  ],
+  "parked_needs_human": [],
+  "stop_reason": null,
+  "last_heartbeat_at": "2026-05-07T01:13:00Z",
+  "ci_last_check_at": "2026-05-06T22:55:00Z",
+  "ci_last_status": "green",
+  "ci_workflows": {
+    "CI": "success",
+    "macOS Compatibility": "success",
+    "Build GhosttyKit": "success"
+  },
+  "known_issues": [
+    {
+      "issue": "parent .lattice/events/* truncated to ~initial state",
+      "ts": "2026-05-07T00:32:00Z",
+      "evidence": "stash@{0} captured ~75 lines of overnight events (C11-16/17/18/24/30/32/lifecycle/ids) when a parallel session switched branches; auto-stash before branch switch",
+      "impact": "lattice show returns stale status/comment counts; actual progress tracked via worktree branch commits",
+      "mitigation": "track real state via `git log origin/main..HEAD` per worktree; do NOT pop the stash (contains C11-34 + perf code from another session)",
+      "operator_action": "after this run, decide whether to extract the lattice events from stash@{0} surgically"
+    }
+  ],
+  "notes": "C11-16 delegator self-recovered from lattice regression at 00:26 via lattice status --force + reason. C11-24/30 did not need explicit recovery (their writes still landed). C11-16 + C11-24 status=review but PR not yet open (Review sibling running); waiting for artifact_attached event before reusing pane for next wait-list ticket.",
+  "deferred": [
+    "C11-19"
+  ],
+  "promotion_policy": "FROZEN by operator at 2026-05-07T02:30Z. Run completes when C11-30, C11-24, C11-18, C11-4 all reach status=review with PRs. C11-19 stays deferred for operator to decide later. No further promotions.",
+  "run_complete_at": "2026-05-07T03:53:22Z",
+  "run_status": "COMPLETE — all 6 overnight delegations at status=review with PRs"
+}

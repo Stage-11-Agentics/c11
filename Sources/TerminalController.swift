@@ -18865,11 +18865,16 @@ class TerminalController {
 
     /// `default_agent get`                              → prints current default agent type
     /// `default_agent set <type>`                       → sets default
-    /// `default_agent launch [--agent <type>] [--pane <id>]` → mimics A button click
+    /// `default_agent launch [--agent <type>] [--pane <id>]` → A-button mimic: create
+    ///     a new agent surface in the focused (or named) pane
+    /// `default_agent launch --in-surface <uuid> [--agent <type>] [--cwd <path>]
+    ///     [--prompt "text" | --prompt-file <path>]` → launch into an existing
+    ///     surface's PTY; c11 composes the launch line and (for non-claude agents)
+    ///     delivers the prompt after a fixed post-launch delay.
     private func defaultAgentCommand(_ args: String) -> String {
-        let tokens = args.split(separator: " ").map(String.init)
-        guard let sub = tokens.first else {
-            return "ERROR: usage: default_agent {get|set <type>|launch [--agent <type>] [--pane <id>]}"
+        let allTokens = tokenizeArgs(args)
+        guard let sub = allTokens.first else {
+            return "ERROR: usage: default_agent {get|set <type>|launch [flags]}"
         }
 
         switch sub {
@@ -18877,7 +18882,7 @@ class TerminalController {
             return "OK \(DefaultAgentConfigStore.shared.current.defaultAgent.rawValue)"
 
         case "set":
-            guard tokens.count == 2, let agent = AgentType(rawValue: tokens[1]) else {
+            guard allTokens.count == 2, let agent = AgentType(rawValue: allTokens[1]) else {
                 let valid = AgentType.allCases.map(\.rawValue).joined(separator: ", ")
                 return "ERROR: usage: default_agent set <type> — valid types: \(valid)"
             }
@@ -18885,25 +18890,92 @@ class TerminalController {
             return "OK \(agent.rawValue)"
 
         case "launch":
-            var explicitAgent: AgentType? = nil
-            var paneArg: String? = nil
-            var i = 1
-            while i < tokens.count {
-                let t = tokens[i]
-                if t == "--agent", i + 1 < tokens.count {
-                    guard let parsed = AgentType(rawValue: tokens[i + 1]) else {
-                        return "ERROR: unknown agent type: \(tokens[i + 1])"
-                    }
-                    explicitAgent = parsed
-                    i += 2
-                } else if t == "--pane", i + 1 < tokens.count {
-                    paneArg = tokens[i + 1]
-                    i += 2
-                } else {
-                    i += 1
-                }
-            }
+            return defaultAgentLaunch(tokens: Array(allTokens.dropFirst()))
 
+        default:
+            return "ERROR: unknown subcommand '\(sub)'. usage: default_agent {get|set|launch}"
+        }
+    }
+
+    /// Parses launch flags and dispatches to the A-button or in-surface path.
+    private func defaultAgentLaunch(tokens: [String]) -> String {
+        var explicitAgent: AgentType? = nil
+        var paneArg: String? = nil
+        var inSurfaceArg: String? = nil
+        var cwdArg: String? = nil
+        var promptArg: String? = nil
+        var promptFileArg: String? = nil
+        var idx = 0
+        while idx < tokens.count {
+            let t = tokens[idx]
+            if t == "--agent", idx + 1 < tokens.count {
+                guard let parsed = AgentType(rawValue: tokens[idx + 1]) else {
+                    return "ERROR: unknown agent type: \(tokens[idx + 1])"
+                }
+                explicitAgent = parsed; idx += 2
+            } else if t == "--pane", idx + 1 < tokens.count {
+                paneArg = tokens[idx + 1]; idx += 2
+            } else if t == "--in-surface", idx + 1 < tokens.count {
+                inSurfaceArg = tokens[idx + 1]; idx += 2
+            } else if t == "--cwd", idx + 1 < tokens.count {
+                cwdArg = tokens[idx + 1]; idx += 2
+            } else if t == "--prompt", idx + 1 < tokens.count {
+                promptArg = tokens[idx + 1]; idx += 2
+            } else if t == "--prompt-file", idx + 1 < tokens.count {
+                promptFileArg = tokens[idx + 1]; idx += 2
+            } else {
+                return "ERROR: unknown flag '\(t)'"
+            }
+        }
+
+        if paneArg != nil && inSurfaceArg != nil {
+            return "ERROR: --pane and --in-surface are mutually exclusive"
+        }
+        if promptArg != nil && promptFileArg != nil {
+            return "ERROR: --prompt and --prompt-file are mutually exclusive"
+        }
+
+        // Resolve the prompt content (file wins on --prompt-file path).
+        let promptText: String? = {
+            if let raw = promptArg, !raw.isEmpty { return raw }
+            if let path = promptFileArg {
+                guard let contents = try? String(contentsOfFile: path, encoding: .utf8) else {
+                    return nil
+                }
+                return contents.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            return nil
+        }()
+        if promptFileArg != nil && promptText == nil {
+            return "ERROR: failed to read --prompt-file: \(promptFileArg ?? "")"
+        }
+
+        // Resolve the agent config. Use --cwd for project-config lookup when
+        // provided; otherwise fall back to the process cwd.
+        let lookupCwd = cwdArg ?? FileManager.default.currentDirectoryPath
+        let userDefault = DefaultAgentConfigStore.shared.current
+        let projectConfig = DefaultAgentProjectConfig.find(from: lookupCwd)
+        let resolved = DefaultAgentResolver.resolve(
+            explicitAgent: explicitAgent,
+            userDefault: userDefault,
+            projectConfig: projectConfig
+        )
+        guard !resolved.launch.bareCommand.isEmpty else {
+            return "ERROR: resolved agent has empty command (configure it in Settings → Default Agent)"
+        }
+
+        if let inSurfaceArg {
+            return launchInExistingSurface(
+                surfaceArg: inSurfaceArg,
+                agent: resolved.agent,
+                bareCommand: resolved.launch.bareCommand,
+                cwd: cwdArg,
+                prompt: promptText
+            )
+        } else {
+            // A-button mimic: create a new surface in a pane. Prompt args are
+            // ignored on this path (the operator's configured initial prompt
+            // still flows via launchAgentSurface's existing pre-baking).
             guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
             var result = "ERROR: Failed to launch agent"
             v2MainSync {
@@ -18932,10 +19004,65 @@ class TerminalController {
                 result = "OK"
             }
             return result
-
-        default:
-            return "ERROR: unknown subcommand '\(sub)'. usage: default_agent {get|set|launch}"
         }
+    }
+
+    /// Launch into an existing surface's PTY. Composes `[cd <cwd> && ]<launcher>[ <quoted-prompt>]`,
+    /// sends it to the surface, and (for non-claude agents with a prompt) schedules
+    /// a delayed sendText to deliver the prompt after the agent has booted.
+    private func launchInExistingSurface(
+        surfaceArg: String,
+        agent: AgentType,
+        bareCommand: String,
+        cwd: String?,
+        prompt: String?
+    ) -> String {
+        guard let surfaceId = UUID(uuidString: surfaceArg) else {
+            return "ERROR: --in-surface requires a UUID (CLI resolves short refs client-side)"
+        }
+        guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
+
+        // Compose the launch line. For claude-code with a prompt, the prompt
+        // ships as a single-quoted positional arg in the same line. For other
+        // agents, the prompt is delivered after a fixed post-launch delay so
+        // each TUI's input contract is honored without per-agent ready-string
+        // detection in v1.
+        var line = ""
+        if let cwd, !cwd.isEmpty {
+            line += "cd \(DefaultAgentResolver.shellQuote(cwd)) && "
+        }
+        if agent == .claudeCode, let prompt, !prompt.isEmpty {
+            line += "\(bareCommand) \(DefaultAgentResolver.shellQuote(prompt))"
+        } else {
+            line += bareCommand
+        }
+
+        var result = "ERROR: surface not found"
+        v2MainSync {
+            for tab in tabManager.tabs {
+                guard let panel = tab.terminalPanel(for: surfaceId) else { continue }
+                // sendSubmitFormText types the text via ghostty_surface_text
+                // (bracketed paste), then dispatches a real synthetic Return
+                // outside the paste sequence — required for shell line
+                // discipline and TUI raw-mode handlers to actually execute.
+                // Falls back to a flush-time submit if the surface is not yet
+                // attached to a window.
+                panel.surface.sendSubmitFormText(line)
+                if agent != .claudeCode, let prompt, !prompt.isEmpty {
+                    // Post-ready delivery. Fixed 2500ms delay: long enough for
+                    // codex/opencode/kimi to boot to a prompt on a typical
+                    // machine, short enough not to feel sluggish. Readiness
+                    // detection (poll for prompt-string-visible) is a v2 follow-up.
+                    let delay: DispatchTimeInterval = .milliseconds(2500)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak panel] in
+                        panel?.surface.sendSubmitFormText(prompt)
+                    }
+                }
+                result = "OK"
+                return
+            }
+        }
+        return result
     }
 
     /// `agent_config get <type>`                        → prints JSON: { command, initial_prompt, env_overrides }

@@ -2,10 +2,14 @@ import Foundation
 
 /// The fully-resolved decision for launching an agent into a terminal panel.
 /// `command` is what gets typed into the shell once the panel is ready;
+/// `bareCommand` is the same launcher with no initial-prompt baking, suitable
+/// for export as `C11_DEFAULT_AGENT_LAUNCH` so callers can append their own
+/// prompts without colliding with the operator's configured seed;
 /// `initialPrompt` (if non-empty) is delivered after launch via a second
 /// `sendText`; `envOverrides` are passed at panel construction.
 struct ResolvedAgentLaunch: Equatable {
     let command: String
+    let bareCommand: String
     let initialPrompt: String
     let envOverrides: [String: String]
 }
@@ -38,8 +42,10 @@ enum DefaultAgentResolver {
             ?? userDefault.config(for: agent)
 
         let command = buildCommand(agent: agent, config: chosenConfig)
+        let bare = chosenConfig.command.trimmingCharacters(in: .whitespacesAndNewlines)
         return (agent, ResolvedAgentLaunch(
             command: command,
+            bareCommand: bare,
             initialPrompt: chosenConfig.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines),
             envOverrides: chosenConfig.envMap
         ))

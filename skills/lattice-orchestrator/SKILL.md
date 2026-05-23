@@ -8,21 +8,54 @@ description: Lattice Orchestration Workflow by Stage 11 — a four-phase workflo
 
 The Stage 11 way to point a session at a project and end up with a small fleet of delegators producing open PRs, audited against spec at the end. Three named roles span the run end-to-end: **Architect** (Phases 1–2, produces every artifact the run needs), **Orchestrator** (Phase 3, dispatches delegators), **Result Validator** (Phase 4, terminal audit). Plus the supporting cast — delegators (one per ticket), captains (one-shot recovery), and the Master Validator singleton (in-flight global audit).
 
-## Scope: medium-and-up runs only
+## Workflow modes — per ticket
 
-The four-phase dance is built to deliver fresh-eyes-on-the-diff for work where that property earns its keep — multi-file features, cross-cutting changes, anything with real design surface. For smaller work — single-file changes, straightforward fixes, mostly-mechanical refactors, doc additions, config wiring — spawning a planner, a plan-reviewer, an implementer, a code-reviewer, and a fix sub-agent costs more time than the change itself, and the spawned reviewers have little to catch.
+Each ticket in a wave gets a workflow mode picked in Phase 2 and recorded in `run-state.md`'s wave table. Three modes; pick the lightest one that still earns its keep. Mixing modes within a wave is normal and encouraged — most real waves are 60–80% fast-track + inline-full with sub-agent-full reserved for the genuinely large outliers.
 
-**For straightforward tickets, use fast-track instead:** one agent runs the whole arc inline through `backlog → planned → in_progress → review → pr_open → done`, no sub-agents spawned. Plan-review is skipped; the same session wears the planner, implementer, and reviewer hats (with distinct actor IDs so the event log shows who did what). The code-review is performed in-session against the diff and recorded via:
+### 1. Fast-track — single session, inline self-review
+
+One delegator session runs the whole arc `backlog → planned → in_progress → review → pr_open → done`. No sub-agents spawned. No `lattice plan-review` / `lattice code-review` CLI invocations. The same session wears planner / implementer / reviewer hats with distinct actor IDs in the event log (`agent:<id>-planner`, `-impl`, `-reviewer`) so the audit trail shows who did what. Code-review is attached inline against the diff:
 
 ```
 lattice attach <task> --type note --role review --inline "<review markdown>" --actor agent:<id>-reviewer
 ```
 
-The `--role review` artifact satisfies the default `done` completion policy without a spawned reviewer. `lattice code-review --mode inline` only prints a guidance message — it does not create the artifact for you; use `lattice attach` directly.
+The `--role review` artifact satisfies the default `done` completion policy. `lattice code-review --mode inline` is a guidance-printer — use `lattice attach` directly.
 
-**When to fast-track:** complexity=low or low-medium, no real design choices, changes that fit in a single file or a tight cluster of closely-related files, work where the author can plausibly catch their own bugs because the surface is small enough to hold in one head. Bug fixes with a clear root cause, CLI flag additions, new test cases, doc updates, single-function refactors, config tweaks — all canonical fits. The model decides.
+**Use for:** clear root cause; single file or a tight cluster of closely-related files; bug fixes, CLI flag additions, doc updates, single-function refactors, config tweaks, test additions — anywhere the implementer can plausibly catch their own bugs because the surface is small enough to hold in one head.
 
-**When to escalate back to the full workflow:** multi-file changes that touch independent subsystems, anything with non-trivial design choices, anything touching a public contract or backward-compat surface, anything where being wrong cleanly is worth the ceremony. **When in doubt, use the full workflow** — the ceremony cost is bounded; the cost of an unreviewed merge is not.
+### 2. Inline-full — single session + headless `lattice` reviews between phases  *(default for medium work)*
+
+Same single Claude session as fast-track, but with two extra steps. After the plan is written and before bumping to `planned`, the delegator runs:
+
+```
+LATTICE_SPAWN_BACKEND=headless
+(cd $REPO_ROOT && lattice plan-review <TICKET-ID> --mode single --actor agent:<id>-plan-reviewer)
+```
+
+…as a **headless** bash subshell (the env var is the durable way; older installs accept `--headless` directly). The CLI spins a fresh-eyes reviewer backend, produces a typed artifact, and exits. The delegator reads the artifact, triages findings into an authoritative amendment block at the bottom of the plan file (`## Plan-Review Cycle K Resolutions (AUTHORITATIVE — overrides earlier text on conflict)`), then proceeds. Same shape after impl:
+
+```
+(cd <WORKTREE> && lattice code-review <TICKET-ID> --mode single --base origin/main --actor agent:<id>-reviewer)
+```
+
+Fresh-eyes value comes from the headless reviewer agent (different prompt, different context window) — *not* from spawning new c11 tabs. The delegator never leaves its own session.
+
+**Use for:** real design surface but bounded scope; touches 2–5 files; a reviewer in a fresh head will catch what the implementer can't easily see, but the impl itself fits in one head. Dispatcher reconciliation, API-key plumbing, schema extensions, contract reconciliation. **Default when in doubt** — it gets fresh-eyes value while keeping c11 PTY pressure low (1 surface per ticket instead of 3–5).
+
+If `lattice code-review` hangs past ~5–10 minutes or returns an empty diff (the documented worktree↔root bridge bug), fall back to the **own-reviewer pattern** before abandoning the phase — see `references/orchestrator.md` § "Own-reviewer-tab fallback."
+
+### 3. Sub-agent-full — separate c11 tabs for plan / impl / fix  *(escalation only)*
+
+The original four-agent-dance shape. Planner spawned as a new tab on the delegator's pane; the delegator monitors via `/loop`; headless `lattice plan-review` once the planner posts completion; impl sub-agent in another new tab; headless code-review; fix sub-agent if findings exist.
+
+**Use only when:** the ticket is genuinely enormous (thousands of LOC across many independent files); each phase needs a fresh context window because no single window can hold the whole thing; or the work spans skill domains the same context shouldn't try to multitask. Sub-agent spawns add c11 PTY pressure (wedge threshold ~15 surfaces per pane) and orchestration overhead (a delegator `/loop` per spawned sub-agent), so this mode trades against pane budget and run wall time.
+
+### Mode-selection rule of thumb
+
+- **Escalate one step at a time.** Fast-track → inline-full → sub-agent-full. The cost of an unreviewed merge is unbounded, but going from fast-track straight to sub-agent-full is rarely the right move.
+- **Capture the mode per ticket in `run-state.md`'s wave table.** The Orchestrator's tick body reads it to set the right expectations: fast-track delegators run synchronously and don't enter `/loop`; inline-full and sub-agent-full delegators run under `/loop`.
+- **Boot prompt scope matches the mode.** A fast-track prompt does not include `lattice plan-review` / `lattice code-review` lines. An inline-full prompt includes them as headless subshells. A sub-agent-full prompt spawns plan/impl/fix sub-agents and references the sub-agent boilerplate at the bottom of `references/orchestrator.md`. See `references/orchestrator.md` § "Spawning a delegator" for templates of each.
 
 ## The flow
 

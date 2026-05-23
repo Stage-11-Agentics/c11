@@ -2667,6 +2667,12 @@ struct CMUXCLI {
                 windowOverride: windowId
             )
 
+        case "default-agent":
+            try runDefaultAgentCommand(
+                commandArgs: commandArgs,
+                client: client
+            )
+
         case "set-metadata":
             try runSetMetadataCommand(
                 commandArgs: commandArgs,
@@ -8955,6 +8961,49 @@ struct CMUXCLI {
               c11 set-agent --type claude-code --model claude-opus-4-7
               c11 set-agent --type opencode --task task-42 --surface surface:1
             """
+        case "default-agent":
+            return """
+            Usage: c11 default-agent {get | set <type> | launch [flags]}
+
+            Read or change the operator's configured default agent, or launch
+            an agent surface programmatically. The launch path is the
+            recommended way to spawn sub-agents: c11 owns per-TUI prompt
+            delivery, so the same call works whether the operator's default is
+            claude-code, codex, opencode, kimi, or a custom agent.
+
+            Subcommands:
+              get                              Print the configured default agent type.
+              set <type>                       Set the default agent (claude-code | codex | kimi | opencode | custom).
+              launch [flags]                   Launch the default (or --agent <type>) agent.
+
+            launch flags:
+              --in-surface <id|ref|index>      Launch into an existing surface's PTY. The
+                                               orchestrator pattern: create a surface with
+                                               `c11 new-split` or `c11 new-pane`, then
+                                               launch into it.
+              --pane <uuid|index>              Legacy A-button mimic: create a NEW agent
+                                               surface in the named pane (focused pane if
+                                               omitted). Mutually exclusive with
+                                               --in-surface.
+              --agent <type>                   Override the configured default for this
+                                               call only.
+              --cwd <path>                     Prepend `cd <path> && ` to the launch line.
+                                               Used with --in-surface when the existing
+                                               surface's cwd needs adjusting.
+              --prompt <text>                  Initial prompt to deliver to the agent. For
+                                               claude-code: appended as a positional arg.
+                                               For other agents: typed in after a fixed
+                                               post-launch delay.
+              --prompt-file <path>             Like --prompt, but read the text from a file.
+                                               Recommended for non-trivial prompts (no shell
+                                               escaping needed).
+
+            Examples:
+              c11 default-agent get
+              c11 default-agent set codex
+              c11 default-agent launch --in-surface surface:5 --prompt-file /tmp/bootstrap.md
+              c11 default-agent launch --pane 0 --agent claude-code
+            """
         case "set-metadata":
             return """
             Usage: c11 set-metadata [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
@@ -10856,6 +10905,119 @@ struct CMUXCLI {
             windowOverride: windowOverride
         )
         return .surface(workspaceId: workspaceId, surfaceId: surfaceId)
+    }
+
+    /// `c11 default-agent {get|set|launch}` — sugar over the v1 `default_agent`
+    /// socket command. Resolves surface refs client-side to UUIDs (the v1
+    /// handler accepts UUIDs only), then forwards the composed v1 string.
+    private func runDefaultAgentCommand(
+        commandArgs: [String],
+        client: SocketClient
+    ) throws {
+        guard let sub = commandArgs.first else {
+            throw CLIError(message: "default-agent requires a subcommand: get | set <type> | launch [flags]")
+        }
+
+        switch sub {
+        case "get":
+            let response = try sendV1Command("default_agent get", client: client)
+            print(response)
+
+        case "set":
+            guard commandArgs.count >= 2 else {
+                let valid = ["claude-code", "codex", "kimi", "opencode", "custom"].joined(separator: ", ")
+                throw CLIError(message: "default-agent set requires <type>. Valid: \(valid)")
+            }
+            let response = try sendV1Command("default_agent set \(commandArgs[1])", client: client)
+            print(response)
+
+        case "launch":
+            try runDefaultAgentLaunchCommand(
+                commandArgs: Array(commandArgs.dropFirst()),
+                client: client
+            )
+
+        default:
+            throw CLIError(message: "default-agent: unknown subcommand '\(sub)' (expected get|set|launch)")
+        }
+    }
+
+    private func runDefaultAgentLaunchCommand(
+        commandArgs: [String],
+        client: SocketClient
+    ) throws {
+        let agentArg = optionValue(commandArgs, name: "--agent")
+        let inSurfaceRaw = optionValue(commandArgs, name: "--in-surface")
+        let paneArg = optionValue(commandArgs, name: "--pane")
+        let cwdArg = optionValue(commandArgs, name: "--cwd")
+        let promptArg = optionValue(commandArgs, name: "--prompt")
+        let promptFileArg = optionValue(commandArgs, name: "--prompt-file")
+
+        if inSurfaceRaw != nil && paneArg != nil {
+            throw CLIError(message: "default-agent launch: --in-surface and --pane are mutually exclusive")
+        }
+        if promptArg != nil && promptFileArg != nil {
+            throw CLIError(message: "default-agent launch: --prompt and --prompt-file are mutually exclusive")
+        }
+
+        // Resolve --in-surface ref → UUID. The v1 handler accepts UUIDs only;
+        // short refs and indexes get resolved here via surface.list.
+        var inSurfaceUUID: String? = nil
+        if let raw = inSurfaceRaw {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if isUUID(trimmed) {
+                inSurfaceUUID = trimmed
+            } else {
+                let listed = try client.sendV2(method: "surface.list", params: [:])
+                let items = listed["surfaces"] as? [[String: Any]] ?? []
+                let asIndex = Int(trimmed)
+                for item in items {
+                    if (item["ref"] as? String) == trimmed, let id = item["id"] as? String {
+                        inSurfaceUUID = id
+                        break
+                    }
+                    if let asIndex, intFromAny(item["index"]) == asIndex, let id = item["id"] as? String {
+                        inSurfaceUUID = id
+                        break
+                    }
+                }
+                if inSurfaceUUID == nil {
+                    throw CLIError(message: "Surface not found: \(raw)")
+                }
+            }
+        }
+
+        // Compose v1 command. Multi-word values get quoted so tokenizeArgs
+        // on the server reconstructs them as single tokens.
+        var parts: [String] = ["default_agent", "launch"]
+        if let agentArg { parts.append("--agent"); parts.append(agentArg) }
+        if let inSurfaceUUID { parts.append("--in-surface"); parts.append(inSurfaceUUID) }
+        if let paneArg { parts.append("--pane"); parts.append(paneArg) }
+        if let cwdArg { parts.append("--cwd"); parts.append(v1QuoteForTokenizer(cwdArg)) }
+        if let promptArg { parts.append("--prompt"); parts.append(v1QuoteForTokenizer(promptArg)) }
+        if let promptFileArg { parts.append("--prompt-file"); parts.append(v1QuoteForTokenizer(promptFileArg)) }
+
+        let v1Cmd = parts.joined(separator: " ")
+        let response = try sendV1Command(v1Cmd, client: client)
+        print(response)
+    }
+
+    /// Quote a string for the v1 server-side `tokenizeArgs` parser. Uses
+    /// double quotes with backslash escapes (the tokenizer's escape grammar:
+    /// `\\`, `\"`, `\n`, `\r`, `\t`).
+    private func v1QuoteForTokenizer(_ value: String) -> String {
+        var escaped = ""
+        for char in value {
+            switch char {
+            case "\\": escaped += "\\\\"
+            case "\"": escaped += "\\\""
+            case "\n": escaped += "\\n"
+            case "\r": escaped += "\\r"
+            case "\t": escaped += "\\t"
+            default: escaped.append(char)
+            }
+        }
+        return "\"\(escaped)\""
     }
 
     /// `cmux set-agent` — M1 sugar over `surface.set_metadata { source: declare, mode: merge }`.
@@ -15193,6 +15355,7 @@ struct CMUXCLI {
           clear-notifications
           claude-hook <session-start|stop|notification> [--workspace <id|ref>] [--surface <id|ref>]
           set-agent --type <terminal_type> [--model <id>] [--task <id>] [--role <id>] [--surface <id|ref>] [--workspace <id|ref>]
+          default-agent {get | set <type> | launch [--in-surface <id|ref> | --pane <id>] [--agent <type>] [--cwd <path>] [--prompt <text> | --prompt-file <path>]}
           set-metadata (--json '{...}' | --key <K> --value <V> [--type string|number|bool|json]) [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>] [--mode merge|replace] [--source <src>]
           get-metadata [--key <K> ...] [--sources] [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
           clear-metadata [--key <K> ...] [--source <src>] [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]

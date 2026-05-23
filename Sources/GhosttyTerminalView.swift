@@ -3353,10 +3353,14 @@ final class TerminalSurface: Identifiable, ObservableObject {
             setManagedEnvironmentValue("CMUX_BUNDLE_ID", bundleId)
         }
 
-        // C11_DEFAULT_AGENT_LAUNCH lets the skill teach a single sub-agent launch
-        // pattern (`exec $C11_DEFAULT_AGENT_LAUNCH`) regardless of which agent the
-        // operator picked. Resolved per shell at spawn time; preference changes
-        // only affect newly-spawned shells, not already-running ones.
+        // C11_DEFAULT_AGENT_LAUNCH carries the bare launcher command (no
+        // operator-configured seed prompt) so callers can append their own
+        // positional args without colliding with a baked-in prompt. The seed,
+        // when configured, ships as a separate env var; orchestrators that
+        // want the operator's A-button shape should call
+        // `c11 default-agent launch ...` instead of building the shell line
+        // themselves. Resolved per shell at spawn time; preference changes
+        // only affect newly-spawned shells.
         do {
             let resolverCwd: String = {
                 if let wd = workingDirectory, !wd.isEmpty { return wd }
@@ -3369,8 +3373,11 @@ final class TerminalSurface: Identifiable, ObservableObject {
                 userDefault: userDefault,
                 projectConfig: projectConfig
             )
-            if !resolved.launch.command.isEmpty {
-                setManagedEnvironmentValue("C11_DEFAULT_AGENT_LAUNCH", resolved.launch.command)
+            if !resolved.launch.bareCommand.isEmpty {
+                setManagedEnvironmentValue("C11_DEFAULT_AGENT_LAUNCH", resolved.launch.bareCommand)
+            }
+            if !resolved.launch.initialPrompt.isEmpty {
+                setManagedEnvironmentValue("C11_DEFAULT_AGENT_SEED_PROMPT", resolved.launch.initialPrompt)
             }
         }
 

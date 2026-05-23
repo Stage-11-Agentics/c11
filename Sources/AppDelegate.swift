@@ -6452,6 +6452,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let initialDirectory = focusedWorkspaceWorkingDirectory()
             ?? FileManager.default.homeDirectoryForCurrentUser.path
 
+        // Capture the operator's current screen before activating the dialog.
+        // NSWindow.center() always targets NSScreen.main (the menu-bar screen);
+        // on multi-monitor setups that misplaces the dialog off the screen the
+        // operator is actually working on. Read this now while the active main
+        // window is still key.
+        let targetScreen = NSApp.keyWindow?.screen
+            ?? NSApp.mainWindow?.screen
+            ?? NSScreen.main
+
         let rootView = CreateWorkspaceSheet(
             initialDirectory: initialDirectory,
             onCancel: { [weak self] in self?.createWorkspaceSheetWindow?.close() },
@@ -6483,9 +6492,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         )
         window.isReleasedWhenClosed = false
         window.level = .modalPanel
-        window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        // Defer centering: NSHostingController with .preferredContentSize
+        // syncs the window's content size during SwiftUI's first layout pass,
+        // so center()'ing before makeKey runs against a smaller-than-final
+        // frame and the dialog lands off-center once it grows. Position on
+        // the captured screen, with the standard HIG "1/3 from the top"
+        // vertical placement.
+        DispatchQueue.main.async { [weak window] in
+            guard let window, let screen = targetScreen else { return }
+            let visible = screen.visibleFrame
+            let frame = window.frame
+            let x = visible.origin.x + (visible.width - frame.width) / 2
+            let y = visible.origin.y + (visible.height - frame.height) * 2.0 / 3.0
+            window.setFrameOrigin(NSPoint(x: x, y: y))
+        }
         createWorkspaceSheetWindow = window
         createWorkspaceSheetCloseObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,

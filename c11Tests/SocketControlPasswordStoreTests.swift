@@ -1044,59 +1044,6 @@ final class AgentSkillsLegacyMigrationTests: XCTestCase {
     }
 }
 
-// MARK: - C11-111: row state classification
-
-final class AgentSkillsRowStateClassificationTests: XCTestCase {
-    func testUpToDateMapsToUpToDate() {
-        let s = makeStatus(target: .claude, skillName: "x", state: .installedCurrent)
-        XCTAssertEqual(AgentSkillsRowVariant.classify(s), .upToDate)
-    }
-
-    func testNotInstalledMapsToNotInstalled() {
-        let s = makeStatus(target: .claude, skillName: "x", state: .notInstalled)
-        XCTAssertEqual(AgentSkillsRowVariant.classify(s), .notInstalled)
-    }
-
-    func testInstalledNoManifestMapsToWillReplaceUnmanaged() {
-        let s = makeStatus(target: .claude, skillName: "x", state: .installedNoManifest)
-        XCTAssertEqual(AgentSkillsRowVariant.classify(s), .willReplaceUnmanaged)
-    }
-
-    func testSchemaMismatchMapsToWillReplaceUnmanaged() {
-        let s = makeStatus(target: .claude, skillName: "x", state: .schemaMismatch)
-        XCTAssertEqual(AgentSkillsRowVariant.classify(s), .willReplaceUnmanaged)
-    }
-
-    func testOutdatedWithoutManifestRecordMapsToUpdate() {
-        let s = makeStatus(target: .claude, skillName: "x", state: .installedOutdated)
-        XCTAssertEqual(AgentSkillsRowVariant.classify(s), .update)
-    }
-
-    func testOutdatedWithManifestHashEqualToBundledMapsToLocalEdits() {
-        let bundledHash = "sha256:current-bundled"
-        let record = SkillInstallerRecord(
-            schema: SkillInstallerRecord.schemaVersion,
-            packageName: "x",
-            skillVersion: "1",
-            installedAt: "2026-05-22T00:00:00Z",
-            appVersion: "0.49.0",
-            appBuild: "1",
-            commitShort: "abcd",
-            sourceContentHash: bundledHash
-        )
-        let status = SkillInstallerPackageStatus(
-            package: SkillInstallerPackage(name: "x", version: "1", description: nil,
-                                           sourceDir: URL(fileURLWithPath: "/tmp/src/x", isDirectory: true)),
-            target: .claude,
-            destinationDir: URL(fileURLWithPath: "/tmp/dst/x", isDirectory: true),
-            state: .installedOutdated,
-            record: record,
-            sourceContentHash: bundledHash
-        )
-        XCTAssertEqual(AgentSkillsRowVariant.classify(status), .localEditsWillBeOverwritten)
-    }
-}
-
 // MARK: - C11-111: bundled skills manifest contract
 
 final class BundledSkillsManifestTests: XCTestCase {

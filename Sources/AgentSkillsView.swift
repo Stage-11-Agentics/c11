@@ -358,51 +358,6 @@ enum AgentSkillsLocalized {
     }
 }
 
-// MARK: - Row state classifier
-
-/// Per-(target, skill) row variant. Drives the SwiftUI row label, warning
-/// copy, and default-checked state. Pure function of the installer status,
-/// testable without SwiftUI. Consumed by both the row view and the row-
-/// classification tests so we never test dead API — see the C11-111 plan
-/// *Per-row content* section.
-enum AgentSkillsRowVariant: Equatable {
-    /// Hash matches bundled; nothing to do.
-    case upToDate
-    /// Bundled content has changed; safe refresh of an unmodified install.
-    case update
-    /// On-disk content differs from what we'd write, but the manifest's
-    /// hash matches the bundled hash — i.e., the operator edited the local
-    /// copy. Re-install would clobber those edits.
-    case localEditsWillBeOverwritten
-    /// Manifest is missing or malformed; treat as user-owned and warn that
-    /// install will replace it.
-    case willReplaceUnmanaged
-    /// No copy on disk at all.
-    case notInstalled
-
-    static func classify(_ status: SkillInstallerPackageStatus) -> AgentSkillsRowVariant {
-        switch status.state {
-        case .installedCurrent:
-            return .upToDate
-        case .notInstalled:
-            return .notInstalled
-        case .installedNoManifest, .schemaMismatch:
-            return .willReplaceUnmanaged
-        case .installedOutdated:
-            // If the manifest still claims our current bundled hash but the
-            // on-disk content differs, the operator edited the local copy.
-            // (Status was computed by hashing on-disk content; manifest's
-            // record.sourceContentHash is the value we wrote at install
-            // time. Equal to current bundled hash → no upstream change →
-            // drift is local.)
-            if let record = status.record, record.sourceContentHash == status.sourceContentHash {
-                return .localEditsWillBeOverwritten
-            }
-            return .update
-        }
-    }
-}
-
 // MARK: - Settings pane
 
 struct AgentSkillsSettingsSection: View {
@@ -800,108 +755,39 @@ struct AgentSkillsOnboardingSheet: View {
         }
     }
 
-    @ViewBuilder
     private func onboardingRow(row: AgentSkillsModel.TargetRow) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .center, spacing: 10) {
-                Toggle(isOn: optInBinding(for: row.target)) {
-                    EmptyView()
-                }
-                .labelsHidden()
-                .toggleStyle(.checkbox)
-                .disabled(!row.detected || !row.needsInstallOrUpdate)
+        HStack(alignment: .center, spacing: 10) {
+            Toggle(isOn: optInBinding(for: row.target)) {
+                EmptyView()
+            }
+            .labelsHidden()
+            .toggleStyle(.checkbox)
+            .disabled(!row.detected || !row.needsInstallOrUpdate)
 
-                VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 7) {
                     Text(row.target.displayName)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(row.detected ? BrandColors.whiteSwiftUI : BrandColors.whiteSwiftUI.opacity(0.42))
-                    Text(detectionLabel(for: row))
-                        .font(.system(size: 11))
-                        .foregroundColor(BrandColors.whiteSwiftUI.opacity(0.58))
+                    if let version = row.sourceVersionLabel {
+                        Text(version)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(BrandColors.goldSwiftUI)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(BrandColors.goldFaintSwiftUI)
+                            )
+                    }
                 }
-                Spacer(minLength: 0)
+                Text(detectionLabel(for: row))
+                    .font(.system(size: 11))
+                    .foregroundColor(BrandColors.whiteSwiftUI.opacity(0.58))
             }
-            if row.detected {
-                ForEach(row.packages, id: \.package.name) { status in
-                    skillSubRow(target: row.target, status: status)
-                }
-            }
+            Spacer(minLength: 0)
         }
         .frame(minHeight: 42)
-    }
-
-    @ViewBuilder
-    private func skillSubRow(
-        target: SkillInstallerTarget,
-        status: SkillInstallerPackageStatus
-    ) -> some View {
-        let variant = AgentSkillsRowVariant.classify(status)
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 7) {
-                Text(skillIcon(for: variant))
-                    .font(.system(size: 11))
-                    .frame(width: 14, alignment: .center)
-                Text(status.package.name)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.88))
-                if !status.package.version.isEmpty && status.package.version != "0" {
-                    Text("v\(status.package.version)")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(BrandColors.goldSwiftUI)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(BrandColors.goldFaintSwiftUI)
-                        )
-                }
-                Spacer(minLength: 0)
-                if status.state != .notInstalled {
-                    Button(action: { model.revealInFinder(url: status.destinationDir) }) {
-                        Text(String(localized: "agentSkills.onboarding.row.revealInFinder", defaultValue: "Reveal in Finder"))
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.62))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            if let description = status.package.description, !description.isEmpty {
-                Text(description)
-                    .font(.system(size: 10))
-                    .lineLimit(2)
-                    .truncationMode(.tail)
-                    .foregroundColor(BrandColors.whiteSwiftUI.opacity(0.52))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if let warning = skillSubRowWarning(variant: variant) {
-                Text(warning)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(.orange.opacity(0.88))
-            }
-        }
-        .padding(.leading, 30)
-        .padding(.vertical, 2)
-    }
-
-    private func skillIcon(for variant: AgentSkillsRowVariant) -> String {
-        switch variant {
-        case .upToDate: return "✓"
-        case .update: return "⚠"
-        case .localEditsWillBeOverwritten, .willReplaceUnmanaged: return "⚠"
-        case .notInstalled: return "◯"
-        }
-    }
-
-    private func skillSubRowWarning(variant: AgentSkillsRowVariant) -> String? {
-        switch variant {
-        case .upToDate, .update, .notInstalled:
-            return nil
-        case .localEditsWillBeOverwritten, .willReplaceUnmanaged:
-            return String(
-                localized: "agentSkills.onboarding.row.localEditsWarning",
-                defaultValue: "Local edits will be overwritten"
-            )
-        }
     }
 
     private func detectionLabel(for row: AgentSkillsModel.TargetRow) -> String {

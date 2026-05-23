@@ -6526,14 +6526,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        // Initial size is intentionally tall enough that the C11-111 content
-        // (header + per-target rows × N skills with descriptions + warnings)
-        // never collides with the pre-layout window frame. SwiftUI's
-        // preferredContentSize sync (below) will tighten it to the actual
-        // intrinsic height once the content lays out; until that fires, a
-        // safe initial size avoids the row-collapse seen on first frame.
+        // Initial content height is a starting point only — the
+        // preferredContentSize sync below drives the actual window
+        // height from SwiftUI's intrinsic layout on first relayout.
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 540, height: 820),
+            contentRect: NSRect(x: 0, y: 0, width: 540, height: 480),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false

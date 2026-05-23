@@ -157,6 +157,12 @@ final class AgentSkillsModel: ObservableObject {
                 force: force,
                 fileManager: fileManager
             )
+            // Any package this call touched is now `.installedCurrent`;
+            // a stale dismissal entry against an older bundled hash would
+            // shadow future drift on the next release. Clear it.
+            for name in result.installed + result.refreshed {
+                AgentSkillsOnboarding.clearDismissal(for: target, skillName: name)
+            }
             lastActionMessage = formatInstallMessage(result: result)
         } catch let err as SkillInstallerError {
             lastActionMessage = AgentSkillsLocalized.description(for: err, target: target)
@@ -874,11 +880,22 @@ struct AgentSkillsOnboardingSheet: View {
             (.kimi, kimiOptIn),
             (.opencode, opencodeOptIn),
         ]
+        var selectedKeys: Set<String> = []
         for (target, selected) in selections where selected {
             guard let row = model.rows.first(where: { $0.target == target }), row.detected else { continue }
-            model.install(target: target, force: false)
+            for status in row.packages where AgentSkillsOnboarding.shouldRowOffer(status) {
+                selectedKeys.insert(AgentSkillsOnboarding.dismissalKey(for: target, skillName: status.package.name))
+            }
         }
-        UserDefaults.standard.set(true, forKey: AgentSkillsOnboarding.sheetShownKey)
+        let offered = model.rows.filter(\.detected).flatMap(\.packages)
+        AgentSkillsOnboarding.recordDismissalsForUncheckedRows(
+            offered: offered,
+            selectedKeys: selectedKeys
+        )
+        for (target, selected) in selections where selected {
+            guard let row = model.rows.first(where: { $0.target == target }), row.detected else { continue }
+            model.install(target: target, force: true)
+        }
         onDismiss()
     }
 
@@ -892,7 +909,7 @@ struct AgentSkillsOnboardingSheet: View {
     }
 
     private func dontAskAgain() {
-        UserDefaults.standard.set(true, forKey: AgentSkillsOnboarding.sheetShownKey)
+        UserDefaults.standard.set(true, forKey: AgentSkillsOnboarding.dontAskAgainKey)
         onDismiss()
     }
 
@@ -1158,9 +1175,27 @@ private extension View {
 // MARK: - Onboarding plumbing
 
 enum AgentSkillsOnboarding {
+    /// Legacy "Don't ask again" flag used by c11 ≤ v0.49.x. Kept as a
+    /// migration breadcrumb only — see `migrateLegacyDismissalsIfNeeded`.
+    /// Never read by `shouldPresent` directly; the new `dontAskAgainKey`
+    /// supersedes it.
+    static let legacyOnboardingShownKey = "cmuxAgentSkillsOnboardingShown"
+
     /// Persistent "Don't ask again" flag. Set only by the explicit button in
-    /// the onboarding sheet; never by a plain close or "Later" click.
-    static let sheetShownKey = "cmuxAgentSkillsOnboardingShown"
+    /// the onboarding sheet. Honored regardless of skill content changes —
+    /// the operator's explicit opt-out wins over drift detection. Cleared
+    /// by Help → "Re-enable agent skills install prompts."
+    static let dontAskAgainKey = "c11SkillDontAskAgain"
+
+    /// Per-(target, skill) dismissed-against-hash store. Key shape
+    /// `"<target.rawValue>.<skillName>"`, value is the bundled
+    /// `sourceContentHash` at dismissal time. A row whose current bundled
+    /// hash matches its stored dismissal hash is suppressed; when the
+    /// bundled hash changes (new c11 release with revised content) the row
+    /// re-surfaces. Written only by the "Update selected" branch; never by
+    /// "Maybe later" or window close (those use the in-memory
+    /// `_dismissedThisLaunch` flag).
+    static let dismissalsKey = "c11SkillDismissals"
 
     /// In-memory flag scoped to the current app launch. Set when the user
     /// dismisses the sheet by clicking "Later", or by hitting the window's
@@ -1190,20 +1225,140 @@ enum AgentSkillsOnboarding {
     }
 
     static func shouldOffer(for statuses: [SkillInstallerPackageStatus]) -> Bool {
-        !statuses.isEmpty && statuses.contains { $0.state == .notInstalled || $0.state == .installedOutdated }
+        !statuses.isEmpty && statuses.contains { shouldRowOffer($0) }
     }
 
-    /// Should the onboarding sheet be offered on this launch? True iff at
-    /// least one detected agent environment is missing the current bundled
-    /// skill set, and the user hasn't already dismissed the sheet.
+    /// True when this individual (target, skill) status would prompt the
+    /// operator. The dismissal store is consulted by the caller — this
+    /// function only classifies the on-disk state.
+    static func shouldRowOffer(_ status: SkillInstallerPackageStatus) -> Bool {
+        switch status.state {
+        case .notInstalled, .installedOutdated, .installedNoManifest, .schemaMismatch:
+            return true
+        case .installedCurrent:
+            return false
+        }
+    }
+
+    static func dismissalKey(for target: SkillInstallerTarget, skillName: String) -> String {
+        "\(target.rawValue).\(skillName)"
+    }
+
+    /// Read the persisted dismissal dict. Tolerant of missing key or
+    /// malformed values — returns an empty dict rather than crashing, so a
+    /// corrupted defaults entry can't lock the operator out of the sheet.
+    static func loadDismissals(defaults: UserDefaults = .standard) -> [String: String] {
+        guard let raw = defaults.dictionary(forKey: dismissalsKey) else { return [:] }
+        var clean: [String: String] = [:]
+        for (k, v) in raw {
+            if let s = v as? String { clean[k] = s }
+        }
+        return clean
+    }
+
+    static func saveDismissals(_ dict: [String: String], defaults: UserDefaults = .standard) {
+        if dict.isEmpty {
+            defaults.removeObject(forKey: dismissalsKey)
+        } else {
+            defaults.set(dict, forKey: dismissalsKey)
+        }
+    }
+
+    /// Record persistent dismissals for every (target, skill) the operator
+    /// left unchecked when invoking "Update selected." Captures the current
+    /// bundled hash so a future c11 release with revised content
+    /// re-surfaces the row. Skips `.installedCurrent` (no actionable state)
+    /// and any row that was checked (it'll be installed instead).
+    ///
+    /// The unchecked-row set is computed by intersecting the offered rows
+    /// with the operator's selection state: a row is "unchecked" if its
+    /// `(target, skill)` is in `offeredRows` but absent from `selectedKeys`.
+    static func recordDismissalsForUncheckedRows(
+        offered: [SkillInstallerPackageStatus],
+        selectedKeys: Set<String>,
+        defaults: UserDefaults = .standard
+    ) {
+        var dict = loadDismissals(defaults: defaults)
+        for status in offered where shouldRowOffer(status) {
+            let key = dismissalKey(for: status.target, skillName: status.package.name)
+            if selectedKeys.contains(key) { continue }
+            dict[key] = status.sourceContentHash
+        }
+        saveDismissals(dict, defaults: defaults)
+    }
+
+    /// Drop a single (target, skill) entry. Called after a successful
+    /// install of that pair so the next content change isn't shadowed by an
+    /// outdated dismissal hash.
+    static func clearDismissal(
+        for target: SkillInstallerTarget,
+        skillName: String,
+        defaults: UserDefaults = .standard
+    ) {
+        var dict = loadDismissals(defaults: defaults)
+        guard dict.removeValue(forKey: dismissalKey(for: target, skillName: skillName)) != nil else { return }
+        saveDismissals(dict, defaults: defaults)
+    }
+
+    /// One-shot migration of the legacy `cmuxAgentSkillsOnboardingShown`
+    /// flag into the new dismissal store. Runs only when no `c11SkillDismissals`
+    /// dict exists yet (so it can't clobber operator decisions made on this
+    /// version). For each (target, skill) pair currently `.installedCurrent`,
+    /// records a dismissal entry against the present bundled hash. Outdated /
+    /// not-installed pairs are intentionally NOT recorded — they need to
+    /// surface so the operator sees the revised content (the bug this whole
+    /// ticket exists to fix). The legacy flag is *not* mapped onto
+    /// `dontAskAgainKey`: pre-v0.50.0 the flag fired on first successful
+    /// install too, not just explicit opt-out, so honoring it as a global
+    /// silence would over-suppress.
+    static func migrateLegacyDismissalsIfNeeded(
+        home: URL,
+        sourceDir: URL,
+        fileManager: FileManager = .default,
+        defaults: UserDefaults = .standard
+    ) {
+        guard defaults.dictionary(forKey: dismissalsKey) == nil else { return }
+        guard defaults.bool(forKey: legacyOnboardingShownKey) else { return }
+
+        var dict: [String: String] = [:]
+        for target in SkillInstallerTarget.allCases where target.isDetected(home: home, fileManager: fileManager) {
+            guard let statuses = try? SkillInstaller.status(
+                for: target,
+                home: home,
+                sourceDir: sourceDir,
+                fileManager: fileManager
+            ) else { continue }
+            for status in statuses where status.state == .installedCurrent {
+                dict[dismissalKey(for: target, skillName: status.package.name)] = status.sourceContentHash
+            }
+        }
+        // Always persist (even an empty dict) so the migration runs exactly
+        // once. Subsequent calls find a present key and short-circuit.
+        defaults.set(dict, forKey: dismissalsKey)
+    }
+
+    /// Should the onboarding sheet be offered on this launch?
+    ///
+    /// Order of suppression checks (cheapest first):
+    /// 1. Explicit `dontAskAgain` opt-out wins over everything.
+    /// 2. In-memory `_dismissedThisLaunch` covers the "Later" / window-close
+    ///    paths for the current run.
+    /// 3. For each detected target × bundled skill that would otherwise
+    ///    offer, the persistent dismissal entry (if any) must match the
+    ///    current bundled hash. A matching entry suppresses that row; a
+    ///    mismatched entry (content drifted since dismissal) re-surfaces
+    ///    it. If any row remains un-suppressed after these checks, the
+    ///    sheet is offered.
     @MainActor static func shouldPresent(
         home: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true),
         defaults: UserDefaults = .standard,
         fileManager: FileManager = .default
     ) -> Bool {
-        if defaults.bool(forKey: sheetShownKey) { return false }
+        if defaults.bool(forKey: dontAskAgainKey) { return false }
         if _dismissedThisLaunch { return false }
         guard let source = SkillInstaller.defaultSourceURL(executableURL: Bundle.main.executableURL) else { return false }
+        migrateLegacyDismissalsIfNeeded(home: home, sourceDir: source, fileManager: fileManager, defaults: defaults)
+        let dismissals = loadDismissals(defaults: defaults)
         for target in SkillInstallerTarget.allCases where target.isDetected(home: home, fileManager: fileManager) {
             guard let statuses = try? SkillInstaller.status(
                 for: target,
@@ -1213,8 +1368,30 @@ enum AgentSkillsOnboarding {
             ) else {
                 continue
             }
-            if shouldOffer(for: statuses) { return true }
+            for status in statuses where shouldRowOffer(status) {
+                let key = dismissalKey(for: target, skillName: status.package.name)
+                if let stored = dismissals[key], stored == status.sourceContentHash { continue }
+                return true
+            }
         }
         return false
+    }
+
+    /// True when the operator has either explicitly opted out via
+    /// "Don't ask again" or has any dismissed entries left over. Drives the
+    /// Help → "Re-enable agent skills install prompts" visibility gate so
+    /// the menu item only appears when there's something to clear.
+    static func hasSilencedState(defaults: UserDefaults = .standard) -> Bool {
+        if defaults.bool(forKey: dontAskAgainKey) { return true }
+        if !loadDismissals(defaults: defaults).isEmpty { return true }
+        return false
+    }
+
+    /// Clear both the global "Don't ask again" flag and every per-(target, skill)
+    /// dismissal entry. Called by the Help → "Re-enable agent skills install
+    /// prompts" action.
+    static func clearAllSilencing(defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: dontAskAgainKey)
+        defaults.removeObject(forKey: dismissalsKey)
     }
 }

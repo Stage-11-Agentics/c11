@@ -184,9 +184,15 @@ Single markdown file the Orchestrator reads on boot and updates as the run evolv
 - lattice_dashboard_port: <port>  (filled in by Orchestrator at Step 0)
 
 ## Tickets in scope
-- TT-1 — <title> — <status>
-- TT-2 — <title> — <status>
-- …
+
+Each ticket carries an explicit workflow mode (set in Phase 2 per "Workflow modes — per ticket" in SKILL.md). The Orchestrator's tick body reads this to set the right expectations (fast-track runs synchronously without `/loop`; inline-full and sub-agent-full enter `/loop`).
+
+| Ticket | Title | Status | Workflow mode | Branch base |
+|---|---|---|---|---|
+| TT-1 | <title> | <status> | fast-track | origin/main |
+| TT-2 | <title> | <status> | inline-full | origin/main |
+| TT-3 | <title> | <status> | sub-agent-full | origin/feat/tt-1-foundation |
+| … | … | … | … | … |
 
 ## Decision log (append-only)
 - <YYYY-MM-DDTHH:MM> Architect → Orchestrator handoff.
@@ -313,6 +319,109 @@ A pane that *looks* idle is one of three things — read the last ~15 lines befo
 Two delegators "idle at the same time" with the same shape is the signature of background-watching on each, not coincident stalls. Don't conflate "Lattice hasn't transitioned" with "stuck"; don't take an operator's "looks idle" framing at face value when the screen tells say otherwise.
 
 ## Spawning a delegator
+
+**Pick the workflow mode per ticket first.** SKILL.md's "Workflow modes — per ticket" section enumerates fast-track / inline-full / sub-agent-full and the selection criteria. The shape of the boot prompt and the delegator's tick cadence depend on the chosen mode:
+
+| Mode | Sub-agents | Headless lattice reviews | Delegator `/loop`? | Boot template |
+|------|------------|--------------------------|---------------------|----------------|
+| Fast-track | none | none (inline self-review via `lattice attach --role review`) | no — runs synchronously | "Fast-track boot prompt template" below |
+| Inline-full *(default for medium work)* | none | `lattice plan-review --mode single` + `lattice code-review --mode single`, both `LATTICE_SPAWN_BACKEND=headless` | yes (single-session loop) | "Inline-full boot prompt template" below |
+| Sub-agent-full *(escalation)* | planner + impl + (fix) as new tabs on delegator's pane | same headless lattice reviews between phases | yes (delegator + each sub-agent) | "Sub-agent-full boot prompt template" below (the legacy "Per-ticket setup" template) |
+
+Record the chosen mode in `run-state.md`'s wave table so the Orchestrator's tick body sets the right expectations. Mixing modes within a wave is normal.
+
+### Fast-track boot prompt template
+
+Smallest shape. One session runs plan → impl → self-review → PR inline. Per-phase actor IDs keep the event log honest.
+
+```bash
+# Worktree (same shape as below)
+git worktree add /path/to/<repo>-worktrees/<ticket-slug> -b fix/<ticket-slug> origin/main
+
+# Pane: spawn a NEW TAB on the delegate pane (no new pane, no new workspace)
+c11 new-surface --pane $DELEGATE_VIEW_PANE --no-focus
+# Capture the returned surface ref
+
+cat > /tmp/delegator-<ticket>-boot.md <<EOF
+You are the Delegator for <TICKET-ID>. **Fast-track**: one Claude session wears all hats.
+
+## Worktree assertion (run FIRST)
+test "\$(pwd)" = "<absolute-worktree-path>" || { echo "WORKTREE MISMATCH"; exit 99; }
+
+## Environment
+export LATTICE_SPAWN_BACKEND=headless    # defensive; not used in fast-track but harmless
+export LATTICE_ROOT=<absolute-repo-root>
+
+## c11 orientation (HARD RULE — runtime-resolve own surface)
+MY_SURF=\$(c11 identify --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["caller"]["surface_ref"])')
+test -n "\$MY_SURF" || { echo "FATAL: could not resolve own surface ref"; exit 99; }
+c11 set-agent       --surface "\$MY_SURF" --type claude-code --model claude-opus-4-7
+c11 rename-tab      --surface "\$MY_SURF" "<TICKET-ID> Delegator"
+c11 set-title       --surface "\$MY_SURF" "<TICKET-ID> Delegator"
+c11 set-description --surface "\$MY_SURF" "Fast-track delegator for <TICKET-ID>. <one-line scope>."
+
+## Phases (all inline, no sub-agents)
+1. Plan:  lattice status <TICKET-ID> in_planning --actor agent:<id>-planner ; write plan to \$REPO_ROOT/.lattice/plans/<task_uuid>.md ; lattice status <TICKET-ID> planned --actor agent:<id>-planner
+2. Impl:  lattice status <TICKET-ID> in_progress --actor agent:<id>-impl ; git fetch && (rebase if needed); edits + tests; commit
+3. Self-review:  lattice status <TICKET-ID> review --actor agent:<id>-reviewer ; lattice attach <TICKET-ID> --type note --role review --inline "<markdown verdict>" --actor agent:<id>-reviewer
+4. PR: git push -u origin <branch> ; create PR via Forgejo REST or gh ; lattice attach <TICKET-ID> <pr_url> --type reference --title "PR #N" --actor agent:<id>-impl ; lattice status <TICKET-ID> pr_open --actor agent:<id>-impl
+
+Stop after pr_open. Orchestrator merges + completes per auto-merge policy.
+EOF
+
+c11 send --workspace \$WS --surface \$NEW_DELEGATOR_SURF "cd <worktree> && claude --dangerously-skip-permissions --model opus \"Read /tmp/delegator-<ticket>-boot.md and follow the instructions.\""
+c11 send-key --workspace \$WS --surface \$NEW_DELEGATOR_SURF enter
+```
+
+The delegator runs synchronously — no `/loop`. It completes plan → impl → review → PR → stop in one continuous session and reports a final completion comment. The Orchestrator's next tick picks it up at `pr_open` and merges.
+
+### Inline-full boot prompt template (default for medium work)
+
+Same single-session shape as fast-track, but with headless `lattice plan-review` + `lattice code-review` between phases. Fresh-eyes value via the headless reviewer backend, zero new c11 tabs.
+
+```bash
+# Worktree + new-surface as above
+
+cat > /tmp/delegator-<ticket>-boot.md <<EOF
+You are the Delegator for <TICKET-ID>. **Inline-full**: one Claude session wears all hats, with headless lattice reviews between phases.
+
+## Worktree assertion (run FIRST)
+test "\$(pwd)" = "<absolute-worktree-path>" || { echo "WORKTREE MISMATCH"; exit 99; }
+
+## Environment
+export LATTICE_SPAWN_BACKEND=headless    # MUST be set — keeps reviews out of c11 surfaces
+export LATTICE_ROOT=<absolute-repo-root>
+
+## c11 orientation (HARD RULE — runtime-resolve own surface, same as fast-track)
+MY_SURF=\$(c11 identify --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["caller"]["surface_ref"])')
+test -n "\$MY_SURF" || { echo "FATAL"; exit 99; }
+c11 set-agent       --surface "\$MY_SURF" --type claude-code --model claude-opus-4-7
+c11 rename-tab      --surface "\$MY_SURF" "<TICKET-ID> Delegator"
+c11 set-title       --surface "\$MY_SURF" "<TICKET-ID> Delegator"
+c11 set-description --surface "\$MY_SURF" "Inline-full delegator for <TICKET-ID>. <one-line scope>. Headless lattice reviews."
+
+## Phases (all inline; reviews are headless subshells)
+1. Plan:        lattice status <TICKET-ID> in_planning --actor agent:<id>-planner ; write plan to \$REPO_ROOT/.lattice/plans/<task_uuid>.md (absolute path — see HARD RULE on plan-file paths in this file) ; lattice status <TICKET-ID> planned --actor agent:<id>-planner
+2. Plan-Review: (cd \$REPO_ROOT && lattice plan-review <TICKET-ID> --mode single --actor agent:<id>-plan-reviewer)   # HEADLESS via LATTICE_SPAWN_BACKEND=headless ; read artifact ; fold findings into the plan file's '## Plan-Review Cycle 1 Resolutions (AUTHORITATIVE)' amendment block ; restore tab title (lattice CLI sometimes clobbers it)
+3. Impl:        lattice status <TICKET-ID> in_progress --actor agent:<id>-impl ; git fetch && rebase if needed ; edits + tests ; commit
+4. Code-Review: lattice status <TICKET-ID> review --actor agent:<id>-reviewer ; (cd <WORKTREE> && lattice code-review <TICKET-ID> --mode single --base origin/main --actor agent:<id>-reviewer)   # HEADLESS ; restore tab title. If CLI hangs >5–10 min OR returns empty diff, fall back to the own-reviewer pattern (see references/orchestrator.md § Own-reviewer-tab fallback): compute git diff, write review artifact, lattice attach --role review --inline.
+5. Fix (if review surfaces Critical/Major): lattice status <TICKET-ID> in_progress --actor agent:<id>-impl ; edits + tests + commit ; lattice status <TICKET-ID> review --actor agent:<id>-reviewer ; re-run code-review or own-reviewer.
+6. PR: git push ; create PR ; lattice attach <TICKET-ID> <pr_url> --type reference ; lattice status <TICKET-ID> pr_open --actor agent:<id>-impl
+
+Stop after pr_open. Orchestrator merges + completes. Distinct actor IDs per phase keep the audit trail clean.
+
+## Run under /loop (cadence)
+60s tick while you're between phases or waiting on a headless CLI; end the loop on pr_open + completion comment.
+EOF
+
+# Launch — same atomic-cwd-binding shape as fast-track
+c11 send --workspace \$WS --surface \$NEW_DELEGATOR_SURF "cd <worktree> && claude --dangerously-skip-permissions --model opus \"Read /tmp/delegator-<ticket>-boot.md and follow the instructions.\""
+c11 send-key --workspace \$WS --surface \$NEW_DELEGATOR_SURF enter
+```
+
+**Why no sub-agent spawns?** A single Claude session can hold the plan + the diff + the review findings for a 2–5-file change comfortably. Headless `lattice plan-review` / `lattice code-review` provide fresh-eyes value via a *different* agent backend (different prompt, fresh context), which is what the sub-agent spawning was buying — without the c11 PTY pressure, the per-sub-agent `/loop`, or the atomic-cwd footgun. This is the **default for medium work** (Holodeck gate-rerun HOLO-54, HOLO-57; substrate-round fixes; most non-trivial bug fixes). Only escalate to sub-agent-full when no single context window can plausibly hold the whole ticket.
+
+### Sub-agent-full boot prompt template (escalation only)
 
 Per-ticket setup:
 

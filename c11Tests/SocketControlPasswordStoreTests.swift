@@ -638,7 +638,7 @@ final class AgentSkillsOnboardingDefaultOptInTests: XCTestCase {
         let packageDir = URL(fileURLWithPath: "/tmp/source/c11", isDirectory: true)
         let destinationDir = URL(fileURLWithPath: "/tmp/\(target.rawValue)/skills/c11", isDirectory: true)
         return SkillInstallerPackageStatus(
-            package: SkillInstallerPackage(name: "c11", version: "1", sourceDir: packageDir),
+            package: SkillInstallerPackage(name: "c11", version: "1", description: nil, sourceDir: packageDir),
             target: target,
             destinationDir: destinationDir,
             state: state,

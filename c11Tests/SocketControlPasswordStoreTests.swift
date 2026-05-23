@@ -859,6 +859,39 @@ final class AgentSkillsDismissalStoreTests: XCTestCase {
         d.set(true, forKey: AgentSkillsOnboarding.dontAskAgainKey)
         XCTAssertTrue(AgentSkillsOnboarding.hasSilencedState(defaults: d))
     }
+
+    func testUpdateAllPathNeverWritesToDismissalStore() {
+        // "Update all" = every offered row is selected; recording dismissals
+        // with the full selected set adds nothing to the dict. Backs AC #2.
+        let d = makeIsolatedDefaults()
+        let offered = [
+            makeStatus(target: .claude, skillName: "foo", state: .notInstalled, sourceHash: "sha256:foo"),
+            makeStatus(target: .claude, skillName: "bar", state: .installedOutdated, sourceHash: "sha256:bar"),
+        ]
+        let allSelected: Set<String> = [
+            AgentSkillsOnboarding.dismissalKey(for: .claude, skillName: "foo"),
+            AgentSkillsOnboarding.dismissalKey(for: .claude, skillName: "bar"),
+        ]
+        AgentSkillsOnboarding.recordDismissalsForUncheckedRows(
+            offered: offered, selectedKeys: allSelected, defaults: d
+        )
+        XCTAssertNil(d.dictionary(forKey: AgentSkillsOnboarding.dismissalsKey))
+    }
+}
+
+@MainActor
+final class AgentSkillsMaybeLaterTests: XCTestCase {
+    func testMarkDismissedThisLaunchNeverWritesToDismissalStore() {
+        // "Maybe later" + window-close path call markDismissedThisLaunch()
+        // only. The persistent dismissal store must stay untouched (AC #3:
+        // sheet re-fires next launch). Uses a hermetic UserDefaults so the
+        // operator's real `.standard` is unaffected.
+        let d = makeIsolatedDefaults()
+        AgentSkillsOnboarding.markDismissedThisLaunch()
+        XCTAssertNil(d.dictionary(forKey: AgentSkillsOnboarding.dismissalsKey))
+        XCTAssertFalse(d.bool(forKey: AgentSkillsOnboarding.dontAskAgainKey))
+        XCTAssertTrue(AgentSkillsOnboarding.dismissedThisLaunch)
+    }
 }
 
 // MARK: - C11-111: shouldPresent matrix

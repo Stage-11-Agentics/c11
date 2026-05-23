@@ -1033,7 +1033,7 @@ struct AgentSkillsOnboardingSheet: View {
             (.opencode, opencodeOptIn),
         ]
         var selectedKeys: Set<String> = []
-        for (target, selected) in selections where selected {
+        for (target, _) in selections.filter({ $0.1 }) {
             guard let row = model.rows.first(where: { $0.target == target }), row.detected else { continue }
             for status in row.packages where AgentSkillsOnboarding.shouldRowOffer(status) {
                 selectedKeys.insert(AgentSkillsOnboarding.dismissalKey(for: target, skillName: status.package.name))
@@ -1044,7 +1044,7 @@ struct AgentSkillsOnboardingSheet: View {
             offered: offered,
             selectedKeys: selectedKeys
         )
-        for (target, selected) in selections where selected {
+        for (target, _) in selections.filter({ $0.1 }) {
             guard let row = model.rows.first(where: { $0.target == target }), row.detected else { continue }
             model.install(target: target, force: true)
         }

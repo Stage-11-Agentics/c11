@@ -6526,8 +6526,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             NSApp.activate(ignoringOtherApps: true)
             return
         }
+        // Initial size is intentionally tall enough that the C11-111 content
+        // (header + per-target rows × N skills with descriptions + warnings)
+        // never collides with the pre-layout window frame. SwiftUI's
+        // preferredContentSize sync (below) will tighten it to the actual
+        // intrinsic height once the content lays out; until that fires, a
+        // safe initial size avoids the row-collapse seen on first frame.
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 540, height: 390),
+            contentRect: NSRect(x: 0, y: 0, width: 540, height: 820),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
@@ -6538,18 +6544,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let rootView = AgentSkillsOnboardingSheet(onDismiss: { [weak window] in
             window?.close()
         })
-        // NSHostingController sizes itself to the SwiftUI content's intrinsic
-        // size. NSHostingView did not, so the sheet's per-skill sub-rows +
-        // descriptions + warnings (C11-111) collapsed onto the same Y when
-        // they overran the hard-pinned 390pt contentRect. Apply
-        // `fittingSize` after attaching so the window starts at the right
-        // height regardless of how many skills + sub-rows render.
+        // NSHostingController.sizingOptions = .preferredContentSize syncs
+        // the controller's preferredContentSize from SwiftUI's intrinsic
+        // layout on every relayout (macOS 13+). AppKit propagates the
+        // controller's preferredContentSize to the containing window's
+        // contentSize, so the window auto-fits the SwiftUI content height
+        // as the install/celebratory states change row counts. Reading
+        // `view.fittingSize` immediately after assigning the controller
+        // (the previous approach) returned zero because SwiftUI hadn't
+        // laid out yet — the window stayed at the pre-set frame and the
+        // content compressed onto the same Y.
         let hosting = NSHostingController(rootView: rootView)
-        window.contentViewController = hosting
-        let fitting = hosting.view.fittingSize
-        if fitting.height > 0 {
-            window.setContentSize(NSSize(width: max(540, fitting.width), height: fitting.height))
+        if #available(macOS 13.0, *) {
+            hosting.sizingOptions = [.preferredContentSize]
         }
+        window.contentViewController = hosting
         window.center()
         window.makeKeyAndOrderFront(nil)
         agentSkillsOnboardingWindow = window

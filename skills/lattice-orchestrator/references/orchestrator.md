@@ -330,6 +330,27 @@ Two delegators "idle at the same time" with the same shape is the signature of b
 
 Record the chosen mode in `run-state.md`'s wave table so the Orchestrator's tick body sets the right expectations. Mixing modes within a wave is normal.
 
+### Worktree prep (applies to every mode)
+
+Every worktree-creation step in the templates below assumes a one-liner `git worktree add ...`, but in practice the orchestrator also needs to **propagate gitignored secrets** before launching the delegator. The dominant case is `.env`:
+
+```bash
+# Standard worktree create
+git worktree add /path/to/<repo>-worktrees/<ticket-slug> -b <branch> <base>
+
+# If the project has a gitignored .env (most do — secrets, HF tokens, API keys),
+# copy it across. Delegators that run the worker, hit gated HF models,
+# or call third-party APIs need this; without it, impl phases fail
+# with confusing "missing secret" errors mid-tool-call.
+if [ -f /path/to/<repo>/.env ]; then
+  cp /path/to/<repo>/.env /path/to/<repo>-worktrees/<ticket-slug>/.env
+fi
+```
+
+The orchestrator does this once per worktree at dispatch time. The delegator boot prompt's `set -a && source .env && set +a` then succeeds. Validated on the Overtone V1.1 build run (2026-05-23) — every delegator depended on `OVERTONE_HF_TOKEN`; without manual `.env` propagation, OVR-51 / OVR-52 / OVR-39 / OVR-47 impl phases would have stalled on the pyannote model fetch.
+
+For non-`.env` secrets (`~/.netrc`, keychain entries, machine-scoped credentials), follow the same shape: propagate at worktree-create time, not at impl time when the delegator is mid-tool-call.
+
 ### Fast-track boot prompt template
 
 Smallest shape. One session runs plan → impl → self-review → PR inline. Per-phase actor IDs keep the event log honest.
@@ -404,7 +425,7 @@ c11 set-description --surface "\$MY_SURF" "Inline-full delegator for <TICKET-ID>
 1. Plan:        lattice status <TICKET-ID> in_planning --actor agent:<id>-planner ; write plan to \$REPO_ROOT/.lattice/plans/<task_uuid>.md (absolute path — see HARD RULE on plan-file paths in this file) ; lattice status <TICKET-ID> planned --actor agent:<id>-planner
 2. Plan-Review: (cd \$REPO_ROOT && lattice plan-review <TICKET-ID> --mode single --actor agent:<id>-plan-reviewer)   # HEADLESS via LATTICE_SPAWN_BACKEND=headless ; read artifact ; fold findings into the plan file's '## Plan-Review Cycle 1 Resolutions (AUTHORITATIVE)' amendment block ; restore tab title (lattice CLI sometimes clobbers it)
 3. Impl:        lattice status <TICKET-ID> in_progress --actor agent:<id>-impl ; git fetch && rebase if needed ; edits + tests ; commit
-4. Code-Review: lattice status <TICKET-ID> review --actor agent:<id>-reviewer ; (cd <WORKTREE> && lattice code-review <TICKET-ID> --mode single --base origin/main --actor agent:<id>-reviewer)   # HEADLESS ; restore tab title. If CLI hangs >5–10 min OR returns empty diff, fall back to the own-reviewer pattern (see references/orchestrator.md § Own-reviewer-tab fallback): compute git diff, write review artifact, lattice attach --role review --inline.
+4. Code-Review: lattice status <TICKET-ID> review --actor agent:<id>-reviewer ; **MUST wrap with `timeout 600`** — `(cd <WORKTREE> && timeout 600 bash -c "LATTICE_SPAWN_BACKEND=headless lattice code-review <TICKET-ID> --mode single --base origin/main --actor agent:<id>-reviewer")`. **HARD RULE — see § "HARD RULE: `lattice code-review` 600-second timeout → own-reviewer fallback".** On RC=124 (timeout) OR empty artifact OR vacuous review: kill the subprocess and pivot to the own-reviewer fallback immediately, in this same Claude session — do NOT wait for orchestrator nudge. Restore tab title after.
 5. Fix (if review surfaces Critical/Major): lattice status <TICKET-ID> in_progress --actor agent:<id>-impl ; edits + tests + commit ; lattice status <TICKET-ID> review --actor agent:<id>-reviewer ; re-run code-review or own-reviewer.
 6. PR: git push ; create PR ; lattice attach <TICKET-ID> <pr_url> --type reference ; lattice status <TICKET-ID> pr_open --actor agent:<id>-impl
 
@@ -420,6 +441,33 @@ c11 send-key --workspace \$WS --surface \$NEW_DELEGATOR_SURF enter
 ```
 
 **Why no sub-agent spawns?** A single Claude session can hold the plan + the diff + the review findings for a 2–5-file change comfortably. Headless `lattice plan-review` / `lattice code-review` provide fresh-eyes value via a *different* agent backend (different prompt, fresh context), which is what the sub-agent spawning was buying — without the c11 PTY pressure, the per-sub-agent `/loop`, or the atomic-cwd footgun. This is the **default for medium work** (Holodeck gate-rerun HOLO-54, HOLO-57; substrate-round fixes; most non-trivial bug fixes). Only escalate to sub-agent-full when no single context window can plausibly hold the whole ticket.
+
+### Plan-validation phase (when ticket arrives at `planned`)
+
+If a press-ahead dispatch targets a ticket whose status is already `planned` (a planner agent wrote its plan in a previous run, or the Architect pre-planned it during Phase 1–2), the delegator **does not plan from scratch**. The plan represents real work — re-planning is wasteful and overwrites context the operator may have shaped. But blindly executing a pre-existing plan is dangerous if SPEC, dependencies, or sibling tickets have shifted since it was written.
+
+The delegator's first phase becomes **plan-validation** instead of plan. Boot-prompt template for this variant:
+
+```
+## Phase 1 — Plan-validation (replaces "Plan" when status is already `planned`)
+
+- Do NOT bump `lattice status <TICKET-ID> in_planning` unless you actually need to rewrite the plan.
+- Read the existing plan at `$REPO_ROOT/.lattice/plans/<task_uuid>.md`.
+- Read current SPEC.md and any recently-amended sections (the plan may predate amendments).
+- Read the parent branch's code if this is a press-ahead dispatch — the plan may describe a contract that has now shipped.
+- Compare. One of three outcomes:
+  (a) Plan still aligns cleanly → post a single Lattice comment confirming validation
+      (`lattice comment <TICKET-ID> "Plan revalidated against <ref>; no Cycle-1 amendments needed." --actor agent:<id>-planner`),
+      then proceed directly to Phase 3 (Impl).
+  (b) Plan has mechanical drift (module-path rename, function-signature shape) →
+      append a `## N. Plan-Validation Cycle 1 Resolutions (AUTHORITATIVE)` amendment block to the plan file
+      documenting each drift + its fix, then proceed to Phase 3.
+  (c) Plan has architecturally substantial drift (wrong approach, missing requirements) →
+      append a Cycle 1 block, then re-run headless `lattice plan-review` to re-validate,
+      then proceed.
+```
+
+The shape mirrors the regular Plan-Review Triage convention (see § "Plan-Review Triage: amendment-block convention") so the impl phase reads top-to-bottom and the addendum wins on conflict. Validated on the Overtone V1.1 build run (2026-05-23) — OVR-47's 210-line pre-existing plan passed cleanly under (a) despite predating OVR-49's voice-identity amendments and OVR-51's just-shipped module paths, because OVR-51's plan-review had already addressed the cross-cut in its own Cycle 1 Resolutions.
 
 ### Sub-agent-full boot prompt template (escalation only)
 
@@ -456,7 +504,7 @@ Run phases sequentially in YOUR OWN PANE. **Status discipline is a HARD RULE —
   1. Plan — bump \`lattice status <TICKET-ID> in_planning\`. Spawn a plan sub-agent as a NEW TAB on this pane **using the atomic-cwd-binding launch pattern in \`## Spawning a sub-agent\` below — never bare \`c11 send "claude ..."\` without the \`cd <worktree> &&\` prefix.**
   2. Plan-Review — run \`(cd \$REPO_ROOT && lattice plan-review <TICKET-ID> --headless --actor agent:<id>-plan-reviewer)\` as a bash subshell. **HEADLESS — NOT a new c11 surface.** See the HARD RULE below. Triage → Cycle K Resolutions block in the plan file. Bump \`lattice status <TICKET-ID> planned\`.
   3. Implement — BEFORE spawning the impl sub-agent, bump \`lattice status <TICKET-ID> in_progress\` AND scan in-flight PRs for cross-ticket constraints: run \`mcp__forgejo__list_pull_requests --state=open\` (or \`gh pr list --state=open\` for GitHub-hosted projects) and read any PR body that mentions your ticket's BUILDPLAN label or its Lattice short ID. Honor anything flagged "open contract", "lock in before X", or in an "Open contracts" section. If unclear, ask the Orchestrator on its surface (visible in \`agents.md\` / \`run-state.md\`). Then spawn the impl sub-agent as a NEW TAB on this pane **using the atomic-cwd-binding launch pattern in \`## Spawning a sub-agent\` below.**
-  4. Code-Review — bump \`lattice status <TICKET-ID> review\` (new Lattice meaning: "local review is underway, examining the diff before a PR is opened"). Run \`(cd <WORKTREE> && lattice code-review <TICKET-ID> --headless --base <remote>/main --actor agent:<id>-reviewer)\` as a bash subshell. **HEADLESS — NOT a new c11 surface.** See the HARD RULE below. **If \`code-review\` returns an empty diff or vacuous artifact, see "Own-reviewer-tab fallback" below — do NOT abandon the phase.**
+  4. Code-Review — bump \`lattice status <TICKET-ID> review\` (new Lattice meaning: "local review is underway, examining the diff before a PR is opened"). Run \`(cd <WORKTREE> && timeout 600 bash -c "LATTICE_SPAWN_BACKEND=headless lattice code-review <TICKET-ID> --mode single --base <remote>/main --actor agent:<id>-reviewer")\` as a bash subshell. **HEADLESS — NOT a new c11 surface.** **HARD RULE — 600-second timeout; on RC=124 (timeout) OR empty/vacuous artifact, kill the subprocess and pivot to the own-reviewer fallback immediately without waiting for orchestrator nudge.** See § "HARD RULE: \`lattice code-review\` 600-second timeout → own-reviewer fallback" for the full fallback procedure.
   5. Fix — if review found issues, bump status back to \`in_progress\`, spawn a fix sub-agent as a NEW TAB on this pane **using the atomic-cwd-binding launch pattern in \`## Spawning a sub-agent\` below**, then bump back to \`review\` when fix completes. (If you skip the re-bump, the board lies — see HARD RULE on status discipline.)
   6. Open PR — write the PR body, push the branch, then run \`mcp__forgejo__create_pull_request\` (or \`gh pr create\`) AND \`lattice status <TICKET-ID> pr_open\` as PARALLEL calls in the same tool-call batch. Never sequence them. \`pr_open\` is the delegator's terminal state (the new Lattice workflow puts \`pr_open\` between \`review\` and \`done\`; the merger moves the ticket to \`done\`, not the delegator).
 
@@ -585,20 +633,44 @@ If an operator explicitly asks for a new workspace (e.g., "spawn the review in i
 
 **Post-merge cleanup: `/quit` exits the foreground Claude but does NOT reap background subprocesses** (orphaned `lattice code-review` without `--headless`, `tail -f` watchers). Those orphans can keep spawning panes after the merge. Use `c11 close-surface` on the delegator's surface — it kills children too. If a stray pane shows up afterwards titled like `<TICKET> reviewer`, root cause is a missing `--headless` in the delegator's prompt.
 
-## Own-reviewer-tab fallback (when `lattice code-review` returns empty)
+## HARD RULE: `lattice code-review` 600-second timeout → own-reviewer fallback
 
-`lattice code-review --headless --base <remote>/main` invoked from a worktree fails reliably in ways `LATTICE_ROOT=$PWD` does not always fix — the CLI's worktree↔root bridge for code-review is more fragile than for plan-review (LAT-219 fixed plan-review; code-review still drifts). Symptom: empty-diff artifact, vacuous review, or "no commits found". Observed in multiple independent runs; every Wave 2 delegator on the EC v1.2.1 run hit it.
+`lattice code-review --headless --base <remote>/main` invoked from a worktree fails reliably in ways `LATTICE_ROOT=$PWD` does not always fix — the CLI's worktree↔root bridge for code-review is more fragile than for plan-review (LAT-219 fixed plan-review; code-review still drifts). Symptom: empty-diff artifact, vacuous review, "no commits found", or — most commonly — the CLI polls indefinitely without ever producing the artifact. **Promoted to HARD RULE after the Overtone V1.1 build run (2026-05-23) hit this three times in one run (OVR-51 first cycle, OVR-39, OVR-52)**, exceeding the catalog's three-instance escalation threshold. Previously fired on EC v1.2.1 (every Wave-2 delegator) and Substrate Round 2.
+
+**The HARD RULE.** Every delegator (inline-full, sub-agent-full, and any captain or recovery agent that invokes `lattice code-review`) MUST:
+
+1. Set a **600-second wall-clock timer** when invoking `lattice code-review`.
+2. If the timer fires without an artifact appearing, **kill the subprocess immediately** (the bash background or foreground job) and **execute the own-reviewer fallback below without waiting for the orchestrator to nudge**. Do not poll past 600 seconds. Do not ask the orchestrator first.
+3. Also fire the fallback if the CLI returns early with an empty-diff artifact, a vacuous review, or "no commits found".
+
+The previous shape — *"if the CLI hangs >5–10 min, consider falling back"* — was treated as soft by delegators; every observed instance polled indefinitely until orchestrator-nudged. **The threshold is now hard.** Concretely, in the bash subshell:
+
+```bash
+# Time-bounded headless invocation. Kills the subprocess at 600s; agent then pivots.
+timeout 600 bash -c "cd <WORKTREE> && LATTICE_SPAWN_BACKEND=headless \
+  lattice code-review <TICKET-ID> --mode single --base origin/main \
+  --actor agent:<id>-reviewer"
+RC=$?
+# RC=124 => GNU/BSD timeout fired; fall back. RC!=0 also => something else failed; fall back to be safe.
+```
+
+If your shell lacks `timeout(1)` (macOS without GNU coreutils), use `gtimeout` or a background-job + `kill` pattern; the threshold and the pivot are what matter.
 
 **Do NOT abandon the code-review phase. Do NOT spawn the reviewer into a new c11 workspace** (the auto-backend selector will try to, ignore it).
 
-**The fallback:** spawn a custom code-reviewer sub-agent as a NEW TAB on your own pane. Prompt it to:
+### Own-reviewer fallback (executed by the delegator itself, in the same Claude session)
 
-1. Compute the diff itself: `git fetch <remote> && git log <remote>/main..HEAD --stat` plus per-file `git diff <remote>/main..HEAD -- <path>` for each changed file.
-2. Walk the diff, produce an artifact at `notes/.tmp/<TICKET>-codereview-custom.md` with the same shape `lattice code-review` would have produced: Verdict (PASS / PASS-WITH-NITS / FAIL), Critical/Major/Minor/NIT findings, per-finding (file:line, recommendation), end with a one-line summary.
+When the HARD RULE fires:
+
+1. Compute the diff: `git fetch <remote> && git log <remote>/main..HEAD --stat` plus per-file `git diff <remote>/main..HEAD -- <path>` for each changed file.
+2. Walk the diff, produce a review artifact in markdown with the same shape `lattice code-review` would have produced: Verdict (PASS / PASS-WITH-NITS / FAIL), Critical/Major/Minor/NIT findings, per-finding (file:line, recommendation), end with a one-line summary.
 3. Attach via `lattice attach <TICKET-ID> --type note --role review --inline "<markdown contents>" --actor agent:<id>-reviewer`. The `--role review` artifact satisfies the default `done` completion policy — the orchestrator can't tell the difference from a CLI-generated review.
-4. Post a completion comment on the ticket noting "code-review (own-reviewer-tab fallback, CLI worktree↔root bridge failed)" so the closeout audit can count how often the upstream bug fires.
+4. Post a completion comment on the ticket noting `"code-review (own-reviewer fallback, lattice code-review CLI hung at 600s)"` so the closeout audit can count how often the upstream bug fires.
+5. Then proceed to phase 5 (Fix) per the normal arc.
 
-Then proceed to phase 5 (Fix) per the normal arc. The fallback is the documented behavior, not an exception — log it as "fallback used" in the run-state decision log so the operator and Result Validator can quantify the CLI footgun.
+**The fallback is the documented behavior, not an exception** — log it as "fallback used" in the run-state decision log so the operator and Result Validator can quantify the CLI footgun.
+
+The **right cure is fixing the Lattice CLI's worktree↔root bridge for `code-review`** (LAT-219 fixed plan-review; code-review needs the same treatment). Until that ships, the timeout + fallback is mandatory.
 
 ## Plan-Review Triage: amendment-block convention
 

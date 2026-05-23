@@ -681,50 +681,60 @@ struct CreateWorkspaceSheet: View {
     @ViewBuilder
     private func blueprintCard(_ entry: BlueprintEntry, showLetters: Bool) -> some View {
         let isSelected = entry.id == selectionId
-        Button {
-            selectionId = entry.id
-            CreateWorkspaceLastLayout.save(entry.id)
-        } label: {
-            VStack(alignment: .center, spacing: 10) {
-                if showLetters, let topology = entry.shape.letterTopology {
-                    LetterCellIcon(topology: topology)
-                        .frame(width: 132, height: 78)
-                } else {
-                    OutlineShapeIcon(shape: entry.shape)
-                        .frame(width: 132, height: 78)
-                }
-                Text(entry.label)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(BrandColors.whiteSwiftUI)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                if let description = entry.description {
-                    Text(description)
-                        .font(.system(size: 11))
-                        .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.55))
-                        .multilineTextAlignment(.center)
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
+        VStack(alignment: .center, spacing: 10) {
+            if showLetters, let topology = entry.shape.letterTopology {
+                LetterCellIcon(topology: topology)
+                    .frame(width: 132, height: 78)
+            } else {
+                OutlineShapeIcon(shape: entry.shape)
+                    .frame(width: 132, height: 78)
             }
-            .frame(width: 176, height: 168, alignment: .top)
-            .padding(.vertical, 14)
-            .padding(.horizontal, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(isSelected ? BrandColors.goldFaintSwiftUI : BrandColors.surface2SwiftUI)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(
-                        isSelected ? BrandColors.goldSwiftUI : BrandColors.ruleSwiftUI,
-                        lineWidth: isSelected ? 1.5 : 0.5
-                    )
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 10))
+            Text(entry.label)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(BrandColors.whiteSwiftUI)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if let description = entry.description {
+                Text(description)
+                    .font(.system(size: 11))
+                    .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.55))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.plain)
+        .frame(width: 176, height: 168, alignment: .top)
+        .padding(.vertical, 14)
+        .padding(.horizontal, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isSelected ? BrandColors.goldFaintSwiftUI : BrandColors.surface2SwiftUI)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(
+                    isSelected ? BrandColors.goldSwiftUI : BrandColors.ruleSwiftUI,
+                    lineWidth: isSelected ? 1.5 : 0.5
+                )
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 10))
+        // Mirror the RecentRow gesture composition: single-click selects,
+        // double-click selects and submits. A SwiftUI Button swallows the
+        // second click, so the card is a plain View with composed taps.
+        .gesture(
+            TapGesture(count: 2).onEnded {
+                selectionId = entry.id
+                CreateWorkspaceLastLayout.save(entry.id)
+                submit()
+            }
+        )
+        .simultaneousGesture(
+            TapGesture(count: 1).onEnded {
+                selectionId = entry.id
+                CreateWorkspaceLastLayout.save(entry.id)
+            }
+        )
     }
 
     private var starterEntries: [BlueprintEntry] {

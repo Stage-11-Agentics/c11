@@ -2291,12 +2291,6 @@ struct ContentView: View {
         )
     }
 
-    private var titlebarVersionLabel: String? {
-        guard let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
-              !v.isEmpty else { return nil }
-        return "c11 v\(v)"
-    }
-
     private var customTitlebar: some View {
         ZStack {
             // Enable window dragging from the titlebar strip without making the entire content
@@ -2324,13 +2318,6 @@ struct ContentView: View {
 
                 Spacer()
 
-                if let versionLabel = titlebarVersionLabel {
-                    Text(versionLabel)
-                        .font(.system(size: 11, weight: .regular).monospacedDigit())
-                        .foregroundColor(fakeTitlebarTextColor.opacity(0.5))
-                        .lineLimit(1)
-                        .allowsHitTesting(false)
-                }
             }
             // HStack fills the titlebar height and the text centers within it.
             // Dropping the explicit frame(height: 28) + .padding(.top, 2) (which

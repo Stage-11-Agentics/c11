@@ -10835,6 +10835,16 @@ extension Workspace: BonsplitDelegate {
                     // If the tab disappeared while we were scheduling, do nothing.
                     guard self.panelIdFromSurfaceId(tabId) != nil else { return }
 
+                    // C11-117: clicking X on a background pane-tab anchors the
+                    // confirm overlay on a panel that isn't on-screen (the pane
+                    // only renders the selected tab's panel), so the operator
+                    // doesn't see the dialog until they manually click the tab.
+                    // Bring the tab to the front first so the overlay mounts
+                    // where the operator is looking.
+                    if self.bonsplitController.selectedTab(inPane: pane)?.id != tabId {
+                        self.bonsplitController.selectTab(tabId)
+                    }
+
                     let confirmed = await self.confirmClosePanel(for: tabId)
                     guard confirmed else { return }
 

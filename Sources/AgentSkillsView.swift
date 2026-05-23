@@ -1515,12 +1515,20 @@ enum AgentSkillsOnboarding {
     ///    sheet is offered.
     @MainActor static func shouldPresent(
         home: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true),
+        sourceDir: URL? = nil,
         defaults: UserDefaults = .standard,
         fileManager: FileManager = .default
     ) -> Bool {
         if defaults.bool(forKey: dontAskAgainKey) { return false }
         if _dismissedThisLaunch { return false }
-        guard let source = SkillInstaller.defaultSourceURL(executableURL: Bundle.main.executableURL) else { return false }
+        let resolvedSource: URL
+        if let sourceDir {
+            resolvedSource = sourceDir
+        } else {
+            guard let s = SkillInstaller.defaultSourceURL(executableURL: Bundle.main.executableURL) else { return false }
+            resolvedSource = s
+        }
+        let source = resolvedSource
         migrateLegacyDismissalsIfNeeded(home: home, sourceDir: source, fileManager: fileManager, defaults: defaults)
         let dismissals = loadDismissals(defaults: defaults)
         for target in SkillInstallerTarget.allCases where target.isDetected(home: home, fileManager: fileManager) {

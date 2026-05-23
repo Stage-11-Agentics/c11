@@ -881,12 +881,22 @@ final class AgentSkillsDismissalStoreTests: XCTestCase {
 
 @MainActor
 final class AgentSkillsMaybeLaterTests: XCTestCase {
+    override func tearDown() {
+        // This test class is the only one that intentionally flips the
+        // process-wide `_dismissedThisLaunch` static. Reset on teardown so
+        // sibling test classes (especially AgentSkillsShouldPresentTests)
+        // see a clean flag regardless of XCTest ordering.
+        AgentSkillsOnboarding._resetDismissedThisLaunchForTests()
+        super.tearDown()
+    }
+
     func testMarkDismissedThisLaunchNeverWritesToDismissalStore() {
         // "Maybe later" + window-close path call markDismissedThisLaunch()
         // only. The persistent dismissal store must stay untouched (AC #3:
         // sheet re-fires next launch). Uses a hermetic UserDefaults so the
         // operator's real `.standard` is unaffected.
         let d = makeIsolatedDefaults()
+        AgentSkillsOnboarding._resetDismissedThisLaunchForTests()
         AgentSkillsOnboarding.markDismissedThisLaunch()
         XCTAssertNil(d.dictionary(forKey: AgentSkillsOnboarding.dismissalsKey))
         XCTAssertFalse(d.bool(forKey: AgentSkillsOnboarding.dontAskAgainKey))
@@ -920,11 +930,15 @@ private struct SkillsHarness {
 
 @MainActor
 final class AgentSkillsShouldPresentTests: XCTestCase {
-    // No test in this class calls `markDismissedThisLaunch`, so the
-    // shared in-memory flag stays false across cases without explicit
-    // reset. Production exposes the flag intentionally one-way (it's
-    // meant to survive sheet-close until app relaunch); we don't add a
-    // test-only reset hook just to satisfy "tearDown looks empty."
+    override func setUp() {
+        super.setUp()
+        // Other test classes in this process (notably AgentSkillsMaybeLaterTests)
+        // intentionally flip the process-wide `_dismissedThisLaunch` static.
+        // Production never clears it mid-launch by design; tests reset it via
+        // the underscore-prefixed test hook so XCTest's nondeterministic class
+        // ordering can't make these cases racy.
+        AgentSkillsOnboarding._resetDismissedThisLaunchForTests()
+    }
 
     func testDontAskAgainBeatsDriftedContent() throws {
         let h = try makeHarness(skills: ["foo": "v1-content"])

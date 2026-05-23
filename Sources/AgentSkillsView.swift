@@ -1376,6 +1376,15 @@ enum AgentSkillsOnboarding {
         _dismissedThisLaunch
     }
 
+    /// Test-only reset hook for the per-launch dismissal flag. Production
+    /// code never clears the flag mid-launch — that's the entire point of
+    /// "Maybe later" surviving until the next process start. Tests need to
+    /// reset it between cases to keep the process-wide static from
+    /// polluting unrelated tests. Don't call this from app code.
+    @MainActor static func _resetDismissedThisLaunchForTests() {
+        _dismissedThisLaunch = false
+    }
+
     static func defaultOptIns(for rows: [AgentSkillsModel.TargetRow]) -> [SkillInstallerTarget: Bool] {
         var result = Dictionary(uniqueKeysWithValues: SkillInstallerTarget.allCases.map { ($0, false) })
         for row in rows {

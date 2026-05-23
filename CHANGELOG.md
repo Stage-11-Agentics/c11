@@ -6,6 +6,38 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-05-22
+
+Feature release. Headline: **state-aware skill install/update** — the Agent Skills onboarding sheet now keeps a per-(target, skill) dismissal store keyed against the bundled skill's content hash, so a new c11 release that updates a skill's body automatically re-surfaces the affected row instead of staying silenced forever (the v0.49.0 silence-flag bug, fixed for upgraders via a one-shot migration). Alongside it: the New Workspace dialog gets a recents-as-panel redesign with sort and pin, blueprint icons gain letter-labeled cells, the Lattice Orchestrator workflow ships as a first-class installable c11 skill, the workspace titlebar surfaces the running version, and `$C11_DEFAULT_AGENT_LAUNCH` stops smuggling the operator's seed prompt into sub-agent launches.
+
+### Added
+
+- **State-aware skill install/update flow.** Replaces v0.47.0's global `cmuxAgentSkillsOnboardingShown` silence flag (which short-circuited `shouldPresent` before the content-drift check could fire) with a per-(target, skill) dismissed-against-hash store. A row is suppressed only while its stored bundled hash matches the current one — when a new c11 release ships revised skill content, affected rows re-surface automatically. A one-shot migration of the legacy flag pre-populates dismissals for rows already `.installedCurrent`, so upgraders from 0.49.0 actually get the fix. Independent "Don't ask again" key (cleared via Help → "Re-enable agent skills install prompts") is the only flag that honors a hard opt-out regardless of content drift. ([#203](https://github.com/Stage-11-Agentics/c11/pull/203))
+- **Per-skill descriptions and Reveal in Finder on every row of the install sheet.** Description is pulled from the skill's SKILL.md YAML frontmatter; the per-row "Reveal in Finder" affordance jumps straight to the on-disk skill bundle for inspection. ([#203](https://github.com/Stage-11-Agentics/c11/pull/203))
+- **"Update all" is the default primary action on the install sheet.** Flips to "Update selected" the moment the operator narrows the set. Rows whose local file has drifted from the bundled copy carry an explicit "Local edits will be overwritten" warning — uncheck before clicking to preserve. Both actions pass `force: true` so `.installedNoManifest`, `.schemaMismatch`, and the local-edits drift sub-case all resolve in one click. ([#203](https://github.com/Stage-11-Agentics/c11/pull/203))
+- **Celebratory all-current state when the install sheet is opened manually and nothing needs install.** Friendly header, "Done" primary button, optional "Refresh all" affordance. The Help → "Re-enable agent skills install prompts" entry only appears when the operator has actually silenced something. ([#203](https://github.com/Stage-11-Agentics/c11/pull/203))
+- **Lattice Orchestrator workflow ships as an installable c11 skill.** Lives at `skills/lattice-orchestrator/`, registered in `skills/MANIFEST.json` so it appears alongside c11, c11-browser, c11-markdown, and c11-debug-windows in the Agent Skills install UI. Includes a Preflight section that verifies the substrate (`lattice` on PATH, git repo, concurrent agent surfaces reachable) before the workflow runs, catching missing deps up front instead of mid-Phase-2. ([a27953eac](https://github.com/Stage-11-Agentics/c11/commit/a27953eac))
+- **New-workspace sheet redesign: recents-as-panel.** Recents are now a first-class vertical panel inside the base-directory block — project name, full path, last-opened relative time, open count, and a pin star per row. Sort toggle (Most recent / Most opened) in the footer. Click selects the row, double-click or Return opens immediately with the last-used layout. Arrow ↑/↓ navigate when focus is not in an input. Drag a folder from Finder onto the block to set the base directory. Empty state shows a dashed plus icon with an invitation to browse or drag. Underlying store migrated from the legacy `[String]` UserDefaults key to a `RecentDirectory { path, lastOpenedAt, openCount, pinned }` record; hard cap raised from 8 to 50. ([#201](https://github.com/Stage-11-Agentics/c11/pull/201))
+- **Letter-labeled blueprint cells in a 2×3 grid on the New Workspace sheet.** The blueprint icons now carry single-letter labels and live in a compact 2×3 layout so the picker reads as a deliberate grid rather than a horizontal scroll. ([#201](https://github.com/Stage-11-Agentics/c11/pull/201))
+- **Workspace titlebar shows `c11 v<version>` on the right.** The trailing region of every workspace's custom titlebar surfaces the running build's version, so it's obvious at a glance which c11 a given window is from. ([21ea94b51](https://github.com/Stage-11-Agentics/c11/commit/21ea94b51))
+
+### Changed
+
+- **Lattice Orchestrator skill: three workflow modes per ticket.** The skill now formally enumerates fast-track (inline, no headless reviews — clear root cause, single-file or config-tweak work), inline-full (default for medium work — single delegator session with headless `lattice plan-review` + `lattice code-review` between phases), and sub-agent-full (escalation only — full planner/impl/fix sub-agent dance, reserved for genuinely enormous tickets). Selection criteria live in the skill so the orchestrator picks the right mode per ticket instead of defaulting to sub-agents for every piece of work. ([#204](https://github.com/Stage-11-Agentics/c11/pull/204))
+- **Lattice Orchestrator skill: "build for debuggability" principle.** The Architect now propagates a structured-logs + programmatic-access + legible-failures principle into each project's CLAUDE.md (Step 1.5), so every delegator on every future run starts with that bias instead of having to be told. ([1ff6e07aa](https://github.com/Stage-11-Agentics/c11/commit/1ff6e07aa))
+
+### Fixed
+
+- **`$C11_DEFAULT_AGENT_LAUNCH` no longer concatenates the operator's seed prompt onto the launcher.** The exported value used to expand to `claude --dangerously-skip-permissions 'seed prompt'`, which silently broke the documented sub-agent launch pattern: `c11 send "cd /path && $C11_DEFAULT_AGENT_LAUNCH \"Read /tmp/bootstrap.md...\""` produced a claude command with two positional prompts, and claude keeps only the first — headless orchestrators were shipping the operator's seed instead of the bootstrap. The env var now exports the bare launcher; the AppKit A-button launch path continues to bake the seed in via `ResolvedAgentLaunch.command`, but the two consumers now diverge cleanly. Sibling `$C11_DEFAULT_AGENT_SEED_PROMPT` carries the seed for callers that want to opt-in. ([#202](https://github.com/Stage-11-Agentics/c11/pull/202))
+
+### Thanks to 1 contributor!
+
+- [@BenevolentFutures](https://github.com/BenevolentFutures)
+
+### Built and shipped by
+
+Stage 11 Agentics. Operator:agent, fused.
+
 ## [0.49.3] - 2026-05-22
 
 Single-fix patch release: offscreen helper surfaces created via `c11 new-surface --no-focus` now actually start a PTY, instead of silently producing a zombie surface that swallows every `c11 send` byte.

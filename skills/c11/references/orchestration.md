@@ -209,6 +209,12 @@ The claude PATH wrapper at `Resources/bin/claude` is a **grandfathered, Claude C
 - **Use `codex --yolo`, not `codex exec`.** `codex exec` is headless and non-interactive, appropriate only for background jobs whose output will be read after completion. For a visible c11 surface where the operator should be able to watch or take over, `codex --yolo` is the right invocation.
 - **No PATH wrapper.** codex does not get a c11 wrapper. The sub-agent self-reports sidebar status by calling `c11 set-status` / `c11 set-metadata` from its own lifecycle, following instructions in the c11 skill it loads at session start.
 
+### grok
+
+- **Use `grok --always-approve`.** Grok Build's auto-approve flag (parallel to claude's `--dangerously-skip-permissions` and codex's `--yolo`). TUI alias is `/yolo`. Headless mode is `grok agent` or `grok -p`; do not use either for a visible c11 surface.
+- **Auth gotcha.** OIDC-acquired tokens (`grok login` browser flow) currently 403 at the chat endpoint for non-Heavy SuperGrok tiers. Use an `XAI_API_KEY` from console.x.ai instead; it bypasses the Heavy-only gate.
+- **No PATH wrapper.** Status comes from skill-driven self-reporting, same as codex/opencode/kimi.
+
 ### opencode, kimi, others
 
 - **No PATH wrapper.** Like codex, status comes from skill-driven self-reporting. If an agent hasn't been taught to self-report, the sidebar won't show status for it; that is expected, not a bug.

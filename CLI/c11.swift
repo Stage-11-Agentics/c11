@@ -10925,7 +10925,7 @@ struct CMUXCLI {
 
         case "set":
             guard commandArgs.count >= 2 else {
-                let valid = ["claude-code", "codex", "kimi", "opencode", "custom"].joined(separator: ", ")
+                let valid = ["claude-code", "codex", "grok", "kimi", "opencode", "custom"].joined(separator: ", ")
                 throw CLIError(message: "default-agent set requires <type>. Valid: \(valid)")
             }
             let response = try sendV1Command("default_agent set \(commandArgs[1])", client: client)

@@ -30,6 +30,12 @@ final class DefaultAgentConfigTests: XCTestCase {
         XCTAssertEqual(entry.initialPrompt, "you are operating inside a c11 workspace. load the skill.")
     }
 
+    func testFactoryGrokCommandIncludesAlwaysApprove() {
+        let entry = AgentConfig.factory(for: .grok)
+        XCTAssertEqual(entry.command, "grok --always-approve")
+        XCTAssertEqual(entry.initialPrompt, "you are operating inside a c11 workspace. load the skill.")
+    }
+
     func testFactoryCustomHasEmptyDefaults() {
         let entry = AgentConfig.factory(for: .custom)
         XCTAssertEqual(entry.command, "")

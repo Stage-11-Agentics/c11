@@ -122,6 +122,8 @@ enum AgentChipResolver {
             return "AgentIcons/claude-code"
         case "codex":
             return "AgentIcons/codex"
+        case "grok":
+            return "AgentIcons/grok"
         case "kimi":
             return "AgentIcons/kimi"
         case "opencode":
@@ -141,6 +143,7 @@ enum AgentChipResolver {
         switch terminalType {
         case "claude-code":  return "sparkles"
         case "codex":        return "chevron.left.forwardslash.chevron.right"
+        case "grok":         return "bolt.fill"
         case "kimi":         return "moon.stars"
         case "opencode":     return "curlybraces"
         case "shell":        return "terminal.fill"

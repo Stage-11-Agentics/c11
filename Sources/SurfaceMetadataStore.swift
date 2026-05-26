@@ -33,7 +33,7 @@ public enum MetadataKey {
     ]
 
     public static let canonicalTerminalTypes: Set<String> = [
-        "claude-code", "codex", "kimi", "opencode", "shell", "unknown"
+        "claude-code", "codex", "grok", "kimi", "opencode", "shell", "unknown"
     ]
 }
 

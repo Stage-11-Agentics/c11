@@ -6,6 +6,7 @@ import Foundation
 enum AgentType: String, Codable, CaseIterable, Identifiable {
     case claudeCode = "claude-code"
     case codex
+    case grok
     case kimi
     case opencode
     case custom
@@ -20,6 +21,8 @@ enum AgentType: String, Codable, CaseIterable, Identifiable {
             return String(localized: "agentType.claudeCode", defaultValue: "Claude Code")
         case .codex:
             return String(localized: "agentType.codex", defaultValue: "Codex")
+        case .grok:
+            return String(localized: "agentType.grok", defaultValue: "Grok Build")
         case .kimi:
             return String(localized: "agentType.kimi", defaultValue: "Kimi")
         case .opencode:
@@ -36,6 +39,7 @@ enum AgentType: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .claudeCode: return "claude --dangerously-skip-permissions"
         case .codex:      return "codex --yolo"
+        case .grok:       return "grok --always-approve"
         case .kimi:       return "kimi"
         case .opencode:   return "opencode run --dangerously-skip-permissions"
         case .custom:     return ""

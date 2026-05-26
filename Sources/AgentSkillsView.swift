@@ -561,6 +561,7 @@ struct AgentSkillsOnboardingSheet: View {
 
     @State private var claudeOptIn: Bool = false
     @State private var codexOptIn: Bool = false
+    @State private var grokOptIn: Bool = false
     @State private var kimiOptIn: Bool = false
     @State private var opencodeOptIn: Bool = false
     @State private var initializedDefaultOptIns: Bool = false
@@ -607,7 +608,7 @@ struct AgentSkillsOnboardingSheet: View {
     }
 
     private var anySelected: Bool {
-        initializedDefaultOptIns && (claudeOptIn || codexOptIn || kimiOptIn || opencodeOptIn)
+        initializedDefaultOptIns && (claudeOptIn || codexOptIn || grokOptIn || kimiOptIn || opencodeOptIn)
     }
 
     private var hasActionNeeded: Bool {
@@ -909,6 +910,7 @@ struct AgentSkillsOnboardingSheet: View {
         switch target {
         case .claude: return $claudeOptIn
         case .codex: return $codexOptIn
+        case .grok: return $grokOptIn
         case .kimi: return $kimiOptIn
         case .opencode: return $opencodeOptIn
         }
@@ -918,6 +920,7 @@ struct AgentSkillsOnboardingSheet: View {
         let selections: [(SkillInstallerTarget, Bool)] = [
             (.claude, claudeOptIn),
             (.codex, codexOptIn),
+            (.grok, grokOptIn),
             (.kimi, kimiOptIn),
             (.opencode, opencodeOptIn),
         ]
@@ -986,6 +989,7 @@ struct AgentSkillsOnboardingSheet: View {
         let defaults = AgentSkillsOnboarding.defaultOptIns(for: rows)
         claudeOptIn = defaults[.claude] ?? false
         codexOptIn = defaults[.codex] ?? false
+        grokOptIn = defaults[.grok] ?? false
         kimiOptIn = defaults[.kimi] ?? false
         opencodeOptIn = defaults[.opencode] ?? false
     }

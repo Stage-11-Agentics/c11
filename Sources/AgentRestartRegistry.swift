@@ -145,7 +145,8 @@ struct AgentRestartRegistry: Sendable {
     ///
     /// Codex uses `--last` best-effort to resume the most recent session
     /// globally. Opencode and kimi have no verified resume flag and launch
-    /// fresh — best-effort is preferable to a broken flag.
+    /// fresh — best-effort is preferable to a broken flag. Grok supports
+    /// `--resume` without an id to attach to the most recent session.
     static let phase1: AgentRestartRegistry = .init(name: "phase1", rows: [
         Row(terminalType: "claude-code") { sessionId, metadata in
             guard let raw = sessionId?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -172,6 +173,11 @@ struct AgentRestartRegistry: Sendable {
             // codex resume --last resumes the most recent codex session globally.
             // Best-effort: may not match the exact session in the snapshot.
             "codex resume --last\n"
+        },
+        Row(terminalType: "grok") { _, _ in
+            // grok --resume (no id) attaches to the most recent session.
+            // Best-effort: may not match the exact session in the snapshot.
+            "grok --always-approve --resume\n"
         },
         Row(terminalType: "opencode") { _, _ in
             // no stable resume flag known; launches fresh.

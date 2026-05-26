@@ -110,7 +110,7 @@ c11 set-agent --type claude-code --model claude-opus-4-7
 c11 set-agent --type codex --task lat-412
 ```
 
-Common types: `claude-code`, `codex`, `kimi`, `opencode`. Any kebab-case string is accepted. Inside Claude Code, `claude.session_id` is populated automatically by the wrapper.
+Common types: `claude-code`, `codex`, `grok`, `kimi`, `opencode`. Any kebab-case string is accepted. Inside Claude Code, `claude.session_id` is populated automatically by the wrapper.
 
 ## Targeting
 
@@ -387,7 +387,7 @@ Treat `flash_state` as a forward-compatible enum — future c11 versions may add
 
 When you spawn a sub-agent, give it its own c11 surface (`c11 new-split` or `c11 new-pane`) and launch the agent inside that surface. The operator gets full observability through c11 (sidebar status, title and description, screen content), and the sub-agent runs as a full-fledged interactive instance instead of a headless detached process.
 
-**Use `c11 default-agent launch --in-surface <ref>` to do the launch.** It is the canonical programmatic path: c11 owns the per-TUI prompt-delivery contract (claude-code positional, post-ready sendText for codex/opencode/kimi), so the same call works regardless of which agent the operator has configured. No shell interpolation, no per-TUI branching in caller code.
+**Use `c11 default-agent launch --in-surface <ref>` to do the launch.** It is the canonical programmatic path: c11 owns the per-TUI prompt-delivery contract (claude-code positional, post-ready sendText for codex/grok/opencode/kimi), so the same call works regardless of which agent the operator has configured. No shell interpolation, no per-TUI branching in caller code.
 
 ```bash
 cat > /tmp/lat-xxx-prompt.md <<'EOF'

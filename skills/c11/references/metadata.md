@@ -30,7 +30,7 @@ These keys have a defined shape and render in the sidebar or title bar. Any writ
 | `task` | string | ≤ 128 chars | sidebar: monospace tag |
 | `model` | string | kebab-case, ≤ 64 chars | sidebar chip |
 | `progress` | number | 0.0 – 1.0 | sidebar: progress bar |
-| `terminal_type` | string | kebab-case, ≤ 32 chars | sidebar chip. Canonical values: `claude-code`, `codex`, `kimi`, `opencode`, `shell`, `unknown`. Open-ended. |
+| `terminal_type` | string | kebab-case, ≤ 32 chars | sidebar chip. Canonical values: `claude-code`, `codex`, `grok`, `kimi`, `opencode`, `shell`, `unknown`. Open-ended. |
 | `title` | string | plain text, ≤ 256 chars | title bar + sidebar tab label (truncated) |
 | `description` | string | Markdown subset (bold/italic, inline `code`, lists, headings, blockquotes, links, rules — no images, fenced code, or tables), ≤ 2048 chars | title bar expanded region |
 | `worktree` | string | ≤ 128 chars (basename) | sidebar chip with colored-dot prefix. Only rendered when the surface's cwd is inside a *linked* git worktree (`git worktree add ...`). Color is a stable hash of the absolute worktree path. **Derived** — written by c11 runtime, not by agents. |

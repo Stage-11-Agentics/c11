@@ -223,6 +223,8 @@ final class AgentDetector: @unchecked Sendable {
             return "claude-code"
         case "codex", "codex-cli":
             return "codex"
+        case "grok", "grok-cli", "grok-pager":
+            return "grok"
         case "kimi", "kimi-cli":
             return "kimi"
         case "opencode", "opencode-cli":

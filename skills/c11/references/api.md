@@ -53,7 +53,7 @@ Most commands default to the caller's context via env vars — no flags needed w
 | `CMUX_SOCKET_PATH` | Override socket path (default `/tmp/cmux.sock`; auto-discovers tagged/debug sockets) |
 | `CMUX_SOCKET_PASSWORD` | Socket auth password (if set in Settings) |
 | `CMUX_SHELL_INTEGRATION` | Set to `1` in c11 terminals — use to detect you're inside c11 (also exported as `C11_SHELL_INTEGRATION=1`) |
-| `CMUX_AGENT_TYPE` | Declared agent TUI type (`claude-code`, `codex`, `kimi`, `opencode`, kebab-case custom); read at surface start |
+| `CMUX_AGENT_TYPE` | Declared agent TUI type (`claude-code`, `codex`, `grok`, `kimi`, `opencode`, kebab-case custom); read at surface start |
 | `CMUX_AGENT_MODEL` | Declared agent model identifier |
 | `CMUX_AGENT_TASK` | Declared agent task ID |
 
@@ -174,7 +174,7 @@ c11 set-agent --type codex --task lat-412
 c11 set-agent --type opencode --model <model-id>
 ```
 
-- `--type` accepts canonical values (`claude-code`, `codex`, `kimi`, `opencode`) and any kebab-case custom value.
+- `--type` accepts canonical values (`claude-code`, `codex`, `grok`, `kimi`, `opencode`) and any kebab-case custom value.
 - Writes land as `source: declare` in the M2 metadata store, overriding heuristic auto-detection but not user-explicit writes.
 - Environment declaration: `CMUX_AGENT_TYPE`, `CMUX_AGENT_MODEL`, `CMUX_AGENT_TASK` in the surface's startup env are read once at surface-child-process start. `C11_*` variants are the primary names going forward; `CMUX_*` still works.
 - Clear with `c11 clear-metadata --key terminal_type` (no `c11 unset-agent`).

@@ -869,6 +869,7 @@ struct BrowserPanelView: View {
                     browserImportHintToolbarChip
                 }
                 browserProfileButton
+                openInExternalBrowserButton
                 browserThemeModeButton
                 developerToolsButton
             }
@@ -1002,6 +1003,34 @@ struct BrowserPanelView: View {
             )
         )
         .accessibilityIdentifier("BrowserProfileButton")
+    }
+
+    private var canPopOutCurrentURL: Bool {
+        guard let url = panel.currentURL else { return false }
+        let scheme = url.scheme?.lowercased() ?? ""
+        if scheme.isEmpty || scheme == "about" { return false }
+        return true
+    }
+
+    private var openInExternalBrowserButton: some View {
+        Button(action: {
+            guard let url = panel.currentURL, canPopOutCurrentURL else { return }
+            NSWorkspace.shared.open(url)
+        }) {
+            Image(systemName: "arrow.up.right.square")
+                .symbolRenderingMode(.monochrome)
+                .cmuxFlatSymbolColorRendering()
+                .font(.system(size: devToolsButtonIconSize, weight: .medium))
+                .foregroundStyle(devToolsColorOption.color)
+                .frame(width: addressBarButtonSize, height: addressBarButtonSize, alignment: .center)
+        }
+        .buttonStyle(OmnibarAddressButtonStyle())
+        .frame(width: addressBarButtonSize, height: addressBarButtonSize, alignment: .center)
+        .disabled(!canPopOutCurrentURL)
+        .opacity(canPopOutCurrentURL ? 1.0 : 0.4)
+        .safeHelp(String(localized: "browser.openExternal.help", defaultValue: "Open in Default Browser"))
+        .accessibilityLabel(String(localized: "browser.openExternal.accessibilityLabel", defaultValue: "Open in default browser"))
+        .accessibilityIdentifier("BrowserOpenExternalButton")
     }
 
     private var browserThemeModeButton: some View {

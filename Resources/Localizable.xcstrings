@@ -10270,6 +10270,28 @@
         }
       }
     },
+    "browser.openExternal.accessibilityLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open in default browser"
+          }
+        }
+      }
+    },
+    "browser.openExternal.help": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open in Default Browser"
+          }
+        }
+      }
+    },
     "browser.openInDefaultBrowser": {
       "extractionState": "manual",
       "localizations": {

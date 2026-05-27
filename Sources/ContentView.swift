@@ -9632,7 +9632,7 @@ private struct SidebarFooterButtons: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SidebarJumpToUnreadButton()
+            SidebarWaitingAgentCluster()
             HStack(spacing: 4) {
                 SidebarHelpMenuButton(onSendFeedback: onSendFeedback)
                 UpdatePill(model: updateViewModel)
@@ -10577,90 +10577,222 @@ private struct SidebarHelpMenuButton: View {
     }
 }
 
-private struct SidebarJumpToUnreadButton: View {
+// MARK: - Waiting Agent + Workspace Nav Cluster
+
+private struct SidebarWaitingAgentCluster: View {
     @EnvironmentObject private var notificationStore: TerminalNotificationStore
+    @EnvironmentObject private var tabManager: TabManager
 
     private var display: StatusBarButtonDisplay {
         StatusBarButtonDisplay(unreadCount: notificationStore.unreadCount)
     }
 
-    private var label: String {
-        String(
-            localized: "statusBar.nextNotification.title",
-            defaultValue: "Next Notification"
-        )
+    private var isFirstWorkspace: Bool {
+        guard let currentId = tabManager.selectedTabId,
+              let idx = tabManager.tabs.firstIndex(where: { $0.id == currentId }) else { return true }
+        return idx == 0
     }
 
-    private var accessibilityLabel: String {
-        String(
-            localized: "statusBar.jumpToUnread.accessibility",
-            defaultValue: "Jump to next unread notification"
-        )
-    }
-
-    private var shortcutText: String {
-        KeyboardShortcutSettings.shortcut(for: .jumpToUnread).displayString
+    private var isLastWorkspace: Bool {
+        guard let currentId = tabManager.selectedTabId,
+              let idx = tabManager.tabs.firstIndex(where: { $0.id == currentId }) else { return true }
+        return idx == tabManager.tabs.count - 1
     }
 
     var body: some View {
-        let display = self.display
-        return Button(action: jump) {
-            HStack(spacing: 6) {
-                Text(label)
-                    .font(.system(size: 11, weight: .semibold))
-                    .lineLimit(1)
-
-                if let badge = display.badgeText {
-                    Text(badge)
-                        .font(.system(size: 9, weight: .bold))
-                        .monospacedDigit()
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(BrandColors.blackSwiftUI.opacity(0.18))
-                        )
-                        .foregroundColor(BrandColors.blackSwiftUI)
-                        .accessibilityHidden(true)
-                }
-
-                Spacer(minLength: 4)
-
-                Text(shortcutText)
-                    .font(.system(size: 10, weight: .medium))
-                    .monospacedDigit()
-                    .opacity(0.72)
-                    .lineLimit(1)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(cmuxAccentColor().opacity(display.isEnabled ? 1.0 : 0.18))
+        VStack(spacing: 1) {
+            WaitingAgentRow(display: display, onJump: jump)
+            WorkspaceNavRow(
+                isFirstDisabled: isFirstWorkspace,
+                isLastDisabled: isLastWorkspace,
+                onPrevious: goToPreviousWorkspace,
+                onNext: goToNextWorkspace
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(cmuxAccentColor().opacity(display.isEnabled ? 0 : 0.5), lineWidth: 1)
-            )
-            .foregroundColor(display.isEnabled ? BrandColors.blackSwiftUI : .secondary)
-            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
-        .buttonStyle(.plain)
-        .disabled(!display.isEnabled)
-        .opacity(display.isEnabled ? 1.0 : 0.72)
-        .accessibilityIdentifier("SidebarJumpToUnreadButton")
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue(display.badgeText ?? "")
-        .safeHelp(
-            KeyboardShortcutSettings.Action.jumpToUnread.tooltip(label)
-        )
     }
 
     private func jump() {
         DispatchQueue.main.async {
             AppDelegate.shared?.jumpToLatestUnread()
         }
+    }
+
+    private func goToPreviousWorkspace() {
+        tabManager.selectPreviousTab()
+    }
+
+    private func goToNextWorkspace() {
+        tabManager.selectNextTab()
+    }
+}
+
+private struct WaitingAgentRow: View {
+    let display: StatusBarButtonDisplay
+    let onJump: () -> Void
+
+    private var isLit: Bool { display.isEnabled }
+
+    private var label: String {
+        String(localized: "sidebar.waitingAgent.title", defaultValue: "Waiting Agent")
+    }
+
+    private var shortcutText: String {
+        KeyboardShortcutSettings.shortcut(for: .jumpToUnread).displayString
+    }
+
+    private var accessibilityLabel: String {
+        String(localized: "sidebar.waitingAgent.accessibility", defaultValue: "Jump to next waiting agent")
+    }
+
+    var body: some View {
+        Button(action: onJump) {
+            HStack(spacing: 0) {
+                Text(label)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+
+                Spacer(minLength: 4)
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("\u{2192}")
+                        .font(.system(size: 13, weight: .medium))
+                    Text(shortcutText)
+                        .font(.system(size: 9, weight: .medium))
+                        .opacity(isLit ? 0.6 : 0.5)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isLit ? BrandColors.paperFillSwiftUI : BrandColors.surfaceSwiftUI)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(BrandColors.goldSwiftUI, lineWidth: 0.75)
+                    .opacity(isLit ? 1 : 0)
+            )
+            .foregroundColor(isLit ? BrandColors.blackSwiftUI : BrandColors.whiteSwiftUI)
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("SidebarWaitingAgentButton")
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(display.badgeText ?? "")
+        .safeHelp(
+            KeyboardShortcutSettings.Action.jumpToUnread.tooltip(label)
+        )
+    }
+}
+
+private struct WorkspaceNavRow: View {
+    let isFirstDisabled: Bool
+    let isLastDisabled: Bool
+    let onPrevious: () -> Void
+    let onNext: () -> Void
+
+    var body: some View {
+        HStack(spacing: 1) {
+            WorkspaceArrowButton(
+                glyph: "\u{25B2}",
+                isDisabled: isFirstDisabled,
+                action: onPrevious,
+                tooltipText: KeyboardShortcutSettings.Action.prevSidebarTab.tooltip(
+                    String(localized: "sidebar.workspaceNav.previous", defaultValue: "Previous Workspace")
+                ),
+                accessibilityText: String(localized: "sidebar.workspaceNav.previous.accessibility", defaultValue: "Go to previous workspace")
+            )
+            WorkspaceArrowButton(
+                glyph: "\u{25BC}",
+                isDisabled: isLastDisabled,
+                action: onNext,
+                tooltipText: KeyboardShortcutSettings.Action.nextSidebarTab.tooltip(
+                    String(localized: "sidebar.workspaceNav.next", defaultValue: "Next Workspace")
+                ),
+                accessibilityText: String(localized: "sidebar.workspaceNav.next.accessibility", defaultValue: "Go to next workspace")
+            )
+        }
+    }
+}
+
+private struct WorkspaceArrowButton: View {
+    let glyph: String
+    let isDisabled: Bool
+    let action: () -> Void
+    let tooltipText: String
+    let accessibilityText: String
+
+    @State private var isHovering = false
+    @State private var isPressed = false
+    @State private var repeatTimer: Timer?
+
+    private var isActive: Bool { (isHovering || isPressed) && !isDisabled }
+
+    var body: some View {
+        Text(glyph)
+            .font(.system(size: 10, weight: .medium))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(BrandColors.surfaceSwiftUI)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .stroke(BrandColors.goldSwiftUI, lineWidth: 1.5)
+                    .opacity(isActive ? 1 : 0)
+            )
+            .foregroundColor(
+                isDisabled
+                    ? BrandColors.whiteSwiftUI.opacity(0.3)
+                    : isActive
+                        ? BrandColors.goldSwiftUI
+                        : BrandColors.whiteSwiftUI
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .onHover { hovering in
+                guard !isDisabled else { return }
+                isHovering = hovering
+            }
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        guard !isDisabled, !isPressed else { return }
+                        isPressed = true
+                        action()
+                        startRepeat()
+                    }
+                    .onEnded { _ in
+                        isPressed = false
+                        stopRepeat()
+                    }
+            )
+            .accessibilityLabel(accessibilityText)
+            .accessibilityAddTraits(isDisabled ? .isStaticText : .isButton)
+            .safeHelp(isDisabled ? "" : tooltipText)
+            .onDisappear { stopRepeat() }
+    }
+
+    private func startRepeat() {
+        repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { _ in
+            DispatchQueue.main.async {
+                self.repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { _ in
+                    DispatchQueue.main.async {
+                        guard self.isPressed, !self.isDisabled else {
+                            self.stopRepeat()
+                            return
+                        }
+                        self.action()
+                    }
+                }
+            }
+        }
+    }
+
+    private func stopRepeat() {
+        repeatTimer?.invalidate()
+        repeatTimer = nil
     }
 }
 

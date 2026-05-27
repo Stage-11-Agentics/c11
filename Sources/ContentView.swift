@@ -10677,10 +10677,11 @@ private struct WaitingAgentRow: View {
                         lineWidth: isLit ? 0.75 : 1
                     )
             )
-            .foregroundColor(isLit ? BrandColors.blackSwiftUI : BrandColors.whiteSwiftUI)
+            .foregroundColor(isLit ? BrandColors.blackSwiftUI : BrandColors.whiteSwiftUI.opacity(0.4))
             .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(.plain)
+        .disabled(!isLit)
         .accessibilityIdentifier("SidebarWaitingAgentButton")
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(display.badgeText ?? "")

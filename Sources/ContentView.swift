@@ -10618,10 +10618,12 @@ private struct SidebarWaitingAgentCluster: View {
     }
 
     private func goToPreviousWorkspace() {
+        guard !isFirstWorkspace else { return }
         tabManager.selectPreviousTab()
     }
 
     private func goToNextWorkspace() {
+        guard !isLastWorkspace else { return }
         tabManager.selectNextTab()
     }
 }
@@ -10670,8 +10672,10 @@ private struct WaitingAgentRow: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(BrandColors.goldSwiftUI, lineWidth: 0.75)
-                    .opacity(isLit ? 1 : 0)
+                    .stroke(
+                        isLit ? BrandColors.goldSwiftUI : BrandColors.ruleSwiftUI,
+                        lineWidth: isLit ? 0.75 : 1
+                    )
             )
             .foregroundColor(isLit ? BrandColors.blackSwiftUI : BrandColors.whiteSwiftUI)
             .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -10740,8 +10744,10 @@ private struct WorkspaceArrowButton: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .stroke(BrandColors.goldSwiftUI, lineWidth: 1.5)
-                    .opacity(isActive ? 1 : 0)
+                    .stroke(
+                        isActive ? BrandColors.goldSwiftUI : BrandColors.ruleSwiftUI,
+                        lineWidth: isActive ? 1.5 : 1
+                    )
             )
             .foregroundColor(
                 isDisabled

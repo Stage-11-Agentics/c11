@@ -391,7 +391,7 @@ Three files, loaded on demand. **Each is one role's playbook — sub-pages of th
 | File | When to load |
 |---|---|
 | `references/architect.md` | Phases 1–2 — planning interview patterns, SPEC.md + CLAUDE.md + BUILDPLAN.md templates, config question set, validation plan template, ticket fidelity examples, breakdown convention |
-| `references/orchestrator.md` | Phase 3 — boot prompt, loop cadences, escalation format, press-ahead discipline, run-state.md / agents.md schema, sub-agent boilerplate (stop instruction, read-before-write, deviate-with-flag), captain pattern, resume path, closeout audit |
+| `references/orchestrator.md` | Phase 3 — boot prompt, loop cadences, escalation format, press-ahead discipline, run-state.md / agents.md schema, sub-agent boilerplate (CAIRN_* orchestration-capture export, stop instruction, read-before-write, deviate-with-flag), captain pattern, resume path, closeout audit |
 | `references/result-validator.md` | Phase 4 — audit protocol, Validation Report template, when to skip |
 
 Operational footguns around Lattice CLI (parent-repo-vs-worktree, status discipline, plan-review amendment blocks) live in the **`lattice` skill**, not here — that's where they belong since they apply to every Lattice-using project, not just orchestrated runs.

@@ -351,6 +351,15 @@ test "\$(pwd)" = "<absolute-worktree-path>" || { echo "WORKTREE MISMATCH"; exit 
 ## Environment
 export LATTICE_SPAWN_BACKEND=headless    # defensive; not used in fast-track but harmless
 export LATTICE_ROOT=<absolute-repo-root>
+# Etch orchestration capture (see "### Export CAIRN_* env vars" HARD RULE below)
+export CAIRN_ORCHESTRATOR_TYPE=lattice-orchestrator
+export CAIRN_DISPATCH_METHOD=c11_delegator
+export CAIRN_TICKET_ID=<TICKET-ID>
+export CAIRN_RUN_ID=<run-ulid>                 # generated once at orchestrator boot; shared across all delegators
+export CAIRN_AGENT_ROLE=delegator
+export CAIRN_WORKFLOW_VERSION=\$(git -C ~/.claude/skills/lattice-orchestrator rev-parse --short HEAD 2>/dev/null)
+export CAIRN_PARENT_SESSION_ID=<orchestrator-cairn-session-id>   # if known
+export CAIRN_ORCHESTRATION_EXTRA='{"mode":"fast-track"}'         # optional JSON
 
 ## c11 orientation (HARD RULE — runtime-resolve own surface)
 MY_SURF=\$(c11 identify --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["caller"]["surface_ref"])')
@@ -391,6 +400,15 @@ test "\$(pwd)" = "<absolute-worktree-path>" || { echo "WORKTREE MISMATCH"; exit 
 ## Environment
 export LATTICE_SPAWN_BACKEND=headless    # MUST be set — keeps reviews out of c11 surfaces
 export LATTICE_ROOT=<absolute-repo-root>
+# Etch orchestration capture (see "### Export CAIRN_* env vars" HARD RULE below)
+export CAIRN_ORCHESTRATOR_TYPE=lattice-orchestrator
+export CAIRN_DISPATCH_METHOD=c11_delegator
+export CAIRN_TICKET_ID=<TICKET-ID>
+export CAIRN_RUN_ID=<run-ulid>                 # generated once at orchestrator boot; shared across all delegators
+export CAIRN_AGENT_ROLE=delegator
+export CAIRN_WORKFLOW_VERSION=\$(git -C ~/.claude/skills/lattice-orchestrator rev-parse --short HEAD 2>/dev/null)
+export CAIRN_PARENT_SESSION_ID=<orchestrator-cairn-session-id>   # if known
+export CAIRN_ORCHESTRATION_EXTRA='{"mode":"inline-full"}'        # optional JSON
 
 ## c11 orientation (HARD RULE — runtime-resolve own surface, same as fast-track)
 MY_SURF=\$(c11 identify --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["caller"]["surface_ref"])')
@@ -446,6 +464,20 @@ Identity:
 
 Worktree: /path/to/<repo>-worktrees/<ticket-slug>
 Branch: feat/<ticket-slug>
+
+## Environment (export before any other work — Etch orchestration capture)
+export LATTICE_SPAWN_BACKEND=headless
+export LATTICE_ROOT=<absolute-repo-root>
+export CAIRN_ORCHESTRATOR_TYPE=lattice-orchestrator
+export CAIRN_DISPATCH_METHOD=c11_delegator
+export CAIRN_TICKET_ID=<TICKET-ID>
+export CAIRN_RUN_ID=<run-ulid>                 # shared across all delegators in this run
+export CAIRN_AGENT_ROLE=delegator              # sub-agents you spawn override this per role
+export CAIRN_WORKFLOW_VERSION=\$(git -C ~/.claude/skills/lattice-orchestrator rev-parse --short HEAD 2>/dev/null)
+export CAIRN_PARENT_SESSION_ID=<orchestrator-cairn-session-id>   # if known
+# When you spawn plan/impl/fix sub-agents, the atomic launch line ALSO exports
+# CAIRN_AGENT_ROLE=<planner|impl|reviewer|fix> and CAIRN_PARENT_SESSION_ID=<your session id>.
+# See "### Export CAIRN_* env vars before launching any sub-agent" HARD RULE below.
 
 Load context:
   1. cd into the worktree.
@@ -506,9 +538,9 @@ WT_N=/Users/<op>/Projects/.../holodeck-worktrees/holo-N-<slug>
 c11 new-surface --pane "$DELEGATE_VIEW_PANE" --no-focus
 # Capture the returned surface ref → $NEW_SUBAGENT_SURF
 
-# 4. ATOMIC launch: cd to the target worktree, set LATTICE_ROOT, then claude — ALL IN ONE COMMAND
+# 4. ATOMIC launch: cd to the target worktree, set LATTICE_ROOT + CAIRN_* role/parent, then claude — ALL IN ONE COMMAND
 c11 send --workspace "$WS" --surface "$NEW_SUBAGENT_SURF" \
-  "cd $WT_N && export LATTICE_ROOT=$REPO_ROOT && claude --dangerously-skip-permissions \"Read /tmp/holo-N-impl-prompt.md and follow the instructions.\""
+  "cd $WT_N && export LATTICE_ROOT=$REPO_ROOT CAIRN_AGENT_ROLE=impl CAIRN_PARENT_SESSION_ID=$MY_CAIRN_SESSION_ID && claude --dangerously-skip-permissions \"Read /tmp/holo-N-impl-prompt.md and follow the instructions.\""
 
 # 5. Explicit Enter (the Claude Code TUI sometimes swallows the synthetic Return inside `c11 send`;
 #    the second call is the durable two-step pattern for Claude-to-Claude handoffs)
@@ -518,7 +550,7 @@ c11 send-key --workspace "$WS" --surface "$NEW_SUBAGENT_SURF" enter
 **Three load-bearing pieces, in order:**
 
 1. **`cd $WT_N && ...`** is the cwd binding. It runs BEFORE `claude` reads its first byte. Whatever cwd the new tab inherited is overridden atomically.
-2. **`export LATTICE_ROOT=$REPO_ROOT`** points `lattice` writes at the parent repo from the start. LAT-219 auto-routes from a linked worktree, but the explicit `LATTICE_ROOT` beats any environmental drift (e.g., a sibling's `LATTICE_ROOT` having leaked into the inherited shell env).
+2. **`export LATTICE_ROOT=$REPO_ROOT`** points `lattice` writes at the parent repo from the start. LAT-219 auto-routes from a linked worktree, but the explicit `LATTICE_ROOT` beats any environmental drift (e.g., a sibling's `LATTICE_ROOT` having leaked into the inherited shell env). The same `export` also carries the sub-agent's **`CAIRN_AGENT_ROLE`** (`planner`/`impl`/`reviewer`/`fix`) and **`CAIRN_PARENT_SESSION_ID`** (the delegator's own session id) — the other `CAIRN_*` vars are inherited from the delegator's shell, but role and parent are per-child and must be set on the launch line. See the "### Export CAIRN_* env vars" HARD RULE.
 3. **The prompt path itself** stays ticket-N-keyed. The atomic launch protects you from the cwd half of the bug; correct path selection protects you from the prompt half. See *Prompt path conventions* below.
 
 The exact same shape applies to plan, impl, code-review-fallback, and fix sub-agent spawns. The prompt changes; the launch shape does not.
@@ -644,6 +676,25 @@ The cadence applies per delegator instance. Multiple delegators each run their o
 ## Sub-agent boilerplate (delegator → plan/impl/review/fix)
 
 Every sub-agent prompt the delegator writes must include these clauses verbatim. They're load-bearing — each one corresponds to a real silent-failure mode observed in prior runs.
+
+### Export CAIRN_* env vars before launching any sub-agent (orchestration capture)
+
+> **HARD RULE.** Every delegator, sub-agent, or captain spawn must set the `CAIRN_*` environment variables so Etch (the `entire-agent-cairn` plugin) captures orchestration metadata on the spawned agent's sessions. Put these in the boot prompt's `## Environment` block, immediately after `export LATTICE_ROOT=...`:
+>
+> ```bash
+> export CAIRN_ORCHESTRATOR_TYPE=lattice-orchestrator
+> export CAIRN_DISPATCH_METHOD=c11_delegator     # or "headless_clear" / "captain" as appropriate
+> export CAIRN_TICKET_ID=<TICKET-ID>
+> export CAIRN_RUN_ID=<run-ulid>                 # generated once at orchestrator boot; shared across all delegators
+> export CAIRN_AGENT_ROLE=delegator              # or "planner" / "impl" / "reviewer" / "fix"
+> export CAIRN_WORKFLOW_VERSION=$(git -C ~/.claude/skills/lattice-orchestrator rev-parse --short HEAD)
+> export CAIRN_PARENT_SESSION_ID=<parent's session ID, if known>
+> export CAIRN_ORCHESTRATION_EXTRA='{"phase":"impl","wave":2}'   # optional JSON
+> ```
+>
+> Absent `CAIRN_ORCHESTRATOR_TYPE`, Etch defaults the session's `orchestration.type` to `"manual"` — useful for solo human sessions, wrong for delegators. See `code/Etch/OUTPUT_SPEC.md §3` for the full env-var contract.
+>
+> **Per-sub-agent override.** The delegator's own boot prompt sets `CAIRN_AGENT_ROLE=delegator`. When the delegator spawns a plan/impl/review/fix sub-agent (sub-agent-full mode), the atomic-cwd launch line MUST additionally export `CAIRN_AGENT_ROLE=<planner|impl|reviewer|fix>` and `CAIRN_PARENT_SESSION_ID=<delegator's own session id>` so each child session records its role and parent. See the atomic-cwd-binding launch-line HARD RULE earlier in this file.
 
 ### Worktree assertion at line 1 of every prompt (HARD RULE)
 

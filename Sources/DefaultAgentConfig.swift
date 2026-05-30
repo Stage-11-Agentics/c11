@@ -8,6 +8,7 @@ enum AgentType: String, Codable, CaseIterable, Identifiable {
     case codex
     case kimi
     case opencode
+    case githubCopilot = "github-copilot"
     case custom
 
     var id: String { rawValue }
@@ -24,6 +25,8 @@ enum AgentType: String, Codable, CaseIterable, Identifiable {
             return String(localized: "agentType.kimi", defaultValue: "Kimi")
         case .opencode:
             return String(localized: "agentType.opencode", defaultValue: "OpenCode")
+        case .githubCopilot:
+            return String(localized: "agentType.githubCopilot", defaultValue: "GitHub Copilot")
         case .custom:
             return String(localized: "agentType.custom", defaultValue: "Custom")
         }
@@ -34,11 +37,12 @@ enum AgentType: String, Codable, CaseIterable, Identifiable {
     /// values for the other agents.
     var factoryCommand: String {
         switch self {
-        case .claudeCode: return "claude --dangerously-skip-permissions"
-        case .codex:      return "codex --yolo"
-        case .kimi:       return "kimi"
-        case .opencode:   return "opencode run --dangerously-skip-permissions"
-        case .custom:     return ""
+        case .claudeCode:    return "claude --dangerously-skip-permissions"
+        case .codex:         return "codex --yolo"
+        case .kimi:          return "kimi"
+        case .opencode:      return "opencode run --dangerously-skip-permissions"
+        case .githubCopilot: return "copilot --allow-all --autopilot"
+        case .custom:        return ""
         }
     }
 

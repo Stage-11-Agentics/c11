@@ -8986,7 +8986,7 @@ struct CMUXCLI {
 
             Subcommands:
               get                              Print the configured default agent type.
-              set <type>                       Set the default agent (claude-code | codex | kimi | opencode | custom).
+              set <type>                       Set the default agent (claude-code | codex | kimi | opencode | github-copilot | custom).
               launch [flags]                   Launch the default (or --agent <type>) agent.
 
             launch flags:
@@ -10938,7 +10938,7 @@ struct CMUXCLI {
 
         case "set":
             guard commandArgs.count >= 2 else {
-                let valid = ["claude-code", "codex", "kimi", "opencode", "custom"].joined(separator: ", ")
+                let valid = ["claude-code", "codex", "kimi", "opencode", "github-copilot", "custom"].joined(separator: ", ")
                 throw CLIError(message: "default-agent set requires <type>. Valid: \(valid)")
             }
             let response = try sendV1Command("default_agent set \(commandArgs[1])", client: client)

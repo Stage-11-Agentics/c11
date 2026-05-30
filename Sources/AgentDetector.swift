@@ -227,6 +227,8 @@ final class AgentDetector: @unchecked Sendable {
             return "kimi"
         case "opencode", "opencode-cli":
             return "opencode"
+        case "copilot":
+            return "github-copilot"
         default:
             break
         }
@@ -244,6 +246,9 @@ final class AgentDetector: @unchecked Sendable {
             }
             if a.contains("opencode-cli") || a.contains("sst/opencode") || a.contains("/opencode") {
                 return "opencode"
+            }
+            if a.contains("@github/copilot") || a.contains("/copilot") {
+                return "github-copilot"
             }
         }
 

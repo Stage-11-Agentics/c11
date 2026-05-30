@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# c11 copilot wrapper - auto-declare terminal_type for GitHub Copilot CLI.
+#
+# When running inside a c11 terminal (CMUX_SURFACE_ID set + socket live),
+# this wrapper marks the surface as terminal_type=github-copilot via
+# `c11 set-agent` so the sidebar chip, default-agent picker, and any
+# orchestration that filters by terminal_type all see Copilot as a
+# first-class agent. Outside c11 (or when the socket is unreachable),
+# it passes through to the real copilot binary unchanged.
+#
+# Modeled on `Resources/bin/codex`. See that wrapper for the reference
+# implementation of the auto-declare pattern and the constraints all
+# wrappers honour:
+#
+#   1. Pass-through when not in a c11 terminal or socket is down.
+#   2. Pass-through for non-interactive subcommands (would lie about
+#      the surface's terminal_type — surface isn't an interactive copilot
+#      session if it's running `copilot --help`).
+#   3. Best-effort background write so startup latency is unaffected.
+#   4. Always exec the real binary at the end.
+#
+# Why no session-id capture (unlike Claude Code's wrapper)?
+#
+#   GitHub Copilot CLI manages its own session-store.db at ~/.copilot/
+#   and exposes `/resume` for in-session resume. It doesn't accept a
+#   `--session-id <id>` at launch, so we can't pre-write a session id
+#   to surface metadata the way the claude wrapper does. The c11
+#   session-restore path falls back to the default behaviour, which is
+#   acceptable for now — `copilot /resume` from within a restored
+#   surface continues the most recent session in cwd.
+
+set -uo pipefail
+
+# Find the real copilot binary, skipping our own directory.
+find_real_copilot() {
+    local self_dir
+    self_dir="$(cd "$(dirname "$0")" && pwd)"
+    local IFS=:
+    for d in $PATH; do
+        [[ "$d" == "$self_dir" ]] && continue
+        [[ -x "$d/copilot" ]] && printf '%s' "$d/copilot" && return 0
+    done
+    return 1
+}
+
+# Return 0 only when CMUX_SOCKET_PATH points to a live c11 socket.
+c11_socket_available() {
+    local socket="${CMUX_SOCKET_PATH:-}"
+    [[ -n "$socket" && -S "$socket" ]] || return 1
+
+    local self_dir c11_bin
+    self_dir="$(cd "$(dirname "$0")" && pwd)"
+    c11_bin="$self_dir/c11"
+    [[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
+    [[ -n "$c11_bin" ]] || return 1
+
+    # Bounded check so copilot startup isn't blocked behind the CLI default
+    # timeout (15s) when the socket is stale or hung.
+    CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+        "$c11_bin" --socket "$socket" ping >/dev/null 2>&1
+}
+
+# Pass through if not in a c11 terminal, hooks are disabled, or the
+# socket is unavailable.
+IN_C11=0
+if [[ -n "${CMUX_SURFACE_ID:-}" ]]; then
+    IN_C11=1
+fi
+
+if [[ "$IN_C11" == "0" || "${CMUX_COPILOT_HOOKS_DISABLED:-}" == "1" ]] || ! c11_socket_available; then
+    REAL_COPILOT="$(find_real_copilot)" || { echo "Error: copilot not found in PATH" >&2; exit 127; }
+    exec "$REAL_COPILOT" "$@"
+fi
+
+REAL_COPILOT="$(find_real_copilot)" || { echo "Error: copilot not found in PATH" >&2; exit 127; }
+
+# Pass through for non-interactive invocations that shouldn't flip the
+# surface's terminal_type to "github-copilot" — the surface isn't an
+# interactive copilot session in these cases.
+#
+# Copilot CLI uses flags rather than subcommands for non-interactive
+# modes:
+#   -p / --prompt        non-interactive scripting (one-shot prompt)
+#   --acp                start as Agent Client Protocol server (not a TUI)
+#   -h / --help          help
+#   -V / --version       version
+#   --connect            attach to a remote session (different surface model)
+for arg in "$@"; do
+    case "$arg" in
+        -p|--prompt|--acp|--help|-h|--version|-V|--connect)
+            exec "$REAL_COPILOT" "$@"
+            ;;
+    esac
+done
+
+# Resolve the c11 binary (bundle-relative first, fall back to PATH so a
+# misconfigured bundle still works in dev builds).
+self_dir="$(cd "$(dirname "$0")" && pwd)"
+c11_bin="$self_dir/c11"
+[[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
+
+# Best-effort surface-metadata write: mark this surface as a
+# github-copilot terminal so the sidebar chip and any orchestration
+# filtering by terminal_type see it. Background so copilot startup
+# latency is unaffected; `disown` so a stale write can't keep the
+# wrapper process alive after `exec`.
+if [[ -n "$c11_bin" ]]; then
+    (
+        CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+            "$c11_bin" --socket "${CMUX_SOCKET_PATH}" set-agent --type github-copilot \
+            >/dev/null 2>&1
+    ) &
+    disown 2>/dev/null || true
+fi
+
+exec "$REAL_COPILOT" "$@"

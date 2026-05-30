@@ -30,6 +30,16 @@ final class DefaultAgentConfigTests: XCTestCase {
         XCTAssertEqual(entry.initialPrompt, "you are operating inside a c11 workspace. load the skill.")
     }
 
+    func testFactoryGitHubCopilotCommandIncludesAllowAllAndAutopilot() {
+        let entry = AgentConfig.factory(for: .githubCopilot)
+        XCTAssertEqual(entry.command, "copilot --allow-all --autopilot")
+        XCTAssertEqual(entry.initialPrompt, "you are operating inside a c11 workspace. load the skill.")
+    }
+
+    func testAgentTypeGitHubCopilotRawValueIsKebabCase() {
+        XCTAssertEqual(AgentType.githubCopilot.rawValue, "github-copilot")
+    }
+
     func testFactoryCustomHasEmptyDefaults() {
         let entry = AgentConfig.factory(for: .custom)
         XCTAssertEqual(entry.command, "")

@@ -8,6 +8,7 @@ enum SkillInstallerTarget: String, CaseIterable {
     case codex
     case kimi
     case opencode
+    case copilot
 
     var displayName: String {
         switch self {
@@ -15,6 +16,7 @@ enum SkillInstallerTarget: String, CaseIterable {
         case .codex: return "Codex"
         case .kimi: return "Kimi"
         case .opencode: return "OpenCode"
+        case .copilot: return "GitHub Copilot"
         }
     }
 

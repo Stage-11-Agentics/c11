@@ -53,7 +53,7 @@ Auto-exported into every c11 surface child process.
 | `C11_SOCKET_PATH` | Override socket path (auto-discovers tagged/debug sockets) |
 | `C11_SOCKET_PASSWORD` | Socket auth password (if set in Settings) |
 | `C11_SHELL_INTEGRATION` | Set to `1` in c11 terminals — use to detect you're inside c11 |
-| `C11_AGENT_TYPE` | Declared agent TUI type (`claude-code`, `codex`, `kimi`, `opencode`, kebab-case custom); read at surface start |
+| `C11_AGENT_TYPE` | Declared agent TUI type (`claude-code`, `codex`, `kimi`, `opencode`, `github-copilot`, kebab-case custom); read at surface start |
 | `C11_AGENT_MODEL` | Declared agent model identifier |
 | `C11_AGENT_TASK` | Declared agent task ID |
 
@@ -174,7 +174,7 @@ c11 set-agent --type codex --task lat-412
 c11 set-agent --type opencode --model <model-id>
 ```
 
-- `--type` accepts canonical values (`claude-code`, `codex`, `kimi`, `opencode`) and any kebab-case custom value.
+- `--type` accepts canonical values (`claude-code`, `codex`, `kimi`, `opencode`, `github-copilot`) and any kebab-case custom value.
 - Writes land as `source: declare` in the metadata store, overriding heuristic auto-detection but not user-explicit writes.
 - Environment declaration: `C11_AGENT_TYPE`, `C11_AGENT_MODEL`, `C11_AGENT_TASK` in the surface's startup env are read once at surface-child-process start.
 - Clear with `c11 clear-metadata --key terminal_type` (no `c11 unset-agent`).

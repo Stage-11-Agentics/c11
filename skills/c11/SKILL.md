@@ -40,10 +40,12 @@ At session start — always, in this order:
 ```bash
 c11 identify                                                        # Your workspace/surface/pane refs (JSON)
 c11 tree                                                            # Spatial layout of the current workspace + hierarchical listing
-c11 set-agent --type claude-code --model claude-opus-4-7            # Declare terminal_type + model (mandatory)
+c11 set-agent --type "$C11_AGENT_TYPE" --model "$C11_AGENT_MODEL"   # Persist agent identity (env vars pre-seeded by c11's spawn path; trust them)
 c11 rename-tab       --surface "$C11_SURFACE_ID" "<your role>"      # Title — what this surface is (mandatory)
 c11 set-description  --surface "$C11_SURFACE_ID" "<why it's open>"  # Description — what you're doing right now (mandatory)
 ```
+
+**On `$C11_AGENT_TYPE` and `$C11_AGENT_MODEL`.** c11's spawn path pre-seeds these env vars with the agent it thinks it's launching — `claude-code`, `codex`, `kimi`, `opencode`, `github-copilot`, or any kebab-case custom value the operator configured. The `c11 set-agent` call above persists them to surface metadata, which is what the sidebar chip and orchestration filters actually read from. **If either env var is empty** you were launched outside the c11 wrapper path (or the operator's shell didn't pre-seed); substitute your own values — e.g. `--type github-copilot --model <your-current-model>` — and do not guess. Read your model name from your runtime's own status banner, not from this skill's examples.
 
 > **Binary bug (as of 2026-04-18):** `C11_TAB_ID` is exported equal to the workspace UUID, not the tab UUID. Bare `c11 rename-tab "<role>"` (and any other tab-scoped command that defaults to `C11_TAB_ID`) errors with `not_found: Tab not found`. Always pass `--surface "$C11_SURFACE_ID"` for tab-scoped commands (`rename-tab`, `set-title`, `set-description`) until this is fixed — `C11_SURFACE_ID` itself is correct.
 
@@ -106,8 +108,9 @@ The rule is intentionally narrow. It does **not** cover `"read /path/to/X and fo
 `c11 set-agent` writes `terminal_type` and `model` to the surface manifest:
 
 ```bash
-c11 set-agent --type claude-code --model claude-opus-4-7
-c11 set-agent --type codex --task lat-412
+c11 set-agent --type "$C11_AGENT_TYPE" --model "$C11_AGENT_MODEL"   # canonical: trust the env vars c11 pre-seeded
+c11 set-agent --task lat-412                                        # partial write: just update the task ID
+c11 set-agent --type <your-terminal-type> --model <your-model>      # explicit override when env vars are empty/wrong
 ```
 
 Common types: `claude-code`, `codex`, `kimi`, `opencode`. Any kebab-case string is accepted. Inside Claude Code, `claude.session_id` is populated automatically by the wrapper.

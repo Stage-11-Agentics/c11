@@ -218,7 +218,7 @@ c11 resize-pane --workspace $WS --pane $B -L $((W / 6))
 
 ```bash
 c11 tree                                # current workspace with floor plan (default)
-c11 tree --window                       # all workspaces in current window (pre-M8 default)
+c11 tree --window                       # all workspaces in current window
 c11 tree --all                          # every window
 c11 tree --json                         # structured coordinates for layout reasoning
 c11 tree --no-layout                    # suppress the floor plan, keep hierarchy
@@ -579,7 +579,7 @@ c11 can snapshot a workspace to disk and restore it later with the layout, surfa
 # Capture the current workspace to ~/.c11-snapshots/<ulid>.json
 c11 snapshot
 
-# List what's on disk (newest first, legacy ~/.cmux-snapshots/ merged in)
+# List what's on disk (newest first)
 c11 list-snapshots
 
 # Restore by id (fresh shells)
@@ -594,7 +594,7 @@ The snapshot wraps a `WorkspaceApplyPlan`; the same shape Blueprints and the deb
 
 ## Troubleshooting
 
-If `c11` on your PATH does not resolve to the active bundle's CLI (or you're unsure which `c11`/`cmux` your shell will invoke), run `c11 doctor` (`--json` for machine-readable output). It reports the bundled CLI path, what `c11`/`cmux` resolve to on PATH, whether `_cmux_fix_path` has run, and a `status` of `ok | mismatch | missing | no_bundle`.
+If `c11` on your PATH does not resolve to the active bundle's CLI, run `c11 doctor` (`--json` for machine-readable output). It reports the bundled CLI path, how `c11` resolves on PATH, whether the PATH-fix shell hook has been applied, and a `status` of `ok | mismatch | missing | no_bundle`.
 
 ## References
 

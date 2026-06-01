@@ -71,6 +71,10 @@ final class DefaultAgentConfigTests: XCTestCase {
         let data = Data(json.utf8)
         let decoded = try JSONDecoder().decode(DefaultAgentConfig.self, from: data)
         XCTAssertEqual(decoded.defaultAgent, .claudeCode)
+        // A corrupt value is not a usable selection, so it must not act as a
+        // project-level override either — same fall-through as an absent key.
+        XCTAssertFalse(decoded.hasExplicitDefaultAgent)
+        XCTAssertNil(decoded.overrideDefaultAgent)
     }
 
     func testDecodeWithDefaultAgentMarksItExplicit() throws {

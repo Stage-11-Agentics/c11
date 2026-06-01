@@ -176,9 +176,12 @@ struct DefaultAgentConfig: Codable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         // Track explicit presence so an omitted `defaultAgent` doesn't read as
         // a deliberate "launch claude-code" override when this config is used at
-        // the project level.
-        if c.contains(.defaultAgent) {
-            self.defaultAgent = try c.decode(AgentType.self, forKey: .defaultAgent)
+        // the project level. A present-but-corrupt value (e.g. an unknown agent
+        // name) is treated like the user-level store has always treated it:
+        // fall back to claude-code, and — since the stated value was unusable —
+        // do NOT count it as an explicit override.
+        if let decoded = try? c.decode(AgentType.self, forKey: .defaultAgent) {
+            self.defaultAgent = decoded
             self.hasExplicitDefaultAgent = true
         } else {
             self.defaultAgent = .claudeCode

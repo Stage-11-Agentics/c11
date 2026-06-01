@@ -83,6 +83,36 @@ final class DefaultAgentResolverTests: XCTestCase {
         XCTAssertEqual(launch.command, "kimi --user-flag")
     }
 
+    func testProjectConfigWithoutExplicitDefaultDoesNotOverrideUser() throws {
+        // A v2 project file with per-agent entries but no `defaultAgent` key must
+        // keep the user's Settings pick, not silently force the claude-code
+        // fallback. Regression for the stale-~/.c11/agents.json A-button bug.
+        let project = try JSONDecoder().decode(
+            DefaultAgentConfig.self,
+            from: Data(#"{"agents":{}}"#.utf8)
+        )
+        let (agent, _) = DefaultAgentResolver.resolve(
+            explicitAgent: nil,
+            userDefault: DefaultAgentConfig(defaultAgent: .codex, agents: [:]),
+            projectConfig: project
+        )
+        XCTAssertEqual(agent, .codex)
+    }
+
+    func testProjectConfigWithExplicitDefaultStillOverridesUser() throws {
+        // The honored-override path must keep working after the fix.
+        let project = try JSONDecoder().decode(
+            DefaultAgentConfig.self,
+            from: Data(#"{"defaultAgent":"kimi","agents":{}}"#.utf8)
+        )
+        let (agent, _) = DefaultAgentResolver.resolve(
+            explicitAgent: nil,
+            userDefault: DefaultAgentConfig(defaultAgent: .codex, agents: [:]),
+            projectConfig: project
+        )
+        XCTAssertEqual(agent, .kimi)
+    }
+
     // MARK: - command builder
 
     func testBuildCommandClaudeAppendsInitialPromptAsPositional() {

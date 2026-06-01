@@ -73,6 +73,44 @@ final class DefaultAgentConfigTests: XCTestCase {
         XCTAssertEqual(decoded.defaultAgent, .claudeCode)
     }
 
+    func testDecodeWithDefaultAgentMarksItExplicit() throws {
+        let decoded = try JSONDecoder().decode(
+            DefaultAgentConfig.self,
+            from: Data(#"{"defaultAgent":"codex"}"#.utf8)
+        )
+        XCTAssertTrue(decoded.hasExplicitDefaultAgent)
+        XCTAssertEqual(decoded.overrideDefaultAgent, .codex)
+    }
+
+    func testDecodeWithoutDefaultAgentHasNoOverride() throws {
+        // Falls back to claude-code for `defaultAgent`, but exposes no override
+        // so a project consumer keeps its own selection.
+        let decoded = try JSONDecoder().decode(
+            DefaultAgentConfig.self,
+            from: Data(#"{"agents":{}}"#.utf8)
+        )
+        XCTAssertEqual(decoded.defaultAgent, .claudeCode)
+        XCTAssertFalse(decoded.hasExplicitDefaultAgent)
+        XCTAssertNil(decoded.overrideDefaultAgent)
+    }
+
+    func testLegacyArrayAgentsShapeIsRejected() {
+        // Pre-v0.48 `~/.c11/agents.json`: an array of {id,displayName,command}
+        // with no `defaultAgent`. Must fail to decode rather than silently
+        // become an empty-but-valid claude-code override (the A-button bug).
+        let legacy = #"{"agents":[{"id":"claudeCode","displayName":"Claude Code","command":"claude --dangerously-skip-permissions"}]}"#
+        XCTAssertThrowsError(
+            try JSONDecoder().decode(DefaultAgentConfig.self, from: Data(legacy.utf8))
+        )
+    }
+
+    func testProgrammaticConfigIsExplicit() {
+        // The memberwise init always represents a deliberate selection.
+        let cfg = DefaultAgentConfig(defaultAgent: .kimi, agents: [:])
+        XCTAssertTrue(cfg.hasExplicitDefaultAgent)
+        XCTAssertEqual(cfg.overrideDefaultAgent, .kimi)
+    }
+
     // MARK: - envMap parsing
 
     func testEnvMapParsesKeyValueLines() {

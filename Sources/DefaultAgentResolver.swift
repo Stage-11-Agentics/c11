@@ -32,8 +32,12 @@ enum DefaultAgentResolver {
         userDefault: DefaultAgentConfig,
         projectConfig: DefaultAgentConfig?
     ) -> (agent: AgentType, launch: ResolvedAgentLaunch) {
+        // A project config only overrides the agent selection when it actually
+        // states a `defaultAgent`; a file that omits the key (or a legacy file
+        // that no longer decodes) must not displace the user's Settings pick.
+        let projectDefault: AgentType? = projectConfig?.overrideDefaultAgent ?? nil
         let agent = explicitAgent
-            ?? projectConfig?.defaultAgent
+            ?? projectDefault
             ?? userDefault.defaultAgent
 
         // Project-level per-agent config beats user-level for the chosen agent.

@@ -125,10 +125,35 @@ struct DefaultAgentConfig: Codable, Equatable {
     /// fall back to factory defaults at use time.
     var agents: [AgentType: AgentConfig]
 
+    /// Whether `defaultAgent` was explicitly specified by the source this
+    /// config was decoded from. `true` for programmatically-built configs and
+    /// for JSON that carries a `defaultAgent` key; `false` only when a decoded
+    /// blob omits the key (and `defaultAgent` therefore holds the fallback).
+    ///
+    /// Project-level overrides key off this: a `.c11/agents.json` that doesn't
+    /// state a `defaultAgent` must NOT silently force the fallback over the
+    /// user's Settings pick (see `overrideDefaultAgent`). Excluded from
+    /// `Equatable` so value comparisons stay shape-based.
+    var hasExplicitDefaultAgent: Bool = true
+
+    /// The agent this config should impose on a *consumer* that already has its
+    /// own default (i.e. project config overriding the user default). `nil` when
+    /// the default was never explicitly stated, so the consumer keeps its own.
+    var overrideDefaultAgent: AgentType? {
+        hasExplicitDefaultAgent ? defaultAgent : nil
+    }
+
     /// Returns the config for `agent`, falling back to factory if the operator
     /// never edited that one.
     func config(for agent: AgentType) -> AgentConfig {
         agents[agent] ?? .factory(for: agent)
+    }
+
+    // Shape-based equality: `hasExplicitDefaultAgent` is provenance metadata,
+    // not part of the config's value, so two configs with the same selection
+    // and per-agent entries compare equal regardless of how they were built.
+    static func == (lhs: DefaultAgentConfig, rhs: DefaultAgentConfig) -> Bool {
+        lhs.defaultAgent == rhs.defaultAgent && lhs.agents == rhs.agents
     }
 
     /// Factory shape: claude-code is the default, every agent pre-filled with
@@ -144,12 +169,30 @@ struct DefaultAgentConfig: Codable, Equatable {
     init(defaultAgent: AgentType, agents: [AgentType: AgentConfig]) {
         self.defaultAgent = defaultAgent
         self.agents = agents
+        self.hasExplicitDefaultAgent = true
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.defaultAgent = (try? c.decode(AgentType.self, forKey: .defaultAgent)) ?? .claudeCode
-        if let agentsByRaw = try? c.decode([String: AgentConfig].self, forKey: .agents) {
+        // Track explicit presence so an omitted `defaultAgent` doesn't read as
+        // a deliberate "launch claude-code" override when this config is used at
+        // the project level.
+        if c.contains(.defaultAgent) {
+            self.defaultAgent = try c.decode(AgentType.self, forKey: .defaultAgent)
+            self.hasExplicitDefaultAgent = true
+        } else {
+            self.defaultAgent = .claudeCode
+            self.hasExplicitDefaultAgent = false
+        }
+        // `agents` must be the v2 dict shape when present. A legacy pre-v0.48
+        // file (an *array* of {id,displayName,command}) must NOT silently decode
+        // to an empty dict and let this whole config masquerade as a valid
+        // override — that's the bug where a stale ~/.c11/agents.json pinned the
+        // A button to claude-code regardless of Settings. Throwing here makes
+        // `DefaultAgentProjectConfig.find`'s `try?` reject the file outright so
+        // resolution falls through to the user's Settings default.
+        if c.contains(.agents) {
+            let agentsByRaw = try c.decode([String: AgentConfig].self, forKey: .agents)
             var byType: [AgentType: AgentConfig] = [:]
             for (raw, cfg) in agentsByRaw {
                 if let t = AgentType(rawValue: raw) { byType[t] = cfg }

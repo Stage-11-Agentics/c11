@@ -1983,14 +1983,19 @@ struct CMUXCLI {
         case "new-workspace":
             let (commandOpt, rem0) = parseOption(commandArgs, name: "--command")
             let (cwdOpt, rem1) = parseOption(rem0, name: "--cwd")
-            let (layoutOpt, remaining) = parseOption(rem1, name: "--layout")
+            let (layoutOpt, rem2) = parseOption(rem1, name: "--layout")
+            let (titleOpt, remaining) = parseOption(rem2, name: "--title")
             if let unknown = remaining.first(where: { $0.hasPrefix("--") }) {
-                throw CLIError(message: "new-workspace: unknown flag '\(unknown)'. Known flags: --command <text>, --cwd <path>, --layout <path|name>")
+                throw CLIError(message: "new-workspace: unknown flag '\(unknown)'. Known flags: --command <text>, --cwd <path>, --layout <path|name>, --title <text>")
             }
             var params: [String: Any] = [:]
             if let cwdOpt {
                 let resolved = resolvePath(cwdOpt)
                 params["cwd"] = resolved
+            }
+            if let titleOpt {
+                let trimmed = titleOpt.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { params["title"] = trimmed }
             }
             if let layoutRef = layoutOpt {
                 // Resolve blueprint path or name -> {plan: ...} dict for workspace.create layout param.
@@ -8074,18 +8079,20 @@ struct CMUXCLI {
             """
         case "new-workspace":
             return """
-            Usage: c11 new-workspace [--cwd <path>] [--command <text>] [--layout <path|name>]
+            Usage: c11 new-workspace [--cwd <path>] [--command <text>] [--title <text>] [--layout <path|name>]
 
             Create a new workspace.
 
             Flags:
               --cwd <path>           Set the working directory for the new workspace
               --command <text>       Send text+Enter to the new workspace after creation
+              --title <text>         Set the workspace title inline (same as a follow-up rename)
               --layout <path|name>   Apply a blueprint plan (file path or blueprint name)
 
             Example:
               c11 new-workspace
               c11 new-workspace --cwd ~/projects/myapp
+              c11 new-workspace --title "Auth refactor"
               c11 new-workspace --cwd . --command "npm test"
               c11 new-workspace --layout my-review-room
               c11 new-workspace --layout /path/to/blueprint.json

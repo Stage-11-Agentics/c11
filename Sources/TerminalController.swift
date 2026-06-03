@@ -4336,15 +4336,34 @@ class TerminalController {
             // Normalize to the standard snake_case workspace creation envelope (B2).
             let workspaceRef = resultDict["workspaceRef"] as? String ?? ""
             let wsUUID = v2ResolveHandleRef(workspaceRef)
+
+            // An explicit --title wins over any title the blueprint set, and is
+            // applied via the same customTitle path that workspace.rename uses.
+            let layoutTitle = v2RawString(params, "title")?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let appliedLayoutTitle = (layoutTitle?.isEmpty == false) ? layoutTitle : nil
+            if let appliedLayoutTitle, let wsUUID {
+                v2MainSync {
+                    if tabManager.tabs.contains(where: { $0.id == wsUUID }) {
+                        tabManager.setCustomTitle(tabId: wsUUID, title: appliedLayoutTitle)
+                    }
+                }
+            }
+
             let windowId = v2ResolveWindowId(tabManager: tabManager)
             return .ok([
                 "workspace_id": v2OrNull(wsUUID?.uuidString),
                 "workspace_ref": workspaceRef as Any,
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId),
+                "title": v2OrNull(appliedLayoutTitle),
                 "layout_result": resultAny
             ])
         }
+
+        // Optional title: set the same customTitle field that workspace.rename writes,
+        // so `new-workspace --title` is atomic with creation (no follow-up rename).
+        let requestedTitle = v2RawString(params, "title")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let customTitle = (requestedTitle?.isEmpty == false) ? requestedTitle : nil
 
         // No layout: create workspace normally.
         var newId: UUID?
@@ -4358,6 +4377,9 @@ class TerminalController {
                 eagerLoadTerminal: !shouldFocus
             )
             newId = ws.id
+            if let customTitle {
+                tabManager.setCustomTitle(tabId: ws.id, title: customTitle)
+            }
             return
         }) != nil else {
             return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)
@@ -4372,7 +4394,8 @@ class TerminalController {
             "window_id": v2OrNull(windowId?.uuidString),
             "window_ref": v2Ref(kind: .window, uuid: windowId),
             "workspace_id": newId.uuidString,
-            "workspace_ref": v2Ref(kind: .workspace, uuid: newId)
+            "workspace_ref": v2Ref(kind: .workspace, uuid: newId),
+            "title": v2OrNull(customTitle)
         ])
     }
     private func v2WorkspaceSelect(params: [String: Any]) -> V2CallResult {

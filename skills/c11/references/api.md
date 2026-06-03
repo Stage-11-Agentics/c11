@@ -81,7 +81,7 @@ The `caller` block in `c11 identify` always reflects the pane invoking the comma
 ```bash
 # Create
 c11 <path>                           # Open directory in new workspace (launches c11 if needed)
-c11 new-workspace [--cwd <path>] [--command <text>]
+c11 new-workspace [--cwd <path>] [--command <text>] [--title <text>] [--layout <path|name>]
 c11 new-split <left|right|up|down>   # Split any pane; the new pane is always a terminal
 c11 new-pane [--type <terminal|browser|markdown>] [--direction <dir>] [--url <url>]
 c11 new-surface [--type <terminal|browser|markdown>] [--pane <id|ref>] [--workspace <id|ref>]

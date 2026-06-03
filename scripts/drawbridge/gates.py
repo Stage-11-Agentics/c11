@@ -1,0 +1,286 @@
+#!/usr/bin/env python3
+"""Drawbridge deterministic gates (lane 2).
+
+Plain code, not an LLM. The judge's verdict is ONE input; nothing here trusts it
+alone. Every autonomous action requires every gate to pass. Any error, missing
+input, or malformed file fails safe to the review lane (non-zero exit).
+
+Inputs are plain JSON files fetched by the workflow (or fixtures in tests):
+  --policy       TRIAGE_POLICY.md (machine config block is parsed out of it)
+  --verdict      judge verdict JSON
+  --item-type    pr | issue
+  --pr-json      `gh api repos/{r}/pulls/{n}` output            (PRs only)
+  --files-json   `gh api repos/{r}/pulls/{n}/files --paginate`  (PRs only)
+  --checks-json  `gh api repos/{r}/commits/{sha}/check-runs`    (PRs only)
+  --skip-ci      mark the CI gate "pending" instead of reading checks-json
+  --output       where to write the gates result JSON (default stdout)
+
+Exit codes: 0 = evaluated (route in output), 2 = bad invocation/input (caller
+must treat as escalation).
+"""
+
+import argparse
+import json
+import re
+import sys
+
+FIRST_TIMER_ASSOCIATIONS = {"FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER", "NONE", "MANNEQUIN"}
+GREEN_CONCLUSIONS = {"success", "neutral", "skipped"}
+# Check runs spawned by drawbridge's own workflow; excluded from the CI gate.
+SELF_CHECK_PREFIX = "drawbridge"
+
+CONFIG_FENCE_RE = re.compile(
+    r"```json[ \t]+drawbridge-config[ \t]*\n(.*?)\n```", re.DOTALL
+)
+
+
+def load_policy_config(policy_path):
+    with open(policy_path, encoding="utf-8") as f:
+        text = f.read()
+    m = CONFIG_FENCE_RE.search(text)
+    if not m:
+        raise ValueError(f"no ```json drawbridge-config block found in {policy_path}")
+    return json.loads(m.group(1))
+
+
+def glob_to_regex(pattern):
+    """Translate a drawbridge glob to an anchored regex.
+
+    `**` crosses path segments, `*` stays within one segment. A pattern with no
+    glob characters matches that exact path.
+    """
+    out = []
+    i = 0
+    while i < len(pattern):
+        c = pattern[i]
+        if c == "*":
+            if pattern[i : i + 3] == "**/":
+                out.append("(?:[^/]+/)*")
+                i += 3
+            elif pattern[i : i + 2] == "**":
+                out.append(".*")
+                i += 2
+            else:
+                out.append("[^/]*")
+                i += 1
+        else:
+            out.append(re.escape(c))
+            i += 1
+    return re.compile("".join(out) + r"\Z")
+
+
+def match_any(path, patterns):
+    return any(glob_to_regex(p).match(path) for p in patterns)
+
+
+def touched_paths(files):
+    """All paths a PR touches, including rename sources."""
+    paths = set()
+    for f in files:
+        paths.add(f["filename"])
+        if f.get("previous_filename"):
+            paths.add(f["previous_filename"])
+    return sorted(paths)
+
+
+def resolve_tier(config, association):
+    for name, tier in config["tiers"].items():
+        if association in tier["associations"]:
+            return name, tier
+    return None, None
+
+
+def valid_verdict(verdict):
+    return (
+        isinstance(verdict, dict)
+        and verdict.get("scope_fit") in {"high", "medium", "low"}
+        and verdict.get("alignment") in {"high", "medium", "low"}
+        and isinstance(verdict.get("risk_flags"), list)
+        and verdict.get("verdict") in {"autonomous", "maintainer_review", "close_suggest"}
+    )
+
+
+def evaluate_pr(config, verdict, pr, files, checks, skip_ci):
+    gates = {}
+
+    def gate(name, ok, detail):
+        gates[name] = {"pass": bool(ok), "detail": detail}
+
+    # Gate: judge verdict — autonomous requires high/high and zero risk flags.
+    flags = verdict.get("risk_flags", [])
+    gate(
+        "judge_verdict",
+        verdict.get("verdict") == "autonomous"
+        and verdict.get("scope_fit") == "high"
+        and verdict.get("alignment") == "high"
+        and not flags,
+        f"verdict={verdict.get('verdict')} scope_fit={verdict.get('scope_fit')} "
+        f"alignment={verdict.get('alignment')} risk_flags={flags}",
+    )
+
+    # Gate: trust tier — first-timers and unknowns never pass (spec MUST 5).
+    association = pr.get("author_association", "NONE")
+    tier_name, tier = resolve_tier(config, association)
+    if association in FIRST_TIMER_ASSOCIATIONS or tier is None:
+        gate("trust_tier", False, f"author_association={association} (no autonomous tier)")
+        allowed_categories = []
+    else:
+        gate("trust_tier", True, f"author_association={association} tier={tier_name}")
+        allowed_categories = list(tier["categories"])
+
+    # The bugfix category is only in play when the judge classified the change
+    # as a bug fix — the verdict feeds the gate but path bounds still apply.
+    if "bugfix" in allowed_categories and verdict.get("category") != "bugfix":
+        allowed_categories.remove("bugfix")
+
+    paths = touched_paths(files)
+
+    # Gate: deny list — always escalates, regardless of anything else.
+    denied = [p for p in paths if match_any(p, config["deny_paths"])]
+    gate("no_denied_paths", not denied, f"denied={denied}" if denied else "no denied paths")
+
+    # Gate: allowlist — every touched path inside the tier's allowed categories.
+    allowed_patterns = []
+    for cat in allowed_categories:
+        allowed_patterns.extend(config["categories"][cat])
+    outside = [p for p in paths if not match_any(p, allowed_patterns)]
+    gate(
+        "paths_allowed",
+        bool(paths) and not outside,
+        f"categories={allowed_categories} outside_allowlist={outside}"
+        if outside or not paths
+        else f"all {len(paths)} paths in categories={allowed_categories}",
+    )
+
+    # Gate: size cap.
+    cap = config["size_cap"]
+    lines = pr.get("additions", 0) + pr.get("deletions", 0)
+    nfiles = pr.get("changed_files", len(files))
+    gate(
+        "size_cap",
+        lines <= cap["max_changed_lines"] and nfiles <= cap["max_changed_files"],
+        f"{lines} lines / {nfiles} files (cap {cap['max_changed_lines']}/{cap['max_changed_files']})",
+    )
+
+    # Gate: not a draft.
+    gate("not_draft", not pr.get("draft", False), f"draft={pr.get('draft', False)}")
+
+    # Gate: CI fully green.
+    if skip_ci:
+        gate("ci_green", False, "skipped (pre-CI pass) — pending")
+    else:
+        runs = [
+            r
+            for r in checks.get("check_runs", [])
+            if not r.get("name", "").lower().startswith(SELF_CHECK_PREFIX)
+        ]
+        pending = [r["name"] for r in runs if r.get("status") != "completed"]
+        red = [
+            r["name"]
+            for r in runs
+            if r.get("status") == "completed"
+            and r.get("conclusion") not in GREEN_CONCLUSIONS
+        ]
+        if not runs:
+            # CI path-ignores docs-tier paths, so a docs-only diff legitimately
+            # has zero check runs. Anything else with zero checks escalates.
+            all_ignored = bool(paths) and all(
+                match_any(p, config["ci_ignored_paths"]) for p in paths
+            )
+            gate(
+                "ci_green",
+                all_ignored,
+                "no check runs; all paths CI-ignored"
+                if all_ignored
+                else "no check runs and paths are not CI-ignored",
+            )
+        else:
+            gate(
+                "ci_green",
+                not pending and not red,
+                f"pending={pending} failed={red}" if (pending or red) else f"{len(runs)} checks green",
+            )
+
+    all_pass = all(g["pass"] for g in gates.values())
+    if all_pass:
+        route = "autonomous"
+    elif verdict.get("verdict") == "close_suggest":
+        route = "close_suggest"
+    else:
+        route = "review"
+    return route, gates
+
+
+def evaluate_issue(verdict):
+    # Issues have no diff, CI, or merge action — nothing autonomous to do.
+    route = "close_suggest" if verdict.get("verdict") == "close_suggest" else "review"
+    gates = {
+        "issue_no_autonomous_lane": {
+            "pass": True,
+            "detail": "issues always route to the maintainer lane",
+        }
+    }
+    return route, gates
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--policy", required=True)
+    ap.add_argument("--verdict", required=True)
+    ap.add_argument("--item-type", required=True, choices=["pr", "issue"])
+    ap.add_argument("--pr-json")
+    ap.add_argument("--files-json")
+    ap.add_argument("--checks-json")
+    ap.add_argument("--skip-ci", action="store_true")
+    ap.add_argument("--output")
+    args = ap.parse_args(argv)
+
+    config = load_policy_config(args.policy)
+    with open(args.verdict, encoding="utf-8") as f:
+        verdict = json.load(f)
+
+    if not valid_verdict(verdict):
+        # Malformed judge output: synthesize an escalation, never autonomous.
+        verdict = {
+            "scope_fit": "low",
+            "alignment": "low",
+            "risk_flags": ["judge verdict malformed"],
+            "verdict": "maintainer_review",
+            "reasoning": "Judge output failed schema validation; escalated fail-safe.",
+        }
+
+    if args.item_type == "pr":
+        if not args.pr_json or not args.files_json:
+            ap.error("--pr-json and --files-json are required for item-type=pr")
+        if not args.skip_ci and not args.checks_json:
+            ap.error("--checks-json is required for item-type=pr without --skip-ci")
+        with open(args.pr_json, encoding="utf-8") as f:
+            pr = json.load(f)
+        with open(args.files_json, encoding="utf-8") as f:
+            files = json.load(f)
+        checks = {}
+        if args.checks_json:
+            with open(args.checks_json, encoding="utf-8") as f:
+                checks = json.load(f)
+        route, gates = evaluate_pr(config, verdict, pr, files, checks, args.skip_ci)
+    else:
+        route, gates = evaluate_issue(verdict)
+
+    result = {
+        "item_type": args.item_type,
+        "mode": config["mode"],
+        "route": route,
+        "gates": gates,
+        "verdict": verdict,
+    }
+    out = json.dumps(result, indent=2)
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(out + "\n")
+    else:
+        print(out)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

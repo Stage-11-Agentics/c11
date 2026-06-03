@@ -1,0 +1,71 @@
+# Drawbridge nightly sweep — re-triages anything the event handlers missed
+# (no drawbridge:* label) and posts a digest to the maintainer channel.
+# See TRIAGE_POLICY.md.
+
+name: Drawbridge Sweep
+
+on:
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  drawbridge-sweep:
+    name: drawbridge-sweep
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      actions: write # dispatch drawbridge.yml for missed items
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+
+      - name: Find and re-dispatch untriaged items
+        id: sweep
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          MAX_DISPATCH=10
+
+          q="repo:$GITHUB_REPOSITORY is:open -label:\"drawbridge:autonomous\" -label:\"drawbridge:review\" -label:\"drawbridge:close-suggest\""
+          gh api -X GET search/issues -f q="$q" -f per_page=50 \
+            --jq '.items | map({number, title, is_pr: (has("pull_request")), html_url})' > /tmp/untriaged.json
+
+          total="$(jq 'length' /tmp/untriaged.json)"
+          echo "untriaged open items: $total"
+
+          dispatched=0
+          while read -r row; do
+            [[ "$dispatched" -ge "$MAX_DISPATCH" ]] && break
+            num="$(jq -r '.number' <<<"$row")"
+            if [[ "$(jq -r '.is_pr' <<<"$row")" == "true" ]]; then type=pr; else type=issue; fi
+            echo "dispatching drawbridge for $type #$num"
+            gh workflow run drawbridge.yml -f item_type="$type" -f item_number="$num"
+            dispatched=$((dispatched + 1))
+          done < <(jq -c '.[]' /tmp/untriaged.json)
+
+          open_prs="$(gh api -X GET search/issues -f q="repo:$GITHUB_REPOSITORY is:open is:pr" -f per_page=1 --jq '.total_count')"
+          open_issues="$(gh api -X GET search/issues -f q="repo:$GITHUB_REPOSITORY is:open is:issue" -f per_page=1 --jq '.total_count')"
+
+          {
+            echo "🌉 **Nightly sweep** — $open_prs open PRs, $open_issues open issues, $total untriaged."
+            if [[ "$total" -gt 0 ]]; then
+              echo
+              echo "Re-dispatched $dispatched for triage:"
+              jq -r '.[] | "- [\(if .is_pr then "PR" else "issue" end) #\(.number): \(.title)](\(.html_url))"' /tmp/untriaged.json | head -n "$MAX_DISPATCH"
+              [[ "$total" -gt "$MAX_DISPATCH" ]] && echo "- …and $((total - MAX_DISPATCH)) more (next sweep)"
+            fi
+          } > /tmp/digest.md
+
+      - name: Post digest
+        env:
+          ZULIP_BOT_API_KEY: ${{ secrets.ZULIP_BOT_API_KEY }}
+        run: scripts/drawbridge/notify.sh TRIAGE_POLICY.md /tmp/digest.md

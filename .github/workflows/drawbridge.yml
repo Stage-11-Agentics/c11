@@ -1,0 +1,447 @@
+# Drawbridge — autonomous inbound pipeline (see TRIAGE_POLICY.md).
+#
+# Lane 1 (judge): read-only LLM triage. No write permissions, no Bash, never
+#   sufficient alone.
+# Lane 2 (gates): deterministic checks in scripts/drawbridge/gates.py, run from
+#   the trusted default-branch checkout — a PR cannot modify the gates that
+#   judge it.
+# Lane 3 (deep review): full LLM review pass, posted on the item.
+# Lane 4 (notify): Zulip ping with the verdict inline.
+#
+# Security invariants honored here:
+# - pull_request_target NEVER checks out the PR head. Every checkout in this
+#   file is the base repo's default branch; PR content arrives as API text only
+#   and is never executed.
+# - The judge job has read-only permissions and a read-only toolset.
+# - Action decisions (merge/comment/label) are deterministic workflow code.
+# - Dry-run vs live is controlled by TRIAGE_POLICY.md, not by anything an
+#   inbound item can touch (the policy file is on the deny list).
+
+name: Drawbridge
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, synchronize]
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      item_type:
+        description: "pr or issue"
+        required: true
+        type: choice
+        options: [pr, issue]
+      item_number:
+        description: "issue/PR number"
+        required: true
+
+concurrency:
+  group: drawbridge-${{ github.event.pull_request.number || github.event.issue.number || inputs.item_number }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  drawbridge-judge:
+    name: drawbridge-judge
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Skip drafts (ready_for_review re-triggers), bot comments, and comments
+    # from maintainers (their comments don't need triage).
+    if: >-
+      (github.event_name != 'pull_request_target' || github.event.pull_request.draft == false) &&
+      (github.event_name != 'issue_comment' ||
+        (github.event.comment.user.type != 'Bot' &&
+         github.event.comment.author_association != 'OWNER' &&
+         github.event.comment.author_association != 'MEMBER' &&
+         github.event.comment.author_association != 'COLLABORATOR'))
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    outputs:
+      item_type: ${{ steps.resolve.outputs.item_type }}
+      item_number: ${{ steps.resolve.outputs.item_number }}
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+
+      - name: Resolve item
+        id: resolve
+        env:
+          INPUT_TYPE: ${{ inputs.item_type }}
+          INPUT_NUMBER: ${{ inputs.item_number }}
+        run: |
+          set -euo pipefail
+          case "$GITHUB_EVENT_NAME" in
+            pull_request_target)
+              type=pr
+              num="$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")"
+              ;;
+            issues)
+              type=issue
+              num="$(jq -r '.issue.number' "$GITHUB_EVENT_PATH")"
+              ;;
+            issue_comment)
+              num="$(jq -r '.issue.number' "$GITHUB_EVENT_PATH")"
+              if jq -e '.issue.pull_request' "$GITHUB_EVENT_PATH" >/dev/null; then
+                type=pr
+              else
+                type=issue
+              fi
+              ;;
+            workflow_dispatch)
+              type="$INPUT_TYPE"
+              num="$INPUT_NUMBER"
+              ;;
+            *)
+              echo "unsupported event: $GITHUB_EVENT_NAME" >&2; exit 1
+              ;;
+          esac
+          echo "item_type=$type" >> "$GITHUB_OUTPUT"
+          echo "item_number=$num" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch item context (API text only — no head checkout)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          scripts/drawbridge/fetch-item.sh "$GITHUB_REPOSITORY" \
+            "${{ steps.resolve.outputs.item_type }}" \
+            "${{ steps.resolve.outputs.item_number }}" \
+            /tmp/drawbridge
+
+      - name: Judge (read-only LLM triage)
+        continue-on-error: true
+        uses: anthropics/claude-code-action@36a69b6a90b850823f86de06fdfd56264772ad98 # v1.0.134
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: "Read scripts/drawbridge/prompts/judge.md and follow it exactly."
+          claude_args: >-
+            --model claude-sonnet-4-6
+            --allowedTools "Read,Grep,Glob,Write"
+            --disallowedTools "Bash,WebFetch,WebSearch,Task"
+
+      - name: Validate verdict (fail-safe to escalation)
+        run: |
+          set -euo pipefail
+          if ! jq -e '
+              type == "object"
+              and (.verdict | IN("autonomous","maintainer_review","close_suggest"))
+              and (.scope_fit | IN("high","medium","low"))
+              and (.alignment | IN("high","medium","low"))
+              and (.risk_flags | type == "array")
+            ' /tmp/drawbridge/verdict.json >/dev/null 2>&1; then
+            echo "judge verdict missing or malformed — synthesizing escalation"
+            cat > /tmp/drawbridge/verdict.json <<'EOF'
+          {
+            "scope_fit": "low",
+            "alignment": "low",
+            "category": "other",
+            "risk_flags": ["judge failed to produce a valid verdict"],
+            "verdict": "maintainer_review",
+            "reasoning": "The judge run errored or emitted malformed output; escalated fail-safe."
+          }
+          EOF
+          fi
+          jq . /tmp/drawbridge/verdict.json
+
+      - name: Upload verdict artifact (audit trail)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: drawbridge-verdict-${{ steps.resolve.outputs.item_type }}-${{ steps.resolve.outputs.item_number }}
+          path: /tmp/drawbridge/
+
+  drawbridge-gate:
+    name: drawbridge-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    needs: drawbridge-judge
+    permissions:
+      contents: write       # merge (live mode only; dry-run never writes contents)
+      issues: write         # labels + comments
+      pull-requests: write  # merge + comments
+    outputs:
+      route: ${{ steps.gates.outputs.route }}
+      mode: ${{ steps.gates.outputs.mode }}
+      internal: ${{ steps.gates.outputs.internal }}
+      item_type: ${{ needs.drawbridge-judge.outputs.item_type }}
+      item_number: ${{ needs.drawbridge-judge.outputs.item_number }}
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+
+      - name: Download verdict
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: drawbridge-verdict-${{ needs.drawbridge-judge.outputs.item_type }}-${{ needs.drawbridge-judge.outputs.item_number }}
+          path: /tmp/drawbridge
+
+      - name: Run deterministic gates
+        id: gates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ITEM_TYPE: ${{ needs.drawbridge-judge.outputs.item_type }}
+          ITEM_NUMBER: ${{ needs.drawbridge-judge.outputs.item_number }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/gate
+
+          if [[ "$ITEM_TYPE" == "pr" ]]; then
+            gh api "repos/$GITHUB_REPOSITORY/pulls/$ITEM_NUMBER" > /tmp/gate/pr.json
+            gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$ITEM_NUMBER/files" | jq -s 'add' > /tmp/gate/files.json
+
+            # Pre-pass without CI: only wait on checks if everything else passes.
+            python3 scripts/drawbridge/gates.py \
+              --policy TRIAGE_POLICY.md \
+              --verdict /tmp/drawbridge/verdict.json \
+              --item-type pr \
+              --pr-json /tmp/gate/pr.json \
+              --files-json /tmp/gate/files.json \
+              --skip-ci \
+              --output /tmp/gate/pre.json
+            eligible="$(jq '[.gates | to_entries[] | select(.key != "ci_green") | .value.pass] | all' /tmp/gate/pre.json)"
+
+            head_sha="$(jq -r '.head.sha' /tmp/gate/pr.json)"
+            if [[ "$eligible" == "true" ]]; then
+              echo "autonomous-eligible pending CI — waiting for checks on $head_sha"
+              for i in $(seq 1 45); do
+                gh api --paginate "repos/$GITHUB_REPOSITORY/commits/$head_sha/check-runs" \
+                  | jq -s '{check_runs: (map(.check_runs) | add // [])}' > /tmp/gate/checks.json
+                pending="$(jq '[.check_runs[] | select((.name | ascii_downcase | startswith("drawbridge")) | not) | select(.status != "completed")] | length' /tmp/gate/checks.json)"
+                [[ "$pending" -eq 0 ]] && break
+                echo "  $pending check(s) still running (poll $i/45)"
+                sleep 60
+              done
+            else
+              gh api --paginate "repos/$GITHUB_REPOSITORY/commits/$head_sha/check-runs" \
+                | jq -s '{check_runs: (map(.check_runs) | add // [])}' > /tmp/gate/checks.json
+            fi
+
+            python3 scripts/drawbridge/gates.py \
+              --policy TRIAGE_POLICY.md \
+              --verdict /tmp/drawbridge/verdict.json \
+              --item-type pr \
+              --pr-json /tmp/gate/pr.json \
+              --files-json /tmp/gate/files.json \
+              --checks-json /tmp/gate/checks.json \
+              --output /tmp/gate/gates.json
+            association="$(jq -r '.author_association' /tmp/gate/pr.json)"
+          else
+            python3 scripts/drawbridge/gates.py \
+              --policy TRIAGE_POLICY.md \
+              --verdict /tmp/drawbridge/verdict.json \
+              --item-type issue \
+              --output /tmp/gate/gates.json
+            association="$(jq -r '.author_association' /tmp/drawbridge/meta.json)"
+          fi
+
+          jq . /tmp/gate/gates.json
+          {
+            echo "route=$(jq -r '.route' /tmp/gate/gates.json)"
+            echo "mode=$(jq -r '.mode' /tmp/gate/gates.json)"
+            case "$association" in
+              OWNER|MEMBER|COLLABORATOR) echo "internal=true" ;;
+              *) echo "internal=false" ;;
+            esac
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Apply route label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ITEM_NUMBER: ${{ needs.drawbridge-judge.outputs.item_number }}
+          ROUTE: ${{ steps.gates.outputs.route }}
+        run: |
+          set -euo pipefail
+          gh label create "drawbridge:autonomous" --color "2da44e" --description "Drawbridge: qualifies for the autonomous lane" 2>/dev/null || true
+          gh label create "drawbridge:review" --color "bf8700" --description "Drawbridge: routed to maintainer review" 2>/dev/null || true
+          gh label create "drawbridge:close-suggest" --color "cf222e" --description "Drawbridge: close suggested (never auto-closed)" 2>/dev/null || true
+          label="drawbridge:${ROUTE/close_suggest/close-suggest}"
+          for other in drawbridge:autonomous drawbridge:review drawbridge:close-suggest; do
+            [[ "$other" == "$label" ]] && continue
+            gh issue edit "$ITEM_NUMBER" --remove-label "$other" 2>/dev/null || true
+          done
+          gh issue edit "$ITEM_NUMBER" --add-label "$label"
+
+      - name: Act (deterministic; dry-run posts WOULD-act)
+        if: steps.gates.outputs.route == 'autonomous'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ITEM_NUMBER: ${{ needs.drawbridge-judge.outputs.item_number }}
+          MODE: ${{ steps.gates.outputs.mode }}
+        run: |
+          set -euo pipefail
+          {
+            if [[ "$MODE" == "dry-run" ]]; then
+              echo "## 🌉 Drawbridge: WOULD AUTO-MERGE (dry-run)"
+              echo
+              echo "Every deterministic gate passed. Drawbridge is in dry-run, so no action was taken — the maintainer has been notified."
+            else
+              echo "## 🌉 Drawbridge: auto-merged"
+              echo
+              echo "Every deterministic gate passed. Thank you for the contribution! 🙏"
+            fi
+            echo
+            echo "| Gate | Result | Detail |"
+            echo "|------|--------|--------|"
+            jq -r '.gates | to_entries[] | "| \(.key) | \(if .value.pass then "✅" else "❌" end) | \(.value.detail | gsub("\\|"; "\\\\|")) |"' /tmp/gate/gates.json
+            echo
+            echo "_Judge: \"$(jq -r '.verdict.reasoning' /tmp/gate/gates.json)\"_"
+            echo
+            echo "<!-- drawbridge:gate -->"
+          } > /tmp/gate/comment.md
+
+          scripts/drawbridge/upsert-comment.sh "$GITHUB_REPOSITORY" "$ITEM_NUMBER" "<!-- drawbridge:gate -->" /tmp/gate/comment.md
+
+          if [[ "$MODE" == "live" ]]; then
+            gh pr merge "$ITEM_NUMBER" --squash
+          fi
+
+      - name: Upload gate result (audit trail)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: drawbridge-gates-${{ needs.drawbridge-judge.outputs.item_type }}-${{ needs.drawbridge-judge.outputs.item_number }}
+          path: /tmp/gate/gates.json
+
+  drawbridge-review:
+    name: drawbridge-review
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [drawbridge-judge, drawbridge-gate]
+    # Deep review external PRs only: internal (org) PRs have their own review
+    # flows, and issues get the judge's reasoning in the notification instead.
+    if: >-
+      needs.drawbridge-gate.outputs.route == 'review' &&
+      needs.drawbridge-gate.outputs.item_type == 'pr' &&
+      needs.drawbridge-gate.outputs.internal != 'true'
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    outputs:
+      comment_url: ${{ steps.post.outputs.comment_url }}
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+
+      - name: Download item context
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: drawbridge-verdict-${{ needs.drawbridge-gate.outputs.item_type }}-${{ needs.drawbridge-gate.outputs.item_number }}
+          path: /tmp/drawbridge
+
+      - name: Deep review (read-only LLM pass)
+        continue-on-error: true
+        uses: anthropics/claude-code-action@36a69b6a90b850823f86de06fdfd56264772ad98 # v1.0.134
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: "Read scripts/drawbridge/prompts/deep-review.md and follow it exactly."
+          claude_args: >-
+            --model claude-opus-4-8
+            --allowedTools "Read,Grep,Glob,Write"
+            --disallowedTools "Bash,WebFetch,WebSearch,Task"
+
+      - name: Post review comment (deterministic)
+        id: post
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ITEM_NUMBER: ${{ needs.drawbridge-gate.outputs.item_number }}
+        run: |
+          set -euo pipefail
+          if [[ ! -s /tmp/drawbridge/review.md ]]; then
+            cat > /tmp/drawbridge/review.md <<'EOF'
+          The Drawbridge deep-review pass failed to produce output for this PR; a maintainer will review it directly. Apologies for the noise, and thank you for the contribution.
+          EOF
+          fi
+          {
+            cat /tmp/drawbridge/review.md
+            echo
+            echo "---"
+            echo "_🌉 Drawbridge deep review (lane 3) — an automated pass; a maintainer has been notified and makes the final call._"
+            echo "<!-- drawbridge:review -->"
+          } > /tmp/drawbridge/review-comment.md
+          url="$(scripts/drawbridge/upsert-comment.sh "$GITHUB_REPOSITORY" "$ITEM_NUMBER" "<!-- drawbridge:review -->" /tmp/drawbridge/review-comment.md)"
+          echo "comment_url=$url" >> "$GITHUB_OUTPUT"
+
+  drawbridge-notify:
+    name: drawbridge-notify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [drawbridge-judge, drawbridge-gate, drawbridge-review]
+    # Ping on every would-act / act, and on every external escalation. Internal
+    # (org-authored) items that merely escalate are not worth an interruption.
+    if: >-
+      always() &&
+      needs.drawbridge-gate.result == 'success' &&
+      (needs.drawbridge-gate.outputs.route == 'autonomous' ||
+       needs.drawbridge-gate.outputs.internal != 'true')
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+
+      - name: Download item context
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: drawbridge-verdict-${{ needs.drawbridge-gate.outputs.item_type }}-${{ needs.drawbridge-gate.outputs.item_number }}
+          path: /tmp/drawbridge
+
+      - name: Download gate result
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: drawbridge-gates-${{ needs.drawbridge-gate.outputs.item_type }}-${{ needs.drawbridge-gate.outputs.item_number }}
+          path: /tmp/gate
+
+      - name: Compose and send notification
+        env:
+          ZULIP_BOT_API_KEY: ${{ secrets.ZULIP_BOT_API_KEY }}
+          ROUTE: ${{ needs.drawbridge-gate.outputs.route }}
+          MODE: ${{ needs.drawbridge-gate.outputs.mode }}
+          REVIEW_URL: ${{ needs.drawbridge-review.outputs.comment_url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="$(jq -r '.title' /tmp/drawbridge/meta.json)"
+          url="$(jq -r '.html_url' /tmp/drawbridge/meta.json)"
+          author="$(jq -r '.author' /tmp/drawbridge/meta.json)"
+          assoc="$(jq -r '.author_association' /tmp/drawbridge/meta.json)"
+          itype="$(jq -r '.type' /tmp/drawbridge/meta.json)"
+          num="$(jq -r '.number' /tmp/drawbridge/meta.json)"
+
+          case "$ROUTE" in
+            autonomous)
+              if [[ "$MODE" == "dry-run" ]]; then headline="⏸️ **WOULD AUTO-MERGE** (dry-run)"; else headline="✅ **auto-merged**"; fi ;;
+            close_suggest) headline="🚪 **suggest close** (your call — nothing was closed)" ;;
+            *) headline="🔍 **needs your review**" ;;
+          esac
+
+          {
+            echo "🌉 $headline — [$itype #$num: $title]($url)"
+            echo
+            echo "- **Author:** \`$author\` ($assoc)"
+            echo "- **Judge:** scope_fit=$(jq -r '.scope_fit' /tmp/drawbridge/verdict.json), alignment=$(jq -r '.alignment' /tmp/drawbridge/verdict.json), category=$(jq -r '.category // "n/a"' /tmp/drawbridge/verdict.json)"
+            flags="$(jq -r '.risk_flags | join("; ")' /tmp/drawbridge/verdict.json)"
+            [[ -n "$flags" ]] && echo "- **Risk flags:** $flags"
+            echo "- **Reasoning:** $(jq -r '.reasoning' /tmp/drawbridge/verdict.json)"
+            failed="$(jq -r '[.gates | to_entries[] | select(.value.pass | not) | "\(.key) (\(.value.detail))"] | join("; ")' /tmp/gate/gates.json)"
+            [[ -n "$failed" ]] && echo "- **Failed gates:** $failed"
+            [[ -n "${REVIEW_URL:-}" ]] && echo "- **Deep review:** $REVIEW_URL"
+            echo "- **Audit:** [workflow run]($RUN_URL)"
+            if [[ "$ROUTE" == "close_suggest" ]]; then
+              echo
+              echo "**Drafted reply (one-click close material):**"
+              jq -r '.draft_reply // "n/a"' /tmp/drawbridge/verdict.json | sed 's/^/> /'
+            fi
+          } > /tmp/notify.md
+
+          scripts/drawbridge/notify.sh TRIAGE_POLICY.md /tmp/notify.md

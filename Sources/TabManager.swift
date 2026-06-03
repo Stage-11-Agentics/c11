@@ -691,6 +691,10 @@ class TabManager: ObservableObject {
         let branch: String?
         let isDirty: Bool
         let pullRequest: WorkspacePullRequestSnapshot
+        /// C11-104 — resolved worktree + branch context for the sidebar
+        /// chips, computed on the same off-main probe pass so we do not
+        /// fork additional git invocations on the hot path.
+        let gitContext: ResolvedGitContext?
     }
 
     private struct CommandResult {
@@ -749,6 +753,49 @@ class TabManager: ObservableObject {
             return false
         }
         return workspace.paneInteractionRuntime.hasAnyActive
+    }
+
+    /// True when the selected workspace has an active workspace-close
+    /// confirmation overlay. Distinct from `hasActivePaneInteraction` so
+    /// AppDelegate can route Cmd+D / Esc / Return through the workspace
+    /// runtime, and so app-level shortcuts stay suppressed while the
+    /// destructive close prompt is visible.
+    @MainActor
+    var hasActiveWorkspaceCloseInteraction: Bool {
+        guard let selectedTabId,
+              let workspace = tabs.first(where: { $0.id == selectedTabId }) else {
+            return false
+        }
+        return workspace.workspaceCloseInteractionRuntime.hasActive
+    }
+
+    /// Accept the active workspace-close interaction in the selected
+    /// workspace. Used by the Cmd+D dispatcher: Cmd+D on a destructive
+    /// confirm should accept (matches the pane-interaction path).
+    @MainActor
+    @discardableResult
+    func acceptActiveWorkspaceCloseInteractionInKeyWorkspace() -> Bool {
+        guard let selectedTabId,
+              let workspace = tabs.first(where: { $0.id == selectedTabId }) else {
+            return false
+        }
+        return workspace.workspaceCloseInteractionRuntime.accept()
+    }
+
+    /// Cancel the active workspace-close interaction in the selected
+    /// workspace. Used as an Esc fallback when the overlay host did not
+    /// receive keyDown directly (WKWebView responder edge cases).
+    @MainActor
+    @discardableResult
+    func cancelActiveWorkspaceCloseInteractionInKeyWorkspace() -> Bool {
+        guard let selectedTabId,
+              let workspace = tabs.first(where: { $0.id == selectedTabId }) else {
+            return false
+        }
+        let runtime = workspace.workspaceCloseInteractionRuntime
+        guard let active = runtime.active else { return false }
+        runtime.cancel(ifInteractionId: active.id)
+        return true
     }
 
     /// Accept the topmost pane interaction in the currently selected workspace,
@@ -969,6 +1016,16 @@ class TabManager: ObservableObject {
     private var workspaceGitProbeGenerationByKey: [WorkspaceGitProbeKey: UUID] = [:]
     private var workspaceGitProbeTimersByKey: [WorkspaceGitProbeKey: [DispatchSourceTimer]] = [:]
 
+    /// (C11-106) Process-wide cache for `GitContextResolver` results,
+    /// shared across all workspaces and surfaces. Reads/writes are
+    /// internally locked (`@unchecked Sendable` with an NSLock), so
+    /// it is safe to share across the `initialWorkspaceGitProbeQueue`
+    /// and any future ad-hoc derivation queues. Lifecycle is tied
+    /// to the TabManager singleton; on workspace deletion the cache
+    /// entries naturally expire via LRU eviction since no further
+    /// resolve will refresh them.
+    nonisolated(unsafe) static let gitContextResolverCache = GitContextResolverCache(capacity: 256)
+
     // Recent tab history for back/forward navigation (like browser history)
     private var tabHistory: [UUID] = []
     private var historyIndex: Int = -1
@@ -980,6 +1037,12 @@ class TabManager: ObservableObject {
     private var pendingWorkspaceUnfocusTarget: (tabId: UUID, panelId: UUID)?
     private var sidebarSelectedWorkspaceIds: Set<UUID> = []
     var confirmCloseHandler: ((String, String, Bool) -> Bool)?
+    /// Test seam for the workspace-scoped close-confirmation overlay (C11-30).
+    /// When set, replaces the async overlay flow with a synchronous callback so
+    /// unit tests can drive `closeWorkspaceIfRunningProcess` /
+    /// `closeWorkspacesWithConfirmation` without a running AppKit window.
+    /// Production callers route through `Workspace.presentConfirmCloseWorkspace`.
+    var workspaceCloseConfirmationHandler: ((_ title: String, _ message: String) -> Bool)?
     private struct WorkspaceCreationSnapshot {
         let tabs: [Workspace]
         let selectedTabId: UUID?
@@ -1191,7 +1254,7 @@ class TabManager: ObservableObject {
                 "find.startSearch workspace=\(panel.workspaceId.uuidString.prefix(5)) " +
                 "panel=\(panel.id.uuidString.prefix(5)) existing=\(hadExistingSearch ? "yes" : "no") " +
                 "handled=\(handled ? 1 : 0) " +
-                "firstResponder=\(String(describing: panel.surface.hostedView.window?.firstResponder))"
+                "firstResponder=\(String(describing: panel.surface.uiWindow?.firstResponder))"
             )
 #endif
             return
@@ -1608,6 +1671,23 @@ class TabManager: ObservableObject {
             break
         }
 
+        // C11-104 — apply the resolved worktree+branch context.
+        // Path:
+        //   1. workspace.panelGitContexts (fast path for the sidebar).
+        //   2. SurfaceMetadataStore.setInternal(.derived) for `worktree`
+        //      and `branch` so external readers (c11 get-metadata,
+        //      future Lattice queries) see the same data without
+        //      reaching into Workspace internals.
+        workspace.updatePanelGitContext(
+            panelId: probeKey.panelId,
+            context: snapshot.gitContext
+        )
+        applyDerivedWorktreeBranchMetadata(
+            workspaceId: probeKey.workspaceId,
+            surfaceId: probeKey.panelId,
+            context: snapshot.gitContext
+        )
+
 #if DEBUG
         let branchLabel = snapshot.branch ?? "none"
         let prLabel: String = {
@@ -1645,19 +1725,42 @@ class TabManager: ObservableObject {
     private nonisolated static func initialWorkspaceGitMetadataSnapshot(
         for directory: String
     ) -> InitialWorkspaceGitMetadataSnapshot {
+        // C11-104 — resolve the worktree/branch chip context first.
+        // Runs the same off-main probe queue; the resolver itself
+        // shells out to `git rev-parse` with a bounded timeout. We
+        // resolve here unconditionally because the resolver also
+        // handles the "no git" case (returns nil) which we want to
+        // capture even when the legacy branch probe also returns nil.
+        //
+        // (C11-106) Goes through `resolveCached` so repeat probes
+        // against a stable HEAD don't re-shell to git. The cache is
+        // keyed on `(cwd, mtime(headPath), mtime(superHeadPath?))`;
+        // see `GitContextResolver.resolveCached` for the full policy
+        // (linked worktrees, submodules, nil-result bypass, etc.).
+        let gitContext = GitContextResolver.resolveCached(
+            cwd: directory,
+            cache: Self.gitContextResolverCache
+        )
+
         let branch = normalizedBranchName(runGitCommand(directory: directory, arguments: ["branch", "--show-current"]))
         guard let branch else {
             return InitialWorkspaceGitMetadataSnapshot(
                 branch: nil,
                 isDirty: false,
-                pullRequest: .notFound
+                pullRequest: .notFound,
+                gitContext: gitContext
             )
         }
 
         let statusOutput = runGitCommand(directory: directory, arguments: ["status", "--porcelain", "-uno"])
         let isDirty = !(statusOutput?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
         let pullRequest = workspacePullRequestSnapshot(directory: directory, branch: branch)
-        return InitialWorkspaceGitMetadataSnapshot(branch: branch, isDirty: isDirty, pullRequest: pullRequest)
+        return InitialWorkspaceGitMetadataSnapshot(
+            branch: branch,
+            isDirty: isDirty,
+            pullRequest: pullRequest,
+            gitContext: gitContext
+        )
     }
 
     private nonisolated static func runGitCommand(directory: String, arguments: [String]) -> String? {
@@ -2318,6 +2421,79 @@ class TabManager: ObservableObject {
         )
     }
 
+    /// C11-104 — write the resolved worktree/branch labels into the
+    /// surface manifest with source `.derived`. Called from the
+    /// off-main probe apply step (already on the main actor via the
+    /// Task hop in `scheduleWorkspaceGitMetadataRefresh`). External
+    /// callers should NOT invoke this directly — it's keyed off the
+    /// resolver output.
+    private func applyDerivedWorktreeBranchMetadata(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        context: ResolvedGitContext?
+    ) {
+        let store = SurfaceMetadataStore.shared
+
+        guard let context else {
+            store.setInternal(
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                key: MetadataKey.worktree,
+                value: "",
+                source: .derived
+            )
+            store.setInternal(
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                key: MetadataKey.branch,
+                value: "",
+                source: .derived
+            )
+            return
+        }
+
+        let worktreeValue: String
+        switch context.outer {
+        case .mainCheckout:
+            worktreeValue = ""
+        case .linkedWorktree(let basename, _, _):
+            worktreeValue = basename
+        case .notInRepo, .stale:
+            // (C11-106) Both states clear the worktree value. Same
+            // observable result as the nil-context branch handled
+            // above; the explicit cases compile-check that future
+            // enum additions are considered here too.
+            worktreeValue = ""
+        }
+
+        let branchValue: String
+        switch context.outer {
+        case .mainCheckout(let branch), .linkedWorktree(_, _, let branch):
+            switch branch {
+            case .attached(let name): branchValue = name
+            case .detached(let sha):  branchValue = "(detached @ \(sha))"
+            case .noBranch:           branchValue = ""
+            }
+        case .notInRepo, .stale:
+            branchValue = ""
+        }
+
+        store.setInternal(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId,
+            key: MetadataKey.worktree,
+            value: worktreeValue,
+            source: .derived
+        )
+        store.setInternal(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId,
+            key: MetadataKey.branch,
+            value: branchValue,
+            source: .derived
+        )
+    }
+
     func clearSurfaceGitBranch(tabId: UUID, surfaceId: UUID) {
         guard let tab = tabs.first(where: { $0.id == tabId }) else { return }
         let hadBranch = tab.panelGitBranches[surfaceId] != nil
@@ -2496,15 +2672,36 @@ class TabManager: ObservableObject {
         }
 
         let plan = closeWorkspacesPlan(for: workspaces)
-        guard confirmClose(
-            title: plan.title,
-            message: plan.message,
-            acceptCmdD: plan.acceptCmdD
-        ) else { return }
-
-        for workspace in plan.workspaces {
-            guard tabs.contains(where: { $0.id == workspace.id }) else { continue }
-            closeWorkspaceIfRunningProcess(workspace, requiresConfirmation: false)
+        // Test seam: synchronous handler short-circuits the overlay flow so
+        // unit tests can exercise the multi-close path without a window.
+        if let handler = workspaceCloseConfirmationHandler {
+            guard handler(plan.title, plan.message) else { return }
+            for workspace in plan.workspaces where tabs.contains(where: { $0.id == workspace.id }) {
+                closeWorkspaceIfRunningProcess(workspace, requiresConfirmation: false)
+            }
+            return
+        }
+        // Anchor on the currently-displayed workspace so the overlay always
+        // mounts on a visible content area. Off-screen workspaces are
+        // isHidden=true (perf #127); their anchor view doesn't report a
+        // window-coord frame, so mounting on one strands the runtime active
+        // with no card visible (operator sees a no-op). The plan listing in
+        // `plan.message` names every workspace being closed, so anchoring
+        // away from the close set doesn't lose context. Fall back to the
+        // first workspace in the close set only when there's no selection
+        // at all.
+        let host: Workspace? = selectedWorkspace ?? workspaces.first
+        guard let host else { return }
+        Task { @MainActor [weak self] in
+            let accepted = await host.presentConfirmCloseWorkspace(
+                title: plan.title,
+                message: plan.message,
+                source: .local
+            )
+            guard accepted, let self else { return }
+            for workspace in plan.workspaces where self.tabs.contains(where: { $0.id == workspace.id }) {
+                self.closeWorkspaceIfRunningProcess(workspace, requiresConfirmation: false)
+            }
         }
     }
 
@@ -2558,7 +2755,6 @@ class TabManager: ObservableObject {
         let workspaces: [Workspace]
         let title: String
         let message: String
-        let acceptCmdD: Bool
     }
 
     private func closeOtherTabsInFocusedPanePlan() -> CloseOtherTabsInFocusedPanePlan? {
@@ -2639,8 +2835,7 @@ class TabManager: ObservableObject {
         return CloseWorkspacesPlan(
             workspaces: workspaces,
             title: title,
-            message: message,
-            acceptCmdD: willCloseWindow
+            message: message
         )
     }
 
@@ -2656,39 +2851,51 @@ class TabManager: ObservableObject {
     }
 
     private func closeWorkspaceIfRunningProcess(_ workspace: Workspace, requiresConfirmation: Bool = true) {
-        let willCloseWindow = tabs.count <= 1
         if requiresConfirmation, workspaceNeedsConfirmClose(workspace) {
-            // Prefer the pane-anchored overlay — it lands on the workspace's focused
-            // panel (typically the running-process terminal that triggered the prompt).
-            // Fall back to the legacy NSAlert when the feature is disabled OR no panel
-            // is resolvable (e.g. race during workspace teardown), which preserves the
-            // existing CloseWorkspaceCmdDUITests contract (plan §3.4, §4.4).
-            if PaneInteractionFeatureFlag.isEnabled,
-               let panelId = workspace.focusedPanelId {
-                Task { @MainActor [weak self, weak workspace] in
-                    guard let self, let workspace else { return }
-                    let accepted = await workspace.presentConfirmClose(
-                        panelId: panelId,
-                        title: String(localized: "dialog.closeWorkspace.title", defaultValue: "Close workspace?"),
-                        message: String(localized: "dialog.closeWorkspace.message", defaultValue: "This will close the workspace and all of its panes."),
-                        source: .local
-                    )
-                    guard accepted else { return }
-                    // Acceptance-time revalidation — workspace may have closed or
-                    // been destroyed while the overlay was visible.
-                    guard self.tabs.contains(where: { $0.id == workspace.id }) else { return }
-                    self.finishCloseWorkspace(workspace)
-                }
+            let title = String(
+                localized: "dialog.closeWorkspace.title",
+                defaultValue: "Close workspace?"
+            )
+            let displayName = closeWorkspaceDisplayTitle(workspace.title)
+            let format = String(
+                localized: "dialog.closeWorkspace.messageNamed",
+                defaultValue: "This will close the workspace \u{201C}%@\u{201D} and all of its panes."
+            )
+            let message = String(format: format, locale: .current, displayName)
+            // Off-screen workspaces are isHidden=true (perf #127), so their anchor
+            // view doesn't report a window-coord frame and the overlay would bail
+            // on `guard let anchor`. When the operator clicks the X on a background
+            // tab we first switch selection to that workspace so it becomes the
+            // visible one; the confirm card then mounts on the workspace being
+            // closed, matching what the dialog references. (C11-117)
+            if selectedTabId != workspace.id {
+                selectWorkspace(workspace)
+            }
+            // Test seam: synchronous handler short-circuits the overlay flow so
+            // unit tests can exercise the close path without a window.
+            if let handler = workspaceCloseConfirmationHandler {
+                guard handler(title, message) else { return }
+                finishCloseWorkspace(workspace)
                 return
             }
-
-            // NSAlert fallback — no focused panel to anchor on.
-            let accepted = confirmClose(
-                title: String(localized: "dialog.closeWorkspace.title", defaultValue: "Close workspace?"),
-                message: String(localized: "dialog.closeWorkspace.message", defaultValue: "This will close the workspace and all of its panes."),
-                acceptCmdD: willCloseWindow
-            )
-            guard accepted else { return }
+            // Workspace-scoped overlay: a near-black scrim covering the workspace
+            // content area only, with a centered confirm/cancel card. Lands above
+            // portal-hosted terminal/browser content via themeFrame mount. Sidebar
+            // stays visible. Plan §3.1, §3.3.
+            Task { @MainActor [weak self, weak workspace] in
+                guard let self, let workspace else { return }
+                let accepted = await workspace.presentConfirmCloseWorkspace(
+                    title: title,
+                    message: message,
+                    source: .local
+                )
+                guard accepted else { return }
+                // Acceptance-time revalidation — workspace may have closed or
+                // been destroyed while the overlay was visible.
+                guard self.tabs.contains(where: { $0.id == workspace.id }) else { return }
+                self.finishCloseWorkspace(workspace)
+            }
+            return
         }
         finishCloseWorkspace(workspace)
     }
@@ -3486,7 +3693,7 @@ class TabManager: ObservableObject {
         selectedWorkspace?.selectLastSurface()
     }
 
-    /// Create a new terminal surface in the focused pane of the selected workspace
+    /// Create a new terminal surface in the focused pane of the selected workspace.
     func newSurface() {
         // Cmd+T should always focus the newly created surface.
         selectedWorkspace?.clearSplitZoom()
@@ -4164,7 +4371,7 @@ class TabManager: ObservableObject {
             timeoutSeconds: timeoutSeconds
         ) { panel in
             panel.surface.requestBackgroundSurfaceStartIfNeeded()
-            attached = panel.hostedView.window != nil
+            attached = panel.surface.isViewInWindow
             hasSurface = panel.surface.surface != nil
             firstResponder = panel.hostedView.isSurfaceViewFirstResponder()
             return attached && hasSurface
@@ -4334,7 +4541,7 @@ class TabManager: ObservableObject {
                         }
                         if let terminal = panel as? TerminalPanel {
                             selectedTerminalCount += 1
-                            if terminal.hostedView.window != nil {
+                            if terminal.surface.isViewInWindow {
                                 selectedTerminalAttachedCount += 1
                             }
                             let size = terminal.hostedView.bounds.size
@@ -4802,7 +5009,7 @@ class TabManager: ObservableObject {
                     panelId: rightPanel.id,
                     timeoutSeconds: 2.0
                 ) { panel in
-                    panel.hostedView.window != nil && panel.surface.surface != nil
+                    panel.surface.isViewInWindow && panel.surface.surface != nil
                 }
                 // Use an explicit shell exit command for deterministic child-exit behavior across
                 // startup timing variance; this still exercises the same SHOW_CHILD_EXITED path.
@@ -5046,7 +5253,7 @@ class TabManager: ObservableObject {
                 }
                 self.ensureFocusedTerminalFirstResponder()
             } else if let exitPanel = tab.terminalPanel(for: exitPanelId) {
-                exitPanelAttachedBeforeCtrlD = exitPanel.hostedView.window != nil
+                exitPanelAttachedBeforeCtrlD = exitPanel.surface.isViewInWindow
                 exitPanelHasSurfaceBeforeCtrlD = exitPanel.surface.surface != nil
             }
 
@@ -5167,7 +5374,7 @@ class TabManager: ObservableObject {
                             panelId: exitPanelId,
                             timeoutSeconds: 5.0
                         ) { panel in
-                            attachedBeforeTrigger = panel.hostedView.window != nil
+                            attachedBeforeTrigger = panel.surface.isViewInWindow
                             hasSurfaceBeforeTrigger = panel.surface.surface != nil
                             return attachedBeforeTrigger && hasSurfaceBeforeTrigger
                         }
@@ -5177,7 +5384,7 @@ class TabManager: ObservableObject {
                             return
                         }
                     } else if let panel = tab.terminalPanel(for: exitPanelId) {
-                        attachedBeforeTrigger = panel.hostedView.window != nil
+                        attachedBeforeTrigger = panel.surface.isViewInWindow
                         hasSurfaceBeforeTrigger = panel.surface.surface != nil
                     }
                     write([

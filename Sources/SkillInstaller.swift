@@ -40,6 +40,7 @@ enum SkillInstallerTarget: String, CaseIterable {
 struct SkillInstallerPackage: Equatable {
     let name: String
     let version: String
+    let description: String?
     let sourceDir: URL
 }
 
@@ -217,13 +218,25 @@ enum SkillInstaller {
             return SkillInstallerPackage(
                 name: name,
                 version: readSkillVersion(from: skillMd, fileManager: fileManager) ?? "0",
+                description: readSkillDescription(from: skillMd, fileManager: fileManager),
                 sourceDir: url.standardizedFileURL
             )
         }
         return packages.sorted { $0.name < $1.name }
     }
 
-    private static func readSkillVersion(from skillFile: URL, fileManager: FileManager) -> String? {
+    /// Read a YAML frontmatter scalar value by key from a SKILL.md file.
+    /// Only matches values on the same line as the key (no folded/literal
+    /// scalars). Strips surrounding `"` or `'` and trims whitespace. Returns
+    /// nil if the file has no frontmatter, the key is missing, or the value
+    /// is empty after trimming. Single-line contract is intentional — see
+    /// the C11-111 plan; bundled SKILL.md files are guarded against
+    /// multi-line descriptions by BundledSkillsManifestTests.
+    private static func readFrontmatterValue(
+        for key: String,
+        from skillFile: URL,
+        fileManager: FileManager
+    ) -> String? {
         guard let data = fileManager.contents(atPath: skillFile.path),
               let text = String(data: data, encoding: .utf8) else {
             return nil
@@ -233,17 +246,26 @@ enum SkillInstaller {
             return nil
         }
         lines.removeFirst()
+        let prefix = "\(key):"
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed == "---" { break }
-            guard trimmed.hasPrefix("version:") else { continue }
-            let rawValue = String(trimmed.dropFirst("version:".count))
+            guard trimmed.hasPrefix(prefix) else { continue }
+            let rawValue = String(trimmed.dropFirst(prefix.count))
             let value = rawValue
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
             return value.isEmpty ? nil : value
         }
         return nil
+    }
+
+    private static func readSkillVersion(from skillFile: URL, fileManager: FileManager) -> String? {
+        readFrontmatterValue(for: "version", from: skillFile, fileManager: fileManager)
+    }
+
+    private static func readSkillDescription(from skillFile: URL, fileManager: FileManager) -> String? {
+        readFrontmatterValue(for: "description", from: skillFile, fileManager: fileManager)
     }
 
     /// Returns the `installable` allowlist from `MANIFEST.json`, or nil if the

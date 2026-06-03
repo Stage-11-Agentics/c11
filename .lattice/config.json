@@ -1,6 +1,6 @@
 {
   "dashboard": {
-    "column_width": 340,
+    "column_width": 230,
     "font_size": 10
   },
   "default_actor": "human:atin",

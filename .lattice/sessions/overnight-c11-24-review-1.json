@@ -1,0 +1,14 @@
+{
+  "agent_type": "review",
+  "base_name": "overnight-c11-24-review",
+  "framework": "claude-code",
+  "last_active": "2026-05-07T01:14:42Z",
+  "model": "claude-opus-4-7",
+  "name": "overnight-c11-24-review-1",
+  "parent": "agent:overnight-c11-24-delegator",
+  "prompt": "code_review",
+  "serial": 1,
+  "session": "sess_01KR0008Q3RKBPN3F5T67H54XE",
+  "started_at": "2026-05-07T01:14:29Z",
+  "status": "active"
+}

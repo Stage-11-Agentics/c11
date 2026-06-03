@@ -18,7 +18,7 @@ final class BrowserChromeSnapshotTests: XCTestCase {
         let fixtures = try loadFixtures(directoryName: "browserChrome-m1b")
         XCTAssertEqual(fixtures.count, 6)
 
-        var deterministicTheme = C11muxTheme.fallbackStage11
+        var deterministicTheme = C11Theme.fallbackStage11
         deterministicTheme.chrome.browserChrome.background = "$surface"
         deterministicTheme.chrome.browserChrome.omnibarFill = "$surface"
 

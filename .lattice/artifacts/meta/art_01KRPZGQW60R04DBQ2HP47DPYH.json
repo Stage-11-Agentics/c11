@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-15T23:28:32Z",
+  "created_by": "agent:c11-26-reviewer",
+  "custom_fields": {},
+  "id": "art_01KRPZGQW60R04DBQ2HP47DPYH",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KRPZGQW60R04DBQ2HP47DPYH.md",
+    "size_bytes": 437
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "PR https://github.com/Stage-11-Agentics/c11/pull/165. Anchored close X on left of every tab (always visible, ~16pt slot, hover-emphasized); title truncates with ellipsis on right. Right-click menu col",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

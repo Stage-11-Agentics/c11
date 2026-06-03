@@ -281,7 +281,7 @@ final class BrowserImportMappingTests: XCTestCase {
 
         XCTAssertTrue(lines.contains("You -> You"))
         XCTAssertTrue(lines.contains("austin -> austin"))
-        XCTAssertTrue(lines.contains("Created cmux profiles: You, austin"))
+        XCTAssertTrue(lines.contains("Created c11 profiles: You, austin"))
     }
 
     @MainActor

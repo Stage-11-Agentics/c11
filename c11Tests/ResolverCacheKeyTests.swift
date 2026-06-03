@@ -3,7 +3,7 @@ import XCTest
 @testable import c11
 
 final class ResolverCacheKeyTests: XCTestCase {
-    func testFullThemeContextParticipatesInColorCacheKey() {
+    func testFullThemeContextParticipatesInColorCacheKey() throws {
         let snapshot = ResolvedThemeSnapshot(theme: .fallbackStage11)
 
         let baseline = ThemeContext(

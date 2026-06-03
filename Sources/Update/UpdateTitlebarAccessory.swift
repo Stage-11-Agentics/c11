@@ -562,7 +562,13 @@ struct HiddenTitlebarSidebarControlsView: View {
                     anchorView: viewModel.notificationsAnchorView
                 )
             },
-            onNewTab: { _ = AppDelegate.shared?.tabManager?.addTab() },
+            onNewTab: {
+                if let appDelegate = AppDelegate.shared {
+                    appDelegate.presentCreateWorkspaceSheet()
+                } else {
+                    _ = AppDelegate.shared?.tabManager?.addTab()
+                }
+            },
             visibilityMode: .onHover
         )
         .frame(width: hostWidth, height: hostHeight, alignment: .leading)
@@ -786,7 +792,13 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
         self.notificationStore = notificationStore
         let toggleSidebar = { _ = AppDelegate.shared?.sidebarState?.toggle() }
         let toggleNotifications: () -> Void = { _ = AppDelegate.shared?.toggleNotificationsPopover(animated: true) }
-        let newTab = { _ = AppDelegate.shared?.tabManager?.addTab() }
+        let newTab = {
+            if let appDelegate = AppDelegate.shared {
+                appDelegate.presentCreateWorkspaceSheet()
+            } else {
+                _ = AppDelegate.shared?.tabManager?.addTab()
+            }
+        }
 
         hostingView = NonDraggableHostingView(
             rootView: TitlebarControlsView(

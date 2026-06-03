@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-19T15:38:59Z",
+  "created_by": "agent:claude-cli",
+  "custom_fields": {},
+  "id": "art_01KS0E7V415H554YV7CFN4H3A9",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KS0E7V415H554YV7CFN4H3A9.md",
+    "size_bytes": 1100
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Shipped scripts/reloads.sh changes for items 1, 2, 4, 5 from the v0.49.0 staging chat. Item 3 (skipPackagePluginValidation + skipMacroValidation) was deliberately dropped per operator.\n\nChanges (one c",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

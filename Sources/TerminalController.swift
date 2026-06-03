@@ -51,7 +51,11 @@ class TerminalController {
         isTerminatingApp = value
     }
 
-    private nonisolated(unsafe) var socketPath = SocketControlSettings.stableDefaultSocketPath
+    // Empty until `start(...)` binds. Initializing to the stable default would
+    // make `stop()` unlink that shared path even in a never-started controller
+    // — the C11-105 production unlink mechanism. See `stop()` for the matching
+    // empty-path guard.
+    private nonisolated(unsafe) var socketPath = ""
     private nonisolated(unsafe) var serverSocket: Int32 = -1
     private nonisolated(unsafe) var isRunning = false
     private nonisolated(unsafe) var acceptLoopAlive = false
@@ -63,7 +67,7 @@ class TerminalController {
     private nonisolated let listenerStateLock = NSLock()
     private var clientHandlers: [Int32: Thread] = [:]
     private var tabManager: TabManager?
-    private var accessMode: SocketControlMode = .cmuxOnly
+    private var accessMode: SocketControlMode = .c11Only
     private let myPid = getpid()
     private nonisolated(unsafe) static var socketCommandPolicyDepth: Int = 0
     private nonisolated(unsafe) static var socketCommandFocusAllowanceStack: [Bool] = []
@@ -256,6 +260,23 @@ class TerminalController {
             return snapshot.socketPath
         }
         return preferredPath
+    }
+
+    /// Test seam: the raw `socketPath` field without any
+    /// running/preferred-path fallback. Used by C11-105 regression tests to
+    /// assert a never-started controller does not carry a shared default
+    /// that `stop()` would unlink.
+    var socketPathSnapshot: String {
+        withListenerState { socketPath }
+    }
+
+    /// Test seam: construct a fresh, never-started `TerminalController` whose
+    /// fields are at their default-init values. The production code path
+    /// always uses `TerminalController.shared`; this exists only so C11-105
+    /// regression tests can observe the default state without rebinding the
+    /// shared singleton mid-process.
+    static func makeForTesting() -> TerminalController {
+        TerminalController()
     }
 
     private nonisolated func shouldContinueAcceptLoop(generation: UInt64) -> Bool {
@@ -1177,10 +1198,17 @@ class TerminalController {
         if socketToClose >= 0 {
             close(socketToClose)
         }
-        unlink(socketPathToUnlink)
+        // Skip the unlink when we never bound a path. Calling unlink on the
+        // stable default while a sibling c11 process owns that bind point is
+        // the C11-105 production bug — the dentry is removed under the live
+        // owner, leaving every `c11 <cmd>` reporting "Socket not found".
+        if !socketPathToUnlink.isEmpty {
+            unlink(socketPathToUnlink)
+        }
     }
 
     private nonisolated func unlinkSocketPathIfListenerStillInactive(_ path: String) {
+        guard !path.isEmpty else { return }
         let shouldUnlink = withListenerState {
             Self.shouldUnlinkSocketPathAfterAcceptLoopCleanup(
                 pathMatches: socketPath == path,
@@ -1591,15 +1619,15 @@ class TerminalController {
     private func handleClient(_ socket: Int32, peerPid: pid_t? = nil) {
         defer { close(socket) }
 
-        // In cmuxOnly mode, verify the connecting process is a descendant of cmux.
+        // In c11Only mode, verify the connecting process is a descendant of c11.
         // In allowAll mode (env-var only), skip the ancestry check.
-        if accessMode == .cmuxOnly {
+        if accessMode == .c11Only {
             // Use pre-captured peer PID if available (captured in accept loop before
             // the peer can disconnect), falling back to live lookup.
             let pid = peerPid ?? getPeerPid(socket)
             if let pid {
                 guard isDescendant(pid) else {
-                    let msg = "ERROR: Access denied — only processes started inside cmux can connect\n"
+                    let msg = "ERROR: Access denied — only processes started inside c11 can connect\n"
                     msg.withCString { ptr in _ = write(socket, ptr, strlen(ptr)) }
                     return
                 }
@@ -1685,6 +1713,24 @@ class TerminalController {
         "surface.clear_history",
     ]
 
+    // C11-4: v1 telemetry commands the worker is allowed to handle off-main.
+    // Each entry has a fast-path branch in its handler that runs only when
+    // `Self.explicitSocketScope(options:)` returns non-nil — i.e. when the
+    // caller passed `--tab=<uuid>` and `--panel=<uuid>` (or `--surface=<uuid>`).
+    // For requests without explicit IDs (the slow path that reads "current
+    // focused tab"), the worker entry returns nil so the dispatcher falls
+    // through to its existing main-sync path. The shell integrations (zsh +
+    // bash) always include explicit IDs so the prompt-frequency telemetry
+    // hits the fast path; only ad-hoc CLI invocations land on the slow path.
+    private nonisolated static let socketWorkerV1Commands: Set<String> = [
+        "report_pwd",
+        "report_shell_state",
+        "report_git_branch",
+        "clear_git_branch",
+        "ports_kick",
+        "agent_kick",
+    ]
+
     private nonisolated static func executionPolicy(forV2Method method: String) -> SocketCommandExecutionPolicy {
         if socketWorkerV2Methods.contains(method) {
             return .socketWorker
@@ -1748,12 +1794,362 @@ class TerminalController {
             return response
         }
 
+        if let response = socketWorkerV1ResponseIfNeeded(for: command) {
+            return response
+        }
+
         if Thread.isMainThread {
             return MainActor.assumeIsolated { self.processCommand(command) }
         }
         return DispatchQueue.main.sync {
             MainActor.assumeIsolated { self.processCommand(command) }
         }
+    }
+
+    /// v1 telemetry worker entry. Parses head and args off-main, checks the
+    /// allowlist, and routes to a per-command worker variant when the args
+    /// carry an explicit `--tab=`/`--panel=` selector. Returns nil to make
+    /// the dispatcher fall through to the existing main-sync path when:
+    ///   - The command is not a v1 telemetry command we know how to migrate.
+    ///   - The args do not contain an explicit selector (handler would need
+    ///     a focused-tab read, which requires a main hop anyway — the
+    ///     current main-sync path already handles that correctly).
+    private nonisolated func socketWorkerV1ResponseIfNeeded(for command: String) -> String? {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.hasPrefix("{") else { return nil }
+        let parts = trimmed.split(separator: " ", maxSplits: 1).map(String.init)
+        guard !parts.isEmpty else { return nil }
+        let head = parts[0].lowercased()
+        guard Self.socketWorkerV1Commands.contains(head) else { return nil }
+        let args = parts.count > 1 ? parts[1] : ""
+
+        return withSocketCommandPolicy(commandKey: head, isV2: false) {
+            socketWorkerV1Response(head: head, args: args)
+        }
+    }
+
+    /// Dispatch a v1 telemetry command to its nonisolated worker variant.
+    /// Each variant returns nil if the command must fall through to the
+    /// main-actor path (slow-path callers without an explicit selector).
+    private nonisolated func socketWorkerV1Response(head: String, args: String) -> String? {
+        switch head {
+        case "report_pwd":
+            return reportPwdWorker(args)
+        case "report_shell_state":
+            return reportShellStateWorker(args)
+        case "report_git_branch":
+            return reportGitBranchWorker(args)
+        case "clear_git_branch":
+            return clearGitBranchWorker(args)
+        case "ports_kick":
+            return portsKickWorker(args)
+        case "agent_kick":
+            return agentKickWorker(args)
+        default:
+            return nil
+        }
+    }
+
+    // MARK: - Pure parser helpers (off-main safe)
+    //
+    // These mirror the @MainActor instance methods `tokenizeArgs`,
+    // `parseOptions`, and `parseOptionsNoStop` exactly. They are pure string
+    // operations; making them static + nonisolated lets the v1 telemetry
+    // worker run them off the main thread without touching the existing
+    // call sites (which still want the shorter instance-method names).
+
+    nonisolated static func tokenizeArgsStatic(_ args: String) -> [String] {
+        let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        var tokens: [String] = []
+        var current = ""
+        var inQuote = false
+        var quoteChar: Character = "\""
+        var cursor = trimmed.startIndex
+
+        while cursor < trimmed.endIndex {
+            let char = trimmed[cursor]
+            if inQuote {
+                if char == quoteChar {
+                    inQuote = false
+                    cursor = trimmed.index(after: cursor)
+                    continue
+                }
+                if char == "\\" {
+                    let nextIndex = trimmed.index(after: cursor)
+                    if nextIndex < trimmed.endIndex {
+                        let next = trimmed[nextIndex]
+                        switch next {
+                        case "n":
+                            current.append("\n")
+                            cursor = trimmed.index(after: nextIndex)
+                            continue
+                        case "r":
+                            current.append("\r")
+                            cursor = trimmed.index(after: nextIndex)
+                            continue
+                        case "t":
+                            current.append("\t")
+                            cursor = trimmed.index(after: nextIndex)
+                            continue
+                        case "\"", "'", "\\":
+                            current.append(next)
+                            cursor = trimmed.index(after: nextIndex)
+                            continue
+                        default:
+                            break
+                        }
+                    }
+                }
+                current.append(char)
+                cursor = trimmed.index(after: cursor)
+                continue
+            }
+
+            if char == "'" || char == "\"" {
+                inQuote = true
+                quoteChar = char
+                cursor = trimmed.index(after: cursor)
+                continue
+            }
+
+            if char.isWhitespace {
+                if !current.isEmpty {
+                    tokens.append(current)
+                    current = ""
+                }
+                cursor = trimmed.index(after: cursor)
+                continue
+            }
+
+            current.append(char)
+            cursor = trimmed.index(after: cursor)
+        }
+
+        if !current.isEmpty {
+            tokens.append(current)
+        }
+        return tokens
+    }
+
+    nonisolated static func parseOptionsStatic(
+        _ args: String
+    ) -> (positional: [String], options: [String: String]) {
+        let tokens = tokenizeArgsStatic(args)
+        guard !tokens.isEmpty else { return ([], [:]) }
+
+        var positional: [String] = []
+        var options: [String: String] = [:]
+        var stopParsingOptions = false
+        var i = 0
+        while i < tokens.count {
+            let token = tokens[i]
+            if stopParsingOptions {
+                positional.append(token)
+            } else if token == "--" {
+                stopParsingOptions = true
+            } else if token.hasPrefix("--") {
+                if let eqIndex = token.firstIndex(of: "=") {
+                    let key = String(token[token.index(token.startIndex, offsetBy: 2)..<eqIndex])
+                    let value = String(token[token.index(after: eqIndex)...])
+                    options[key] = value
+                } else {
+                    let key = String(token.dropFirst(2))
+                    if i + 1 < tokens.count && !tokens[i + 1].hasPrefix("--") {
+                        options[key] = tokens[i + 1]
+                        i += 1
+                    } else {
+                        options[key] = ""
+                    }
+                }
+            } else {
+                positional.append(token)
+            }
+            i += 1
+        }
+        return (positional, options)
+    }
+
+    // MARK: - V1 telemetry worker variants (nonisolated, fast-path only)
+    //
+    // Each worker variant handles the explicit-scope fast path of a
+    // high-frequency telemetry command. They mirror the corresponding @MainActor
+    // handler bit-for-bit *only* on the fast path — when the args do not
+    // contain explicit `--tab=<uuid>` and `--panel=<uuid>`, they return nil
+    // so the dispatcher falls through to the main-sync path and the @MainActor
+    // handler runs unchanged. The behavioral contract for callers (shell
+    // integrations etc.) is identical: parse-time errors still come back as
+    // "ERROR: ..." synchronously, and the actual UI mutation is enqueued via
+    // `DispatchQueue.main.async` exactly as the @MainActor variant does.
+
+    private nonisolated func reportPwdWorker(_ args: String) -> String? {
+        let parsed = Self.parseOptionsStatic(args)
+        guard !parsed.positional.isEmpty else {
+            return "ERROR: Missing path — usage: report_pwd <path> [--tab=X] [--panel=Y]"
+        }
+
+        guard let scope = Self.explicitSocketScope(options: parsed.options) else {
+            return nil
+        }
+
+        // Note: the @MainActor `reportPwd` early-returns "ERROR: TabManager
+        // not available" when `self.tabManager` is nil. The worker variant
+        // skips that guard intentionally — when `--tab=<uuid>` is provided,
+        // we resolve the manager via `AppDelegate.shared?.tabManagerFor(...)`
+        // below, which finds the correct manager regardless of the
+        // controller's bound `tabManager`. The visible behavioral diff is
+        // "ERROR: TabManager not available" → silent async no-op when
+        // neither path can resolve a manager. In practice this fires only
+        // before the app finishes wiring its TabManager, well before any
+        // socket accepts commands.
+        let directory = parsed.positional.joined(separator: " ")
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
+                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
+                    return
+                }
+                let validSurfaceIds = Set(tab.panels.keys)
+                tab.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
+                guard validSurfaceIds.contains(scope.panelId) else { return }
+                tabManager.updateSurfaceDirectory(
+                    tabId: scope.workspaceId,
+                    surfaceId: scope.panelId,
+                    directory: directory
+                )
+            }
+        }
+        return "OK"
+    }
+
+    private nonisolated func reportShellStateWorker(_ args: String) -> String? {
+        let parsed = Self.parseOptionsStatic(args)
+        guard let rawState = parsed.positional.first, !rawState.isEmpty else {
+            return "ERROR: Missing shell state — usage: report_shell_state <prompt|running> [--tab=X] [--panel=Y]"
+        }
+        guard let state = Self.parseReportedShellActivityState(rawState) else {
+            return "ERROR: Invalid shell state '\(rawState)' — expected prompt or running"
+        }
+
+        guard let scope = Self.explicitSocketScope(options: parsed.options) else {
+            return nil
+        }
+
+        guard Self.socketFastPathState.shouldPublishShellActivity(
+            workspaceId: scope.workspaceId,
+            panelId: scope.panelId,
+            state: state
+        ) else {
+            return "OK"
+        }
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId) else { return }
+                tabManager.updateSurfaceShellActivity(
+                    tabId: scope.workspaceId,
+                    surfaceId: scope.panelId,
+                    state: state
+                )
+            }
+        }
+        return "OK"
+    }
+
+    private nonisolated func reportGitBranchWorker(_ args: String) -> String? {
+        let parsed = Self.parseOptionsStatic(args)
+        guard let branch = parsed.positional.first else {
+            return "ERROR: Missing branch name — usage: report_git_branch <branch> [--status=dirty] [--tab=X]"
+        }
+        let isDirty = parsed.options["status"]?.lowercased() == "dirty"
+
+        guard let scope = Self.explicitSocketScope(options: parsed.options) else {
+            return nil
+        }
+
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
+                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
+                    return
+                }
+                let validSurfaceIds = Set(tab.panels.keys)
+                tab.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
+                guard validSurfaceIds.contains(scope.panelId) else { return }
+                tabManager.updateSurfaceGitBranch(
+                    tabId: scope.workspaceId,
+                    surfaceId: scope.panelId,
+                    branch: branch,
+                    isDirty: isDirty
+                )
+            }
+        }
+        return "OK"
+    }
+
+    private nonisolated func clearGitBranchWorker(_ args: String) -> String? {
+        let parsed = Self.parseOptionsStatic(args)
+        guard let scope = Self.explicitSocketScope(options: parsed.options) else {
+            return nil
+        }
+
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
+                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
+                    return
+                }
+                let validSurfaceIds = Set(tab.panels.keys)
+                tab.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
+                guard validSurfaceIds.contains(scope.panelId) else { return }
+                tabManager.clearSurfaceGitBranch(
+                    tabId: scope.workspaceId,
+                    surfaceId: scope.panelId
+                )
+            }
+        }
+        return "OK"
+    }
+
+    private nonisolated func portsKickWorker(_ args: String) -> String? {
+        let parsed = Self.parseOptionsStatic(args)
+        guard let scope = Self.explicitSocketScope(options: parsed.options) else {
+            return nil
+        }
+
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
+                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
+                    return
+                }
+                let validSurfaceIds = Set(tab.panels.keys)
+                tab.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
+                guard validSurfaceIds.contains(scope.panelId) else { return }
+                PortScanner.shared.kick(workspaceId: scope.workspaceId, panelId: scope.panelId)
+            }
+        }
+        return "OK"
+    }
+
+    private nonisolated func agentKickWorker(_ args: String) -> String? {
+        let parsed = Self.parseOptionsStatic(args)
+        guard let scope = Self.explicitSocketScope(options: parsed.options) else {
+            return nil
+        }
+
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
+                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
+                    return
+                }
+                let validSurfaceIds = Set(tab.panels.keys)
+                guard validSurfaceIds.contains(scope.panelId) else { return }
+                AgentDetector.shared.kick(workspaceId: scope.workspaceId, panelId: scope.panelId)
+            }
+        }
+        return "OK"
     }
 
     private func processCommand(_ command: String) -> String {
@@ -2094,6 +2490,14 @@ class TerminalController {
 
         case "new_surface":
             return newSurface(args)
+
+        // C11-14: read/write the default agent + per-agent configuration. Same
+        // store the Settings UI binds to; live updates fan out via UserDefaults.
+        case "default_agent":
+            return defaultAgentCommand(args)
+
+        case "agent_config":
+            return agentConfigCommand(args)
 
         case "close_surface":
             return closeSurface(args)
@@ -6920,7 +7324,7 @@ class TerminalController {
             let terminals: [[String: Any]] = surfaces.enumerated().map { index, terminalSurface in
                 let mapped = mappedLocations[ObjectIdentifier(terminalSurface)]
                 let hostedView = terminalSurface.hostedView
-                let hostedWindow = mapped?.window ?? hostedView.window
+                let hostedWindow = mapped?.window ?? terminalSurface.uiWindow
                 let fallbackWindowMetadata = resolvedWindowMetadata(for: hostedWindow)
                 let resolvedWindowId = mapped?.windowId ?? fallbackWindowMetadata.windowId
                 let resolvedWindowIndex = mapped?.windowIndex ?? fallbackWindowMetadata.windowIndex
@@ -6984,7 +7388,8 @@ class TerminalController {
                     "runtime_surface_ready": terminalSurface.surface != nil,
                     "hosted_view_ptr": objectPointerString(hostedView),
                     "hosted_view_class": className(hostedView) ?? "nil",
-                    "hosted_view_in_window": hostedView.window != nil,
+                    "hosted_view_in_window": terminalSurface.isViewInWindow,
+                    "hosted_view_in_headless_bootstrap_window": terminalSurface.isHeadlessStartupWindow(hostedView.window),
                     "hosted_view_has_superview": hostedView.superview != nil,
                     "hosted_view_hidden": hostedView.isHidden,
                     "hosted_view_hidden_or_ancestor_hidden": hostedView.isHiddenOrHasHiddenAncestor,
@@ -7170,6 +7575,15 @@ class TerminalController {
         guard let text = params["text"] as? String else {
             return .err(code: "invalid_params", message: "Missing text", data: nil)
         }
+        // C11-108: `submit` defaults to true so `c11 send "..."` types the text AND
+        // submits it in one call. Callers building a partial line that should not
+        // execute (e.g. typing `cd ` then more) pass `submit: false` (CLI:
+        // `--no-submit`) and follow with explicit `c11 send-key enter` when ready.
+        // For an attached surface, the synthetic Return fires on the same @MainActor
+        // turn that delivered the text. For the queueing fallback (surface not yet
+        // attached) the trailing `\r` is appended to the queued payload so the
+        // flush on attach submits the line.
+        let submit = v2Bool(params, "submit") ?? true
 
         let phaseASema = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var phaseAOutcome: SurfaceSendPhaseAOutcome = .err(.err(code: "internal_error", message: "Failed to send text", data: nil))
@@ -7214,6 +7628,9 @@ class TerminalController {
                 defer { phaseBSema.signal() }
                 if let liveSurface = resolved.terminalPanel.surface.surface {
                     sendSocketText(text, surface: liveSurface)
+                    if submit {
+                        _ = sendNamedKey(liveSurface, keyName: "enter")
+                    }
                     // Ensure we present a new frame after injecting input so snapshot-based tests
                     // (and socket-driven agents) can observe the updated terminal without requiring
                     // a focus change to trigger a draw.
@@ -7221,17 +7638,19 @@ class TerminalController {
                     attachedAtPhaseB = true
                 } else {
                     // Surface was torn down between Phase A and Phase B. Fall through to
-                    // the pending queue as a last resort.
-                    resolved.terminalPanel.sendText(text)
+                    // the pending queue as a last resort. Append \r when submit is on
+                    // so the queue flush submits the line on attach.
+                    resolved.terminalPanel.sendText(submit ? text + "\r" : text)
                 }
             }
             phaseBSema.wait()
             queued = !attachedAtPhaseB
         } else {
             // Surface not available within 2s (e.g., terminal not yet attached to any window).
-            // Fall back to the pending queue as a last resort.
+            // Fall back to the pending queue as a last resort. Same submit-aware append
+            // as the teardown fallback above.
             Task { @MainActor in
-                resolved.terminalPanel.sendText(text)
+                resolved.terminalPanel.sendText(submit ? text + "\r" : text)
                 phaseBSema.signal()
             }
             phaseBSema.wait()
@@ -7821,7 +8240,9 @@ class TerminalController {
     // MARK: - V2 Surface Metadata (Module 2)
 
     /// Resolve the (workspaceId, surfaceId) pair for a metadata call.
-    /// Runs off-main — touches only `TabManager.tabs` snapshot + v2 handle refs.
+    /// Resolves on the main actor via `v2MainSync`; safe to call from any
+    /// queue. (The earlier comment claimed "Runs off-main" — it does not;
+    /// the v2 metadata handlers reach this from a main-sync hop today.)
     private func v2ResolveSurfaceForMetadata(
         params: [String: Any]
     ) -> (workspaceId: UUID, surfaceId: UUID, tabManager: TabManager)? {
@@ -7859,6 +8280,19 @@ class TerminalController {
         let sourceStr = (v2String(params, "source") ?? "explicit").lowercased()
         guard let source = MetadataSource(rawValue: sourceStr) else {
             return .err(code: "invalid_source", message: "source must be one of: explicit, declare, osc, heuristic", data: nil)
+        }
+        // C11-104 v2 (B5a) — `derived` is reserved for c11-internal
+        // writers. External socket/CLI clients are rejected. Without
+        // this gate, an agent could write `source=derived` and claim
+        // their values are system-computed, nullifying the meaning
+        // of the precedence tier.
+        //
+        // (C11-106 AC16) Logic moved to SocketMetadataSourceValidator
+        // so the rejection contract is exercised in
+        // c11Tests/SocketDerivedSourceRejectionTests.swift without
+        // standing up a full socket frame loop.
+        if let rejection = SocketMetadataSourceValidator.externalRejectionMessage(for: source) {
+            return .err(code: rejection.code, message: rejection.message, data: nil)
         }
 
         guard let resolved = v2ResolveSurfaceForMetadata(params: params) else {
@@ -7974,6 +8408,19 @@ class TerminalController {
         let sourceStr = (v2String(params, "source") ?? "explicit").lowercased()
         guard let source = MetadataSource(rawValue: sourceStr) else {
             return .err(code: "invalid_source", message: "source must be one of: explicit, declare, osc, heuristic", data: nil)
+        }
+        // C11-104 v2 (B5a) — `derived` is reserved for c11-internal
+        // writers. External socket/CLI clients are rejected. Without
+        // this gate, an agent could write `source=derived` and claim
+        // their values are system-computed, nullifying the meaning
+        // of the precedence tier.
+        //
+        // (C11-106 AC16) Logic moved to SocketMetadataSourceValidator
+        // so the rejection contract is exercised in
+        // c11Tests/SocketDerivedSourceRejectionTests.swift without
+        // standing up a full socket frame loop.
+        if let rejection = SocketMetadataSourceValidator.externalRejectionMessage(for: source) {
+            return .err(code: rejection.code, message: rejection.message, data: nil)
         }
 
         guard let resolved = v2ResolveSurfaceForMetadata(params: params) else {
@@ -8723,6 +9170,19 @@ class TerminalController {
         guard let source = MetadataSource(rawValue: sourceStr) else {
             return .err(code: "invalid_source", message: "source must be one of: explicit, declare, osc, heuristic", data: nil)
         }
+        // C11-104 v2 (B5a) — `derived` is reserved for c11-internal
+        // writers. External socket/CLI clients are rejected. Without
+        // this gate, an agent could write `source=derived` and claim
+        // their values are system-computed, nullifying the meaning
+        // of the precedence tier.
+        //
+        // (C11-106 AC16) Logic moved to SocketMetadataSourceValidator
+        // so the rejection contract is exercised in
+        // c11Tests/SocketDerivedSourceRejectionTests.swift without
+        // standing up a full socket frame loop.
+        if let rejection = SocketMetadataSourceValidator.externalRejectionMessage(for: source) {
+            return .err(code: rejection.code, message: rejection.message, data: nil)
+        }
 
         guard let resolved = v2ResolvePaneForMetadata(params: params) else {
             return .err(code: "pane_not_found", message: "Pane not found", data: nil)
@@ -8811,6 +9271,19 @@ class TerminalController {
         let sourceStr = (v2String(params, "source") ?? "explicit").lowercased()
         guard let source = MetadataSource(rawValue: sourceStr) else {
             return .err(code: "invalid_source", message: "source must be one of: explicit, declare, osc, heuristic", data: nil)
+        }
+        // C11-104 v2 (B5a) — `derived` is reserved for c11-internal
+        // writers. External socket/CLI clients are rejected. Without
+        // this gate, an agent could write `source=derived` and claim
+        // their values are system-computed, nullifying the meaning
+        // of the precedence tier.
+        //
+        // (C11-106 AC16) Logic moved to SocketMetadataSourceValidator
+        // so the rejection contract is exercised in
+        // c11Tests/SocketDerivedSourceRejectionTests.swift without
+        // standing up a full socket frame loop.
+        if let rejection = SocketMetadataSourceValidator.externalRejectionMessage(for: source) {
+            return .err(code: rejection.code, message: rejection.message, data: nil)
         }
 
         guard let resolved = v2ResolvePaneForMetadata(params: params) else {
@@ -18386,6 +18859,285 @@ class TerminalController {
             }
         }
         return result
+    }
+
+    // MARK: - C11-14 default-agent socket commands
+
+    /// `default_agent get`                              → prints current default agent type
+    /// `default_agent set <type>`                       → sets default
+    /// `default_agent launch [--agent <type>] [--pane <id>]` → A-button mimic: create
+    ///     a new agent surface in the focused (or named) pane
+    /// `default_agent launch --in-surface <uuid> [--agent <type>] [--cwd <path>]
+    ///     [--prompt "text" | --prompt-file <path>]` → launch into an existing
+    ///     surface's PTY; c11 composes the launch line and (for non-claude agents)
+    ///     delivers the prompt after a fixed post-launch delay.
+    private func defaultAgentCommand(_ args: String) -> String {
+        let allTokens = tokenizeArgs(args)
+        guard let sub = allTokens.first else {
+            return "ERROR: usage: default_agent {get|set <type>|launch [flags]}"
+        }
+
+        switch sub {
+        case "get":
+            return "OK \(DefaultAgentConfigStore.shared.current.defaultAgent.rawValue)"
+
+        case "set":
+            guard allTokens.count == 2, let agent = AgentType(rawValue: allTokens[1]) else {
+                let valid = AgentType.allCases.map(\.rawValue).joined(separator: ", ")
+                return "ERROR: usage: default_agent set <type> — valid types: \(valid)"
+            }
+            DefaultAgentConfigStore.shared.setDefaultAgent(agent)
+            return "OK \(agent.rawValue)"
+
+        case "launch":
+            return defaultAgentLaunch(tokens: Array(allTokens.dropFirst()))
+
+        default:
+            return "ERROR: unknown subcommand '\(sub)'. usage: default_agent {get|set|launch}"
+        }
+    }
+
+    /// Parses launch flags and dispatches to the A-button or in-surface path.
+    private func defaultAgentLaunch(tokens: [String]) -> String {
+        var explicitAgent: AgentType? = nil
+        var paneArg: String? = nil
+        var inSurfaceArg: String? = nil
+        var cwdArg: String? = nil
+        var promptArg: String? = nil
+        var promptFileArg: String? = nil
+        var idx = 0
+        while idx < tokens.count {
+            let t = tokens[idx]
+            if t == "--agent", idx + 1 < tokens.count {
+                guard let parsed = AgentType(rawValue: tokens[idx + 1]) else {
+                    return "ERROR: unknown agent type: \(tokens[idx + 1])"
+                }
+                explicitAgent = parsed; idx += 2
+            } else if t == "--pane", idx + 1 < tokens.count {
+                paneArg = tokens[idx + 1]; idx += 2
+            } else if t == "--in-surface", idx + 1 < tokens.count {
+                inSurfaceArg = tokens[idx + 1]; idx += 2
+            } else if t == "--cwd", idx + 1 < tokens.count {
+                cwdArg = tokens[idx + 1]; idx += 2
+            } else if t == "--prompt", idx + 1 < tokens.count {
+                promptArg = tokens[idx + 1]; idx += 2
+            } else if t == "--prompt-file", idx + 1 < tokens.count {
+                promptFileArg = tokens[idx + 1]; idx += 2
+            } else {
+                return "ERROR: unknown flag '\(t)'"
+            }
+        }
+
+        if paneArg != nil && inSurfaceArg != nil {
+            return "ERROR: --pane and --in-surface are mutually exclusive"
+        }
+        if promptArg != nil && promptFileArg != nil {
+            return "ERROR: --prompt and --prompt-file are mutually exclusive"
+        }
+
+        // Resolve the prompt content (file wins on --prompt-file path).
+        let promptText: String? = {
+            if let raw = promptArg, !raw.isEmpty { return raw }
+            if let path = promptFileArg {
+                guard let contents = try? String(contentsOfFile: path, encoding: .utf8) else {
+                    return nil
+                }
+                return contents.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            return nil
+        }()
+        if promptFileArg != nil && promptText == nil {
+            return "ERROR: failed to read --prompt-file: \(promptFileArg ?? "")"
+        }
+
+        // Resolve the agent config. Use --cwd for project-config lookup when
+        // provided; otherwise fall back to the process cwd.
+        let lookupCwd = cwdArg ?? FileManager.default.currentDirectoryPath
+        let userDefault = DefaultAgentConfigStore.shared.current
+        let projectConfig = DefaultAgentProjectConfig.find(from: lookupCwd)
+        let resolved = DefaultAgentResolver.resolve(
+            explicitAgent: explicitAgent,
+            userDefault: userDefault,
+            projectConfig: projectConfig
+        )
+        guard !resolved.launch.bareCommand.isEmpty else {
+            return "ERROR: resolved agent has empty command (configure it in Settings → Default Agent)"
+        }
+
+        if let inSurfaceArg {
+            return launchInExistingSurface(
+                surfaceArg: inSurfaceArg,
+                agent: resolved.agent,
+                bareCommand: resolved.launch.bareCommand,
+                cwd: cwdArg,
+                prompt: promptText
+            )
+        } else {
+            // A-button mimic: create a new surface in a pane. Prompt args are
+            // ignored on this path (the operator's configured initial prompt
+            // still flows via launchAgentSurface's existing pre-baking).
+            guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
+            var result = "ERROR: Failed to launch agent"
+            v2MainSync {
+                guard let tabId = tabManager.selectedTabId,
+                      let tab = tabManager.tabs.first(where: { $0.id == tabId }) else {
+                    return
+                }
+                let paneIds = tab.bonsplitController.allPaneIds
+                let resolvedPane: PaneID?
+                if let paneArg {
+                    if let uuid = UUID(uuidString: paneArg) {
+                        resolvedPane = paneIds.first(where: { $0.id == uuid })
+                    } else if let idx = Int(paneArg), idx >= 0, idx < paneIds.count {
+                        resolvedPane = paneIds[idx]
+                    } else {
+                        resolvedPane = nil
+                    }
+                } else {
+                    resolvedPane = tab.bonsplitController.focusedPaneId
+                }
+                guard let pane = resolvedPane else {
+                    result = "ERROR: Pane not found"
+                    return
+                }
+                tab.launchAgentSurface(inPane: pane, explicitAgent: explicitAgent)
+                result = "OK"
+            }
+            return result
+        }
+    }
+
+    /// Launch into an existing surface's PTY. Composes `[cd <cwd> && ]<launcher>[ <quoted-prompt>]`,
+    /// sends it to the surface, and (for non-claude agents with a prompt) schedules
+    /// a delayed sendText to deliver the prompt after the agent has booted.
+    private func launchInExistingSurface(
+        surfaceArg: String,
+        agent: AgentType,
+        bareCommand: String,
+        cwd: String?,
+        prompt: String?
+    ) -> String {
+        guard let surfaceId = UUID(uuidString: surfaceArg) else {
+            return "ERROR: --in-surface requires a UUID (CLI resolves short refs client-side)"
+        }
+        guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
+
+        // Compose the launch line. For claude-code with a prompt, the prompt
+        // ships as a single-quoted positional arg in the same line. For other
+        // agents, the prompt is delivered after a fixed post-launch delay so
+        // each TUI's input contract is honored without per-agent ready-string
+        // detection in v1.
+        var line = ""
+        if let cwd, !cwd.isEmpty {
+            line += "cd \(DefaultAgentResolver.shellQuote(cwd)) && "
+        }
+        if agent == .claudeCode, let prompt, !prompt.isEmpty {
+            line += "\(bareCommand) \(DefaultAgentResolver.shellQuote(prompt))"
+        } else {
+            line += bareCommand
+        }
+
+        var result = "ERROR: surface not found"
+        v2MainSync {
+            for tab in tabManager.tabs {
+                guard let panel = tab.terminalPanel(for: surfaceId) else { continue }
+                // sendSubmitFormText types the text via ghostty_surface_text
+                // (bracketed paste), then dispatches a real synthetic Return
+                // outside the paste sequence — required for shell line
+                // discipline and TUI raw-mode handlers to actually execute.
+                // Falls back to a flush-time submit if the surface is not yet
+                // attached to a window.
+                panel.surface.sendSubmitFormText(line)
+                if agent != .claudeCode, let prompt, !prompt.isEmpty {
+                    // Post-ready delivery. Fixed 2500ms delay: long enough for
+                    // codex/opencode/kimi to boot to a prompt on a typical
+                    // machine, short enough not to feel sluggish. Readiness
+                    // detection (poll for prompt-string-visible) is a v2 follow-up.
+                    let delay: DispatchTimeInterval = .milliseconds(2500)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak panel] in
+                        panel?.surface.sendSubmitFormText(prompt)
+                    }
+                }
+                result = "OK"
+                return
+            }
+        }
+        return result
+    }
+
+    /// `agent_config get <type>`                        → prints JSON: { command, initial_prompt, env_overrides }
+    /// `agent_config set <type> [--command "..."] [--initial-prompt "..."] [--env-overrides "KEY=val\nKEY=val"] [--reset]`
+    private func agentConfigCommand(_ args: String) -> String {
+        // Tokenize quoted-args style so multi-word values work.
+        let tokens = tokenizeArgs(args)
+        guard let sub = tokens.first else {
+            return "ERROR: usage: agent_config {get <type>|set <type> [--command \"…\"] [--initial-prompt \"…\"] [--env-overrides \"…\"] [--reset]}"
+        }
+
+        switch sub {
+        case "get":
+            guard tokens.count == 2, let agent = AgentType(rawValue: tokens[1]) else {
+                return "ERROR: usage: agent_config get <type>"
+            }
+            let entry = DefaultAgentConfigStore.shared.current.config(for: agent)
+            struct Out: Encodable {
+                let command: String
+                let initialPrompt: String
+                let envOverrides: String
+                enum CodingKeys: String, CodingKey {
+                    case command, initialPrompt = "initial_prompt", envOverrides = "env_overrides"
+                }
+            }
+            let out = Out(
+                command: entry.command,
+                initialPrompt: entry.initialPrompt,
+                envOverrides: entry.envOverridesText
+            )
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            guard let data = try? encoder.encode(out),
+                  let json = String(data: data, encoding: .utf8) else {
+                return "ERROR: failed to encode config"
+            }
+            return "OK \(json)"
+
+        case "set":
+            guard tokens.count >= 2, let agent = AgentType(rawValue: tokens[1]) else {
+                return "ERROR: usage: agent_config set <type> [flags]"
+            }
+            var newCommand: String? = nil
+            var newPrompt: String? = nil
+            var newEnv: String? = nil
+            var reset = false
+            var i = 2
+            while i < tokens.count {
+                let t = tokens[i]
+                if t == "--command", i + 1 < tokens.count {
+                    newCommand = tokens[i + 1]; i += 2
+                } else if t == "--initial-prompt", i + 1 < tokens.count {
+                    newPrompt = tokens[i + 1]; i += 2
+                } else if t == "--env-overrides", i + 1 < tokens.count {
+                    newEnv = tokens[i + 1]; i += 2
+                } else if t == "--reset" {
+                    reset = true; i += 1
+                } else {
+                    return "ERROR: unknown flag '\(t)'"
+                }
+            }
+            if reset {
+                DefaultAgentConfigStore.shared.update(agent) { $0 = .factory(for: agent) }
+                return "OK reset"
+            }
+            DefaultAgentConfigStore.shared.update(agent) { entry in
+                if let v = newCommand { entry.command = v }
+                if let v = newPrompt { entry.initialPrompt = v }
+                if let v = newEnv { entry.envOverridesText = v }
+            }
+            return "OK"
+
+        default:
+            return "ERROR: unknown subcommand '\(sub)'. usage: agent_config {get|set}"
+        }
     }
 
     deinit {

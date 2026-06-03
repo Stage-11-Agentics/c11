@@ -123,26 +123,19 @@ struct AgentRestartRegistry: Sendable {
     /// future in-process writer that bypasses the store must not become a
     /// command-injection vector.
     ///
-    /// The row output ends in `"\r"` as a "submit form" affordance.
-    /// **However**, callers that route through `TextBoxSubmit.send` (the
-    /// reliable path — see `Workspace.scheduleAgentRestart`) trim trailing
-    /// newlines and dispatch a synthetic Return key *outside* the
-    /// bracketed-paste sequence, because Ghostty's `sendText` wraps input
-    /// in bracket-paste markers (`ESC[200~…ESC[201~`) and zsh ZLE / bash
-    /// readline / Claude CLI all ignore embedded newlines inside a paste.
-    /// So a raw `sendText("…\n")` types the command but leaves it sitting
-    /// at the prompt — the well-known "Enter sometimes doesn't fire" flake.
-    ///
-    /// CR (`\r`) — not LF (`\n`) — for codebase consistency: `TabManager`
-    /// callers (split-marker probe, browser-pane exit, `exec cat`) all
-    /// submit via `\r`. The trailing byte is moot for `TextBoxSubmit.send`
-    /// (trimmed at the receiver), but kept for any caller that wants a
-    /// "submit form" string.
-    ///
-    /// **Do not** call `sendText(cmd)` directly with the registry's output
-    /// and expect it to execute — use `TextBoxSubmit.send(cmd, via: surface)`
-    /// (or the equivalent paste-then-Return sequence). This is the rule
-    /// `WorkspaceLayoutExecutor` follows for registry-synthesised commands.
+    /// The trailing `"\n"` is preserved in the row's output for
+    /// compatibility with callers and snapshot consumers that may inspect
+    /// the literal string. Submission no longer depends on it:
+    /// `ghostty_surface_text` wraps every write in bracketed-paste markers
+    /// (`ESC[200~ … ESC[201~`), and bracketed paste is specifically
+    /// designed so embedded `\n`/`\r` do NOT auto-execute — shells and
+    /// TUI raw-mode handlers only submit when a real Return arrives
+    /// outside the paste sequence. Both the executor and the boot-time
+    /// restart path route registry output through
+    /// `TerminalSurface.sendSubmitFormText`, which trims the trailing
+    /// newline, types the bytes via paste, and dispatches a synthetic
+    /// Return key outside the paste so the receiving shell or TUI
+    /// actually submits the line.
     ///
     /// Use `claude --dangerously-skip-permissions --resume <id>` rather than
     /// `cc`: `cc` resolves to the C compiler in c11 terminal environments,
@@ -171,22 +164,22 @@ struct AgentRestartRegistry: Sendable {
                 .trimmingCharacters(in: .whitespacesAndNewlines),
                !raw.isEmpty,
                isValidClaudeSessionProjectDir(raw) {
-                return "cd \(shellSingleQuote(raw)) && \(resume)\r"
+                return "cd \(shellSingleQuote(raw)) && \(resume)\n"
             }
-            return "\(resume)\r"
+            return "\(resume)\n"
         },
         Row(terminalType: "codex") { _, _ in
             // codex resume --last resumes the most recent codex session globally.
             // Best-effort: may not match the exact session in the snapshot.
-            "codex resume --last\r"
+            "codex resume --last\n"
         },
         Row(terminalType: "opencode") { _, _ in
             // no stable resume flag known; launches fresh.
-            "opencode\r"
+            "opencode run --dangerously-skip-permissions\n"
         },
         Row(terminalType: "kimi") { _, _ in
             // no stable resume flag known; launches fresh.
-            "kimi\r"
+            "kimi\n"
         }
     ])
 }

@@ -152,7 +152,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
     /// order (apply first, close second): at the moment of close, tab
     /// count is 2, so the guard passes.
     func testInPlaceRestoreReplacesSingleWorkspaceWithoutDuplicating() throws {
-        let existing = tabManager.addWorkspace()
+        let existing = try XCTUnwrap(tabManager.selectedWorkspace)
         XCTAssertEqual(tabManager.tabs.count, 1, "test seeded with exactly one workspace")
         let existingId = existing.id
 
@@ -189,7 +189,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
     /// Multi-workspace case: target is replaced, sibling is untouched,
     /// and the overall tab count is stable.
     func testInPlaceRestoreReplacesTargetAndLeavesSiblingIntact() throws {
-        let target = tabManager.addWorkspace()
+        let target = try XCTUnwrap(tabManager.selectedWorkspace)
         let sibling = tabManager.addWorkspace()
         XCTAssertEqual(tabManager.tabs.count, 2)
         let targetId = target.id
@@ -218,7 +218,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
     /// A missing target UUID surfaces `invalid_params` without touching
     /// any existing workspace (non-destructive failure).
     func testInPlaceRestoreMissingTargetReturnsInvalidParams() throws {
-        let existing = tabManager.addWorkspace()
+        let existing = try XCTUnwrap(tabManager.selectedWorkspace)
         let existingId = existing.id
         let bogusId = UUID()
         XCTAssertNotEqual(bogusId, existingId)
@@ -246,7 +246,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
     /// A plan with an unsupported version short-circuits in `validate`
     /// before touching any workspace. The target stays intact.
     func testInPlaceRestoreValidationFailureLeavesTargetIntact() throws {
-        let existing = tabManager.addWorkspace()
+        let existing = try XCTUnwrap(tabManager.selectedWorkspace)
         let existingId = existing.id
 
         let plan = WorkspaceApplyPlan(

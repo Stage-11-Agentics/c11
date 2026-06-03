@@ -1648,6 +1648,11 @@ struct CMUXCLI {
             return
         }
 
+        if command == "doctor" {
+            try runDoctor(commandArgs: commandArgs, jsonOutput: jsonOutput)
+            return
+        }
+
         if command == "welcome" {
             printWelcome()
             return
@@ -1692,19 +1697,6 @@ struct CMUXCLI {
 
         if command == "skill" {
             try runSkillCommand(commandArgs: commandArgs, jsonOutput: jsonOutput)
-            return
-        }
-
-        if command == "install" || command == "uninstall" {
-            // Integration installers (Module 4) are filesystem-local; they do
-            // not connect to the running cmux socket. Exit codes are carried
-            // via a dedicated thrown error type that CMUXTermMain routes to
-            // the proper numeric exit.
-            try runIntegrationInstallerCommand(
-                command: command,
-                commandArgs: commandArgs,
-                jsonOutput: jsonOutput
-            )
             return
         }
 
@@ -2436,6 +2428,7 @@ struct CMUXCLI {
         case "send":
             let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
             let (sfArg, rem1) = parseOption(rem0, name: "--surface")
+            let (noSubmit, rem2) = parseBoolFlag(rem1, name: "--no-submit")
             let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
             // Require explicit surface targeting. Shell-integrated callers inside a c11
@@ -2446,10 +2439,10 @@ struct CMUXCLI {
                 || ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] != nil else {
                 throw CLIError(message: "send requires --surface <id|ref> (or run inside a c11 surface so CMUX_SURFACE_ID is set)")
             }
-            let rawText = rem1.dropFirst(rem1.first == "--" ? 1 : 0).joined(separator: " ")
+            let rawText = rem2.dropFirst(rem2.first == "--" ? 1 : 0).joined(separator: " ")
             guard !rawText.isEmpty else { throw CLIError(message: "send requires text") }
             let text = unescapeSendText(rawText)
-            var params: [String: Any] = ["text": text]
+            var params: [String: Any] = ["text": text, "submit": !noSubmit]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
@@ -2481,14 +2474,15 @@ struct CMUXCLI {
         case "send-panel":
             let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
             let (panelArg, rem1) = parseOption(rem0, name: "--panel")
+            let (noSubmit, rem2) = parseBoolFlag(rem1, name: "--no-submit")
             let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             guard let panelArg else {
                 throw CLIError(message: "send-panel requires --panel")
             }
-            let rawText = rem1.dropFirst(rem1.first == "--" ? 1 : 0).joined(separator: " ")
+            let rawText = rem2.dropFirst(rem2.first == "--" ? 1 : 0).joined(separator: " ")
             guard !rawText.isEmpty else { throw CLIError(message: "send-panel requires text") }
             let text = unescapeSendText(rawText)
-            var params: [String: Any] = ["text": text]
+            var params: [String: Any] = ["text": text, "submit": !noSubmit]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(panelArg, client: client, workspaceHandle: wsId)
@@ -2671,6 +2665,12 @@ struct CMUXCLI {
                 jsonOutput: jsonOutput,
                 idFormat: idFormat,
                 windowOverride: windowId
+            )
+
+        case "default-agent":
+            try runDefaultAgentCommand(
+                commandArgs: commandArgs,
+                client: client
             )
 
         case "set-metadata":
@@ -7607,6 +7607,13 @@ struct CMUXCLI {
     }
 
     private func resolveWorkspaceId(_ raw: String?, client: SocketClient) throws -> String {
+        // An explicit empty value almost always means an unset env var leaked
+        // into `--workspace ""`. Refuse to fall back to the focused workspace —
+        // that silent fallback has landed agent work on the wrong tab. Pass a
+        // real ref or omit the flag.
+        if let raw, raw.isEmpty {
+            throw CLIError(message: "--workspace received an empty value (likely from an unset shell variable). Pass a real ref or omit the flag.")
+        }
         if let raw, isUUID(raw) {
             return raw
         }
@@ -7640,6 +7647,12 @@ struct CMUXCLI {
     }
 
     private func resolveSurfaceId(_ raw: String?, workspaceId: String, client: SocketClient) throws -> String {
+        // See resolveWorkspaceId — same hazard. Empty string is a programming
+        // error, not a request for "focused surface". Fall through to focused
+        // is reserved for the nil case where no flag was passed at all.
+        if let raw, raw.isEmpty {
+            throw CLIError(message: "--surface received an empty value (likely from an unset shell variable, e.g. $C11_SURFACE_ID). Pass a real ref or omit the flag.")
+        }
         if let raw, isUUID(raw) {
             return raw
         }
@@ -8082,7 +8095,7 @@ struct CMUXCLI {
             return """
             Usage: c11 new-workspace [--cwd <path>] [--command <text>] [--layout <path|name>]
 
-            Create a new workspace in the current window.
+            Create a new workspace.
 
             Flags:
               --cwd <path>           Set the working directory for the new workspace
@@ -8153,6 +8166,38 @@ struct CMUXCLI {
               c11 health --since 30m
               c11 health --since-boot --rail sentinel
               c11 health --json
+            """
+        case "doctor":
+            return """
+            Usage: c11 doctor [--json]
+
+            Live-environment introspection for CLI resolution: which `c11` and
+            `cmux` binaries the current shell will invoke, what the active
+            bundle's CLI is, and whether they agree. Companion to `c11 health`,
+            which inspects post-mortem crash rails.
+
+            Best run inside a c11 terminal so CMUX_BUNDLED_CLI_PATH is set.
+
+            Flags:
+              --json     Emit a stable lowercase-snake JSON object instead of
+                         the default table. Schema:
+                           status               ok | mismatch | missing | no_bundle
+                           bundled_cli_path     absolute path | omitted
+                           c11_on_path          absolute path | omitted
+                           cmux_on_path         absolute path | omitted
+                           bundled_cli_version  first line of `--version` | omitted
+                           c11_on_path_version  first line of `--version` | omitted
+                           path_fix_applied     bool — true when the bundled
+                                                CLI's directory is the first
+                                                entry on PATH (structural
+                                                proxy for the shell
+                                                integration having run)
+                           path                 PATH split into entries
+                           notes                array of human-readable warnings
+
+            Example:
+              c11 doctor
+              c11 doctor --json
             """
         case "new-split":
             return """
@@ -8928,6 +8973,49 @@ struct CMUXCLI {
             Examples:
               c11 set-agent --type claude-code --model claude-opus-4-7
               c11 set-agent --type opencode --task task-42 --surface surface:1
+            """
+        case "default-agent":
+            return """
+            Usage: c11 default-agent {get | set <type> | launch [flags]}
+
+            Read or change the operator's configured default agent, or launch
+            an agent surface programmatically. The launch path is the
+            recommended way to spawn sub-agents: c11 owns per-TUI prompt
+            delivery, so the same call works whether the operator's default is
+            claude-code, codex, opencode, kimi, or a custom agent.
+
+            Subcommands:
+              get                              Print the configured default agent type.
+              set <type>                       Set the default agent (claude-code | codex | kimi | opencode | custom).
+              launch [flags]                   Launch the default (or --agent <type>) agent.
+
+            launch flags:
+              --in-surface <id|ref|index>      Launch into an existing surface's PTY. The
+                                               orchestrator pattern: create a surface with
+                                               `c11 new-split` or `c11 new-pane`, then
+                                               launch into it.
+              --pane <uuid|index>              Legacy A-button mimic: create a NEW agent
+                                               surface in the named pane (focused pane if
+                                               omitted). Mutually exclusive with
+                                               --in-surface.
+              --agent <type>                   Override the configured default for this
+                                               call only.
+              --cwd <path>                     Prepend `cd <path> && ` to the launch line.
+                                               Used with --in-surface when the existing
+                                               surface's cwd needs adjusting.
+              --prompt <text>                  Initial prompt to deliver to the agent. For
+                                               claude-code: appended as a positional arg.
+                                               For other agents: typed in after a fixed
+                                               post-launch delay.
+              --prompt-file <path>             Like --prompt, but read the text from a file.
+                                               Recommended for non-trivial prompts (no shell
+                                               escaping needed).
+
+            Examples:
+              c11 default-agent get
+              c11 default-agent set codex
+              c11 default-agent launch --in-surface surface:5 --prompt-file /tmp/bootstrap.md
+              c11 default-agent launch --pane 0 --agent claude-code
             """
         case "set-metadata":
             return """
@@ -10682,6 +10770,28 @@ struct CMUXCLI {
         args.contains(name)
     }
 
+    /// Extract a boolean flag, returning (present, remaining). Respects `--` terminator
+    /// so callers that join the remainder as text don't accidentally treat a post-`--`
+    /// occurrence of `name` as the flag.
+    private func parseBoolFlag(_ args: [String], name: String) -> (Bool, [String]) {
+        var present = false
+        var remaining: [String] = []
+        var pastTerminator = false
+        for arg in args {
+            if arg == "--" {
+                pastTerminator = true
+                remaining.append(arg)
+                continue
+            }
+            if !pastTerminator, arg == name {
+                present = true
+                continue
+            }
+            remaining.append(arg)
+        }
+        return (present, remaining)
+    }
+
     /// CMUX-10: client-side hex validation for `--color`. The socket re-validates
     /// authoritatively (server is the source of truth), but rejecting obviously
     /// wrong shapes here gives the operator a fast, clear error without a
@@ -10808,6 +10918,119 @@ struct CMUXCLI {
             windowOverride: windowOverride
         )
         return .surface(workspaceId: workspaceId, surfaceId: surfaceId)
+    }
+
+    /// `c11 default-agent {get|set|launch}` — sugar over the v1 `default_agent`
+    /// socket command. Resolves surface refs client-side to UUIDs (the v1
+    /// handler accepts UUIDs only), then forwards the composed v1 string.
+    private func runDefaultAgentCommand(
+        commandArgs: [String],
+        client: SocketClient
+    ) throws {
+        guard let sub = commandArgs.first else {
+            throw CLIError(message: "default-agent requires a subcommand: get | set <type> | launch [flags]")
+        }
+
+        switch sub {
+        case "get":
+            let response = try sendV1Command("default_agent get", client: client)
+            print(response)
+
+        case "set":
+            guard commandArgs.count >= 2 else {
+                let valid = ["claude-code", "codex", "kimi", "opencode", "custom"].joined(separator: ", ")
+                throw CLIError(message: "default-agent set requires <type>. Valid: \(valid)")
+            }
+            let response = try sendV1Command("default_agent set \(commandArgs[1])", client: client)
+            print(response)
+
+        case "launch":
+            try runDefaultAgentLaunchCommand(
+                commandArgs: Array(commandArgs.dropFirst()),
+                client: client
+            )
+
+        default:
+            throw CLIError(message: "default-agent: unknown subcommand '\(sub)' (expected get|set|launch)")
+        }
+    }
+
+    private func runDefaultAgentLaunchCommand(
+        commandArgs: [String],
+        client: SocketClient
+    ) throws {
+        let agentArg = optionValue(commandArgs, name: "--agent")
+        let inSurfaceRaw = optionValue(commandArgs, name: "--in-surface")
+        let paneArg = optionValue(commandArgs, name: "--pane")
+        let cwdArg = optionValue(commandArgs, name: "--cwd")
+        let promptArg = optionValue(commandArgs, name: "--prompt")
+        let promptFileArg = optionValue(commandArgs, name: "--prompt-file")
+
+        if inSurfaceRaw != nil && paneArg != nil {
+            throw CLIError(message: "default-agent launch: --in-surface and --pane are mutually exclusive")
+        }
+        if promptArg != nil && promptFileArg != nil {
+            throw CLIError(message: "default-agent launch: --prompt and --prompt-file are mutually exclusive")
+        }
+
+        // Resolve --in-surface ref → UUID. The v1 handler accepts UUIDs only;
+        // short refs and indexes get resolved here via surface.list.
+        var inSurfaceUUID: String? = nil
+        if let raw = inSurfaceRaw {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if isUUID(trimmed) {
+                inSurfaceUUID = trimmed
+            } else {
+                let listed = try client.sendV2(method: "surface.list", params: [:])
+                let items = listed["surfaces"] as? [[String: Any]] ?? []
+                let asIndex = Int(trimmed)
+                for item in items {
+                    if (item["ref"] as? String) == trimmed, let id = item["id"] as? String {
+                        inSurfaceUUID = id
+                        break
+                    }
+                    if let asIndex, intFromAny(item["index"]) == asIndex, let id = item["id"] as? String {
+                        inSurfaceUUID = id
+                        break
+                    }
+                }
+                if inSurfaceUUID == nil {
+                    throw CLIError(message: "Surface not found: \(raw)")
+                }
+            }
+        }
+
+        // Compose v1 command. Multi-word values get quoted so tokenizeArgs
+        // on the server reconstructs them as single tokens.
+        var parts: [String] = ["default_agent", "launch"]
+        if let agentArg { parts.append("--agent"); parts.append(agentArg) }
+        if let inSurfaceUUID { parts.append("--in-surface"); parts.append(inSurfaceUUID) }
+        if let paneArg { parts.append("--pane"); parts.append(paneArg) }
+        if let cwdArg { parts.append("--cwd"); parts.append(v1QuoteForTokenizer(cwdArg)) }
+        if let promptArg { parts.append("--prompt"); parts.append(v1QuoteForTokenizer(promptArg)) }
+        if let promptFileArg { parts.append("--prompt-file"); parts.append(v1QuoteForTokenizer(promptFileArg)) }
+
+        let v1Cmd = parts.joined(separator: " ")
+        let response = try sendV1Command(v1Cmd, client: client)
+        print(response)
+    }
+
+    /// Quote a string for the v1 server-side `tokenizeArgs` parser. Uses
+    /// double quotes with backslash escapes (the tokenizer's escape grammar:
+    /// `\\`, `\"`, `\n`, `\r`, `\t`).
+    private func v1QuoteForTokenizer(_ value: String) -> String {
+        var escaped = ""
+        for char in value {
+            switch char {
+            case "\\": escaped += "\\\\"
+            case "\"": escaped += "\\\""
+            case "\n": escaped += "\\n"
+            case "\r": escaped += "\\r"
+            case "\t": escaped += "\\t"
+            default: escaped.append(char)
+            }
+        }
+        return "\"\(escaped)\""
     }
 
     /// `cmux set-agent` — M1 sugar over `surface.set_metadata { source: declare, mode: merge }`.
@@ -15124,6 +15347,7 @@ struct CMUXCLI {
           refresh-surfaces
           surface-health [--workspace <id|ref>]
           health [--since <duration> | --since-boot] [--rail <name>] [--json]
+          doctor [--json]
           trigger-flash [--workspace <id|ref>] [--surface <id|ref>] [--color <#hex>] [--persistent]
           cancel-flash [--workspace <id|ref>] [--surface <id|ref>]
           list-panels [--workspace <id|ref>]
@@ -15144,6 +15368,7 @@ struct CMUXCLI {
           clear-notifications
           claude-hook <session-start|stop|notification> [--workspace <id|ref>] [--surface <id|ref>]
           set-agent --type <terminal_type> [--model <id>] [--task <id>] [--role <id>] [--surface <id|ref>] [--workspace <id|ref>]
+          default-agent {get | set <type> | launch [--in-surface <id|ref> | --pane <id>] [--agent <type>] [--cwd <path>] [--prompt <text> | --prompt-file <path>]}
           set-metadata (--json '{...}' | --key <K> --value <V> [--type string|number|bool|json]) [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>] [--mode merge|replace] [--source <src>]
           get-metadata [--key <K> ...] [--sources] [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
           clear-metadata [--key <K> ...] [--source <src>] [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
@@ -15285,2342 +15510,11 @@ struct CMUXTermMain {
         let cli = CMUXCLI(args: CommandLine.arguments)
         do {
             try cli.run()
-        } catch let installerError as IntegrationInstallerError {
-            // Installer errors carry their own exit code + structured payload.
-            installerError.emit()
-            exit(installerError.exitCode)
         } catch {
             FileHandle.standardError.write(Data("Error: \(error)\n".utf8))
             exit(1)
         }
     }
-}
-
-// MARK: - Module 4: Integration installers
-//
-// c11 Module 4 — `cmux install <tui>` / `cmux uninstall <tui>`.
-// One-command wiring of cmux's notification shims and agent-declaration
-// calls into each first-class TUI's configuration.
-//
-// Spec: docs/c11mux-module-4-integration-installers-spec.md
-//
-// Everything here is filesystem-local; install does not touch the running
-// cmux socket. Menubar integration lives in Sources/AppDelegate.swift and
-// goes through the existing v2 surface.create + surface.send_text path.
-
-public enum IntegrationInstallerTUI: String, CaseIterable {
-    case claudeCode = "claude-code"
-    case codex = "codex"
-    case opencode = "opencode"
-    case kimi = "kimi"
-
-    public static func parse(_ raw: String) -> IntegrationInstallerTUI? {
-        let lowered = raw.lowercased()
-        if let direct = IntegrationInstallerTUI(rawValue: lowered) { return direct }
-        if lowered == "claude" { return .claudeCode }
-        return nil
-    }
-
-    public var displayName: String {
-        switch self {
-        case .claudeCode: return "Claude Code"
-        case .codex: return "Codex"
-        case .opencode: return "OpenCode"
-        case .kimi: return "Kimi"
-        }
-    }
-
-    public var usesNativeHooks: Bool { self == .claudeCode }
-
-    public func defaultConfigPath(home: String) -> String {
-        switch self {
-        case .claudeCode: return "\(home)/.claude/settings.json"
-        case .codex: return "\(home)/.codex/config.toml"
-        case .opencode: return "\(home)/.config/opencode/opencode.json"
-        case .kimi: return "\(home)/.kimi/config.toml"
-        }
-    }
-
-    public func binaryName() -> String {
-        // `claude-code` ships as `claude`, other three match rawValue.
-        switch self {
-        case .claudeCode: return "claude"
-        default: return rawValue
-        }
-    }
-
-    public func shimPath(home: String) -> String {
-        return "\(home)/.local/bin/cmux-shims/\(rawValue)"
-    }
-}
-
-public enum IntegrationInstallerState: String {
-    case notInstalled = "not_installed"
-    case installedCurrent = "installed_current"
-    case installedOutdated = "installed_outdated"
-    case schemaMismatch = "schema_mismatch"
-    case configMalformed = "config_malformed"
-    case markerHandEdit = "marker_hand_edit"
-}
-
-public struct IntegrationInstallerError: Error {
-    public let code: String
-    public let message: String
-    public let exitCode: Int32
-    public let path: String?
-    public let parserError: String?
-    public let jsonOutput: Bool
-
-    public init(
-        code: String,
-        message: String,
-        exitCode: Int32,
-        path: String? = nil,
-        parserError: String? = nil,
-        jsonOutput: Bool = false
-    ) {
-        self.code = code
-        self.message = message
-        self.exitCode = exitCode
-        self.path = path
-        self.parserError = parserError
-        self.jsonOutput = jsonOutput
-    }
-
-    public func emit() {
-        if jsonOutput {
-            var errorPayload: [String: Any] = [
-                "code": code,
-                "message": message
-            ]
-            if let path { errorPayload["path"] = path }
-            if let parserError { errorPayload["parser_error"] = parserError }
-            let payload: [String: Any] = [
-                "ok": false,
-                "error": errorPayload
-            ]
-            let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])) ?? Data()
-            if let line = String(data: data, encoding: .utf8) {
-                FileHandle.standardError.write(Data((line + "\n").utf8))
-            }
-        } else {
-            FileHandle.standardError.write(Data(("Error: \(message)\n").utf8))
-        }
-    }
-}
-
-enum InstallExitCode {
-    static let userAborted: Int32 = 1
-    static let unknownTui: Int32 = 2
-    static let configMissing: Int32 = 3
-    static let configPermissionDenied: Int32 = 4
-    static let configMalformed: Int32 = 5
-    static let schemaVersionMismatch: Int32 = 6
-    static let outdatedInstallRequiresForce: Int32 = 7
-    static let tuiBinaryNotFound: Int32 = 8
-    static let shimDirNotWritable: Int32 = 9
-    static let markerHandEditDetected: Int32 = 10
-}
-
-struct IntegrationInstallerConstants {
-    static let schemaVersion = 1
-    static let markerId = "c11mux-v1"
-    static let tomlFenceBegin = "# cmux-install-begin"
-    static let tomlFenceEnd = "# cmux-install-end"
-}
-
-/// Canonical hook entries c11 writes into `~/.claude/settings.json`.
-/// Identity is established by content-hash match against the `x-cmux.entries`
-/// table. See `docs/c11mux-module-4-integration-installers-spec.md`.
-private func claudeCanonicalEntries() -> [(event: String, entry: [String: Any])] {
-    return [
-        ("SessionStart", [
-            "matcher": "",
-            "hooks": [
-                ["type": "command", "command": "c11 claude-hook session-start", "timeout": 10],
-                ["type": "command", "command": "c11 set-agent --type claude-code --source declare", "timeout": 5]
-            ]
-        ]),
-        ("Stop", [
-            "matcher": "",
-            "hooks": [
-                ["type": "command", "command": "c11 claude-hook stop", "timeout": 10]
-            ]
-        ]),
-        ("SessionEnd", [
-            "matcher": "",
-            "hooks": [
-                ["type": "command", "command": "c11 claude-hook session-end", "timeout": 1]
-            ]
-        ]),
-        ("Notification", [
-            "matcher": "",
-            "hooks": [
-                ["type": "command", "command": "c11 claude-hook notification", "timeout": 10]
-            ]
-        ]),
-        ("UserPromptSubmit", [
-            "matcher": "",
-            "hooks": [
-                ["type": "command", "command": "c11 claude-hook prompt-submit", "timeout": 10]
-            ]
-        ]),
-        ("PreToolUse", [
-            "matcher": "",
-            "hooks": [
-                ["type": "command", "command": "c11 claude-hook pre-tool-use", "timeout": 5, "async": true]
-            ]
-        ])
-    ]
-}
-
-func integrationInstallerCanonicalJSON(_ object: Any) -> Data {
-    // Sorted keys, no whitespace. Safe for SHA256 content addressing.
-    return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data()
-}
-
-func integrationInstallerSHA256(_ data: Data) -> String {
-    let digest = SHA256.hash(data: data)
-    return digest.map { String(format: "%02x", $0) }.joined()
-}
-
-func integrationInstallerSHA256(of string: String) -> String {
-    return integrationInstallerSHA256(Data(string.utf8))
-}
-
-func integrationInstallerShimScript(for tui: IntegrationInstallerTUI) -> String {
-    let type = tui.rawValue
-    let binary = tui.binaryName()
-    return """
-    #!/usr/bin/env bash
-    # c11 integration shim (do not edit — regenerate via `cmux install \(type)`)
-    set -u
-    CMUX_MARKER_ID=\"\(IntegrationInstallerConstants.markerId)\"
-    if [[ -n \"${CMUX_SURFACE_ID:-}\" ]]; then
-      cmux set-agent --type \(type) --source declare >/dev/null 2>&1 || true
-      cmux claude-hook session-start </dev/null >/dev/null 2>&1 || true
-    fi
-    SELF_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"
-    REAL=\"\"
-    OLD_IFS=$IFS
-    IFS=:
-    for d in $PATH; do
-      [[ \"$d\" == \"$SELF_DIR\" ]] && continue
-      if [[ -x \"$d/\(binary)\" ]]; then REAL=\"$d/\(binary)\"; break; fi
-    done
-    IFS=$OLD_IFS
-    if [[ -z \"$REAL\" ]]; then
-      echo \"cmux-shim: \(binary) not found in PATH\" >&2
-      exit 127
-    fi
-    \"$REAL\" \"$@\"
-    STATUS=$?
-    if [[ -n \"${CMUX_SURFACE_ID:-}\" ]]; then
-      cmux claude-hook session-end </dev/null >/dev/null 2>&1 || true
-    fi
-    exit $STATUS
-    """
-}
-
-struct IntegrationInstallerPlan {
-    let tui: IntegrationInstallerTUI
-    let configPath: String
-    let homePath: String
-    let preConfigText: String?          // nil if the file did not exist
-    let postConfigText: String?         // nil if no change to the config file
-    let shimPath: String?               // nil for native-hook TUIs
-    let preShimText: String?
-    let postShimText: String?
-    let priorState: IntegrationInstallerState
-    let newInstalledAt: String
-    let noop: Bool
-    let summary: [String]
-    let unifiedDiff: String
-    let tuiBinaryFound: Bool
-    let tuiBinaryPath: String?
-    let createdConfig: Bool             // true when config file didn't exist pre-install
-}
-
-struct IntegrationInstallerStatus {
-    let tui: IntegrationInstallerTUI
-    let configPath: String
-    let shimPath: String?
-    let state: IntegrationInstallerState
-    let schemaVersion: Int?
-    let markerId: String?
-    let installedAt: String?
-    let tuiBinaryFound: Bool
-    let tuiBinaryPath: String?
-    let expectedHashes: [String: String]   // event -> sha for claude-code; "shim" -> sha for shim TUIs
-    let actualHashes: [String: String]     // parallel
-    let parserError: String?
-    let note: String?
-}
-
-extension CMUXCLI {
-    fileprivate func runIntegrationInstallerCommand(
-        command: String,
-        commandArgs: [String],
-        jsonOutput: Bool
-    ) throws {
-        switch command {
-        case "install":
-            try runIntegrationInstallCommand(commandArgs: commandArgs, jsonOutput: jsonOutput)
-        case "uninstall":
-            try runIntegrationUninstallCommand(commandArgs: commandArgs, jsonOutput: jsonOutput)
-        default:
-            throw CLIError(message: "Unknown integration command: \(command)")
-        }
-    }
-
-    fileprivate func runIntegrationInstallCommand(commandArgs: [String], jsonOutput: Bool) throws {
-        // --list and --status are sub-commands implemented as flags.
-        if commandArgs.contains("--list") {
-            try runIntegrationInstallerList(commandArgs: commandArgs, jsonOutput: jsonOutput)
-            return
-        }
-        if commandArgs.contains("--status") {
-            try runIntegrationInstallerStatus(commandArgs: commandArgs, jsonOutput: jsonOutput)
-            return
-        }
-
-        // Parse flags and positional <tui>.
-        var dryRun = false
-        var noConfirm = false
-        var force = false
-        var configPathOverride: String? = nil
-        var homeOverride: String? = nil
-        var tuiArg: String? = nil
-
-        var index = 0
-        while index < commandArgs.count {
-            let arg = commandArgs[index]
-            switch arg {
-            case "--dry-run": dryRun = true
-            case "--no-confirm": noConfirm = true
-            case "--force": force = true
-            case "--json": break  // handled by top-level --json flag
-            case "--config-path":
-                guard index + 1 < commandArgs.count else {
-                    throw IntegrationInstallerError(
-                        code: "usage",
-                        message: "--config-path requires a path",
-                        exitCode: 2,
-                        jsonOutput: jsonOutput
-                    )
-                }
-                configPathOverride = commandArgs[index + 1]
-                index += 1
-            case "--home":
-                guard index + 1 < commandArgs.count else {
-                    throw IntegrationInstallerError(
-                        code: "usage",
-                        message: "--home requires a path",
-                        exitCode: 2,
-                        jsonOutput: jsonOutput
-                    )
-                }
-                homeOverride = commandArgs[index + 1]
-                index += 1
-            default:
-                if arg.hasPrefix("-") {
-                    throw IntegrationInstallerError(
-                        code: "usage",
-                        message: "Unknown flag: \(arg)",
-                        exitCode: 2,
-                        jsonOutput: jsonOutput
-                    )
-                }
-                if tuiArg == nil {
-                    tuiArg = arg
-                } else {
-                    throw IntegrationInstallerError(
-                        code: "usage",
-                        message: "Unexpected argument: \(arg)",
-                        exitCode: 2,
-                        jsonOutput: jsonOutput
-                    )
-                }
-            }
-            index += 1
-        }
-
-        guard let tuiRaw = tuiArg else {
-            throw IntegrationInstallerError(
-                code: "usage",
-                message: "Missing <tui> argument. Run `cmux install --list` to see supported TUIs.",
-                exitCode: 2,
-                jsonOutput: jsonOutput
-            )
-        }
-        guard let tui = IntegrationInstallerTUI.parse(tuiRaw) else {
-            throw IntegrationInstallerError(
-                code: "unknown_tui",
-                message: "Unknown TUI '\(tuiRaw)'. Supported: \(IntegrationInstallerTUI.allCases.map { $0.rawValue }.joined(separator: ", "))",
-                exitCode: InstallExitCode.unknownTui,
-                jsonOutput: jsonOutput
-            )
-        }
-
-        let home = resolveIntegrationInstallerHome(override: homeOverride)
-        let configPath = configPathOverride.map { resolveIntegrationInstallerPath($0, home: home) }
-            ?? tui.defaultConfigPath(home: home)
-
-        let plan: IntegrationInstallerPlan
-        do {
-            plan = try integrationInstallerPlan(
-                tui: tui,
-                configPath: configPath,
-                home: home,
-                force: force,
-                jsonOutput: jsonOutput
-            )
-        } catch let err as IntegrationInstallerError {
-            throw err
-        }
-
-        // Apply gates unrelated to the diff (schema mismatch, malformed, etc.)
-        if plan.priorState == .schemaMismatch && !force {
-            throw IntegrationInstallerError(
-                code: "schema_version_mismatch",
-                message: "Existing cmux install uses a different schema; re-run with --force to overwrite.",
-                exitCode: InstallExitCode.schemaVersionMismatch,
-                path: configPath,
-                jsonOutput: jsonOutput
-            )
-        }
-        if plan.priorState == .installedOutdated && noConfirm && !force {
-            throw IntegrationInstallerError(
-                code: "outdated_install_requires_force",
-                message: "Existing cmux install is outdated; pass --force to overwrite in non-interactive mode.",
-                exitCode: InstallExitCode.outdatedInstallRequiresForce,
-                path: configPath,
-                jsonOutput: jsonOutput
-            )
-        }
-
-        if dryRun {
-            emitInstallerResultOutput(
-                plan: plan,
-                action: "install",
-                applied: false,
-                jsonOutput: jsonOutput,
-                extraNote: plan.noop ? "would no-op" : "would apply"
-            )
-            return
-        }
-
-        if plan.noop {
-            emitInstallerResultOutput(
-                plan: plan,
-                action: "install",
-                applied: false,
-                jsonOutput: jsonOutput,
-                extraNote: "already installed, current"
-            )
-            return
-        }
-
-        if !noConfirm {
-            // Require TTY for interactive prompt.
-            let stdinTTY = isatty(STDIN_FILENO) == 1
-            let stdoutTTY = isatty(STDOUT_FILENO) == 1
-            if !stdinTTY || !stdoutTTY {
-                throw IntegrationInstallerError(
-                    code: "user_aborted",
-                    message: "Interactive confirmation requires a TTY; pass --no-confirm to apply without prompting.",
-                    exitCode: InstallExitCode.userAborted,
-                    jsonOutput: jsonOutput
-                )
-            }
-
-            if !jsonOutput {
-                print(plan.unifiedDiff)
-                print("")
-                if plan.createdConfig {
-                    print("Config not found at \(configPath). Install will create it.")
-                }
-                print("Apply these changes? [y/N] ", terminator: "")
-            }
-            let response = (readLine() ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            if response != "y" && response != "yes" {
-                throw IntegrationInstallerError(
-                    code: "user_aborted",
-                    message: "Install aborted by user.",
-                    exitCode: InstallExitCode.userAborted,
-                    jsonOutput: jsonOutput
-                )
-            }
-        }
-
-        try applyIntegrationInstallerPlan(plan: plan, jsonOutput: jsonOutput)
-
-        emitInstallerResultOutput(
-            plan: plan,
-            action: "install",
-            applied: true,
-            jsonOutput: jsonOutput,
-            extraNote: nil
-        )
-    }
-
-    fileprivate func runIntegrationUninstallCommand(commandArgs: [String], jsonOutput: Bool) throws {
-        var dryRun = false
-        var noConfirm = false
-        var force = false
-        var configPathOverride: String? = nil
-        var homeOverride: String? = nil
-        var tuiArg: String? = nil
-
-        var index = 0
-        while index < commandArgs.count {
-            let arg = commandArgs[index]
-            switch arg {
-            case "--dry-run": dryRun = true
-            case "--no-confirm": noConfirm = true
-            case "--force": force = true
-            case "--json": break
-            case "--config-path":
-                guard index + 1 < commandArgs.count else {
-                    throw IntegrationInstallerError(
-                        code: "usage",
-                        message: "--config-path requires a path",
-                        exitCode: 2,
-                        jsonOutput: jsonOutput
-                    )
-                }
-                configPathOverride = commandArgs[index + 1]
-                index += 1
-            case "--home":
-                guard index + 1 < commandArgs.count else {
-                    throw IntegrationInstallerError(
-                        code: "usage",
-                        message: "--home requires a path",
-                        exitCode: 2,
-                        jsonOutput: jsonOutput
-                    )
-                }
-                homeOverride = commandArgs[index + 1]
-                index += 1
-            default:
-                if arg.hasPrefix("-") {
-                    throw IntegrationInstallerError(
-                        code: "usage",
-                        message: "Unknown flag: \(arg)",
-                        exitCode: 2,
-                        jsonOutput: jsonOutput
-                    )
-                }
-                if tuiArg == nil {
-                    tuiArg = arg
-                } else {
-                    throw IntegrationInstallerError(
-                        code: "usage",
-                        message: "Unexpected argument: \(arg)",
-                        exitCode: 2,
-                        jsonOutput: jsonOutput
-                    )
-                }
-            }
-            index += 1
-        }
-
-        guard let tuiRaw = tuiArg else {
-            throw IntegrationInstallerError(
-                code: "usage",
-                message: "Missing <tui> argument.",
-                exitCode: 2,
-                jsonOutput: jsonOutput
-            )
-        }
-        guard let tui = IntegrationInstallerTUI.parse(tuiRaw) else {
-            throw IntegrationInstallerError(
-                code: "unknown_tui",
-                message: "Unknown TUI '\(tuiRaw)'.",
-                exitCode: InstallExitCode.unknownTui,
-                jsonOutput: jsonOutput
-            )
-        }
-
-        let home = resolveIntegrationInstallerHome(override: homeOverride)
-        let configPath = configPathOverride.map { resolveIntegrationInstallerPath($0, home: home) }
-            ?? tui.defaultConfigPath(home: home)
-
-        let plan = try integrationUninstallerPlan(
-            tui: tui,
-            configPath: configPath,
-            home: home,
-            force: force,
-            jsonOutput: jsonOutput
-        )
-
-        if dryRun {
-            emitInstallerResultOutput(
-                plan: plan,
-                action: "uninstall",
-                applied: false,
-                jsonOutput: jsonOutput,
-                extraNote: plan.noop ? "nothing to uninstall" : "would remove cmux install"
-            )
-            return
-        }
-
-        if plan.noop {
-            emitInstallerResultOutput(
-                plan: plan,
-                action: "uninstall",
-                applied: false,
-                jsonOutput: jsonOutput,
-                extraNote: "nothing to uninstall"
-            )
-            return
-        }
-
-        if !noConfirm {
-            let stdinTTY = isatty(STDIN_FILENO) == 1
-            let stdoutTTY = isatty(STDOUT_FILENO) == 1
-            if !stdinTTY || !stdoutTTY {
-                throw IntegrationInstallerError(
-                    code: "user_aborted",
-                    message: "Interactive confirmation requires a TTY; pass --no-confirm to apply without prompting.",
-                    exitCode: InstallExitCode.userAborted,
-                    jsonOutput: jsonOutput
-                )
-            }
-            if !jsonOutput {
-                print(plan.unifiedDiff)
-                print("")
-                print("Remove cmux integration from \(tui.displayName)? [y/N] ", terminator: "")
-            }
-            let response = (readLine() ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            if response != "y" && response != "yes" {
-                throw IntegrationInstallerError(
-                    code: "user_aborted",
-                    message: "Uninstall aborted by user.",
-                    exitCode: InstallExitCode.userAborted,
-                    jsonOutput: jsonOutput
-                )
-            }
-        }
-
-        try applyIntegrationInstallerPlan(plan: plan, jsonOutput: jsonOutput)
-
-        emitInstallerResultOutput(
-            plan: plan,
-            action: "uninstall",
-            applied: true,
-            jsonOutput: jsonOutput,
-            extraNote: nil
-        )
-    }
-
-    fileprivate func runIntegrationInstallerList(commandArgs: [String], jsonOutput: Bool) throws {
-        let home = resolveIntegrationInstallerHome(override: optionValue(commandArgs, name: "--home"))
-        var rows: [[String: Any]] = []
-        for tui in IntegrationInstallerTUI.allCases {
-            let configPath = tui.defaultConfigPath(home: home)
-            let status = integrationInstallerStatusSnapshot(tui: tui, configPath: configPath, home: home)
-            rows.append([
-                "tui": tui.rawValue,
-                "display_name": tui.displayName,
-                "installed": status.state == .installedCurrent || status.state == .installedOutdated,
-                "state": status.state.rawValue,
-                "schema_version": status.schemaVersion ?? NSNull(),
-                "config_path": configPath,
-                "shim_path": status.shimPath ?? NSNull(),
-                "tui_binary_found": status.tuiBinaryFound,
-                "tui_binary_path": status.tuiBinaryPath ?? NSNull()
-            ])
-        }
-        if jsonOutput {
-            let payload: [String: Any] = ["ok": true, "integrations": rows]
-            print(jsonString(payload))
-            return
-        }
-        // Plain table.
-        func pad(_ s: String, _ width: Int) -> String {
-            if s.count >= width { return s }
-            return s + String(repeating: " ", count: width - s.count)
-        }
-        print("TUI           INSTALLED     SCHEMA  TUI-BIN   CONFIG")
-        for row in rows {
-            let tuiName = (row["tui"] as? String) ?? ""
-            let state = (row["state"] as? String) ?? ""
-            let schema = row["schema_version"]
-            let schemaText = (schema as? Int).map(String.init) ?? "-"
-            let binFound = (row["tui_binary_found"] as? Bool) == true ? "yes" : "no"
-            let configPath = (row["config_path"] as? String) ?? ""
-            print("\(pad(tuiName, 13)) \(pad(state, 13)) \(pad(schemaText, 7)) \(pad(binFound, 9)) \(configPath)")
-        }
-    }
-
-    fileprivate func runIntegrationInstallerStatus(commandArgs: [String], jsonOutput: Bool) throws {
-        let home = resolveIntegrationInstallerHome(override: optionValue(commandArgs, name: "--home"))
-        guard let tuiRaw = optionValue(commandArgs, name: "--status") else {
-            throw IntegrationInstallerError(
-                code: "usage",
-                message: "--status requires a <tui> value",
-                exitCode: 2,
-                jsonOutput: jsonOutput
-            )
-        }
-        guard let tui = IntegrationInstallerTUI.parse(tuiRaw) else {
-            throw IntegrationInstallerError(
-                code: "unknown_tui",
-                message: "Unknown TUI '\(tuiRaw)'.",
-                exitCode: InstallExitCode.unknownTui,
-                jsonOutput: jsonOutput
-            )
-        }
-        let configPath = optionValue(commandArgs, name: "--config-path").map { resolveIntegrationInstallerPath($0, home: home) }
-            ?? tui.defaultConfigPath(home: home)
-        let status = integrationInstallerStatusSnapshot(tui: tui, configPath: configPath, home: home)
-
-        if jsonOutput {
-            var payload: [String: Any] = [
-                "ok": true,
-                "tui": tui.rawValue,
-                "display_name": tui.displayName,
-                "state": status.state.rawValue,
-                "config_path": status.configPath,
-                "shim_path": status.shimPath ?? NSNull(),
-                "schema_version": status.schemaVersion ?? NSNull(),
-                "marker_id": status.markerId ?? NSNull(),
-                "installed_at": status.installedAt ?? NSNull(),
-                "tui_binary_found": status.tuiBinaryFound,
-                "tui_binary_path": status.tuiBinaryPath ?? NSNull(),
-                "expected_hashes": status.expectedHashes,
-                "actual_hashes": status.actualHashes
-            ]
-            if let note = status.note { payload["note"] = note }
-            if let parserError = status.parserError { payload["parser_error"] = parserError }
-            print(jsonString(payload))
-            return
-        }
-
-        print("TUI:          \(tui.displayName) (\(tui.rawValue))")
-        print("State:        \(status.state.rawValue)")
-        print("Config path:  \(status.configPath)")
-        if let shimPath = status.shimPath {
-            print("Shim path:    \(shimPath)")
-        }
-        if let schema = status.schemaVersion {
-            print("Schema:       \(schema)")
-        }
-        if let installed = status.installedAt {
-            print("Installed at: \(installed)")
-        }
-        print("TUI binary:   \(status.tuiBinaryFound ? (status.tuiBinaryPath ?? "yes") : "not found")")
-        if let note = status.note {
-            print("Note:         \(note)")
-        }
-    }
-
-    fileprivate func emitInstallerResultOutput(
-        plan: IntegrationInstallerPlan,
-        action: String,
-        applied: Bool,
-        jsonOutput: Bool,
-        extraNote: String?
-    ) {
-        if jsonOutput {
-            var payload: [String: Any] = [
-                "ok": true,
-                "action": action,
-                "applied": applied,
-                "noop": plan.noop,
-                "tui": plan.tui.rawValue,
-                "display_name": plan.tui.displayName,
-                "config_path": plan.configPath,
-                "prior_state": plan.priorState.rawValue,
-                "created_config": plan.createdConfig,
-                "tui_binary_found": plan.tuiBinaryFound,
-                "tui_binary_path": plan.tuiBinaryPath ?? NSNull(),
-                "summary": plan.summary
-            ]
-            if let shimPath = plan.shimPath {
-                payload["shim_path"] = shimPath
-            }
-            if let note = extraNote {
-                payload["note"] = note
-            }
-            print(jsonString(payload))
-            return
-        }
-
-        if applied {
-            print("\(plan.tui.displayName): \(action) OK")
-        } else if let note = extraNote {
-            print("\(plan.tui.displayName): \(note)")
-        } else {
-            print("\(plan.tui.displayName): (no changes)")
-        }
-        for line in plan.summary {
-            print("  - \(line)")
-        }
-        if action == "install" && !plan.tuiBinaryFound {
-            print("  warning: \(plan.tui.binaryName()) binary not found in PATH (\(plan.tui.rawValue))")
-        }
-        if plan.shimPath != nil && action == "install" && applied {
-            let dir = IntegrationInstallerHelpers.parentDirectory(of: plan.shimPath!)
-            print("  note: ensure \(dir) is on your PATH to route \(plan.tui.binaryName()) through the cmux shim.")
-        }
-    }
-}
-
-// MARK: - Installer helpers
-
-enum IntegrationInstallerHelpers {
-    static func parentDirectory(of path: String) -> String {
-        return (path as NSString).deletingLastPathComponent
-    }
-
-    static func ensureDirectoryExists(_ path: String, mode: Int = 0o755) throws {
-        var isDir: ObjCBool = false
-        if FileManager.default.fileExists(atPath: path, isDirectory: &isDir) {
-            if isDir.boolValue { return }
-            throw IntegrationInstallerError(
-                code: "config_permission_denied",
-                message: "Path exists and is not a directory: \(path)",
-                exitCode: InstallExitCode.configPermissionDenied,
-                path: path
-            )
-        }
-        do {
-            try FileManager.default.createDirectory(
-                atPath: path,
-                withIntermediateDirectories: true,
-                attributes: [.posixPermissions: NSNumber(value: mode)]
-            )
-        } catch {
-            throw IntegrationInstallerError(
-                code: "config_permission_denied",
-                message: "Could not create directory \(path): \(error.localizedDescription)",
-                exitCode: InstallExitCode.configPermissionDenied,
-                path: path
-            )
-        }
-    }
-
-    /// Atomic write: writes to a sibling tempfile then renames into place.
-    static func atomicWrite(_ text: String, to path: String, mode: Int = 0o644) throws {
-        let dir = parentDirectory(of: path)
-        try ensureDirectoryExists(dir)
-
-        let tempPath = "\(path).cmux-install.\(getpid()).tmp"
-        let data = Data(text.utf8)
-        let fm = FileManager.default
-        fm.createFile(atPath: tempPath, contents: data, attributes: [.posixPermissions: NSNumber(value: mode)])
-        if rename(tempPath, path) != 0 {
-            let savedErrno = errno
-            _ = unlink(tempPath)
-            if savedErrno == EACCES || savedErrno == EPERM {
-                throw IntegrationInstallerError(
-                    code: "config_permission_denied",
-                    message: "Cannot write to \(path) (EACCES)",
-                    exitCode: InstallExitCode.configPermissionDenied,
-                    path: path
-                )
-            }
-            throw IntegrationInstallerError(
-                code: "config_permission_denied",
-                message: "Atomic rename failed for \(path) (errno=\(savedErrno))",
-                exitCode: InstallExitCode.configPermissionDenied,
-                path: path
-            )
-        }
-    }
-
-    static func readUTF8IfExists(_ path: String) throws -> String? {
-        if !FileManager.default.fileExists(atPath: path) { return nil }
-        do {
-            let data = try Data(contentsOf: URL(fileURLWithPath: path))
-            guard let text = String(data: data, encoding: .utf8) else {
-                throw IntegrationInstallerError(
-                    code: "config_malformed",
-                    message: "File is not valid UTF-8: \(path)",
-                    exitCode: InstallExitCode.configMalformed,
-                    path: path
-                )
-            }
-            return text
-        } catch let err as IntegrationInstallerError {
-            throw err
-        } catch {
-            let e = error as NSError
-            if e.domain == NSCocoaErrorDomain && e.code == NSFileReadNoPermissionError {
-                throw IntegrationInstallerError(
-                    code: "config_permission_denied",
-                    message: "Cannot read \(path): permission denied",
-                    exitCode: InstallExitCode.configPermissionDenied,
-                    path: path
-                )
-            }
-            throw IntegrationInstallerError(
-                code: "config_permission_denied",
-                message: "Cannot read \(path): \(error.localizedDescription)",
-                exitCode: InstallExitCode.configPermissionDenied,
-                path: path
-            )
-        }
-    }
-
-    static func removeFileIfExists(_ path: String) throws {
-        if !FileManager.default.fileExists(atPath: path) { return }
-        do {
-            try FileManager.default.removeItem(atPath: path)
-        } catch {
-            throw IntegrationInstallerError(
-                code: "config_permission_denied",
-                message: "Cannot remove \(path): \(error.localizedDescription)",
-                exitCode: InstallExitCode.configPermissionDenied,
-                path: path
-            )
-        }
-    }
-
-    static func nowISO8601() -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: Date())
-    }
-
-    /// Finds `binary` in PATH, skipping the shim dir under `home`.
-    static func findBinary(named binary: String, home: String) -> String? {
-        let pathEnv = ProcessInfo.processInfo.environment["PATH"] ?? ""
-        let shimDir = "\(home)/.local/bin/cmux-shims"
-        for component in pathEnv.split(separator: ":") {
-            let dir = String(component)
-            if dir == shimDir { continue }
-            let candidate = "\(dir)/\(binary)"
-            if access(candidate, X_OK) == 0 {
-                return candidate
-            }
-        }
-        return nil
-    }
-
-    static func prettyJSON(_ obj: Any) -> String {
-        var options: JSONSerialization.WritingOptions = [.prettyPrinted]
-        options.insert(.withoutEscapingSlashes)
-        options.insert(.sortedKeys)
-        guard JSONSerialization.isValidJSONObject(obj),
-              let data = try? JSONSerialization.data(withJSONObject: obj, options: options),
-              let text = String(data: data, encoding: .utf8) else {
-            return "{}"
-        }
-        return text
-    }
-
-    /// Pretty-prints a JSON object with 2-space indent, sorted keys, and a
-    /// trailing newline — matches the convention the claude-code installer
-    /// writes. `sortedKeys` keeps roundtrip diffs clean across runs.
-    static func claudeCodeJSONDump(_ obj: Any) -> String {
-        return prettyJSON(obj) + "\n"
-    }
-
-    /// Unified diff between two strings. Simple implementation: per-line,
-    /// prints the full before block as `-` and the full after block as `+`.
-    /// This is sufficient for the confirmation prompt; it is not a real
-    /// Myers diff.
-    static func simpleUnifiedDiff(before: String?, after: String?, label: String) -> String {
-        let beforeLines = (before ?? "").split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        let afterLines = (after ?? "").split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        var lines: [String] = []
-        lines.append("--- a/\(label)\(before == nil ? " (new file)" : "")")
-        lines.append("+++ b/\(label)\(after == nil ? " (removed)" : "")")
-        for line in beforeLines {
-            lines.append("-\(line)")
-        }
-        for line in afterLines {
-            lines.append("+\(line)")
-        }
-        return lines.joined(separator: "\n")
-    }
-}
-
-fileprivate func resolveIntegrationInstallerHome(override: String?) -> String {
-    if let override, !override.isEmpty {
-        return resolveIntegrationInstallerPath(override, home: NSHomeDirectory())
-    }
-    return NSHomeDirectory()
-}
-
-fileprivate func resolveIntegrationInstallerPath(_ path: String, home: String) -> String {
-    let expanded: String
-    if path.hasPrefix("~/") {
-        expanded = home + String(path.dropFirst(1))
-    } else if path == "~" {
-        expanded = home
-    } else {
-        expanded = path
-    }
-    if expanded.hasPrefix("/") { return expanded }
-    let cwd = FileManager.default.currentDirectoryPath
-    return (cwd as NSString).appendingPathComponent(expanded)
-}
-
-// MARK: - Planning (install)
-
-fileprivate func integrationInstallerPlan(
-    tui: IntegrationInstallerTUI,
-    configPath: String,
-    home: String,
-    force: Bool,
-    jsonOutput: Bool
-) throws -> IntegrationInstallerPlan {
-    switch tui {
-    case .claudeCode:
-        return try claudeCodeInstallerPlan(configPath: configPath, home: home, force: force, jsonOutput: jsonOutput)
-    case .codex, .kimi:
-        return try tomlShimInstallerPlan(tui: tui, configPath: configPath, home: home, force: force, jsonOutput: jsonOutput)
-    case .opencode:
-        return try opencodeShimInstallerPlan(configPath: configPath, home: home, force: force, jsonOutput: jsonOutput)
-    }
-}
-
-fileprivate func integrationUninstallerPlan(
-    tui: IntegrationInstallerTUI,
-    configPath: String,
-    home: String,
-    force: Bool,
-    jsonOutput: Bool
-) throws -> IntegrationInstallerPlan {
-    switch tui {
-    case .claudeCode:
-        return try claudeCodeUninstallerPlan(configPath: configPath, home: home, force: force, jsonOutput: jsonOutput)
-    case .codex, .kimi:
-        return try tomlShimUninstallerPlan(tui: tui, configPath: configPath, home: home, force: force, jsonOutput: jsonOutput)
-    case .opencode:
-        return try opencodeShimUninstallerPlan(configPath: configPath, home: home, force: force, jsonOutput: jsonOutput)
-    }
-}
-
-fileprivate func applyIntegrationInstallerPlan(
-    plan: IntegrationInstallerPlan,
-    jsonOutput: Bool
-) throws {
-    // Config file write / delete.
-    if let postText = plan.postConfigText {
-        try IntegrationInstallerHelpers.atomicWrite(postText, to: plan.configPath)
-    } else {
-        // nil means delete (empty round-trip on a file we created).
-        try IntegrationInstallerHelpers.removeFileIfExists(plan.configPath)
-    }
-    // Shim script write / delete.
-    if let shimPath = plan.shimPath {
-        if let postShim = plan.postShimText {
-            do {
-                try IntegrationInstallerHelpers.atomicWrite(postShim, to: shimPath, mode: 0o755)
-            } catch let err as IntegrationInstallerError {
-                if err.code == "config_permission_denied" {
-                    throw IntegrationInstallerError(
-                        code: "shim_dir_not_writable",
-                        message: "Could not write shim at \(shimPath): \(err.message)",
-                        exitCode: InstallExitCode.shimDirNotWritable,
-                        path: shimPath,
-                        jsonOutput: jsonOutput
-                    )
-                }
-                throw err
-            }
-        } else {
-            try IntegrationInstallerHelpers.removeFileIfExists(shimPath)
-        }
-    }
-}
-
-// MARK: - Status snapshots
-
-fileprivate func integrationInstallerStatusSnapshot(
-    tui: IntegrationInstallerTUI,
-    configPath: String,
-    home: String
-) -> IntegrationInstallerStatus {
-    let tuiBinaryPath = IntegrationInstallerHelpers.findBinary(named: tui.binaryName(), home: home)
-    let tuiBinaryFound = tuiBinaryPath != nil
-    switch tui {
-    case .claudeCode:
-        return claudeCodeStatusSnapshot(configPath: configPath, tuiBinaryFound: tuiBinaryFound, tuiBinaryPath: tuiBinaryPath)
-    case .codex, .kimi:
-        return tomlShimStatusSnapshot(tui: tui, configPath: configPath, home: home, tuiBinaryFound: tuiBinaryFound, tuiBinaryPath: tuiBinaryPath)
-    case .opencode:
-        return opencodeShimStatusSnapshot(configPath: configPath, home: home, tuiBinaryFound: tuiBinaryFound, tuiBinaryPath: tuiBinaryPath)
-    }
-}
-
-// MARK: - Claude Code native-hook installer
-
-fileprivate func claudeCodeBuildBlock(installedAt: String) -> (root: [String: Any], entryHashes: [String: String]) {
-    let canonicals = claudeCanonicalEntries()
-    var hashes: [String: String] = [:]
-    var entriesBySha: [[String: Any]] = []
-    for (event, entry) in canonicals {
-        let hash = integrationInstallerSHA256(integrationInstallerCanonicalJSON(entry))
-        hashes[event] = hash
-        entriesBySha.append(["event": event, "sha256": hash])
-    }
-    let xCmux: [String: Any] = [
-        "schema": IntegrationInstallerConstants.schemaVersion,
-        "id": IntegrationInstallerConstants.markerId,
-        "installed_at": installedAt,
-        "entries": entriesBySha
-    ]
-    var hooks: [String: Any] = [:]
-    for (event, entry) in canonicals {
-        hooks[event] = [entry]
-    }
-    let root: [String: Any] = [
-        "hooks": hooks,
-        "x-cmux": xCmux
-    ]
-    return (root, hashes)
-}
-
-fileprivate func claudeCodeMergeInto(existing: [String: Any], with fresh: [String: Any], freshHashes: [String: String], installedAt: String) -> (root: [String: Any], priorHashes: [String: String]) {
-    var result = existing
-
-    // Track prior per-event hashes from existing x-cmux.entries, if any.
-    var priorHashes: [String: String] = [:]
-    if let xCmux = existing["x-cmux"] as? [String: Any],
-       let entries = xCmux["entries"] as? [[String: Any]] {
-        for e in entries {
-            if let event = e["event"] as? String, let sha = e["sha256"] as? String {
-                priorHashes[event] = sha
-            }
-        }
-    }
-
-    var hooks = (existing["hooks"] as? [String: Any]) ?? [:]
-    let canonicals = claudeCanonicalEntries()
-    for (event, entry) in canonicals {
-        let freshEntryHash = freshHashes[event] ?? ""
-        var arr = (hooks[event] as? [Any]) ?? []
-        // Try to find an entry with a hash matching any prior-stored hash for this event.
-        var replacedIndex: Int? = nil
-        if let prior = priorHashes[event] {
-            for (idx, item) in arr.enumerated() {
-                if let dict = item as? [String: Any] {
-                    let itemHash = integrationInstallerSHA256(integrationInstallerCanonicalJSON(dict))
-                    if itemHash == prior {
-                        replacedIndex = idx
-                        break
-                    }
-                }
-            }
-        }
-        if let idx = replacedIndex {
-            arr[idx] = entry
-        } else {
-            // If an entry with the exact fresh hash already exists, don't duplicate.
-            var alreadyPresent = false
-            for item in arr {
-                if let dict = item as? [String: Any] {
-                    let itemHash = integrationInstallerSHA256(integrationInstallerCanonicalJSON(dict))
-                    if itemHash == freshEntryHash {
-                        alreadyPresent = true
-                        break
-                    }
-                }
-            }
-            if !alreadyPresent {
-                arr.append(entry)
-            }
-        }
-        hooks[event] = arr
-    }
-
-    result["hooks"] = hooks
-
-    // Build x-cmux with current fresh hashes.
-    var entriesOut: [[String: Any]] = []
-    for (event, _) in canonicals {
-        entriesOut.append(["event": event, "sha256": freshHashes[event] ?? ""])
-    }
-    result["x-cmux"] = [
-        "schema": IntegrationInstallerConstants.schemaVersion,
-        "id": IntegrationInstallerConstants.markerId,
-        "installed_at": installedAt,
-        "entries": entriesOut
-    ] as [String: Any]
-
-    return (result, priorHashes)
-}
-
-fileprivate func claudeCodeInstallerPlan(
-    configPath: String,
-    home: String,
-    force: Bool,
-    jsonOutput: Bool
-) throws -> IntegrationInstallerPlan {
-    let preText = try IntegrationInstallerHelpers.readUTF8IfExists(configPath)
-    let createdConfig = preText == nil
-
-    // Parse existing config if present. Empty file is treated as {} for merge purposes.
-    var existing: [String: Any] = [:]
-    if let text = preText, !text.isEmpty {
-        guard let data = text.data(using: .utf8) else {
-            throw IntegrationInstallerError(
-                code: "config_malformed",
-                message: "Config is not valid UTF-8",
-                exitCode: InstallExitCode.configMalformed,
-                path: configPath,
-                jsonOutput: jsonOutput
-            )
-        }
-        do {
-            let obj = try JSONSerialization.jsonObject(with: data, options: [])
-            guard let dict = obj as? [String: Any] else {
-                throw IntegrationInstallerError(
-                    code: "config_malformed",
-                    message: "Config is not a JSON object",
-                    exitCode: InstallExitCode.configMalformed,
-                    path: configPath,
-                    jsonOutput: jsonOutput
-                )
-            }
-            existing = dict
-        } catch let err as IntegrationInstallerError {
-            throw err
-        } catch {
-            throw IntegrationInstallerError(
-                code: "config_malformed",
-                message: "Config is not valid JSON: \(error.localizedDescription)",
-                exitCode: InstallExitCode.configMalformed,
-                path: configPath,
-                parserError: error.localizedDescription,
-                jsonOutput: jsonOutput
-            )
-        }
-    }
-
-    // Determine prior state.
-    let (priorState, _, priorSchema) = claudeCodeExistingState(existing: existing)
-    if priorState == .schemaMismatch && !force {
-        // Short-circuit: return a plan but signal no-op with the schema_mismatch state.
-        let summary = ["cmux install uses schema \(priorSchema ?? 0); expected \(IntegrationInstallerConstants.schemaVersion). Re-run with --force to overwrite."]
-        return IntegrationInstallerPlan(
-            tui: .claudeCode,
-            configPath: configPath,
-            homePath: home,
-            preConfigText: preText,
-            postConfigText: nil,
-            shimPath: nil,
-            preShimText: nil,
-            postShimText: nil,
-            priorState: .schemaMismatch,
-            newInstalledAt: IntegrationInstallerHelpers.nowISO8601(),
-            noop: true,
-            summary: summary,
-            unifiedDiff: "",
-            tuiBinaryFound: IntegrationInstallerHelpers.findBinary(named: "claude", home: home) != nil,
-            tuiBinaryPath: IntegrationInstallerHelpers.findBinary(named: "claude", home: home),
-            createdConfig: false
-        )
-    }
-
-    // Build fresh hashes.
-    let installedAt = IntegrationInstallerHelpers.nowISO8601()
-    let (_, freshHashes) = claudeCodeBuildBlock(installedAt: installedAt)
-    let (merged, _) = claudeCodeMergeInto(existing: existing, with: [:], freshHashes: freshHashes, installedAt: installedAt)
-
-    let newText = IntegrationInstallerHelpers.claudeCodeJSONDump(merged)
-
-    // Detect noop: if priorState is installedCurrent (all hashes match), AND
-    // the serialized post matches pre-byte-identical (modulo re-serialization),
-    // we treat as noop. Because sortedKeys gives stable output, re-serializing
-    // the same structure twice yields identical bytes.
-    let noop: Bool
-    if priorState == .installedCurrent {
-        // Re-serialize existing with sorted keys for comparison.
-        let canonicalPre = IntegrationInstallerHelpers.claudeCodeJSONDump(existing)
-        noop = canonicalPre == newText
-    } else {
-        noop = false
-    }
-
-    let diff: String
-    if noop {
-        diff = "(no changes)"
-    } else {
-        diff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: preText, after: newText, label: configPath)
-    }
-
-    var summary: [String] = []
-    switch priorState {
-    case .notInstalled:
-        summary.append(createdConfig ? "create \(configPath)" : "add cmux hooks to \(configPath)")
-    case .installedCurrent:
-        summary.append("cmux install is current (no changes)")
-    case .installedOutdated:
-        summary.append("update cmux hooks to schema \(IntegrationInstallerConstants.schemaVersion)")
-    case .schemaMismatch:
-        summary.append("schema mismatch: rewriting at schema \(IntegrationInstallerConstants.schemaVersion)")
-    case .configMalformed, .markerHandEdit:
-        summary.append("rewriting cmux hooks (prior state: \(priorState.rawValue))")
-    }
-
-    let binaryPath = IntegrationInstallerHelpers.findBinary(named: "claude", home: home)
-
-    return IntegrationInstallerPlan(
-        tui: .claudeCode,
-        configPath: configPath,
-        homePath: home,
-        preConfigText: preText,
-        postConfigText: noop ? preText : newText,
-        shimPath: nil,
-        preShimText: nil,
-        postShimText: nil,
-        priorState: priorState,
-        newInstalledAt: installedAt,
-        noop: noop,
-        summary: summary,
-        unifiedDiff: diff,
-        tuiBinaryFound: binaryPath != nil,
-        tuiBinaryPath: binaryPath,
-        createdConfig: createdConfig
-    )
-}
-
-fileprivate func claudeCodeExistingState(existing: [String: Any]) -> (state: IntegrationInstallerState, markerId: String?, schema: Int?) {
-    guard let xCmux = existing["x-cmux"] as? [String: Any] else {
-        return (.notInstalled, nil, nil)
-    }
-    let schema = xCmux["schema"] as? Int
-    let markerId = xCmux["id"] as? String
-    if let schema, schema != IntegrationInstallerConstants.schemaVersion {
-        return (.schemaMismatch, markerId, schema)
-    }
-    // Verify each canonical event hash matches and that a live entry with that hash exists.
-    var entriesByEvent: [String: String] = [:]
-    if let entries = xCmux["entries"] as? [[String: Any]] {
-        for e in entries {
-            if let event = e["event"] as? String, let sha = e["sha256"] as? String {
-                entriesByEvent[event] = sha
-            }
-        }
-    }
-    let hooks = (existing["hooks"] as? [String: Any]) ?? [:]
-    var anyOutdated = false
-    var anyMissing = false
-    for (event, freshEntry) in claudeCanonicalEntries() {
-        let freshHash = integrationInstallerSHA256(integrationInstallerCanonicalJSON(freshEntry))
-        let storedHash = entriesByEvent[event]
-        let entries = (hooks[event] as? [Any]) ?? []
-        var liveHasStored = false
-        for item in entries {
-            if let dict = item as? [String: Any] {
-                let h = integrationInstallerSHA256(integrationInstallerCanonicalJSON(dict))
-                if storedHash != nil && h == storedHash {
-                    liveHasStored = true
-                    break
-                }
-            }
-        }
-        if storedHash == nil {
-            anyMissing = true
-        } else if storedHash != freshHash {
-            anyOutdated = true
-        } else if !liveHasStored {
-            anyMissing = true
-        }
-    }
-    if anyMissing { return (.installedOutdated, markerId, schema) }
-    if anyOutdated { return (.installedOutdated, markerId, schema) }
-    return (.installedCurrent, markerId, schema)
-}
-
-fileprivate func claudeCodeUninstallerPlan(
-    configPath: String,
-    home: String,
-    force: Bool,
-    jsonOutput: Bool
-) throws -> IntegrationInstallerPlan {
-    let preText = try IntegrationInstallerHelpers.readUTF8IfExists(configPath)
-    guard let preText else {
-        // Nothing to uninstall.
-        return IntegrationInstallerPlan(
-            tui: .claudeCode,
-            configPath: configPath,
-            homePath: home,
-            preConfigText: nil,
-            postConfigText: nil,
-            shimPath: nil,
-            preShimText: nil,
-            postShimText: nil,
-            priorState: .notInstalled,
-            newInstalledAt: "",
-            noop: true,
-            summary: ["no config at \(configPath)"],
-            unifiedDiff: "",
-            tuiBinaryFound: false,
-            tuiBinaryPath: nil,
-            createdConfig: false
-        )
-    }
-
-    guard !preText.isEmpty else {
-        return IntegrationInstallerPlan(
-            tui: .claudeCode,
-            configPath: configPath,
-            homePath: home,
-            preConfigText: preText,
-            postConfigText: preText,
-            shimPath: nil,
-            preShimText: nil,
-            postShimText: nil,
-            priorState: .notInstalled,
-            newInstalledAt: "",
-            noop: true,
-            summary: ["config is empty"],
-            unifiedDiff: "",
-            tuiBinaryFound: false,
-            tuiBinaryPath: nil,
-            createdConfig: false
-        )
-    }
-
-    guard let data = preText.data(using: .utf8),
-          let existing = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
-        throw IntegrationInstallerError(
-            code: "config_malformed",
-            message: "Config at \(configPath) is not valid JSON",
-            exitCode: InstallExitCode.configMalformed,
-            path: configPath,
-            jsonOutput: jsonOutput
-        )
-    }
-
-    guard let xCmux = existing["x-cmux"] as? [String: Any] else {
-        return IntegrationInstallerPlan(
-            tui: .claudeCode,
-            configPath: configPath,
-            homePath: home,
-            preConfigText: preText,
-            postConfigText: preText,
-            shimPath: nil,
-            preShimText: nil,
-            postShimText: nil,
-            priorState: .notInstalled,
-            newInstalledAt: "",
-            noop: true,
-            summary: ["no cmux install detected"],
-            unifiedDiff: "",
-            tuiBinaryFound: false,
-            tuiBinaryPath: nil,
-            createdConfig: false
-        )
-    }
-
-    // Detect hand-edit: any stored entry whose hash no longer matches a live
-    // entry. If so, error unless --force.
-    var storedHashes: [String: String] = [:]
-    if let entries = xCmux["entries"] as? [[String: Any]] {
-        for e in entries {
-            if let event = e["event"] as? String, let sha = e["sha256"] as? String {
-                storedHashes[event] = sha
-            }
-        }
-    }
-    let storedSchema = xCmux["schema"] as? Int
-    if let storedSchema, storedSchema != IntegrationInstallerConstants.schemaVersion, !force {
-        throw IntegrationInstallerError(
-            code: "marker_hand_edit_detected",
-            message: "x-cmux.schema differs from current (\(storedSchema) vs \(IntegrationInstallerConstants.schemaVersion)); re-run uninstall with --force to proceed.",
-            exitCode: InstallExitCode.markerHandEditDetected,
-            path: configPath,
-            jsonOutput: jsonOutput
-        )
-    }
-
-    // Build post: remove matching cmux entries from hooks; remove x-cmux key.
-    var hooks = (existing["hooks"] as? [String: Any]) ?? [:]
-    var anyLiveMissing = false
-    for (event, storedHash) in storedHashes {
-        let arr = (hooks[event] as? [Any]) ?? []
-        var filtered: [Any] = []
-        var removed = false
-        for item in arr {
-            if let dict = item as? [String: Any] {
-                let h = integrationInstallerSHA256(integrationInstallerCanonicalJSON(dict))
-                if h == storedHash {
-                    removed = true
-                    continue
-                }
-            }
-            filtered.append(item)
-        }
-        if !removed { anyLiveMissing = true }
-        if filtered.isEmpty {
-            hooks.removeValue(forKey: event)
-        } else {
-            hooks[event] = filtered
-        }
-    }
-    if anyLiveMissing && !force {
-        throw IntegrationInstallerError(
-            code: "marker_hand_edit_detected",
-            message: "cmux-owned entries were hand-edited; re-run uninstall with --force to proceed. Unmatched entries left in place.",
-            exitCode: InstallExitCode.markerHandEditDetected,
-            path: configPath,
-            jsonOutput: jsonOutput
-        )
-    }
-
-    var result = existing
-    if hooks.isEmpty {
-        result.removeValue(forKey: "hooks")
-    } else {
-        result["hooks"] = hooks
-    }
-    result.removeValue(forKey: "x-cmux")
-
-    let postText: String?
-    if result.isEmpty {
-        // Delete the file entirely.
-        postText = nil
-    } else {
-        postText = IntegrationInstallerHelpers.claudeCodeJSONDump(result)
-    }
-    let diff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: preText, after: postText, label: configPath)
-
-    return IntegrationInstallerPlan(
-        tui: .claudeCode,
-        configPath: configPath,
-        homePath: home,
-        preConfigText: preText,
-        postConfigText: postText,
-        shimPath: nil,
-        preShimText: nil,
-        postShimText: nil,
-        priorState: .installedCurrent,
-        newInstalledAt: "",
-        noop: false,
-        summary: postText == nil
-            ? ["remove cmux install and delete empty config at \(configPath)"]
-            : ["remove cmux install from \(configPath)"],
-        unifiedDiff: diff,
-        tuiBinaryFound: false,
-        tuiBinaryPath: nil,
-        createdConfig: false
-    )
-}
-
-fileprivate func claudeCodeStatusSnapshot(
-    configPath: String,
-    tuiBinaryFound: Bool,
-    tuiBinaryPath: String?
-) -> IntegrationInstallerStatus {
-    guard let text = (try? IntegrationInstallerHelpers.readUTF8IfExists(configPath)) ?? nil else {
-        return IntegrationInstallerStatus(
-            tui: .claudeCode,
-            configPath: configPath,
-            shimPath: nil,
-            state: .notInstalled,
-            schemaVersion: nil,
-            markerId: nil,
-            installedAt: nil,
-            tuiBinaryFound: tuiBinaryFound,
-            tuiBinaryPath: tuiBinaryPath,
-            expectedHashes: [:],
-            actualHashes: [:],
-            parserError: nil,
-            note: nil
-        )
-    }
-    if text.isEmpty {
-        return IntegrationInstallerStatus(
-            tui: .claudeCode,
-            configPath: configPath,
-            shimPath: nil,
-            state: .notInstalled,
-            schemaVersion: nil,
-            markerId: nil,
-            installedAt: nil,
-            tuiBinaryFound: tuiBinaryFound,
-            tuiBinaryPath: tuiBinaryPath,
-            expectedHashes: [:],
-            actualHashes: [:],
-            parserError: nil,
-            note: "empty config"
-        )
-    }
-
-    guard let data = text.data(using: .utf8),
-          let existing = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
-        return IntegrationInstallerStatus(
-            tui: .claudeCode,
-            configPath: configPath,
-            shimPath: nil,
-            state: .configMalformed,
-            schemaVersion: nil,
-            markerId: nil,
-            installedAt: nil,
-            tuiBinaryFound: tuiBinaryFound,
-            tuiBinaryPath: tuiBinaryPath,
-            expectedHashes: [:],
-            actualHashes: [:],
-            parserError: "invalid JSON",
-            note: nil
-        )
-    }
-
-    let (state, markerId, schema) = claudeCodeExistingState(existing: existing)
-    var expected: [String: String] = [:]
-    for (event, entry) in claudeCanonicalEntries() {
-        expected[event] = integrationInstallerSHA256(integrationInstallerCanonicalJSON(entry))
-    }
-    var actual: [String: String] = [:]
-    if let xCmux = existing["x-cmux"] as? [String: Any],
-       let entries = xCmux["entries"] as? [[String: Any]] {
-        for e in entries {
-            if let event = e["event"] as? String, let sha = e["sha256"] as? String {
-                actual[event] = sha
-            }
-        }
-    }
-    let installedAt = (existing["x-cmux"] as? [String: Any])?["installed_at"] as? String
-
-    return IntegrationInstallerStatus(
-        tui: .claudeCode,
-        configPath: configPath,
-        shimPath: nil,
-        state: state,
-        schemaVersion: schema,
-        markerId: markerId,
-        installedAt: installedAt,
-        tuiBinaryFound: tuiBinaryFound,
-        tuiBinaryPath: tuiBinaryPath,
-        expectedHashes: expected,
-        actualHashes: actual,
-        parserError: nil,
-        note: nil
-    )
-}
-
-// MARK: - TOML shim installer (codex, kimi)
-
-fileprivate func tomlShimBlock(tui: IntegrationInstallerTUI, installedAt: String, shimPath: String, shimSHA: String) -> String {
-    return """
-    \(IntegrationInstallerConstants.tomlFenceBegin)
-    [x-cmux]
-    schema = \(IntegrationInstallerConstants.schemaVersion)
-    id = "\(IntegrationInstallerConstants.markerId)"
-    installed_at = "\(installedAt)"
-    shim_path = "\(shimPath)"
-    shim_sha256 = "\(shimSHA)"
-    # Managed by `cmux install \(tui.rawValue)`.
-    \(IntegrationInstallerConstants.tomlFenceEnd)
-    """
-}
-
-fileprivate func tomlStripExistingCmuxBlock(_ text: String) -> (stripped: String, removedRange: Range<String.Index>?) {
-    guard let beginRange = text.range(of: IntegrationInstallerConstants.tomlFenceBegin) else {
-        return (text, nil)
-    }
-    // Expand begin to include the leading newline if present.
-    var start = beginRange.lowerBound
-    if start > text.startIndex {
-        let before = text.index(before: start)
-        if text[before] == "\n" {
-            start = before
-        }
-    }
-    let endRange = text.range(
-        of: IntegrationInstallerConstants.tomlFenceEnd,
-        options: [],
-        range: beginRange.upperBound..<text.endIndex
-    )
-    guard let endRange else {
-        return (text, nil)
-    }
-    var end = endRange.upperBound
-    // Include a trailing newline after the fence if present.
-    if end < text.endIndex, text[end] == "\n" {
-        end = text.index(after: end)
-    }
-    var stripped = text
-    let cutRange = start..<end
-    stripped.removeSubrange(cutRange)
-    return (stripped, cutRange)
-}
-
-fileprivate func tomlShimInstallerPlan(
-    tui: IntegrationInstallerTUI,
-    configPath: String,
-    home: String,
-    force: Bool,
-    jsonOutput: Bool
-) throws -> IntegrationInstallerPlan {
-    precondition(tui == .codex || tui == .kimi, "tomlShimInstallerPlan supports codex/kimi only")
-
-    let preText = try IntegrationInstallerHelpers.readUTF8IfExists(configPath)
-    let createdConfig = preText == nil
-
-    let shimPath = tui.shimPath(home: home)
-    let shimText = integrationInstallerShimScript(for: tui)
-    let shimSHA = integrationInstallerSHA256(of: shimText)
-    let installedAt = IntegrationInstallerHelpers.nowISO8601()
-    let block = tomlShimBlock(tui: tui, installedAt: installedAt, shimPath: shimPath, shimSHA: shimSHA)
-
-    // Strip any existing cmux block first.
-    let (stripped, _) = tomlStripExistingCmuxBlock(preText ?? "")
-
-    // Determine prior state.
-    let priorState: IntegrationInstallerState
-    var priorShimSHA: String? = nil
-    var priorSchema: Int? = nil
-    if let preText, let beginRange = preText.range(of: IntegrationInstallerConstants.tomlFenceBegin),
-       let endRange = preText.range(of: IntegrationInstallerConstants.tomlFenceEnd, options: [], range: beginRange.upperBound..<preText.endIndex) {
-        let blockText = String(preText[beginRange.lowerBound..<endRange.upperBound])
-        priorShimSHA = tomlExtractValue(from: blockText, key: "shim_sha256")
-        if let schemaStr = tomlExtractValue(from: blockText, key: "schema"), let parsed = Int(schemaStr) {
-            priorSchema = parsed
-        }
-        if let priorSchema, priorSchema != IntegrationInstallerConstants.schemaVersion {
-            priorState = .schemaMismatch
-        } else {
-            // Check shim on disk.
-            let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
-            let liveShimSHA = liveShim.map { integrationInstallerSHA256(of: $0) }
-            if priorShimSHA == shimSHA && liveShimSHA == shimSHA {
-                priorState = .installedCurrent
-            } else {
-                priorState = .installedOutdated
-            }
-        }
-    } else {
-        priorState = .notInstalled
-    }
-
-    if priorState == .schemaMismatch && !force {
-        return IntegrationInstallerPlan(
-            tui: tui,
-            configPath: configPath,
-            homePath: home,
-            preConfigText: preText,
-            postConfigText: nil,
-            shimPath: shimPath,
-            preShimText: try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath),
-            postShimText: nil,
-            priorState: .schemaMismatch,
-            newInstalledAt: installedAt,
-            noop: true,
-            summary: ["cmux install uses schema \(priorSchema ?? 0); expected \(IntegrationInstallerConstants.schemaVersion). Re-run with --force."],
-            unifiedDiff: "",
-            tuiBinaryFound: IntegrationInstallerHelpers.findBinary(named: tui.binaryName(), home: home) != nil,
-            tuiBinaryPath: IntegrationInstallerHelpers.findBinary(named: tui.binaryName(), home: home),
-            createdConfig: false
-        )
-    }
-
-    // Build new text.
-    let strippedEndsWithNewline = stripped.hasSuffix("\n") || stripped.isEmpty
-    var newText: String = stripped
-    if !stripped.isEmpty && !strippedEndsWithNewline {
-        newText += "\n"
-    }
-    if !stripped.isEmpty {
-        // separate existing content from our block with a blank line.
-        newText += "\n"
-    }
-    newText += block + "\n"
-
-    let noop: Bool
-    if priorState == .installedCurrent {
-        // Compare our new block to what's there; shims match; config content unchanged => noop.
-        let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
-        noop = (preText == newText) && (liveShim == shimText)
-    } else {
-        noop = false
-    }
-
-    let diff: String
-    if noop {
-        diff = "(no changes)"
-    } else {
-        let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
-        let configDiff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: preText, after: newText, label: configPath)
-        let shimDiff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: liveShim ?? nil, after: shimText, label: shimPath)
-        diff = configDiff + "\n" + shimDiff
-    }
-
-    var summary: [String] = []
-    switch priorState {
-    case .notInstalled:
-        summary.append(createdConfig ? "create \(configPath)" : "append [x-cmux] block to \(configPath)")
-        summary.append("install shim at \(shimPath)")
-    case .installedCurrent:
-        summary.append("cmux install is current (no changes)")
-    case .installedOutdated:
-        summary.append("refresh [x-cmux] block in \(configPath)")
-        summary.append("refresh shim at \(shimPath)")
-    case .schemaMismatch:
-        summary.append("schema mismatch: rewriting [x-cmux] at schema \(IntegrationInstallerConstants.schemaVersion)")
-        summary.append("refresh shim at \(shimPath)")
-    case .configMalformed, .markerHandEdit:
-        summary.append("rewriting cmux block (prior state: \(priorState.rawValue))")
-    }
-
-    let tuiBinaryPath = IntegrationInstallerHelpers.findBinary(named: tui.binaryName(), home: home)
-    return IntegrationInstallerPlan(
-        tui: tui,
-        configPath: configPath,
-        homePath: home,
-        preConfigText: preText,
-        postConfigText: noop ? preText : newText,
-        shimPath: shimPath,
-        preShimText: try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath),
-        postShimText: noop ? (try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)) ?? shimText : shimText,
-        priorState: priorState,
-        newInstalledAt: installedAt,
-        noop: noop,
-        summary: summary,
-        unifiedDiff: diff,
-        tuiBinaryFound: tuiBinaryPath != nil,
-        tuiBinaryPath: tuiBinaryPath,
-        createdConfig: createdConfig
-    )
-}
-
-fileprivate func tomlExtractValue(from block: String, key: String) -> String? {
-    for rawLine in block.split(separator: "\n") {
-        let line = rawLine.trimmingCharacters(in: .whitespaces)
-        if line.hasPrefix("\(key) =") {
-            let parts = line.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
-            guard parts.count == 2 else { continue }
-            var value = parts[1]
-            if value.hasPrefix("\"") && value.hasSuffix("\"") && value.count >= 2 {
-                value = String(value.dropFirst().dropLast())
-            }
-            return value
-        }
-    }
-    return nil
-}
-
-fileprivate func tomlShimUninstallerPlan(
-    tui: IntegrationInstallerTUI,
-    configPath: String,
-    home: String,
-    force: Bool,
-    jsonOutput: Bool
-) throws -> IntegrationInstallerPlan {
-    let preText = try IntegrationInstallerHelpers.readUTF8IfExists(configPath)
-    let shimPath = tui.shimPath(home: home)
-    let preShim = try IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
-
-    guard let preText else {
-        return IntegrationInstallerPlan(
-            tui: tui,
-            configPath: configPath,
-            homePath: home,
-            preConfigText: nil,
-            postConfigText: nil,
-            shimPath: shimPath,
-            preShimText: preShim,
-            postShimText: nil,
-            priorState: .notInstalled,
-            newInstalledAt: "",
-            noop: preShim == nil,
-            summary: preShim == nil ? ["nothing to uninstall"] : ["remove shim at \(shimPath)"],
-            unifiedDiff: "",
-            tuiBinaryFound: false,
-            tuiBinaryPath: nil,
-            createdConfig: false
-        )
-    }
-
-    guard preText.range(of: IntegrationInstallerConstants.tomlFenceBegin) != nil else {
-        return IntegrationInstallerPlan(
-            tui: tui,
-            configPath: configPath,
-            homePath: home,
-            preConfigText: preText,
-            postConfigText: preText,
-            shimPath: shimPath,
-            preShimText: preShim,
-            postShimText: preShim == nil ? nil : nil,
-            priorState: .notInstalled,
-            newInstalledAt: "",
-            noop: preShim == nil,
-            summary: preShim == nil ? ["nothing to uninstall"] : ["remove shim at \(shimPath)"],
-            unifiedDiff: "",
-            tuiBinaryFound: false,
-            tuiBinaryPath: nil,
-            createdConfig: false
-        )
-    }
-
-    // Hand-edit detection (force bypass).
-    if let beginRange = preText.range(of: IntegrationInstallerConstants.tomlFenceBegin),
-       let endRange = preText.range(of: IntegrationInstallerConstants.tomlFenceEnd, options: [], range: beginRange.upperBound..<preText.endIndex) {
-        let blockText = String(preText[beginRange.lowerBound..<endRange.upperBound])
-        let storedSchema = tomlExtractValue(from: blockText, key: "schema").flatMap(Int.init)
-        if let storedSchema, storedSchema != IntegrationInstallerConstants.schemaVersion, !force {
-            throw IntegrationInstallerError(
-                code: "marker_hand_edit_detected",
-                message: "x-cmux.schema differs from current; re-run uninstall with --force.",
-                exitCode: InstallExitCode.markerHandEditDetected,
-                path: configPath,
-                jsonOutput: jsonOutput
-            )
-        }
-    }
-
-    let (stripped, _) = tomlStripExistingCmuxBlock(preText)
-
-    // If resulting content is empty, delete the file entirely.
-    let postText: String?
-    if stripped.isEmpty {
-        postText = nil
-    } else {
-        postText = stripped
-    }
-
-    let diff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: preText, after: postText, label: configPath)
-    var summary: [String] = ["remove [x-cmux] block from \(configPath)"]
-    if preShim != nil { summary.append("remove shim at \(shimPath)") }
-    if postText == nil { summary.append("delete empty config file") }
-
-    return IntegrationInstallerPlan(
-        tui: tui,
-        configPath: configPath,
-        homePath: home,
-        preConfigText: preText,
-        postConfigText: postText,
-        shimPath: shimPath,
-        preShimText: preShim,
-        postShimText: nil,
-        priorState: .installedCurrent,
-        newInstalledAt: "",
-        noop: false,
-        summary: summary,
-        unifiedDiff: diff,
-        tuiBinaryFound: false,
-        tuiBinaryPath: nil,
-        createdConfig: false
-    )
-}
-
-fileprivate func tomlShimStatusSnapshot(
-    tui: IntegrationInstallerTUI,
-    configPath: String,
-    home: String,
-    tuiBinaryFound: Bool,
-    tuiBinaryPath: String?
-) -> IntegrationInstallerStatus {
-    let shimPath = tui.shimPath(home: home)
-    guard let text = (try? IntegrationInstallerHelpers.readUTF8IfExists(configPath)) ?? nil else {
-        return IntegrationInstallerStatus(
-            tui: tui,
-            configPath: configPath,
-            shimPath: shimPath,
-            state: .notInstalled,
-            schemaVersion: nil,
-            markerId: nil,
-            installedAt: nil,
-            tuiBinaryFound: tuiBinaryFound,
-            tuiBinaryPath: tuiBinaryPath,
-            expectedHashes: [:],
-            actualHashes: [:],
-            parserError: nil,
-            note: nil
-        )
-    }
-    guard let beginRange = text.range(of: IntegrationInstallerConstants.tomlFenceBegin),
-          let endRange = text.range(of: IntegrationInstallerConstants.tomlFenceEnd, options: [], range: beginRange.upperBound..<text.endIndex) else {
-        return IntegrationInstallerStatus(
-            tui: tui,
-            configPath: configPath,
-            shimPath: shimPath,
-            state: .notInstalled,
-            schemaVersion: nil,
-            markerId: nil,
-            installedAt: nil,
-            tuiBinaryFound: tuiBinaryFound,
-            tuiBinaryPath: tuiBinaryPath,
-            expectedHashes: [:],
-            actualHashes: [:],
-            parserError: nil,
-            note: nil
-        )
-    }
-    let blockText = String(text[beginRange.lowerBound..<endRange.upperBound])
-    let schema = tomlExtractValue(from: blockText, key: "schema").flatMap(Int.init)
-    let markerId = tomlExtractValue(from: blockText, key: "id")
-    let installedAt = tomlExtractValue(from: blockText, key: "installed_at")
-    let storedShimSHA = tomlExtractValue(from: blockText, key: "shim_sha256")
-    let expectedShimSHA = integrationInstallerSHA256(of: integrationInstallerShimScript(for: tui))
-    let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
-    let liveShimSHA = liveShim.map { integrationInstallerSHA256(of: $0) }
-
-    let state: IntegrationInstallerState
-    if let schema, schema != IntegrationInstallerConstants.schemaVersion {
-        state = .schemaMismatch
-    } else if storedShimSHA == expectedShimSHA && liveShimSHA == expectedShimSHA {
-        state = .installedCurrent
-    } else {
-        state = .installedOutdated
-    }
-
-    return IntegrationInstallerStatus(
-        tui: tui,
-        configPath: configPath,
-        shimPath: shimPath,
-        state: state,
-        schemaVersion: schema,
-        markerId: markerId,
-        installedAt: installedAt,
-        tuiBinaryFound: tuiBinaryFound,
-        tuiBinaryPath: tuiBinaryPath,
-        expectedHashes: ["shim": expectedShimSHA],
-        actualHashes: ["shim": storedShimSHA ?? "", "shim_live": liveShimSHA ?? ""],
-        parserError: nil,
-        note: nil
-    )
-}
-
-// MARK: - OpenCode shim installer (JSON + shim)
-
-fileprivate func opencodeShimInstallerPlan(
-    configPath: String,
-    home: String,
-    force: Bool,
-    jsonOutput: Bool
-) throws -> IntegrationInstallerPlan {
-    let preText = try IntegrationInstallerHelpers.readUTF8IfExists(configPath)
-    let createdConfig = preText == nil
-
-    let shimPath = IntegrationInstallerTUI.opencode.shimPath(home: home)
-    let shimText = integrationInstallerShimScript(for: .opencode)
-    let shimSHA = integrationInstallerSHA256(of: shimText)
-    let installedAt = IntegrationInstallerHelpers.nowISO8601()
-
-    var existing: [String: Any] = [:]
-    if let text = preText, !text.isEmpty {
-        guard let data = text.data(using: .utf8),
-              let dict = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
-            throw IntegrationInstallerError(
-                code: "config_malformed",
-                message: "Config at \(configPath) is not a valid JSON object",
-                exitCode: InstallExitCode.configMalformed,
-                path: configPath,
-                jsonOutput: jsonOutput
-            )
-        }
-        existing = dict
-    }
-
-    let priorState: IntegrationInstallerState
-    var priorSchema: Int? = nil
-    if let xCmux = existing["x-cmux"] as? [String: Any] {
-        priorSchema = xCmux["schema"] as? Int
-        if let priorSchema, priorSchema != IntegrationInstallerConstants.schemaVersion {
-            priorState = .schemaMismatch
-        } else {
-            let storedShim = xCmux["shim_sha256"] as? String
-            let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
-            let liveSHA = liveShim.map { integrationInstallerSHA256(of: $0) }
-            if storedShim == shimSHA && liveSHA == shimSHA {
-                priorState = .installedCurrent
-            } else {
-                priorState = .installedOutdated
-            }
-        }
-    } else {
-        priorState = .notInstalled
-    }
-
-    if priorState == .schemaMismatch && !force {
-        return IntegrationInstallerPlan(
-            tui: .opencode,
-            configPath: configPath,
-            homePath: home,
-            preConfigText: preText,
-            postConfigText: nil,
-            shimPath: shimPath,
-            preShimText: try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath),
-            postShimText: nil,
-            priorState: .schemaMismatch,
-            newInstalledAt: installedAt,
-            noop: true,
-            summary: ["cmux install uses schema \(priorSchema ?? 0); expected \(IntegrationInstallerConstants.schemaVersion). Re-run with --force."],
-            unifiedDiff: "",
-            tuiBinaryFound: IntegrationInstallerHelpers.findBinary(named: "opencode", home: home) != nil,
-            tuiBinaryPath: IntegrationInstallerHelpers.findBinary(named: "opencode", home: home),
-            createdConfig: false
-        )
-    }
-
-    var result = existing
-    result["x-cmux"] = [
-        "schema": IntegrationInstallerConstants.schemaVersion,
-        "id": IntegrationInstallerConstants.markerId,
-        "installed_at": installedAt,
-        "shim_path": shimPath,
-        "shim_sha256": shimSHA
-    ] as [String: Any]
-    let newText = IntegrationInstallerHelpers.claudeCodeJSONDump(result)
-
-    let noop: Bool
-    if priorState == .installedCurrent {
-        let canonicalPre = IntegrationInstallerHelpers.claudeCodeJSONDump(existing)
-        let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
-        noop = canonicalPre == newText && liveShim == shimText
-    } else {
-        noop = false
-    }
-
-    let diff: String
-    if noop {
-        diff = "(no changes)"
-    } else {
-        let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
-        let configDiff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: preText, after: newText, label: configPath)
-        let shimDiff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: liveShim ?? nil, after: shimText, label: shimPath)
-        diff = configDiff + "\n" + shimDiff
-    }
-
-    var summary: [String] = []
-    switch priorState {
-    case .notInstalled:
-        summary.append(createdConfig ? "create \(configPath)" : "add x-cmux key to \(configPath)")
-        summary.append("install shim at \(shimPath)")
-    case .installedCurrent:
-        summary.append("cmux install is current (no changes)")
-    case .installedOutdated:
-        summary.append("refresh x-cmux in \(configPath)")
-        summary.append("refresh shim at \(shimPath)")
-    case .schemaMismatch:
-        summary.append("schema mismatch: rewriting x-cmux at schema \(IntegrationInstallerConstants.schemaVersion)")
-        summary.append("refresh shim at \(shimPath)")
-    case .configMalformed, .markerHandEdit:
-        summary.append("rewriting x-cmux (prior state: \(priorState.rawValue))")
-    }
-
-    let tuiBinaryPath = IntegrationInstallerHelpers.findBinary(named: "opencode", home: home)
-    return IntegrationInstallerPlan(
-        tui: .opencode,
-        configPath: configPath,
-        homePath: home,
-        preConfigText: preText,
-        postConfigText: noop ? preText : newText,
-        shimPath: shimPath,
-        preShimText: try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath),
-        postShimText: noop ? (try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)) ?? shimText : shimText,
-        priorState: priorState,
-        newInstalledAt: installedAt,
-        noop: noop,
-        summary: summary,
-        unifiedDiff: diff,
-        tuiBinaryFound: tuiBinaryPath != nil,
-        tuiBinaryPath: tuiBinaryPath,
-        createdConfig: createdConfig
-    )
-}
-
-fileprivate func opencodeShimUninstallerPlan(
-    configPath: String,
-    home: String,
-    force: Bool,
-    jsonOutput: Bool
-) throws -> IntegrationInstallerPlan {
-    let preText = try IntegrationInstallerHelpers.readUTF8IfExists(configPath)
-    let shimPath = IntegrationInstallerTUI.opencode.shimPath(home: home)
-    let preShim = try IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
-
-    guard let preText else {
-        return IntegrationInstallerPlan(
-            tui: .opencode,
-            configPath: configPath,
-            homePath: home,
-            preConfigText: nil,
-            postConfigText: nil,
-            shimPath: shimPath,
-            preShimText: preShim,
-            postShimText: nil,
-            priorState: .notInstalled,
-            newInstalledAt: "",
-            noop: preShim == nil,
-            summary: preShim == nil ? ["nothing to uninstall"] : ["remove shim at \(shimPath)"],
-            unifiedDiff: "",
-            tuiBinaryFound: false,
-            tuiBinaryPath: nil,
-            createdConfig: false
-        )
-    }
-
-    guard !preText.isEmpty,
-          let data = preText.data(using: .utf8),
-          let existing = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
-        throw IntegrationInstallerError(
-            code: "config_malformed",
-            message: "Config at \(configPath) is not valid JSON",
-            exitCode: InstallExitCode.configMalformed,
-            path: configPath,
-            jsonOutput: jsonOutput
-        )
-    }
-
-    guard let xCmux = existing["x-cmux"] as? [String: Any] else {
-        return IntegrationInstallerPlan(
-            tui: .opencode,
-            configPath: configPath,
-            homePath: home,
-            preConfigText: preText,
-            postConfigText: preText,
-            shimPath: shimPath,
-            preShimText: preShim,
-            postShimText: preShim == nil ? nil : nil,
-            priorState: .notInstalled,
-            newInstalledAt: "",
-            noop: preShim == nil,
-            summary: preShim == nil ? ["nothing to uninstall"] : ["remove shim at \(shimPath)"],
-            unifiedDiff: "",
-            tuiBinaryFound: false,
-            tuiBinaryPath: nil,
-            createdConfig: false
-        )
-    }
-
-    let storedSchema = xCmux["schema"] as? Int
-    if let storedSchema, storedSchema != IntegrationInstallerConstants.schemaVersion, !force {
-        throw IntegrationInstallerError(
-            code: "marker_hand_edit_detected",
-            message: "x-cmux.schema differs from current; re-run uninstall with --force.",
-            exitCode: InstallExitCode.markerHandEditDetected,
-            path: configPath,
-            jsonOutput: jsonOutput
-        )
-    }
-
-    var result = existing
-    result.removeValue(forKey: "x-cmux")
-
-    let postText: String?
-    if result.isEmpty {
-        postText = nil
-    } else {
-        postText = IntegrationInstallerHelpers.claudeCodeJSONDump(result)
-    }
-
-    let diff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: preText, after: postText, label: configPath)
-    var summary: [String] = ["remove x-cmux from \(configPath)"]
-    if preShim != nil { summary.append("remove shim at \(shimPath)") }
-    if postText == nil { summary.append("delete empty config file") }
-
-    return IntegrationInstallerPlan(
-        tui: .opencode,
-        configPath: configPath,
-        homePath: home,
-        preConfigText: preText,
-        postConfigText: postText,
-        shimPath: shimPath,
-        preShimText: preShim,
-        postShimText: nil,
-        priorState: .installedCurrent,
-        newInstalledAt: "",
-        noop: false,
-        summary: summary,
-        unifiedDiff: diff,
-        tuiBinaryFound: false,
-        tuiBinaryPath: nil,
-        createdConfig: false
-    )
-}
-
-fileprivate func opencodeShimStatusSnapshot(
-    configPath: String,
-    home: String,
-    tuiBinaryFound: Bool,
-    tuiBinaryPath: String?
-) -> IntegrationInstallerStatus {
-    let shimPath = IntegrationInstallerTUI.opencode.shimPath(home: home)
-    guard let text = (try? IntegrationInstallerHelpers.readUTF8IfExists(configPath)) ?? nil, !text.isEmpty else {
-        return IntegrationInstallerStatus(
-            tui: .opencode,
-            configPath: configPath,
-            shimPath: shimPath,
-            state: .notInstalled,
-            schemaVersion: nil,
-            markerId: nil,
-            installedAt: nil,
-            tuiBinaryFound: tuiBinaryFound,
-            tuiBinaryPath: tuiBinaryPath,
-            expectedHashes: [:],
-            actualHashes: [:],
-            parserError: nil,
-            note: nil
-        )
-    }
-    guard let data = text.data(using: .utf8),
-          let existing = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
-        return IntegrationInstallerStatus(
-            tui: .opencode,
-            configPath: configPath,
-            shimPath: shimPath,
-            state: .configMalformed,
-            schemaVersion: nil,
-            markerId: nil,
-            installedAt: nil,
-            tuiBinaryFound: tuiBinaryFound,
-            tuiBinaryPath: tuiBinaryPath,
-            expectedHashes: [:],
-            actualHashes: [:],
-            parserError: "invalid JSON",
-            note: nil
-        )
-    }
-    guard let xCmux = existing["x-cmux"] as? [String: Any] else {
-        return IntegrationInstallerStatus(
-            tui: .opencode,
-            configPath: configPath,
-            shimPath: shimPath,
-            state: .notInstalled,
-            schemaVersion: nil,
-            markerId: nil,
-            installedAt: nil,
-            tuiBinaryFound: tuiBinaryFound,
-            tuiBinaryPath: tuiBinaryPath,
-            expectedHashes: [:],
-            actualHashes: [:],
-            parserError: nil,
-            note: nil
-        )
-    }
-    let schema = xCmux["schema"] as? Int
-    let markerId = xCmux["id"] as? String
-    let installedAt = xCmux["installed_at"] as? String
-    let storedShim = xCmux["shim_sha256"] as? String ?? ""
-    let expectedShim = integrationInstallerSHA256(of: integrationInstallerShimScript(for: .opencode))
-    let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
-    let liveShimSHA = liveShim.map { integrationInstallerSHA256(of: $0) } ?? ""
-
-    let state: IntegrationInstallerState
-    if let schema, schema != IntegrationInstallerConstants.schemaVersion {
-        state = .schemaMismatch
-    } else if storedShim == expectedShim && liveShimSHA == expectedShim {
-        state = .installedCurrent
-    } else {
-        state = .installedOutdated
-    }
-
-    return IntegrationInstallerStatus(
-        tui: .opencode,
-        configPath: configPath,
-        shimPath: shimPath,
-        state: state,
-        schemaVersion: schema,
-        markerId: markerId,
-        installedAt: installedAt,
-        tuiBinaryFound: tuiBinaryFound,
-        tuiBinaryPath: tuiBinaryPath,
-        expectedHashes: ["shim": expectedShim],
-        actualHashes: ["shim": storedShim, "shim_live": liveShimSHA],
-        parserError: nil,
-        note: nil
-    )
 }
 
 // MARK: - `cmux skill` subcommand

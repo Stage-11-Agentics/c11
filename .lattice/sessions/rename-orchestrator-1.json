@@ -1,0 +1,13 @@
+{
+  "agent_type": "plan",
+  "base_name": "rename-orchestrator",
+  "framework": "claude-code",
+  "last_active": "2026-05-16T03:25:45Z",
+  "model": "claude-opus-4-7",
+  "name": "rename-orchestrator-1",
+  "parent": "human:atin",
+  "serial": 1,
+  "session": "sess_01KRQD29T037GVBYCMJ3MGTY8C",
+  "started_at": "2026-05-16T03:25:19Z",
+  "status": "active"
+}

@@ -174,7 +174,11 @@ enum WorkspacePlanCapture {
                 surfaceId: panelId
             )
             guard !snapshot.metadata.isEmpty else { return [:] }
-            return PersistedMetadataBridge.encodeValues(snapshot.metadata, surfaceIdForLog: panelId)
+            return PersistedMetadataBridge.encodeValues(
+                snapshot.metadata,
+                surfaceIdForLog: panelId,
+                sources: snapshot.sources
+            )
         }
 
         private func paneMetadata(for paneID: PaneID?) -> [String: PersistedJSONValue] {
@@ -184,7 +188,11 @@ enum WorkspacePlanCapture {
                 paneId: paneID.id
             )
             guard !snapshot.metadata.isEmpty else { return [:] }
-            return PersistedMetadataBridge.encodeValues(snapshot.metadata, surfaceIdForLog: paneID.id)
+            return PersistedMetadataBridge.encodeValues(
+                snapshot.metadata,
+                surfaceIdForLog: paneID.id,
+                sources: snapshot.sources
+            )
         }
 
         // MARK: Pane / tab lookup

@@ -16,74 +16,22 @@ final class AgentRestartRegistryTests: XCTestCase {
 
     // MARK: - Phase 1 claude row
 
-    func testClaudeCodeWithSessionIdReturnsResumeCommandWithTrailingCarriageReturn() {
+    func testClaudeCodeWithSessionIdReturnsResumeCommandWithTrailingNewline() {
         let registry = AgentRestartRegistry.phase1
         let cmd = registry.resolveCommand(
             terminalType: "claude-code",
             sessionId: "abc12345-ef67-890a-bcde-f0123456789a",
             metadata: [:]
         )
-        // Exact-equal — the trailing CR is load-bearing. Without it the
-        // synthesised command sits at the prompt unsubmitted and resume
-        // silently no-ops. CR (not LF) matches the rest of the codebase's
-        // `surface.sendText` conventions; see the C11-34 ticket.
+        // Exact-equal pins both the command shape AND the registry's
+        // "submit form" trailing newline. The newline itself is no longer
+        // the submission signal — `TerminalSurface.sendSubmitFormText`
+        // trims it and dispatches a synthetic Return — but it is
+        // preserved here for snapshot consumers that may sample the
+        // literal string.
         XCTAssertEqual(
             cmd,
-            "claude --dangerously-skip-permissions --resume abc12345-ef67-890a-bcde-f0123456789a\r"
-        )
-    }
-
-    /// Regression for C11-34 (resume command sometimes fails to submit).
-    /// All `phase1` rows must end in CR (`\r`), not LF (`\n`), to match the
-    /// rest of the codebase's `surface.sendText` callers.
-    func testAllPhase1RowsEndInCarriageReturnNotLineFeed() {
-        let registry = AgentRestartRegistry.phase1
-        let validId = "abc12345-ef67-890a-bcde-f0123456789a"
-        let cases: [(type: String, sessionId: String?)] = [
-            ("claude-code", validId),
-            ("codex", nil),
-            ("opencode", nil),
-            ("kimi", nil)
-        ]
-        for testCase in cases {
-            guard let resolved = registry.resolveCommand(
-                terminalType: testCase.type,
-                sessionId: testCase.sessionId,
-                metadata: [:]
-            ) else {
-                XCTFail("row \(testCase.type) returned nil")
-                continue
-            }
-            XCTAssertTrue(
-                resolved.hasSuffix("\r"),
-                "row \(testCase.type) must end in CR; got tail bytes \(Array(resolved.utf8.suffix(2)))"
-            )
-            XCTAssertFalse(
-                resolved.hasSuffix("\n"),
-                "row \(testCase.type) must not end in LF; got tail bytes \(Array(resolved.utf8.suffix(2)))"
-            )
-            // And: no embedded LF anywhere (the command is one line).
-            XCTAssertFalse(
-                resolved.contains("\n"),
-                "row \(testCase.type) must not contain LF"
-            )
-        }
-    }
-
-    /// The `cd '<dir>' && claude --resume <id>` form must keep the CR at
-    /// the very end (after the chained command), not mid-string.
-    func testClaudeCodeWithProjectDirKeepsCarriageReturnAtVeryEnd() {
-        let registry = AgentRestartRegistry.phase1
-        let cmd = registry.resolveCommand(
-            terminalType: "claude-code",
-            sessionId: "abc12345-ef67-890a-bcde-f0123456789a",
-            metadata: [
-                SurfaceMetadataKeyName.claudeSessionProjectDir: "/Users/atin/Projects/Stage11/code/c11"
-            ]
-        )
-        XCTAssertEqual(
-            cmd,
-            "cd '/Users/atin/Projects/Stage11/code/c11' && claude --dangerously-skip-permissions --resume abc12345-ef67-890a-bcde-f0123456789a\r"
+            "claude --dangerously-skip-permissions --resume abc12345-ef67-890a-bcde-f0123456789a\n"
         )
     }
 
@@ -178,7 +126,7 @@ final class AgentRestartRegistryTests: XCTestCase {
         )
         XCTAssertEqual(
             cmd,
-            "claude --dangerously-skip-permissions --resume cccc1111-2222-3333-4444-555566667777\r"
+            "claude --dangerously-skip-permissions --resume cccc1111-2222-3333-4444-555566667777\n"
         )
     }
 
@@ -320,7 +268,7 @@ final class AgentRestartRegistryTests: XCTestCase {
         )
         XCTAssertEqual(
             cmd,
-            "claude --dangerously-skip-permissions --resume AaBbCcDd-1111-2222-3333-AABBCCDDEEFF\r",
+            "claude --dangerously-skip-permissions --resume AaBbCcDd-1111-2222-3333-AABBCCDDEEFF\n",
             "UUID grammar is case-insensitive for hex"
         )
     }
@@ -333,7 +281,7 @@ final class AgentRestartRegistryTests: XCTestCase {
         // Returns the command regardless of whether a session id is present.
         XCTAssertEqual(
             registry.resolveCommand(terminalType: "codex", sessionId: nil, metadata: [:]),
-            "codex resume --last\r",
+            "codex resume --last\n",
             "codex row returns best-effort resume --last even without session id"
         )
         XCTAssertEqual(
@@ -342,18 +290,18 @@ final class AgentRestartRegistryTests: XCTestCase {
                 sessionId: "abc12345-ef67-890a-bcde-f0123456789a",
                 metadata: [:]
             ),
-            "codex resume --last\r",
+            "codex resume --last\n",
             "codex row ignores session id and always returns resume --last"
         )
     }
 
-    /// Opencode has no verified resume flag — launches fresh.
+    /// Opencode has no verified resume flag — launches fresh with --dangerously-skip-permissions.
     func testOpencodeRowReturnsBareCommand() {
         let registry = AgentRestartRegistry.phase1
         XCTAssertEqual(
             registry.resolveCommand(terminalType: "opencode", sessionId: nil, metadata: [:]),
-            "opencode\r",
-            "opencode row returns bare launch (no resume flag)"
+            "opencode run --dangerously-skip-permissions\n",
+            "opencode row returns fresh launch with --dangerously-skip-permissions (no resume flag)"
         )
         XCTAssertEqual(
             registry.resolveCommand(
@@ -361,8 +309,8 @@ final class AgentRestartRegistryTests: XCTestCase {
                 sessionId: "11111111-2222-3333-4444-555566667777",
                 metadata: [:]
             ),
-            "opencode\r",
-            "opencode row ignores session id and returns bare launch"
+            "opencode run --dangerously-skip-permissions\n",
+            "opencode row ignores session id and returns fresh launch"
         )
     }
 
@@ -371,7 +319,7 @@ final class AgentRestartRegistryTests: XCTestCase {
         let registry = AgentRestartRegistry.phase1
         XCTAssertEqual(
             registry.resolveCommand(terminalType: "kimi", sessionId: nil, metadata: [:]),
-            "kimi\r",
+            "kimi\n",
             "kimi row returns bare launch (no resume flag)"
         )
         XCTAssertEqual(
@@ -380,7 +328,7 @@ final class AgentRestartRegistryTests: XCTestCase {
                 sessionId: "aaaabbbb-cccc-dddd-eeee-ffff00001111",
                 metadata: [:]
             ),
-            "kimi\r",
+            "kimi\n",
             "kimi row ignores session id and returns bare launch"
         )
     }

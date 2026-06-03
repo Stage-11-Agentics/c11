@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-16T21:33:02Z",
+  "created_by": "agent:lattice-auto-review",
+  "custom_fields": {},
+  "id": "art_01KRSB9ZB2EM9S32RBE7ZN000T",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KRSB9ZB2EM9S32RBE7ZN000T.md",
+    "size_bytes": 12141
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "plan-review (claude)",
+  "token_usage": null,
+  "type": "file"
+}

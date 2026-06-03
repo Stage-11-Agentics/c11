@@ -15,12 +15,12 @@ public final class ThemeManager: ObservableObject {
             case user
         }
 
-        public let identity: C11muxTheme.Identity
+        public let identity: C11Theme.Identity
         public let source: Source
         public let sourcePath: String?
         public let warning: String?
 
-        public init(identity: C11muxTheme.Identity, source: Source, sourcePath: String?, warning: String? = nil) {
+        public init(identity: C11Theme.Identity, source: Source, sourcePath: String?, warning: String? = nil) {
             self.identity = identity
             self.source = source
             self.sourcePath = sourcePath
@@ -28,9 +28,9 @@ public final class ThemeManager: ObservableObject {
         }
     }
 
-    @Published public private(set) var active: C11muxTheme
-    @Published public private(set) var activeLight: C11muxTheme
-    @Published public private(set) var activeDark: C11muxTheme
+    @Published public private(set) var active: C11Theme
+    @Published public private(set) var activeLight: C11Theme
+    @Published public private(set) var activeDark: C11Theme
     @Published public private(set) var availableThemes: [ThemeDescriptor] = []
     @Published public private(set) var version: UInt64 = 1
 
@@ -51,8 +51,8 @@ public final class ThemeManager: ObservableObject {
     private let disabledByEnvironment: Bool
 
     private var themesByName: [String: ThemeDescriptor] = [:]
-    private var loadedThemeCache: [String: C11muxTheme] = [:]
-    private var lastKnownGoodThemes: [String: C11muxTheme] = [:]
+    private var loadedThemeCache: [String: C11Theme] = [:]
+    private var lastKnownGoodThemes: [String: C11Theme] = [:]
     private var malformedThemes: [String: String] = [:]
 
     private var watcher: ThemeDirectoryWatcher?
@@ -82,7 +82,7 @@ public final class ThemeManager: ObservableObject {
         self.pathsOverride = pathsOverride
 
         let loaded = ThemeManager.loadThemeFromBundle(named: "stage11", override: pathsOverride)
-            ?? C11muxTheme.fallbackStage11
+            ?? C11Theme.fallbackStage11
         self.active = loaded
         self.activeLight = loaded
         self.activeDark = loaded
@@ -332,7 +332,7 @@ public final class ThemeManager: ObservableObject {
         themesByName[name]
     }
 
-    public func theme(named name: String) -> C11muxTheme? {
+    public func theme(named name: String) -> C11Theme? {
         loadedThemeCache[name]
     }
 
@@ -391,7 +391,7 @@ public final class ThemeManager: ObservableObject {
     private func rescanThemes() {
         var descriptors: [ThemeDescriptor] = []
         var byName: [String: ThemeDescriptor] = [:]
-        var loaded: [String: C11muxTheme] = [:]
+        var loaded: [String: C11Theme] = [:]
         var malformed: [String: String] = [:]
 
         let builtinDir = pathsOverride?.builtinDirectory ?? Bundle.main.resourceURL?
@@ -410,7 +410,7 @@ public final class ThemeManager: ObservableObject {
 
         // Fallback: ensure `stage11` always enumerated even if the bundled file is missing.
         if byName["stage11"] == nil {
-            let stage11 = C11muxTheme.fallbackStage11
+            let stage11 = C11Theme.fallbackStage11
             let desc = ThemeDescriptor(identity: stage11.identity, source: .builtin, sourcePath: nil)
             descriptors.append(desc)
             byName["stage11"] = desc
@@ -446,7 +446,7 @@ public final class ThemeManager: ObservableObject {
         source: ThemeDescriptor.Source,
         descriptors: inout [ThemeDescriptor],
         byName: inout [String: ThemeDescriptor],
-        loaded: inout [String: C11muxTheme],
+        loaded: inout [String: C11Theme],
         malformed: inout [String: String]
     ) {
         let fm = FileManager.default
@@ -468,7 +468,7 @@ public final class ThemeManager: ObservableObject {
 
             do {
                 let table = try TomlSubsetParser.parse(file: fileURL.path, source: source0)
-                let theme = try C11muxTheme.fromToml(table)
+                let theme = try C11Theme.fromToml(table)
 
                 guard theme.identity.name == name else {
                     let msg = "theme identity '\(theme.identity.name)' does not match filename '\(name)'"
@@ -528,10 +528,10 @@ public final class ThemeManager: ObservableObject {
         bumpVersionAndPublishAll()
     }
 
-    private func resolvedTheme(for name: String) -> C11muxTheme {
+    private func resolvedTheme(for name: String) -> C11Theme {
         if let theme = loadedThemeCache[name] { return theme }
         if let fallback = lastKnownGoodThemes[name] { return fallback }
-        return loadedThemeCache["stage11"] ?? C11muxTheme.fallbackStage11
+        return loadedThemeCache["stage11"] ?? C11Theme.fallbackStage11
     }
 
     private func ensureUserThemesDirectoryExists(at url: URL) {
@@ -594,7 +594,7 @@ public final class ThemeManager: ObservableObject {
     private static func loadThemeFromBundle(
         named name: String,
         override: PathsOverride? = nil
-    ) -> C11muxTheme? {
+    ) -> C11Theme? {
         let resourceURL: URL?
         if let override, let dir = override.builtinDirectory {
             resourceURL = dir
@@ -604,25 +604,25 @@ public final class ThemeManager: ObservableObject {
         }
 
         guard let resourceURL else {
-            return C11muxTheme.fallbackStage11
+            return C11Theme.fallbackStage11
         }
 
         let themeURL = resourceURL.appendingPathComponent("\(name).toml")
 
         guard let source = try? String(contentsOf: themeURL, encoding: .utf8) else {
             if name == "stage11" {
-                return C11muxTheme.fallbackStage11
+                return C11Theme.fallbackStage11
             }
             return nil
         }
 
         do {
             let table = try TomlSubsetParser.parse(file: themeURL.path, source: source)
-            return try C11muxTheme.fromToml(table)
+            return try C11Theme.fromToml(table)
         } catch {
             ThemeDiagnostics.loader("failed to load '\(name).toml': \(error)")
             if name == "stage11" {
-                return C11muxTheme.fallbackStage11
+                return C11Theme.fallbackStage11
             }
             return nil
         }

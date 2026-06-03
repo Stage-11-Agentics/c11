@@ -13,10 +13,11 @@ import Bonsplit
 /// captures the live workspace via `LiveWorkspaceSnapshotSource`, and asserts
 /// that surface kinds, metadata, and the markdown filePath survive the cycle.
 ///
-/// Browser `currentURL` is NOT round-tripped because `BrowserPanel.currentURL`
-/// is set by WKNavigationDelegate callbacks — not at creation time — and those
-/// never fire in the headless test harness. The test verifies the correct
-/// surface kind and nil-URL behaviour instead.
+/// Browser `currentURL` IS round-tripped (C11-99 Area C): `BrowserPanel.init`
+/// seeds `currentURL` synchronously from the requested `initialURL` so capture
+/// sees the value before the WKWebView KVO observer has a chance to fire. The
+/// KVO observer still overwrites this with the live URL on real navigation
+/// completion, handling redirects.
 ///
 /// CI-only per `CLAUDE.md` testing policy. Never run locally.
 @MainActor
@@ -80,11 +81,13 @@ final class WorkspaceSnapshotBrowserMarkdownRoundTripTests: XCTestCase {
         XCTAssertTrue(kinds.contains(.terminal), "captured plan contains a terminal surface; got: \(kinds)")
         XCTAssertEqual(captured.plan.surfaces.count, 2)
 
-        // currentURL is nil without WebKit — the walker correctly captures nil.
+        // C11-99 Area C: BrowserPanel.init seeds currentURL synchronously
+        // so the requested url round-trips even without a WebKit load.
         let browserSpec = try XCTUnwrap(captured.plan.surfaces.first { $0.kind == .browser })
-        XCTAssertNil(
+        XCTAssertEqual(
             browserSpec.url,
-            "browser url is nil in headless test (no WKNavigationDelegate callbacks)"
+            "https://example.com",
+            "browser url round-trips through capture (seeded synchronously in init)"
         )
     }
 

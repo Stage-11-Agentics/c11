@@ -56,6 +56,7 @@ final class CmuxWebView: WKWebView {
     /// Called when "Open Link in New Tab" context menu is selected.
     /// Bypasses createWebViewWith so the link opens as a tab, not a popup.
     var onContextMenuOpenLinkInNewTab: ((URL) -> Void)?
+    var onShowSurfaceManifest: (() -> Void)?
     var contextMenuLinkURLProvider: ((CmuxWebView, NSPoint, @escaping (URL?) -> Void) -> Void)?
     var contextMenuDefaultBrowserOpener: ((URL) -> Bool)?
     /// Guard against background panes stealing first responder (e.g. page autofocus).
@@ -1270,6 +1271,25 @@ final class CmuxWebView: WKWebView {
             item.target = self
             menu.insertItem(item, at: min(openLinkInsertionIndex, menu.items.count))
         }
+
+        if onShowSurfaceManifest != nil {
+            menu.addItem(.separator())
+            let manifestItem = NSMenuItem(
+                title: String(
+                    localized: "surfaceManifest.menuItem",
+                    defaultValue: "Show surface manifest…"
+                ),
+                action: #selector(contextMenuShowSurfaceManifest(_:)),
+                keyEquivalent: ""
+            )
+            manifestItem.target = self
+            menu.addItem(manifestItem)
+        }
+    }
+
+    @objc private func contextMenuShowSurfaceManifest(_ sender: Any?) {
+        _ = sender
+        onShowSurfaceManifest?()
     }
 
     @objc private func contextMenuOpenLinkInDefaultBrowser(_ sender: Any?) {

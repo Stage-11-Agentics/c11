@@ -112,7 +112,7 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         // Set up three directories under the override root so directoryOverride
         // supplies the user-override dir, a Blueprints/ sub-dir for built-ins,
         // and a separate cwd for repo discovery.
-        let userDir = tmpRoot
+        let userDir: URL = tmpRoot
         let builtInDir = tmpRoot.appendingPathComponent("Blueprints", isDirectory: true)
         try FileManager.default.createDirectory(at: builtInDir, withIntermediateDirectories: true)
 
@@ -140,7 +140,7 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
     }
 
     func testMergedSortsByModifiedAtDescWithinEachGroup() throws {
-        let userDir = tmpRoot
+        let userDir: URL = tmpRoot
         let store = WorkspaceBlueprintStore(directoryOverride: userDir)
 
         // Write two user blueprints in sequence so their mtime will differ.

@@ -131,7 +131,7 @@ Named so they're recoverable without having to re-derive them. None of these are
 
 ### Metadata delivery
 - Push/subscribe delivery for pane metadata changes (`pane.broadcast.changed` events). Ship only if consumer count grows beyond what pull-on-demand serves well.
-- Canonical JSON-broadcast writers shipped per TUI (wrappers/hooks that auto-populate canonical keys as each TUI runs). May not be needed if the integration installers from Module 4 handle this.
+- Canonical JSON-broadcast writers shipped per TUI (wrappers/hooks that auto-populate canonical keys as each TUI runs).
 
 ### Agent-to-agent coordination
 - Pane-to-pane structured messaging (not just keystroke injection) — an agent in one pane sends a typed message to another, discoverable by role/tag.

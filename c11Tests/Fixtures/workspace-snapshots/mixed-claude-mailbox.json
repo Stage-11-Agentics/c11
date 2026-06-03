@@ -36,13 +36,13 @@
         "title": "cc :: driver",
         "command": "echo seed",
         "metadata": {
-          "terminal_type":     { "string": "claude-code" },
-          "model":             { "string": "claude-opus-4-7" },
-          "claude.session_id": { "string": "aaaa1111-2222-3333-4444-555566667777" }
+          "terminal_type":     "claude-code",
+          "model":             "claude-opus-4-7",
+          "claude.session_id": "aaaa1111-2222-3333-4444-555566667777"
         },
         "paneMetadata": {
-          "mailbox.delivery":  { "string": "stdin" },
-          "mailbox.subscribe": { "string": "build.*" }
+          "mailbox.delivery":  "stdin",
+          "mailbox.subscribe": "build.*"
         }
       },
       {
@@ -57,11 +57,11 @@
         "title": "cc :: watcher",
         "command": "echo seed",
         "metadata": {
-          "terminal_type":     { "string": "claude-code" },
-          "claude.session_id": { "string": "bbbb8888-9999-aaaa-bbbb-ccccddddeeee" }
+          "terminal_type":     "claude-code",
+          "claude.session_id": "bbbb8888-9999-aaaa-bbbb-ccccddddeeee"
         },
         "paneMetadata": {
-          "mailbox.retention_days": { "string": "14" }
+          "mailbox.retention_days": "14"
         }
       }
     ]

@@ -185,7 +185,17 @@ final class WorkspaceSnapshotCaptureTests: XCTestCase {
     /// stem after `deletingPathExtension`. The unreadable-row fallback
     /// must still produce an identifiable id (the full filename) so the
     /// row isn't an empty string in the plain-table column.
+    ///
+    /// Structurally skipped: a file literally named `.json` is a Unix-hidden
+    /// file (dot-prefix), and production `WorkspaceSnapshotStore.enumerate`
+    /// uses `[.skipsHiddenFiles]` (Sources/WorkspaceSnapshotStore.swift:486),
+    /// so the file is never enumerated and the unreadable-row fallback never
+    /// fires. The test as written can't exercise the intended fallback. C11-99
+    /// follow-up: either drop the hidden-files skip in production (changes
+    /// user-facing behavior on legitimate hidden snapshots) or rewrite the
+    /// test to use a different empty-stem path that isn't hidden.
     func testStoreListUnreadableRowFallsBackWhenFilenameStemIsEmpty() throws {
+        try XCTSkipIf(true, "C11-99 Area C: `.json` is Unix-hidden; production [.skipsHiddenFiles] excludes it. Re-enable after the empty-stem fallback gets a real harness.")
         let tmp = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: tmp) }
         let degenerate = tmp.appendingPathComponent(".json")
@@ -486,7 +496,17 @@ final class WorkspaceSnapshotCaptureTests: XCTestCase {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("c11-snapshot-tests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
+        // Resolve `/var/folders/...` → `/private/var/folders/...` via libc's
+        // `realpath` so path-equality assertions in the suite match the
+        // resolved form FileManager enumeration returns. Neither
+        // `URL.resolvingSymlinksInPath()` nor `NSString.resolvingSymlinksInPath`
+        // resolves macOS's top-level `/var` → `/private/var` symlink on its own;
+        // only realpath(3) does the kernel-level lookup.
+        guard let resolved = url.path.withCString({ realpath($0, nil) }) else {
+            return url
+        }
+        defer { free(resolved) }
+        return URL(fileURLWithPath: String(cString: resolved), isDirectory: true)
     }
 
     private func sampleEnvelope(

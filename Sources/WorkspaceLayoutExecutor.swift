@@ -225,20 +225,13 @@ enum WorkspaceLayoutExecutor {
                 continue
             }
             let effectiveCommand: String?
-            // Track whether the command came from the registry. Registry
-            // outputs are paste-bracketed-aware "submit forms" and must
-            // reach the surface via `TextBoxSubmit.send` so a real
-            // synthetic Return fires *outside* the bracketed-paste
-            // sequence — `sendText("…\r")` alone leaves the line typed
-            // but unsubmitted (zsh ZLE / Claude CLI ignore embedded
-            // newlines inside a paste). See `AgentRestartRegistry`
-            // and `TextBoxSubmit` for the full rationale.
-            var isRegistrySynthesized = false
+            let usedRegistry: Bool
             if let rawCommand = surfaceSpec.command {
                 // Explicit command — Phase 0 rule: deliver verbatim,
                 // including whitespace-only strings. Registry is not
                 // consulted when the plan declared a command at all.
                 effectiveCommand = rawCommand
+                usedRegistry = false
             } else if let registry = options.restartRegistry {
                 let surfaceMeta = stringMetadata(surfaceSpec.metadata)
                 let terminalType = surfaceMeta[SurfaceMetadataKeyName.terminalType]
@@ -259,9 +252,10 @@ enum WorkspaceLayoutExecutor {
                     ))
                 }
                 effectiveCommand = synthesized
-                isRegistrySynthesized = synthesized != nil
+                usedRegistry = synthesized != nil
             } else {
                 effectiveCommand = nil
+                usedRegistry = false
             }
             // Genuinely empty commands (`""`) are a no-op under Phase 0
             // too — sendText of zero bytes would write nothing. Skip
@@ -269,9 +263,20 @@ enum WorkspaceLayoutExecutor {
             // commands are NOT empty; they reach sendText unchanged.
             guard let cmd = effectiveCommand, !cmd.isEmpty else { continue }
             let cmdClock = StepClock()
-            if isRegistrySynthesized {
-                TextBoxSubmit.send(cmd, via: terminalPanel.surface)
+            if usedRegistry {
+                // Registry-synthesised commands are restart payloads — the
+                // surface metadata declared an agent (`terminal_type`) and a
+                // captured session, and the operator expects the resume to
+                // execute, not sit at the prompt. `sendSubmitFormText` types
+                // the bytes (queueing if the surface isn't yet attached) and
+                // dispatches a synthetic Return outside the bracketed-paste
+                // sequence so the receiving shell or TUI actually submits.
+                terminalPanel.surface.sendSubmitFormText(cmd)
             } else {
+                // Explicit `SurfaceSpec.command` — Phase 0 parity. Deliver
+                // raw bytes verbatim, including whitespace-only "kick"
+                // commands that blueprints use to coax the shell into
+                // printing a fresh prompt.
                 terminalPanel.sendText(cmd)
             }
             walkState.timings.append(StepTiming(

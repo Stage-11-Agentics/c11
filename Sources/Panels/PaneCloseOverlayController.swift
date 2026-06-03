@@ -1,4 +1,5 @@
 import AppKit
+import Bonsplit
 import Combine
 import Foundation
 
@@ -15,6 +16,13 @@ final class PaneCloseOverlayController {
     private var hosts: [UUID: PaneInteractionOverlayHost] = [:]
     private var activeIds: Set<UUID> = []
     private var subscription: AnyCancellable?
+    // Weak registry of every live AnchorView so the controller can ask
+    // them to re-query their window-coord frames after a sibling-close
+    // reflow has settled. Required because reportFrame is called by
+    // SwiftUI (updateNSView) and AppKit (viewDidMoveToWindow) DURING
+    // the reflow, when convert(bounds, to: nil) can return transient
+    // half-applied coordinates that the system never corrects.
+    private let liveAnchorViews = NSHashTable<PaneInteractionOverlayHostView.AnchorView>.weakObjects()
 
     private struct AnchorRecord {
         var frameInWindow: NSRect
@@ -53,6 +61,33 @@ final class PaneCloseOverlayController {
         activeIds.removeAll()
     }
 
+    /// Called by AnchorView the first time it gains a window. The hash table is
+    /// weak, so dead entries auto-prune when SwiftUI deallocates the view —
+    /// no explicit unregister needed.
+    func registerAnchorView(_ view: PaneInteractionOverlayHostView.AnchorView) {
+        liveAnchorViews.add(view)
+    }
+
+    /// After Bonsplit fires its authoritative didClosePane, ask every live
+    /// AnchorView to re-publish its window-coord frame. We schedule the walk
+    /// on `main.async` (next runloop tick) and again at +60ms because the
+    /// SwiftUI/Bonsplit reflow can take more than one layout pass to settle —
+    /// the in-flight reportFrame calls fire mid-reflow with transient values
+    /// (we've logged `convert(bounds, to: nil)` returning a 923-wide frame
+    /// for a 461-wide pane) and no post-settle event corrects them. Without
+    /// this re-query the controller's anchors map stays stale and the
+    /// confirmation overlay mounts at the wrong pane position.
+    func refreshAllAnchorsAfterReflow() {
+        let refresh: @MainActor () -> Void = { [weak self] in
+            guard let self else { return }
+            for view in self.liveAnchorViews.allObjects {
+                view.reportFrame()
+            }
+        }
+        DispatchQueue.main.async(execute: refresh)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06, execute: refresh)
+    }
+
     private func synchronize() {
         // Drop hosts for panes that are no longer active.
         for (id, host) in hosts where !activeIds.contains(id) {
@@ -64,7 +99,16 @@ final class PaneCloseOverlayController {
             guard let anchor = anchors[id],
                   let window = anchor.window,
                   let themeFrame = window.contentView?.superview
-            else { continue }
+            else {
+#if DEBUG
+                let reason: String
+                if anchors[id] == nil { reason = "no_anchor" }
+                else if anchors[id]?.window == nil { reason = "anchor_window_nil" }
+                else { reason = "no_themeFrame" }
+                dlog("paneClose.sync skip pane=\(id.uuidString.prefix(5)) reason=\(reason)")
+#endif
+                continue
+            }
 
             let host: PaneInteractionOverlayHost
             if let existing = hosts[id] {

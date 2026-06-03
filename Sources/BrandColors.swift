@@ -16,6 +16,7 @@ enum BrandColors {
     static let whiteHex      = "#e8e8e8"
     static let goldHex       = "#c9a84c"
     static let goldFaintHex  = "#c9a84c33"
+    static let paperFillHex  = "#E8E2D0"
 
     static let black: NSColor      = srgb(0x00, 0x00, 0x00)
     static let surface: NSColor    = srgb(0x0a, 0x0a, 0x0a)
@@ -24,6 +25,7 @@ enum BrandColors {
     static let white: NSColor      = srgb(0xe8, 0xe8, 0xe8)
     static let gold: NSColor       = srgb(0xc9, 0xa8, 0x4c)
     static let goldFaint: NSColor  = srgb(0xc9, 0xa8, 0x4c, alpha: 0x33)
+    static let paperFill: NSColor  = srgb(0xE8, 0xE2, 0xD0)
 
     static var blackSwiftUI: Color     { Color(nsColor: black) }
     static var surfaceSwiftUI: Color   { Color(nsColor: surface) }
@@ -32,6 +34,7 @@ enum BrandColors {
     static var whiteSwiftUI: Color     { Color(nsColor: white) }
     static var goldSwiftUI: Color      { Color(nsColor: gold) }
     static var goldFaintSwiftUI: Color { Color(nsColor: goldFaint) }
+    static var paperFillSwiftUI: Color { Color(nsColor: paperFill) }
 
     private static func srgb(_ r: Int, _ g: Int, _ b: Int, alpha a: Int = 0xFF) -> NSColor {
         NSColor(
@@ -53,6 +56,7 @@ extension BrandColors {
         ("white",      whiteHex),
         ("gold",       goldHex),
         ("gold_faint", goldFaintHex),
+        ("paper_fill", paperFillHex),
     ]
 
     /// Font family c11 ships with. Terminal content is owned by the

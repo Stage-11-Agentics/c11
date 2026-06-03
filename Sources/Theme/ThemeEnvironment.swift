@@ -1,21 +1,21 @@
 import SwiftUI
 
-private struct C11muxThemeManagerEnvironmentKey: EnvironmentKey {
+private struct C11ThemeManagerEnvironmentKey: EnvironmentKey {
     static let defaultValue: ThemeManager? = nil
 }
 
-private struct C11muxThemeContextEnvironmentKey: EnvironmentKey {
+private struct C11ThemeContextEnvironmentKey: EnvironmentKey {
     static let defaultValue: ThemeContext? = nil
 }
 
 extension EnvironmentValues {
-    var c11muxThemeManager: ThemeManager? {
-        get { self[C11muxThemeManagerEnvironmentKey.self] }
-        set { self[C11muxThemeManagerEnvironmentKey.self] = newValue }
+    var c11ThemeManager: ThemeManager? {
+        get { self[C11ThemeManagerEnvironmentKey.self] }
+        set { self[C11ThemeManagerEnvironmentKey.self] = newValue }
     }
 
-    var c11muxThemeContext: ThemeContext? {
-        get { self[C11muxThemeContextEnvironmentKey.self] }
-        set { self[C11muxThemeContextEnvironmentKey.self] = newValue }
+    var c11ThemeContext: ThemeContext? {
+        get { self[C11ThemeContextEnvironmentKey.self] }
+        set { self[C11ThemeContextEnvironmentKey.self] = newValue }
     }
 }

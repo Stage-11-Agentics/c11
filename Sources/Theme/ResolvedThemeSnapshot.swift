@@ -18,7 +18,7 @@ public final class ResolvedThemeSnapshot {
         let context: ThemeContext
     }
 
-    let theme: C11muxTheme
+    let theme: C11Theme
 
     private var colorCache: [ResolvedColorKey: NSColor?] = [:]
     private var numberCache: [ResolvedNumberKey: Double?] = [:]
@@ -26,7 +26,7 @@ public final class ResolvedThemeSnapshot {
     private var astCache: [String: ThemedValueAST] = [:]
     private let lock = NSLock()
 
-    init(theme: C11muxTheme) {
+    init(theme: C11Theme) {
         self.theme = theme
     }
 
@@ -269,26 +269,44 @@ public final class ResolvedThemeSnapshot {
     }
 
     private func resolveWorkspaceColor(context: ThemeContext, warningKey: String) -> NSColor? {
-        guard let workspaceHex = context.workspaceColor else {
-            return nil
+        if let workspaceHex = context.workspaceColor {
+            let workspaceColor = WorkspaceTabColorSettings.displayNSColor(
+                hex: workspaceHex,
+                colorScheme: context.colorScheme.swiftUIColorScheme,
+                forceBright: context.forceBright
+            ) ?? NSColor(hex: workspaceHex)
+
+            guard let workspaceColor else {
+                ThemeDiagnostics.resolverWarnOnce(
+                    themeName: theme.identity.name,
+                    key: warningKey,
+                    message: "unable to resolve workspace color '\(workspaceHex)'"
+                )
+                return nil
+            }
+
+            return workspaceColor.usingColorSpace(.sRGB) ?? workspaceColor
         }
 
-        let workspaceColor = WorkspaceTabColorSettings.displayNSColor(
-            hex: workspaceHex,
-            colorScheme: context.colorScheme.swiftUIColorScheme,
-            forceBright: context.forceBright
-        ) ?? NSColor(hex: workspaceHex)
-
-        guard let workspaceColor else {
-            ThemeDiagnostics.resolverWarnOnce(
-                themeName: theme.identity.name,
-                key: warningKey,
-                message: "unable to resolve workspace color '\(workspaceHex)'"
-            )
+        // C11-35: when no workspace color is set, fall back to the theme's
+        // `accent` variable. Without a fallback, formulas like
+        // `$workspaceColor.mix($background, 0.65)` (chrome.dividers.color)
+        // collapse to nil and chrome surfaces drop to caller-side defaults
+        // (or vanish entirely) for any workspace that hasn't picked a color.
+        // Callsites that explicitly want "did the user pick a color" gate
+        // on `workspace.customColor` directly (see ContentView.swift's
+        // `*Fallback` role switch) — this fallback only fills the gap for
+        // chrome that should always render.
+        guard let accentExpression = theme.variables["accent"] else {
             return nil
         }
-
-        return workspaceColor.usingColorSpace(.sRGB) ?? workspaceColor
+        var fallbackStack: [String] = []
+        return evaluateColorExpression(
+            accentExpression,
+            warningKey: "variable.accent",
+            context: context,
+            variableStack: &fallbackStack
+        )
     }
 
     private func resolveGhosttyBackground() -> NSColor {

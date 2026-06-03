@@ -1,0 +1,2 @@
+Drain review (human:atin via Claude review-pile drainer):
+PR #151 merged to main 2026-05-13T20:44Z (squash 37786e689). Verified via git log + gh pr view. c11-spawn-agent bash primitive landed at Resources/bin/c11-spawn-agent; tmux -L agents dedicated socket, named window, idempotent-on-session, errors on existing window. Atlas-substitute validation (8/8 PASS on yew Fedora) recorded in prior comments; runbook + followup in docs commit 9ad89b022. Slice 2 (depends_on this) ready to claim. Acceptance criteria satisfied.

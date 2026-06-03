@@ -65,6 +65,14 @@ jobs:
             fi
           } > /tmp/digest.md
 
+      # Zulip is tailnet-only; ephemeral ACL-scoped join (see drawbridge.yml).
+      - name: Join tailnet (ephemeral, scoped to Zulip)
+        uses: tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8 # v4.1.2
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
       - name: Post digest
         env:
           ZULIP_BOT_API_KEY: ${{ secrets.ZULIP_BOT_API_KEY }}

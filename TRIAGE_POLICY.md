@@ -45,7 +45,9 @@ deterministic gate (CI green, size cap, allowlist, deny list, trust tier):
 `*.entitlements`), the Xcode project (`*.pbxproj`, `GhosttyTabs.xcodeproj/**`),
 submodules and vendored code (`ghostty`, `vendor/**`, `.gitmodules`), package
 manifests (`Package.swift`, `Package.resolved`, lockfiles), the release skill
-(`skills/release/**`), and this policy file itself.
+(`skills/release/**`), agent-instruction markdown (`CLAUDE.md`, `AGENTS.md` at any
+depth — these are executable instructions for agents, not prose, and they ride the
+CI path-ignore), and this policy file itself.
 
 ## Trust tiers
 
@@ -128,6 +130,10 @@ exact root-level path.
     "**/*.lock",
     "**/bun.lockb",
     "skills/release/**",
+    "CLAUDE.md",
+    "**/CLAUDE.md",
+    "AGENTS.md",
+    "**/AGENTS.md",
     "TRIAGE_POLICY.md"
   ],
   "categories": {

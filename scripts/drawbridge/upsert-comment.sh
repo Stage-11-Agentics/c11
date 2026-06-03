@@ -11,8 +11,10 @@ NUM="${2:?}"
 MARKER="${3:?}"
 BODY_FILE="${4:?}"
 
+# Only match bot-authored comments: a contributor pasting the literal marker
+# into their own comment must not become the PATCH target (403 + griefing).
 existing="$(gh api --paginate "repos/$REPO/issues/$NUM/comments" \
-  | jq -r --arg m "$MARKER" '.[] | select(.body | contains($m)) | .id' | head -1)"
+  | jq -r --arg m "$MARKER" '.[] | select((.body | contains($m)) and (.user.type == "Bot")) | .id' | head -1)"
 
 if [[ -n "$existing" ]]; then
   gh api -X PATCH "repos/$REPO/issues/comments/$existing" \

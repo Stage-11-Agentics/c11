@@ -64,6 +64,7 @@ jobs:
     outputs:
       item_type: ${{ steps.resolve.outputs.item_type }}
       item_number: ${{ steps.resolve.outputs.item_number }}
+      open: ${{ steps.resolve.outputs.open }}
     steps:
       - name: Checkout trusted default branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -73,6 +74,7 @@ jobs:
       - name: Resolve item
         id: resolve
         env:
+          GH_TOKEN: ${{ github.token }}
           INPUT_TYPE: ${{ inputs.item_type }}
           INPUT_NUMBER: ${{ inputs.item_number }}
         run: |
@@ -105,16 +107,28 @@ jobs:
           echo "item_type=$type" >> "$GITHUB_OUTPUT"
           echo "item_number=$num" >> "$GITHUB_OUTPUT"
 
+          # Closed/merged items don't get triaged: comments on them would
+          # otherwise re-fire the paid judge forever (quota-exhaustion vector).
+          state="$(gh api "repos/$GITHUB_REPOSITORY/issues/$num" --jq '.state')"
+          if [[ "$state" == "open" ]]; then
+            echo "open=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "open=false" >> "$GITHUB_OUTPUT"
+            echo "item $type #$num is $state — skipping triage"
+          fi
+
       - name: Fetch item context (API text only — no head checkout)
+        if: steps.resolve.outputs.open == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          ITEM_TYPE: ${{ steps.resolve.outputs.item_type }}
+          ITEM_NUMBER: ${{ steps.resolve.outputs.item_number }}
         run: |
           scripts/drawbridge/fetch-item.sh "$GITHUB_REPOSITORY" \
-            "${{ steps.resolve.outputs.item_type }}" \
-            "${{ steps.resolve.outputs.item_number }}" \
-            /tmp/drawbridge
+            "$ITEM_TYPE" "$ITEM_NUMBER" /tmp/drawbridge
 
       - name: Judge (read-only LLM triage)
+        if: steps.resolve.outputs.open == 'true'
         continue-on-error: true
         uses: anthropics/claude-code-action@36a69b6a90b850823f86de06fdfd56264772ad98 # v1.0.134
         with:
@@ -126,6 +140,7 @@ jobs:
             --disallowedTools "Bash,WebFetch,WebSearch,Task"
 
       - name: Validate verdict (fail-safe to escalation)
+        if: steps.resolve.outputs.open == 'true'
         run: |
           set -euo pipefail
           if ! jq -e '
@@ -136,20 +151,14 @@ jobs:
               and (.risk_flags | type == "array")
             ' /tmp/drawbridge/verdict.json >/dev/null 2>&1; then
             echo "judge verdict missing or malformed — synthesizing escalation"
-            cat > /tmp/drawbridge/verdict.json <<'EOF'
-          {
-            "scope_fit": "low",
-            "alignment": "low",
-            "category": "other",
-            "risk_flags": ["judge failed to produce a valid verdict"],
-            "verdict": "maintainer_review",
-            "reasoning": "The judge run errored or emitted malformed output; escalated fail-safe."
-          }
-          EOF
+            python3 scripts/drawbridge/gates.py \
+              --emit-escalation "judge failed to produce a valid verdict" \
+              > /tmp/drawbridge/verdict.json
           fi
           jq . /tmp/drawbridge/verdict.json
 
       - name: Upload verdict artifact (audit trail)
+        if: steps.resolve.outputs.open == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: drawbridge-verdict-${{ steps.resolve.outputs.item_type }}-${{ steps.resolve.outputs.item_number }}
@@ -160,6 +169,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 75
     needs: drawbridge-judge
+    if: needs.drawbridge-judge.outputs.open == 'true'
     permissions:
       contents: write       # merge (live mode only; dry-run never writes contents)
       issues: write         # labels + comments
@@ -209,13 +219,25 @@ jobs:
 
             head_sha="$(jq -r '.head.sha' /tmp/gate/pr.json)"
             if [[ "$eligible" == "true" ]]; then
-              echo "autonomous-eligible pending CI — waiting for checks on $head_sha"
+              # For paths CI actually runs on, "zero check runs" usually means
+              # GitHub hasn't created them yet — wait for them to exist, then
+              # for all of them to complete. Docs-tier (CI-ignored) diffs
+              # legitimately never get checks, so they only wait out stragglers.
+              all_ignored="$(python3 scripts/drawbridge/gates.py \
+                --emit-all-ci-ignored --policy TRIAGE_POLICY.md \
+                --files-json /tmp/gate/files.json)"
+              echo "autonomous-eligible pending CI — waiting for checks on $head_sha (all_ci_ignored=$all_ignored)"
               for i in $(seq 1 45); do
                 gh api --paginate "repos/$GITHUB_REPOSITORY/commits/$head_sha/check-runs" \
                   | jq -s '{check_runs: (map(.check_runs) | add // [])}' > /tmp/gate/checks.json
+                total="$(jq '[.check_runs[] | select((.name | ascii_downcase | startswith("drawbridge")) | not)] | length' /tmp/gate/checks.json)"
                 pending="$(jq '[.check_runs[] | select((.name | ascii_downcase | startswith("drawbridge")) | not) | select(.status != "completed")] | length' /tmp/gate/checks.json)"
-                [[ "$pending" -eq 0 ]] && break
-                echo "  $pending check(s) still running (poll $i/45)"
+                if [[ "$all_ignored" == "true" ]]; then
+                  [[ "$pending" -eq 0 ]] && break
+                else
+                  [[ "$total" -gt 0 && "$pending" -eq 0 ]] && break
+                fi
+                echo "  checks: $total registered, $pending pending (poll $i/45)"
                 sleep 60
               done
             else
@@ -381,11 +403,16 @@ jobs:
     needs: [drawbridge-judge, drawbridge-gate, drawbridge-review]
     # Ping on every would-act / act, and on every external escalation. Internal
     # (org-authored) items that merely escalate are not worth an interruption.
+    # Also ping when the judge or gate job ERRORS: a hard failure is exactly
+    # when the maintainer must hear about it (fail-safe for the human loop,
+    # not just for the route value).
     if: >-
       always() &&
-      needs.drawbridge-gate.result == 'success' &&
-      (needs.drawbridge-gate.outputs.route == 'autonomous' ||
-       needs.drawbridge-gate.outputs.internal != 'true')
+      ((needs.drawbridge-gate.result == 'success' &&
+        (needs.drawbridge-gate.outputs.route == 'autonomous' ||
+         needs.drawbridge-gate.outputs.internal != 'true')) ||
+       needs.drawbridge-gate.result == 'failure' ||
+       needs.drawbridge-judge.result == 'failure')
     permissions:
       contents: read
     steps:
@@ -395,15 +422,17 @@ jobs:
           ref: main
 
       - name: Download item context
+        continue-on-error: true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: drawbridge-verdict-${{ needs.drawbridge-gate.outputs.item_type }}-${{ needs.drawbridge-gate.outputs.item_number }}
+          name: drawbridge-verdict-${{ needs.drawbridge-judge.outputs.item_type }}-${{ needs.drawbridge-judge.outputs.item_number }}
           path: /tmp/drawbridge
 
       - name: Download gate result
+        continue-on-error: true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: drawbridge-gates-${{ needs.drawbridge-gate.outputs.item_type }}-${{ needs.drawbridge-gate.outputs.item_number }}
+          name: drawbridge-gates-${{ needs.drawbridge-judge.outputs.item_type }}-${{ needs.drawbridge-judge.outputs.item_number }}
           path: /tmp/gate
 
       - name: Compose and send notification
@@ -413,8 +442,26 @@ jobs:
           MODE: ${{ needs.drawbridge-gate.outputs.mode }}
           REVIEW_URL: ${{ needs.drawbridge-review.outputs.comment_url }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          FALLBACK_TYPE: ${{ needs.drawbridge-judge.outputs.item_type || inputs.item_type }}
+          FALLBACK_NUMBER: ${{ needs.drawbridge-judge.outputs.item_number || github.event.pull_request.number || github.event.issue.number || inputs.item_number }}
         run: |
           set -euo pipefail
+
+          # Hard-failure path: the pipeline errored before producing its
+          # artifacts. Send a manual-triage ping instead of going silent.
+          if [[ ! -s /tmp/drawbridge/verdict.json || ! -s /tmp/gate/gates.json ]]; then
+            {
+              echo "🌉 ⚠️ **Drawbridge pipeline errored** on ${FALLBACK_TYPE:-item} #${FALLBACK_NUMBER:-?} — manual triage needed."
+              echo
+              [[ -s /tmp/drawbridge/meta.json ]] && \
+                echo "- **Item:** [$(jq -r '.title' /tmp/drawbridge/meta.json)]($(jq -r '.html_url' /tmp/drawbridge/meta.json))"
+              echo "- **Run:** $RUN_URL"
+              echo "- No verdict/gate artifacts were produced; nothing was merged, labeled, or commented."
+            } > /tmp/notify.md
+            scripts/drawbridge/notify.sh TRIAGE_POLICY.md /tmp/notify.md
+            exit 0
+          fi
+
           title="$(jq -r '.title' /tmp/drawbridge/meta.json)"
           url="$(jq -r '.html_url' /tmp/drawbridge/meta.json)"
           author="$(jq -r '.author' /tmp/drawbridge/meta.json)"

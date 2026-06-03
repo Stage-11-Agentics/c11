@@ -43,6 +43,18 @@ def load_policy_config(policy_path):
     return json.loads(m.group(1))
 
 
+def synthesize_escalation(reason):
+    """The one fail-safe verdict, shared by main() and --emit-escalation."""
+    return {
+        "scope_fit": "low",
+        "alignment": "low",
+        "category": "other",
+        "risk_flags": [reason],
+        "verdict": "maintainer_review",
+        "reasoning": f"Escalated fail-safe: {reason}.",
+    }
+
+
 def glob_to_regex(pattern):
     """Translate a drawbridge glob to an anchored regex.
 
@@ -225,15 +237,52 @@ def evaluate_issue(verdict):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--policy", required=True)
-    ap.add_argument("--verdict", required=True)
-    ap.add_argument("--item-type", required=True, choices=["pr", "issue"])
+    ap.add_argument("--policy")
+    ap.add_argument("--verdict")
+    ap.add_argument("--item-type", choices=["pr", "issue"])
     ap.add_argument("--pr-json")
     ap.add_argument("--files-json")
     ap.add_argument("--checks-json")
     ap.add_argument("--skip-ci", action="store_true")
     ap.add_argument("--output")
+    # Utility modes — single source of truth for config parsing and the
+    # escalation verdict (consumed by notify.sh and the workflow).
+    ap.add_argument("--emit-config-key", metavar="KEY",
+                    help="print config[KEY] from the policy block as JSON and exit")
+    ap.add_argument("--emit-escalation", metavar="REASON",
+                    help="print the fail-safe escalation verdict JSON and exit")
+    ap.add_argument("--emit-all-ci-ignored", action="store_true",
+                    help="print 'true' if every path in --files-json is CI-ignored, else 'false'")
     args = ap.parse_args(argv)
+
+    if args.emit_escalation:
+        print(json.dumps(synthesize_escalation(args.emit_escalation), indent=2))
+        return 0
+
+    if args.emit_config_key:
+        if not args.policy:
+            ap.error("--policy is required with --emit-config-key")
+        config = load_policy_config(args.policy)
+        if args.emit_config_key not in config:
+            ap.error(f"no '{args.emit_config_key}' key in drawbridge-config")
+        print(json.dumps(config[args.emit_config_key], indent=2))
+        return 0
+
+    if args.emit_all_ci_ignored:
+        if not args.policy or not args.files_json:
+            ap.error("--policy and --files-json are required with --emit-all-ci-ignored")
+        config = load_policy_config(args.policy)
+        with open(args.files_json, encoding="utf-8") as f:
+            files = json.load(f)
+        paths = touched_paths(files)
+        all_ignored = bool(paths) and all(
+            match_any(p, config["ci_ignored_paths"]) for p in paths
+        )
+        print("true" if all_ignored else "false")
+        return 0
+
+    if not (args.policy and args.verdict and args.item_type):
+        ap.error("--policy, --verdict, and --item-type are required for gate evaluation")
 
     config = load_policy_config(args.policy)
     with open(args.verdict, encoding="utf-8") as f:
@@ -241,13 +290,7 @@ def main(argv=None):
 
     if not valid_verdict(verdict):
         # Malformed judge output: synthesize an escalation, never autonomous.
-        verdict = {
-            "scope_fit": "low",
-            "alignment": "low",
-            "risk_flags": ["judge verdict malformed"],
-            "verdict": "maintainer_review",
-            "reasoning": "Judge output failed schema validation; escalated fail-safe.",
-        }
+        verdict = synthesize_escalation("judge verdict malformed")
 
     if args.item_type == "pr":
         if not args.pr_json or not args.files_json:

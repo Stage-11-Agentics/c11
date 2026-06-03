@@ -340,6 +340,62 @@ class TestRouting(unittest.TestCase):
         self.assertEqual(result["route"], "close_suggest")
 
 
+class TestAgentInstructionMarkdown(unittest.TestCase):
+    def test_claude_md_is_denied_at_any_depth(self):
+        """CLAUDE.md is executable agent instructions, not docs — always escalates."""
+        for path in ("CLAUDE.md", "docs/CLAUDE.md", "skills/c11/CLAUDE.md", "AGENTS.md"):
+            result = run_gates(
+                "pr", GOOD_VERDICT,
+                pr=pr_fixture(),
+                files=files_fixture(path),
+                checks={"check_runs": []},
+            )
+            self.assertFalse(result["gates"]["no_denied_paths"]["pass"], path)
+            self.assertEqual(result["route"], "review", path)
+
+
+class TestUtilityModes(unittest.TestCase):
+    def run_emit(self, argv):
+        import contextlib
+        import io
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = gates.main(argv)
+        self.assertEqual(rc, 0)
+        return buf.getvalue().strip()
+
+    def test_emit_escalation_is_a_valid_review_verdict(self):
+        out = self.run_emit(["--emit-escalation", "test reason"])
+        verdict = json.loads(out)
+        self.assertTrue(gates.valid_verdict(verdict))
+        self.assertEqual(verdict["verdict"], "maintainer_review")
+        self.assertIn("test reason", verdict["risk_flags"])
+
+    def test_emit_config_key_zulip(self):
+        out = self.run_emit(["--emit-config-key", "zulip", "--policy", POLICY])
+        zulip = json.loads(out)
+        for key in ("site", "channel", "topic", "bot_email"):
+            self.assertIn(key, zulip)
+
+    def test_emit_all_ci_ignored(self):
+        with tempfile.TemporaryDirectory() as td:
+            docs = os.path.join(td, "docs.json")
+            code = os.path.join(td, "code.json")
+            with open(docs, "w", encoding="utf-8") as f:
+                json.dump(files_fixture("docs/guide.md", "notes/x.md"), f)
+            with open(code, "w", encoding="utf-8") as f:
+                json.dump(files_fixture("docs/guide.md", "Sources/A.swift"), f)
+            self.assertEqual(
+                self.run_emit(["--emit-all-ci-ignored", "--policy", POLICY, "--files-json", docs]),
+                "true",
+            )
+            self.assertEqual(
+                self.run_emit(["--emit-all-ci-ignored", "--policy", POLICY, "--files-json", code]),
+                "false",
+            )
+
+
 class TestGlobMatcher(unittest.TestCase):
     def test_double_star_crosses_segments(self):
         self.assertTrue(gates.match_any("docs/a/b/c.md", ["docs/**"]))

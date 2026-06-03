@@ -13,20 +13,12 @@ POLICY_FILE="${1:?usage: notify.sh <policy-file> <content-file>}"
 CONTENT_FILE="${2:?usage: notify.sh <policy-file> <content-file>}"
 : "${ZULIP_BOT_API_KEY:?ZULIP_BOT_API_KEY is required}"
 
-config="$(python3 - "$POLICY_FILE" <<'PY'
-import json, re, sys
-text = open(sys.argv[1], encoding="utf-8").read()
-m = re.search(r"```json[ \t]+drawbridge-config[ \t]*\n(.*?)\n```", text, re.DOTALL)
-if not m:
-    sys.exit("no drawbridge-config block in policy file")
-z = json.loads(m.group(1))["zulip"]
-print("\n".join([z["site"], z["channel"], z["topic"], z["bot_email"]]))
-PY
-)"
-SITE="$(sed -n 1p <<<"$config")"
-CHANNEL="$(sed -n 2p <<<"$config")"
-TOPIC="$(sed -n 3p <<<"$config")"
-BOT_EMAIL="$(sed -n 4p <<<"$config")"
+# Single source of truth for policy parsing: gates.py owns the config block.
+zulip="$(python3 "$(dirname "$0")/gates.py" --emit-config-key zulip --policy "$POLICY_FILE")"
+SITE="$(jq -r '.site' <<<"$zulip")"
+CHANNEL="$(jq -r '.channel' <<<"$zulip")"
+TOPIC="$(jq -r '.topic' <<<"$zulip")"
+BOT_EMAIL="$(jq -r '.bot_email' <<<"$zulip")"
 
 # Zulip caps messages at 10000 chars; truncate defensively.
 content="$(head -c 9000 "$CONTENT_FILE")"

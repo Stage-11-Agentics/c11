@@ -64,6 +64,19 @@ CI path-ignore), and this policy file itself.
 Autonomous lane: **≤ 500 changed lines (additions + deletions) and ≤ 20 files.**
 Anything larger escalates no matter how clean it looks.
 
+## Additional deterministic gates
+
+- **Required CI checks.** For any diff touching paths CI runs on, the checks named in
+  `required_checks` below must each conclude `success` — a `skipped` required check
+  (e.g. the paid-runner fork guard skipping the app build on fork PRs) is not green.
+  Docs-tier diffs (entirely within `ci_ignored_paths`) are exempt.
+- **Judged head must be current.** The verdict is bound to the head SHA the judge saw;
+  if the head moved by gate time, the lane fails and the new head is re-judged.
+- **Regular files only.** The autonomous lane may not introduce symlinks or
+  gitlinks/submodules, verified against the head tree.
+- **Deny matching is case-insensitive** (`docs/claude.md` hits `**/CLAUDE.md`);
+  allowlist matching stays case-sensitive, so odd-cased paths escalate.
+
 ## Notification channels
 
 1. **Zulip** (primary): channel `c11`, topic `drawbridge`, posted by the bot
@@ -152,6 +165,7 @@ exact root-level path.
     }
   },
   "ci_ignored_paths": ["**/*.md", "docs/**", "notes/**", "Resources/Localizable.xcstrings"],
+  "required_checks": ["workflow-guard-tests", "remote-daemon-tests", "web-typecheck", "build"],
   "zulip": {
     "site": "https://zulip.stage11.ai",
     "channel": "c11",

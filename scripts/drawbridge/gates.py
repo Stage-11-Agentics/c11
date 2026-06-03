@@ -81,8 +81,23 @@ def glob_to_regex(pattern):
     return re.compile("".join(out) + r"\Z")
 
 
-def match_any(path, patterns):
+def match_any(path, patterns, casefold=False):
+    """Match path against glob patterns.
+
+    casefold=True is used for DENY matching only: this project is developed on
+    case-insensitive filesystems, so `docs/claude.md` must hit the `**/CLAUDE.md`
+    deny entry. Allowlists stay case-sensitive — an unexpected-case path then
+    simply fails the allowlist and escalates (fail-safe).
+    """
+    if casefold:
+        path = path.casefold()
+        patterns = [p.casefold() for p in patterns]
     return any(glob_to_regex(p).match(path) for p in patterns)
+
+
+# Modes a PR may introduce on the autonomous lane: regular and executable
+# blobs. Symlinks (120000) and gitlinks/submodules (160000) always escalate.
+REGULAR_FILE_MODES = {"100644", "100755"}
 
 
 def touched_paths(files):
@@ -112,11 +127,21 @@ def valid_verdict(verdict):
     )
 
 
-def evaluate_pr(config, verdict, pr, files, checks, skip_ci):
+def evaluate_pr(config, verdict, pr, files, checks, skip_ci, judged_sha=None, tree=None):
     gates = {}
 
     def gate(name, ok, detail):
         gates[name] = {"pass": bool(ok), "detail": detail}
+
+    # Gate: judged head is current — the verdict must describe the same head
+    # SHA the gates are evaluating, or an older autonomous verdict could be
+    # applied to a newer pushed head.
+    current_sha = (pr.get("head") or {}).get("sha")
+    gate(
+        "judged_head_current",
+        bool(judged_sha) and bool(current_sha) and judged_sha == current_sha,
+        f"judged={judged_sha} current={current_sha}",
+    )
 
     # Gate: judge verdict — autonomous requires high/high and zero risk flags.
     flags = verdict.get("risk_flags", [])
@@ -148,8 +173,30 @@ def evaluate_pr(config, verdict, pr, files, checks, skip_ci):
     paths = touched_paths(files)
 
     # Gate: deny list — always escalates, regardless of anything else.
-    denied = [p for p in paths if match_any(p, config["deny_paths"])]
+    # Case-insensitive: see match_any.
+    denied = [p for p in paths if match_any(p, config["deny_paths"], casefold=True)]
     gate("no_denied_paths", not denied, f"denied={denied}" if denied else "no denied paths")
+
+    # Gate: regular files only — the autonomous lane may not introduce
+    # symlinks or gitlinks/submodules. Checked against the head tree (the
+    # Files API does not expose modes). Deleted paths are absent from the
+    # head tree and are fine.
+    if tree is None:
+        gate("regular_files_only", False, "head tree not provided — cannot verify file modes")
+    elif tree.get("truncated"):
+        gate("regular_files_only", False, "head tree truncated — cannot verify file modes")
+    else:
+        modes = {e["path"]: e.get("mode") for e in tree.get("tree", [])}
+        irregular = [
+            f"{f['filename']} (mode {modes[f['filename']]})"
+            for f in files
+            if f["filename"] in modes and modes[f["filename"]] not in REGULAR_FILE_MODES
+        ]
+        gate(
+            "regular_files_only",
+            not irregular,
+            f"irregular={irregular}" if irregular else "all touched paths are regular files",
+        )
 
     # Gate: allowlist — every touched path inside the tier's allowed categories.
     allowed_patterns = []
@@ -186,6 +233,11 @@ def evaluate_pr(config, verdict, pr, files, checks, skip_ci):
             for r in checks.get("check_runs", [])
             if not r.get("name", "").lower().startswith(SELF_CHECK_PREFIX)
         ]
+        # CI path-ignores docs-tier paths; such diffs legitimately have zero
+        # check runs and are exempt from the required-checks list below.
+        all_ignored = bool(paths) and all(
+            match_any(p, config["ci_ignored_paths"]) for p in paths
+        )
         pending = [r["name"] for r in runs if r.get("status") != "completed"]
         red = [
             r["name"]
@@ -194,11 +246,6 @@ def evaluate_pr(config, verdict, pr, files, checks, skip_ci):
             and r.get("conclusion") not in GREEN_CONCLUSIONS
         ]
         if not runs:
-            # CI path-ignores docs-tier paths, so a docs-only diff legitimately
-            # has zero check runs. Anything else with zero checks escalates.
-            all_ignored = bool(paths) and all(
-                match_any(p, config["ci_ignored_paths"]) for p in paths
-            )
             gate(
                 "ci_green",
                 all_ignored,
@@ -207,10 +254,29 @@ def evaluate_pr(config, verdict, pr, files, checks, skip_ci):
                 else "no check runs and paths are not CI-ignored",
             )
         else:
+            # For code paths, the configured required checks must each be
+            # present and conclude "success" specifically — `skipped`/`neutral`
+            # is acceptable only for non-required checks. Catches e.g. the
+            # paid-runner fork guard skipping the app build on fork PRs.
+            unsatisfied = []
+            if not all_ignored:
+                for req in config.get("required_checks", []):
+                    matching = [
+                        r for r in runs
+                        if r.get("name") == req or r.get("name", "").startswith(req + " (")
+                    ]
+                    ok = matching and all(
+                        r.get("status") == "completed" and r.get("conclusion") == "success"
+                        for r in matching
+                    )
+                    if not ok:
+                        unsatisfied.append(req)
             gate(
                 "ci_green",
-                not pending and not red,
-                f"pending={pending} failed={red}" if (pending or red) else f"{len(runs)} checks green",
+                not pending and not red and not unsatisfied,
+                f"pending={pending} failed={red} required_not_success={unsatisfied}"
+                if (pending or red or unsatisfied)
+                else f"{len(runs)} checks green; required checks satisfied",
             )
 
     all_pass = all(g["pass"] for g in gates.values())
@@ -243,6 +309,8 @@ def main(argv=None):
     ap.add_argument("--pr-json")
     ap.add_argument("--files-json")
     ap.add_argument("--checks-json")
+    ap.add_argument("--judged-sha", help="head SHA the judge's verdict describes (PRs)")
+    ap.add_argument("--tree-json", help="head tree JSON (git/trees API, recursive) for file-mode checks (PRs)")
     ap.add_argument("--skip-ci", action="store_true")
     ap.add_argument("--output")
     # Utility modes — single source of truth for config parsing and the
@@ -305,7 +373,14 @@ def main(argv=None):
         if args.checks_json:
             with open(args.checks_json, encoding="utf-8") as f:
                 checks = json.load(f)
-        route, gates = evaluate_pr(config, verdict, pr, files, checks, args.skip_ci)
+        tree = None
+        if args.tree_json:
+            with open(args.tree_json, encoding="utf-8") as f:
+                tree = json.load(f)
+        route, gates = evaluate_pr(
+            config, verdict, pr, files, checks, args.skip_ci,
+            judged_sha=args.judged_sha, tree=tree,
+        )
     else:
         route, gates = evaluate_issue(verdict)
 

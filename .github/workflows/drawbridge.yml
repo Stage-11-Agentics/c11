@@ -127,6 +127,15 @@ jobs:
           scripts/drawbridge/fetch-item.sh "$GITHUB_REPOSITORY" \
             "$ITEM_TYPE" "$ITEM_NUMBER" /tmp/drawbridge
 
+      # The LLM below holds a Write tool and the workspace is the trusted
+      # checkout — stage trusted copies of anything executed AFTER the LLM
+      # step, so a prompt-injected rewrite of a repo script cannot run.
+      - name: Stage trusted script copies
+        if: steps.resolve.outputs.open == 'true'
+        run: |
+          mkdir -p /tmp/db-trusted
+          cp scripts/drawbridge/gates.py /tmp/db-trusted/
+
       - name: Judge (read-only LLM triage)
         if: steps.resolve.outputs.open == 'true'
         continue-on-error: true
@@ -151,7 +160,7 @@ jobs:
               and (.risk_flags | type == "array")
             ' /tmp/drawbridge/verdict.json >/dev/null 2>&1; then
             echo "judge verdict missing or malformed — synthesizing escalation"
-            python3 scripts/drawbridge/gates.py \
+            python3 /tmp/db-trusted/gates.py \
               --emit-escalation "judge failed to produce a valid verdict" \
               > /tmp/drawbridge/verdict.json
           fi
@@ -170,14 +179,17 @@ jobs:
     timeout-minutes: 75
     needs: drawbridge-judge
     if: needs.drawbridge-judge.outputs.open == 'true'
+    # No contents: write here — the gate can label and comment but cannot
+    # merge. The merge lives in drawbridge-merge, which only exists in live
+    # mode (blast-radius containment).
     permissions:
-      contents: write       # merge (live mode only; dry-run never writes contents)
-      issues: write         # labels + comments
-      pull-requests: write  # merge + comments
+      issues: write         # labels + comments on issues
+      pull-requests: write  # labels + comments on PRs
     outputs:
       route: ${{ steps.gates.outputs.route }}
       mode: ${{ steps.gates.outputs.mode }}
       internal: ${{ steps.gates.outputs.internal }}
+      head_sha: ${{ steps.gates.outputs.head_sha }}
       item_type: ${{ needs.drawbridge-judge.outputs.item_type }}
       item_number: ${{ needs.drawbridge-judge.outputs.item_number }}
     steps:
@@ -206,6 +218,16 @@ jobs:
             gh api "repos/$GITHUB_REPOSITORY/pulls/$ITEM_NUMBER" > /tmp/gate/pr.json
             gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$ITEM_NUMBER/files" | jq -s 'add' > /tmp/gate/files.json
 
+            # The SHA the judge's verdict describes — the gates require it to
+            # still be the current head (no judge-then-push swaps).
+            judged_sha="$(jq -r '.head_sha // empty' /tmp/drawbridge/meta.json)"
+
+            # Head tree for file-mode checks (no symlinks/gitlinks on the
+            # autonomous lane). Missing/truncated tree fails that gate safe.
+            current_sha="$(jq -r '.head.sha' /tmp/gate/pr.json)"
+            gh api "repos/$GITHUB_REPOSITORY/git/trees/$current_sha?recursive=1" \
+              > /tmp/gate/tree.json || echo '{"truncated": true}' > /tmp/gate/tree.json
+
             # Pre-pass without CI: only wait on checks if everything else passes.
             python3 scripts/drawbridge/gates.py \
               --policy TRIAGE_POLICY.md \
@@ -213,6 +235,8 @@ jobs:
               --item-type pr \
               --pr-json /tmp/gate/pr.json \
               --files-json /tmp/gate/files.json \
+              --judged-sha "$judged_sha" \
+              --tree-json /tmp/gate/tree.json \
               --skip-ci \
               --output /tmp/gate/pre.json
             eligible="$(jq '[.gates | to_entries[] | select(.key != "ci_green") | .value.pass] | all' /tmp/gate/pre.json)"
@@ -252,8 +276,11 @@ jobs:
               --pr-json /tmp/gate/pr.json \
               --files-json /tmp/gate/files.json \
               --checks-json /tmp/gate/checks.json \
+              --judged-sha "$judged_sha" \
+              --tree-json /tmp/gate/tree.json \
               --output /tmp/gate/gates.json
             association="$(jq -r '.author_association' /tmp/gate/pr.json)"
+            echo "head_sha=$current_sha" >> "$GITHUB_OUTPUT"
           else
             python3 scripts/drawbridge/gates.py \
               --policy TRIAGE_POLICY.md \
@@ -304,7 +331,7 @@ jobs:
               echo
               echo "Every deterministic gate passed. Drawbridge is in dry-run, so no action was taken — the maintainer has been notified."
             else
-              echo "## 🌉 Drawbridge: auto-merged"
+              echo "## 🌉 Drawbridge: auto-merge approved — merging"
               echo
               echo "Every deterministic gate passed. Thank you for the contribution! 🙏"
             fi
@@ -319,20 +346,39 @@ jobs:
           } > /tmp/gate/comment.md
 
           scripts/drawbridge/upsert-comment.sh "$GITHUB_REPOSITORY" "$ITEM_NUMBER" "<!-- drawbridge:gate -->" /tmp/gate/comment.md
-
-          if [[ "$MODE" == "live" ]]; then
-            # Pin the merge to the exact SHA the gates evaluated: if the author
-            # pushes between gate-pass and merge, this fails cleanly and the
-            # synchronize event re-judges the new head.
-            gh pr merge "$ITEM_NUMBER" --squash \
-              --match-head-commit "$(jq -r '.head.sha' /tmp/gate/pr.json)"
-          fi
+          # The merge itself happens in drawbridge-merge (live mode only) —
+          # this job deliberately has no contents: write.
 
       - name: Upload gate result (audit trail)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: drawbridge-gates-${{ needs.drawbridge-judge.outputs.item_type }}-${{ needs.drawbridge-judge.outputs.item_number }}
           path: /tmp/gate/gates.json
+
+  drawbridge-merge:
+    name: drawbridge-merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [drawbridge-judge, drawbridge-gate]
+    # The ONLY job with contents: write, and it only exists in live mode.
+    if: >-
+      needs.drawbridge-gate.outputs.route == 'autonomous' &&
+      needs.drawbridge-gate.outputs.mode == 'live'
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Merge (pinned to the gate-evaluated head SHA)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ITEM_NUMBER: ${{ needs.drawbridge-gate.outputs.item_number }}
+          HEAD_SHA: ${{ needs.drawbridge-gate.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          # If the author pushed between gate-pass and merge, this fails
+          # cleanly and the synchronize event re-judges the new head.
+          gh pr merge "$ITEM_NUMBER" --repo "$GITHUB_REPOSITORY" --squash \
+            --match-head-commit "$HEAD_SHA"
 
   drawbridge-review:
     name: drawbridge-review
@@ -347,8 +393,7 @@ jobs:
       needs.drawbridge-gate.outputs.internal != 'true'
     permissions:
       contents: read
-      issues: write
-      pull-requests: write
+      pull-requests: write  # this job only ever comments on PRs
     outputs:
       comment_url: ${{ steps.post.outputs.comment_url }}
     steps:
@@ -362,6 +407,13 @@ jobs:
         with:
           name: drawbridge-verdict-${{ needs.drawbridge-gate.outputs.item_type }}-${{ needs.drawbridge-gate.outputs.item_number }}
           path: /tmp/drawbridge
+
+      # Same trusted-copy discipline as the judge job: nothing from the
+      # workspace executes after the LLM step.
+      - name: Stage trusted script copies
+        run: |
+          mkdir -p /tmp/db-trusted
+          cp scripts/drawbridge/upsert-comment.sh /tmp/db-trusted/
 
       - name: Deep review (read-only LLM pass)
         continue-on-error: true
@@ -393,7 +445,7 @@ jobs:
             echo "_🌉 Drawbridge deep review (lane 3) — an automated pass; a maintainer has been notified and makes the final call._"
             echo "<!-- drawbridge:review -->"
           } > /tmp/drawbridge/review-comment.md
-          url="$(scripts/drawbridge/upsert-comment.sh "$GITHUB_REPOSITORY" "$ITEM_NUMBER" "<!-- drawbridge:review -->" /tmp/drawbridge/review-comment.md)"
+          url="$(/tmp/db-trusted/upsert-comment.sh "$GITHUB_REPOSITORY" "$ITEM_NUMBER" "<!-- drawbridge:review -->" /tmp/drawbridge/review-comment.md)"
           echo "comment_url=$url" >> "$GITHUB_OUTPUT"
 
   drawbridge-notify:

@@ -31,10 +31,15 @@ GOOD_VERDICT = {
     "reasoning": "Docs-only typo fix.",
 }
 
+HEAD_SHA = "feedfacecafebeef"
+
+# All checks the policy's required_checks list names, green.
 GREEN_CHECKS = {
     "check_runs": [
-        {"name": "build", "status": "completed", "conclusion": "success"},
+        {"name": "workflow-guard-tests", "status": "completed", "conclusion": "success"},
+        {"name": "remote-daemon-tests", "status": "completed", "conclusion": "success"},
         {"name": "web-typecheck", "status": "completed", "conclusion": "success"},
+        {"name": "build", "status": "completed", "conclusion": "success"},
     ]
 }
 
@@ -46,6 +51,7 @@ def pr_fixture(**overrides):
         "deletions": 2,
         "changed_files": 1,
         "draft": False,
+        "head": {"sha": HEAD_SHA},
     }
     pr.update(overrides)
     return pr
@@ -55,7 +61,16 @@ def files_fixture(*names):
     return [{"filename": n} for n in names]
 
 
-def run_gates(item_type, verdict, pr=None, files=None, checks=None, skip_ci=False):
+def tree_fixture(files, mode="100644"):
+    """Head tree mirroring a files fixture; all regular blobs by default."""
+    return {
+        "truncated": False,
+        "tree": [{"path": f["filename"], "mode": mode, "type": "blob"} for f in files],
+    }
+
+
+def run_gates(item_type, verdict, pr=None, files=None, checks=None, skip_ci=False,
+              judged_sha=HEAD_SHA, tree="auto"):
     with tempfile.TemporaryDirectory() as td:
         def dump(name, obj):
             p = os.path.join(td, name)
@@ -77,6 +92,14 @@ def run_gates(item_type, verdict, pr=None, files=None, checks=None, skip_ci=Fals
             argv += ["--checks-json", dump("checks.json", checks)]
         if skip_ci:
             argv += ["--skip-ci"]
+        if judged_sha is not None:
+            argv += ["--judged-sha", judged_sha]
+        if tree == "auto" and files is not None:
+            tree = tree_fixture(files)
+        if tree is not None and tree != "auto":
+            argv += ["--tree-json", dump("tree.json", tree)]
+        elif tree == "auto":
+            tree = None
         rc = gates.main(argv)
         assert rc == 0
         with open(os.path.join(td, "gates.json"), encoding="utf-8") as f:
@@ -186,10 +209,8 @@ class TestRouting(unittest.TestCase):
 
     def test_drawbridge_own_checks_excluded_from_ci_gate(self):
         checks = {
-            "check_runs": [
-                {"name": "build", "status": "completed", "conclusion": "success"},
-                {"name": "drawbridge-judge", "status": "in_progress", "conclusion": None},
-            ]
+            "check_runs": GREEN_CHECKS["check_runs"]
+            + [{"name": "drawbridge-judge", "status": "in_progress", "conclusion": None}]
         }
         verdict = dict(GOOD_VERDICT, category="bugfix")
         result = run_gates(
@@ -338,6 +359,148 @@ class TestRouting(unittest.TestCase):
         closer = dict(GOOD_VERDICT, verdict="close_suggest")
         result = run_gates("issue", closer)
         self.assertEqual(result["route"], "close_suggest")
+
+
+class TestCodexFindings(unittest.TestCase):
+    """Gates added from the codex cross-review of PR #221."""
+
+    def test_judged_sha_mismatch_escalates(self):
+        """An autonomous verdict for an older head must not apply to a newer push."""
+        result = run_gates(
+            "pr", GOOD_VERDICT,
+            pr=pr_fixture(),
+            files=files_fixture("docs/guide.md"),
+            checks={"check_runs": []},
+            judged_sha="0ldhead0000",
+        )
+        self.assertFalse(result["gates"]["judged_head_current"]["pass"])
+        self.assertEqual(result["route"], "review")
+
+    def test_missing_judged_sha_escalates(self):
+        result = run_gates(
+            "pr", GOOD_VERDICT,
+            pr=pr_fixture(),
+            files=files_fixture("docs/guide.md"),
+            checks={"check_runs": []},
+            judged_sha=None,
+        )
+        self.assertFalse(result["gates"]["judged_head_current"]["pass"])
+
+    def test_required_check_skipped_is_not_green(self):
+        """Fork-guard-skipped app build must fail the CI gate for code paths."""
+        checks = {
+            "check_runs": [
+                {"name": "workflow-guard-tests", "status": "completed", "conclusion": "success"},
+                {"name": "remote-daemon-tests", "status": "completed", "conclusion": "success"},
+                {"name": "web-typecheck", "status": "completed", "conclusion": "success"},
+                {"name": "build", "status": "completed", "conclusion": "skipped"},
+            ]
+        }
+        verdict = dict(GOOD_VERDICT, category="bugfix")
+        result = run_gates(
+            "pr", verdict,
+            pr=pr_fixture(author_association="CONTRIBUTOR"),
+            files=files_fixture("Sources/GhosttyTerminalView.swift"),
+            checks=checks,
+        )
+        self.assertFalse(result["gates"]["ci_green"]["pass"])
+        self.assertIn("build", result["gates"]["ci_green"]["detail"])
+
+    def test_required_check_missing_is_not_green(self):
+        checks = {
+            "check_runs": [
+                {"name": "web-typecheck", "status": "completed", "conclusion": "success"},
+            ]
+        }
+        verdict = dict(GOOD_VERDICT, category="bugfix")
+        result = run_gates(
+            "pr", verdict,
+            pr=pr_fixture(),
+            files=files_fixture("Sources/ContentView.swift"),
+            checks=checks,
+        )
+        self.assertFalse(result["gates"]["ci_green"]["pass"])
+
+    def test_required_checks_waived_for_ci_ignored_docs(self):
+        """A docs PR where some unrelated check ran must not demand the build."""
+        checks = {
+            "check_runs": [
+                {"name": "some-other-workflow", "status": "completed", "conclusion": "success"},
+            ]
+        }
+        result = run_gates(
+            "pr", GOOD_VERDICT,
+            pr=pr_fixture(),
+            files=files_fixture("docs/guide.md"),
+            checks=checks,
+        )
+        self.assertTrue(result["gates"]["ci_green"]["pass"])
+        self.assertEqual(result["route"], "autonomous")
+
+    def test_matrix_required_check_matches_by_prefix(self):
+        checks = dict(GREEN_CHECKS)
+        checks = {"check_runs": list(GREEN_CHECKS["check_runs"])}
+        # replace plain "build" with a matrix-suffixed name
+        checks["check_runs"] = [
+            r for r in checks["check_runs"] if r["name"] != "build"
+        ] + [{"name": "build (macos-15-xlarge)", "status": "completed", "conclusion": "success"}]
+        verdict = dict(GOOD_VERDICT, category="bugfix")
+        result = run_gates(
+            "pr", verdict,
+            pr=pr_fixture(),
+            files=files_fixture("Sources/ContentView.swift"),
+            checks=checks,
+        )
+        self.assertTrue(result["gates"]["ci_green"]["pass"])
+
+    def test_deny_matching_is_case_insensitive(self):
+        """docs/claude.md resolves to CLAUDE.md on case-insensitive filesystems."""
+        for path in ("docs/claude.md", "CLAUDE.MD", "AGENTS.MD", "Scripts/notarize.sh"):
+            result = run_gates(
+                "pr", GOOD_VERDICT,
+                pr=pr_fixture(),
+                files=files_fixture(path),
+                checks={"check_runs": []},
+            )
+            self.assertFalse(result["gates"]["no_denied_paths"]["pass"], path)
+            self.assertEqual(result["route"], "review", path)
+
+    def test_symlink_and_gitlink_escalate(self):
+        files = files_fixture("docs/guide.md")
+        for mode in ("120000", "160000"):
+            result = run_gates(
+                "pr", GOOD_VERDICT,
+                pr=pr_fixture(),
+                files=files,
+                checks={"check_runs": []},
+                tree=tree_fixture(files, mode=mode),
+            )
+            self.assertFalse(result["gates"]["regular_files_only"]["pass"], mode)
+            self.assertEqual(result["route"], "review", mode)
+
+    def test_missing_or_truncated_tree_fails_safe(self):
+        files = files_fixture("docs/guide.md")
+        for tree in (None, {"truncated": True, "tree": []}):
+            result = run_gates(
+                "pr", GOOD_VERDICT,
+                pr=pr_fixture(),
+                files=files,
+                checks={"check_runs": []},
+                tree=tree,
+            )
+            self.assertFalse(result["gates"]["regular_files_only"]["pass"])
+
+    def test_deleted_path_absent_from_tree_is_fine(self):
+        files = files_fixture("docs/old-page.md")  # removed file: not in head tree
+        result = run_gates(
+            "pr", GOOD_VERDICT,
+            pr=pr_fixture(),
+            files=files,
+            checks={"check_runs": []},
+            tree={"truncated": False, "tree": []},
+        )
+        self.assertTrue(result["gates"]["regular_files_only"]["pass"])
+        self.assertEqual(result["route"], "autonomous")
 
 
 class TestAgentInstructionMarkdown(unittest.TestCase):

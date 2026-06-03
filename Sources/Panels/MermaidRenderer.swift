@@ -132,17 +132,26 @@ final class MermaidRenderer: FencedCodeRenderer {
         cacheKey(code: code, isDark: isDark)
     }
 
-    /// Render mermaid code to an NSImage. Returns nil if mmdc is unavailable or rendering fails.
-    func render(code: String, isDark: Bool, completion: @escaping (NSImage?) -> Void) {
+    /// Render mermaid code to an NSImage. Returns nil image plus an optional
+    /// operator-facing hint on failure (e.g. missing chrome-headless-shell).
+    func render(code: String, isDark: Bool, completion: @escaping (NSImage?, String?) -> Void) {
         queue.async { [self] in
             guard let mmdc = resolveMmdc() else {
-                DispatchQueue.main.async { completion(nil) }
+                let hint = String(
+                    localized: "markdown.mermaid.installHint",
+                    defaultValue: "Install @mermaid-js/mermaid-cli for diagram rendering"
+                )
+                DispatchQueue.main.async { completion(nil, hint) }
                 return
             }
 
             // Reject oversized input
             guard code.utf8.count <= Self.maxInputBytes else {
-                DispatchQueue.main.async { completion(nil) }
+                let hint = String(
+                    localized: "markdown.mermaid.inputTooLarge",
+                    defaultValue: "Mermaid diagram exceeds \(Self.maxInputBytes / 1024) KB limit."
+                )
+                DispatchQueue.main.async { completion(nil, hint) }
                 return
             }
 
@@ -152,7 +161,7 @@ final class MermaidRenderer: FencedCodeRenderer {
             // Check cache
             if FileManager.default.fileExists(atPath: cachedPng.path),
                let image = NSImage(contentsOf: cachedPng) {
-                DispatchQueue.main.async { completion(image) }
+                DispatchQueue.main.async { completion(image, nil) }
                 return
             }
 
@@ -167,7 +176,7 @@ final class MermaidRenderer: FencedCodeRenderer {
             do {
                 try code.write(to: inputFile, atomically: true, encoding: .utf8)
             } catch {
-                DispatchQueue.main.async { completion(nil) }
+                DispatchQueue.main.async { completion(nil, nil) }
                 return
             }
             defer {
@@ -184,7 +193,8 @@ final class MermaidRenderer: FencedCodeRenderer {
                 "-s", "2"
             ]
             process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
+            let stderrPipe = Pipe()
+            process.standardError = stderrPipe
 
             // Use extended PATH for mmdc's own child processes (e.g. Puppeteer)
             var env = ProcessInfo.processInfo.environment
@@ -196,7 +206,7 @@ final class MermaidRenderer: FencedCodeRenderer {
             do {
                 try process.run()
             } catch {
-                DispatchQueue.main.async { completion(nil) }
+                DispatchQueue.main.async { completion(nil, nil) }
                 return
             }
 
@@ -219,14 +229,17 @@ final class MermaidRenderer: FencedCodeRenderer {
                     kill(process.processIdentifier, SIGKILL)
                 }
                 inFlightProcesses.removeValue(forKey: key)
-                DispatchQueue.main.async { completion(nil) }
+                let hint = Self.timeoutHint()
+                DispatchQueue.main.async { completion(nil, hint) }
                 return
             }
 
             inFlightProcesses.removeValue(forKey: key)
 
             guard process.terminationStatus == 0 else {
-                DispatchQueue.main.async { completion(nil) }
+                let stderr = Self.readPipe(stderrPipe)
+                let hint = Self.diagnosticHint(forStderr: stderr)
+                DispatchQueue.main.async { completion(nil, hint) }
                 return
             }
 
@@ -238,7 +251,7 @@ final class MermaidRenderer: FencedCodeRenderer {
             } else if FileManager.default.fileExists(atPath: altOutputFile.path) {
                 actualOutput = altOutputFile
             } else {
-                DispatchQueue.main.async { completion(nil) }
+                DispatchQueue.main.async { completion(nil, nil) }
                 return
             }
 
@@ -249,15 +262,64 @@ final class MermaidRenderer: FencedCodeRenderer {
             try? FileManager.default.removeItem(at: altOutputFile)
 
             guard let image = NSImage(contentsOf: cachedPng) else {
-                DispatchQueue.main.async { completion(nil) }
+                DispatchQueue.main.async { completion(nil, nil) }
                 return
             }
 
             // Evict old cache entries if over size limit
             evictCacheIfNeeded()
 
-            DispatchQueue.main.async { completion(image) }
+            DispatchQueue.main.async { completion(image, nil) }
         }
+    }
+
+    // MARK: - Diagnostic hints
+
+    /// Drain a pipe without blocking the rendering queue indefinitely. mmdc's
+    /// stderr is small (<1 KB on the failure paths we care about), so a single
+    /// read after process exit is sufficient.
+    private static func readPipe(_ pipe: Pipe) -> String {
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    /// Map a captured mmdc stderr to an operator-facing hint. Recognizes the
+    /// puppeteer "Could not find Chrome (ver. X.Y.Z.W)" pattern that fires when
+    /// `~/.cache/puppeteer/chrome-headless-shell/<platform>-<ver>/` is missing
+    /// (a routine outcome of npm prune / mmdc upgrade / partial install). Falls
+    /// back to the first stderr line containing "Error" for everything else.
+    private static func diagnosticHint(forStderr stderr: String) -> String? {
+        guard !stderr.isEmpty else { return nil }
+
+        if let regex = try? NSRegularExpression(pattern: #"Could not find Chrome \(ver\. ([0-9.]+)\)"#),
+           let match = regex.firstMatch(in: stderr, range: NSRange(stderr.startIndex..., in: stderr)),
+           let versionRange = Range(match.range(at: 1), in: stderr) {
+            let version = String(stderr[versionRange])
+            let installCmd = "npx -p @puppeteer/browsers browsers install chrome-headless-shell@\(version)"
+            return String(
+                localized: "markdown.mermaid.chromeRuntimeMissing",
+                defaultValue: "Mermaid render failed: missing Chrome runtime. Run: \(installCmd)"
+            )
+        }
+
+        let firstErrorLine = stderr
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first(where: { $0.localizedCaseInsensitiveContains("error") && !$0.isEmpty })
+        if let firstErrorLine {
+            return String(
+                localized: "markdown.mermaid.renderFailed",
+                defaultValue: "Mermaid render failed: \(firstErrorLine)"
+            )
+        }
+        return nil
+    }
+
+    private static func timeoutHint() -> String {
+        String(
+            localized: "markdown.mermaid.renderTimedOut",
+            defaultValue: "Mermaid render timed out after \(Int(renderTimeout))s — diagram may be too complex or mmdc is stuck."
+        )
     }
 
     // MARK: - Cache eviction

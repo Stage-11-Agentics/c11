@@ -501,7 +501,7 @@ final class NotificationDockBadgeTests: XCTestCase {
         store.promptToEnableNotificationsForTesting()
         let drained = expectation(description: "main queue drained")
         DispatchQueue.main.async { drained.fulfill() }
-        wait(for: [drained], timeout: 1.0)
+        wait(for: [drained], timeout: 5.0)
 
         XCTAssertEqual(alertSpy.beginSheetModalCallCount, 1)
         XCTAssertEqual(alertSpy.runModalCallCount, 0)
@@ -528,7 +528,7 @@ final class NotificationDockBadgeTests: XCTestCase {
         store.promptToEnableNotificationsForTesting()
         let drained = expectation(description: "main queue drained")
         DispatchQueue.main.async { drained.fulfill() }
-        wait(for: [drained], timeout: 1.0)
+        wait(for: [drained], timeout: 5.0)
 
         XCTAssertEqual(alertSpy.beginSheetModalCallCount, 0)
         XCTAssertEqual(alertSpy.runModalCallCount, 0)
@@ -689,19 +689,19 @@ final class NotificationMenuSnapshotBuilderTests: XCTestCase {
 
 final class MenuBarBuildHintFormatterTests: XCTestCase {
     func testReleaseBuildShowsNoHint() {
-        XCTAssertNil(MenuBarBuildHintFormatter.menuTitle(appName: "cmux DEV menubar-extra", isDebugBuild: false))
+        XCTAssertNil(MenuBarBuildHintFormatter.menuTitle(appName: "c11 DEV menubar-extra", isDebugBuild: false))
     }
 
     func testDebugBuildWithTagShowsTag() {
         XCTAssertEqual(
-            MenuBarBuildHintFormatter.menuTitle(appName: "cmux DEV menubar-extra", isDebugBuild: true),
+            MenuBarBuildHintFormatter.menuTitle(appName: "c11 DEV menubar-extra", isDebugBuild: true),
             "Build Tag: menubar-extra"
         )
     }
 
     func testDebugBuildWithoutTagShowsUntagged() {
         XCTAssertEqual(
-            MenuBarBuildHintFormatter.menuTitle(appName: "cmux DEV", isDebugBuild: true),
+            MenuBarBuildHintFormatter.menuTitle(appName: "c11 DEV", isDebugBuild: true),
             "Build: DEV (untagged)"
         )
     }

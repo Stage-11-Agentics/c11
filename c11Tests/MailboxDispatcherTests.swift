@@ -10,6 +10,7 @@ final class MailboxDispatcherTests: XCTestCase {
 
     private var tempState: URL!
     private var workspaceId: UUID!
+    private var dispatcher: MailboxDispatcher?
 
     override func setUpWithError() throws {
         try super.setUpWithError()
@@ -17,11 +18,28 @@ final class MailboxDispatcherTests: XCTestCase {
             .appendingPathComponent("c11-mailbox-dispatcher-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tempState, withIntermediateDirectories: true)
         workspaceId = UUID()
+        // Tests drive `dispatchOne` directly and skip `start()` to keep the
+        // watcher and GC timer out of the way; pre-create the three mailbox
+        // dirs that `start()` would have created so the atomic outbox→processing
+        // move and quarantine path can find their targets.
+        for dir in [
+            MailboxLayout.outboxURL(state: tempState, workspaceId: workspaceId),
+            MailboxLayout.processingURL(state: tempState, workspaceId: workspaceId),
+            MailboxLayout.rejectedURL(state: tempState, workspaceId: workspaceId),
+        ] {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
     }
 
     override func tearDownWithError() throws {
+        // Drain the dispatch log queue so any async `_dispatch.log` writes
+        // settle before we remove the tree; the CI runner has raced
+        // `removeItem(tempState)` against an in-flight createDirectory and
+        // produced NSCocoaError 513 EPERM.
+        dispatcher?.log.flush()
+        dispatcher = nil
         if let tempState, FileManager.default.fileExists(atPath: tempState.path) {
-            try FileManager.default.removeItem(at: tempState)
+            try? FileManager.default.removeItem(at: tempState)
         }
         tempState = nil
         try super.tearDownWithError()
@@ -50,11 +68,13 @@ final class MailboxDispatcherTests: XCTestCase {
             workspaceId: workspaceId,
             liveSurfaces: { surfaces }
         )
-        return MailboxDispatcher(
+        let dispatcher = MailboxDispatcher(
             workspaceId: workspaceId,
             stateURL: tempState,
             resolver: resolver
         )
+        self.dispatcher = dispatcher
+        return dispatcher
     }
 
     private func writeEnvelope(_ envelope: MailboxEnvelope) throws {

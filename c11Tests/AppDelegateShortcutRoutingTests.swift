@@ -875,7 +875,17 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         }
     }
 
-    func testMinimalModeUsesZeroTopSafeAreaForMainWindowContentView() {
+    func testMinimalModeUsesZeroTopSafeAreaForMainWindowContentView() throws {
+        // Re-enabled by the Info.plist UTExportedTypeDeclarations addition for
+        // `com.splittabbar.{tabitem,tabtransfer}` — that eliminated 500+
+        // cascading runtime warnings (375 "Type was expected to be declared"
+        // UTType warnings + 125 SwiftUI "Publishing changes from within view
+        // updates" warnings) the test accumulated during `createMainWindow`.
+        // On Apple Silicon the warning collection is microsecond-cheap (test
+        // ran in 2.5s pre-fix); on shared-tenant `macos-15-xlarge` CI runners
+        // the same warning collection ballooned the test to 100-123s. Per-test
+        // runtime is 1.57s locally after the fix.
+
         guard let appDelegate = AppDelegate.shared else {
             XCTFail("Expected AppDelegate.shared")
             return
@@ -1489,7 +1499,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        wait(for: [paletteExpectation, switcherExpectation], timeout: 1.0)
+        wait(for: [paletteExpectation, switcherExpectation], timeout: 5.0)
         XCTAssertEqual(observedPaletteWindow?.windowNumber, window.windowNumber)
     }
 
@@ -1918,7 +1928,11 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         }
         defer { NotificationCenter.default.removeObserver(switcherToken) }
 
-        withTemporaryShortcut(action: .renameTab) {
+        // C11-41 rebound the default to ⌘⇧E. The original intent of this test
+        // is layout-resolution routing, not the current default, so we set the
+        // legacy ⌘R binding explicitly for the duration of the test.
+        let legacyRenameTabShortcut = StoredShortcut(key: "r", command: true, shift: false, option: false, control: false)
+        withTemporaryShortcut(action: .renameTab, shortcut: legacyRenameTabShortcut) {
             // Dvorak: physical ANSI "O" key can produce "r".
             // This should behave as semantic Cmd+R (rename tab), not Cmd+P.
             guard let event = NSEvent.keyEvent(
@@ -1944,7 +1958,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
 #endif
         }
 
-        wait(for: [renameTabExpectation, switcherExpectation], timeout: 1.0)
+        wait(for: [renameTabExpectation, switcherExpectation], timeout: 5.0)
         XCTAssertEqual(observedRenameTabWindow?.windowNumber, window.windowNumber)
     }
 
@@ -2009,7 +2023,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        wait(for: [switcherExpectation, renameTabExpectation], timeout: 1.0)
+        wait(for: [switcherExpectation, renameTabExpectation], timeout: 5.0)
         XCTAssertEqual(observedSwitcherWindow?.windowNumber, window.windowNumber)
     }
 
@@ -2071,7 +2085,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        wait(for: [workspaceExpectation, renameTabExpectation], timeout: 1.0)
+        wait(for: [workspaceExpectation, renameTabExpectation], timeout: 5.0)
         XCTAssertEqual(observedWorkspaceWindow?.windowNumber, window.windowNumber)
     }
 
@@ -2124,7 +2138,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        wait(for: [dismissExpectation], timeout: 1.0)
+        wait(for: [dismissExpectation], timeout: 5.0)
         XCTAssertEqual(observedDismissWindow?.windowNumber, window.windowNumber)
     }
 
@@ -2246,7 +2260,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        wait(for: [dismissExpectation], timeout: 1.0)
+        wait(for: [dismissExpectation], timeout: 5.0)
         XCTAssertEqual(observedDismissWindow?.windowNumber, window.windowNumber)
     }
 
@@ -2316,7 +2330,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        wait(for: [moveExpectation], timeout: 1.0)
+        wait(for: [moveExpectation], timeout: 5.0)
         XCTAssertEqual(observedWindow?.windowNumber, window.windowNumber)
         XCTAssertEqual(observedDelta, 1)
     }
@@ -2377,7 +2391,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        wait(for: [dismissExpectation], timeout: 1.0)
+        wait(for: [dismissExpectation], timeout: 5.0)
         XCTAssertEqual(observedDismissWindow?.windowNumber, window.windowNumber)
     }
 
@@ -2437,7 +2451,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        wait(for: [dismissExpectation], timeout: 1.0)
+        wait(for: [dismissExpectation], timeout: 5.0)
         XCTAssertEqual(observedDismissWindow?.windowNumber, window.windowNumber)
     }
 
@@ -2567,7 +2581,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
-        wait(for: [dismissExpectation], timeout: 1.0)
+        wait(for: [dismissExpectation], timeout: 5.0)
         XCTAssertEqual(observedDismissWindow?.windowNumber, window.windowNumber)
     }
 

@@ -11,6 +11,7 @@ import Bonsplit
 /// translates `ChromeScaleTokens` into `BonsplitConfiguration.Appearance`
 /// values. Decoupled from `GhosttyApp.shared` per the v3 plan
 /// (Workspace-Apply-ChromeScale section). (C11-6)
+@MainActor
 final class WorkspaceApplyChromeScaleTests: XCTestCase {
 
     func testStandardTokensProduceDefaultAppearanceFields() {

@@ -324,7 +324,6 @@ final class WorkspaceRestartCommandsTests: XCTestCase {
             stableDefaultTitle: nil,
             customColor: nil,
             isPinned: false,
-            isSilent: nil,
             currentDirectory: "/tmp",
             focusedPanelId: nil,
             layout: .pane(SessionPaneLayoutSnapshot(

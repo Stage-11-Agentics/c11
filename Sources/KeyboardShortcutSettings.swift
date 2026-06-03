@@ -9,7 +9,6 @@ enum KeyboardShortcutSettings {
     enum Action: String, CaseIterable, Identifiable {
         // Titlebar / primary UI
         case toggleSidebar
-        case toggleTabBarChrome
         case newTab
         case newWindow
         case closeWindow
@@ -54,7 +53,6 @@ enum KeyboardShortcutSettings {
         var label: String {
             switch self {
             case .toggleSidebar: return String(localized: "shortcut.toggleSidebar.label", defaultValue: "Toggle Sidebar")
-            case .toggleTabBarChrome: return String(localized: "shortcut.toggleTabBarChrome.label", defaultValue: "Cycle Tab Bar Chrome")
             case .newTab: return String(localized: "shortcut.newWorkspace.label", defaultValue: "New Workspace")
             case .newWindow: return String(localized: "shortcut.newWindow.label", defaultValue: "New Window")
             case .closeWindow: return String(localized: "shortcut.closeWindow.label", defaultValue: "Close Window")
@@ -91,7 +89,6 @@ enum KeyboardShortcutSettings {
         var defaultsKey: String {
             switch self {
             case .toggleSidebar: return "shortcut.toggleSidebar"
-            case .toggleTabBarChrome: return "shortcut.toggleTabBarChrome"
             case .newTab: return "shortcut.newTab"
             case .newWindow: return "shortcut.newWindow"
             case .closeWindow: return "shortcut.closeWindow"
@@ -129,8 +126,6 @@ enum KeyboardShortcutSettings {
             switch self {
             case .toggleSidebar:
                 return StoredShortcut(key: "b", command: true, shift: false, option: false, control: false)
-            case .toggleTabBarChrome:
-                return StoredShortcut(key: "b", command: true, shift: true, option: false, control: false)
             case .newTab:
                 return StoredShortcut(key: "n", command: true, shift: false, option: false, control: false)
             case .newWindow:
@@ -152,7 +147,8 @@ enum KeyboardShortcutSettings {
             case .prevSidebarTab:
                 return StoredShortcut(key: "[", command: true, shift: false, option: false, control: true)
             case .renameTab:
-                return StoredShortcut(key: "r", command: true, shift: false, option: false, control: false)
+                // C11-41: rebound from ⌘R to ⌘⇧E to free ⌘R for Browser → Reload Page.
+                return StoredShortcut(key: "e", command: true, shift: true, option: false, control: false)
             case .renameWorkspace:
                 return StoredShortcut(key: "r", command: true, shift: true, option: false, control: false)
             case .closeWorkspace:

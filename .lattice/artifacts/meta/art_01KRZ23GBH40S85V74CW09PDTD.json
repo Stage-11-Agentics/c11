@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-19T02:47:40Z",
+  "created_by": "agent:trident-pane-C11-104",
+  "custom_fields": {},
+  "id": "art_01KRZ23GBH40S85V74CW09PDTD",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KRZ23GBH40S85V74CW09PDTD.md",
+    "size_bytes": 46457
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "9-agent trident plan review for C11-104 (2 of 3 models successful; Gemini rate-limited). Verdict: revise-then-proceed (plan-level FAIL). 6 blockers, 7 importants, 6 mediums, 1 evolutionary clear win, 10 surface-to-user items, 3 evolutionary worth-considering items. Full review pack at .lattice/orchestration/c11-104/c11-104-plan-review-pack-2026-05-18T2228/",
+  "tags": [],
+  "title": "Trident plan-review synthesis-action (C11-104) \u2014 verdict: revise-then-proceed",
+  "token_usage": null,
+  "type": "note"
+}

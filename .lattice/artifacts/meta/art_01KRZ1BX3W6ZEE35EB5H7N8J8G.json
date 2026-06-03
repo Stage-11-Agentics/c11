@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-19T02:34:46Z",
+  "created_by": "agent:claude-c11-105-d1-reviewer",
+  "custom_fields": {},
+  "id": "art_01KRZ1BX3W6ZEE35EB5H7N8J8G",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KRZ1BX3W6ZEE35EB5H7N8J8G.md",
+    "size_bytes": 5320
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Inline: review",
+  "token_usage": null,
+  "type": "note"
+}

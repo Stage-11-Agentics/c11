@@ -12,7 +12,7 @@ updates:
       - "github-actions"
     open-pull-requests-limit: 5
 
-  - package-ecosystem: "npm"
+  - package-ecosystem: "bun"
     directory: "/web"
     schedule:
       interval: "weekly"

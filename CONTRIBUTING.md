@@ -86,7 +86,7 @@ We don't merge UI changes without a video. Prose can't catch typing-latency regr
 c11 ships in English plus six translations (ja, uk, ko, zh-Hans, zh-Hant, ru). All strings live in `Resources/Localizable.xcstrings`.
 
 - **Write English only.** Use `String(localized: "key.name", defaultValue: "English text")` at every user-facing call site. Don't hand-author the non-English values in product code.
-- **Translations come after.** A follow-up pass syncs `Localizable.xcstrings` across the six locales. If your PR adds new English strings, flag it in the description so we know to schedule the translation sync.
+- **Translations come after.** If your PR adds new English strings, have your agent run the translation pass — delegate it to a sub-agent in a fresh c11 surface to sync `Localizable.xcstrings` across the six locales before merge.
 
 ### Code quality guardrails
 

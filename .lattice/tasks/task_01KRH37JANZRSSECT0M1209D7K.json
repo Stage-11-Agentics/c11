@@ -1,0 +1,37 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": null,
+  "created_at": "2026-05-13T16:37:59Z",
+  "created_by": "agent:claude-opus-4",
+  "custom_fields": {},
+  "description": "Umbrella ticket. Run autonomous Claude Code agents on remote servers (Atlas, Hetzner), controlled from local c11. Server-side: bash scripts shipped in c11's Resources/bin/. Local-side: new `c11 remote` subcommand namespace. Mapping: tmux session <-> c11 workspace, tmux window <-> c11 surface, one agent per window. Architecture doc attached. Built in 3 slices below; explicit non-goals in the doc.",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "art_01KRH37JXQ9Z34BZV1YFM4SDRT",
+      "role": null,
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KRH37JANZRSSECT0M1209D7K",
+  "last_event_id": "ev_01KRH37JXSZB259DJEVQ1WMH30",
+  "last_status_changed_at": "2026-05-13T16:37:59Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-36",
+  "status": "backlog",
+  "tags": [
+    "infrastructure",
+    "remote-agents",
+    "umbrella"
+  ],
+  "title": "Autonomous Connections \u2014 remote agents over c11",
+  "type": "task",
+  "updated_at": "2026-05-13T16:38:00Z",
+  "urgency": null
+}

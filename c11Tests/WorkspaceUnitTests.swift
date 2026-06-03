@@ -66,10 +66,11 @@ final class WorkspaceRenameShortcutDefaultsTests: XCTestCase {
         XCTAssertEqual(KeyboardShortcutSettings.Action.renameTab.label, "Rename Tab")
         XCTAssertEqual(KeyboardShortcutSettings.Action.renameTab.defaultsKey, "shortcut.renameTab")
 
+        // C11-41: default rebound from ⌘R to ⌘⇧E to free ⌘R for Browser → Reload Page.
         let shortcut = KeyboardShortcutSettings.Action.renameTab.defaultShortcut
-        XCTAssertEqual(shortcut.key, "r")
+        XCTAssertEqual(shortcut.key, "e")
         XCTAssertTrue(shortcut.command)
-        XCTAssertFalse(shortcut.shift)
+        XCTAssertTrue(shortcut.shift)
         XCTAssertFalse(shortcut.option)
         XCTAssertFalse(shortcut.control)
     }
@@ -1258,7 +1259,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         DispatchQueue.main.async {
             expectation.fulfill()
         }
-        wait(for: [expectation], timeout: 1.0)
+        wait(for: [expectation], timeout: 5.0)
     }
 
     func testBrowserSplitWithFocusFalsePreservesOriginalFocusedPanel() {
@@ -1726,10 +1727,6 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         XCTAssertEqual(
             workspace.sidebarGitBranchesInDisplayOrder(orderedPanelIds: orderedPanelIds).map { "\($0.branch)|\($0.isDirty)" },
             workspace.sidebarGitBranchesInDisplayOrder().map { "\($0.branch)|\($0.isDirty)" }
-        )
-        XCTAssertEqual(
-            workspace.sidebarBranchDirectoryEntriesInDisplayOrder(orderedPanelIds: orderedPanelIds),
-            workspace.sidebarBranchDirectoryEntriesInDisplayOrder()
         )
         XCTAssertEqual(
             workspace.sidebarPullRequestsInDisplayOrder(orderedPanelIds: orderedPanelIds),

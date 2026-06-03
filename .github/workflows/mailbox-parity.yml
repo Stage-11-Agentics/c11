@@ -9,16 +9,18 @@ name: Mailbox parity
 # Scope today:
 #   1. Python syntax check on tests_v2/test_mailbox_parity.py so the
 #      end-to-end test never goes stale.
-#   2. xcodebuild test against the `c11-unit` scheme, filtered to the
-#      Mailbox* and StdinHandler* test classes. These tests assert the
-#      byte-level invariants the parity test depends on (e.g. that
+#   2. xcodebuild test against the `c11-logic` scheme, filtered to the
+#      Mailbox* and StdinHandler* test classes (which moved to
+#      c11LogicTests in C11-27). These tests assert the byte-level
+#      invariants the parity test depends on (e.g. that
 #      JSONSerialization does not escape forward slashes).
 #
 # Out of scope (follow-up): launching a real c11 app on a virtual
 # display and running the Python parity test against its socket. The
-# app-launch wiring lives in `test-e2e.yml` (manual dispatch) and
-# requires ffmpeg + TCC grants — too heavy to fire on every push for
-# the byte-level lock this workflow owns.
+# host-driven UI test harness was removed in C11-99 Area D (the
+# `test-e2e.yml` workflow had been bit-rotted against a renamed
+# scheme); the byte-level lock this workflow owns is too narrow to
+# justify rebuilding the ffmpeg + TCC harness on every push.
 
 on:
   push:
@@ -138,26 +140,27 @@ jobs:
             -resolvePackageDependencies
 
       - name: Run mailbox unit tests
-        # CLAUDE.md notes `xcodebuild -scheme c11-unit` is safe (no
+        # CLAUDE.md notes `xcodebuild -scheme c11-logic` is safe (no
         # app launch). The -only-testing filters narrow to the byte-
         # shape and dispatcher-behavior tests so the push path stays
-        # fast (sub-5-min on a warm cache).
+        # fast (sub-5-min on a warm cache). All targeted tests moved
+        # to c11LogicTests in C11-27.
         run: |
           set -euo pipefail
           SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
-          xcodebuild -project GhosttyTabs.xcodeproj -scheme c11-unit -configuration Debug \
+          xcodebuild -project GhosttyTabs.xcodeproj -scheme c11-logic -configuration Debug \
             -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
             -disableAutomaticPackageResolution \
             -destination "platform=macOS" \
-            -only-testing:c11Tests/MailboxEnvelopeValidationTests \
-            -only-testing:c11Tests/MailboxDispatcherTests \
-            -only-testing:c11Tests/MailboxDispatcherGCTests \
-            -only-testing:c11Tests/MailboxOutboxWatcherTests \
-            -only-testing:c11Tests/MailboxDispatchLogTests \
-            -only-testing:c11Tests/MailboxIOTests \
-            -only-testing:c11Tests/MailboxLayoutTests \
-            -only-testing:c11Tests/MailboxSurfaceResolverTests \
-            -only-testing:c11Tests/MailboxULIDTests \
-            -only-testing:c11Tests/StdinHandlerFormattingTests \
+            -only-testing:c11LogicTests/MailboxEnvelopeValidationTests \
+            -only-testing:c11LogicTests/MailboxDispatcherTests \
+            -only-testing:c11LogicTests/MailboxDispatcherGCTests \
+            -only-testing:c11LogicTests/MailboxOutboxWatcherTests \
+            -only-testing:c11LogicTests/MailboxDispatchLogTests \
+            -only-testing:c11LogicTests/MailboxIOTests \
+            -only-testing:c11LogicTests/MailboxLayoutTests \
+            -only-testing:c11LogicTests/MailboxSurfaceResolverTests \
+            -only-testing:c11LogicTests/MailboxULIDTests \
+            -only-testing:c11LogicTests/StdinHandlerFormattingTests \
             COMPILER_INDEX_STORE_ENABLE=NO \
             test

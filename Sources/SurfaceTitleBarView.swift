@@ -35,6 +35,7 @@ struct SurfaceTitleBarView: View {
     @Environment(\.chromeScaleTokens) private var chromeTokens
     @AppStorage(ThemeAppStorage.Keys.m1bSurfaceTitleBarMigrated, store: ThemeAppStorage.defaults)
     private var m1bSurfaceTitleBarMigrated = false
+    @State private var measuredDescriptionHeight: CGFloat = 0
 
     private var descriptionIsEmpty: Bool {
         state.description?.isEmpty ?? true
@@ -161,14 +162,35 @@ struct SurfaceTitleBarView: View {
     @ViewBuilder
     private func descriptionRow(_ description: String) -> some View {
         let sanitized = sanitizeDescriptionMarkdown(description)
-        ScrollView(.vertical, showsIndicators: true) {
-            Markdown(sanitized)
-                .markdownTheme(titleBarMarkdownTheme(for: colorScheme))
-                .environment(\.openURL, OpenURLAction { _ in .discarded })
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        let markdown = Markdown(sanitized)
+            .markdownTheme(titleBarMarkdownTheme(for: colorScheme))
+            .environment(\.openURL, OpenURLAction { _ in .discarded })
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: TitleBarDescriptionHeightKey.self,
+                        value: proxy.size.height
+                    )
+                }
+            )
+
+        Group {
+            if measuredDescriptionHeight > titleBarDescriptionMaxHeight {
+                ScrollView(.vertical, showsIndicators: true) {
+                    markdown
+                }
+                .frame(height: titleBarDescriptionMaxHeight)
+            } else {
+                markdown
+            }
         }
-        .frame(maxHeight: titleBarDescriptionMaxHeight)
+        .onPreferenceChange(TitleBarDescriptionHeightKey.self) { newValue in
+            if abs(newValue - measuredDescriptionHeight) > 0.5 {
+                measuredDescriptionHeight = newValue
+            }
+        }
         .padding(.leading, 20)
         .padding(.top, 2)
     }
@@ -182,6 +204,15 @@ struct SurfaceTitleBarView: View {
             parts.append(description)
         }
         return parts.joined(separator: " — ")
+    }
+}
+
+// MARK: - Description height measurement
+
+private struct TitleBarDescriptionHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 

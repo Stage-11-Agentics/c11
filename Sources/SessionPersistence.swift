@@ -555,8 +555,9 @@ enum SessionPersistenceStore {
             with: "_",
             options: .regularExpression
         )
+        StateDirectoryMigration.ensureMigrated()
         return resolvedAppSupport
-            .appendingPathComponent("c11mux", isDirectory: true)
+            .appendingPathComponent("c11", isDirectory: true)
             .appendingPathComponent("session-\(safeBundleId).json", isDirectory: false)
     }
 }

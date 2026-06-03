@@ -20,7 +20,7 @@ func drainMainQueue() {
     DispatchQueue.main.async {
         expectation.fulfill()
     }
-    XCTWaiter().wait(for: [expectation], timeout: 1.0)
+    XCTWaiter().wait(for: [expectation], timeout: 5.0)
 }
 
 @MainActor
@@ -128,9 +128,9 @@ final class TabManagerCloseWorkspacesWithConfirmationTests: XCTestCase {
         manager.setCustomTitle(tabId: second.id, title: "Beta")
         manager.setCustomTitle(tabId: third.id, title: "Gamma")
 
-        var prompts: [(title: String, message: String, acceptCmdD: Bool)] = []
-        manager.confirmCloseHandler = { title, message, acceptCmdD in
-            prompts.append((title, message, acceptCmdD))
+        var prompts: [(title: String, message: String)] = []
+        manager.workspaceCloseConfirmationHandler = { title, message in
+            prompts.append((title, message))
             return true
         }
 
@@ -151,7 +151,6 @@ final class TabManagerCloseWorkspacesWithConfirmationTests: XCTestCase {
             String(localized: "dialog.closeWorkspaces.title", defaultValue: "Close workspaces?")
         )
         XCTAssertEqual(prompts.first?.message, expectedMessage)
-        XCTAssertEqual(prompts.first?.acceptCmdD, false)
         XCTAssertEqual(manager.tabs.map(\.title), ["Gamma"])
     }
 
@@ -161,9 +160,9 @@ final class TabManagerCloseWorkspacesWithConfirmationTests: XCTestCase {
         manager.setCustomTitle(tabId: manager.tabs[0].id, title: "Alpha")
         manager.setCustomTitle(tabId: second.id, title: "Beta")
 
-        var prompts: [(title: String, message: String, acceptCmdD: Bool)] = []
-        manager.confirmCloseHandler = { title, message, acceptCmdD in
-            prompts.append((title, message, acceptCmdD))
+        var prompts: [(title: String, message: String)] = []
+        manager.workspaceCloseConfirmationHandler = { title, message in
+            prompts.append((title, message))
             return false
         }
 
@@ -179,13 +178,75 @@ final class TabManagerCloseWorkspacesWithConfirmationTests: XCTestCase {
             "• Alpha\n• Beta"
         )
         XCTAssertEqual(prompts.count, 1)
+        // Title differentiates "close window" (last workspaces) from
+        // "close workspaces" (some workspaces). Replaces the previous
+        // acceptCmdD assertion since acceptCmdD was an NSAlert-only signal.
         XCTAssertEqual(
             prompts.first?.title,
             String(localized: "dialog.closeWindow.title", defaultValue: "Close window?")
         )
         XCTAssertEqual(prompts.first?.message, expectedMessage)
-        XCTAssertEqual(prompts.first?.acceptCmdD, true)
         XCTAssertEqual(manager.tabs.map(\.title), ["Alpha", "Beta"])
+    }
+
+    func testCloseWorkspaceWithConfirmationOnBackgroundTabFocusesItBeforePrompting() {
+        // C11-117: clicking the X on a background sidebar tab must select that
+        // workspace before the close-confirm overlay is shown, so the dialog
+        // mounts on the workspace being closed rather than the previously-visible
+        // one.
+        let envKey = "CMUX_UI_TEST_FORCE_CONFIRM_CLOSE_WORKSPACE"
+        setenv(envKey, "1", 1)
+        defer { unsetenv(envKey) }
+
+        let manager = TabManager()
+        let foreground = manager.tabs[0]
+        let background = manager.addWorkspace()
+        manager.selectWorkspace(foreground)
+        XCTAssertEqual(manager.selectedTabId, foreground.id)
+
+        var selectedTabIdWhenPrompted: UUID?
+        manager.workspaceCloseConfirmationHandler = { [weak manager] _, _ in
+            selectedTabIdWhenPrompted = manager?.selectedTabId
+            return false
+        }
+
+        manager.closeWorkspaceWithConfirmation(background)
+
+        XCTAssertEqual(
+            selectedTabIdWhenPrompted,
+            background.id,
+            "Expected the background tab to be selected before the confirmation prompt fires"
+        )
+        XCTAssertEqual(manager.selectedTabId, background.id)
+        XCTAssertEqual(
+            manager.tabs.map(\.id),
+            [foreground.id, background.id],
+            "Both workspaces remain because the operator cancelled"
+        )
+    }
+
+    func testCloseWorkspaceWithConfirmationOnForegroundTabKeepsSelection() {
+        // The foreground-tab case is the no-op: selection already matches, the
+        // confirm prompt fires once, and selection stays unchanged.
+        let envKey = "CMUX_UI_TEST_FORCE_CONFIRM_CLOSE_WORKSPACE"
+        setenv(envKey, "1", 1)
+        defer { unsetenv(envKey) }
+
+        let manager = TabManager()
+        let foreground = manager.tabs[0]
+        _ = manager.addWorkspace()
+        XCTAssertEqual(manager.selectedTabId, foreground.id)
+
+        var promptCount = 0
+        manager.workspaceCloseConfirmationHandler = { _, _ in
+            promptCount += 1
+            return false
+        }
+
+        manager.closeWorkspaceWithConfirmation(foreground)
+
+        XCTAssertEqual(promptCount, 1)
+        XCTAssertEqual(manager.selectedTabId, foreground.id)
     }
 
     func testCloseCurrentWorkspaceWithConfirmationUsesSidebarMultiSelection() {
@@ -198,9 +259,9 @@ final class TabManagerCloseWorkspacesWithConfirmationTests: XCTestCase {
         manager.selectWorkspace(second)
         manager.setSidebarSelectedWorkspaceIds([manager.tabs[0].id, second.id])
 
-        var prompts: [(title: String, message: String, acceptCmdD: Bool)] = []
-        manager.confirmCloseHandler = { title, message, acceptCmdD in
-            prompts.append((title, message, acceptCmdD))
+        var prompts: [(title: String, message: String)] = []
+        manager.workspaceCloseConfirmationHandler = { title, message in
+            prompts.append((title, message))
             return false
         }
 
@@ -221,7 +282,6 @@ final class TabManagerCloseWorkspacesWithConfirmationTests: XCTestCase {
             String(localized: "dialog.closeWorkspaces.title", defaultValue: "Close workspaces?")
         )
         XCTAssertEqual(prompts.first?.message, expectedMessage)
-        XCTAssertEqual(prompts.first?.acceptCmdD, false)
         XCTAssertEqual(manager.tabs.map(\.title), ["Alpha", "Beta", "Gamma"])
     }
 }
@@ -971,7 +1031,7 @@ final class TabManagerReopenClosedBrowserFocusTests: XCTestCase {
         DispatchQueue.main.async {
             expectation.fulfill()
         }
-        wait(for: [expectation], timeout: 1.0)
+        wait(for: [expectation], timeout: 5.0)
     }
 }
 

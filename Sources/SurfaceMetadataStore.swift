@@ -19,11 +19,17 @@ public enum MetadataKey {
     public static let description = "description"
     public static let lifecycleState = "lifecycle_state"
 
+    /// C11-104 — derived canonical keys. Written by the c11 runtime,
+    /// not by agents. Validated as plain strings with size caps.
+    public static let worktree = "worktree"
+    public static let branch = "branch"
+
     /// Non-canonical display hint used by M3's sidebar chip.
     public static let modelLabel = "model_label"
 
     public static let canonical: Set<String> = [
-        role, status, task, model, progress, terminalType, title, description, lifecycleState
+        role, status, task, model, progress, terminalType, title, description, lifecycleState,
+        worktree, branch
     ]
 
     public static let canonicalTerminalTypes: Set<String> = [
@@ -35,14 +41,22 @@ public enum MetadataSource: String, CaseIterable, Codable, Sendable {
     case explicit
     case declare
     case osc
+    /// C11-104 — system-computed projections of ground-truth state
+    /// (e.g., worktree + branch derived from cwd + gitfs). Ranked
+    /// between `osc` and `heuristic`: an `osc` value wins over a
+    /// `derived` value for the same key; a `derived` value wins over
+    /// a `heuristic` one. Agents should not write `derived` keys
+    /// directly — they are recomputed automatically as state changes.
+    case derived
     case heuristic
 
     public var precedence: Int {
         switch self {
         case .heuristic: return 0
-        case .osc:       return 1
-        case .declare:   return 2
-        case .explicit:  return 3
+        case .derived:   return 1
+        case .osc:       return 2
+        case .declare:   return 3
+        case .explicit:  return 4
         }
     }
 
@@ -156,6 +170,8 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         "title",
         "description",
         "lifecycle_state",
+        "worktree",
+        "branch",
         "claude.session_id",
         "claude.session_project_dir"
     ]
@@ -222,6 +238,17 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                 )
             }
             return nil
+        case "worktree":
+            // C11-104 — derived basename, up to 128 chars (matches the
+            // spec's ≤128 cap). Accepts any string within the cap;
+            // the resolver only writes strings that already passed
+            // `git rev-parse` so additional grammar checks would be
+            // belt-and-suspenders.
+            return validateString(key: key, value: value, maxLen: 128)
+        case "branch":
+            // C11-104 — derived branch name (or "(detached @ <sha>)"
+            // or "(no branch)"). Up to 64 chars per spec.
+            return validateString(key: key, value: value, maxLen: 64)
         case "claude.session_id":
             // Claude SessionStart's `session_id` is a UUIDv4; reject
             // anything else. The value is interpolated verbatim into

@@ -26,7 +26,11 @@ protocol FencedCodeRenderer: AnyObject {
     func renderCacheKey(code: String, isDark: Bool) -> String
 
     /// Render fenced code to an image. Calls completion on the main thread.
-    func render(code: String, isDark: Bool, completion: @escaping (NSImage?) -> Void)
+    /// `errorHint` is non-nil when the render failed and the renderer has
+    /// operator-actionable diagnostic text (e.g. a missing runtime dependency
+    /// with a copy-pasteable install command). Callers should treat it as a
+    /// per-render result, not a persistent renderer state.
+    func render(code: String, isDark: Bool, completion: @escaping (_ image: NSImage?, _ errorHint: String?) -> Void)
 
     /// Cancel in-flight renders whose keys are not in the active set.
     func cancelRendersExcept(activeKeys: Set<String>)

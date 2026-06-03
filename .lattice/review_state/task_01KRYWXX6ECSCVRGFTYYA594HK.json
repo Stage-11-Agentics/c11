@@ -1,0 +1,18 @@
+{
+  "task_id": "task_01KRYWXX6ECSCVRGFTYYA594HK",
+  "mode": "triple",
+  "review_type": "plan-review",
+  "started_at": "2026-05-19T02:25:18.040515+00:00",
+  "started_by_pid": 47888,
+  "started_by_actor": "C11-104-D1-1",
+  "auto_fired": false,
+  "pane_ref": "surface:18",
+  "agents": [
+    {
+      "name": "trident-pane",
+      "status": "running",
+      "started_at": "2026-05-19T02:25:18.040515+00:00",
+      "pane_ref": "surface:18"
+    }
+  ]
+}

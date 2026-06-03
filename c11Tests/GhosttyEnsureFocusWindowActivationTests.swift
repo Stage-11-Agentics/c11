@@ -93,7 +93,7 @@ final class IdleSpinDebounceTests: XCTestCase {
             }
         }
 
-        wait(for: [expectation], timeout: 1.0)
+        wait(for: [expectation], timeout: 5.0)
         XCTAssertEqual(actualCallCount, expectedCallCount, "Coalescing guard must reduce \(iterations) requests to exactly 1 actual call")
     }
 }

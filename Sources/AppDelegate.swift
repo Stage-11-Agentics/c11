@@ -2227,6 +2227,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var lastSessionAutosaveFingerprint: Int?
     private var lastSessionAutosavePersistedAt: Date = .distantPast
     private var lastTypingActivityAt: TimeInterval = 0
+    private var lastBackgroundedAt: Date?
     private var didHandleExplicitOpenIntentAtStartup = false
     private var isTerminatingApp = false
     private var didInstallLifecycleSnapshotObservers = false
@@ -2316,6 +2317,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let defaults = UserDefaults.standard
         guard !defaults.bool(forKey: migratedFlagKey) else { return }
 
+        let bundleId = Bundle.main.bundleIdentifier ?? ""
+        let env = ProcessInfo.processInfo.environment
+        if Self.legacyMigrationShouldSkip(bundleId: bundleId, env: env) {
+            // Mark as "complete" so we don't keep re-evaluating the gate on
+            // every launch. A debug bundle that later flips back to a
+            // release-style id (essentially never) would simply not migrate;
+            // the flag is bundle-scoped, so production users are unaffected.
+            defaults.set(true, forKey: migratedFlagKey)
+#if DEBUG
+            dlog("prefs.migrate: skipped; bundleId=\(bundleId) gate=debug-or-env-disable")
+#endif
+            return
+        }
+
         let legacyDomains = ["ai.manaflow.cmuxterm", "com.cmuxterm.app"]
         for domain in legacyDomains {
             guard let legacyPrefs = UserDefaults(suiteName: domain)?.persistentDomain(forName: domain),
@@ -2334,6 +2349,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #if DEBUG
         dlog("prefs.migrate: complete; flag=\(migratedFlagKey) set")
 #endif
+    }
+
+    /// Decide whether to skip the one-shot legacy-prefs migration. Pure
+    /// function for testability — no UserDefaults or Bundle access. Marked
+    /// `nonisolated` so unit tests can call it off the main actor.
+    ///
+    /// Skip when:
+    ///   - the bundle id is a debug variant (`com.stage11.c11.debug` and any
+    ///     future `.debug.<suffix>` tagged form). Debug builds want clean
+    ///     profiles for repeatable first-run UX testing (welcome workspace,
+    ///     TCC primer, agent-skills onboarding) instead of inheriting state
+    ///     from a pre-existing `com.cmuxterm.app` install on the same machine.
+    ///   - `CMUX_DISABLE_LEGACY_MIGRATION=1` is set. Escape hatch for forcing
+    ///     skip on a release bundle (e.g. a release build run from a CI
+    ///     fixture or a maintainer's clean-install validation). Any other
+    ///     value (including `0`, empty, unset) does NOT force-enable.
+    nonisolated static func legacyMigrationShouldSkip(
+        bundleId: String,
+        env: [String: String]
+    ) -> Bool {
+        if env["CMUX_DISABLE_LEGACY_MIGRATION"] == "1" { return true }
+        if bundleId.hasSuffix(".debug") { return true }
+        if bundleId.range(of: ".debug.") != nil { return true }
+        return false
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -2759,11 +2798,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #endif
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        sentryBreadcrumb("app.didBecomeActive", category: "lifecycle", data: [
+        var crumbData: [String: Any] = [
             "tabCount": tabManager?.tabs.count ?? 0
-        ])
+        ]
+        if let backgroundedAt = lastBackgroundedAt {
+            crumbData["seconds_since_background"] = Int(Date().timeIntervalSince(backgroundedAt))
+        }
+        lastBackgroundedAt = nil
+        sentryBreadcrumb("app.didBecomeActive", category: "lifecycle", data: crumbData)
         if TelemetrySettings.enabledForCurrentLaunch && !isRunningUnderXCTestCached {
             PostHogAnalytics.shared.trackActive(reason: "didBecomeActive")
+        }
+
+        // Offer the agent-skills install sheet on activation when a supported
+        // agent (`~/.claude`, `~/.codex`, …) is detected and the bundled
+        // skill set isn't installed yet. The previous trigger lived only
+        // inside `openWelcomeWorkspace()` (Help → Welcome), so a fresh
+        // install whose first launch ran the auto-welcome path never saw
+        // the prompt. `shouldPresent()` self-suppresses across launches via
+        // `cmuxAgentSkillsOnboardingShown` and within a launch via the
+        // window's willClose observer, so calling on every activation is
+        // safe and lets us catch users who install a supported agent after
+        // c11 is already running. Skip under XCTest so a tester's `~/.claude`
+        // doesn't pop a modal mid-test.
+        if !isRunningUnderXCTestCached {
+            presentAgentSkillsOnboardingIfNeeded()
         }
 
         guard let notificationStore else { return }
@@ -2809,6 +2868,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func applicationWillResignActive(_ notification: Notification) {
         guard !isTerminatingApp else { return }
+        lastBackgroundedAt = Date()
+        sentryBreadcrumb("app.willResignActive", category: "lifecycle", data: [
+            "tabCount": tabManager?.tabs.count ?? 0
+        ])
         _ = saveSessionSnapshot(includeScrollback: false)
     }
 
@@ -5888,6 +5951,100 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return workspace.id
     }
 
+    /// Materializes a workspace from a `WorkspaceApplyPlan` chosen via the
+    /// New Workspace dialog. Injects the dialog's working directory and
+    /// (optionally) the configured agent's launch command on the first
+    /// terminal surface that has none, then runs the plan through
+    /// `WorkspaceLayoutExecutor`.
+    @MainActor
+    @discardableResult
+    func applyWorkspacePlanInPreferredMainWindow(
+        plan: WorkspaceApplyPlan,
+        workingDirectory: String,
+        workspaceName: String? = nil,
+        launchAgent: Bool,
+        debugSource: String = "createWorkspaceSheet"
+    ) -> UUID? {
+        guard let context = preferredMainWindowContextForWorkspaceCreation(debugSource: debugSource) else {
+            return nil
+        }
+        guard let window = resolvedWindow(for: context) else {
+            discardOrphanedMainWindowContext(context)
+            return nil
+        }
+        setActiveMainWindow(window)
+        bringToFront(window)
+
+        var injected = plan
+        injected.workspace.workingDirectory = workingDirectory
+        if let trimmed = workspaceName?.trimmingCharacters(in: .whitespaces), !trimmed.isEmpty {
+            injected.workspace.title = trimmed
+        }
+        if launchAgent {
+            let userDefault = DefaultAgentConfigStore.shared.current
+            let projectConfig = DefaultAgentProjectConfig.find(from: workingDirectory)
+            let resolved = DefaultAgentResolver.resolve(
+                explicitAgent: nil,
+                userDefault: userDefault,
+                projectConfig: projectConfig
+            )
+            let command = resolved.launch.command
+            if let idx = injected.surfaces.firstIndex(where: { surface in
+                surface.kind == .terminal && (surface.command?.isEmpty ?? true)
+            }) {
+                // Trailing newline submits the command. The "A" tab-bar button
+                // appends "\n" at its call site (Workspace.launchAgentSurface);
+                // SurfaceSpec.command is delivered verbatim by the layout
+                // executor, so the newline has to live in the value itself.
+                injected.surfaces[idx].command = command + "\n"
+            }
+        }
+
+        let dependencies = WorkspaceLayoutExecutorDependencies(
+            tabManager: context.tabManager,
+            workspaceRefMinter: { uuid in "workspace:\(uuid.uuidString)" },
+            surfaceRefMinter: { uuid in "surface:\(uuid.uuidString)" },
+            paneRefMinter: { uuid in "pane:\(uuid.uuidString)" }
+        )
+        let result = WorkspaceLayoutExecutor.apply(
+            injected,
+            options: ApplyOptions(select: true),
+            dependencies: dependencies
+        )
+        #if DEBUG
+        for failure in result.failures {
+            FocusLogStore.shared.append(
+                "createWorkspace.apply failure code=\(failure.code) step=\(failure.step) message=\(failure.message)"
+            )
+        }
+        #endif
+
+        guard !result.workspaceRef.isEmpty else { return nil }
+        CreateWorkspaceRecents.record(workingDirectory)
+        let prefix = "workspace:"
+        let uuidPart = result.workspaceRef.hasPrefix(prefix)
+            ? String(result.workspaceRef.dropFirst(prefix.count))
+            : result.workspaceRef
+        return UUID(uuidString: uuidPart)
+    }
+
+    /// Returns the working directory of the workspace currently selected in
+    /// the window that would host a new workspace. Used to pre-fill the
+    /// New Workspace dialog. Returns `nil` if no main window is available
+    /// or the focused workspace has no recorded cwd.
+    @MainActor
+    func focusedWorkspaceWorkingDirectory() -> String? {
+        guard let context = preferredMainWindowContextForWorkspaceCreation(debugSource: "createWorkspaceSheet.cwd") else {
+            return nil
+        }
+        guard let selectedId = context.tabManager.selectedTabId,
+              let workspace = context.tabManager.tabs.first(where: { $0.id == selectedId }) else {
+            return nil
+        }
+        let dir = workspace.currentDirectory
+        return dir.isEmpty ? nil : dir
+    }
+
     private func preferredMainWindowContextForWorkspaceCreation(
         event: NSEvent? = nil,
         debugSource: String = "unspecified"
@@ -6269,6 +6426,103 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    // MARK: - New Workspace sheet
+
+    /// Strong reference for the New Workspace dialog window. Same AppKit
+    /// retention gotcha as `agentSkillsOnboardingWindow` — the willClose
+    /// observer below clears this on user-initiated close.
+    private var createWorkspaceSheetWindow: NSWindow?
+    private var createWorkspaceSheetCloseObserver: NSObjectProtocol?
+
+    /// Show the New Workspace dialog. Called from File → New Workspace, the
+    /// ⌘N shortcut, and the "+" buttons. If no main window exists yet, falls
+    /// back to spawning a new main window — the dialog has nothing to host
+    /// the new workspace into otherwise.
+    @MainActor
+    func presentCreateWorkspaceSheet() {
+        if mainWindowContexts.isEmpty {
+            openNewMainWindow(nil)
+            return
+        }
+        if let existing = createWorkspaceSheetWindow {
+            existing.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let initialDirectory = focusedWorkspaceWorkingDirectory()
+            ?? FileManager.default.homeDirectoryForCurrentUser.path
+
+        // Capture the operator's current screen before activating the dialog.
+        // NSWindow.center() always targets NSScreen.main (the menu-bar screen);
+        // on multi-monitor setups that misplaces the dialog off the screen the
+        // operator is actually working on. Read this now while the active main
+        // window is still key.
+        let targetScreen = NSApp.keyWindow?.screen
+            ?? NSApp.mainWindow?.screen
+            ?? NSScreen.main
+
+        let rootView = CreateWorkspaceSheet(
+            initialDirectory: initialDirectory,
+            onCancel: { [weak self] in self?.createWorkspaceSheetWindow?.close() },
+            onCreate: { [weak self] outcome in
+                guard let self else { return }
+                _ = self.applyWorkspacePlanInPreferredMainWindow(
+                    plan: outcome.plan,
+                    workingDirectory: outcome.workingDirectory,
+                    workspaceName: outcome.workspaceName,
+                    launchAgent: outcome.launchAgent
+                )
+                self.createWorkspaceSheetWindow?.close()
+            }
+        )
+        // NSHostingController with .preferredContentSize keeps the window's
+        // content size synced to SwiftUI's intrinsic size. Plain NSHostingView
+        // assigned to contentView leaves the window stuck at its initial
+        // contentRect, which on first layout clamps the SwiftUI content to
+        // a too-short frame; the dialog only snaps to its real size after a
+        // focus-driven relayout. See the new-workspace tiny-dialog regression
+        // observed in the 0.47.0 prod build.
+        let controller = NSHostingController(rootView: rootView)
+        controller.sizingOptions = [.preferredContentSize]
+        let window = NSWindow(contentViewController: controller)
+        window.styleMask = [.titled, .closable]
+        window.title = String(
+            localized: "createWorkspace.windowTitle",
+            defaultValue: "New Workspace"
+        )
+        window.isReleasedWhenClosed = false
+        window.level = .modalPanel
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        // Defer centering: NSHostingController with .preferredContentSize
+        // syncs the window's content size during SwiftUI's first layout pass,
+        // so center()'ing before makeKey runs against a smaller-than-final
+        // frame and the dialog lands off-center once it grows. Position on
+        // the captured screen, with the standard HIG "1/3 from the top"
+        // vertical placement.
+        DispatchQueue.main.async { [weak window] in
+            guard let window, let screen = targetScreen else { return }
+            let visible = screen.visibleFrame
+            let frame = window.frame
+            let x = visible.origin.x + (visible.width - frame.width) / 2
+            let y = visible.origin.y + (visible.height - frame.height) * 2.0 / 3.0
+            window.setFrameOrigin(NSPoint(x: x, y: y))
+        }
+        createWorkspaceSheetWindow = window
+        createWorkspaceSheetCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            if let observer = self.createWorkspaceSheetCloseObserver {
+                NotificationCenter.default.removeObserver(observer)
+            }
+            self.createWorkspaceSheetCloseObserver = nil
+            self.createWorkspaceSheetWindow = nil
+        }
+    }
+
     // MARK: - Agent skill onboarding
 
     /// Strong reference so the NSWindow isn't deallocated while visible. A
@@ -6294,9 +6548,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             NSApp.activate(ignoringOtherApps: true)
             return
         }
+        // Initial content height is a starting point only — the
+        // preferredContentSize sync below drives the actual window
+        // height from SwiftUI's intrinsic layout on first relayout.
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 540, height: 390),
-            styleMask: [.titled, .closable],
+            contentRect: NSRect(x: 0, y: 0, width: 540, height: 480),
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -6306,7 +6563,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let rootView = AgentSkillsOnboardingSheet(onDismiss: { [weak window] in
             window?.close()
         })
-        window.contentView = NSHostingView(rootView: rootView)
+        // NSHostingController.sizingOptions = .preferredContentSize syncs
+        // the controller's preferredContentSize from SwiftUI's intrinsic
+        // layout on every relayout (macOS 13+). AppKit propagates the
+        // controller's preferredContentSize to the containing window's
+        // contentSize, so the window auto-fits the SwiftUI content height
+        // as the install/celebratory states change row counts. Reading
+        // `view.fittingSize` immediately after assigning the controller
+        // (the previous approach) returned zero because SwiftUI hadn't
+        // laid out yet — the window stayed at the pre-set frame and the
+        // content compressed onto the same Y.
+        let hosting = NSHostingController(rootView: rootView)
+        if #available(macOS 13.0, *) {
+            hosting.sizingOptions = [.preferredContentSize]
+        }
+        window.contentViewController = hosting
         window.center()
         window.makeKeyAndOrderFront(nil)
         agentSkillsOnboardingWindow = window
@@ -6339,6 +6610,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// reference. Same AppKit retention gotcha applies.
     private var tccPrimerWindow: NSWindow?
     private var tccPrimerCloseObserver: NSObjectProtocol?
+    private var fdaProbe: FullDiskAccessProbe?
+    private var fdaActiveObserver: NSObjectProtocol?
+    private var tccPrimerCoordinator: TCCPrimerCoordinator?
 
     /// First-run primer explaining why macOS is about to ask about folders.
     /// Consent-gated; the "Got it" button is the only thing that writes the
@@ -6367,13 +6641,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         )
         window.isReleasedWhenClosed = false
         window.level = .modalPanel
+        let coordinator = TCCPrimerCoordinator()
+        tccPrimerCoordinator = coordinator
         let rootView = TCCPrimerSheet(
-            onGrantFDA: { TCCPrimer.openFullDiskAccessPane() },
-            onContinueWithout: { [weak window] in
+            coordinator: coordinator,
+            onGrantFDA: { [weak self] in self?.handleGrantFDA() },
+            onContinueWithout: { [weak self, weak window] in
+                self?.cancelFDAProbe()
                 UserDefaults.standard.set(true, forKey: TCCPrimer.shownKey)
                 window?.close()
             },
-            onDismiss: { [weak window] in window?.close() }
+            onDismiss: { [weak self, weak window] in
+                self?.cancelFDAProbe()
+                window?.close()
+            }
         )
         window.contentView = NSHostingView(rootView: rootView)
         window.center()
@@ -6386,12 +6667,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         ) { [weak self] _ in
             guard let self else { return }
             TCCPrimer.markDismissedThisLaunch()
+            self.cancelFDAProbe()
+            self.tccPrimerCoordinator = nil
             if let observer = self.tccPrimerCloseObserver {
                 NotificationCenter.default.removeObserver(observer)
             }
             self.tccPrimerCloseObserver = nil
             self.tccPrimerWindow = nil
             onCompletion?()
+        }
+    }
+
+    private func handleGrantFDA() {
+        TCCPrimer.openFullDiskAccessPane()
+        startFDAProbeIfNeeded()
+    }
+
+    private func startFDAProbeIfNeeded() {
+        guard fdaProbe == nil else { return }
+        let probe = FullDiskAccessProbe(onGranted: { [weak self] in
+            // Probe hops to the main queue before invoking this callback.
+            // We're in MainActor's thread; assume the isolation rather than
+            // posting another Task hop and risking ordering surprises.
+            MainActor.assumeIsolated {
+                self?.handleFDADetected()
+            }
+        })
+        fdaProbe = probe
+        probe.start()
+        // didBecomeActive kicks an extra probe attempt so we get a fast
+        // detection on the user's return from System Settings rather than
+        // waiting up to the schedule's 10s ceiling.
+        fdaActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.fdaProbe?.kick()
+        }
+    }
+
+    private func cancelFDAProbe() {
+        fdaProbe?.stop()
+        fdaProbe = nil
+        if let observer = fdaActiveObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        fdaActiveObserver = nil
+    }
+
+    /// Called once on the main queue when the FDA probe observes a grant.
+    /// Persists the shown flag, transitions the coordinator to the brief
+    /// confirmation state, and closes the window after a 1.2s interstitial.
+    /// MUST NOT call `NSApp.activate(ignoringOtherApps:)`,
+    /// `makeKeyAndOrderFront(_:)`, or any other reactivation API: the user
+    /// may still be in System Settings, and stealing focus from there is
+    /// the exact failure mode this ticket is designed to avoid.
+    private func handleFDADetected() {
+        UserDefaults.standard.set(true, forKey: TCCPrimer.shownKey)
+        cancelFDAProbe()
+        tccPrimerCoordinator?.autoAdvanceState = .granted
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            self?.tccPrimerWindow?.close()
         }
     }
 
@@ -6453,9 +6790,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    /// Module 4: opens a new terminal surface in the active main window and sends
-    /// `c11 install <tui>` to run the installer interactively (with TTY confirm).
-    /// Focus-intent: raises the window and creates a visible surface per the spec.
     @objc func applyUpdateIfAvailable(_ sender: Any?) {
         updateViewModel.overrideState = nil
         updateController.installUpdate()
@@ -7217,7 +7551,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 let hostedView = terminalPanel.hostedView
                 let shouldReconcileVisibleSelection =
                     target.workspace.id == selectedWorkspaceId &&
-                    hostedView.window != nil &&
+                    terminalPanel.surface.isViewInWindow &&
                     hostedView.superview != nil
 
                 if shouldReconcileVisibleSelection {
@@ -9511,8 +9845,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // key window's portal/SwiftUI hierarchy. Gate the same shortcuts here so the
         // overlay sees the Cmd+D accept and other app shortcuts stay suppressed while
         // a dialog is visible (plan §4.8).
+        //
+        // C11-30: workspace-scoped close-confirmation overlay follows the same
+        // contract — Cmd+D accepts, app-level shortcuts stay suppressed.
         let shortcutTabManager = tabManagerForShortcutEvent(event)
         let paneInteractionActive = shortcutTabManager?.hasActivePaneInteraction ?? false
+        let workspaceCloseOverlayActive = shortcutTabManager?.hasActiveWorkspaceCloseInteraction ?? false
 
         if let closeConfirmationPanel {
             // Special-case: Cmd+D should confirm destructive close on alerts.
@@ -9531,6 +9869,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 return true
             }
             return false
+        }
+
+        if workspaceCloseOverlayActive {
+            // C11-30: workspace-scoped close-confirmation overlay. Cmd+D accepts
+            // the destructive close — same contract as the NSPanel and pane-
+            // interaction paths. All app-level shortcuts stay suppressed so
+            // keybindings don't fire through the overlay.
+            if matchShortcut(
+                event: event,
+                shortcut: StoredShortcut(key: "d", command: true, shift: false, option: false, control: false)
+            ), shortcutTabManager?.acceptActiveWorkspaceCloseInteractionInKeyWorkspace() == true {
+                return true
+            }
+            // Esc fallback for cases where the overlay host did not receive
+            // keyDown directly (WKWebView responder edge cases). keyCode 53 = Esc.
+            let hasAppShortcutModifier = hasCommand || hasControl || hasOption
+            if !hasAppShortcutModifier,
+               event.keyCode == 53,
+               shortcutTabManager?.cancelActiveWorkspaceCloseInteractionInKeyWorkspace() == true {
+                return true
+            }
+            return hasAppShortcutModifier
         }
 
         if paneInteractionActive {
@@ -9878,32 +10238,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #if DEBUG
             dlog("shortcut.action name=newWorkspace \(debugShortcutRouteSnapshot(event: event))")
 #endif
-            // Cmd+N semantics:
-            // - If there are no main windows, create a new window.
-            // - Otherwise, create a new workspace in the active window.
-            if mainWindowContexts.isEmpty {
-                #if DEBUG
-                logWorkspaceCreationRouting(
-                    phase: "fallback_new_window",
-                    source: "shortcut.cmdN",
-                    reason: "no_main_windows",
-                    event: event,
-                    chosenContext: nil
-                )
-                #endif
-                openNewMainWindow(nil)
-            } else if addWorkspaceInPreferredMainWindow(event: event, debugSource: "shortcut.cmdN") == nil {
-                #if DEBUG
-                logWorkspaceCreationRouting(
-                    phase: "fallback_new_window",
-                    source: "shortcut.cmdN",
-                    reason: "workspace_creation_returned_nil",
-                    event: event,
-                    chosenContext: nil
-                )
-                #endif
-                openNewMainWindow(nil)
-            }
+            // Cmd+N: present the New Workspace dialog. The presenter falls
+            // back to `openNewMainWindow` when there are no main windows
+            // yet, so all callers (menu, shortcut, "+") share one entry
+            // point.
+            presentCreateWorkspaceSheet()
             return true
         }
 
@@ -10366,7 +10705,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let hostedView = terminalPanel.hostedView
         let hostedSize = hostedView.bounds.size
         let hostedHiddenInHierarchy = hostedView.isHiddenOrHasHiddenAncestor
-        let hostedAttachedToWindow = hostedView.window != nil
+        let hostedAttachedToWindow = terminalPanel.surface.isViewInWindow
         let firstResponderIsWindow = NSApp.keyWindow?.firstResponder is NSWindow
 
         let shouldSuppress = shouldSuppressSplitShortcutForTransientTerminalFocusInputs(

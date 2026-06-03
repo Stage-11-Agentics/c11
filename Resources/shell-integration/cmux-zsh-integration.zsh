@@ -230,7 +230,7 @@ _cmux_ports_kick() {
 }
 
 _cmux_agent_kick() {
-    # c11mux Module 1: nudge the app to re-run the TUI heuristic for this panel.
+    # c11 Module 1: nudge the app to re-run the TUI heuristic for this panel.
     # The app coalesces kicks and runs a single `ps -t` across all registered TTYs.
     [[ -S "$CMUX_SOCKET_PATH" ]] || return 0
     [[ -n "$CMUX_TAB_ID" ]] || return 0

@@ -1,0 +1,2 @@
+Drain review (human:atin via Claude review-pile drainer):
+PR #145 merged to main 2026-05-12T19:05Z (squash 81b52161e). Verified via git log + gh pr view + git show of the squash. legacyMigrationShouldSkip(bundleId:env:) gates legacy-prefs migration on .debug bundle suffix; CMUX_DISABLE_LEGACY_MIGRATION env hatch in place; LegacyPrefsMigrationGateTests covers the matrix. Release path unchanged. Acceptance criteria satisfied by the merged code path.

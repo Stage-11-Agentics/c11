@@ -58,6 +58,7 @@ class UpdateController {
     private var noUpdateDismissWorkItem: DispatchWorkItem?
     private var readyCheckWorkItem: DispatchWorkItem?
     private var backgroundProbeTimer: Timer?
+    private var lastBackgroundProbeFiredAt: Date?
     private var didStartUpdater: Bool = false
     private let readyRetryDelay: TimeInterval = 0.25
     private let readyRetryCount: Int = 20
@@ -153,6 +154,15 @@ class UpdateController {
         backgroundProbeTimer?.invalidate()
         backgroundProbeTimer = Timer.scheduledTimer(withTimeInterval: backgroundProbeInterval, repeats: true) { [weak self] _ in
             guard let self, self.updater.automaticallyChecksForUpdates else { return }
+            let now = Date()
+            var crumbData: [String: Any] = [
+                "app_active": NSApp?.isActive ?? false
+            ]
+            if let last = self.lastBackgroundProbeFiredAt {
+                crumbData["seconds_since_last_tick"] = Int(now.timeIntervalSince(last))
+            }
+            self.lastBackgroundProbeFiredAt = now
+            sentryBreadcrumb("update.background_probe.tick", category: "update", data: crumbData)
             UpdateLogStore.shared.append("periodic background update probe")
             self.updater.checkForUpdateInformation()
         }

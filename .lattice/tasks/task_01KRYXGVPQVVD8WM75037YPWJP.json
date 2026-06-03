@@ -1,0 +1,45 @@
+{
+  "assigned_to": "agent:claude-c11-105-d1",
+  "branch_links": [
+    {
+      "branch": "diag/c11-105-socket-watcher",
+      "linked_at": "2026-05-19T02:28:36Z",
+      "linked_by": "agent:claude-c11-105-d1",
+      "repo": null
+    }
+  ],
+  "comment_count": 3,
+  "complexity": "medium",
+  "created_at": "2026-05-19T01:27:34Z",
+  "created_by": "human:atin",
+  "custom_fields": {},
+  "description": "## Symptom\n\nWhen a tagged debug build (built via scripts/reload.sh --tag <name>) runs alongside the prod c11.app and then terminates, the prod c11's socket file at ~/Library/Application Support/c11/c11.sock can be unlinked from the filesystem as part of the debug build's shutdown cleanup. The prod c11 process remains alive and the FD bound to that path remains open inside the process, but no new CLI connection can reach the prod c11 because the bind point on disk is gone.\n\nNet effect: every \\`c11 <command>\\` from any shell fails with \"Socket not found at ~/Library/Application Support/c11/c11.sock\" until the prod c11 is restarted. Restarting prod c11 hits C11-103 (state-dir migration is broken when both c11/ and c11mux/ exist), so the operator loses workspaces too. Two bugs compound.\n\n## Observed 2026-05-18\n\nAtin's session, ~21:21 local time. Two tagged debug builds were running alongside the prod c11.app:\n\n- PID 40216  c11 DEV update-flow.app  etime 4h30m  built from /Users/atin/Library/Developer/Xcode/DerivedData/c11-update-flow/\n- PID 58855  c11 DEV help-about.app   etime 6h30m  built from /Users/atin/Library/Developer/Xcode/DerivedData/c11-help-about/\n- PID 29797  /Applications/c11.app    etime 4.5h   the prod release v0.48.0 (102), bundle id com.stage11.c11\n\nBoth debug builds terminated at ~21:21 (gone from \\`ps -ax\\` shortly after; cause of termination not yet determined). At the same timestamp:\n\n- ~/Library/Application Support/c11/last-socket-path and /tmp/c11-last-socket-path both rewritten to \"/var/folders/vr/.../T/csec-cmux-8EA984A6.sock\" (and several other csec-cmux-* paths in a short burst around 21:17-21:21).\n- The csec-cmux-* path itself never resolves to an actual bound socket on disk (find returns nothing).\n- ~/Library/Application Support/c11/c11.sock (the stable default path the prod c11 had been bound to since 4:45pm) is unlinked from the filesystem.\n- lsof -p 29797 still shows fd 4u bound to \"/Users/atin/Library/Application Support/c11/c11.sock\" \u2014 the kernel-level binding is intact, only the dentry is gone.\n- /tmp/c11-last-cli-path still points at /Users/atin/Library/Developer/Xcode/DerivedData/c11-update-flow/Build/Products/Debug/c11 DEV update-flow.app/Contents/Resources/bin/c11 \u2014 strong indication that the update-flow build was the most-recent dev-shim writer.\n\nThe grep for \"csec-cmux\" returns zero matches across Sources/, Tests/, Resources/, vendor/, every worktree, and \\`strings\\` on the compiled prod c11 binary. The csec-cmux-* literal genuinely does not originate from any c11 build. Source of that string is currently unknown \u2014 possible candidates: a SwiftPM test fixture, a build-system temp-path generator, or upstream cmux code that has since been removed but lives in a Debug build's compiled artifacts. Worth chasing as part of the fix.\n\n## Hypothesis: where the unlink happens\n\nSources/SocketControlSettings.swift::resolvedStableDefaultSocketPath uses this policy when picking a bind path:\n\n\\`\\`\\`swift\nswitch probeStableDefaultPathEntry(stableDefaultSocketPath) {\ncase .missing:                                            return stableDefaultSocketPath\ncase .socket(let owner) where owner == currentUserID:     return stableDefaultSocketPath\ncase .socket, .other, .inaccessible:                      return userScopedStableSocketPath(currentUserID)\n}\n\\`\\`\\`\n\nWhen a debug build starts, the stable default path is owned by the same user as the prod build (uid 501). The debug build's probe sees \\`.socket(owner == currentUserID)\\` and \"uses\" the stable default \u2014 but the actual socket-bind path the debug build picks is gated by \\`shouldHonorSocketPathOverride\\` (debug builds get override permission). So the debug build binds elsewhere (likely its own tagged path like /tmp/c11-debug-update-flow.sock) but the resolvedStableDefaultSocketPath logic above still thinks the stable default is \"in use by us.\" On shutdown, the debug build runs socket cleanup that includes \\`unlink(stableDefaultSocketPath)\\` \u2014 assuming it's tidying its own file \u2014 and wipes the prod c11's bind point.\n\nThis is a hypothesis from reading; needs confirmation by tracing the shutdown path. Search terms: \\`unlink\\`, \\`removeItem\\`, \\`stableDefaultSocketPath\\` in SocketControlSettings and any cleanup hook in AppDelegate.\n\n## Fix shape (sketch)\n\nPick one or compose:\n\n1. Debug builds should never unlink the stable default socket path on shutdown. Only unlink your own bind path. If \\`taggedDebugSocketPath()\\` returned a different path than the stable default, ignore the stable default at cleanup time.\n2. The unlink call should verify the file it's about to remove is the path THIS process bound. Stat + getsockname comparison would be sufficient.\n3. Alternatively: prod c11 detects \"my bind path was unlinked while I'm alive\" and rebinds. Could be done via fsevents or a periodic stat. Higher complexity but more defensive.\n\n(1) is probably cleanest \u2014 fixes the offending code path directly. (3) is a defense-in-depth follow-up.\n\n## Severity\n\nHigh. The compound failure mode is \"developer runs a tagged debug build, then closes it, then the operator has lost CLI control over the prod c11 they use as their daily driver.\" Recovery requires restarting prod c11, which on a machine still affected by C11-103 also wipes the workspace state. Two stacked bugs, both observed in production on 2026-05-18.\n\n## Test policy\n\nPer code/c11/CLAUDE.md: tests verify observable behavior. Build a c11LogicTests test that simulates the dual-bind scenario via a fake FileManager / fake SocketControlSettings.probeStableDefaultPathEntry, exercises the debug-build's shutdown cleanup code path, and asserts the stable default path is left intact. No tests of source-code shape.\n\n## References\n\n- Sources/SocketControlSettings.swift \u2014 the bind-path resolution + override logic (around lines 487\u2013540 in current main).\n- C11-103 \u2014 state-dir migration bug, compounds with this one on operator workstations.\n- Forensics conversation: 2026-05-18 C11-103 Orchestrator session, surface:7.",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "art_01KRZ1BX3W6ZEE35EB5H7N8J8G",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KRYXGVPQVVD8WM75037YPWJP",
+  "last_event_id": "ev_01KRZ8W03X8N8QM6ENPDBJKKGJ",
+  "last_status_changed_at": "2026-05-19T02:34:06Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-105",
+  "status": "review",
+  "tags": [
+    "socket",
+    "ipc",
+    "debug-build",
+    "shutdown"
+  ],
+  "title": "Tagged debug build shutdown unlinks prod c11's socket file, killing CLI control",
+  "type": "bug",
+  "updated_at": "2026-05-19T04:45:54Z",
+  "urgency": null
+}

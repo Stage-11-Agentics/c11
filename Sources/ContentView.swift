@@ -2121,15 +2121,9 @@ struct ContentView: View {
     @State private var titlebarPadding: CGFloat = 32
     @AppStorage(WorkspacePresentationModeSettings.modeKey)
     private var workspacePresentationMode = WorkspacePresentationModeSettings.defaultMode.rawValue
-    @AppStorage(TabBarChromeSettings.stateKey)
-    private var tabBarChromeStateRaw = TabBarChromeState.full.rawValue
 
     private var isMinimalMode: Bool {
         WorkspacePresentationModeSettings.mode(for: workspacePresentationMode) == .minimal
-    }
-
-    private var tabBarChromeState: TabBarChromeState {
-        TabBarChromeSettings.state(for: tabBarChromeStateRaw)
     }
 
     private var effectiveTitlebarPadding: CGFloat {
@@ -2286,7 +2280,13 @@ struct ContentView: View {
                     anchorView: fullscreenControlsViewModel.notificationsAnchorView
                 )
             },
-            onNewTab: { tabManager.addTab() },
+            onNewTab: {
+                if let appDelegate = AppDelegate.shared {
+                    appDelegate.presentCreateWorkspaceSheet()
+                } else {
+                    tabManager.addTab()
+                }
+            },
             visibilityMode: .alwaysVisible
         )
     }
@@ -2319,8 +2319,11 @@ struct ContentView: View {
                 Spacer()
 
             }
-            .frame(height: 28)
-            .padding(.top, 2)
+            // HStack fills the titlebar height and the text centers within it.
+            // Dropping the explicit frame(height: 28) + .padding(.top, 2) (which
+            // sat the content 30pt tall in a 32pt outer, with the implicit
+            // bottom space stacking against the 1pt bottom border so the text
+            // read as bottom-heavy) lets the 13pt bold text sit symmetrically.
             .padding(.leading, (isFullScreen && !sidebarState.isVisible) ? 8 : (sidebarState.isVisible ? 12 : titlebarLeadingInset + CGFloat(debugTitlebarLeadingExtra)))
             .padding(.trailing, 8)
         }
@@ -2464,15 +2467,6 @@ struct ContentView: View {
                         fullscreenControls
                             .padding(.leading, 10)
                             .padding(.top, 4)
-                    }
-                }
-                .overlay(alignment: .topTrailing) {
-                    if tabBarChromeState == .shrunk {
-                        TabBarChromeHandle(onExpand: {
-                            tabBarChromeStateRaw = TabBarChromeState.full.rawValue
-                        })
-                        .padding(.top, isMinimalMode ? 4 : titlebarPadding + 4)
-                        .padding(.trailing, 8)
                     }
                 }
                 .frame(minWidth: CGFloat(SessionPersistencePolicy.minimumWindowWidth), minHeight: CGFloat(SessionPersistencePolicy.minimumWindowHeight))
@@ -2950,14 +2944,6 @@ struct ContentView: View {
             removeSidebarResizerPointerMonitor()
         })
 
-        view = AnyView(view.onChange(of: tabBarChromeStateRaw) { _, newRaw in
-            let state = TabBarChromeSettings.state(for: newRaw)
-            let visible = state == .full
-            for tab in tabManager.tabs {
-                tab.setTabBarVisible(visible)
-            }
-        })
-
         view = AnyView(view.background(WindowAccessor { [sidebarBlendMode, bgGlassEnabled, bgGlassTintHex, bgGlassTintOpacity] window in
             let didChangeChrome = applyMainWindowChrome(to: window)
             if didChangeChrome {
@@ -3254,7 +3240,11 @@ struct ContentView: View {
     }
 
     private func addTab() {
-        tabManager.addTab()
+        if let appDelegate = AppDelegate.shared {
+            appDelegate.presentCreateWorkspaceSheet()
+        } else {
+            tabManager.addTab()
+        }
         sidebarSelectionState.selection = .tabs
     }
 
@@ -4679,9 +4669,14 @@ struct ContentView: View {
             return Text(title).foregroundColor(.primary)
         }
 
+        // Build a flat AttributedString rather than accumulating Text + Text.
+        // Repeated `result = result + Text(...)` produces a recursive
+        // ConcatenatedTextStorage tree whose `resolve` is depth-N recursive;
+        // a highly fragmented match pattern (long title, alternating runs)
+        // blows the render-thread stack at SwiftUI resolve time (C11-26).
         let chars = Array(title)
         var index = 0
-        var result = Text("")
+        var attributed = AttributedString()
 
         while index < chars.count {
             let isMatched = matchedIndices.contains(index)
@@ -4690,16 +4685,13 @@ struct ContentView: View {
                 end += 1
             }
 
-            let segment = String(chars[index..<end])
-            if isMatched {
-                result = result + Text(segment).foregroundColor(.blue)
-            } else {
-                result = result + Text(segment).foregroundColor(.primary)
-            }
+            var run = AttributedString(String(chars[index..<end]))
+            run.foregroundColor = isMatched ? .blue : .primary
+            attributed.append(run)
             index = end
         }
 
-        return result
+        return Text(attributed)
     }
 
     private func commandPaletteTrailingLabel(for command: CommandPaletteCommand) -> CommandPaletteTrailingLabel? {
@@ -8424,10 +8416,22 @@ struct VerticalTabsSidebar: View {
     private var workspacePresentationMode = WorkspacePresentationModeSettings.defaultMode.rawValue
     @AppStorage(ChromeScaleSettings.presetKey)
     private var chromeScalePresetRaw = ChromeScaleSettings.defaultPreset.rawValue
+    /// C11-104 v2 — chip row is gated by the preserved
+    /// `sidebarShowBranchDirectory` key (existing user prefs survive
+    /// the legacy-row → chip-row migration).
+    @AppStorage("sidebarShowBranchDirectory")
+    private var sidebarShowBranchDirectory = true
 
     /// Space at top of sidebar for traffic light buttons
     private let trafficLightPadding: CGFloat = 28
     private let tabRowSpacing: CGFloat = 2
+    /// Extra clearance between the traffic-light strip and the first
+    /// workspace row so the row's selection highlight clears the
+    /// `SidebarTopScrim` gradient. The scrim is `trafficLightPadding + 20`
+    /// tall and its bottom 20pt is the soft fade; we need the first row
+    /// to begin at least ~12pt past the scrim's center to keep the
+    /// rounded top corners legible.
+    private let firstRowTopInset: CGFloat = 12
     private let hiddenTitlebarControlsLeadingInset: CGFloat = 72
 
     private var isMinimalMode: Bool {
@@ -8513,9 +8517,14 @@ struct VerticalTabsSidebar: View {
             GeometryReader { proxy in
                 ScrollView {
                     VStack(spacing: 0) {
-                        // Space for traffic lights / fullscreen controls
+                        // Space for traffic lights / fullscreen controls.
+                        // Includes `firstRowTopInset` so the first row's
+                        // highlight rounded-rect clears the `SidebarTopScrim`
+                        // gradient below — without it the scrim is still
+                        // ~40% opaque where the top corner lands and the
+                        // highlight reads as if the corner is cut off.
                         Spacer()
-                            .frame(height: trafficLightPadding)
+                            .frame(height: trafficLightPadding + firstRowTopInset)
 
                         LazyVStack(spacing: tabRowSpacing) {
                             ForEach(Array(tabManager.tabs.enumerated()), id: \.element.id) { index, tab in
@@ -8546,6 +8555,27 @@ struct VerticalTabsSidebar: View {
                                         sources: sources
                                     )
                                 }()
+                                // C11-104 v2: precompute worktree+branch
+                                // chips for the focused surface. Reads the
+                                // resolver output directly from the
+                                // workspace's `panelGitContexts` (populated
+                                // by the off-main probe in TabManager).
+                                // Branch chip's dirty marker comes from the
+                                // existing `panelGitBranches[surfaceId].isDirty`
+                                // signal so the legacy UX is preserved.
+                                let worktreeChipRows: [WorktreeChipRow] = {
+                                    guard sidebarShowBranchDirectory,
+                                          let focusedId = tab.focusedPanelId else {
+                                        return []
+                                    }
+                                    let context = tab.panelGitContexts[focusedId] ?? nil
+                                    let isDirty = tab.panelGitBranches[focusedId]?.isDirty ?? false
+                                    return WorktreeChipProjector.project(
+                                        context,
+                                        settingsEnabled: true,
+                                        isDirty: isDirty
+                                    )
+                                }()
                                 // C11-25: read the focused surface's most recent CPU/RSS
                                 // sample as a precomputed `let`. The sampler's revision is
                                 // observed at the struct level so this re-evaluates at the
@@ -8562,6 +8592,7 @@ struct VerticalTabsSidebar: View {
                                     index: index,
                                     isActive: isActive,
                                     agentChip: agentChip,
+                                    worktreeChipRows: worktreeChipRows,
                                     surfaceMetricsSample: surfaceMetricsSample,
                                     workspaceShortcutDigit: WorkspaceShortcutMapper.commandDigitForWorkspace(
                                         at: index,
@@ -9601,7 +9632,7 @@ private struct SidebarFooterButtons: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SidebarJumpToUnreadButton()
+            SidebarWaitingAgentCluster()
             HStack(spacing: 4) {
                 SidebarHelpMenuButton(onSendFeedback: onSendFeedback)
                 UpdatePill(model: updateViewModel)
@@ -9815,6 +9846,7 @@ private enum SidebarHelpMenuAction {
     case checkForUpdates
     case sendFeedback
     case welcome
+    case reEnableSkillPrompts
 }
 
 private struct SidebarFeedbackComposerSheet: View {
@@ -10411,6 +10443,18 @@ private struct SidebarHelpMenuButton: View {
                 accessibilityIdentifier: "SidebarHelpMenuOptionCheckForUpdates",
                 isExternalLink: false
             )
+            // Visible only when the operator has either explicitly opted
+            // out of the agent-skills sheet ("Don't ask again") or has
+            // dismissed individual (target, skill) rows. No clutter for
+            // operators who have never silenced anything.
+            if AgentSkillsOnboarding.hasSilencedState() {
+                helpOptionButton(
+                    title: String(localized: "sidebar.help.reEnableSkillPrompts", defaultValue: "Re-enable agent skills install prompts"),
+                    action: .reEnableSkillPrompts,
+                    accessibilityIdentifier: "SidebarHelpMenuOptionReEnableSkillPrompts",
+                    isExternalLink: false
+                )
+            }
         }
         .padding(8)
         .frame(minWidth: 200)
@@ -10511,6 +10555,16 @@ private struct SidebarHelpMenuButton: View {
                     appDelegate.openWelcomeWorkspace()
                 }
             }
+        case .reEnableSkillPrompts:
+            isPopoverPresented = false
+            AgentSkillsOnboarding.clearAllSilencing()
+            Task { @MainActor in
+                // Unconditional present (not the IfNeeded variant): when
+                // everything is current, the celebratory branch renders
+                // confirmation instead of leaving the operator with a
+                // silent no-op.
+                AppDelegate.shared?.presentAgentSkillsOnboarding(onCompletion: nil)
+            }
         }
     }
 
@@ -10523,90 +10577,229 @@ private struct SidebarHelpMenuButton: View {
     }
 }
 
-private struct SidebarJumpToUnreadButton: View {
+// MARK: - Waiting Agent + Workspace Nav Cluster
+
+private struct SidebarWaitingAgentCluster: View {
     @EnvironmentObject private var notificationStore: TerminalNotificationStore
+    @EnvironmentObject private var tabManager: TabManager
 
     private var display: StatusBarButtonDisplay {
         StatusBarButtonDisplay(unreadCount: notificationStore.unreadCount)
     }
 
-    private var label: String {
-        String(
-            localized: "statusBar.nextNotification.title",
-            defaultValue: "Next Notification"
-        )
+    private var isFirstWorkspace: Bool {
+        guard let currentId = tabManager.selectedTabId,
+              let idx = tabManager.tabs.firstIndex(where: { $0.id == currentId }) else { return true }
+        return idx == 0
     }
 
-    private var accessibilityLabel: String {
-        String(
-            localized: "statusBar.jumpToUnread.accessibility",
-            defaultValue: "Jump to next unread notification"
-        )
-    }
-
-    private var shortcutText: String {
-        KeyboardShortcutSettings.shortcut(for: .jumpToUnread).displayString
+    private var isLastWorkspace: Bool {
+        guard let currentId = tabManager.selectedTabId,
+              let idx = tabManager.tabs.firstIndex(where: { $0.id == currentId }) else { return true }
+        return idx == tabManager.tabs.count - 1
     }
 
     var body: some View {
-        let display = self.display
-        return Button(action: jump) {
-            HStack(spacing: 6) {
-                Text(label)
-                    .font(.system(size: 11, weight: .semibold))
-                    .lineLimit(1)
-
-                if let badge = display.badgeText {
-                    Text(badge)
-                        .font(.system(size: 9, weight: .bold))
-                        .monospacedDigit()
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(BrandColors.blackSwiftUI.opacity(0.18))
-                        )
-                        .foregroundColor(BrandColors.blackSwiftUI)
-                        .accessibilityHidden(true)
-                }
-
-                Spacer(minLength: 4)
-
-                Text(shortcutText)
-                    .font(.system(size: 10, weight: .medium))
-                    .monospacedDigit()
-                    .opacity(0.72)
-                    .lineLimit(1)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(cmuxAccentColor().opacity(display.isEnabled ? 1.0 : 0.18))
+        VStack(spacing: 1) {
+            WaitingAgentRow(display: display, onJump: jump)
+            WorkspaceNavRow(
+                isFirstDisabled: isFirstWorkspace,
+                isLastDisabled: isLastWorkspace,
+                onPrevious: goToPreviousWorkspace,
+                onNext: goToNextWorkspace
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(cmuxAccentColor().opacity(display.isEnabled ? 0 : 0.5), lineWidth: 1)
-            )
-            .foregroundColor(display.isEnabled ? BrandColors.blackSwiftUI : .secondary)
-            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
-        .buttonStyle(.plain)
-        .disabled(!display.isEnabled)
-        .opacity(display.isEnabled ? 1.0 : 0.72)
-        .accessibilityIdentifier("SidebarJumpToUnreadButton")
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue(display.badgeText ?? "")
-        .safeHelp(
-            KeyboardShortcutSettings.Action.jumpToUnread.tooltip(label)
-        )
     }
 
     private func jump() {
         DispatchQueue.main.async {
             AppDelegate.shared?.jumpToLatestUnread()
         }
+    }
+
+    private func goToPreviousWorkspace() {
+        guard !isFirstWorkspace else { return }
+        tabManager.selectPreviousTab()
+    }
+
+    private func goToNextWorkspace() {
+        guard !isLastWorkspace else { return }
+        tabManager.selectNextTab()
+    }
+}
+
+private struct WaitingAgentRow: View {
+    let display: StatusBarButtonDisplay
+    let onJump: () -> Void
+
+    private var isLit: Bool { display.isEnabled }
+
+    private var label: String {
+        String(localized: "sidebar.waitingAgent.title", defaultValue: "Waiting Agent")
+    }
+
+    private var shortcutText: String {
+        KeyboardShortcutSettings.shortcut(for: .jumpToUnread).displayString
+    }
+
+    private var accessibilityLabel: String {
+        String(localized: "sidebar.waitingAgent.accessibility", defaultValue: "Jump to next waiting agent")
+    }
+
+    var body: some View {
+        Button(action: onJump) {
+            HStack(spacing: 0) {
+                Text(label)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+
+                Spacer(minLength: 4)
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("\u{2192}")
+                        .font(.system(size: 13, weight: .medium))
+                    Text(shortcutText)
+                        .font(.system(size: 9, weight: .medium))
+                        .opacity(isLit ? 0.6 : 0.5)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isLit ? BrandColors.paperFillSwiftUI : BrandColors.surfaceSwiftUI)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(
+                        isLit ? BrandColors.goldSwiftUI : BrandColors.ruleSwiftUI,
+                        lineWidth: isLit ? 0.75 : 1
+                    )
+            )
+            .foregroundColor(isLit ? BrandColors.blackSwiftUI : BrandColors.whiteSwiftUI.opacity(0.4))
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(!isLit)
+        .accessibilityIdentifier("SidebarWaitingAgentButton")
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(display.badgeText ?? "")
+        .safeHelp(
+            KeyboardShortcutSettings.Action.jumpToUnread.tooltip(label)
+        )
+    }
+}
+
+private struct WorkspaceNavRow: View {
+    let isFirstDisabled: Bool
+    let isLastDisabled: Bool
+    let onPrevious: () -> Void
+    let onNext: () -> Void
+
+    var body: some View {
+        HStack(spacing: 1) {
+            WorkspaceArrowButton(
+                glyph: "\u{25B2}",
+                isDisabled: isFirstDisabled,
+                action: onPrevious,
+                tooltipText: KeyboardShortcutSettings.Action.prevSidebarTab.tooltip(
+                    String(localized: "sidebar.workspaceNav.previous", defaultValue: "Previous Workspace")
+                ),
+                accessibilityText: String(localized: "sidebar.workspaceNav.previous.accessibility", defaultValue: "Go to previous workspace")
+            )
+            WorkspaceArrowButton(
+                glyph: "\u{25BC}",
+                isDisabled: isLastDisabled,
+                action: onNext,
+                tooltipText: KeyboardShortcutSettings.Action.nextSidebarTab.tooltip(
+                    String(localized: "sidebar.workspaceNav.next", defaultValue: "Next Workspace")
+                ),
+                accessibilityText: String(localized: "sidebar.workspaceNav.next.accessibility", defaultValue: "Go to next workspace")
+            )
+        }
+    }
+}
+
+private struct WorkspaceArrowButton: View {
+    let glyph: String
+    let isDisabled: Bool
+    let action: () -> Void
+    let tooltipText: String
+    let accessibilityText: String
+
+    @State private var isHovering = false
+    @State private var isPressed = false
+    @State private var repeatTimer: Timer?
+
+    private var isActive: Bool { (isHovering || isPressed) && !isDisabled }
+
+    var body: some View {
+        Text(glyph)
+            .font(.system(size: 10, weight: .medium))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(BrandColors.surfaceSwiftUI)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .stroke(
+                        isActive ? BrandColors.goldSwiftUI : BrandColors.ruleSwiftUI,
+                        lineWidth: isActive ? 1.5 : 1
+                    )
+            )
+            .foregroundColor(
+                isDisabled
+                    ? BrandColors.whiteSwiftUI.opacity(0.3)
+                    : isActive
+                        ? BrandColors.goldSwiftUI
+                        : BrandColors.whiteSwiftUI
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .onHover { hovering in
+                guard !isDisabled else { return }
+                isHovering = hovering
+            }
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        guard !isDisabled, !isPressed else { return }
+                        isPressed = true
+                        action()
+                        startRepeat()
+                    }
+                    .onEnded { _ in
+                        isPressed = false
+                        stopRepeat()
+                    }
+            )
+            .accessibilityLabel(accessibilityText)
+            .accessibilityAddTraits(isDisabled ? .isStaticText : .isButton)
+            .safeHelp(isDisabled ? "" : tooltipText)
+            .onDisappear { stopRepeat() }
+    }
+
+    private func startRepeat() {
+        repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { _ in
+            DispatchQueue.main.async {
+                self.repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { _ in
+                    DispatchQueue.main.async {
+                        guard self.isPressed, !self.isDisabled else {
+                            self.stopRepeat()
+                            return
+                        }
+                        self.action()
+                    }
+                }
+            }
+        }
+    }
+
+    private func stopRepeat() {
+        repeatTimer?.invalidate()
+        repeatTimer = nil
     }
 }
 
@@ -11027,6 +11220,7 @@ private struct TabItemView: View, Equatable {
         lhs.index == rhs.index &&
         lhs.isActive == rhs.isActive &&
         lhs.agentChip == rhs.agentChip &&
+        lhs.worktreeChipRows == rhs.worktreeChipRows &&
         TabItemView.surfaceMetricsEqual(lhs.surfaceMetricsSample, rhs.surfaceMetricsSample) &&
         lhs.workspaceShortcutDigit == rhs.workspaceShortcutDigit &&
         lhs.canCloseWorkspace == rhs.canCloseWorkspace &&
@@ -11088,6 +11282,11 @@ private struct TabItemView: View, Equatable {
     let index: Int
     let isActive: Bool
     let agentChip: AgentChip?
+    /// C11-104: precomputed worktree/branch chip rows for the focused
+    /// surface. Empty when the setting is disabled or the surface is
+    /// not in a git directory. Keeping the projection upstream means
+    /// the TabItemView body does zero IO/git work.
+    let worktreeChipRows: [WorktreeChipRow]
     /// C11-25: most recent CPU/RSS sample for the workspace's focused
     /// surface, or nil when no PID is registered (terminals — pending
     /// the TTY → child PID resolver follow-up).
@@ -11364,39 +11563,13 @@ private struct TabItemView: View, Equatable {
         let latestNotificationSubtitle = latestNotificationText
         let effectiveSubtitle = latestNotificationSubtitle
         let detailVisibility = visibleAuxiliaryDetails
-        let orderedPanelIds: [UUID]? = (detailVisibility.showsBranchDirectory || detailVisibility.showsPullRequests)
+        // C11-104 v2 — branch+directory text-line precomputes retired.
+        // The new chip render (precomputed upstream in
+        // `VerticalTabsSidebar`, passed in via `worktreeChipRows`)
+        // replaces them.
+        let orderedPanelIds: [UUID]? = detailVisibility.showsPullRequests
             ? tab.sidebarOrderedPanelIds()
             : nil
-        let compactGitBranchSummaryText: String? = {
-            guard detailVisibility.showsBranchDirectory,
-                  !sidebarBranchVerticalLayout,
-                  sidebarShowGitBranch,
-                  let orderedPanelIds else {
-                return nil
-            }
-            return gitBranchSummaryText(orderedPanelIds: orderedPanelIds)
-        }()
-        let compactDirectorySummaryText: String? = {
-            guard detailVisibility.showsBranchDirectory,
-                  !sidebarBranchVerticalLayout,
-                  let orderedPanelIds else {
-                return nil
-            }
-            return directorySummaryText(orderedPanelIds: orderedPanelIds)
-        }()
-        let compactBranchDirectoryRow = branchDirectoryRow(
-            gitSummary: compactGitBranchSummaryText,
-            directorySummary: compactDirectorySummaryText
-        )
-        let branchDirectoryLines: [VerticalBranchDirectoryLine] = {
-            guard detailVisibility.showsBranchDirectory,
-                  sidebarBranchVerticalLayout,
-                  let orderedPanelIds else {
-                return []
-            }
-            return verticalBranchDirectoryLines(orderedPanelIds: orderedPanelIds)
-        }()
-        let branchLinesContainBranch = sidebarShowGitBranch && branchDirectoryLines.contains { $0.branch != nil }
         let pullRequestRows: [PullRequestDisplay] = {
             guard detailVisibility.showsPullRequests, let orderedPanelIds else { return [] }
             return pullRequestDisplays(orderedPanelIds: orderedPanelIds)
@@ -11504,6 +11677,19 @@ private struct TabItemView: View, Equatable {
                 .padding(.top, 1)
             }
 
+            // C11-104 — worktree + branch chips. Renders when the master
+            // toggle is on AND the resolver returned context for this
+            // surface. The projection is precomputed upstream so the
+            // body stays cheap.
+            if !worktreeChipRows.isEmpty {
+                WorktreeChipsRow(
+                    rows: worktreeChipRows,
+                    foreground: activeSecondaryColor(0.85),
+                    secondary: activeSecondaryColor(0.7)
+                )
+                .padding(.top, 1)
+            }
+
             if let subtitle = effectiveSubtitle {
                 Text(subtitle)
                     .font(.system(size: chromeTokens.sidebarWorkspaceDetail))
@@ -11575,59 +11761,10 @@ private struct TabItemView: View, Equatable {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
-            // Branch + directory row
-            if detailVisibility.showsBranchDirectory {
-                if sidebarBranchVerticalLayout {
-                    if !branchDirectoryLines.isEmpty {
-                        HStack(alignment: .top, spacing: 3) {
-                            if sidebarShowGitBranchIcon, branchLinesContainBranch {
-                                Image(systemName: "arrow.triangle.branch")
-                                    .font(.system(size: chromeTokens.sidebarWorkspaceAccessory))
-                                    .foregroundColor(activeSecondaryColor(0.6))
-                            }
-                            VStack(alignment: .leading, spacing: 1) {
-                                ForEach(Array(branchDirectoryLines.enumerated()), id: \.offset) { _, line in
-                                    HStack(spacing: 3) {
-                                        if let branch = line.branch {
-                                            Text(branch)
-                                                .font(.system(size: chromeTokens.sidebarWorkspaceMetadata, design: .monospaced))
-                                                .foregroundColor(activeSecondaryColor(0.75))
-                                                .lineLimit(1)
-                                                .truncationMode(.tail)
-                                        }
-                                        if line.branch != nil, line.directory != nil {
-                                            Image(systemName: "circle.fill")
-                                                .font(.system(size: chromeTokens.sidebarWorkspaceBranchDot))
-                                                .foregroundColor(activeSecondaryColor(0.6))
-                                                .padding(.horizontal, 1)
-                                        }
-                                        if let directory = line.directory {
-                                            Text(directory)
-                                                .font(.system(size: chromeTokens.sidebarWorkspaceMetadata, design: .monospaced))
-                                                .foregroundColor(activeSecondaryColor(0.75))
-                                                .lineLimit(1)
-                                                .truncationMode(.tail)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else if let dirRow = compactBranchDirectoryRow {
-                    HStack(spacing: 3) {
-                        if sidebarShowGitBranchIcon, compactGitBranchSummaryText != nil {
-                            Image(systemName: "arrow.triangle.branch")
-                                .font(.system(size: chromeTokens.sidebarWorkspaceAccessory))
-                                .foregroundColor(activeSecondaryColor(0.6))
-                        }
-                        Text(dirRow)
-                            .font(.system(size: chromeTokens.sidebarWorkspaceMetadata, design: .monospaced))
-                            .foregroundColor(activeSecondaryColor(0.75))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                }
-            }
+            // C11-104 v2 — Branch + Directory row retired. The
+            // worktree+branch chip row above replaces it. The toggle
+            // key `sidebarShowBranchDirectory` is preserved (existing
+            // user prefs survive) and now gates the chip row.
 
             // Pull request rows
             if detailVisibility.showsPullRequests, !pullRequestRows.isEmpty {
@@ -12339,84 +12476,12 @@ private struct TabItemView: View, Equatable {
     // latestNotificationText is now passed as a parameter from the parent view
     // to avoid subscribing to notificationStore changes in every TabItemView.
 
-    private func branchDirectoryRow(
-        gitSummary: String?,
-        directorySummary: String?
-    ) -> String? {
-        var parts: [String] = []
-
-        if let gitSummary {
-            parts.append(gitSummary)
-        }
-
-        if let directorySummary {
-            parts.append(directorySummary)
-        }
-
-        let result = parts.joined(separator: " · ")
-        return result.isEmpty ? nil : result
-    }
-
-    private func gitBranchSummaryText(orderedPanelIds: [UUID]) -> String? {
-        let lines = gitBranchSummaryLines(orderedPanelIds: orderedPanelIds)
-        guard !lines.isEmpty else { return nil }
-        return lines.joined(separator: " | ")
-    }
-
-    private func gitBranchSummaryLines(orderedPanelIds: [UUID]) -> [String] {
-        tab.sidebarGitBranchesInDisplayOrder(orderedPanelIds: orderedPanelIds).map { branch in
-            "\(branch.branch)\(branch.isDirty ? "*" : "")"
-        }
-    }
-
-    private struct VerticalBranchDirectoryLine {
-        let branch: String?
-        let directory: String?
-    }
-
-    private func verticalBranchDirectoryLines(orderedPanelIds: [UUID]) -> [VerticalBranchDirectoryLine] {
-        let entries = tab.sidebarBranchDirectoryEntriesInDisplayOrder(orderedPanelIds: orderedPanelIds)
-        let home = SidebarPathFormatter.homeDirectoryPath
-        return entries.compactMap { entry in
-            let branchText: String? = {
-                guard sidebarShowGitBranch, let branch = entry.branch else { return nil }
-                return "\(branch)\(entry.isDirty ? "*" : "")"
-            }()
-
-            let directoryText: String? = {
-                guard let directory = entry.directory else { return nil }
-                let shortened = SidebarPathFormatter.shortenedPath(directory, homeDirectoryPath: home)
-                return shortened.isEmpty ? nil : shortened
-            }()
-
-            switch (branchText, directoryText) {
-            case let (branch?, directory?):
-                return VerticalBranchDirectoryLine(branch: branch, directory: directory)
-            case let (branch?, nil):
-                return VerticalBranchDirectoryLine(branch: branch, directory: nil)
-            case let (nil, directory?):
-                return VerticalBranchDirectoryLine(branch: nil, directory: directory)
-            default:
-                return nil
-            }
-        }
-    }
-
-    private func directorySummaryText(orderedPanelIds: [UUID]) -> String? {
-        guard !tab.panels.isEmpty else { return nil }
-        let home = SidebarPathFormatter.homeDirectoryPath
-        var seen: Set<String> = []
-        var entries: [String] = []
-        for panelId in orderedPanelIds {
-            let directory = tab.panelDirectories[panelId] ?? tab.currentDirectory
-            let shortened = SidebarPathFormatter.shortenedPath(directory, homeDirectoryPath: home)
-            guard !shortened.isEmpty else { continue }
-            if seen.insert(shortened).inserted {
-                entries.append(shortened)
-            }
-        }
-        return entries.isEmpty ? nil : entries.joined(separator: " | ")
-    }
+    // C11-104 v2 — retired:
+    //   branchDirectoryRow, gitBranchSummaryText, gitBranchSummaryLines,
+    //   VerticalBranchDirectoryLine, verticalBranchDirectoryLines,
+    //   directorySummaryText
+    // The chip render in `WorktreeChipsRow` (precomputed upstream in
+    // `VerticalTabsSidebar`) replaces these.
 
     private struct PullRequestDisplay: Identifiable {
         let id: String
@@ -14384,20 +14449,3 @@ extension NSColor {
     }
 }
 
-private struct TabBarChromeHandle: View {
-    let onExpand: () -> Void
-
-    var body: some View {
-        Button(action: onExpand) {
-            Image(systemName: "sidebar.left")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 32, height: 32)
-        }
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .shadow(color: .black.opacity(0.12), radius: 4, x: 0, y: 2)
-        .buttonStyle(.plain)
-        .accessibilityLabel(String(localized: "accessibility.tab_bar.expand_handle",
-                                  defaultValue: "Expand tab bar"))
-    }
-}

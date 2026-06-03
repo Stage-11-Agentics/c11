@@ -1,0 +1,31 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 1,
+  "complexity": null,
+  "created_at": "2026-05-18T20:31:23Z",
+  "created_by": "agent:claude-opus-4-7",
+  "custom_fields": {},
+  "description": "Restore the c11 CI + test signal after v0.48.0 shipped via admin-merge (build job red on every main commit for 50+ runs because c11-unit test step misdiagnosed as \"hang\"). Full audit: `notes/build-test-pipeline-audit-2026-05-18.md`.\n\n**Summary of findings**\n\n1. **Not a hang.** c11Tests runs ~10 min and reliably brushes the 15-min `timeout-minutes` ceiling. One outlier test (`AppDelegateShortcutRoutingTests.testMinimalModeUsesZeroTopSafeAreaForMainWindowContentView`, 104s) consumes 22% of suite time. The suite ends with 32 real `XCTestExpectation` 1-second timeouts losing races on shared-tenant runners.\n2. **Operator's c11 dies under local `xcodebuild test`** because the test host's untagged `c11 DEV.app` binds `/tmp/c11-debug.sock` \u2014 same path any debug build the operator is running uses. Fix surface is one resolver function (`SocketControlSettings.socketPath()`, ~6 lines).\n3. **Release path is healthy.** v0.48.0 round-tripped clean. Universal DMG verified via `lipo`. Sign/notarize/Sparkle/Homebrew all green.\n4. **Adjacent bit-rot.** `nightly.yml` red 15 consecutive runs since 2026-05-04 (missing `continue-on-error` on Sentry step). `claude.yml` references missing secret + floating tags. `test-e2e.yml` hardcodes stale `cmuxUITests` scheme.\n\n**Four components** (each a child task linked via `subtask_of`):\n\n1. **CI unblock** \u2014 `nightly.yml` Sentry flag, `ci.yml` timeout 15\u219225, slow-test `XCTSkip`, scheme split into hard-gate + advisory. (\u22641 PR, hours.)\n2. **Local test runnability** \u2014 `SocketControlSettings` runtime guard, scheme env var, `scripts/test-unit-local.sh`, CLAUDE.md rule drop. (~1 PR, ~1 day.) Enables iterating on #3 locally.\n3. **c11Tests stabilization** \u2014 triage 32 expectation-timeout failures + profile the 104s slow test; exit criterion is flipping #1's advisory flag back to hard-fail. (Multi-day, owner-driven.)\n4. **Workflow hygiene** \u2014 `update-homebrew.yml` timeout, `sparkle_generate_appcast.sh` defaults, `bump-version.sh` floor-curl hard-fail, `claude.yml` + `test-e2e.yml` keep-or-delete decisions, CLAUDE.md ghostty remote naming alignment. (~1 small PR + 2 decisions.)\n\n**Dependencies**\n- 1 \u2192 3 (advisory becomes hard-fail once 3 is done)\n- 2 \u2192 3 (ergonomic: lets 3's owner iterate locally)\n- 4 is independent\n\n**Explicit non-goals**\n- Adding explicit `ARCHS=\"arm64 x86_64\"` to `release.yml`. Shipped DMG is already universal (`ONLY_ACTIVE_ARCH = NO` in pbxproj). Belt-and-braces, not a fix.\n- Rewriting the \"self-referential\" Homebrew SHA gate. It validates heredoc substitution correctness, which is what's needed; download integrity is already gated by the 5-retry HTTP loop.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KRYCJGPG13GS6H01TGNH1V8H",
+  "last_event_id": "ev_01KRYD6350EBDXT9RKJ577TZWF",
+  "last_status_changed_at": "2026-05-18T20:31:23Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-98",
+  "status": "backlog",
+  "tags": [
+    "ci",
+    "test-infrastructure",
+    "audit-2026-05-18"
+  ],
+  "title": "Restore c11 CI + test pipeline signal (post-v0.48.0 audit)",
+  "type": "task",
+  "updated_at": "2026-05-18T20:42:04Z",
+  "urgency": null
+}

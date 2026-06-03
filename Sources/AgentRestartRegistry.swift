@@ -123,13 +123,19 @@ struct AgentRestartRegistry: Sendable {
     /// future in-process writer that bypasses the store must not become a
     /// command-injection vector.
     ///
-    /// The trailing `"\n"` is part of the row's output: the registry
-    /// returns the **submit form** of the command, not the typed form.
-    /// How to submit is the registry's concern, not the executor's —
-    /// otherwise every executor caller would have to remember to append
-    /// one. Without it, `TerminalPanel.sendText` writes the bytes verbatim
-    /// and the command sits at the prompt unexecuted. Phase 5 rows for
-    /// codex/opencode/kimi follow the same "return submit form" contract.
+    /// The trailing `"\n"` is preserved in the row's output for
+    /// compatibility with callers and snapshot consumers that may inspect
+    /// the literal string. Submission no longer depends on it:
+    /// `ghostty_surface_text` wraps every write in bracketed-paste markers
+    /// (`ESC[200~ … ESC[201~`), and bracketed paste is specifically
+    /// designed so embedded `\n`/`\r` do NOT auto-execute — shells and
+    /// TUI raw-mode handlers only submit when a real Return arrives
+    /// outside the paste sequence. Both the executor and the boot-time
+    /// restart path route registry output through
+    /// `TerminalSurface.sendSubmitFormText`, which trims the trailing
+    /// newline, types the bytes via paste, and dispatches a synthetic
+    /// Return key outside the paste so the receiving shell or TUI
+    /// actually submits the line.
     ///
     /// Use `claude --dangerously-skip-permissions --resume <id>` rather than
     /// `cc`: `cc` resolves to the C compiler in c11 terminal environments,
@@ -169,7 +175,7 @@ struct AgentRestartRegistry: Sendable {
         },
         Row(terminalType: "opencode") { _, _ in
             // no stable resume flag known; launches fresh.
-            "opencode\n"
+            "opencode run --dangerously-skip-permissions\n"
         },
         Row(terminalType: "kimi") { _, _ in
             // no stable resume flag known; launches fresh.

@@ -82,10 +82,10 @@ Anything larger escalates no matter how clean it looks.
 1. **Zulip** (primary): channel `c11`, topic `drawbridge`, posted by the bot
    account. Token lives in the `ZULIP_BOT_API_KEY` repo secret — never in files.
    **Reachability:** `zulip.stage11.ai` resolves only inside the tailnet (CoreDNS
-   split DNS; no public record), so delivery from GitHub-hosted runners fails
-   until the notify job joins the tailnet via an ephemeral, ACL-scoped
-   `tailscale/github-action` step (pending: maintainer mints the auth key,
-   scoped to Zulip:443 only).
+   split DNS; no public record). The notify and sweep jobs join the tailnet via
+   an ephemeral `tailscale/github-action` step: OAuth client (repo secrets
+   `TS_OAUTH_CLIENT_ID`/`TS_OAUTH_SECRET`) mints `tag:ci` nodes that the ACL
+   pins to pine's 443/53 and that self-remove when the job ends.
 2. **GitHub-native fallback** (automatic): when Zulip is unreachable, the notify
    job labels the item `drawbridge:notify-failed` and assigns the
    `fallback_assignee` from the machine config instead of failing the run red —

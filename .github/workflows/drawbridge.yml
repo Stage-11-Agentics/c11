@@ -488,6 +488,18 @@ jobs:
           name: drawbridge-gates-${{ needs.drawbridge-judge.outputs.item_type }}-${{ needs.drawbridge-judge.outputs.item_number }}
           path: /tmp/gate
 
+      # Zulip is tailnet-only (see TRIAGE_POLICY.md). Join as an ephemeral,
+      # ACL-scoped node (tag:ci → pine 443/53 only); the node self-removes
+      # when the job ends. continue-on-error: the GitHub-native fallback in
+      # notify_or_fallback carries the ping if the join fails.
+      - name: Join tailnet (ephemeral, scoped to Zulip)
+        continue-on-error: true
+        uses: tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8 # v4.1.2
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
       - name: Compose and send notification
         env:
           ZULIP_BOT_API_KEY: ${{ secrets.ZULIP_BOT_API_KEY }}

@@ -81,7 +81,17 @@ Anything larger escalates no matter how clean it looks.
 
 1. **Zulip** (primary): channel `c11`, topic `drawbridge`, posted by the bot
    account. Token lives in the `ZULIP_BOT_API_KEY` repo secret — never in files.
-2. Email: deliberately not wired yet. Add a channel by extending
+   **Reachability:** `zulip.stage11.ai` resolves only inside the tailnet (CoreDNS
+   split DNS; no public record), so delivery from GitHub-hosted runners fails
+   until the notify job joins the tailnet via an ephemeral, ACL-scoped
+   `tailscale/github-action` step (pending: maintainer mints the auth key,
+   scoped to Zulip:443 only).
+2. **GitHub-native fallback** (automatic): when Zulip is unreachable, the notify
+   job labels the item `drawbridge:notify-failed` and assigns the
+   `fallback_assignee` from the machine config instead of failing the run red —
+   a red X on an inbound PR reads as a broken pipeline to contributors when
+   it's only the messenger that slipped.
+3. Email: deliberately not wired yet. Add a channel by extending
    `scripts/drawbridge/notify.sh` and documenting it here.
 
 ## Tone
@@ -171,6 +181,7 @@ exact root-level path.
     "channel": "c11",
     "topic": "drawbridge",
     "bot_email": "mcp-bot@zulip.stage11.ai"
-  }
+  },
+  "fallback_assignee": "BenevolentFutures"
 }
 ```

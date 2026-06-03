@@ -467,6 +467,7 @@ jobs:
        needs.drawbridge-judge.result == 'failure')
     permissions:
       contents: read
+      issues: write         # GitHub-native fallback ping (label + assignee)
     steps:
       - name: Checkout trusted default branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -490,6 +491,7 @@ jobs:
       - name: Compose and send notification
         env:
           ZULIP_BOT_API_KEY: ${{ secrets.ZULIP_BOT_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
           ROUTE: ${{ needs.drawbridge-gate.outputs.route }}
           MODE: ${{ needs.drawbridge-gate.outputs.mode }}
           REVIEW_URL: ${{ needs.drawbridge-review.outputs.comment_url }}
@@ -498,6 +500,30 @@ jobs:
           FALLBACK_NUMBER: ${{ needs.drawbridge-judge.outputs.item_number || github.event.pull_request.number || github.event.issue.number || inputs.item_number }}
         run: |
           set -euo pipefail
+
+          # Zulip lives on the tailnet only (CoreDNS split DNS; no public
+          # record — see TRIAGE_POLICY.md operational notes). Until the
+          # runner joins via an ephemeral Tailscale step, delivery from CI
+          # can fail with DNS errors. Degrade to a GitHub-native ping
+          # (label + assignee) instead of failing the run red on every
+          # inbound item — a red X here reads as a broken pipeline to
+          # contributors when it's only the messenger that slipped.
+          notify_or_fallback() {
+            if scripts/drawbridge/notify.sh TRIAGE_POLICY.md /tmp/notify.md; then
+              return 0
+            fi
+            echo "::warning::drawbridge-notify: Zulip unreachable from this runner; using GitHub-native fallback ping"
+            local assignee
+            assignee="$(python3 scripts/drawbridge/gates.py --emit-config-key fallback_assignee --policy TRIAGE_POLICY.md 2>/dev/null | jq -r . || true)"
+            if [[ -n "${FALLBACK_NUMBER:-}" ]]; then
+              gh label create "drawbridge:notify-failed" --color "d93f0b" \
+                --description "Drawbridge: maintainer ping failed; GitHub-native fallback used" 2>/dev/null || true
+              gh issue edit "$FALLBACK_NUMBER" --add-label "drawbridge:notify-failed" || true
+              if [[ -n "$assignee" && "$assignee" != "null" ]]; then
+                gh issue edit "$FALLBACK_NUMBER" --add-assignee "$assignee" || true
+              fi
+            fi
+          }
 
           # Hard-failure path: the pipeline errored before producing its
           # artifacts. Send a manual-triage ping instead of going silent.
@@ -510,7 +536,7 @@ jobs:
               echo "- **Run:** $RUN_URL"
               echo "- No verdict/gate artifacts were produced; nothing was merged, labeled, or commented."
             } > /tmp/notify.md
-            scripts/drawbridge/notify.sh TRIAGE_POLICY.md /tmp/notify.md
+            notify_or_fallback
             exit 0
           fi
 
@@ -547,4 +573,4 @@ jobs:
             fi
           } > /tmp/notify.md
 
-          scripts/drawbridge/notify.sh TRIAGE_POLICY.md /tmp/notify.md
+          notify_or_fallback

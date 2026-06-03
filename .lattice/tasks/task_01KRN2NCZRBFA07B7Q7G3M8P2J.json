@@ -1,0 +1,33 @@
+{
+  "assigned_to": "agent:claude-opus-4-7-1m",
+  "branch_links": [],
+  "cmux_surface": "38D8E632-B090-44B9-B216-F5C96FC261BD",
+  "cmux_workspace": "10B54B7A-E46A-4D6F-9E43-63E38D54CDCF",
+  "comment_count": 5,
+  "complexity": null,
+  "created_at": "2026-05-15T05:45:02Z",
+  "created_by": "human:atin",
+  "custom_fields": {},
+  "description": "The c11 main menu bar has grown organically (notifications top-level menu, workspace submenu inside File, splits + browser nav + workspace switching + sidebar toggle all mixed inside View) and now reads as random and miscellaneous. Audit the current state of every item in c11 / File / Edit / View / Notifications / Window / Help, then redesign for legibility \u2014 group by user intent, surface c11-native concepts (panes, surfaces, workspaces, sidebar) at appropriate levels, and decide whether 'Notifications' should remain top-level or fold into View.",
+  "done_at": "2026-05-15T06:52:35Z",
+  "evidence_refs": [],
+  "id": "task_01KRN2NCZRBFA07B7Q7G3M8P2J",
+  "last_event_id": "ev_01KRN6H4N93K18RXF5CSQZ3J8X",
+  "last_status_changed_at": "2026-05-15T06:52:35Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-41",
+  "status": "done",
+  "tags": [
+    "ux",
+    "menu-bar",
+    "ia"
+  ],
+  "title": "Reorganize macOS menu bar \u2014 reduce miscellany, group by intent",
+  "type": "task",
+  "updated_at": "2026-05-15T06:52:36Z",
+  "urgency": null
+}

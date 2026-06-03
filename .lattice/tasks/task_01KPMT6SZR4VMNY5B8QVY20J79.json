@@ -18,15 +18,15 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KPMT6SZR4VMNY5B8QVY20J79",
-  "last_event_id": "ev_01KPMTTAE4VMFPDKFDYVTH7YN3",
-  "last_status_changed_at": "2026-04-20T06:56:31Z",
+  "last_event_id": "ev_01KQTTXC3N4T9G9G5E6334PJ9S",
+  "last_status_changed_at": "2026-05-05T01:09:19Z",
   "linked_files": [],
   "priority": "low",
   "relationships_out": [],
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "CMUX-36",
-  "status": "planned",
+  "status": "cancelled",
   "tags": [
     "ui",
     "chrome",
@@ -35,6 +35,6 @@
   ],
   "title": "Bottom status bar + Jump-to-Latest-Unread as first tenant",
   "type": "task",
-  "updated_at": "2026-04-20T06:56:31Z",
+  "updated_at": "2026-05-05T01:09:19Z",
   "urgency": null
 }

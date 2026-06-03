@@ -1,0 +1,33 @@
+{
+  "assigned_to": "agent:claude-opus-4-7-c11-25",
+  "branch_links": [],
+  "comment_count": 4,
+  "complexity": null,
+  "created_at": "2026-05-05T00:00:57Z",
+  "created_by": "agent:claude-opus-4-7",
+  "custom_fields": {},
+  "description": "Performance improvements to make c11 a defensive substrate for surfaces \u2014 robust against agents (and operators) that spawn dozens of surfaces, including spammy terminals and heavy webviews.\n\n## Motivating evidence\n\nSurfaced during live testing of c11-26-followup (2026-05-04). With ~21 surfaces across 6 workspaces (7 of those WKWebView browsers), the dev binary became laggy. Diagnostics:\n\n- c11-26-followup CPU: 7.6% (not unusual on its own)\n- 32 WebKit content procs system-wide, ~13GB RSS combined (some from c11, rest from other apps like Lexicon)\n- One surface \u2014 a bash radar loop doing awk-per-cell on a 21\u00d721 grid at 2 Hz \u2014 was the dominant single-surface CPU hog\n- Lag persisted even after the agent's hot loops were terminated, pointing at compositor/rendering load from sheer surface count rather than raw CPU\n\n## Improvements (ranked by leverage)\n\n### 1. Suspend browser surfaces in non-focused workspaces\nTwo implementation tiers:\n- **Cheap** \u2014 when a workspace deselects, detach its browser surfaces' NSView from the window hierarchy. AppKit/CoreAnimation stops driving compositor work automatically. Recovers compositor cost; doesn't free memory.\n- **ARC-grade** \u2014 snapshot the WKWebView to an NSImage, swap the image into the layout, terminate the webview's WebContent process. On re-focus, recreate and reload. This is what ARC does for archived/inactive tabs and is why it can hold dozens of pinned tabs at low memory.\n\n### 2. Throttle terminal rendering in non-focused workspaces\nDecouple the PTY byte-processor (must always drain so the child doesn't block on stdout) from the renderer (which can defer to ~1 Hz when offscreen, full rate when focused). Same approach mosh and modern terminal emulators use.\n\n### 3. Per-surface frame budget\nNo single surface should drive >30 fps regardless of focus. A spammy producer (`top -l 0 -s 2`, the awk radar, a noisy `tail -f`) shouldn't be able to flood the renderer faster than the GPU coalesces. A displaylink-pegged `setNeedsDisplay` cap fixes it.\n\n### 4. Per-surface CPU/memory in the sidebar\nSurfaces are anonymous CPU-wise today. Adding per-surface telemetry would let operators *and* agents see \"the radar is hot, the ping is fine.\" Agents could self-throttle when they notice their own surface is the cause.\n\n### 5. Explicit \"Hibernate workspace\" action\nUser-facing version of #1 \u2014 right-click a workspace, snapshot its browsers + SIGSTOP its terminal children. Resume on focus. Useful for parking work without closing it.\n\n## Why this is one ticket\n\nAll five pivot on the same primitive: **per-surface lifecycle states** (active / throttled / suspended / hibernated). Implementing that primitive once unlocks all five. Splitting too early would duplicate the lifecycle machinery across PRs. Subtasks make sense once the primitive lands; before then, they'd diverge.\n\n## Why this matters strategically\n\nAgents will spam terminals (one of mine just did). c11 being a defensive substrate isn't a workaround \u2014 it's a feature. ARC handles lifecycle for a single content type (web pages); c11 has to do it across three (terminal, browser, markdown). Getting the lifecycle primitive right is what lets the workspace count scale beyond ~20 surfaces without operators feeling the pain.\n\n## Definition of done (suggested)\n\n- Browsers in non-focused workspaces consume <1% CPU and (snapshot tier) <50 MB each\n- Terminal renderers in non-focused workspaces draw at <2 Hz\n- No single surface can exceed 30 fps redraw rate, regardless of producer\n- Sidebar shows per-surface CPU/memory\n- Right-click workspace \u2192 \"Hibernate\" works as described",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KQTQ05R0G4CSMJRQPK7XVKY3",
+  "last_event_id": "ev_01KQTVNBMG9HBDAERYVGQ40VPS",
+  "last_status_changed_at": "2026-05-05T01:22:25Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-25",
+  "status": "planned",
+  "tags": [
+    "perf",
+    "webview",
+    "terminal",
+    "surface",
+    "lifecycle"
+  ],
+  "title": "Surface lifecycle perf: webview suspension, off-screen terminal throttling, per-surface frame budget",
+  "type": "task",
+  "updated_at": "2026-05-05T01:22:25Z",
+  "urgency": null
+}

@@ -1,0 +1,29 @@
+=== c11 health --json ===
+{
+  "events" : [
+
+  ],
+  "rails" : {
+    "ips" : {
+      "count" : 0
+    },
+    "metrickit" : {
+      "count" : 0
+    },
+    "sentinel" : {
+      "count" : 0
+    },
+    "sentry" : {
+      "count" : 0
+    }
+  },
+  "schema_version" : 1,
+  "warnings" : [
+    "Sentry cache empty across c11 bundles: telemetry may be off, or events shipped on last launch and cleared the cache."
+  ],
+  "window" : {
+    "mode" : "default-24h",
+    "since" : "2026-05-02T22:37:32.073Z",
+    "until" : "2026-05-03T22:37:32.073Z"
+  }
+}

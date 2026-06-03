@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-04T00:21:24Z",
+  "created_by": "agent:opus-c11-6",
+  "custom_fields": {},
+  "id": "art_01KQR5RXQZGCKV6E1NXF2VBG12",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KQR5RXQZGCKV6E1NXF2VBG12.md",
+    "size_bytes": 1553
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "plan-review (gemini)",
+  "token_usage": null,
+  "type": "file"
+}

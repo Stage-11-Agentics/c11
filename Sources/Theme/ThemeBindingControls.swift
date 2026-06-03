@@ -20,7 +20,7 @@ public struct ChromeThemeTokens: Equatable, Sendable {
         self.separator = separator
     }
 
-    public static func resolve(for theme: C11muxTheme, scheme: ThemeContext.ColorScheme) -> ChromeThemeTokens {
+    public static func resolve(for theme: C11Theme, scheme: ThemeContext.ColorScheme) -> ChromeThemeTokens {
         let snapshot = ResolvedThemeSnapshot(theme: theme)
         let ctx = ThemeContext(
             workspaceColor: nil,

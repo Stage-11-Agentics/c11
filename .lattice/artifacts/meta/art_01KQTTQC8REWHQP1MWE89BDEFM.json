@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-05T01:06:03Z",
+  "created_by": "human:atin",
+  "custom_fields": {},
+  "id": "art_01KQTTQC8REWHQP1MWE89BDEFM",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KQTTQC8REWHQP1MWE89BDEFM.md",
+    "size_bytes": 1142
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "PR #45 merged 2026-04-22. All three original failure modes verified by visual test on main.\n\nFailure 1 \u2014 sidebar neutrality: PASS. Rail/list background stays neutral across saturated custom colors; on",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

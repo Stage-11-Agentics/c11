@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-15T23:27:58Z",
+  "created_by": "agent:c11-26-reviewer",
+  "custom_fields": {},
+  "id": "art_01KRPZFPHBN4W0G2G3JRTHW3BV",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KRPZFPHBN4W0G2G3JRTHW3BV.md",
+    "size_bytes": 6699
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Self-review",
+  "token_usage": null,
+  "type": "note"
+}

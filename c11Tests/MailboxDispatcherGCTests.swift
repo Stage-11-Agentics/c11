@@ -11,6 +11,7 @@ final class MailboxDispatcherGCTests: XCTestCase {
     private var tempState: URL!
     private var workspaceId: UUID!
     private var outbox: URL!
+    private var dispatcher: MailboxDispatcher?
 
     override func setUpWithError() throws {
         try super.setUpWithError()
@@ -25,8 +26,14 @@ final class MailboxDispatcherGCTests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
+        // Drain the dispatch log queue before tearing down the tree. `runGCSweep`
+        // appends a `.gc` event async when files are removed; without a flush
+        // the CI runner can race `removeItem(tempState)` against the log
+        // writer's `createDirectory`/`createFile` and trip NSCocoaError 513.
+        dispatcher?.log.flush()
+        dispatcher = nil
         if let tempState, FileManager.default.fileExists(atPath: tempState.path) {
-            try FileManager.default.removeItem(at: tempState)
+            try? FileManager.default.removeItem(at: tempState)
         }
         tempState = nil
         try super.tearDownWithError()
@@ -37,11 +44,13 @@ final class MailboxDispatcherGCTests: XCTestCase {
             workspaceId: workspaceId,
             liveSurfaces: { [] }
         )
-        return MailboxDispatcher(
+        let dispatcher = MailboxDispatcher(
             workspaceId: workspaceId,
             stateURL: tempState,
             resolver: resolver
         )
+        self.dispatcher = dispatcher
+        return dispatcher
     }
 
     private func writeTempFile(name: String, ageSeconds: TimeInterval) throws {

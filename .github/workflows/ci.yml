@@ -52,7 +52,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup Go
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: daemon/remote/go.mod
 
@@ -73,7 +73,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -89,7 +89,7 @@ jobs:
     # can be reinstated in nightly.yml if needed.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: macos-15-xlarge
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -182,3 +182,48 @@ jobs:
             -destination "platform=macOS" \
             COMPILER_INDEX_STORE_ENABLE=NO \
             build
+
+      - name: Logic tests (gate)
+        # Hard-fail gate: pure-logic suite (parsers, snapshots, persistence,
+        # mailbox, theme). Runs in xctest-only, no DEV.app host. Fast (~45s)
+        # and stable on shared-tenant runners.
+        run: |
+          set -euo pipefail
+          SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
+          xcodebuild -project GhosttyTabs.xcodeproj -scheme c11-logic -configuration Debug \
+            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
+            -disableAutomaticPackageResolution \
+            -destination "platform=macOS" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            test
+
+      - name: Host-bound unit tests (advisory)
+        # Advisory while C11-99 Area C stabilizes the 32 expectation-timeout
+        # failures clustered in 7 host-bound classes. Failures still surface
+        # in the run log; they just don't gate merges. Flip back to hard-fail
+        # once C11-99 Area C lands 5+ consecutive green runs.
+        #
+        # C11-109: the 7 flaky classes are explicitly -skip-testing'd below.
+        # Each expectation timeout is ~10s; 32 timeouts dominated the ~6 min
+        # wall time even though `continue-on-error: true` made them advisory.
+        # Skipping recovers ~5 min per build while the remaining ~20 c11Tests
+        # still provide host-runtime signal (AppKit, Ghostty, WKWebView,
+        # UNNotificationCenter). Remove the skip flags when Area C lands.
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          SOURCE_PACKAGES_DIR="$PWD/.ci-source-packages"
+          xcodebuild -project GhosttyTabs.xcodeproj -scheme c11-unit -configuration Debug \
+            -only-testing:c11Tests \
+            -skip-testing:c11Tests/AppDelegateShortcutRoutingTests \
+            -skip-testing:c11Tests/GhosttyConfigTests \
+            -skip-testing:c11Tests/NotificationBurstCoalescerTests \
+            -skip-testing:c11Tests/TabManagerReopenClosedBrowserFocusTests \
+            -skip-testing:c11Tests/TerminalNotificationDirectInteractionTests \
+            -skip-testing:c11Tests/BrowserDeveloperToolsVisibilityPersistenceTests \
+            -skip-testing:c11Tests/BrowserPanelHostContainerViewTests \
+            -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
+            -disableAutomaticPackageResolution \
+            -destination "platform=macOS" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            test

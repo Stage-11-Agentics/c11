@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Pre-push guard for c11.
+#
+# Blocks pushes from this (parent) repo to any manaflow-ai/* remote.
+# c11 is a Stage-11-Agentics fork of cmux; pushes back to the upstream
+# org are forbidden (see CLAUDE.md and the "no upstream writes" memory).
+#
+# The ghostty submodule legitimately pushes to manaflow-ai/ghostty.
+# Submodule pushes use the submodule's own hooks path, not this one,
+# so they are unaffected.
+#
+# Bypass intentionally with: git push --no-verify ...
+
+set -e
+
+remote_name="${1:-}"
+remote_url="${2:-}"
+
+case "$remote_url" in
+    *manaflow-ai/*)
+        echo "pre-push blocked: '$remote_name' resolves to $remote_url" >&2
+        echo "  c11 must not push to manaflow-ai/* from this parent repo." >&2
+        echo "  See CLAUDE.md and the 'no upstream writes' memory." >&2
+        echo "  Bypass intentionally with: git push --no-verify ..." >&2
+        exit 1
+        ;;
+esac
+
+exit 0

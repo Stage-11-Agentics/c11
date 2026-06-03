@@ -10,6 +10,9 @@ NAME_SET=0
 BUNDLE_SET=0
 DERIVED_SET=0
 TAG=""
+WMO=0
+UNIVERSAL=0
+CLEAN=0
 LAST_SOCKET_PATH_DIR="$HOME/Library/Application Support/c11"
 LAST_SOCKET_PATH_FILE="${LAST_SOCKET_PATH_DIR}/last-socket-path"
 
@@ -33,7 +36,26 @@ Options:
   --name <app name>      Override app display/bundle name.
   --bundle-id <id>       Override bundle identifier.
   --derived-data <path>  Override derived data path.
+  --clean                Wipe the derived-data dir before building.
+  --universal            Build a universal (arm64 + x86_64) binary.
+                         Default is arm64-only for faster local iteration.
+                         Use this for x86_64-specific checks; combine with
+                         --wmo for full prod parity before a tag push.
+  --wmo                  Use wholemodule Swift compilation (prod parity).
+                         Default is incremental for faster local iteration.
+                         Recommended before tag push to catch WMO-only bugs.
   -h, --help             Show this help.
+
+The default derived-data path keys on the tag *family* (the prefix up to
+the first hyphen of the sanitized tag), so related tags share an
+incremental build cache:
+
+  --tag release/v0.49.0   -> /tmp/c11-staging-release/
+  --tag c11-110-build     -> /tmp/c11-staging-c11/
+  --tag feat-foo-bar      -> /tmp/c11-staging-feat/
+
+The script prints the last tag/SHA built into the shared dir on reuse;
+pass --clean (or --derived-data <path>) to override.
 EOF
 }
 
@@ -55,6 +77,19 @@ sanitize_path() {
     cleaned="agent"
   fi
   echo "$cleaned"
+}
+
+# Family extraction: prefix-up-to-first-hyphen of the sanitized tag slug.
+# release-v0-49-0 -> release; c11-110-build-perf -> c11; feat-foo -> feat.
+# Lets related tags (release/v0.49.0, release/v0.50.0; c11-108, c11-109)
+# share a derived-data dir for incremental rebuilds across branches.
+family_for_slug() {
+  local slug="$1"
+  local family="${slug%%-*}"
+  if [[ -z "$family" ]]; then
+    family="default"
+  fi
+  echo "$family"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -94,6 +129,18 @@ while [[ $# -gt 0 ]]; do
       DERIVED_SET=1
       shift 2
       ;;
+    --wmo)
+      WMO=1
+      shift
+      ;;
+    --universal)
+      UNIVERSAL=1
+      shift
+      ;;
+    --clean)
+      CLEAN=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -109,6 +156,7 @@ done
 if [[ -n "$TAG" ]]; then
   TAG_ID="$(sanitize_bundle "$TAG")"
   TAG_SLUG="$(sanitize_path "$TAG")"
+  TAG_FAMILY="$(family_for_slug "$TAG_SLUG")"
   if [[ "$NAME_SET" -eq 0 ]]; then
     APP_NAME="c11 STAGING ${TAG}"
   fi
@@ -116,7 +164,31 @@ if [[ -n "$TAG" ]]; then
     BUNDLE_ID="com.stage11.c11.staging.${TAG_ID}"
   fi
   if [[ "$DERIVED_SET" -eq 0 ]]; then
-    DERIVED_DATA="/tmp/c11-staging-${TAG_SLUG}"
+    DERIVED_DATA="/tmp/c11-staging-${TAG_FAMILY}"
+  fi
+fi
+
+# Optional cold-build: wipe the derived-data dir before building.
+# Mirrors the old per-tag "always clean" behavior for callers that need it.
+if [[ "$CLEAN" -eq 1 && -n "$DERIVED_DATA" && -d "$DERIVED_DATA" ]]; then
+  echo "[reloads.sh] --clean: removing $DERIVED_DATA"
+  rm -rf "$DERIVED_DATA"
+fi
+
+# Breadcrumb for shared derived-data reuse. Reports what was last built
+# in this dir alongside the current HEAD/tag so the operator can decide
+# whether to pass --clean next time.
+LAST_SHA_FILE=""
+LAST_TAG_FILE=""
+if [[ -n "$DERIVED_DATA" ]]; then
+  LAST_SHA_FILE="${DERIVED_DATA}/.last-sha"
+  LAST_TAG_FILE="${DERIVED_DATA}/.last-tag"
+  CUR_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  if [[ -f "$LAST_SHA_FILE" || -f "$LAST_TAG_FILE" ]]; then
+    PREV_SHA="$(cat "$LAST_SHA_FILE" 2>/dev/null || echo unknown)"
+    PREV_TAG="$(cat "$LAST_TAG_FILE" 2>/dev/null || echo unknown)"
+    echo "[reloads.sh] reusing $DERIVED_DATA (last: tag=$PREV_TAG sha=$PREV_SHA; now: tag=${TAG:-none} sha=$CUR_SHA)"
+    echo "             pass --clean to force a cold build"
   fi
 fi
 
@@ -136,10 +208,36 @@ if [[ -z "$TAG" ]]; then
     PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"
   )
 fi
+# On Apple Silicon the x86_64 slice of a universal build is dead weight at
+# iteration time and roughly doubles the Swift compile cost. CI's release.yml
+# still produces universal because it invokes xcodebuild without these
+# overrides; pass --universal here to catch x86_64-only issues locally.
+if [[ "$UNIVERSAL" -eq 0 ]]; then
+  XCODEBUILD_ARGS+=(ARCHS=arm64 ONLY_ACTIVE_ARCH=YES)
+fi
+# Staging is built for running, not for IDE navigation; the indexer output
+# would only be useful if we ever edited against this build in Xcode.
+XCODEBUILD_ARGS+=(COMPILER_INDEX_STORE_ENABLE=NO)
+# Default to incremental Swift compilation. Wholemodule is faster for a
+# single binary's runtime perf but slower to compile on each iteration.
+# Pass --wmo for the rare staging build that needs prod parity (e.g. the
+# build right before a tag push, to catch WMO-only regressions like the
+# 0.47.0 New Workspace dialog issue).
+if [[ "$WMO" -eq 0 ]]; then
+  XCODEBUILD_ARGS+=(SWIFT_COMPILATION_MODE=incremental)
+fi
 XCODEBUILD_ARGS+=(build)
 
+echo "[reloads.sh] xcodebuild ${XCODEBUILD_ARGS[*]}"
 xcodebuild "${XCODEBUILD_ARGS[@]}"
 sleep 0.2
+
+# Successful build: record the breadcrumb for the next reuse.
+if [[ -n "$DERIVED_DATA" && -d "$DERIVED_DATA" ]]; then
+  CUR_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  printf '%s\n' "$CUR_SHA" > "$LAST_SHA_FILE" 2>/dev/null || true
+  printf '%s\n' "${TAG:-none}" > "$LAST_TAG_FILE" 2>/dev/null || true
+fi
 
 FALLBACK_APP_NAME="$BASE_APP_NAME"
 SEARCH_APP_NAME="$APP_NAME"

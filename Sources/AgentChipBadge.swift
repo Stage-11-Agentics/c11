@@ -14,14 +14,17 @@ struct AgentChipBadge: View {
     let foreground: Color
     let secondary: Color
 
+    @Environment(\.chromeScaleTokens) private var chromeTokens
+
     var body: some View {
         if let chip {
             HStack(spacing: 4) {
                 iconView(for: chip)
-                    .frame(width: 14, height: 14)
+                    .frame(width: chromeTokens.sidebarWorkspaceDetail * 1.5,
+                           height: chromeTokens.sidebarWorkspaceDetail * 1.5)
                 if showsLabel, let label = chip.displayLabel, !label.isEmpty {
                     Text(label)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: chromeTokens.sidebarWorkspaceDetail, weight: .medium))
                         .foregroundColor(secondary)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
@@ -46,7 +49,7 @@ struct AgentChipBadge: View {
                 .foregroundColor(foreground)
         } else {
             Image(systemName: sfFallback)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: chromeTokens.sidebarWorkspaceDetail * 1.2, weight: .medium))
                 .foregroundColor(foreground)
         }
     }

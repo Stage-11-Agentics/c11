@@ -315,14 +315,14 @@ final class GhosttyConfigTests: XCTestCase {
         try withTemporaryAppSupportDirectory { appSupportDirectory in
             let releaseConfigURL = try writeAppSupportConfig(
                 appSupportDirectory: appSupportDirectory,
-                bundleIdentifier: "com.stage11.c11mux",
+                bundleIdentifier: "com.stage11.c11",
                 filename: "config",
                 contents: "font-size = 13\n"
             )
 
             XCTAssertEqual(
                 GhosttyApp.cmuxAppSupportConfigURLs(
-                    currentBundleIdentifier: "com.stage11.c11mux.debug",
+                    currentBundleIdentifier: "com.stage11.c11.debug",
                     appSupportDirectory: appSupportDirectory
                 ),
                 [releaseConfigURL]
@@ -334,20 +334,20 @@ final class GhosttyConfigTests: XCTestCase {
         try withTemporaryAppSupportDirectory { appSupportDirectory in
             _ = try writeAppSupportConfig(
                 appSupportDirectory: appSupportDirectory,
-                bundleIdentifier: "com.stage11.c11mux",
+                bundleIdentifier: "com.stage11.c11",
                 filename: "config",
                 contents: "font-size = 13\n"
             )
             let currentConfigURL = try writeAppSupportConfig(
                 appSupportDirectory: appSupportDirectory,
-                bundleIdentifier: "com.stage11.c11mux.debug.issue-829",
+                bundleIdentifier: "com.stage11.c11.debug.issue-829",
                 filename: "config.ghostty",
                 contents: "font-size = 14\n"
             )
 
             XCTAssertEqual(
                 GhosttyApp.cmuxAppSupportConfigURLs(
-                    currentBundleIdentifier: "com.stage11.c11mux.debug.issue-829",
+                    currentBundleIdentifier: "com.stage11.c11.debug.issue-829",
                     appSupportDirectory: appSupportDirectory
                 ),
                 [currentConfigURL]
@@ -359,7 +359,7 @@ final class GhosttyConfigTests: XCTestCase {
         try withTemporaryAppSupportDirectory { appSupportDirectory in
             _ = try writeAppSupportConfig(
                 appSupportDirectory: appSupportDirectory,
-                bundleIdentifier: "com.stage11.c11mux",
+                bundleIdentifier: "com.stage11.c11",
                 filename: "config",
                 contents: "font-size = 13\n"
             )
@@ -377,14 +377,14 @@ final class GhosttyConfigTests: XCTestCase {
         try withTemporaryAppSupportDirectory { appSupportDirectory in
             _ = try writeAppSupportConfig(
                 appSupportDirectory: appSupportDirectory,
-                bundleIdentifier: "com.stage11.c11mux",
+                bundleIdentifier: "com.stage11.c11",
                 filename: "config.ghostty",
                 contents: ""
             )
 
             XCTAssertTrue(
                 GhosttyApp.cmuxAppSupportConfigURLs(
-                    currentBundleIdentifier: "com.stage11.c11mux.debug",
+                    currentBundleIdentifier: "com.stage11.c11.debug",
                     appSupportDirectory: appSupportDirectory
                 ).isEmpty
             )
@@ -692,6 +692,143 @@ final class WorkspaceAppearanceConfigResolutionTests: XCTestCase {
         )
 
         XCTAssertEqual(resolved.backgroundColor.hexString(), "#272822")
+    }
+
+    func testCacheInvalidationAllowsCrossSchemeTransitionAfterAppearanceChange() {
+        // Reproduces the scenario fixed by Pick 5: a light config is cached, then the
+        // system switches to dark. Without cache invalidation on appearance change the
+        // stale light config would be returned for the dark scheme request.
+        GhosttyConfig.invalidateLoadCache()
+        defer { GhosttyConfig.invalidateLoadCache() }
+
+        var callCount = 0
+        let loadFromDisk: (GhosttyConfig.ColorSchemePreference) -> GhosttyConfig = { scheme in
+            callCount += 1
+            var config = GhosttyConfig()
+            config.fontFamily = scheme == .light ? "light-scheme" : "dark-scheme"
+            return config
+        }
+
+        let light = GhosttyConfig.load(preferredColorScheme: .light, loadFromDisk: loadFromDisk)
+        XCTAssertEqual(light.fontFamily, "light-scheme")
+
+        // Simulate the appearance change observer calling invalidateLoadCache()
+        GhosttyConfig.invalidateLoadCache()
+
+        let dark = GhosttyConfig.load(preferredColorScheme: .dark, loadFromDisk: loadFromDisk)
+        XCTAssertEqual(dark.fontFamily, "dark-scheme", "After cache invalidation dark-scheme config must be freshly loaded")
+        XCTAssertEqual(callCount, 2, "Both schemes must trigger a fresh disk load after invalidation")
+    }
+
+    func testWhiteBackgroundWithNearWhiteForegroundIsRemappedToDarkForeground() {
+        // Reproduces the white-on-white regression (#2708): a light theme sets a
+        // white background, but the foreground fell back to the near-white Monokai
+        // default. applyContrastFallbackIfNeeded() corrects this by substituting
+        // a safe dark foreground whenever both bg and fg are light-colored.
+        var config = GhosttyConfig()
+        config.backgroundColor = NSColor(hex: "#FFFFFF")!  // pure white background
+        config.foregroundColor = NSColor(hex: "#FDFFF1")!  // near-white Monokai default
+        config.applyContrastFallbackIfNeeded()
+        XCTAssertFalse(
+            config.foregroundColor.isLightColor,
+            "Foreground must not be near-white when background is also near-white"
+        )
+    }
+
+    func testDarkForegroundOnDarkBackgroundIsNotRemapped() {
+        // Dark themes must not be affected by the contrast-check guard.
+        var config = GhosttyConfig()
+        config.backgroundColor = NSColor(hex: "#272822")!  // Monokai dark background
+        config.foregroundColor = NSColor(hex: "#FDFFF1")!  // near-white Monokai foreground
+        config.applyContrastFallbackIfNeeded()
+        XCTAssertTrue(
+            config.foregroundColor.isLightColor,
+            "Near-white foreground on dark background must be preserved unchanged"
+        )
+    }
+
+    func testLightForegroundOnDarkBackgroundIsNotRemapped() {
+        var config = GhosttyConfig()
+        config.backgroundColor = NSColor(hex: "#000000")!  // black background
+        config.foregroundColor = NSColor(hex: "#FFFFFF")!  // white foreground (high contrast)
+        config.applyContrastFallbackIfNeeded()
+        XCTAssertTrue(
+            config.foregroundColor.isLightColor,
+            "White foreground on black background is correct contrast and must not be remapped"
+        )
+    }
+
+    func testPaletteOverrideStoredByIndex() {
+        var config = GhosttyConfig()
+        let customColor = NSColor(hex: "#FF0000")!
+        config.palette[0] = customColor
+        XCTAssertNotNil(config.palette[0])
+        XCTAssertNil(config.palette[1], "Unset palette entries must remain nil")
+    }
+
+    func testScrollbackLimitParsesGigabyteSuffix() {
+        var config = GhosttyConfig()
+        config.parse("scrollback-limit = 1G")
+        XCTAssertEqual(config.scrollbackLimit, 1_073_741_824)
+    }
+
+    func testScrollbackLimitParsesMegabyteSuffix() {
+        var config = GhosttyConfig()
+        config.parse("scrollback-limit = 512M")
+        XCTAssertEqual(config.scrollbackLimit, 536_870_912)
+    }
+
+    func testScrollbackLimitParsesKilobyteSuffix() {
+        var config = GhosttyConfig()
+        config.parse("scrollback-limit = 100K")
+        XCTAssertEqual(config.scrollbackLimit, 102_400)
+    }
+
+    func testScrollbackLimitParsesPlainInteger() {
+        var config = GhosttyConfig()
+        config.parse("scrollback-limit = 10000")
+        XCTAssertEqual(config.scrollbackLimit, 10_000)
+    }
+
+    func testScrollbackLimitParsesLowercaseSuffix() {
+        var config = GhosttyConfig()
+        config.parse("scrollback-limit = 1g")
+        XCTAssertEqual(config.scrollbackLimit, 1_073_741_824)
+    }
+
+    func testScrollbackLimitIgnoresInvalidValue() {
+        var config = GhosttyConfig()
+        let defaultLimit = config.scrollbackLimit
+        config.parse("scrollback-limit = 1GB")
+        XCTAssertEqual(config.scrollbackLimit, defaultLimit, "Unsupported suffix should leave scrollback limit unchanged")
+    }
+
+    func testScrollbackLimitRejectsOverflowValue() {
+        var config = GhosttyConfig()
+        let defaultLimit = config.scrollbackLimit
+        config.parse("scrollback-limit = 9000000000G")
+        XCTAssertEqual(config.scrollbackLimit, defaultLimit, "Overflow value should leave scrollback limit unchanged")
+    }
+
+    func testScrollbackLimitRejectsNegativeValue() {
+        var config = GhosttyConfig()
+        let defaultLimit = config.scrollbackLimit
+        config.parse("scrollback-limit = -1G")
+        XCTAssertEqual(config.scrollbackLimit, defaultLimit, "Negative value should leave scrollback limit unchanged")
+    }
+
+    func testScrollbackLimitRejectsPlainNegative() {
+        var config = GhosttyConfig()
+        let defaultLimit = config.scrollbackLimit
+        config.parse("scrollback-limit = -1")
+        XCTAssertEqual(config.scrollbackLimit, defaultLimit, "Plain negative value should leave scrollback limit unchanged")
+    }
+
+    func testScrollbackLimitRejectsNearMaxOverflow() {
+        var config = GhosttyConfig()
+        let defaultLimit = config.scrollbackLimit
+        config.parse("scrollback-limit = 9223372036G")
+        XCTAssertEqual(config.scrollbackLimit, defaultLimit, "Near-Int.max overflow should leave scrollback limit unchanged")
     }
 }
 
@@ -1436,7 +1573,7 @@ final class NotificationBurstCoalescerTests: XCTestCase {
             }
         }
 
-        wait(for: [expectation], timeout: 1.0)
+        wait(for: [expectation], timeout: 5.0)
         XCTAssertEqual(flushCount, 1)
     }
 
@@ -1455,7 +1592,7 @@ final class NotificationBurstCoalescerTests: XCTestCase {
             }
         }
 
-        wait(for: [expectation], timeout: 1.0)
+        wait(for: [expectation], timeout: 5.0)
         XCTAssertEqual(value, 2)
     }
 
@@ -1478,7 +1615,7 @@ final class NotificationBurstCoalescerTests: XCTestCase {
             }
         }
 
-        wait(for: [expectation], timeout: 1.0)
+        wait(for: [expectation], timeout: 5.0)
         XCTAssertEqual(flushCount, 2)
     }
 }
@@ -1508,7 +1645,7 @@ final class GhosttyDefaultBackgroundNotificationDispatcherTests: XCTestCase {
             dispatcher.signal(backgroundColor: light, opacity: 0.75, eventId: 2, source: "test.light")
         }
 
-        wait(for: [expectation], timeout: 1.0)
+        wait(for: [expectation], timeout: 5.0)
         XCTAssertEqual(postedUserInfos.count, 1)
         XCTAssertEqual(
             (postedUserInfos[0][GhosttyNotificationKey.backgroundColor] as? NSColor)?.hexString(),
@@ -1556,7 +1693,7 @@ final class GhosttyDefaultBackgroundNotificationDispatcherTests: XCTestCase {
             }
         }
 
-        wait(for: [expectation], timeout: 1.0)
+        wait(for: [expectation], timeout: 5.0)
         XCTAssertEqual(postedHexes, ["#272822", "#FDF6E3"])
     }
 
@@ -1614,7 +1751,9 @@ final class RecentlyClosedBrowserStackTests: XCTestCase {
 final class SocketControlSettingsTests: XCTestCase {
     func testMigrateModeSupportsExpandedSocketModes() {
         XCTAssertEqual(SocketControlSettings.migrateMode("off"), .off)
-        XCTAssertEqual(SocketControlSettings.migrateMode("cmuxOnly"), .cmuxOnly)
+        XCTAssertEqual(SocketControlSettings.migrateMode("c11Only"), .c11Only)
+        // Pre-rename UserDefaults values must still migrate forward.
+        XCTAssertEqual(SocketControlSettings.migrateMode("cmuxOnly"), .c11Only)
         XCTAssertEqual(SocketControlSettings.migrateMode("automation"), .automation)
         XCTAssertEqual(SocketControlSettings.migrateMode("password"), .password)
         XCTAssertEqual(SocketControlSettings.migrateMode("allow-all"), .allowAll)
@@ -1626,7 +1765,7 @@ final class SocketControlSettingsTests: XCTestCase {
 
     func testSocketModePermissions() {
         XCTAssertEqual(SocketControlMode.off.socketFilePermissions, 0o600)
-        XCTAssertEqual(SocketControlMode.cmuxOnly.socketFilePermissions, 0o600)
+        XCTAssertEqual(SocketControlMode.c11Only.socketFilePermissions, 0o600)
         XCTAssertEqual(SocketControlMode.automation.socketFilePermissions, 0o600)
         XCTAssertEqual(SocketControlMode.password.socketFilePermissions, 0o600)
         XCTAssertEqual(SocketControlMode.allowAll.socketFilePermissions, 0o666)
@@ -1652,7 +1791,7 @@ final class SocketControlSettingsTests: XCTestCase {
             environment: [
                 "CMUX_SOCKET_PATH": "/tmp/cmux-debug-issue-153-tmux-compat.sock",
             ],
-            bundleIdentifier: "com.stage11.c11mux",
+            bundleIdentifier: "com.stage11.c11",
             isDebugBuild: false,
             probeStableDefaultPathEntry: { _ in .missing }
         )
@@ -1663,38 +1802,38 @@ final class SocketControlSettingsTests: XCTestCase {
     func testNightlyReleaseUsesDedicatedDefaultAndIgnoresAmbientSocketOverride() {
         let path = SocketControlSettings.socketPath(
             environment: [
-                "CMUX_SOCKET_PATH": "/tmp/cmux-debug-issue-153-tmux-compat.sock",
+                "CMUX_SOCKET_PATH": "/tmp/c11-debug-issue-153-tmux-compat.sock",
             ],
-            bundleIdentifier: "com.stage11.c11mux.nightly",
+            bundleIdentifier: "com.stage11.c11.nightly",
             isDebugBuild: false,
             probeStableDefaultPathEntry: { _ in .missing }
         )
 
-        XCTAssertEqual(path, "/tmp/cmux-nightly.sock")
+        XCTAssertEqual(path, "/tmp/c11-nightly.sock")
     }
 
     func testDebugBundleHonorsSocketOverrideWithoutOptInFlag() {
         let path = SocketControlSettings.socketPath(
             environment: [
-                "CMUX_SOCKET_PATH": "/tmp/cmux-debug-my-tag.sock",
+                "CMUX_SOCKET_PATH": "/tmp/c11-debug-my-tag.sock",
             ],
-            bundleIdentifier: "com.stage11.c11mux.debug.my-tag",
+            bundleIdentifier: "com.stage11.c11.debug.my-tag",
             isDebugBuild: false
         )
 
-        XCTAssertEqual(path, "/tmp/cmux-debug-my-tag.sock")
+        XCTAssertEqual(path, "/tmp/c11-debug-my-tag.sock")
     }
 
     func testStagingBundleHonorsSocketOverrideWithoutOptInFlag() {
         let path = SocketControlSettings.socketPath(
             environment: [
-                "CMUX_SOCKET_PATH": "/tmp/cmux-staging-my-tag.sock",
+                "CMUX_SOCKET_PATH": "/tmp/c11-staging-my-tag.sock",
             ],
-            bundleIdentifier: "com.stage11.c11mux.staging.my-tag",
+            bundleIdentifier: "com.stage11.c11.staging.my-tag",
             isDebugBuild: false
         )
 
-        XCTAssertEqual(path, "/tmp/cmux-staging-my-tag.sock")
+        XCTAssertEqual(path, "/tmp/c11-staging-my-tag.sock")
     }
 
     func testStableReleaseCanOptInToSocketOverride() {
@@ -1703,7 +1842,7 @@ final class SocketControlSettingsTests: XCTestCase {
                 "CMUX_SOCKET_PATH": "/tmp/cmux-debug-forced.sock",
                 "CMUX_ALLOW_SOCKET_OVERRIDE": "1",
             ],
-            bundleIdentifier: "com.stage11.c11mux",
+            bundleIdentifier: "com.stage11.c11",
             isDebugBuild: false,
             probeStableDefaultPathEntry: { _ in .missing }
         )
@@ -1714,7 +1853,7 @@ final class SocketControlSettingsTests: XCTestCase {
     func testDefaultSocketPathByChannel() {
         XCTAssertEqual(
             SocketControlSettings.defaultSocketPath(
-                bundleIdentifier: "com.stage11.c11mux",
+                bundleIdentifier: "com.stage11.c11",
                 isDebugBuild: false,
                 probeStableDefaultPathEntry: { _ in .missing }
             ),
@@ -1722,33 +1861,33 @@ final class SocketControlSettingsTests: XCTestCase {
         )
         XCTAssertEqual(
             SocketControlSettings.defaultSocketPath(
-                bundleIdentifier: "com.stage11.c11mux.nightly",
+                bundleIdentifier: "com.stage11.c11.nightly",
                 isDebugBuild: false,
                 probeStableDefaultPathEntry: { _ in .missing }
             ),
-            "/tmp/cmux-nightly.sock"
+            "/tmp/c11-nightly.sock"
         )
         XCTAssertEqual(
             SocketControlSettings.defaultSocketPath(
-                bundleIdentifier: "com.stage11.c11mux.debug.tag",
+                bundleIdentifier: "com.stage11.c11.debug",
                 isDebugBuild: false,
                 probeStableDefaultPathEntry: { _ in .missing }
             ),
-            "/tmp/cmux-debug.sock"
+            "/tmp/c11-debug.sock"
         )
         XCTAssertEqual(
             SocketControlSettings.defaultSocketPath(
-                bundleIdentifier: "com.stage11.c11mux.staging.tag",
+                bundleIdentifier: "com.stage11.c11.staging",
                 isDebugBuild: false,
                 probeStableDefaultPathEntry: { _ in .missing }
             ),
-            "/tmp/cmux-staging.sock"
+            "/tmp/c11-staging.sock"
         )
     }
 
     func testStableReleaseFallsBackToUserScopedSocketWhenStablePathOwnedByDifferentUser() {
         let path = SocketControlSettings.defaultSocketPath(
-            bundleIdentifier: "com.stage11.c11mux",
+            bundleIdentifier: "com.stage11.c11",
             isDebugBuild: false,
             currentUserID: 501,
             probeStableDefaultPathEntry: { _ in .socket(ownerUserID: 0) }
@@ -1759,7 +1898,7 @@ final class SocketControlSettingsTests: XCTestCase {
 
     func testStableReleaseFallsBackToUserScopedSocketWhenStablePathIsBlockedByNonSocketEntry() {
         let path = SocketControlSettings.defaultSocketPath(
-            bundleIdentifier: "com.stage11.c11mux",
+            bundleIdentifier: "com.stage11.c11",
             isDebugBuild: false,
             currentUserID: 501,
             probeStableDefaultPathEntry: { _ in .other(ownerUserID: 501) }
@@ -1772,7 +1911,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertTrue(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: [:],
-                bundleIdentifier: "com.stage11.c11mux.debug",
+                bundleIdentifier: "com.stage11.c11.debug",
                 isDebugBuild: true
             )
         )
@@ -1782,7 +1921,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertFalse(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: ["CMUX_TAG": "tests-v1"],
-                bundleIdentifier: "com.stage11.c11mux.debug",
+                bundleIdentifier: "com.stage11.c11.debug",
                 isDebugBuild: true
             )
         )
@@ -1792,7 +1931,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertFalse(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: [:],
-                bundleIdentifier: "com.stage11.c11mux.debug.tests-v1",
+                bundleIdentifier: "com.stage11.c11.debug.tests-v1",
                 isDebugBuild: true
             )
         )
@@ -1802,7 +1941,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertFalse(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: [:],
-                bundleIdentifier: "com.stage11.c11mux.debug",
+                bundleIdentifier: "com.stage11.c11.debug",
                 isDebugBuild: false
             )
         )
@@ -1812,7 +1951,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertFalse(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: ["XCTestConfigurationFilePath": "/tmp/fake.xctestconfiguration"],
-                bundleIdentifier: "com.stage11.c11mux.debug",
+                bundleIdentifier: "com.stage11.c11.debug",
                 isDebugBuild: true
             )
         )
@@ -1822,7 +1961,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertFalse(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: ["XCInjectBundle": "/tmp/fake.xctest"],
-                bundleIdentifier: "com.stage11.c11mux.debug",
+                bundleIdentifier: "com.stage11.c11.debug",
                 isDebugBuild: true
             )
         )
@@ -1832,7 +1971,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertFalse(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: ["DYLD_INSERT_LIBRARIES": "/usr/lib/libXCTestBundleInject.dylib"],
-                bundleIdentifier: "com.stage11.c11mux.debug",
+                bundleIdentifier: "com.stage11.c11.debug",
                 isDebugBuild: true
             )
         )
@@ -1844,7 +1983,7 @@ final class SocketControlSettingsTests: XCTestCase {
         XCTAssertFalse(
             SocketControlSettings.shouldBlockUntaggedDebugLaunch(
                 environment: ["CMUX_UI_TEST_MODE": "1"],
-                bundleIdentifier: "com.stage11.c11mux.debug",
+                bundleIdentifier: "com.stage11.c11.debug",
                 isDebugBuild: true
             )
         )

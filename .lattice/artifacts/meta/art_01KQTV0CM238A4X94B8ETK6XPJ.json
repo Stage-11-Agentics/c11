@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-05-05T01:10:58Z",
+  "created_by": "human:atin",
+  "custom_fields": {
+    "url": "https://github.com/Stage-11-Agentics/c11/pull/31"
+  },
+  "id": "art_01KQTV0CM238A4X94B8ETK6XPJ",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": null,
+    "size_bytes": null
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "PR #31 \u2014 CMUX-35 user themes + hot reload + Settings + CLI (M3+M4)",
+  "token_usage": null,
+  "type": "reference"
+}

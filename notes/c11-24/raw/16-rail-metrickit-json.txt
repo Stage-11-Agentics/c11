@@ -1,0 +1,26 @@
+=== c11 health --rail metrickit --json ===
+{
+  "events" : [
+    {
+      "path" : "~\/Library\/Logs\/c11\/metrickit\/2026-05-03T22-19-00.000Z-hang3.json",
+      "rail" : "metrickit",
+      "severity" : "hang",
+      "summary" : "hang3",
+      "timestamp" : "2026-05-03T22:19:00.000Z"
+    }
+  ],
+  "rails" : {
+    "metrickit" : {
+      "count" : 1
+    }
+  },
+  "schema_version" : 1,
+  "warnings" : [
+
+  ],
+  "window" : {
+    "mode" : "default-24h",
+    "since" : "2026-05-02T22:38:58.848Z",
+    "until" : "2026-05-03T22:38:58.848Z"
+  }
+}

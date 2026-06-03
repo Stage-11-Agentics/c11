@@ -1,0 +1,23 @@
+=== c11 health --help ===
+exit=0
+--- stdout ---
+c11 health
+
+Usage: c11 health [--since <duration> | --since-boot] [--rail <name>] [--json]
+
+Read-only crash-visibility sweep across four local rails: Apple IPS reports,
+queued Sentry envelopes, MetricKit diagnostic payloads, and the c11 launch
+sentinel (catches Force Quit and SIGKILL where Sentry cannot).
+
+Flags:
+  --since <duration>     Time window: 30m, 2h, 24h, 3d. Default 24h.
+  --since-boot           Limit to events since the last system boot.
+  --rail <name>          Filter to one rail: ips, sentry, metrickit, sentinel. Specify at most once. Default: all rails.
+  --json                 Emit structured JSON instead of the default table.
+
+Example:
+  c11 health
+  c11 health --since 30m
+  c11 health --since-boot --rail sentinel
+  c11 health --json
+--- stderr ---

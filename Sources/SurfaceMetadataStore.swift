@@ -1,14 +1,13 @@
 import Foundation
 
-/// Source precedence for metadata writes (c11 Module 2).
+/// Source precedence for metadata writes.
 ///
 /// Writers declare a `source` per call. The precedence chain is
 /// `explicit > declare > osc > heuristic`. A lower-precedence write is
 /// rejected per-key (soft reject: `applied: false`, `reason: lower_precedence`).
-/// Canonical-key namespace (c11 Module 2).
+/// Canonical-key namespace.
 /// String constants for the canonical metadata keys rendered in the sidebar
-/// and title bar. Non-canonical keys accept any JSON value and are opaque to
-/// c11. See `docs/c11mux-module-2-metadata-spec.md`.
+/// and title bar. Non-canonical keys accept any JSON value and are opaque to c11.
 public enum MetadataKey {
     public static let role = "role"
     public static let status = "status"
@@ -18,12 +17,19 @@ public enum MetadataKey {
     public static let terminalType = "terminal_type"
     public static let title = "title"
     public static let description = "description"
+    public static let lifecycleState = "lifecycle_state"
+
+    /// C11-104 — derived canonical keys. Written by the c11 runtime,
+    /// not by agents. Validated as plain strings with size caps.
+    public static let worktree = "worktree"
+    public static let branch = "branch"
 
     /// Non-canonical display hint used by M3's sidebar chip.
     public static let modelLabel = "model_label"
 
     public static let canonical: Set<String> = [
-        role, status, task, model, progress, terminalType, title, description
+        role, status, task, model, progress, terminalType, title, description, lifecycleState,
+        worktree, branch
     ]
 
     public static let canonicalTerminalTypes: Set<String> = [
@@ -35,14 +41,22 @@ public enum MetadataSource: String, CaseIterable, Codable, Sendable {
     case explicit
     case declare
     case osc
+    /// C11-104 — system-computed projections of ground-truth state
+    /// (e.g., worktree + branch derived from cwd + gitfs). Ranked
+    /// between `osc` and `heuristic`: an `osc` value wins over a
+    /// `derived` value for the same key; a `derived` value wins over
+    /// a `heuristic` one. Agents should not write `derived` keys
+    /// directly — they are recomputed automatically as state changes.
+    case derived
     case heuristic
 
     public var precedence: Int {
         switch self {
         case .heuristic: return 0
-        case .osc:       return 1
-        case .declare:   return 2
-        case .explicit:  return 3
+        case .derived:   return 1
+        case .osc:       return 2
+        case .declare:   return 3
+        case .explicit:  return 4
         }
     }
 
@@ -155,7 +169,11 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         "terminal_type",
         "title",
         "description",
-        "claude.session_id"
+        "lifecycle_state",
+        "worktree",
+        "branch",
+        "claude.session_id",
+        "claude.session_project_dir"
     ]
 
     static func validateReservedKey(_ key: String, _ value: Any) -> WriteError? {
@@ -183,6 +201,54 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             return validateString(key: key, value: value, maxLen: 256)
         case "description":
             return validateString(key: key, value: value, maxLen: 2048)
+        case "lifecycle_state":
+            // Canonical per-surface lifecycle state (C11-25). The set of
+            // legal values is defined by `SurfaceLifecycleState`; reject
+            // anything outside that vocabulary so a stale snapshot or a
+            // typo can't leak into the runtime path. Length cap matches
+            // `SurfaceLifecycleState.metadataMaxLength`.
+            //
+            // Review fix I4: `.suspended` is reserved-only — the runtime
+            // dispatcher rejects every transition into and out of it
+            // (`SurfaceLifecycleState.canTransition`). Allowing the
+            // metadata write here would let an external writer park a
+            // value the runtime cannot consume, splitting the metadata
+            // mirror from the state machine. Reject at the validator
+            // until a future PR (C11-25c / SIGSTOP terminal hibernate)
+            // lands a real consumer.
+            guard let s = value as? String else {
+                return .reservedKeyInvalidType(key, "expected string")
+            }
+            if s.count > SurfaceLifecycleState.metadataMaxLength {
+                return .reservedKeyInvalidType(
+                    key,
+                    "exceeds max length \(SurfaceLifecycleState.metadataMaxLength)"
+                )
+            }
+            guard let parsed = SurfaceLifecycleState(rawValue: s) else {
+                return .reservedKeyInvalidType(
+                    key,
+                    "must be one of: active, throttled, hibernated"
+                )
+            }
+            if parsed == .suspended {
+                return .reservedKeyInvalidType(
+                    key,
+                    "'suspended' is reserved and not yet a runtime target; use 'hibernated' for operator-pinned surfaces"
+                )
+            }
+            return nil
+        case "worktree":
+            // C11-104 — derived basename, up to 128 chars (matches the
+            // spec's ≤128 cap). Accepts any string within the cap;
+            // the resolver only writes strings that already passed
+            // `git rev-parse` so additional grammar checks would be
+            // belt-and-suspenders.
+            return validateString(key: key, value: value, maxLen: 128)
+        case "branch":
+            // C11-104 — derived branch name (or "(detached @ <sha>)"
+            // or "(no branch)"). Up to 64 chars per spec.
+            return validateString(key: key, value: value, maxLen: 64)
         case "claude.session_id":
             // Claude SessionStart's `session_id` is a UUIDv4; reject
             // anything else. The value is interpolated verbatim into
@@ -195,6 +261,24 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                 return .reservedKeyInvalidType(
                     key,
                     "must match UUIDv4 shape 8-4-4-4-12 hex"
+                )
+            }
+            return nil
+        case "claude.session_project_dir":
+            // Project directory the claude session was created in;
+            // interpolated into `cd '<path>' && …` at restore time. The
+            // registry single-quote-escapes it, but we still reject
+            // values that could break that escape (single-quote, NUL,
+            // newlines) or yield a non-absolute path. PATH_MAX on Darwin
+            // is 1024 — cap at 4096 for headroom on synthetic / encoded
+            // paths.
+            guard let s = value as? String else {
+                return .reservedKeyInvalidType(key, "expected string")
+            }
+            if !isValidClaudeSessionProjectDir(s) {
+                return .reservedKeyInvalidType(
+                    key,
+                    "must be an absolute POSIX path (≤4096 chars, no NUL/newline/single-quote)"
                 )
             }
             return nil

@@ -108,6 +108,89 @@ final class SessionPersistenceTests: XCTestCase {
         )
     }
 
+    func testSessionPanelSnapshotCustomColorRoundTrip() throws {
+        let panelId = UUID()
+        let snapshot = SessionPanelSnapshot(
+            id: panelId,
+            type: .terminal,
+            title: nil,
+            customTitle: nil,
+            customColor: "#C0392B",
+            directory: nil,
+            isPinned: false,
+            isManuallyUnread: false,
+            gitBranch: nil,
+            listeningPorts: [],
+            ttyName: nil,
+            terminal: nil,
+            browser: nil,
+            markdown: nil,
+            metadata: nil,
+            metadataSources: nil
+        )
+
+        let encoded = try JSONEncoder().encode(snapshot)
+        let json = try XCTUnwrap(String(data: encoded, encoding: .utf8))
+        XCTAssertTrue(json.contains("\"customColor\""))
+        XCTAssertTrue(json.contains("#C0392B"))
+
+        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: encoded)
+        XCTAssertEqual(decoded.customColor, "#C0392B")
+        XCTAssertEqual(decoded.id, panelId)
+    }
+
+    func testSessionPanelSnapshotCustomColorOmittedWhenNil() throws {
+        let snapshot = SessionPanelSnapshot(
+            id: UUID(),
+            type: .terminal,
+            title: nil,
+            customTitle: nil,
+            customColor: nil,
+            directory: nil,
+            isPinned: false,
+            isManuallyUnread: false,
+            gitBranch: nil,
+            listeningPorts: [],
+            ttyName: nil,
+            terminal: nil,
+            browser: nil,
+            markdown: nil,
+            metadata: nil,
+            metadataSources: nil
+        )
+
+        let encoded = try JSONEncoder().encode(snapshot)
+        let json = try XCTUnwrap(String(data: encoded, encoding: .utf8))
+        XCTAssertFalse(
+            json.contains("\"customColor\""),
+            "Nil customColor should not bloat snapshots — JSONEncoder omits the key"
+        )
+
+        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: encoded)
+        XCTAssertNil(decoded.customColor)
+    }
+
+    func testSessionPanelSnapshotDecodesLegacyJSONWithoutCustomColor() throws {
+        let panelId = UUID()
+        // Hand-rolled legacy JSON without the customColor field; mirrors a
+        // pre-C11-10 snapshot. Must decode with customColor == nil.
+        let legacyJSON = """
+        {
+          "id": "\(panelId.uuidString)",
+          "type": "terminal",
+          "isPinned": false,
+          "isManuallyUnread": false,
+          "listeningPorts": []
+        }
+        """
+        let data = try XCTUnwrap(legacyJSON.data(using: .utf8))
+        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: data)
+
+        XCTAssertEqual(decoded.id, panelId)
+        XCTAssertNil(decoded.customColor)
+        XCTAssertNil(decoded.customTitle)
+    }
+
     func testWorkspaceCustomColorDecodeSupportsMissingLegacyField() throws {
         var snapshot = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
         snapshot.windows[0].tabManager.workspaces[0].customColor = nil

@@ -1,0 +1,42 @@
+{
+  "assigned_to": "agent:overnight-c11-30",
+  "branch_links": [],
+  "comment_count": 19,
+  "complexity": null,
+  "created_at": "2026-05-06T01:31:30Z",
+  "created_by": "agent:claude-opus-4-7",
+  "custom_fields": {},
+  "description": "The pane-interaction confirmation overlay (built for close-pane) is currently doing double duty for close-workspace, and the result undersells how destructive a workspace close is. Build the workspace-scoped equivalent: a black scrim over the entire workspace area with a centered confirm/cancel card, so the disruption is unmistakable.\n\nCONTEXT\n- Closing a workspace tears down all panels, the remote connection, browser tracking, git probes, and any running agents (TabManager.swift:2246-2269). When it's the last workspace it also closes the window. This is the most destructive routine action in c11.\n- We already shipped a pane-interaction confirmation system (Sources/Panels/PaneInteractionOverlayHost.swift) for close-pane. That overlay is panel-anchored, modal-within-the-pane, and reads visually as a small card. It was the right move for close-pane.\n- We then routed close-workspace through the same overlay (TabManager.swift:2557-2573 -> Workspace.presentConfirmClose at Workspace.swift:9897-9922). Same small card, same visual weight as close-pane. Wrong scale for the action.\n- A legacy NSAlert fallback still exists at TabManager.swift:2576-2582 for when the feature flag is off or no panel resolves. Should also be retired once the new workspace overlay covers all trigger sites.\n\nPROPOSAL\nBuild a workspace-scoped sibling of the existing pane-interaction overlay:\n- Black scrim covering the workspace area (sidebar stays visible \u2014 keeps spatial context, makes 'this workspace' feel scoped). Use BrandColors.black at ~0.85 opacity.\n- Centered confirm/cancel card. Reuse strings dialog.closeWorkspace.title ('Close workspace?') and dialog.closeWorkspace.message ('This will close the workspace and all of its panes.'). Any new strings via String(localized:) + translator pass for ja/uk/ko/zh-Hans/zh-Hant/ru.\n- Mount in the AppKit portal layer so it sits above terminals + WebView surfaces (same constraint that forced the find overlay into GhosttySurfaceScrollView per CLAUDE.md).\n- Keystroke trap so keys do not reach terminals underneath (reuse the find overlay's beginFindEscapeSuppression() pattern).\n- Esc cancels, Return confirms.\n- Fade in 120-180ms.\n\nTRIGGER SITES TO REWIRE (all six currently route through closeCurrentWorkspaceWithConfirmation / closeWorkspaceWithConfirmation)\n- Cmd+Shift+W -- AppDelegate.swift:10074\n- File menu 'Close Workspace' -- c11App.swift:811\n- Command palette palette.closeWorkspace -- ContentView.swift:5904\n- Sidebar X button -- ContentView.swift:11280\n- Sidebar middle-click -- ContentView.swift:11545\n- Sidebar right-click context menu -- c11App.swift:1372\n\nOUT OF SCOPE\n- Close-pane overlay stays as-is. It is correctly scoped today.\n- Window close (AppDelegate.confirmCloseMainWindow at AppDelegate.swift:5094-5113) still uses raw NSAlert and is equally destructive \u2014 file a follow-up ticket if we want the same treatment, but do not bundle.\n\nACCEPTANCE\n- All six workspace-close trigger sites present the full-workspace black overlay, not the pane-anchored card and not an NSAlert.\n- Esc / explicit Cancel dismisses without teardown; Confirm proceeds with the existing teardown sequence.\n- Keystrokes do not reach terminals underneath while the overlay is up.\n- Sidebar remains visible and interactive-during-display is fine (clicking another workspace dismisses + reroutes is a reasonable extension; not required).\n- Legacy NSAlert path at TabManager.swift:2576-2582 and the confirmClose handler injection at TabManager.swift:2413 are removed.\n- Translator pass run for any new localized strings.\n- PR includes a screenshot or short clip of the blacked-out workspace.\n\nNOT UPSTREAM-ELIGIBLE\nThis is fixing our own over-application of the pane-interaction overlay. The pane-interaction system is c11-only; no cmux equivalent to upstream against.",
+  "done_at": "2026-05-16T18:44:06Z",
+  "evidence_refs": [
+    {
+      "id": "art_01KR04RAXFAPWVDG449B0SGGAA",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KRS1MJ31B7SAYJZZWE248FST",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KQXEJPEGPC7D3Y4Q7RPYGSP9",
+  "last_event_id": "ev_01KRS1MMP3WW8QG9XXMAWA2G63",
+  "last_status_changed_at": "2026-05-16T18:44:06Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-30",
+  "status": "done",
+  "tags": [
+    "ux",
+    "close-flow",
+    "pane-interaction"
+  ],
+  "title": "Close-workspace confirmation: workspace-scoped black overlay (not the pane-scoped card)",
+  "type": "task",
+  "updated_at": "2026-05-16T18:44:06Z",
+  "urgency": null
+}

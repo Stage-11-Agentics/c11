@@ -90,7 +90,7 @@ Before launching a new tagged run, clean up any older tags you started in this s
 ./scripts/prune-tags.sh --keep <tag>   # protect an additional tag
 ```
 
-Running tags are auto-protected.
+Running tags are auto-protected. A weekly launchd job (`scripts/launchd/com.stage11.c11-prune-tags.plist`) runs `--yes` automatically; reach for manual prune when you want space back sooner.
 
 ## Debug event log
 
@@ -106,13 +106,6 @@ tail -f "$(cat /tmp/c11-last-debug-log-path 2>/dev/null || echo /tmp/c11-debug.l
 - `reload.sh` writes the selected dev CLI path to `/tmp/c11-last-cli-path`
 - `reload.sh` updates `/tmp/c11-cli`, `$HOME/.local/bin/c11-dev`, and `$HOME/.local/bin/cmux-dev` (compat alias) to that CLI
 
-### Implementation
+### Adding a log call
 
-- `vendor/bonsplit/Sources/Bonsplit/Public/DebugEventLog.swift`
-- Free function `dlog("message")` — logs with timestamp and appends to file in real time
-- Entire file is `#if DEBUG`; all call sites must be wrapped in `#if DEBUG` / `#endif`
-- 500-entry ring buffer; `DebugEventLog.shared.dump()` writes full buffer to file
-- Key events logged in `AppDelegate.swift` (monitor, performKeyEquivalent)
-- Mouse/UI events logged inline in views (ContentView, BrowserPanelView, etc.)
-- Focus events: `focus.panel`, `focus.bonsplit`, `focus.firstResponder`, `focus.moveFocus`
-- Bonsplit events: `tab.select`, `tab.close`, `tab.dragStart`, `tab.drop`, `pane.focus`, `pane.drop`, `divider.dragStart`
+The `dlog("message")` free function lives in `vendor/bonsplit/Sources/Bonsplit/Public/DebugEventLog.swift`. The whole file is `#if DEBUG`, so every call site must also be wrapped in `#if DEBUG` / `#endif`. Existing event names include `focus.*`, `tab.*`, `pane.*`, and `divider.*`; grep for a nearby category before inventing a new one.

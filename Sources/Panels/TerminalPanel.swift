@@ -57,6 +57,12 @@ final class TerminalPanel: Panel, ObservableObject {
     /// `Workspace.toggleTextBoxMode` to detect and move focus.
     weak var inputTextView: InputTextView?
 
+    /// Per-surface lifecycle controller (C11-25). Owns the canonical
+    /// `lifecycle_state` metadata mirror and dispatches occlusion to
+    /// libghostty on state transitions. Visibility is driven from
+    /// `TerminalPanelView` via `applyVisibility(_:)`.
+    let lifecycle: SurfaceLifecycleController
+
     private var cancellables = Set<AnyCancellable>()
 
     var displayTitle: String {
@@ -92,6 +98,29 @@ final class TerminalPanel: Panel, ObservableObject {
         self.id = surface.id
         self.workspaceId = workspaceId
         self.surface = surface
+        self.lifecycle = SurfaceLifecycleController(
+            workspaceId: workspaceId,
+            surfaceId: surface.id,
+            initial: .active
+        ) { [weak surface] _, target in
+            // Pause libghostty's CVDisplayLink wakeups when the surface
+            // leaves `.active`. PTY drains in every state — only the
+            // renderer is throttled. Called on workspace-selection edge
+            // events; never on the typing-latency hot path.
+            surface?.setOcclusion(target == .active)
+        }
+
+        // C11-25 commit 6: register with the per-surface CPU/RSS sampler.
+        //
+        // C11-25 fix DoD #5: terminal CPU/MEM is now wired via the
+        // Sendable pid-provider rail. The provider is installed in
+        // `TerminalController.reportTTY` once the shell announces its
+        // tty (the only point in time where the tty name is known to
+        // the app side); the sampler invokes `TerminalPIDResolver`
+        // every couple of seconds to track the foreground process.
+        // Until that report lands, the surface is registered without
+        // a pid and the sidebar renders `—`.
+        SurfaceMetricsSampler.shared.register(surfaceId: surface.id)
 
         // Subscribe to surface's search state changes
         surface.$searchState
@@ -150,14 +179,53 @@ final class TerminalPanel: Panel, ObservableObject {
     func updateWorkspaceId(_ newWorkspaceId: UUID) {
         workspaceId = newWorkspaceId
         surface.updateWorkspaceId(newWorkspaceId)
+        lifecycle.updateWorkspaceId(newWorkspaceId)
+    }
+
+    // MARK: - Lifecycle dispatch
+
+    /// Translate the panel's `isVisibleInUI` from SwiftUI into a
+    /// lifecycle transition. Idempotent: calling with the same value
+    /// twice is a no-op. Called on workspace-selection edge events
+    /// (`.onChange`) and at panel mount (`.onAppear`); never on the
+    /// typing-latency hot path.
+    ///
+    /// Operator-pinned states (`hibernated`) are preserved — only
+    /// `active ↔ throttled` flip on automatic visibility changes. A
+    /// hibernated panel resumes via the operator's "Resume Workspace"
+    /// action, which calls `setHibernated(false)`.
+    func applyVisibility(_ isVisibleInUI: Bool) {
+        if lifecycle.state.isOperatorPinned { return }
+        lifecycle.transition(to: isVisibleInUI ? .active : .throttled)
     }
 
     func focus() {
+#if DEBUG
+        let focusStart = CACurrentMediaTime()
+#endif
         surface.setFocus(true)
+#if DEBUG
+        let postSetFocus = (CACurrentMediaTime() - focusStart) * 1000
+#endif
         // `unfocus()` force-disables active state to stop stale retries from stealing focus.
         // Re-enable it immediately for explicit focus requests (socket/UI) so ensureFocus can run.
         hostedView.setActive(true)
+#if DEBUG
+        let postSetActive = (CACurrentMediaTime() - focusStart) * 1000
+#endif
         hostedView.ensureFocus(for: workspaceId, surfaceId: id)
+#if DEBUG
+        let postEnsureFocus = (CACurrentMediaTime() - focusStart) * 1000
+        if postEnsureFocus > 5 {
+            dlog(
+                "terminalPanel.focus.timing panel=\(id.uuidString.prefix(5)) " +
+                "setFocus=\(String(format: "%.2f", postSetFocus))ms " +
+                "setActive=\(String(format: "%.2f", postSetActive - postSetFocus))ms " +
+                "ensureFocus=\(String(format: "%.2f", postEnsureFocus - postSetActive))ms " +
+                "total=\(String(format: "%.2f", postEnsureFocus))ms"
+            )
+        }
+#endif
     }
 
     func unfocus() {
@@ -182,17 +250,18 @@ final class TerminalPanel: Panel, ObservableObject {
         dlog(
             "surface.panel.close.begin panel=\(id.uuidString.prefix(5)) " +
             "workspace=\(workspaceId.uuidString.prefix(5)) runtimeSurface=\(surface.surface != nil ? 1 : 0) " +
-            "inWindow=\(hostedView.window != nil ? 1 : 0) hasSuperview=\(hostedView.superview != nil ? 1 : 0) " +
+            "inWindow=\(surface.isViewInWindow ? 1 : 0) hasSuperview=\(hostedView.superview != nil ? 1 : 0) " +
             "hidden=\(hostedView.isHidden ? 1 : 0) frame=\(frame) bounds=\(bounds)"
         )
 #endif
         unfocus()
         hostedView.setVisibleInUI(false)
         TerminalWindowPortalRegistry.detach(hostedView: hostedView)
+        SurfaceMetricsSampler.shared.unregister(surfaceId: id)
 #if DEBUG
         dlog(
             "surface.panel.close.end panel=\(id.uuidString.prefix(5)) " +
-            "inWindow=\(hostedView.window != nil ? 1 : 0) hasSuperview=\(hostedView.superview != nil ? 1 : 0) " +
+            "inWindow=\(surface.isViewInWindow ? 1 : 0) hasSuperview=\(hostedView.superview != nil ? 1 : 0) " +
             "hidden=\(hostedView.isHidden ? 1 : 0)"
         )
 #endif
@@ -230,6 +299,11 @@ final class TerminalPanel: Panel, ObservableObject {
     func triggerFlash() {
         guard NotificationPaneFlashSettings.isEnabled() else { return }
         hostedView.triggerFlash()
+    }
+
+    func triggerFlash(appearance: FlashAppearance) {
+        guard NotificationPaneFlashSettings.isEnabled() else { return }
+        hostedView.triggerFlash(style: .standardFocus, appearance: appearance)
     }
 
     func triggerNotificationDismissFlash() {

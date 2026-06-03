@@ -1,5 +1,8 @@
 import Foundation
 import AppKit
+#if DEBUG
+import Bonsplit
+#endif
 
 struct GhosttyConfig {
     enum ColorSchemePreference: Hashable {
@@ -227,7 +230,25 @@ struct GhosttyConfig {
         config.resolveSidebarBackground(preferredColorScheme: preferredColorScheme)
         config.applySidebarAppearanceToUserDefaults()
 
+        // Guard against white-on-white text: if both fg and bg are light, the
+        // terminal would be unreadable. Substitute a safe dark foreground.
+        config.applyContrastFallbackIfNeeded()
+
         return config
+    }
+
+    // If both background and foreground are light-colored (luminance > 0.5),
+    // overwrite foreground with a safe dark value so text is always legible.
+    mutating func applyContrastFallbackIfNeeded() {
+        if backgroundColor.isLightColor && foregroundColor.isLightColor {
+            let oldFg = foregroundColor
+            foregroundColor = NSColor(hex: "#1A1A1A")!
+            #if DEBUG
+            dlog("contrast-fallback: fg overridden from \(oldFg) to \(foregroundColor) -- bg=\(backgroundColor)")
+            #else
+            _ = oldFg
+            #endif
+        }
     }
 
     mutating func parse(_ contents: String) {
@@ -255,7 +276,7 @@ struct GhosttyConfig {
                 case "working-directory":
                     workingDirectory = value
                 case "scrollback-limit":
-                    if let limit = Int(value) {
+                    if let limit = Self.parseByteCount(value) {
                         scrollbackLimit = limit
                     }
                 case "background":
@@ -292,6 +313,7 @@ struct GhosttyConfig {
                     if paletteParts.count == 2,
                        let index = Int(paletteParts[0]),
                        let color = NSColor(hex: String(paletteParts[1])) {
+                        guard index >= 0, index <= 15 else { break }
                         palette[index] = color
                     }
                 case "unfocused-split-opacity":
@@ -317,6 +339,23 @@ struct GhosttyConfig {
                 }
             }
         }
+    }
+
+    // Parses a byte-count value with optional K/M/G suffix (case-insensitive).
+    // "100K" -> 102400, "512M" -> 536870912, "1G" -> 1073741824, "10000" -> 10000.
+    private static func parseByteCount(_ s: String) -> Int? {
+        let upper = s.uppercased()
+        let multipliers: [(String, Int)] = [("G", 1_073_741_824), ("M", 1_048_576), ("K", 1_024)]
+        for (suffix, mult) in multipliers {
+            if upper.hasSuffix(suffix), let n = Int(upper.dropLast()) {
+                guard n >= 0 else { return nil }
+                let (result, overflow) = n.multipliedReportingOverflow(by: mult)
+                guard !overflow else { return nil }
+                return result
+            }
+        }
+        guard let n = Int(s), n >= 0 else { return nil }
+        return n
     }
 
     mutating func loadTheme(_ name: String) {

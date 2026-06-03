@@ -1,0 +1,15 @@
+{
+  "agent_type": "advance",
+  "base_name": "BacklogScribe",
+  "ended_at": "2026-05-05T00:57:26Z",
+  "framework": "claude-code",
+  "last_active": "2026-05-04T23:43:48Z",
+  "model": "claude-opus-4-7",
+  "name": "BacklogScribe-1",
+  "parent": "human:atin",
+  "prompt": "filing-c11-backlog-tickets",
+  "serial": 1,
+  "session": "sess_01KQTNZXQW7YTS3KB8P3WP482W",
+  "started_at": "2026-05-04T23:43:20Z",
+  "status": "ended"
+}

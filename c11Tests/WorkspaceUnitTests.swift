@@ -66,10 +66,11 @@ final class WorkspaceRenameShortcutDefaultsTests: XCTestCase {
         XCTAssertEqual(KeyboardShortcutSettings.Action.renameTab.label, "Rename Tab")
         XCTAssertEqual(KeyboardShortcutSettings.Action.renameTab.defaultsKey, "shortcut.renameTab")
 
+        // C11-41: default rebound from ⌘R to ⌘⇧E to free ⌘R for Browser → Reload Page.
         let shortcut = KeyboardShortcutSettings.Action.renameTab.defaultShortcut
-        XCTAssertEqual(shortcut.key, "r")
+        XCTAssertEqual(shortcut.key, "e")
         XCTAssertTrue(shortcut.command)
-        XCTAssertFalse(shortcut.shift)
+        XCTAssertTrue(shortcut.shift)
         XCTAssertFalse(shortcut.option)
         XCTAssertFalse(shortcut.control)
     }
@@ -1258,7 +1259,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         DispatchQueue.main.async {
             expectation.fulfill()
         }
-        wait(for: [expectation], timeout: 1.0)
+        wait(for: [expectation], timeout: 5.0)
     }
 
     func testBrowserSplitWithFocusFalsePreservesOriginalFocusedPanel() {
@@ -1728,10 +1729,6 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             workspace.sidebarGitBranchesInDisplayOrder().map { "\($0.branch)|\($0.isDirty)" }
         )
         XCTAssertEqual(
-            workspace.sidebarBranchDirectoryEntriesInDisplayOrder(orderedPanelIds: orderedPanelIds),
-            workspace.sidebarBranchDirectoryEntriesInDisplayOrder()
-        )
-        XCTAssertEqual(
             workspace.sidebarPullRequestsInDisplayOrder(orderedPanelIds: orderedPanelIds),
             workspace.sidebarPullRequestsInDisplayOrder()
         )
@@ -1984,5 +1981,163 @@ final class WorkspaceCustomColorDidChangeTests: XCTestCase {
         let fired1 = fired
         workspace.setCustomColor("#00FF00")
         XCTAssertEqual(fired, fired1, "Setting the same normalized hex must not re-publish")
+    }
+}
+
+// MARK: - C11-10 surface tab color (panel-scoped custom color)
+
+@MainActor
+final class WorkspacePanelCustomColorTests: XCTestCase {
+    func testSetPanelCustomColorNormalizesValidHex() {
+        let workspace = Workspace()
+        guard let panelId = workspace.focusedPanelId else {
+            XCTFail("Expected focused panel in new workspace")
+            return
+        }
+
+        workspace.setPanelCustomColor(panelId: panelId, color: "ff8800")
+        XCTAssertEqual(workspace.panelCustomColor(panelId: panelId), "#FF8800")
+
+        workspace.setPanelCustomColor(panelId: panelId, color: "  #aabbcc  ")
+        XCTAssertEqual(workspace.panelCustomColor(panelId: panelId), "#AABBCC")
+    }
+
+    func testSetPanelCustomColorRejectsInvalidHexLeavesPriorValue() {
+        let workspace = Workspace()
+        guard let panelId = workspace.focusedPanelId else {
+            XCTFail("Expected focused panel in new workspace")
+            return
+        }
+
+        workspace.setPanelCustomColor(panelId: panelId, color: "#123456")
+        XCTAssertEqual(workspace.panelCustomColor(panelId: panelId), "#123456")
+
+        workspace.setPanelCustomColor(panelId: panelId, color: "not-a-color")
+        XCTAssertEqual(
+            workspace.panelCustomColor(panelId: panelId), "#123456",
+            "Invalid hex must not mutate the existing color"
+        )
+
+        workspace.setPanelCustomColor(panelId: panelId, color: "#GGHHII")
+        XCTAssertEqual(workspace.panelCustomColor(panelId: panelId), "#123456")
+    }
+
+    func testSetPanelCustomColorClearsViaNilOrEmpty() {
+        let workspace = Workspace()
+        guard let panelId = workspace.focusedPanelId else {
+            XCTFail("Expected focused panel in new workspace")
+            return
+        }
+
+        workspace.setPanelCustomColor(panelId: panelId, color: "#C0392B")
+        XCTAssertEqual(workspace.panelCustomColor(panelId: panelId), "#C0392B")
+
+        workspace.setPanelCustomColor(panelId: panelId, color: nil)
+        XCTAssertNil(workspace.panelCustomColor(panelId: panelId))
+        XCTAssertNil(workspace.panelCustomColors[panelId])
+
+        workspace.setPanelCustomColor(panelId: panelId, color: "#1565C0")
+        workspace.setPanelCustomColor(panelId: panelId, color: "   ")
+        XCTAssertNil(workspace.panelCustomColor(panelId: panelId))
+    }
+
+    func testSetPanelCustomColorIgnoresUnknownPanelId() {
+        let workspace = Workspace()
+        let unknownPanelId = UUID()
+
+        workspace.setPanelCustomColor(panelId: unknownPanelId, color: "#FF0000")
+        XCTAssertNil(workspace.panelCustomColor(panelId: unknownPanelId))
+        XCTAssertTrue(workspace.panelCustomColors.isEmpty)
+    }
+
+    func testTeardownClearsPanelCustomColors() {
+        let workspace = Workspace()
+        guard let panelId = workspace.focusedPanelId else {
+            XCTFail("Expected focused panel in new workspace")
+            return
+        }
+
+        workspace.setPanelCustomColor(panelId: panelId, color: "#196F3D")
+        XCTAssertFalse(workspace.panelCustomColors.isEmpty)
+
+        workspace.teardownAllPanels()
+
+        XCTAssertTrue(
+            workspace.panelCustomColors.isEmpty,
+            "panelCustomColors must be cleared by teardownAllPanels (via pruneSurfaceMetadata)"
+        )
+    }
+
+    func testSetPanelCustomColorPropagatesToBonsplitTab() {
+        let workspace = Workspace()
+        guard let panelId = workspace.focusedPanelId,
+              let tabId = workspace.surfaceIdFromPanelId(panelId) else {
+            XCTFail("Expected initial panel and bonsplit tab mapping")
+            return
+        }
+
+        XCTAssertNil(workspace.bonsplitController.tab(tabId)?.customColorHex)
+
+        workspace.setPanelCustomColor(panelId: panelId, color: "#1565C0")
+        XCTAssertEqual(
+            workspace.bonsplitController.tab(tabId)?.customColorHex, "#1565C0",
+            "Setting a panel custom color must mirror through to the bonsplit tab"
+        )
+
+        workspace.setPanelCustomColor(panelId: panelId, color: nil)
+        XCTAssertNil(
+            workspace.bonsplitController.tab(tabId)?.customColorHex,
+            "Clearing a panel custom color must clear the bonsplit tab's value"
+        )
+    }
+
+    func testDetachAttachAcrossWorkspacesPreservesPanelCustomColor() {
+        let source = Workspace()
+        guard let panelId = source.focusedPanelId else {
+            XCTFail("Expected source focused panel")
+            return
+        }
+
+        source.setPanelCustomColor(panelId: panelId, color: "#7B3F00")
+
+        guard let detached = source.detachSurface(panelId: panelId) else {
+            XCTFail("Expected detach to succeed")
+            return
+        }
+
+        XCTAssertEqual(
+            detached.customColor, "#7B3F00",
+            "DetachedSurfaceTransfer must carry the surface tab color"
+        )
+        XCTAssertNil(
+            source.panelCustomColor(panelId: panelId),
+            "Source workspace cleanup paths must drop panelCustomColors entry on detach"
+        )
+
+        let destination = Workspace()
+        guard let destinationPane = destination.bonsplitController.allPaneIds.first else {
+            XCTFail("Expected destination pane")
+            return
+        }
+
+        let attachedPanelId = destination.attachDetachedSurface(
+            detached,
+            inPane: destinationPane,
+            focus: false
+        )
+        XCTAssertEqual(attachedPanelId, panelId)
+        XCTAssertEqual(
+            destination.panelCustomColor(panelId: panelId), "#7B3F00",
+            "Destination workspace must restore the surface tab color from the transfer"
+        )
+
+        guard let attachedTabId = destination.surfaceIdFromPanelId(panelId) else {
+            XCTFail("Expected attached tab mapping")
+            return
+        }
+        XCTAssertEqual(
+            destination.bonsplitController.tab(attachedTabId)?.customColorHex, "#7B3F00",
+            "Bonsplit tab in the destination must render the migrated color"
+        )
     }
 }

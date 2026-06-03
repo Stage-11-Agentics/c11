@@ -790,6 +790,10 @@ final class WindowTerminalPortal: NSObject {
     private var installConstraints: [NSLayoutConstraint] = []
     private var hasDeferredFullSyncScheduled = false
     private var hasExternalGeometrySyncScheduled = false
+    // Per-entry dirty set consumed by scheduleDeferredFullSynchronizeAll's deferred body.
+    // Each schedule caller marks the hosted ids it touched; the deferred body iterates only
+    // those entries (skipping entirely when nothing's dirty) instead of sweeping all entries.
+    private var dirtyHostedIds: Set<ObjectIdentifier> = []
     private var geometryObservers: [NSObjectProtocol] = []
 #if DEBUG
     private var lastLoggedBonsplitContainerSignature: String?
@@ -951,6 +955,15 @@ final class WindowTerminalPortal: NSObject {
     fileprivate func synchronizeAllEntriesFromExternalGeometryChange() {
         guard ensureInstalled() else { return }
         synchronizeLayoutHierarchy()
+        // An orphan entry is one whose anchor is no longer attached to this window:
+        // either the weak reference deallocated, or the AppKit view was detached
+        // (e.g., bonsplit's _ConditionalContent flipped between EmptyPanelView and
+        // PanelContentView between bind and settle, leaving the original anchor
+        // out of the live tree). Without this pass, the orphan keeps its hostedView
+        // mounted at a stale frame and contributes phantom chrome segments and
+        // (sometimes) an EmptyPanelView SwiftUI subtree on top of the live
+        // workspace. See notes/launch-white-line-artifact.md.
+        let didHideOrphan = hideOrphanEntriesIfNeeded()
         synchronizeAllHostedViews(excluding: nil)
 
         // During live resize, AppKit can deliver frame churn where host/container geometry
@@ -962,6 +975,66 @@ final class WindowTerminalPortal: NSObject {
                 hostedView.refreshSurfaceNow(reason: "portal.externalGeometrySync")
             }
         }
+
+        if didHideOrphan {
+            dividerOverlayView.needsDisplay = true
+        }
+    }
+
+    /// Walk the registry once and hide any entry whose anchor has definitively
+    /// left this window's view tree. Returns true if at least one entry was
+    /// hidden so the caller can invalidate the overlay.
+    ///
+    /// "Definitively" means one of:
+    ///   - the anchor's weak reference deallocated (`anchor == nil`), which
+    ///     happens when the SwiftUI representable that owned it was dismantled,
+    ///   - the anchor is in some other window (`anchor.window !== window`).
+    ///
+    /// We deliberately don't hide on `anchor != nil && anchor.window == nil`:
+    /// that's a momentary window-less limbo state during attach/detach
+    /// transitions, and synchronizeHostedView's existing transient-recovery
+    /// path handles it. Hiding aggressively there would cause a flash during
+    /// legitimate workspace remounts.
+    @discardableResult
+    private func hideOrphanEntriesIfNeeded() -> Bool {
+        var didHide = false
+        for hostedId in entriesByHostedId.keys {
+            guard var entry = entriesByHostedId[hostedId] else { continue }
+            let anchor = entry.anchorView
+            let isOrphan: Bool
+            if anchor == nil {
+                isOrphan = true
+            } else if let anchorWindow = anchor?.window, anchorWindow !== window {
+                isOrphan = true
+            } else {
+                isOrphan = false
+            }
+            guard isOrphan else { continue }
+            let wasContributing = entry.visibleInUI || (entry.hostedView?.isHidden == false)
+            guard wasContributing else { continue }
+
+            entry.visibleInUI = false
+            entriesByHostedId[hostedId] = entry
+            entry.hostedView?.isHidden = true
+            didHide = true
+#if DEBUG
+            let anchorWindowDesc: String
+            if anchor == nil {
+                anchorWindowDesc = "deallocated"
+            } else if anchor?.window === nil {
+                anchorWindowDesc = "nil"
+            } else if anchor?.window === window {
+                anchorWindowDesc = "self"
+            } else {
+                anchorWindowDesc = "other"
+            }
+            dlog(
+                "portal.orphan.hide hosted=\(portalDebugToken(entry.hostedView)) " +
+                "anchor=\(portalDebugToken(anchor)) anchorWindow=\(anchorWindowDesc)"
+            )
+#endif
+        }
+        return didHide
     }
 
     private func ensureDividerOverlayOnTop() {
@@ -1004,6 +1077,12 @@ final class WindowTerminalPortal: NSObject {
                   let hostedView = entry.hostedView,
                   !hostedView.isHidden,
                   hostedView.superview === hostView,
+                  // Belt-and-suspenders: even if hideOrphanEntriesIfNeeded
+                  // hasn't run yet on this redraw cycle, suppress chrome
+                  // segments derived from an entry whose anchor has left
+                  // this window. See notes/launch-white-line-artifact.md.
+                  let anchor = entry.anchorView,
+                  anchor.window === window,
                   let color = PortalWorkspaceFrameOverlay.color(from: style) else {
                 continue
             }
@@ -1392,6 +1471,9 @@ final class WindowTerminalPortal: NSObject {
         ensureDividerOverlayOnTop()
 
         synchronizeHostedView(withId: hostedId)
+        // Re-check this hosted view on the next tick — the bind just reparented/resized it
+        // and ancestor layout may still settle. Other entries are unaffected by this bind.
+        dirtyHostedIds.insert(hostedId)
         scheduleDeferredFullSynchronizeAll()
         pruneDeadEntries()
     }
@@ -1410,6 +1492,13 @@ final class WindowTerminalPortal: NSObject {
         // geometry callback while another fires. Reconcile all mapped hosted views so no stale
         // frame remains "stuck" onscreen until the next interaction.
         synchronizeAllHostedViews(excluding: primaryHostedId)
+        // Only the primary hosted view (whose anchor moved) needs a deferred re-check after
+        // layout settles. Other entries were just synchronized inline above. When primaryHostedId
+        // is nil (anchor not bound to any hosted view), there's nothing to defer — the deferred
+        // body will skip cleanly.
+        if let primaryHostedId {
+            dirtyHostedIds.insert(primaryHostedId)
+        }
         scheduleDeferredFullSynchronizeAll()
     }
 
@@ -1430,7 +1519,38 @@ final class WindowTerminalPortal: NSObject {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.hasDeferredFullSyncScheduled = false
-            self.synchronizeAllHostedViews(excluding: nil)
+            self.runDeferredHostedSync()
+        }
+    }
+
+    /// Body of the deferred sync. Iterates only entries marked dirty since the schedule
+    /// call; skips entirely when nothing's dirty. Re-entrant marks added during iteration
+    /// (e.g., transient-recovery retries) re-arm a fresh deferred via the schedule call,
+    /// so they're handled on the next tick rather than in the current sweep.
+    private func runDeferredHostedSync() {
+        guard ensureInstalled() else {
+            dirtyHostedIds.removeAll(keepingCapacity: true)
+            return
+        }
+        let snapshot = dirtyHostedIds
+        dirtyHostedIds.removeAll(keepingCapacity: true)
+        guard !snapshot.isEmpty else {
+#if DEBUG
+            dlog("portal.deferredSync.skip count=0")
+#endif
+            return
+        }
+#if DEBUG
+        dlog("portal.deferredSync.run count=\(snapshot.count) full=0")
+#endif
+        synchronizeLayoutHierarchy()
+        pruneDeadEntries()
+        for hostedId in snapshot {
+            // Skip ids that no longer correspond to a live entry (detached/unbound between
+            // schedule and run). synchronizeHostedView would no-op anyway, but skipping here
+            // avoids the lookup churn.
+            guard entriesByHostedId[hostedId] != nil else { continue }
+            synchronizeHostedView(withId: hostedId)
         }
     }
 
@@ -1472,6 +1592,9 @@ final class WindowTerminalPortal: NSObject {
         )
 #endif
         if entry.transientRecoveryRetriesRemaining > 0 {
+            // Retry only the entry whose recovery is in flight; other entries aren't
+            // affected by this transient-recovery cycle.
+            dirtyHostedIds.insert(hostedId)
             scheduleDeferredFullSynchronizeAll()
         }
         return true
@@ -1599,6 +1722,9 @@ final class WindowTerminalPortal: NSObject {
                         reason: "hostBoundsNotReady"
                     )
                 } else {
+                    // Legacy fallback (transient recovery disabled): retry only this hosted
+                    // view on the next tick once host bounds settle.
+                    dirtyHostedIds.insert(hostedId)
                     scheduleDeferredFullSynchronizeAll()
                 }
             }
@@ -2077,7 +2203,9 @@ enum TerminalWindowPortalRegistry {
            oldWindowId != windowId {
             portalsByWindowId[oldWindowId]?.detachHostedView(withId: hostedId)
         }
-
+#if DEBUG
+        let bindStart = CACurrentMediaTime()
+#endif
         nextPortal.bind(
             hostedView: hostedView,
             to: anchorView,
@@ -2087,6 +2215,15 @@ enum TerminalWindowPortalRegistry {
         )
         hostedToWindowId[hostedId] = windowId
         pruneHostedMappings(for: windowId, validHostedIds: nextPortal.hostedIds())
+#if DEBUG
+        let bindMs = (CACurrentMediaTime() - bindStart) * 1000
+        if bindMs > 5 {
+            dlog(
+                "portal.bind.timing hosted=\(portalDebugToken(hostedView)) " +
+                "bindMs=\(String(format: "%.2f", bindMs))"
+            )
+        }
+#endif
     }
 
     static func synchronizeForAnchor(_ anchorView: NSView) {

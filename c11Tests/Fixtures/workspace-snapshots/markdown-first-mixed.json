@@ -42,8 +42,8 @@
         "title": "cc :: driver",
         "command": "echo seed",
         "metadata": {
-          "terminal_type":     { "string": "claude-code" },
-          "claude.session_id": { "string": "dddd3333-4444-5555-6666-777788889999" }
+          "terminal_type":     "claude-code",
+          "claude.session_id": "dddd3333-4444-5555-6666-777788889999"
         }
       }
     ]

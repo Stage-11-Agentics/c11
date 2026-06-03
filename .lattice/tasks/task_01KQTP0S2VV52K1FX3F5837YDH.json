@@ -1,0 +1,40 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": null,
+  "created_at": "2026-05-04T23:43:48Z",
+  "created_by": {
+    "agent_type": "advance",
+    "base_name": "BacklogScribe",
+    "framework": "claude-code",
+    "model": "claude-opus-4-7",
+    "name": "BacklogScribe-1",
+    "serial": 1,
+    "session": "sess_01KQTNZXQW7YTS3KB8P3WP482W"
+  },
+  "custom_fields": {},
+  "description": "## Summary\n\nAdd a right-click (context menu) entry on every c11 surface \u2014 terminal, browser, markdown \u2014 that opens a viewer showing the **surface manifest** JSON: the arbitrary, broadcastable per-surface blob agents read/write via `c11 set-metadata` / `c11 get-metadata`. Goal: a one-click way for the operator (or an agent walking the operator through something) to *see* the JSON blob a surface is broadcasting, without dropping to the terminal to run `c11 get-metadata --surface ...`.\n\n## Why\n\nThe surface manifest is a first-class extension surface for c11 (canonical keys + free-form keys, see `skills/c11/SKILL.md` \"The surface manifest\"). Today inspection is CLI-only \u2014 fine for agents, friction-heavy for the operator and for live demos / debugging dialogues. A right-click menu item collapses that to one gesture. Useful in three modes:\n\n1. **Dialogue / demo** \u2014 explaining what each surface advertises while showing it.\n2. **Debug** \u2014 confirming canonical keys (`role`, `status`, `task`, `model`, `progress`, `terminal_type`, `title`, `description`) and any third-party keys (Lattice, Mycelium) are what you expect.\n3. **Test** \u2014 verifying agent writes landed on the right surface (especially after the `set-metadata` env-default footgun).\n\n## Sketch\n\n- Right-click on any c11 surface \u2192 context menu gains an entry, e.g. **\"Show surface manifest\u2026\"** (exact label TBD; see open questions).\n- Selecting it opens a panel/sheet/popover (TBD) rendering the manifest JSON pretty-printed and read-only at minimum. Stretch: include provenance (`--sources` style \u2014 who wrote each key, when), and a copy-to-clipboard action.\n- Should work on every surface kind that has a manifest: terminal, browser, markdown.\n- Scope creep guards: no editing in v1, no live subscribe (manifest is pull-on-demand per spec). Re-render on menu re-open is fine.\n\n## Open questions (defer to plan phase)\n\n- **Label.** \"Show manifest\", \"Show surface JSON\", \"Inspect manifest\", \"Show metadata\"? Pick one consistent with how the manifest is referred to in the rest of the UI/docs.\n- **Surface (UI).** Floating panel? Sheet? Inspector pane? Reuse any existing JSON-viewer chrome we already have, or new component.\n- **Pane manifest too?** Panes carry their own manifest layer (see \"Pane-layer lineage\" in c11 skill). Decide whether right-click on the pane (vs. the surface) shows the pane manifest, or whether one viewer toggles between them.\n- **Provenance toggle.** Show the `--sources` view as default, on toggle, or not at all in v1.\n- **Copy / export.** Copy-to-clipboard is cheap; \"save to file\" is probably out of scope.\n- **Discoverability.** Whether to also add a keyboard shortcut, or leave that for a later pass.\n\n## Related\n\n- `CMUX-19` \u2014 Per-surface theme button (right-click menu): same context menu we'd be extending.\n- `CMUX-14` \u2014 Lineage primitive on the surface manifest: same manifest, different feature.\n- `skills/c11/SKILL.md` \"The surface manifest\" \u2014 canonical key reference; v1 viewer should render canonical and non-canonical keys legibly.\n\n## Out of scope (v1)\n\n- Editing the manifest from the viewer.\n- Live subscribe / push updates (spec says pull-on-demand).\n- Cross-surface manifest browser / aggregator UI.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KQTP0S2VV52K1FX3F5837YDH",
+  "last_event_id": "ev_01KQTP0S32KRH0FQ7QJFMBFWMR",
+  "last_status_changed_at": "2026-05-04T23:43:48Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-24",
+  "status": "backlog",
+  "tags": [
+    "ui",
+    "manifest",
+    "surface",
+    "debug"
+  ],
+  "title": "Right-click menu: show surface manifest JSON",
+  "type": "task",
+  "updated_at": "2026-05-04T23:43:48Z",
+  "urgency": null
+}

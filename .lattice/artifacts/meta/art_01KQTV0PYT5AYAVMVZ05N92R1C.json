@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-05T01:11:09Z",
+  "created_by": "human:atin",
+  "custom_fields": {},
+  "id": "art_01KQTV0PYT5AYAVMVZ05N92R1C",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KQTV0PYT5AYAVMVZ05N92R1C.md",
+    "size_bytes": 785
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Backfill close-out. PR #30 merged 2026-04-20 (Workspace color prevalence \u2014 frame + dividers + sidebar tint), then C11-8 PR #45 (2026-04-22) refined the chrome (sidebar neutrality, continuous portal fr",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

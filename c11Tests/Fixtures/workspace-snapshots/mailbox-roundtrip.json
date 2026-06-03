@@ -21,9 +21,9 @@
         "kind": "terminal",
         "title": "build watcher",
         "paneMetadata": {
-          "mailbox.delivery":       { "string": "stdin,watch" },
-          "mailbox.subscribe":      { "string": "build.*,deploy.green" },
-          "mailbox.retention_days": { "string": "7" }
+          "mailbox.delivery":       "stdin,watch",
+          "mailbox.subscribe":      "build.*,deploy.green",
+          "mailbox.retention_days": "7"
         }
       }
     ]

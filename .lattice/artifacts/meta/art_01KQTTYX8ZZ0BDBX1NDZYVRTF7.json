@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-05T01:10:09Z",
+  "created_by": "agent:claude-opus-4-7",
+  "custom_fields": {},
+  "id": "art_01KQTTYX8ZZ0BDBX1NDZYVRTF7",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KQTTYX8ZZ0BDBX1NDZYVRTF7.md",
+    "size_bytes": 723
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Shipped via PR #118 (\"CMUX-37 final push: close five 2026-05-03 smoke-test gaps\"), merged 2026-05-04T23:37:11Z as commit cbae93d3 on main. All five workstreams from the final-push plan landed: workspa",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

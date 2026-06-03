@@ -2,10 +2,16 @@ import Foundation
 
 /// Filesystem I/O for blueprint envelopes.
 ///
-/// Three sources in priority order: per-repo (`.cmux/blueprints/` walked up
-/// from a working directory), per-user (`~/.config/cmux/blueprints/`), and
-/// built-in (app bundle `Blueprints/` subdirectory). `merged(cwd:)` combines
-/// all three, per-repo first, sorted by modifiedAt desc within each group.
+/// Three sources in priority order: per-repo (walks up from a working
+/// directory checking `.c11/blueprints/` then `.cmux/blueprints/`),
+/// per-user (`~/.config/c11/blueprints/` plus the legacy
+/// `~/.config/cmux/blueprints/`), and built-in (app bundle `Blueprints/`
+/// subdirectory). `merged(cwd:)` combines all three, per-repo first,
+/// sorted by modifiedAt desc within each group.
+///
+/// Files may be either JSON (`.json`) or Markdown (`.md`). Read/write
+/// dispatch happens on the URL's extension; the parser for the markdown
+/// form lives in `WorkspaceBlueprintMarkdown.swift`.
 ///
 /// Not `@MainActor`. Socket handlers and CLI commands call this off the main
 /// thread. Tests inject `directoryOverride:` so the real home dir never leaks
@@ -57,17 +63,24 @@ struct WorkspaceBlueprintStore: Sendable {
 
     // MARK: - Source discovery
 
-    /// Scan `.cmux/blueprints/*.{json,md}` walking UP from `cwd` (git-discovery
-    /// style) until the filesystem root or the user's home directory.
+    /// Walk UP from `cwd` (git-discovery style) and at the first ancestor
+    /// that has either `.c11/blueprints/` or `.cmux/blueprints/` collect
+    /// blueprints from both. `.c11/` entries appear first in the returned
+    /// list so the picker shows the c11-canonical directory above the
+    /// legacy one when both exist at the same ancestor.
     func perRepoBlueprintURLs(cwd: URL) -> [URL] {
         let home = fileManager.homeDirectoryForCurrentUser.standardized
         var candidate = cwd.standardized
-        // Walk up, but never above home — stop on first hit rather than
-        // accumulating from every ancestor to avoid shadowing surprises.
         while true {
-            let dir = candidate.appendingPathComponent(".cmux/blueprints", isDirectory: true)
-            if fileManager.fileExists(atPath: dir.path) {
-                return blueprintURLs(in: dir)
+            let c11Dir = candidate.appendingPathComponent(".c11/blueprints", isDirectory: true)
+            let cmuxDir = candidate.appendingPathComponent(".cmux/blueprints", isDirectory: true)
+            let c11Exists = fileManager.fileExists(atPath: c11Dir.path)
+            let cmuxExists = fileManager.fileExists(atPath: cmuxDir.path)
+            if c11Exists || cmuxExists {
+                var out: [URL] = []
+                if c11Exists { out.append(contentsOf: blueprintURLs(in: c11Dir)) }
+                if cmuxExists { out.append(contentsOf: blueprintURLs(in: cmuxDir)) }
+                return out
             }
             // Stop at home or root.
             if candidate == home || candidate.path == "/" {
@@ -83,16 +96,18 @@ struct WorkspaceBlueprintStore: Sendable {
         return []
     }
 
-    /// Scan `~/.config/cmux/blueprints/*.{json,md}`, or the override when set.
+    /// Scan `~/.config/c11/blueprints/*.{json,md}` and the legacy
+    /// `~/.config/cmux/blueprints/` path. The c11 directory ships first so
+    /// the picker prefers canonically-named files when both exist. The
+    /// `directoryOverride:` test seam returns just that directory unchanged.
     func perUserBlueprintURLs() -> [URL] {
-        let dir: URL
         if let override = directoryOverride {
-            dir = override
-        } else {
-            let home = fileManager.homeDirectoryForCurrentUser
-            dir = home.appendingPathComponent(".config/cmux/blueprints", isDirectory: true)
+            return blueprintURLs(in: override)
         }
-        return blueprintURLs(in: dir)
+        let home = fileManager.homeDirectoryForCurrentUser
+        let primary = home.appendingPathComponent(".config/c11/blueprints", isDirectory: true)
+        let legacy = home.appendingPathComponent(".config/cmux/blueprints", isDirectory: true)
+        return blueprintURLs(in: primary) + blueprintURLs(in: legacy)
     }
 
     /// Scan the app bundle's `Blueprints/` subdirectory, or the override's
@@ -140,12 +155,22 @@ struct WorkspaceBlueprintStore: Sendable {
 
     // MARK: - Read / Write
 
+    /// Read and decode a blueprint, dispatching on extension: `.md` files
+    /// are parsed by `WorkspaceBlueprintMarkdown`; everything else is read
+    /// as JSON.
     func read(url: URL) throws -> WorkspaceBlueprintFile {
         let data: Data
         do {
             data = try Data(contentsOf: url)
         } catch {
             throw StoreError.readFailed(url.path, underlying: "\(error)")
+        }
+        if url.pathExtension.lowercased() == "md" {
+            do {
+                return try WorkspaceBlueprintMarkdown.parse(data)
+            } catch {
+                throw StoreError.decodeFailed(url.path, underlying: "\(error)")
+            }
         }
         do {
             return try JSONDecoder().decode(WorkspaceBlueprintFile.self, from: data)
@@ -154,8 +179,11 @@ struct WorkspaceBlueprintStore: Sendable {
         }
     }
 
-    /// Atomic write. Directory is created on demand. Follows the same
-    /// write-temp-then-move contract as `WorkspaceSnapshotStore`.
+    /// Atomic write. Directory is created on demand. Encoding dispatches on
+    /// the destination URL's extension: `.md` files round-trip through
+    /// `WorkspaceBlueprintMarkdown`, everything else through `JSONEncoder`.
+    /// Follows the same write-temp-then-move contract as
+    /// `WorkspaceSnapshotStore`.
     func write(_ file: WorkspaceBlueprintFile, to url: URL) throws {
         let parent = url.deletingLastPathComponent()
         do {
@@ -163,13 +191,21 @@ struct WorkspaceBlueprintStore: Sendable {
         } catch {
             throw StoreError.createDirectoryFailed(parent.path, underlying: "\(error)")
         }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let data: Data
-        do {
-            data = try encoder.encode(file)
-        } catch {
-            throw StoreError.encodeFailed("\(error)")
+        if url.pathExtension.lowercased() == "md" {
+            do {
+                data = try WorkspaceBlueprintMarkdown.serialize(file)
+            } catch {
+                throw StoreError.encodeFailed("\(error)")
+            }
+        } else {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+            do {
+                data = try encoder.encode(file)
+            } catch {
+                throw StoreError.encodeFailed("\(error)")
+            }
         }
         do {
             try data.write(to: url, options: .atomic)
@@ -201,9 +237,11 @@ struct WorkspaceBlueprintStore: Sendable {
         }
     }
 
-    /// Build `WorkspaceBlueprintIndex` entries from a set of URLs. Reads each
-    /// file's `name` and `description` from the JSON envelope; skips
-    /// undecodable files silently. Sorted by modifiedAt desc.
+    /// Build `WorkspaceBlueprintIndex` entries from a set of URLs. Decodes
+    /// each file's envelope (JSON or Markdown frontmatter) to populate
+    /// `name` and `description`; falls back to the filename stem when a
+    /// markdown file's frontmatter is missing or unparseable. Skips
+    /// undecodable JSON files silently. Sorted by modifiedAt desc.
     private func indexEntries(
         urls: [URL],
         source: WorkspaceBlueprintIndex.Source
@@ -213,17 +251,21 @@ struct WorkspaceBlueprintStore: Sendable {
             // modifiedAt from filesystem attributes; skip if unavailable.
             guard let attrs = try? fileManager.attributesOfItem(atPath: url.path),
                   let modifiedAt = attrs[.modificationDate] as? Date else { continue }
-            // For JSON files decode the envelope to get name/description.
-            // Markdown blueprints use the filename stem as the name.
+            let ext = url.pathExtension.lowercased()
             let name: String
             let description: String?
-            if url.pathExtension.lowercased() == "json" {
+            if ext == "md" {
+                if let file = try? read(url: url), !file.name.isEmpty {
+                    name = file.name
+                    description = file.description
+                } else {
+                    name = url.deletingPathExtension().lastPathComponent
+                    description = nil
+                }
+            } else {
                 guard let file = try? read(url: url) else { continue }
                 name = file.name
                 description = file.description
-            } else {
-                name = url.deletingPathExtension().lastPathComponent
-                description = nil
             }
             out.append(WorkspaceBlueprintIndex(
                 name: name,

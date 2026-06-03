@@ -18,8 +18,8 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KPKJ68Q9CZHMN7YCWWD4AH8S",
-  "last_event_id": "ev_01KPMJNPF6HEQBFEVV8MXGSF8N",
-  "last_status_changed_at": "2026-04-20T04:34:11Z",
+  "last_event_id": "ev_01KQTTXAT8K92QZZDB72T46RQ1",
+  "last_status_changed_at": "2026-05-05T01:09:18Z",
   "linked_files": [],
   "priority": "low",
   "relationships_out": [
@@ -61,10 +61,10 @@
       "type": "supersedes"
     }
   ],
-  "reopened_count": 1,
+  "reopened_count": 2,
   "schema_version": 1,
   "short_id": "CMUX-30",
-  "status": "planned",
+  "status": "backlog",
   "tags": [
     "architecture",
     "bonsplit",
@@ -73,6 +73,6 @@
   ],
   "title": "Bonsplit \u2194 c11mux: TrailingAccessory slot \u2014 extract toolbar buttons out of bonsplit",
   "type": "spike",
-  "updated_at": "2026-04-20T04:34:11Z",
+  "updated_at": "2026-05-05T01:09:18Z",
   "urgency": null
 }

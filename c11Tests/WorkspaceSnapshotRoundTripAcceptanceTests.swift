@@ -157,12 +157,16 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
                 "fixture surface[\(surfaceSpec.id)] missing claude.session_id"
             )
             if let sessionId {
-                // B2 acceptance: the registry returns the submit form — the
-                // trailing newline is load-bearing. `==` not `.contains`:
-                // `.contains("cc --resume <id>")` would happily pass on
-                // `"cc --resume <id>"` (typed but never submitted), which
-                // was exactly the shipped regression this test now guards.
-                let expected = "cc --resume \(sessionId)\n"
+                // B2 acceptance: the executor routes registry-synthesised
+                // commands through `TerminalSurface.sendSubmitFormText`,
+                // which trims the registry's trailing newline before
+                // queueing the bytes — the synthetic Return it dispatches
+                // separately is what actually submits the line. So the
+                // bytes that land in the pending queue are the trimmed
+                // command, not the registry's literal `<cmd>\n` output.
+                // `==` not `.contains`: substring assertions would pass
+                // on a no-op send.
+                let expected = "claude --dangerously-skip-permissions --resume \(sessionId)"
                 let sent = terminalPendingInput(terminal) ?? ""
                 XCTAssertEqual(
                     sent,
@@ -241,8 +245,8 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
             }
             let pending = terminalPendingInput(terminal) ?? ""
             XCTAssertFalse(
-                pending.contains("cc --resume"),
-                "restartRegistry=nil must not synthesise any cc --resume; got: '\(pending)'"
+                pending.contains("--resume"),
+                "restartRegistry=nil must not synthesise any --resume command; got: '\(pending)'"
             )
         }
     }
@@ -257,6 +261,9 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
     /// still receives `cc --resume <session-id>`.
     func testCaptureAndRestoreBrowserFirstLayout() throws {
         try skipIfReleaseBuild()
+        // C11-99 Area C: fixed in BrowserPanel.init by seeding `currentURL`
+        // synchronously to the requested URL so snapshot capture sees the
+        // value before the WKWebView KVO observer has a chance to fire.
         try runMixedFirstFixtureRoundTrip(
             fixtureName: "browser-first-mixed",
             firstSurfaceId: "docs",
@@ -330,8 +337,15 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
         // round-trips url, markdown round-trips filePath. This is what
         // Phase 3 Blueprints will depend on when they author non-terminal
         // surfaces.
+        //
+        // Match by `kind` rather than by fixture id: `SurfaceSpec.id` is
+        // re-minted at capture time (Sources/WorkspaceSnapshotCapture.swift:39-41),
+        // so the fixture's "docs"/"readme" / "driver" ids do not survive a
+        // live apply → capture → restore round-trip. Each P7 fixture has
+        // exactly one non-terminal first surface + one trailing terminal,
+        // so `kind` is unique enough to identify the right one.
         let firstSurfaceInRoundTrip = try XCTUnwrap(
-            convertedPlan.surfaces.first { $0.id == firstSurfaceId }
+            convertedPlan.surfaces.first { $0.kind == firstSurfaceKind }
         )
         XCTAssertEqual(firstSurfaceInRoundTrip.kind, firstSurfaceKind)
         switch firstSurfaceKind {
@@ -357,14 +371,20 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
         XCTAssertFalse(restoreResult.workspaceRef.isEmpty)
         let restoredWorkspace = try XCTUnwrap(resolveWorkspace(from: restoreResult.workspaceRef))
 
-        // Trailing terminal receives `cc --resume <session-id>` via the
-        // registry. Same exact-match pattern as the mixed-claude-mailbox
-        // acceptance.
-        let terminalSpec = try XCTUnwrap(convertedPlan.surfaces.first { $0.id == trailingTerminalId })
+        // Trailing terminal receives `claude --dangerously-skip-permissions
+        // --resume <session-id>` via the registry. Same exact-match pattern as
+        // the mixed-claude-mailbox acceptance. Match by `kind == .terminal`
+        // since `trailingTerminalId` ("driver") is the fixture's id, not the
+        // re-minted id the converter hands back after a round-trip; the
+        // parameter is kept for call-site readability.
+        _ = trailingTerminalId
+        let terminalSpec = try XCTUnwrap(convertedPlan.surfaces.first { $0.kind == .terminal })
         let panelId = try XCTUnwrap(parseUUIDSuffix(restoreResult.surfaceRefs[terminalSpec.id]))
         let terminal = try XCTUnwrap(restoredWorkspace.panels[panelId] as? TerminalPanel)
         let sessionId = try XCTUnwrap(stringMetadataValue(terminalSpec.metadata, key: "claude.session_id"))
-        let expected = "cc --resume \(sessionId)\n"
+        // `sendSubmitFormText` trims the registry's trailing newline
+        // before queueing — see the mixed-claude-mailbox acceptance above.
+        let expected = "claude --dangerously-skip-permissions --resume \(sessionId)"
         let sent = terminalPendingInput(terminal) ?? ""
         XCTAssertEqual(sent, expected)
     }

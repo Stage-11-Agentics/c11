@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+# c11-spawn-agent — launch one autonomous Claude Code agent in a named tmux
+# window on a dedicated `-L agents` socket, so it survives SSH detach.
+#
+# This is the server-side primitive for c11's Autonomous Connections (C11-36):
+# the script that runs ON the remote host. It assumes `tmux` is installed and
+# `claude` is on PATH and already authenticated via a prior `claude login`.
+# It does not read, write, or env-inject credentials.
+#
+# Portability: macOS bash 3.2 and Linux bash 5+. No bash-4-only features.
+# Auth model: whatever `claude login` already wrote to disk on this host.
+# Socket: dedicated `tmux -L agents` (configurable) so the agent fleet is
+# isolated from any operator-driven tmux sessions on the same box.
+
+set -euo pipefail
+
+PROG="c11-spawn-agent"
+
+usage() {
+    cat <<'EOF'
+Usage:
+  c11-spawn-agent --workspace <name> --window <name>
+                  (--prompt-file <path> | --prompt <text>)
+                  [--cwd <path>]    # default: $HOME
+                  [--model <id>]    # default: claude-opus-4-7
+                  [--socket <name>] # tmux -L value; default: agents
+                  [--help]
+
+Launches one Claude Code agent in a named tmux window on a dedicated socket.
+The window survives SSH detach. Re-running with the same workspace/window
+errors out rather than clobbering an existing agent.
+
+Examples:
+  c11-spawn-agent --workspace test --window haiku \
+    --cwd /tmp --prompt "Write a haiku and save to /tmp/haiku.txt."
+
+  c11-spawn-agent --workspace fleet --window scout-1 \
+    --prompt-file /tmp/scout-1-instructions.md
+
+Output on success:
+  spawned: tmux -L <socket> <workspace>:<window>
+  attach: ssh <host> -t "tmux -L <socket> attach -t <workspace> \; select-window -t <window>"
+EOF
+}
+
+die() {
+    echo "$PROG: error: $*" >&2
+    exit 1
+}
+
+WORKSPACE=""
+WINDOW=""
+PROMPT_FILE=""
+PROMPT_TEXT=""
+PROMPT_TEXT_SET=0
+CWD="${HOME}"
+MODEL="claude-opus-4-7"
+SOCKET="agents"
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --workspace)
+            [ "$#" -ge 2 ] || die "--workspace requires a value"
+            WORKSPACE="$2"; shift 2 ;;
+        --window)
+            [ "$#" -ge 2 ] || die "--window requires a value"
+            WINDOW="$2"; shift 2 ;;
+        --prompt-file)
+            [ "$#" -ge 2 ] || die "--prompt-file requires a value"
+            PROMPT_FILE="$2"; shift 2 ;;
+        --prompt)
+            [ "$#" -ge 2 ] || die "--prompt requires a value"
+            PROMPT_TEXT="$2"; PROMPT_TEXT_SET=1; shift 2 ;;
+        --cwd)
+            [ "$#" -ge 2 ] || die "--cwd requires a value"
+            CWD="$2"; shift 2 ;;
+        --model)
+            [ "$#" -ge 2 ] || die "--model requires a value"
+            MODEL="$2"; shift 2 ;;
+        --socket)
+            [ "$#" -ge 2 ] || die "--socket requires a value"
+            SOCKET="$2"; shift 2 ;;
+        --help|-h)
+            usage; exit 0 ;;
+        --)
+            shift; break ;;
+        -*)
+            die "unknown flag: $1 (try --help)" ;;
+        *)
+            die "unexpected positional argument: $1 (try --help)" ;;
+    esac
+done
+
+[ -n "$WORKSPACE" ] || die "--workspace is required"
+[ -n "$WINDOW" ]    || die "--window is required"
+
+if [ -n "$PROMPT_FILE" ] && [ "$PROMPT_TEXT_SET" -eq 1 ]; then
+    die "--prompt-file and --prompt are mutually exclusive"
+fi
+if [ -z "$PROMPT_FILE" ] && [ "$PROMPT_TEXT_SET" -eq 0 ]; then
+    die "exactly one of --prompt-file or --prompt is required"
+fi
+
+command -v tmux >/dev/null 2>&1   || die "tmux not found on PATH"
+command -v claude >/dev/null 2>&1 || die "claude not found on PATH (run 'claude login' on this host first)"
+
+# If --prompt was given, write it to a tempfile so we don't have to escape
+# arbitrary text through `tmux send-keys`. The file lives until /tmp is
+# reaped on reboot; it contains the prompt only, no credentials.
+if [ "$PROMPT_TEXT_SET" -eq 1 ]; then
+    PROMPT_FILE="$(mktemp /tmp/c11-spawn-agent.XXXXXX)"
+    # `printf %s` (not echo) so leading dashes / backslashes survive verbatim.
+    printf '%s' "$PROMPT_TEXT" > "$PROMPT_FILE"
+fi
+
+[ -r "$PROMPT_FILE" ] || die "prompt file not readable: $PROMPT_FILE"
+
+# Resolve to absolute path so `cd <cwd>` inside the new window doesn't
+# invalidate it.
+case "$PROMPT_FILE" in
+    /*) ;;
+    *)  PROMPT_FILE="$(cd "$(dirname "$PROMPT_FILE")" && pwd)/$(basename "$PROMPT_FILE")" ;;
+esac
+
+# Create-or-reuse the session on the dedicated socket. The first tmux call
+# implicitly starts the server if it isn't running.
+NEED_NEW_WINDOW=1
+if ! tmux -L "$SOCKET" has-session -t "$WORKSPACE" 2>/dev/null; then
+    tmux -L "$SOCKET" new-session -d -s "$WORKSPACE" -n "$WINDOW" -c "$CWD"
+    NEED_NEW_WINDOW=0
+fi
+
+# Duplicate-window guard. tmux allows windows with identical names by default;
+# we explicitly forbid it so re-running the same invocation can't clobber a
+# live agent. The new-session path above is exempt because we just created
+# the window ourselves.
+if [ "$NEED_NEW_WINDOW" -eq 1 ]; then
+    if tmux -L "$SOCKET" list-windows -t "$WORKSPACE" -F '#W' 2>/dev/null | grep -qx "$WINDOW"; then
+        die "window '$WINDOW' already exists in session '$WORKSPACE' on socket '$SOCKET' (refusing to clobber)"
+    fi
+    tmux -L "$SOCKET" new-window -t "$WORKSPACE:" -n "$WINDOW" -c "$CWD"
+fi
+
+# Compose the agent command. `printf '%q'` is the portable shell-quote that
+# works the same on macOS bash 3.2 and Linux bash 5+.
+CWD_Q="$(printf '%q' "$CWD")"
+MODEL_Q="$(printf '%q' "$MODEL")"
+PROMPT_ARG="Read $PROMPT_FILE and follow the instructions."
+PROMPT_ARG_Q="$(printf '%q' "$PROMPT_ARG")"
+
+CMD="cd $CWD_Q && claude --dangerously-skip-permissions --model $MODEL_Q $PROMPT_ARG_Q"
+
+tmux -L "$SOCKET" send-keys -t "$WORKSPACE:$WINDOW" "$CMD" Enter
+
+HOST="$(hostname -s 2>/dev/null || hostname)"
+printf 'spawned: tmux -L %s %s:%s\n' "$SOCKET" "$WORKSPACE" "$WINDOW"
+printf 'attach: ssh %s -t "tmux -L %s attach -t %s \\; select-window -t %s"\n' \
+    "$HOST" "$SOCKET" "$WORKSPACE" "$WINDOW"

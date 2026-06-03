@@ -142,6 +142,15 @@ struct TerminalPanelView: View {
         // This prevents transient teardown/recreate that can momentarily detach the hosted terminal view.
         .id(panel.id)
         .background(Color.clear)
+        // C11-25: drive the per-surface lifecycle (active ↔ throttled) from
+        // the same `isVisibleInUI` flag the rest of the panel reads. Edge-
+        // event only — onChange/onAppear, never per-keystroke.
+        .onAppear {
+            panel.applyVisibility(isVisibleInUI)
+        }
+        .onChange(of: isVisibleInUI) { newValue in
+            panel.applyVisibility(newValue)
+        }
     }
 }
 

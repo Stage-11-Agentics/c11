@@ -1,0 +1,42 @@
+=== c11 health --json (default, populated) ===
+{
+  "events" : [
+    {
+      "path" : "~\/Library\/Caches\/com.stage11.c11.debug.c11.24.health\/sessions\/unclean-exit-2026-05-03T22-38-36.273Z.json",
+      "rail" : "sentinel",
+      "severity" : "unclean_exit",
+      "summary" : "0.44.1 (95) bbb8fa89",
+      "timestamp" : "2026-05-03T22:38:36.273Z"
+    },
+    {
+      "path" : "~\/Library\/Logs\/c11\/metrickit\/2026-05-03T22-19-00.000Z-hang3.json",
+      "rail" : "metrickit",
+      "severity" : "hang",
+      "summary" : "hang3",
+      "timestamp" : "2026-05-03T22:19:00.000Z"
+    }
+  ],
+  "rails" : {
+    "ips" : {
+      "count" : 0
+    },
+    "metrickit" : {
+      "count" : 1
+    },
+    "sentinel" : {
+      "count" : 1
+    },
+    "sentry" : {
+      "count" : 0
+    }
+  },
+  "schema_version" : 1,
+  "warnings" : [
+    "Sentry cache empty across c11 bundles: telemetry may be off, or events shipped on last launch and cleared the cache."
+  ],
+  "window" : {
+    "mode" : "default-24h",
+    "since" : "2026-05-02T22:39:06.494Z",
+    "until" : "2026-05-03T22:39:06.494Z"
+  }
+}

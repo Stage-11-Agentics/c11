@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-16T03:44:38Z",
+  "created_by": "agent:c11-27-plan-reviewer",
+  "custom_fields": {},
+  "id": "art_01KRQE5N7FM938YN85R0M3HGQ1",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KRQE5N7FM938YN85R0M3HGQ1.md",
+    "size_bytes": 9474
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "plan-review (claude)",
+  "token_usage": null,
+  "type": "file"
+}

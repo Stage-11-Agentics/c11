@@ -1,0 +1,38 @@
+{
+  "assigned_to": "agent:claude-cli",
+  "branch_links": [],
+  "comment_count": 2,
+  "complexity": null,
+  "created_at": "2026-05-22T01:42:44Z",
+  "created_by": "agent:claude-cli",
+  "custom_fields": {},
+  "description": "Offscreen surfaces created via `c11 new-surface --no-focus` never call `ghostty_surface_new` because SwiftUI never mounts the unselected tab. `c11 send` then silently drops bytes (returns OK, queues into `pendingTextQueue`, never flushes). Breaks the lattice-orchestrator pattern.\n\n**Root cause:** `surface.create` is not in `focusIntentV2Methods` \u2192 `v2FocusAllowed` clamps focus to false \u2192 tab is added without selection \u2192 view never enters a window \u2192 `attachToView`'s `view.window != nil` guard keeps `ghostty_surface_t` nil indefinitely. c11's recovery hook (`waitForTerminalSurfaceOffMain` \u2192 `requestBackgroundSurfaceStartIfNeeded` \u2192 `createSurface(for: view)` on an off-window view) is the path upstream concluded is unreliable and retreated from.\n\n**Upstream fix:** `manaflow-ai/cmux` PR #4233 (commit `5cb4715a8`, 2026-05-16): creates a borderless headless NSWindow at `TerminalSurface.init` for surfaces with startup work, attaches the view to that window so `view.window != nil` is satisfied, `ghostty_surface_new` runs cleanly. Replaces the c11-style off-window createSurface in `requestBackgroundSurfaceStartIfNeeded` with delegation to `scheduleHeadlessRuntimeStartIfNeeded`.\n\n**Scope:** 11 files, ~1062 lines. Big ones: `GhosttyTerminalView.swift` (+525), `TerminalController.swift` (-384 net). Expected conflicts on `PendingSocketInput` (upstream renamed `text(Data)` \u2192 `pasteText(Data)` + `inputText(String)`) and `requestBackgroundSurfaceStartIfNeeded`.\n\n**Deliverable:** PR that cherry-picks/ports `5cb4715a8` cleanly into c11 main, with the upstream regression test (`tests_v2/test_cli_background_terminal_helpers_start_pty.py`) green on a tagged build. Update lattice-orchestrator skill to reflect the fix.\n\n**Research:** Full diagnosis at `/tmp/c11-pty-wedge-research.md` and prior `/tmp/c11-pty-wedge-diagnosis.md`. Upstream issues #4187, #4192. c11 docs: `code/c11/CLAUDE.md` 'Pitfalls' + 'Socket command threading policy'.",
+  "done_at": "2026-05-22T04:33:00Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01KS6ZAHQJDZEZGP320WHZ073J",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KS6ZAHQJDZEZGP320WHZ073H",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KS6NJS9BGQ7G5MJZ0A4PA5QG",
+  "last_event_id": "ev_01KS6ZAHQJDZEZGP320WHZ073M",
+  "last_status_changed_at": "2026-05-22T04:33:00Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-114",
+  "status": "done",
+  "tags": null,
+  "title": "Port upstream PR #4233 \u2014 fix offscreen terminal PTY wedge",
+  "type": "bug",
+  "updated_at": "2026-05-22T04:33:00Z",
+  "urgency": null
+}

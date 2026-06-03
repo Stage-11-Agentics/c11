@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-05T01:11:16Z",
+  "created_by": "human:atin",
+  "custom_fields": {},
+  "id": "art_01KQTV0Y4F4ZYMGGHSAKJFP6WG",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KQTV0Y4F4ZYMGGHSAKJFP6WG.md",
+    "size_bytes": 953
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Backfill close-out. PR #31 merged 2026-04-20 (user themes + hot reload + Settings picker overload + CLI + socket).\n\nM3 + M4 all delivered and verified on main:\n- Sources/Theme/ThemeDirectoryWatcher.sw",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

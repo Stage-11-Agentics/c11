@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-05-07T00:17:40Z",
+  "created_by": "agent:overnight-c11-17",
+  "custom_fields": {
+    "url": "https://github.com/Stage-11-Agentics/c11/pull/136"
+  },
+  "id": "art_01KQZWR776RYY6GVVHCEJDJMBC",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": null,
+    "size_bytes": null
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "PR #136 \u2014 Purge Module 4 installer subtree",
+  "token_usage": null,
+  "type": "reference"
+}

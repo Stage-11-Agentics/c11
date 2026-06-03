@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-16T21:00:27Z",
+  "created_by": "agent:lattice-auto-review",
+  "custom_fields": {},
+  "id": "art_01KRS9E9PNDGH2S932E0GGEF9M",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KRS9E9PNDGH2S932E0GGEF9M.md",
+    "size_bytes": 17413
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "plan-review (merged)",
+  "token_usage": null,
+  "type": "file"
+}

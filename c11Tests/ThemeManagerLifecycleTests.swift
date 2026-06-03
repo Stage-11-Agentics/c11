@@ -92,26 +92,26 @@ final class ThemeManagerLifecycleTests: XCTestCase {
 
         let context = manager.makeContext(
             workspaceColor: "#FF0000",
-            colorScheme: .dark
+            colorScheme: ThemeContext.ColorScheme.dark
         )
         let color: NSColor? = manager.resolve(.dividers_color, context: context)
         XCTAssertNotNil(color, "dividers_color should resolve against $workspaceColor.mix formula")
 
         let nilContext = manager.makeContext(
             workspaceColor: nil,
-            colorScheme: .dark
+            colorScheme: ThemeContext.ColorScheme.dark
         )
         let fallbackColor: NSColor? = manager.resolve(.dividers_color, context: nilContext)
         // Without a workspace color, $workspaceColor falls back to theme defaults; still returns a color.
         XCTAssertNotNil(fallbackColor)
     }
 
-    func testDividerThicknessResolvesToNumber() {
+    func testDividerThicknessResolvesToNumber() throws {
         let center = NotificationCenter()
         let manager = ThemeManager(notificationCenter: center)
 
-        let context = manager.makeContext(colorScheme: .light)
-        let thickness: CGFloat? = manager.resolve(.dividers_thicknessPt, context: context)
-        XCTAssertEqual(thickness, 1.0, accuracy: 0.0001)
+        let context = manager.makeContext(colorScheme: ThemeContext.ColorScheme.light)
+        let thickness = try XCTUnwrap(manager.resolve(.dividers_thicknessPt, context: context) as CGFloat?)
+        XCTAssertEqual(Double(thickness), 1.0, accuracy: 0.0001)
     }
 }

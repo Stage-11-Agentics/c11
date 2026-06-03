@@ -69,39 +69,44 @@ final class StdinMailboxHandler: MailboxHandler {
     ) async -> MailboxDispatcher.HandlerInvocationResult {
         let block = Self.formatFramedBlock(envelope: envelope)
         let start = Date()
+        let writer = self.writer
+        let timeoutDuration = self.timeout
 
-        return await withTaskGroup(
-            of: MailboxDispatcher.HandlerInvocationResult.self
-        ) { group in
-            let writer = self.writer
-            let elapsed: () -> Int = {
+        // We need the timeout branch to return *immediately* when it fires —
+        // a `withTaskGroup` race would wait for both child tasks to finish
+        // before the group closure returns, which means a writer that blocks
+        // its thread (Thread.sleep on the main actor, a synchronous PTY
+        // write that stalls) would pin deliver for the full block. The
+        // continuation pattern races two unstructured Tasks and resumes on
+        // whichever signals first; the loser keeps running until the system
+        // collects it, which matches the reporting-bound contract documented
+        // above.
+        let gate = ContinuationGate()
+        return await withCheckedContinuation { (cont: CheckedContinuation<MailboxDispatcher.HandlerInvocationResult, Never>) in
+            let elapsedMs: @Sendable () -> Int = {
                 Int(Date().timeIntervalSince(start) * 1000)
             }
 
-            group.addTask {
+            Task {
                 let outcome: WriteOutcome = await MainActor.run {
                     writer(surfaceId, block)
                 }
+                let result: MailboxDispatcher.HandlerInvocationResult
                 switch outcome {
                 case .ok(let bytes):
-                    return .init(
-                        outcome: .ok,
-                        bytes: bytes,
-                        elapsedMs: elapsed()
-                    )
+                    result = .init(outcome: .ok, bytes: bytes, elapsedMs: elapsedMs())
                 case .surfaceNotFound, .surfaceNotTerminal:
-                    return .init(outcome: .closed, bytes: 0, elapsedMs: elapsed())
+                    result = .init(outcome: .closed, bytes: 0, elapsedMs: elapsedMs())
+                }
+                if gate.tryFire() { cont.resume(returning: result) }
+            }
+
+            Task {
+                try? await Task.sleep(nanoseconds: Self.nanoseconds(from: timeoutDuration))
+                if gate.tryFire() {
+                    cont.resume(returning: .init(outcome: .timeout, bytes: 0, elapsedMs: elapsedMs()))
                 }
             }
-
-            group.addTask { [timeout] in
-                try? await Task.sleep(nanoseconds: Self.nanoseconds(from: timeout))
-                return .init(outcome: .timeout, bytes: 0, elapsedMs: elapsed())
-            }
-
-            let first = await group.next() ?? .init(outcome: .timeout)
-            group.cancelAll()
-            return first
         }
     }
 
@@ -175,5 +180,23 @@ final class StdinMailboxHandler: MailboxHandler {
             }
         }
         return result
+    }
+}
+
+/// One-shot latch that lets exactly one of the writer/timeout tasks resume the
+/// `withCheckedContinuation` in `StdinMailboxHandler.deliver`. The loser still
+/// runs to completion (Swift task cancellation is cooperative; a main-thread
+/// `Thread.sleep` won't react), but it won't fire the continuation a second
+/// time and trip the checked-continuation trap.
+private final class ContinuationGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var fired = false
+
+    func tryFire() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if fired { return false }
+        fired = true
+        return true
     }
 }

@@ -1,7 +1,7 @@
 import Foundation
 
 public enum ThemeCanonicalizer {
-    public static func canonicalize(_ theme: C11muxTheme) -> String {
+    public static func canonicalize(_ theme: C11Theme) -> String {
         var lines: [String] = []
 
         lines.append("[identity]")

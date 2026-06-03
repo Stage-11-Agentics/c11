@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-04T00:24:42Z",
+  "created_by": "agent:opus-c11-6",
+  "custom_fields": {},
+  "id": "art_01KQR5YYN8DJW3ZJ8FCR5MDR78",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KQR5YYN8DJW3ZJ8FCR5MDR78.md",
+    "size_bytes": 15984
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "plan-review (merged)",
+  "token_usage": null,
+  "type": "file"
+}

@@ -10,7 +10,7 @@ Developer-focused workflow for the c11 macOS app's Debug menu (DEBUG builds only
 
 ## Workflow
 
-1. Verify debug menu wiring in `Sources/cmuxApp.swift` under `CommandMenu("Debug")`.
+1. Verify debug menu wiring in `Sources/c11App.swift` under `CommandMenu("Debug")`.
    - Menu path in app: `Debug` → `Debug Windows` → window entry.
    - The `Debug` menu only exists in DEBUG builds (`./scripts/reload.sh --tag ...`).
    - Release builds (`reloadp.sh`, `reloads.sh`) do not show this menu.
@@ -32,7 +32,7 @@ xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug -dest
 
 ## Key Files
 
-- `Sources/cmuxApp.swift`: Debug menu entries and debug window controllers/views.
+- `Sources/c11App.swift`: Debug menu entries and debug window controllers/views.
 - `Sources/AppDelegate.swift`: Menu bar extra debug settings payload and defaults keys.
 
 ## Script

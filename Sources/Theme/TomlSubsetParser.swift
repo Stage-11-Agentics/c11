@@ -456,7 +456,7 @@ private struct Parser {
         )
     }
 
-    private mutating func parseEscapeSequence() throws -> Character {
+    private mutating func parseEscapeSequence() throws -> String {
         guard let escape = scanner.advance() else {
             throw parseError(
                 kind: .unterminatedString,
@@ -488,14 +488,15 @@ private struct Parser {
                     found: "\\u\(hex)"
                 )
             }
-            return Character(unicode)
+            return String(Character(unicode))
         default:
-            throw parseError(
-                kind: .invalidValue,
-                message: "invalid escape sequence",
-                expected: ["\\n", "\\t", "\\\"", "\\\\", "\\uXXXX"],
-                found: "\\\(escape)"
-            )
+            // C11-35: keep unknown escapes (e.g. `\<space>`, `\!`) as the
+            // literal `\<char>` pair instead of throwing. The previous
+            // strict-throw made authoring brittle — a single stray backslash
+            // anywhere in a quoted string failed the whole theme file. The
+            // parser is a deliberate TOML subset, so passing unknown escapes
+            // through is a reasonable forgiving extension.
+            return "\\\(escape)"
         }
     }
 

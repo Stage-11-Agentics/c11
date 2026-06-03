@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-05T01:11:27Z",
+  "created_by": "human:atin",
+  "custom_fields": {},
+  "id": "art_01KQTV18H1WNTTSEK08YDZNHR3",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KQTV18H1WNTTSEK08YDZNHR3.md",
+    "size_bytes": 1148
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Anchor close-out. All three child milestones shipped on main; this parent was just left at planned.\n\n- CMUX-21 (M1 \u2014 engine + parser + default theme + surface adoption): done. PR #28.\n- CMUX-32 (M2 \u2014 ",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

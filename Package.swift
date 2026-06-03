@@ -1,4 +1,5 @@
 // swift-tools-version:5.9
+// SPM manifest for the c11 Swift target under Sources/.
 import PackageDescription
 
 let package = Package(

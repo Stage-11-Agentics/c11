@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-04-24T19:49:47Z",
+  "created_by": "agent:claude-opus-4-7-cmux-37-p1",
+  "custom_fields": {
+    "url": "https://github.com/Stage-11-Agentics/c11/pull/77"
+  },
+  "id": "art_01KQ0GN3AZWA38XS5CKEXG3GQ4",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": null,
+    "size_bytes": null
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "PR #77: CMUX-37 Phase 1 \u2014 snapshot / restore / Claude resume",
+  "token_usage": null,
+  "type": "reference"
+}

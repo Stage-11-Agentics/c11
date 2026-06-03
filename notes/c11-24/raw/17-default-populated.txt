@@ -1,0 +1,8 @@
+=== c11 health (default, with sentinel + metrickit populated) ===
+TIME             | RAIL      | SEVERITY     | SUMMARY
+(TIME reflects the OS-reported event time when available, file mtime otherwise)
+2026-05-03 18:38 | sentinel  | unclean_exit | 0.44.1 (95) bbb8fa89
+2026-05-03 18:19 | metrickit | hang         | hang3
+
+Warnings:
+  - Sentry cache empty across c11 bundles: telemetry may be off, or events shipped on last launch and cleared the cache.

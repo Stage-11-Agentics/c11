@@ -1,0 +1,14 @@
+{
+  "agent_type": "review",
+  "base_name": "cmux-37-p1-review",
+  "framework": "claude-code",
+  "last_active": "2026-04-24T19:07:15Z",
+  "model": "claude-opus-4-7",
+  "name": "cmux-37-p1-review-1",
+  "parent": "agent:claude-opus-4-7-cmux-37-p1",
+  "prompt": "trident-code-review",
+  "serial": 1,
+  "session": "sess_01KQ0E72PSFF832JJDGC2BDHFV",
+  "started_at": "2026-04-24T19:07:10Z",
+  "status": "active"
+}

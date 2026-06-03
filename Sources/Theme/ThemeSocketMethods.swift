@@ -32,9 +32,9 @@ public enum ThemeSocketMethods {
     // MARK: - Read-only
 
     public static func list() -> [String: Any] {
-        let descriptors = DispatchQueue.main.sync { ThemeManager.shared.availableThemes }
-        let lightName = DispatchQueue.main.sync { ThemeManager.shared.activeLightName }
-        let darkName = DispatchQueue.main.sync { ThemeManager.shared.activeDarkName }
+        let descriptors = Self.mainSync { ThemeManager.shared.availableThemes }
+        let lightName = Self.mainSync { ThemeManager.shared.activeLightName }
+        let darkName = Self.mainSync { ThemeManager.shared.activeDarkName }
 
         let items: [[String: Any]] = descriptors.map { descriptor in
             var payload: [String: Any] = [
@@ -64,8 +64,8 @@ public enum ThemeSocketMethods {
     }
 
     public static func get(params: [String: Any]) -> [String: Any] {
-        let lightName = DispatchQueue.main.sync { ThemeManager.shared.activeLightName }
-        let darkName = DispatchQueue.main.sync { ThemeManager.shared.activeDarkName }
+        let lightName = Self.mainSync { ThemeManager.shared.activeLightName }
+        let darkName = Self.mainSync { ThemeManager.shared.activeDarkName }
         let slot = (params["slot"] as? String)?.lowercased()
 
         switch slot {
@@ -97,10 +97,10 @@ public enum ThemeSocketMethods {
         case "dark":
             colorScheme = .dark
         default:
-            colorScheme = DispatchQueue.main.sync { ThemeManager.currentColorScheme() }
+            colorScheme = Self.mainSync { ThemeManager.currentColorScheme() }
         }
 
-        let json = DispatchQueue.main.sync {
+        let json = Self.mainSync {
             let context = ThemeManager.shared.makeContext(colorScheme: colorScheme)
             return ThemeManager.shared.dumpActiveThemeJSON(context: context)
         }
@@ -123,7 +123,7 @@ public enum ThemeSocketMethods {
 
         do {
             let table = try TomlSubsetParser.parse(file: url.path, source: source)
-            let theme = try C11muxTheme.fromToml(table)
+            let theme = try C11Theme.fromToml(table)
             return [
                 "ok": true,
                 "name": theme.identity.name,
@@ -175,7 +175,7 @@ public enum ThemeSocketMethods {
         }
         let slot = (params["slot"] as? String)?.lowercased() ?? "both"
 
-        let ok: Bool = DispatchQueue.main.sync {
+        let ok: Bool = Self.mainSync {
             switch slot {
             case "light":
                 return ThemeManager.shared.setActiveTheme(name: name, for: .light)
@@ -195,14 +195,14 @@ public enum ThemeSocketMethods {
     }
 
     public static func clearActive() -> [String: Any] {
-        DispatchQueue.main.sync {
+        Self.mainSync {
             ThemeManager.shared.clearActiveOverrides()
         }
         return ["ok": true]
     }
 
     public static func reload() -> [String: Any] {
-        DispatchQueue.main.sync {
+        Self.mainSync {
             ThemeManager.shared.forceReloadUserThemes()
         }
         return ["ok": true]
@@ -214,14 +214,14 @@ public enum ThemeSocketMethods {
             return ["ok": false, "error": "missing required parameters: parent, as"]
         }
 
-        let parentTheme: C11muxTheme? = DispatchQueue.main.sync {
+        let parentTheme: C11Theme? = Self.mainSync {
             ThemeManager.shared.theme(named: parent)
         }
         guard let parentTheme else {
             return ["ok": false, "error": "unknown parent theme: \(parent)"]
         }
 
-        let cloned = C11muxTheme(
+        let cloned = C11Theme(
             identity: .init(
                 name: childName,
                 displayName: childName,
@@ -260,16 +260,34 @@ public enum ThemeSocketMethods {
 
     // MARK: - Helpers
 
-    private static func resolveThemeForDiff(nameOrPath: String) -> C11muxTheme? {
+    /// Hop to main when needed, run inline when already on main.
+    ///
+    /// Bare `DispatchQueue.main.sync` would self-deadlock if a caller is already on main —
+    /// post-C11-26 the v2 dispatcher routes default-policy commands through main, so any
+    /// theme.* handler reached via `processCommand` is now invoked on the main thread.
+    /// libdispatch detects the self-wait and traps with EXC_BREAKPOINT
+    /// (`__DISPATCH_WAIT_FOR_QUEUE__`). Mirrors `GhosttyTerminalView.performOnMain`
+    /// and `TerminalController.v2MainSync`; ThemeSocketMethods isn't @MainActor itself,
+    /// so the body has to be marked `@MainActor` explicitly.
+    private static func mainSync<T>(_ body: @MainActor () -> T) -> T {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated { body() }
+        }
+        return DispatchQueue.main.sync {
+            MainActor.assumeIsolated { body() }
+        }
+    }
+
+    private static func resolveThemeForDiff(nameOrPath: String) -> C11Theme? {
         if nameOrPath.contains("/") || nameOrPath.hasSuffix(".toml") {
             let url = URL(fileURLWithPath: nameOrPath)
             guard let source = try? String(contentsOf: url, encoding: .utf8),
                   let table = try? TomlSubsetParser.parse(file: url.path, source: source),
-                  let theme = try? C11muxTheme.fromToml(table) else {
+                  let theme = try? C11Theme.fromToml(table) else {
                 return nil
             }
             return theme
         }
-        return DispatchQueue.main.sync { ThemeManager.shared.theme(named: nameOrPath) }
+        return Self.mainSync { ThemeManager.shared.theme(named: nameOrPath) }
     }
 }

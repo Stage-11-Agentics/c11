@@ -41,7 +41,12 @@ struct FocusFlashSegment: Equatable {
 enum FocusFlashPattern {
     static let values: [Double] = [0, 1, 0, 1, 0]
     static let keyTimes: [Double] = [0, 0.25, 0.5, 0.75, 1]
-    static let duration: TimeInterval = 0.9
+    /// CMUX-10: total duration of one flash pulse, sourced from the
+    /// configurable `NotificationFlashDurationSettings` (500–4000ms, default
+    /// 1500ms). Both pane and sidebar segments scale with this.
+    static var duration: TimeInterval {
+        Double(NotificationFlashDurationSettings.currentMs()) / 1000.0
+    }
     static let curves: [FocusFlashCurve] = [.easeOut, .easeIn, .easeOut, .easeIn]
     static let ringInset: Double = 6
     static let ringCornerRadius: Double = 10
@@ -60,6 +65,13 @@ enum FocusFlashPattern {
         }
     }
 }
+
+// CMUX-10: the historical `SidebarFlashPattern` (single-peak, 0.6s, peak 0.18)
+// was retired in favor of a single unified envelope shared across the pane
+// ring and the sidebar workspace row. The sidebar now reuses
+// `FocusFlashPattern` with `FlashEnvelope.sidebarFill.peakScale` (0.6) applied
+// at render time, so a flash signal is a single recognizable shape across
+// surfaces rather than two visually-distinct treatments.
 
 /// Protocol for all panel types (terminal, browser, etc.)
 @MainActor
@@ -91,6 +103,12 @@ public protocol Panel: AnyObject, Identifiable, ObservableObject where ID == UUI
     /// Trigger a focus flash animation for this panel.
     func triggerFlash()
 
+    /// Trigger a focus flash animation with a specific appearance (color +
+    /// envelope). Default impl falls back to the no-arg `triggerFlash()` so
+    /// existing call sites keep working — panels that want to honor a per-
+    /// call color override implement this directly.
+    func triggerFlash(appearance: FlashAppearance)
+
     /// Capture the panel-local focus target that should be restored later.
     func captureFocusIntent(in window: NSWindow?) -> PanelFocusIntent
 
@@ -116,6 +134,13 @@ public protocol Panel: AnyObject, Identifiable, ObservableObject where ID == UUI
 extension Panel {
     public var displayIcon: String? { nil }
     public var isDirty: Bool { false }
+
+    /// Default impl: panels that don't yet honor per-call appearance fall
+    /// through to the legacy `triggerFlash()` path.
+    func triggerFlash(appearance: FlashAppearance) {
+        _ = appearance
+        triggerFlash()
+    }
 
     func captureFocusIntent(in window: NSWindow?) -> PanelFocusIntent {
         _ = window

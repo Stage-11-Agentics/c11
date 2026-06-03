@@ -145,4 +145,91 @@ final class SurfaceMetadataStoreValidationTests: XCTestCase {
         XCTAssertNil(metadata["claude.session_id"])
         XCTAssertNil(sources["claude.session_id"])
     }
+
+    // MARK: - claude.session_project_dir
+
+    func testStoreAcceptsAbsolutePosixProjectDir() throws {
+        let workspace = UUID()
+        let surface = UUID()
+        defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
+
+        let result = try store.setMetadata(
+            workspaceId: workspace,
+            surfaceId: surface,
+            partial: ["claude.session_project_dir": "/Users/op/repo/c11-worktrees/feat"],
+            mode: .merge,
+            source: .explicit
+        )
+        XCTAssertEqual(result.applied["claude.session_project_dir"], true)
+    }
+
+    func testStoreRejectsRelativeProjectDir() {
+        let workspace = UUID()
+        let surface = UUID()
+        defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
+
+        XCTAssertThrowsError(
+            try store.setMetadata(
+                workspaceId: workspace,
+                surfaceId: surface,
+                partial: ["claude.session_project_dir": "relative/path"],
+                mode: .merge,
+                source: .explicit
+            )
+        ) { error in
+            guard let writeError = error as? SurfaceMetadataStore.WriteError else {
+                return XCTFail("expected WriteError, got \(error)")
+            }
+            XCTAssertEqual(writeError.code, "reserved_key_invalid_type")
+        }
+    }
+
+    func testStoreRejectsProjectDirWithSingleQuoteOrNewline() {
+        let workspace = UUID()
+        let surface = UUID()
+        defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
+
+        // A single quote would break the registry's single-quote shell
+        // escape; a newline would let an attacker append a second command
+        // after the synthesized `cd ... && claude --resume`.
+        let payloads = [
+            "/path/with'quote",
+            "/path/with\nnewline",
+            "/path/with\rcr",
+            "/path/with\u{0000}nul"
+        ]
+        for payload in payloads {
+            XCTAssertThrowsError(
+                try store.setMetadata(
+                    workspaceId: workspace,
+                    surfaceId: surface,
+                    partial: ["claude.session_project_dir": payload],
+                    mode: .merge,
+                    source: .explicit
+                ),
+                "store must reject project_dir containing dangerous bytes"
+            )
+        }
+    }
+
+    func testStoreRejectsNonStringProjectDir() {
+        let workspace = UUID()
+        let surface = UUID()
+        defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
+
+        XCTAssertThrowsError(
+            try store.setMetadata(
+                workspaceId: workspace,
+                surfaceId: surface,
+                partial: ["claude.session_project_dir": 42],
+                mode: .merge,
+                source: .explicit
+            )
+        ) { error in
+            guard let writeError = error as? SurfaceMetadataStore.WriteError else {
+                return XCTFail("expected WriteError, got \(error)")
+            }
+            XCTAssertEqual(writeError.code, "reserved_key_invalid_type")
+        }
+    }
 }

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-16T04:13:51Z",
+  "created_by": "agent:c11-27-plan-reviewer",
+  "custom_fields": {},
+  "id": "art_01KRQFV5H4Q8BG1ESGJ56YZCTJ",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KRQFV5H4Q8BG1ESGJ56YZCTJ.md",
+    "size_bytes": 5021
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "plan-review (codex)",
+  "token_usage": null,
+  "type": "file"
+}

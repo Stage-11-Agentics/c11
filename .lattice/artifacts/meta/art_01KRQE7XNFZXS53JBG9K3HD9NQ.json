@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-16T03:45:52Z",
+  "created_by": "agent:c11-27-plan-reviewer",
+  "custom_fields": {},
+  "id": "art_01KRQE7XNFZXS53JBG9K3HD9NQ",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KRQE7XNFZXS53JBG9K3HD9NQ.md",
+    "size_bytes": 10438
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "plan-review (merged)",
+  "token_usage": null,
+  "type": "file"
+}

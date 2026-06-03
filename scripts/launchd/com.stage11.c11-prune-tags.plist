@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.stage11.c11-prune-tags</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/atin/Projects/Stage11/code/c11/scripts/prune-tags.sh</string>
+        <string>--yes</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>0</integer>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/atin/Library/Logs/c11-prune-tags.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/atin/Library/Logs/c11-prune-tags.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/atin/Projects/Stage11/code/c11</string>
+</dict>
+</plist>

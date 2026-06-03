@@ -135,7 +135,7 @@ jobs:
 
       - name: Setup Go
         if: steps.guard_release_assets.outputs.skip_all != 'true'
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: daemon/remote/go.mod
 
@@ -298,10 +298,11 @@ jobs:
 
       - name: Upload dSYMs to Sentry
         if: steps.guard_release_assets.outputs.skip_all != 'true'
+        continue-on-error: true
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: stage11
-          SENTRY_PROJECT: c11mux-macos
+          SENTRY_ORG: stage-11-kl
+          SENTRY_PROJECT: stage11-c11
         run: |
           if [ -z "$SENTRY_AUTH_TOKEN" ]; then
             echo "SENTRY_AUTH_TOKEN not set, skipping dSYM upload"

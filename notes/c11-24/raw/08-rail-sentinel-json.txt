@@ -1,0 +1,20 @@
+=== c11 health --rail sentinel --json ===
+{
+  "events" : [
+
+  ],
+  "rails" : {
+    "sentinel" : {
+      "count" : 0
+    }
+  },
+  "schema_version" : 1,
+  "warnings" : [
+
+  ],
+  "window" : {
+    "mode" : "default-24h",
+    "since" : "2026-05-02T22:37:37.558Z",
+    "until" : "2026-05-03T22:37:37.558Z"
+  }
+}

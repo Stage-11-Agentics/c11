@@ -1,0 +1,5 @@
+=== c11 health --since-boot ===
+c11 health: nothing since boot across ips, sentry, metrickit, sentinel.
+
+Warnings:
+  - Sentry cache empty across c11 bundles: telemetry may be off, or events shipped on last launch and cleared the cache.

@@ -105,7 +105,6 @@ c11 new-split right
 
 # 2. Launch claude
 c11 send --workspace $WS --surface $SURF "claude --dangerously-skip-permissions"
-c11 send-key --workspace $WS --surface $SURF enter
 
 # 3. Wait for claude to be ready (see polling section), then name the tab with lineage
 #    (parent first, `::` separator — see Tab naming above)
@@ -116,13 +115,11 @@ Clearing lint errors in src/ before the feature branch merges."
 # 4. Declare what this agent is (so the sidebar chip, title bar, and tree all reflect identity)
 c11 set-agent --workspace $WS --surface $SURF --type claude-code --model claude-opus-4-7
 
-# 5. Send the prompt — always as two calls (send, then send-key enter).
-#    Tell the sub-agent its parent so it can preserve the chain on self-updates.
+# 5. Send the prompt. Tell the sub-agent its parent so it can preserve the chain on self-updates.
 c11 send --workspace $WS --surface $SURF "Your tab title is already set to 'Login Button :: Lint Fixes' — preserve that prefix. Now: fix all lint errors in src/"
-c11 send-key --workspace $WS --surface $SURF enter
 ```
 
-**Why two-call send:** `\n` in `c11 send` is stripped by Claude Code's Bash tool before reaching c11, so the command sits unsent on the sub-agent's prompt line. Always pair `send` with a separate `send-key enter`.
+**One-call send.** `c11 send` types the text and dispatches a synthetic Return on the same turn, so the receiving TUI sees one user turn. Pass `--no-submit` to type without executing (e.g., staging a partial line across multiple calls).
 
 ### Spawning multiple panes at once
 
@@ -134,7 +131,6 @@ for ROLE in plan impl review; do
   SURF=$(c11 new-split right | awk '{print $2}')
   c11 rename-tab --workspace $WS --surface $SURF "$ROLE"
   c11 send       --workspace $WS --surface $SURF "claude --dangerously-skip-permissions \"<prompt>\""
-  c11 send-key   --workspace $WS --surface $SURF enter
 done
 ```
 
@@ -152,7 +148,6 @@ EOF
 
 # 2. Tell the agent to read it
 c11 send --workspace $WS --surface $SURF "Read /tmp/agent-prompt.md and follow the instructions."
-c11 send-key --workspace $WS --surface $SURF enter
 ```
 
 ## Ready-state handoff
@@ -171,7 +166,6 @@ EOF
 
 # One-shot launch — claude consumes the short argv instruction, which points it at the file
 c11 send --workspace $WS --surface $SURF "cd /path && claude --dangerously-skip-permissions \"Read /tmp/agent-prompt.md and follow the instructions.\""
-c11 send-key --workspace $WS --surface $SURF enter
 ```
 
 This is the default for orchestrated sub-agents. No polling, no sleep, no screen-scraping. Works regardless of how many other Claude Code surfaces are in the workspace.
@@ -184,7 +178,6 @@ When you need claude interactive first (e.g. to send follow-up messages over the
 # Wait for claude to reach Idle before sending the prompt
 until c11 list-status --workspace $WS 2>/dev/null | grep -q '^claude_code=Idle '; do sleep 1; done
 c11 send --workspace $WS --surface $SURF "Read /tmp/prompt.md and follow the instructions."
-c11 send-key --workspace $WS --surface $SURF enter
 ```
 
 Supported status values: `Idle` (prompt waiting), `Running` (processing a turn), `Needs input` (permission/dialog), plus opt-in verbose tool descriptions. Values are `TitleCase`. The trailing space in the grep anchors the match to just `Idle`.
@@ -201,13 +194,36 @@ Additional notes on the polling signal:
 
 The claude PATH wrapper at `Resources/bin/claude` is a **grandfathered, Claude Code-specific concession** — c11 does not write to any TUI's persistent config, and will not install analogous wrappers for codex, kimi, or opencode. The host is deliberately unopinionated about the terminal: c11 provides the surface, the socket, and the skill file; what an agent does with them is the agent's business. For every TUI except Claude Code, the skill-driven self-reporting path above is how status gets populated — there is no installer, no config-writing, no hook injection performed by c11.
 
+## Per-agent launch quirks
+
+`$C11_DEFAULT_AGENT_LAUNCH` (set in every c11 shell at spawn time) abstracts the launch command across agent types, so the main skill can teach one pattern that works for whichever agent the operator has chosen. The per-agent gotchas worth knowing before you spawn:
+
+### claude-code
+
+- **Wrapper on PATH.** Inside a c11 surface, `claude` resolves to `Resources/bin/claude`, a PATH-scoped wrapper that injects the session id and hook settings so the sidebar gets `claude_code` status. The launch command stored in `$C11_DEFAULT_AGENT_LAUNCH` always invokes this wrapper.
+- **Never `claude -p`.** Headless mode breaks the auth chain; sub-agents cannot self-report. The default-agent resolver uses `claude --dangerously-skip-permissions`, which is the interactive form.
+- **Multi-claude polling deadlock.** `c11 list-status` aggregates per workspace; a second claude in the same workspace makes the `claude_code` row never settle on `Idle`, deadlocking any `until ... grep Idle` poll. Use the one-shot argv pattern (Ready-state handoff above) when any sibling claude is in flight.
+
+### codex
+
+- **Use `codex --yolo`, not `codex exec`.** `codex exec` is headless and non-interactive, appropriate only for background jobs whose output will be read after completion. For a visible c11 surface where the operator should be able to watch or take over, `codex --yolo` is the right invocation.
+- **No PATH wrapper.** codex does not get a c11 wrapper. The sub-agent self-reports sidebar status by calling `c11 set-status` / `c11 set-metadata` from its own lifecycle, following instructions in the c11 skill it loads at session start.
+
+### opencode, kimi, others
+
+- **No PATH wrapper.** Like codex, status comes from skill-driven self-reporting. If an agent hasn't been taught to self-report, the sidebar won't show status for it; that is expected, not a bug.
+- **Launch command is operator-configured** under Settings → Agents & Automation → Agent Launcher Button. The resolver materializes whatever the operator chose into `$C11_DEFAULT_AGENT_LAUNCH` at shell-spawn time. Preference changes only take effect on newly-spawned shells, not already-running ones.
+
+### Banner-string scraping is always wrong
+
+Do not regex `c11 read-screen` output for `❯`, `> `, `Welcome to Claude Code`, `Claude Code v`, or any other prompt or banner string. They drift across releases and produce silent stalls. Use one-shot argv delivery, or poll a status row when it is safe to do so.
+
 ## Agent-to-agent communication
 
 Sub-agents can `c11 send` directly into each other's terminals — no orchestrator relay required.
 
 ```bash
 c11 send --workspace workspace:N --surface surface:M "The number is 42"
-c11 send-key --workspace workspace:N --surface surface:M enter
 ```
 
 This is a powerful primitive for handoffs: agent A finishes a step, writes its result to agent B's terminal.

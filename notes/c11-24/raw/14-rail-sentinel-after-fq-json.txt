@@ -1,0 +1,26 @@
+=== c11 health --rail sentinel --json (after force-quit) ===
+{
+  "events" : [
+    {
+      "path" : "~\/Library\/Caches\/com.stage11.c11.debug.c11.24.health\/sessions\/unclean-exit-2026-05-03T22-38-36.273Z.json",
+      "rail" : "sentinel",
+      "severity" : "unclean_exit",
+      "summary" : "0.44.1 (95) bbb8fa89",
+      "timestamp" : "2026-05-03T22:38:36.273Z"
+    }
+  ],
+  "rails" : {
+    "sentinel" : {
+      "count" : 1
+    }
+  },
+  "schema_version" : 1,
+  "warnings" : [
+
+  ],
+  "window" : {
+    "mode" : "default-24h",
+    "since" : "2026-05-02T22:38:50.113Z",
+    "until" : "2026-05-03T22:38:50.113Z"
+  }
+}

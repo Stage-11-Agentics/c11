@@ -1,0 +1,2 @@
+=== c11 health --rail sentinel ===
+c11 health: nothing in the last 24h across sentinel.

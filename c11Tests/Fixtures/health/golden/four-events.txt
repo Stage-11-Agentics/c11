@@ -1,0 +1,6 @@
+TIME             | RAIL      | SEVERITY     | SUMMARY
+(TIME reflects the OS-reported event time when available, file mtime otherwise)
+2026-05-03 15:28 | sentinel  | unclean_exit | 0.44.1 (0.44.1.123) e6ce1be2
+2026-05-03 15:19 | ips       | crash        | com.stage11.c11 bug_type=309 (00000000)
+2026-05-03 14:30 | metrickit | hang         | hang3
+2026-05-03 13:00 | sentry    | queued       | com.stage11.c11.debug.foo/envelope-1

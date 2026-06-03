@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-22T04:33:00Z",
+  "created_by": "agent:claude-cli",
+  "custom_fields": {},
+  "id": "art_01KS6ZAHQJDZEZGP320WHZ073H",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KS6ZAHQJDZEZGP320WHZ073H.md",
+    "size_bytes": 1481
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Minimal port of upstream PR #4233 (commit 5cb4715a8) merged as 7fc8bd023.\n\n**Validation:**\n- c11-logic test suite: 870 tests, 0 failures\n- Single-surface manual repro on tagged build: PTY materializes",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

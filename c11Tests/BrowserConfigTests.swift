@@ -1960,6 +1960,7 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
             shouldFocusWebView: false,
             isPanelFocused: true,
             portalZPriority: 0,
+            workspaceFrameStyle: nil,
             paneDropZone: nil,
             searchOverlay: nil,
             paneInteractionRuntime: PaneInteractionRuntime(),
@@ -2003,6 +2004,7 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
             shouldFocusWebView: false,
             isPanelFocused: true,
             portalZPriority: 0,
+            workspaceFrameStyle: nil,
             paneDropZone: nil,
             searchOverlay: nil,
             paneInteractionRuntime: PaneInteractionRuntime(),
@@ -2065,6 +2067,7 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
             shouldFocusWebView: false,
             isPanelFocused: true,
             portalZPriority: 0,
+            workspaceFrameStyle: nil,
             paneDropZone: nil,
             searchOverlay: nil,
             paneInteractionRuntime: PaneInteractionRuntime(),
@@ -2085,7 +2088,7 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
 
         let visibleHosting = NSHostingView(rootView: representable)
         visibleHosting.frame = contentView.bounds
-        visibleHosting.autoresizingMask = [.width, .height]
+        visibleHosting.autoresizingMask = [NSView.AutoresizingMask.width, .height]
         contentView.addSubview(visibleHosting)
         window.makeKeyAndOrderFront(nil)
         window.displayIfNeeded()
@@ -2118,7 +2121,7 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
         let detachedRoot = NSView(frame: visibleHosting.frame)
         let offWindowHosting = NSHostingView(rootView: representable)
         offWindowHosting.frame = detachedRoot.bounds
-        offWindowHosting.autoresizingMask = [.width, .height]
+        offWindowHosting.autoresizingMask = [NSView.AutoresizingMask.width, .height]
         detachedRoot.addSubview(offWindowHosting)
         detachedRoot.layoutSubtreeIfNeeded()
         offWindowHosting.layoutSubtreeIfNeeded()
@@ -2149,6 +2152,7 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
             shouldFocusWebView: false,
             isPanelFocused: true,
             portalZPriority: 0,
+            workspaceFrameStyle: nil,
             paneDropZone: nil,
             searchOverlay: nil,
             paneInteractionRuntime: PaneInteractionRuntime(),
@@ -2197,7 +2201,7 @@ final class BrowserDeveloperToolsVisibilityPersistenceTests: XCTestCase {
 
         let replacementHosting = NSHostingView(rootView: representable)
         replacementHosting.frame = contentView.bounds
-        replacementHosting.autoresizingMask = [.width, .height]
+        replacementHosting.autoresizingMask = [NSView.AutoresizingMask.width, .height]
         contentView.addSubview(replacementHosting, positioned: .above, relativeTo: narrowHosting)
         contentView.layoutSubtreeIfNeeded()
         replacementHosting.layoutSubtreeIfNeeded()

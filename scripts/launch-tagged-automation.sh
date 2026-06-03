@@ -44,6 +44,7 @@ MODE="automation"
 SHELL_LOG=""
 WAIT_SOCKET="10"
 EXTRA_ENV=()
+EXTRA_ENV_COUNT=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -61,6 +62,7 @@ while [[ $# -gt 0 ]]; do
         exit 1
       fi
       EXTRA_ENV+=("${2}")
+      EXTRA_ENV_COUNT=$((EXTRA_ENV_COUNT + 1))
       shift 2
       ;;
     --shell-log)
@@ -152,9 +154,11 @@ OPEN_ENV=(
   "CMUX_DEBUG_LOG=${LOG}"
 )
 
-for kv in "${EXTRA_ENV[@]}"; do
-  OPEN_ENV+=("${kv}")
-done
+if [[ "$EXTRA_ENV_COUNT" -gt 0 ]]; then
+  for kv in "${EXTRA_ENV[@]}"; do
+    OPEN_ENV+=("${kv}")
+  done
+fi
 if [[ -n "$SHELL_LOG" ]]; then
   OPEN_ENV+=("GHOSTTY_ZSH_INTEGRATION_LOG=${SHELL_LOG}")
 fi
@@ -181,7 +185,7 @@ echo "socket_ready: $(if [[ -S "$SOCK" ]]; then echo yes; else echo no; fi)"
 if [[ -n "$SHELL_LOG" ]]; then
   echo "shell_log: $SHELL_LOG"
 fi
-if [[ "${#EXTRA_ENV[@]}" -gt 0 ]]; then
+if [[ "$EXTRA_ENV_COUNT" -gt 0 ]]; then
   echo "extra_env:"
   for kv in "${EXTRA_ENV[@]}"; do
     echo "  $kv"

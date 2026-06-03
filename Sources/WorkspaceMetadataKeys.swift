@@ -28,6 +28,16 @@ public enum SurfaceMetadataKeyName {
     /// the C11-13 `mailbox.*` (pane-scoped) namespace.
     public static let claudeSessionId = "claude.session_id"
 
+    /// Surface-scoped project directory the Claude session was created in
+    /// (its current-working-directory at `SessionStart`). Written alongside
+    /// `claude.session_id` by the same hook. The pair is atomic: claude's
+    /// session JSONL files are stored under `~/.claude/projects/<encoded-cwd>/<id>.jsonl`
+    /// and `claude --resume <id>` looks them up by the *current* shell's
+    /// cwd, so a session captured in a worktree subdir cannot be resumed
+    /// from its parent directory. The registry uses this value to `cd`
+    /// into the recorded directory before issuing `claude --resume`.
+    public static let claudeSessionProjectDir = "claude.session_project_dir"
+
     /// Canonical `terminal_type` key (same literal as
     /// `SurfaceMetadataStore.reservedKeys`). Named here for executor
     /// readability; validation still flows through the store's reserved
@@ -38,6 +48,31 @@ public enum SurfaceMetadataKeyName {
     /// what `c11 set-agent --type claude-code` writes and what the
     /// Phase 1 restart registry keys against.
     public static let terminalTypeClaudeCode = "claude-code"
+}
+
+/// Project-dir grammar for `claude.session_project_dir`. Must be an
+/// absolute POSIX path with no NUL, newline, carriage return, or single
+/// quote. The single-quote ban is what lets the registry's single-quote
+/// shell escape stay a no-op even under defense-in-depth. Length cap is
+/// 4096 — well above Darwin's 1024 PATH_MAX, with headroom for synthetic
+/// or encoded paths.
+///
+/// File-scoped so both `SurfaceMetadataStore.validateReservedKey` (in the
+/// app target) and the `c11 claude-hook session-start` handler (in the
+/// CLI target) can share one definition. `WorkspaceMetadataKeys.swift` is
+/// the only file linked into both targets that the schema layer naturally
+/// reaches for.
+public let claudeSessionProjectDirMaxLen = 4096
+nonisolated public func isValidClaudeSessionProjectDir(_ candidate: String) -> Bool {
+    guard candidate.first == "/" else { return false }
+    if candidate.count > claudeSessionProjectDirMaxLen { return false }
+    for scalar in candidate.unicodeScalars {
+        switch scalar.value {
+        case 0x00, 0x0A, 0x0D, 0x27: return false  // NUL, LF, CR, '
+        default: continue
+        }
+    }
+    return true
 }
 
 /// Validation for workspace metadata writes.

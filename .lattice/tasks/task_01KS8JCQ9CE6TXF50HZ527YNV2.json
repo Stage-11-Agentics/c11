@@ -1,0 +1,58 @@
+{
+  "assigned_to": {
+    "agent_type": "implement",
+    "base_name": "c11-115-impl",
+    "framework": "claude-code",
+    "model": "claude-opus-4-7",
+    "name": "c11-115-impl-1",
+    "serial": 1,
+    "session": "sess_01KS8JC55YCEDAEX2JXNY0C00M"
+  },
+  "branch_links": [
+    {
+      "branch": "c11-115-new-workspace",
+      "linked_at": "2026-05-22T19:25:47Z",
+      "linked_by": {
+        "agent_type": "implement",
+        "base_name": "c11-115-impl",
+        "framework": "claude-code",
+        "model": "claude-opus-4-7",
+        "name": "c11-115-impl-1",
+        "serial": 1,
+        "session": "sess_01KS8JC55YCEDAEX2JXNY0C00M"
+      },
+      "repo": null
+    }
+  ],
+  "comment_count": 5,
+  "complexity": "medium",
+  "created_at": "2026-05-22T19:25:29Z",
+  "created_by": {
+    "agent_type": "implement",
+    "base_name": "c11-115-impl",
+    "framework": "claude-code",
+    "model": "claude-opus-4-7",
+    "name": "c11-115-impl-1",
+    "serial": 1,
+    "session": "sess_01KS8JC55YCEDAEX2JXNY0C00M"
+  },
+  "custom_fields": {},
+  "description": "## Goal\n\nOverhaul the New Workspace dialog to give power users a richer, more spatially scannable starting point. Recents becomes a first-class panel with rich per-row metadata; blueprints get letter-labeled cells so users can read them at a glance; several power-user affordances thread through (pin/keyboard/drag-drop/empty-state, last-layout memory).\n\nBranch from origin/main @ 5fc161aaa62a8528ca176a0a45741e47e4aa9473.\n\n## Scope\n\n### Recents-as-panel (replaces dropdown)\n- Always-visible, vertically scrollable list. ~6 rows in viewport.\n- Per-row: project name, full path (mono dim), last opened, open count, pin star.\n- Pinned rows lock to top regardless of sort.\n- Sort toggle (Most recent / Most opened) in footer.\n- Click selects. Double-click or Return opens immediately with last layout.\n- Arrow keys navigate when focus not in input.\n- Drag a folder from Finder to set base directory.\n- Empty state for fresh installs.\n- Store cap raised from 8 to 50.\n- Data model: RecentDirectory { path, lastOpenedAt, openCount, pinned }. Migrate from existing string-array UserDefaults.\n\n### Base directory block\nMerged: directory path + Browse at top, 'or select from your recent directories:' caption, then list.\n\n### Workspace name field\nPreserved between recents block and Default layouts. Placeholder syncs with directory's last-path-segment.\n\n### Default layouts row (horizontal scroll)\n- Five layouts: Single, Two columns, Three columns, 2x2, **2x3 (new)**.\n- Horizontal scroll; 5th item intentionally clipped.\n- Each icon: grid of cells with letter labels. First cell A, rest T. Selection only changes outline/background; icon interior stays calm.\n- Legend below: A agent / T terminal / B browser / M markdown.\n\n### Custom blueprints row (no letters in v1)\n- Horizontal scroller. Outlined topology icons, name, 'N panes' meta.\n- '{N} blueprints' count below.\n- 'i' help icon opens popover with agent-first framing + 'Reveal blueprints folder' button.\n\n### Single-selection across both rows\nClicking any layout deselects every other blueprint.\n\n### Footer copy\n'Launch your default coding agent in the first pane'.\n\n### Last-selected layout memory\nOne global UserDefaults key. Falls back to Two columns when unset.\n\n## Out of scope\n- Type-aware letter labels on custom blueprints.\n- Inline filter/search.\n- Already-open indicator.\n- Git branch/dirty markers.\n- Cmd-click for new window.\n\n## Mock\n/tmp/c11-new-workspace-mock.html (operator-reviewed).\n\n## Validation plan\n- Sheet opens with new layout.\n- Click/dblclick/Return on rows behave correctly.\n- Pin/unpin holds across sort modes.\n- Arrow keys navigate; typing in inputs doesn't steal nav.\n- Drag-folder-from-Finder sets directory.\n- Empty state visible after clearing UserDefaults.\n- 2x3 creates 6 panes (2 cols x 3 rows).\n- Letter cells render correctly for defaults.\n- Default-layout selection persists across reopens.\n- Popover + Reveal-folder works.",
+  "done_at": "2026-05-22T21:42:51Z",
+  "evidence_refs": [],
+  "id": "task_01KS8JCQ9CE6TXF50HZ527YNV2",
+  "last_event_id": "ev_01KS8T8DMFYVM1H3AD1ZDTDX87",
+  "last_status_changed_at": "2026-05-22T21:42:51Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-115",
+  "status": "done",
+  "tags": null,
+  "title": "New-workspace sheet redesign: recents-as-panel, letter-cell layout icons, 2x3 layout, pin/keyboard/drag-drop/empty-state, last-layout memory",
+  "type": "task",
+  "updated_at": "2026-05-22T21:42:56Z",
+  "urgency": null
+}

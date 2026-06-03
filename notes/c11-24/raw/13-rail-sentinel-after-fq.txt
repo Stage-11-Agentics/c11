@@ -1,0 +1,4 @@
+=== c11 health --rail sentinel (after force-quit) ===
+TIME             | RAIL      | SEVERITY     | SUMMARY
+(TIME reflects the OS-reported event time when available, file mtime otherwise)
+2026-05-03 18:38 | sentinel  | unclean_exit | 0.44.1 (95) bbb8fa89

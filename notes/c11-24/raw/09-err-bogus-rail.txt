@@ -1,0 +1,5 @@
+=== c11 health --rail bogus (should error one stderr line) ===
+exit=1
+--- stdout ---
+--- stderr ---
+Error: c11 health: unknown --rail 'bogus' (expected one of ips, sentry, metrickit, sentinel)

@@ -112,7 +112,7 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         // Set up three directories under the override root so directoryOverride
         // supplies the user-override dir, a Blueprints/ sub-dir for built-ins,
         // and a separate cwd for repo discovery.
-        let userDir = tmpRoot
+        let userDir: URL = tmpRoot
         let builtInDir = tmpRoot.appendingPathComponent("Blueprints", isDirectory: true)
         try FileManager.default.createDirectory(at: builtInDir, withIntermediateDirectories: true)
 
@@ -140,7 +140,7 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
     }
 
     func testMergedSortsByModifiedAtDescWithinEachGroup() throws {
-        let userDir = tmpRoot
+        let userDir: URL = tmpRoot
         let store = WorkspaceBlueprintStore(directoryOverride: userDir)
 
         // Write two user blueprints in sequence so their mtime will differ.
@@ -204,7 +204,7 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         let overrideDir = tmpRoot.appendingPathComponent("md-test", isDirectory: true)
         try FileManager.default.createDirectory(at: overrideDir, withIntermediateDirectories: true)
 
-        // Write valid blueprint JSON with a .md extension.
+        // Write a real markdown blueprint via the store's .md write path.
         let blueprint = sampleBlueprint(name: "Markdown Extension")
         let mdStore = WorkspaceBlueprintStore(directoryOverride: overrideDir)
         let mdURL = overrideDir.appendingPathComponent("blueprint.md")
@@ -214,11 +214,70 @@ final class WorkspaceBlueprintStoreTests: XCTestCase {
         XCTAssertEqual(found.count, 1)
         XCTAssertEqual(found.first?.pathExtension, "md")
 
-        // The .md file should also appear in merged() with source .user.
+        // The .md file should appear in merged() with source .user. The name
+        // now comes from the frontmatter `title:` populated on serialise.
         let merged = mdStore.merged(cwd: nil)
         XCTAssertEqual(merged.count, 1)
-        // For .md files the store uses the filename stem as the name.
-        XCTAssertEqual(merged.first?.name, "blueprint")
+        XCTAssertEqual(merged.first?.name, "Markdown Extension")
         XCTAssertEqual(merged.first?.source, .user)
     }
+
+    // MARK: - Per-repo dual-path discovery
+
+    func testPerRepoBlueprintURLsCollectsBothC11AndCmuxDirsAtSameAncestor() throws {
+        let projectRoot = tmpRoot.appendingPathComponent("project", isDirectory: true)
+        let c11Dir = projectRoot.appendingPathComponent(".c11/blueprints", isDirectory: true)
+        let cmuxDir = projectRoot.appendingPathComponent(".cmux/blueprints", isDirectory: true)
+        try FileManager.default.createDirectory(at: c11Dir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: cmuxDir, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: c11Dir.appendingPathComponent("modern.json"))
+        try Data("{}".utf8).write(to: cmuxDir.appendingPathComponent("legacy.json"))
+
+        let store = makeStore()
+        let found = store.perRepoBlueprintURLs(cwd: projectRoot)
+
+        XCTAssertEqual(found.count, 2)
+        // .c11 entries must lead the list (so the picker prefers the
+        // canonically-named directory when both exist).
+        XCTAssertEqual(found.first?.lastPathComponent, "modern.json")
+        XCTAssertTrue(found.contains(where: { $0.lastPathComponent == "legacy.json" }))
+    }
+
+    func testPerRepoBlueprintURLsFindsC11OnlyWhenCmuxAbsent() throws {
+        let projectRoot = tmpRoot.appendingPathComponent("project", isDirectory: true)
+        let c11Dir = projectRoot.appendingPathComponent(".c11/blueprints", isDirectory: true)
+        try FileManager.default.createDirectory(at: c11Dir, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: c11Dir.appendingPathComponent("only.json"))
+
+        let store = makeStore()
+        let found = store.perRepoBlueprintURLs(cwd: projectRoot)
+
+        XCTAssertEqual(found.count, 1)
+        XCTAssertEqual(found.first?.lastPathComponent, "only.json")
+    }
+
+    func testMDExtensionRoundTripsThroughStoreReadWrite() throws {
+        let store = makeStore()
+        let blueprint = WorkspaceBlueprintFile(
+            name: "MD Round Trip",
+            description: "End-to-end through the store",
+            plan: WorkspaceApplyPlan(
+                version: 1,
+                workspace: WorkspaceSpec(title: "MD Round Trip", customColor: "#9D8048"),
+                layout: .pane(.init(surfaceIds: ["a"])),
+                surfaces: [SurfaceSpec(id: "a", kind: .terminal, title: "shell")]
+            )
+        )
+        let url = tmpRoot.appendingPathComponent("md-roundtrip.md")
+        try store.write(blueprint, to: url)
+        let readBack = try store.read(url: url)
+        XCTAssertEqual(readBack.name, blueprint.name)
+        XCTAssertEqual(readBack.description, blueprint.description)
+        XCTAssertEqual(readBack.plan.workspace.title, blueprint.plan.workspace.title)
+        XCTAssertEqual(readBack.plan.workspace.customColor, blueprint.plan.workspace.customColor)
+        XCTAssertEqual(readBack.plan.surfaces.count, 1)
+        XCTAssertEqual(readBack.plan.surfaces.first?.kind, .terminal)
+        XCTAssertEqual(readBack.plan.surfaces.first?.title, "shell")
+    }
+
 }

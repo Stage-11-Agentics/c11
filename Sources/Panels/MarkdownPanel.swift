@@ -5,12 +5,16 @@ import Combine
 /// A segment of markdown content — either regular markdown or a rendered fenced code block.
 enum MarkdownSegment: Identifiable {
     case markdown(id: String, content: String)
-    case fencedCode(id: String, language: String, code: String, renderedImage: NSImage?)
+    /// `errorHint` is set when the most recent render attempt failed and the
+    /// renderer surfaced operator-actionable diagnostic text (e.g. missing
+    /// runtime dependency with a copy-pasteable install command). nil when the
+    /// segment has not yet been rendered, is rendering, or rendered cleanly.
+    case fencedCode(id: String, language: String, code: String, renderedImage: NSImage?, errorHint: String?)
 
     var id: String {
         switch self {
         case .markdown(let id, _): return id
-        case .fencedCode(let id, _, _, _): return id
+        case .fencedCode(let id, _, _, _, _): return id
         }
     }
 }
@@ -225,7 +229,7 @@ final class MarkdownPanel: Panel, ObservableObject {
             let language = nsText.substring(with: langRange).lowercased()
             let codeRange = match.range(at: 2)
             let code = nsText.substring(with: codeRange).trimmingCharacters(in: .whitespacesAndNewlines)
-            result.append(.fencedCode(id: Self.segmentId(index: segIndex, content: code), language: language, code: code, renderedImage: nil))
+            result.append(.fencedCode(id: Self.segmentId(index: segIndex, content: code), language: language, code: code, renderedImage: nil, errorHint: nil))
             segIndex += 1
             lastEnd = matchRange.location + matchRange.length
         }
@@ -238,14 +242,15 @@ final class MarkdownPanel: Panel, ObservableObject {
             }
         }
 
-        // Preserve rendered images for segments whose content hasn't changed
+        // Preserve rendered images for segments whose content hasn't changed.
+        // Drop any prior errorHint — a fresh parse should re-render and recompute.
         let oldSegments = segments
         for (i, seg) in result.enumerated() {
-            if case .fencedCode(let id, let lang, let code, _) = seg,
+            if case .fencedCode(let id, let lang, let code, _, _) = seg,
                let old = oldSegments.first(where: { $0.id == id }),
-               case .fencedCode(_, _, _, let oldImage) = old,
+               case .fencedCode(_, _, _, let oldImage, _) = old,
                oldImage != nil {
-                result[i] = .fencedCode(id: id, language: lang, code: code, renderedImage: oldImage)
+                result[i] = .fencedCode(id: id, language: lang, code: code, renderedImage: oldImage, errorHint: nil)
             }
         }
 
@@ -263,7 +268,7 @@ final class MarkdownPanel: Panel, ObservableObject {
         // Build active keys per renderer for cancellation
         var activeKeysByRenderer: [String: Set<String>] = [:]
         for segment in segments {
-            guard case .fencedCode(_, let language, let code, let existingImage) = segment else { continue }
+            guard case .fencedCode(_, let language, let code, let existingImage, _) = segment else { continue }
             if existingImage != nil { continue }
             guard let renderer = registry.renderer(for: language) else { continue }
             let key = renderer.renderCacheKey(code: code, isDark: isDark)
@@ -274,15 +279,15 @@ final class MarkdownPanel: Panel, ObservableObject {
         }
 
         for (index, segment) in segments.enumerated() {
-            guard case .fencedCode(let id, let language, let code, let existingImage) = segment else { continue }
+            guard case .fencedCode(let id, let language, let code, let existingImage, _) = segment else { continue }
             if existingImage != nil { continue }
             guard let renderer = registry.renderer(for: language) else { continue }
-            renderer.render(code: code, isDark: isDark) { [weak self] image in
+            renderer.render(code: code, isDark: isDark) { [weak self] image, hint in
                 guard let self else { return }
                 guard index < self.segments.count,
-                      case .fencedCode(let currentId, _, _, _) = self.segments[index],
+                      case .fencedCode(let currentId, _, _, _, _) = self.segments[index],
                       currentId == id else { return }
-                self.segments[index] = .fencedCode(id: id, language: language, code: code, renderedImage: image)
+                self.segments[index] = .fencedCode(id: id, language: language, code: code, renderedImage: image, errorHint: hint)
             }
         }
     }
@@ -326,8 +331,8 @@ final class MarkdownPanel: Panel, ObservableObject {
         guard isDark != lastRenderedDark else { return }
         // Clear rendered images so they re-render with the new theme
         for (i, segment) in segments.enumerated() {
-            if case .fencedCode(let id, let lang, let code, let image) = segment, image != nil {
-                segments[i] = .fencedCode(id: id, language: lang, code: code, renderedImage: nil)
+            if case .fencedCode(let id, let lang, let code, let image, _) = segment, image != nil {
+                segments[i] = .fencedCode(id: id, language: lang, code: code, renderedImage: nil, errorHint: nil)
             }
         }
         renderFencedCodeSegments()

@@ -1,0 +1,5 @@
+=== c11 health --since 30m --since-boot (mutual exclusion) ===
+exit=1
+--- stdout ---
+--- stderr ---
+Error: c11 health: --since and --since-boot are mutually exclusive

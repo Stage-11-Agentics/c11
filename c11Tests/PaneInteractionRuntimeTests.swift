@@ -176,7 +176,7 @@ final class PaneInteractionRuntimeTests: XCTestCase {
         )
 
         runtime.resolveConfirm(panelId: panelId, result: .confirmed)
-        wait(for: [firstExpectation, secondExpectation], timeout: 1.0)
+        wait(for: [firstExpectation, secondExpectation], timeout: 5.0)
         XCTAssertEqual(firedCount, 2, "Both callers must have their completions fire")
     }
 

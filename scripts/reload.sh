@@ -46,10 +46,26 @@ EOF
 select_cli_shim_target() {
   local bin_name="$1"
   local app_cli_dir="/Applications/c11.app/Contents/Resources/bin"
-  local marker="c11 dev shim (managed by scripts/reload.sh)"
+  # Fixed-string substring shared by both the current ("c11 dev shim …")
+  # and legacy pre-rebrand ("c11mux dev shim …") markers. Recognising the
+  # legacy marker lets the next reload overwrite stale shims that still
+  # read the no-longer-written /tmp/c11mux-last-cli-path and error out in
+  # tagged-build contexts.
+  local marker_substr="dev shim (managed by scripts/reload.sh)"
   local target=""
   local path_entry=""
   local candidate=""
+
+  # Only treat the app's own bin dir as a PATH precedence boundary if it
+  # actually has a binary installed (i.e. the user has /Applications/c11.app).
+  # Dev-build setups often keep this path entry for forward-compat without
+  # an installed app — without the existence guard, the loop breaks at
+  # iteration 1 and never reaches user-writable shim dirs earlier in PATH
+  # precedence than the (nonexistent) app dir, leaving stale shims unrefreshed.
+  local app_cli_dir_active=0
+  if [[ -x "$app_cli_dir/$bin_name" ]]; then
+    app_cli_dir_active=1
+  fi
 
   IFS=':' read -r -a path_entries <<< "${PATH:-}"
   for path_entry in "${path_entries[@]}"; do
@@ -57,7 +73,7 @@ select_cli_shim_target() {
     if [[ "$path_entry" == "~/"* ]]; then
       path_entry="$HOME/${path_entry#~/}"
     fi
-    if [[ "$path_entry" == "$app_cli_dir" ]]; then
+    if [[ "$app_cli_dir_active" == "1" && "$path_entry" == "$app_cli_dir" ]]; then
       break
     fi
     [[ -d "$path_entry" && -w "$path_entry" ]] || continue
@@ -66,7 +82,7 @@ select_cli_shim_target() {
       target="$candidate"
       break
     fi
-    if [[ -f "$candidate" ]] && grep -q "$marker" "$candidate" 2>/dev/null; then
+    if [[ -f "$candidate" ]] && grep -qF "$marker_substr" "$candidate" 2>/dev/null; then
       target="$candidate"
       break
     fi
@@ -85,7 +101,7 @@ select_cli_shim_target() {
       echo "$candidate"
       return 0
     fi
-    if [[ -f "$candidate" ]] && grep -q "$marker" "$candidate" 2>/dev/null; then
+    if [[ -f "$candidate" ]] && grep -qF "$marker_substr" "$candidate" 2>/dev/null; then
       echo "$candidate"
       return 0
     fi

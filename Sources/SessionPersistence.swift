@@ -68,6 +68,33 @@ enum SessionPersistencePolicy {
         !envFlagEnabled("CMUX_DISABLE_STATUS_ENTRY_PERSIST")
     }
 
+    /// C11-24: startup-restore agent restart.
+    ///
+    /// When `true` (default), `Workspace.restoreSessionSnapshot` consults the
+    /// Phase 1 `AgentRestartRegistry` for each restored terminal surface that
+    /// carries a recognised `terminal_type` and a captured `claude.session_id`,
+    /// and sends the synthesised resume command (e.g.
+    /// `claude --dangerously-skip-permissions --resume <id>\n`) into the
+    /// restored terminal panel after a short startup delay.
+    ///
+    /// Setting `CMUX_DISABLE_AGENT_RESTART=1` disables auto-resume — the
+    /// workspace layout still restores, but no resume commands are sent.
+    /// App-launch-scope only — set via `launchctl setenv` or the parent shell
+    /// before launching c11; setting it on the `c11` CLI invocation has no
+    /// effect. Kept as a one-release rollback safety net.
+    static var agentRestartOnRestoreEnabled: Bool {
+        !envFlagEnabled("CMUX_DISABLE_AGENT_RESTART")
+    }
+
+    /// Seconds to wait after `restoreSessionSnapshot` returns before
+    /// dispatching agent-restart commands. Gives Ghostty PTYs and their
+    /// shells time to come up so `TerminalPanel.sendText` has a live
+    /// surface to write into. The TerminalPanel pre-ready queue would
+    /// also catch early writes, but a small delay keeps the timing in a
+    /// regime that has been hand-tested rather than relying purely on
+    /// queue semantics.
+    static let agentRestartDelay: TimeInterval = 2.5
+
     private static func envFlagEnabled(_ name: String) -> Bool {
         guard let raw = ProcessInfo.processInfo.environment[name] else { return false }
         switch raw.trimmingCharacters(in: .whitespaces).lowercased() {
@@ -314,6 +341,10 @@ struct SessionPanelSnapshot: Codable, Sendable {
     var type: PanelType
     var title: String?
     var customTitle: String?
+    /// Per-surface tab color, normalized as `#RRGGBB`. Optional for
+    /// backwards compatibility with pre-C11-10 snapshots; old snapshots
+    /// decode with `customColor == nil` via `decodeIfPresent`.
+    var customColor: String? = nil
     var directory: String?
     var isPinned: Bool
     var isManuallyUnread: Bool
@@ -524,8 +555,9 @@ enum SessionPersistenceStore {
             with: "_",
             options: .regularExpression
         )
+        StateDirectoryMigration.ensureMigrated()
         return resolvedAppSupport
-            .appendingPathComponent("c11mux", isDirectory: true)
+            .appendingPathComponent("c11", isDirectory: true)
             .appendingPathComponent("session-\(safeBundleId).json", isDirectory: false)
     }
 }

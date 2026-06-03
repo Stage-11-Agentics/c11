@@ -6,7 +6,7 @@ import Security
 
 enum SocketControlMode: String, CaseIterable, Identifiable {
     case off
-    case cmuxOnly
+    case c11Only
     case automation
     case password
     /// Full open access (all local users/processes) with no ancestry or password gate.
@@ -14,13 +14,16 @@ enum SocketControlMode: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    static var uiCases: [SocketControlMode] { [.off, .cmuxOnly, .automation, .password, .allowAll] }
+    static var uiCases: [SocketControlMode] { [.off, .c11Only, .automation, .password, .allowAll] }
 
+    // Localization keys retain the legacy `socketControl.cmuxOnly.*` names so
+    // translations across the six shipping locales survive the Swift rename;
+    // chase the key rename in a separate hygiene pass.
     var displayName: String {
         switch self {
         case .off:
             return String(localized: "socketControl.off.name", defaultValue: "Off")
-        case .cmuxOnly:
+        case .c11Only:
             return String(localized: "socketControl.cmuxOnly.name", defaultValue: "c11 processes only")
         case .automation:
             return String(localized: "socketControl.automation.name", defaultValue: "Automation mode")
@@ -35,7 +38,7 @@ enum SocketControlMode: String, CaseIterable, Identifiable {
         switch self {
         case .off:
             return String(localized: "socketControl.off.description", defaultValue: "Disable the local control socket.")
-        case .cmuxOnly:
+        case .c11Only:
             return String(localized: "socketControl.cmuxOnly.description", defaultValue: "Only processes started inside c11 terminals can send commands.")
         case .automation:
             return String(localized: "socketControl.automation.description", defaultValue: "Allow external local automation clients from this macOS user (no ancestry check).")
@@ -50,7 +53,7 @@ enum SocketControlMode: String, CaseIterable, Identifiable {
         switch self {
         case .allowAll:
             return 0o666
-        case .off, .cmuxOnly, .automation, .password:
+        case .off, .c11Only, .automation, .password:
             return 0o600
         }
     }
@@ -61,7 +64,7 @@ enum SocketControlMode: String, CaseIterable, Identifiable {
 }
 
 enum SocketControlPasswordStore {
-    static let directoryName = "c11mux"
+    static let directoryName = "c11"
     static let fileName = "socket-control-password"
     private static let keychainMigrationDefaultsKey = "socketControlPasswordMigrationVersion"
     private static let keychainMigrationVersion = 1
@@ -218,6 +221,7 @@ enum SocketControlPasswordStore {
         appSupportDirectory: URL? = nil,
         fileManager: FileManager = .default
     ) -> URL? {
+        StateDirectoryMigration.ensureMigrated(fileManager: fileManager)
         let resolvedAppSupport: URL
         if let appSupportDirectory {
             resolvedAppSupport = appSupportDirectory
@@ -293,7 +297,7 @@ struct SocketControlSettings {
     static let socketPasswordEnvKey = "CMUX_SOCKET_PASSWORD"
     static let launchTagEnvKey = "CMUX_TAG"
     static let baseDebugBundleIdentifier = "com.stage11.c11.debug"
-    private static let socketDirectoryName = "c11mux"
+    private static let socketDirectoryName = "c11"
     private static let stableSocketFileName = "c11.sock"
     private static let lastSocketPathFileName = "last-socket-path"
     static let legacyStableDefaultSocketPath = "/tmp/c11.sock"
@@ -326,8 +330,11 @@ struct SocketControlSettings {
         switch normalizeMode(raw) {
         case "off":
             return .off
-        case "cmuxonly":
-            return .cmuxOnly
+        // "cmuxonly" remains here so persisted UserDefaults values from
+        // pre-rename builds still migrate forward; "c11only" is the new
+        // canonical form written by `migrateMode` (see c11App.swift).
+        case "c11only", "cmuxonly":
+            return .c11Only
         case "automation":
             return .automation
         case "password":
@@ -350,7 +357,7 @@ struct SocketControlSettings {
     }
 
     static var defaultMode: SocketControlMode {
-        return .cmuxOnly
+        return .c11Only
     }
 
     private static var isDebugBuild: Bool {
@@ -425,14 +432,25 @@ struct SocketControlSettings {
         bundleIdentifier: String? = Bundle.main.bundleIdentifier,
         isDebugBuild: Bool = SocketControlSettings.isDebugBuild,
         currentUserID: uid_t = getuid(),
-        probeStableDefaultPathEntry: (String) -> StableDefaultSocketPathEntry = inspectStableDefaultSocketPathEntry
+        probeStableDefaultPathEntry: (String) -> StableDefaultSocketPathEntry = inspectStableDefaultSocketPathEntry,
+        processIdentifier: pid_t = getpid()
     ) -> String {
-        let fallback = defaultSocketPath(
+        var fallback = defaultSocketPath(
             bundleIdentifier: bundleIdentifier,
             isDebugBuild: isDebugBuild,
             currentUserID: currentUserID,
             probeStableDefaultPathEntry: probeStableDefaultPathEntry
         )
+
+        // C11-99 Area B: when launched by xcodebuild test, the XCTest host runs as the
+        // untagged c11 DEV.app (bundle id com.stage11.c11.debug) and would otherwise
+        // bind /tmp/c11-debug.sock — the same path the operator's running c11 DEV.app
+        // uses. On teardown the test host unlinks the socket, killing the operator's
+        // c11 socket. Detect XCTest via XCTestConfigurationFilePath and isolate per-PID.
+        if environment["XCTestConfigurationFilePath"] != nil,
+           fallback == "/tmp/c11-debug.sock" {
+            fallback = "/tmp/c11-test-\(processIdentifier).sock"
+        }
 
         if let taggedDebugPath = taggedDebugSocketPath(
             bundleIdentifier: bundleIdentifier,
@@ -571,6 +589,7 @@ struct SocketControlSettings {
     }
 
     static func stableSocketDirectoryURL(fileManager: FileManager = .default) -> URL? {
+        StateDirectoryMigration.ensureMigrated(fileManager: fileManager)
         guard let appSupportDirectory = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             return nil
         }
@@ -662,7 +681,7 @@ struct SocketControlSettings {
             if let overrideMode = envOverrideMode(environment: environment) {
                 return overrideMode
             }
-            return userMode == .off ? .cmuxOnly : userMode
+            return userMode == .off ? .c11Only : userMode
         }
 
         if let overrideMode = envOverrideMode(environment: environment) {

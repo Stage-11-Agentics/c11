@@ -266,6 +266,17 @@ extension Workspace {
         prunePaneMetadata(validPaneIds: Set(bonsplitController.allPaneIds.map { $0.id }))
 
         pruneSurfaceMetadata(validSurfaceIds: Set(panels.keys))
+
+        // C11-25 review fix I1: rehydrate per-surface lifecycle from the
+        // canonical metadata mirror. The blueprint-apply restore path
+        // (`WorkspaceLayoutExecutor.apply`) already calls this; the
+        // session-snapshot restore path used by `TabManager` /
+        // `TerminalController` / `AppDelegate` did not, so a hibernated
+        // browser restored on app relaunch landed with
+        // `lifecycle_state == "hibernated"` in metadata but was running
+        // as `.active` in runtime. Operator intent was silently dropped.
+        restoreLifecycleStateFromMetadata()
+
         applySessionDividerPositions(snapshotNode: snapshot.layout, liveNode: bonsplitController.treeSnapshot())
 
         let restoredStableDefaultTitle = snapshot.stableDefaultTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -324,6 +335,105 @@ extension Workspace {
         } else {
             scheduleFocusReconcile()
         }
+
+        // C11-24: schedule agent-resume for restored terminal surfaces that
+        // carry a captured session id. The dispatch is deferred so Ghostty
+        // PTYs + their shells have time to come up; `CMUX_DISABLE_AGENT_RESTART=1`
+        // suppresses the whole pass. Layout/metadata/status restore above
+        // is independent — failures here cannot break a normal restore.
+        scheduleAgentRestart(from: snapshot, registry: .phase1, oldToNewPanelIds: oldToNewPanelIds)
+    }
+
+    /// C11-24: collect resume commands for terminal panels that have a
+    /// captured `terminal_type` + `claude.session_id` in their snapshot
+    /// metadata, consulting the supplied registry. Reads directly from
+    /// the panel snapshot rather than the live `SurfaceMetadataStore`
+    /// because the store is rehydrated as part of the same restore pass
+    /// and may not have the values populated at the moment this is called.
+    /// Internal (not private) so unit tests can exercise it without going
+    /// through the full live workspace restore path.
+    func pendingRestartCommands(
+        from snapshot: SessionWorkspaceSnapshot,
+        registry: AgentRestartRegistry
+    ) -> [(panelId: UUID, command: String)] {
+        guard SessionPersistencePolicy.agentRestartOnRestoreEnabled else { return [] }
+        var result: [(panelId: UUID, command: String)] = []
+        for panelSnapshot in snapshot.panels {
+            guard panelSnapshot.type == .terminal else { continue }
+            let meta = Workspace.stringValues(from: panelSnapshot.metadata)
+            let terminalType = meta[SurfaceMetadataKeyName.terminalType]
+            let sessionId = meta[SurfaceMetadataKeyName.claudeSessionId]
+            guard let command = registry.resolveCommand(
+                terminalType: terminalType,
+                sessionId: sessionId,
+                metadata: meta
+            ) else { continue }
+            result.append((panelId: panelSnapshot.id, command: command))
+        }
+        return result
+    }
+
+    /// Flatten persisted metadata to `[String: String]`, keeping only
+    /// `.string(...)` entries. Mirrors the existing
+    /// `WorkspaceLayoutExecutor.stringMetadata` helper: the registry
+    /// contract is string-valued (`terminal_type`, `claude.session_id`)
+    /// and the metadata store rejects non-string writes for these
+    /// reserved keys at the boundary, so silently dropping any non-string
+    /// value here is consistent with the executor's restore path.
+    static func stringValues(from metadata: [String: PersistedJSONValue]?) -> [String: String] {
+        guard let metadata else { return [:] }
+        var out: [String: String] = [:]
+        for (key, value) in metadata {
+            if case .string(let s) = value {
+                out[key] = s
+            }
+        }
+        return out
+    }
+
+    /// Schedule deferred submission of synthesised resume commands for
+    /// terminal panels resolved via `pendingRestartCommands`. The dispatch
+    /// runs on the main actor after `SessionPersistencePolicy.agentRestartDelay`
+    /// so Ghostty surfaces have time to initialise.
+    ///
+    /// Submission goes through `TerminalSurface.sendSubmitFormText`.
+    /// Ghostty's text-input path (`sendText` → `ghostty_surface_text`)
+    /// wraps every call in bracketed-paste markers (`ESC[200~…ESC[201~`).
+    /// Bracketed paste is intentionally designed so embedded `\n`/`\r`
+    /// inside the paste do not auto-execute — zsh ZLE and bash readline
+    /// only execute when a *real* Return arrives outside the paste. So a
+    /// raw `sendText("<cmd>\n")` types the command but leaves it sitting
+    /// at the prompt, which is exactly the regression the operator
+    /// observed. `sendSubmitFormText` types the trimmed text via paste
+    /// and then dispatches a synthetic Return key — and, critically,
+    /// defers the Return until the pending-text queue actually flushes
+    /// on surface attach, so the boot-time race where `view.window` is
+    /// still nil at the 2.5s mark (and `sendKey` silently drops) no
+    /// longer hides the submission.
+    ///
+    /// `oldToNewPanelIds` lets the routine remap snapshot panel ids to
+    /// the freshly minted ids when the stable-panel-id rollback flag is
+    /// set. Under default behaviour (`stablePanelIdsEnabled` true) the
+    /// map is an identity and the lookup is the snapshot id directly.
+    private func scheduleAgentRestart(
+        from snapshot: SessionWorkspaceSnapshot,
+        registry: AgentRestartRegistry,
+        oldToNewPanelIds: [UUID: UUID]
+    ) {
+        let commands = pendingRestartCommands(from: snapshot, registry: registry)
+        guard !commands.isEmpty else { return }
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + SessionPersistencePolicy.agentRestartDelay
+        ) { [weak self] in
+            guard let self else { return }
+            for (snapshotPanelId, command) in commands {
+                let livePanelId = oldToNewPanelIds[snapshotPanelId] ?? snapshotPanelId
+                guard let terminalPanel = self.panels[livePanelId] as? TerminalPanel else {
+                    continue
+                }
+                terminalPanel.surface.sendSubmitFormText(command)
+            }
+        }
     }
 
     private func sessionLayoutSnapshot(from node: ExternalTreeNode) -> SessionWorkspaceLayoutSnapshot {
@@ -380,7 +490,8 @@ extension Workspace {
         }
         let bridgedValues = PersistedMetadataBridge.encodeValues(
             snapshot.metadata,
-            surfaceIdForLog: paneUUID
+            surfaceIdForLog: paneUUID,
+            sources: snapshot.sources
         )
         let cappedValues = PersistedMetadataBridge.enforceSizeCap(
             bridgedValues,
@@ -507,7 +618,8 @@ extension Workspace {
             } else {
                 let bridgedValues = PersistedMetadataBridge.encodeValues(
                     snapshot.metadata,
-                    surfaceIdForLog: panelId
+                    surfaceIdForLog: panelId,
+                    sources: snapshot.sources
                 )
                 let cappedValues = PersistedMetadataBridge.enforceSizeCap(
                     bridgedValues,
@@ -526,6 +638,7 @@ extension Workspace {
             type: panel.panelType,
             title: panelTitle,
             customTitle: customTitle,
+            customColor: panelCustomColors[panelId],
             directory: directory,
             isPinned: isPinned,
             isManuallyUnread: isManuallyUnread,
@@ -700,12 +813,19 @@ extension Workspace {
             return terminalPanel.id
         case .browser:
             let initialURL = snapshot.browser?.urlString.flatMap { URL(string: $0) }
+            // C11-25 fix S4+E1: when the persisted snapshot says the panel
+            // was hibernated, construct it natively in `.hibernated` so the
+            // initial WKWebView load never fires for `initialURL` —
+            // matches the executor-driven restore path and closes the same
+            // privacy/billing leak on session-snapshot restore.
+            let restoredHibernated = snapshotRequestsHibernated(snapshot)
             guard let browserPanel = newBrowserSurface(
                 inPane: paneId,
                 url: initialURL,
                 focus: false,
                 preferredProfileID: snapshot.browser?.profileID,
-                panelId: restoredPanelId
+                panelId: restoredPanelId,
+                pendingHibernate: restoredHibernated
             ) else {
                 return nil
             }
@@ -725,12 +845,26 @@ extension Workspace {
         }
     }
 
+    /// C11-25 fix S4+E1: returns `true` when the persisted session
+    /// snapshot's per-surface metadata pinned the panel to
+    /// `lifecycle_state == "hibernated"`. Used by `createPanel` to
+    /// suppress the initial WKWebView navigate so a restored hibernated
+    /// browser never briefly hits the network for its persisted URL.
+    private func snapshotRequestsHibernated(_ snapshot: SessionPanelSnapshot) -> Bool {
+        guard let metadata = snapshot.metadata,
+              case .string(let raw)? = metadata[MetadataKey.lifecycleState] else {
+            return false
+        }
+        return raw == SurfaceLifecycleState.hibernated.rawValue
+    }
+
     private func applySessionPanelMetadata(_ snapshot: SessionPanelSnapshot, toPanelId panelId: UUID) {
         if let title = snapshot.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
             panelTitles[panelId] = title
         }
 
         setPanelCustomTitle(panelId: panelId, title: snapshot.customTitle)
+        setPanelCustomColor(panelId: panelId, color: snapshot.customColor)
         setPanelPinned(panelId: panelId, pinned: snapshot.isPinned)
 
         if snapshot.isManuallyUnread {
@@ -943,6 +1077,7 @@ private final class WorkspaceRemoteDaemonRPCClient {
 
         process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
         process.arguments = Self.daemonArguments(configuration: configuration, remotePath: remotePath)
+        process.environment = ProcessInfo.processInfo.environment
         process.standardInput = stdinPipe
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
@@ -3217,6 +3352,7 @@ final class WorkspaceRemoteSessionController {
             let stderrPipe = Pipe()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
             process.arguments = reverseRelayArguments(relayPort: relayPort, localRelayPort: localRelayPort)
+            process.environment = ProcessInfo.processInfo.environment
             process.standardInput = FileHandle.nullDevice
             process.standardOutput = FileHandle.nullDevice
             process.standardError = stderrPipe
@@ -3899,6 +4035,7 @@ final class WorkspaceRemoteSessionController {
     }
 
     private static func remoteDaemonCacheRoot(fileManager: FileManager = .default) throws -> URL {
+        StateDirectoryMigration.ensureMigrated(fileManager: fileManager)
         let appSupportRoot = try fileManager.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,
@@ -3906,7 +4043,7 @@ final class WorkspaceRemoteSessionController {
             create: true
         )
         let cacheRoot = appSupportRoot
-            .appendingPathComponent("c11mux", isDirectory: true)
+            .appendingPathComponent("c11", isDirectory: true)
             .appendingPathComponent("remote-daemons", isDirectory: true)
         try fileManager.createDirectory(at: cacheRoot, withIntermediateDirectories: true)
         return cacheRoot
@@ -4701,11 +4838,14 @@ enum SidebarBranchOrdering {
         let isDirty: Bool
     }
 
-    struct BranchDirectoryEntry: Equatable {
-        let branch: String?
-        let isDirty: Bool
-        let directory: String?
-    }
+    // (C11-106) `struct BranchDirectoryEntry` and
+    // `static func orderedUniqueBranchDirectoryEntries(...)` were
+    // retired alongside `sidebarBranchDirectoryEntriesInDisplayOrder`
+    // — they fed the legacy AC24-retired text branch+directory row.
+    // The worktree+branch chips that replaced that row consume
+    // `WorktreeChipRow` directly via `WorktreeChipProjector`. Grep
+    // confirms no other consumer; both `c11-logic` and `c11-unit`
+    // compile after removal.
 
     static func orderedPaneIds(tree: ExternalTreeNode) -> [String] {
         switch tree {
@@ -4845,113 +4985,6 @@ enum SidebarBranchOrdering {
 
         return orderedKeys.compactMap { pullRequestsByKey[$0] }
     }
-
-    static func orderedUniqueBranchDirectoryEntries(
-        orderedPanelIds: [UUID],
-        panelBranches: [UUID: SidebarGitBranchState],
-        panelDirectories: [UUID: String],
-        defaultDirectory: String?,
-        fallbackBranch: SidebarGitBranchState?
-    ) -> [BranchDirectoryEntry] {
-        struct EntryKey: Hashable {
-            let directory: String?
-            let branch: String?
-        }
-
-        struct MutableEntry {
-            var branch: String?
-            var isDirty: Bool
-            var directory: String?
-        }
-
-        func normalized(_ text: String?) -> String? {
-            guard let text else { return nil }
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : trimmed
-        }
-
-        func canonicalDirectoryKey(_ directory: String?) -> String? {
-            guard let directory = normalized(directory) else { return nil }
-            let expanded = NSString(string: directory).expandingTildeInPath
-            let standardized = NSString(string: expanded).standardizingPath
-            let cleaned = standardized.trimmingCharacters(in: .whitespacesAndNewlines)
-            return cleaned.isEmpty ? nil : cleaned
-        }
-
-        let normalizedFallbackBranch = normalized(fallbackBranch?.branch)
-        let shouldUseFallbackBranchPerPanel = !orderedPanelIds.contains {
-            normalized(panelBranches[$0]?.branch) != nil
-        }
-        let defaultBranchForPanels = shouldUseFallbackBranchPerPanel ? normalizedFallbackBranch : nil
-        let defaultBranchDirty = shouldUseFallbackBranchPerPanel ? (fallbackBranch?.isDirty ?? false) : false
-
-        var order: [EntryKey] = []
-        var entries: [EntryKey: MutableEntry] = [:]
-
-        for panelId in orderedPanelIds {
-            let panelBranch = normalized(panelBranches[panelId]?.branch)
-            let branch = panelBranch ?? defaultBranchForPanels
-            let directory = normalized(panelDirectories[panelId] ?? defaultDirectory)
-            guard branch != nil || directory != nil else { continue }
-
-            let panelDirty = panelBranch != nil
-                ? (panelBranches[panelId]?.isDirty ?? false)
-                : defaultBranchDirty
-
-            let key: EntryKey
-            if let directoryKey = canonicalDirectoryKey(directory) {
-                // Keep one line per directory and allow the latest branch state to overwrite.
-                key = EntryKey(directory: directoryKey, branch: nil)
-            } else {
-                key = EntryKey(directory: nil, branch: branch)
-            }
-
-            guard key.directory != nil || key.branch != nil else { continue }
-
-            if var existing = entries[key] {
-                if key.directory != nil {
-                    if let branch {
-                        existing.branch = branch
-                        existing.isDirty = panelDirty
-                    } else if existing.branch == nil {
-                        existing.isDirty = panelDirty
-                    }
-                    if let directory {
-                        existing.directory = directory
-                    }
-                    entries[key] = existing
-                } else if panelDirty {
-                    existing.isDirty = true
-                    entries[key] = existing
-                }
-            } else {
-                order.append(key)
-                entries[key] = MutableEntry(branch: branch, isDirty: panelDirty, directory: directory)
-            }
-        }
-
-        if order.isEmpty {
-            let fallbackDirectory = normalized(defaultDirectory)
-            if normalizedFallbackBranch != nil || fallbackDirectory != nil {
-                return [
-                    BranchDirectoryEntry(
-                        branch: normalizedFallbackBranch,
-                        isDirty: fallbackBranch?.isDirty ?? false,
-                        directory: fallbackDirectory
-                    )
-                ]
-            }
-        }
-
-        return order.compactMap { key in
-            guard let entry = entries[key] else { return nil }
-            return BranchDirectoryEntry(
-                branch: entry.branch,
-                isDirty: entry.isDirty,
-                directory: entry.directory
-            )
-        }
-    }
 }
 
 struct ClosedBrowserPanelRestoreSnapshot {
@@ -4982,6 +5015,13 @@ final class Workspace: Identifiable, ObservableObject {
     /// already runs a no-op guard, so rapid changes are safe.
     let customColorDidChange = PassthroughSubject<String?, Never>()
 
+    /// KVO observer on `UserDefaults.standard.chromeScalePreset`. Keeps the
+    /// Bonsplit configuration in sync with the persisted App Chrome UI Scale
+    /// preset for any writer (Settings UI, `defaults write`, future migrations).
+    /// Workspace itself is `@MainActor final class : ObservableObject`, not an
+    /// NSObject subclass, so KVO has to live on this composed helper. (C11-6)
+    private var chromeScaleObserver: ChromeScaleObserver?
+
     /// Operator-authored workspace metadata (e.g. "description", "icon").
     /// Workspace-scoped; not to be confused with surface-scoped
     /// `SurfaceMetadataStore`. Persisted across restart via
@@ -4997,6 +5037,43 @@ final class Workspace: Identifiable, ObservableObject {
 
     /// Mapping from bonsplit TabID to our Panel instances
     @Published private(set) var panels: [UUID: any Panel] = [:]
+
+    /// Monotonically incrementing token used by the sidebar workspace row to
+    /// observe focus flashes targeting any panel in this workspace. Bumped
+    /// from `triggerFocusFlash(panelId:)` so a single fan-out drives the
+    /// pane content flash, the Bonsplit tab strip flash, and the sidebar
+    /// row pulse together. Visual-only; never affects selection.
+    @Published private(set) var sidebarFlashToken: Int = 0
+
+    /// CMUX-10: hex color (sRGB w/ alpha) used by the sidebar workspace row
+    /// pulse. Set in `runFlashPulse` from the per-call `FlashAppearance` so
+    /// `c11 trigger-flash --color "#FF00FF"` tints the sidebar pulse, not
+    /// just the terminal pane ring. Stored as a hex string so it can fold
+    /// cleanly into `TabItemView.==` without touching `NSColor` reference
+    /// equality. nil → fall back to the default sidebar-fill color.
+    @Published private(set) var sidebarFlashColorHex: String?
+
+    /// CMUX-10: state for in-flight persistent flashes (one entry per panel).
+    /// The Timer is process-local; the manifest is not abused for per-frame
+    /// state (per Plan note: write `flash_state=persistent` once on start,
+    /// clear once on cancel). Operator/agent visibility comes from the
+    /// metadata key, not from persistent timers.
+    struct PersistentFlashState {
+        let appearance: FlashAppearance
+        let timer: Timer
+        let startedAt: Date
+        var lastBreadcrumbAt: Date?
+    }
+
+    @Published private(set) var persistentFlashPanels: [UUID: PersistentFlashState] = [:]
+
+    /// C11-25: workspace-level operator hibernate flag. True when the
+    /// operator has explicitly hibernated this workspace via the
+    /// "Hibernate Workspace" context menu (or socket equivalent). Survives
+    /// `c11 snapshot` / `restore` via the canonical `lifecycle_state`
+    /// metadata mirror on each panel — the workspace flag is rebuilt on
+    /// restore from "any panel hibernated".
+    @Published var isHibernated: Bool = false
 
     /// Subscriptions for panel updates (e.g., browser title changes)
     private var panelSubscriptions: [UUID: AnyCancellable] = [:]
@@ -5044,6 +5121,22 @@ final class Workspace: Identifiable, ObservableObject {
         runtime: paneCloseInteractionRuntime
     )
 
+    /// Workspace-scoped close-confirmation runtime. Distinct keyspace from
+    /// `paneInteractionRuntime` (panel-keyed) and `paneCloseInteractionRuntime`
+    /// (pane-keyed) so the workspace overlay's lifecycle never collides with
+    /// pane-scoped interactions. Only `.confirm` is supported here.
+    let workspaceCloseInteractionRuntime = WorkspaceCloseInteractionRuntime()
+
+    /// Mounts the workspace-scoped close-confirmation overlay (a near-black
+    /// scrim covering the workspace content area only) as an AppKit subview
+    /// of the window's themeFrame, above all portal-hosted content. Anchor
+    /// frame pushed in from `WorkspaceCloseOverlayHostView` rendered inside
+    /// `WorkspaceContentView` so the cover excludes the sidebar by
+    /// construction.
+    lazy var workspaceCloseOverlayController = WorkspaceCloseOverlayController(
+        runtime: workspaceCloseInteractionRuntime
+    )
+
 
     // Closing tabs mutates split layout immediately; terminal views handle their own AppKit
     // layout/size synchronization.
@@ -5079,6 +5172,10 @@ final class Workspace: Identifiable, ObservableObject {
     @Published var panelDirectories: [UUID: String] = [:]
     @Published var panelTitles: [UUID: String] = [:]
     @Published private(set) var panelCustomTitles: [UUID: String] = [:]
+    /// Per-surface custom color, normalized as `#RRGGBB`. Identity marker for
+    /// individual pane tabs; distinct from workspace-level `customColor` which
+    /// drives sidebar/theme chrome. See ticket C11-10.
+    @Published private(set) var panelCustomColors: [UUID: String] = [:]
     /// M7 per-surface title-bar collapse state (in-memory, session-scoped).
     @Published var titleBarCollapsed: [UUID: Bool] = [:]
     /// M7 per-surface flag: user explicitly collapsed this surface (suppresses auto-expand).
@@ -5096,6 +5193,10 @@ final class Workspace: Identifiable, ObservableObject {
     @Published var progress: SidebarProgressState?
     @Published var gitBranch: SidebarGitBranchState?
     @Published var panelGitBranches: [UUID: SidebarGitBranchState] = [:]
+    /// C11-104 — per-panel resolved worktree+branch context for the
+    /// sidebar chips. Written by `TabManager.applyWorkspaceGitMetadataSnapshot`
+    /// from the off-main probe. Nil signals "not a git directory."
+    @Published var panelGitContexts: [UUID: ResolvedGitContext?] = [:]
     @Published var pullRequest: SidebarPullRequestState?
     @Published var panelPullRequests: [UUID: SidebarPullRequestState] = [:]
     @Published var surfaceListeningPorts: [UUID: [Int]] = [:]
@@ -5195,7 +5296,7 @@ final class Workspace: Identifiable, ObservableObject {
                     localized: "workspace.tooltip.newAgent",
                     defaultValue: "Launch Agent (%@)"
                 )
-                return String(format: template, locale: Locale.current, AgentLauncherSettings.current().displayName)
+                return String(format: template, locale: Locale.current, DefaultAgentConfigStore.shared.current.defaultAgent.displayName)
             }(),
             newTerminal: KeyboardShortcutSettings.Action.newSurface.tooltip(
                 String(localized: "workspace.tooltip.newTerminal", defaultValue: "New Terminal")
@@ -5219,7 +5320,8 @@ final class Workspace: Identifiable, ObservableObject {
         bonsplitAppearance(
             from: config.backgroundColor,
             backgroundOpacity: config.backgroundOpacity,
-            context: nil
+            context: nil,
+            tokens: ChromeScaleTokens.resolved(from: .standard)
         )
     }
 
@@ -5274,11 +5376,12 @@ final class Workspace: Identifiable, ObservableObject {
     private static func bonsplitAppearance(
         from backgroundColor: NSColor,
         backgroundOpacity: Double,
-        context: ThemeContext?
+        context: ThemeContext?,
+        tokens: ChromeScaleTokens = .standard
     ) -> BonsplitConfiguration.Appearance {
         let divider = resolvedDividerPresentation(context: context)
         let activeIndicatorHex = resolvedActiveIndicatorHex(context: context)
-        return BonsplitConfiguration.Appearance(
+        var appearance = BonsplitConfiguration.Appearance(
             splitButtonTooltips: Self.currentSplitButtonTooltips(),
             enableAnimations: false,
             chromeColors: .init(
@@ -5291,13 +5394,71 @@ final class Workspace: Identifiable, ObservableObject {
             ),
             dividerStyle: .init(thicknessPt: divider.thicknessPt)
         )
+        Self.applyChromeScale(tokens, to: &appearance)
+        return appearance
     }
 
-    func setTabBarVisible(_ visible: Bool) {
-        guard bonsplitController.configuration.appearance.showsTabBar != visible else { return }
-        var next = bonsplitController.configuration
-        next.appearance.showsTabBar = visible
-        bonsplitController.configuration = next
+    /// Pure helper. No `GhosttyApp.shared`, no `UserDefaults`, no
+    /// `NotificationCenter` — just in/out value-type mutation. Both the static
+    /// factory and the live-update path call this so behavior is identical and
+    /// testable in isolation. (C11-6)
+    ///
+    /// `nonisolated` because the function touches no main-actor state — pure
+    /// value-type mutation — so the actor inheritance from `Workspace` is
+    /// incidental, not load-bearing. Without this, `WorkspaceApplyChromeScaleTests`
+    /// fails to compile under Swift 6 strict concurrency: XCTestCase methods
+    /// are non-main-actor by default, and calling a `@MainActor`-isolated
+    /// static method from a synchronous context is a compile error.
+    nonisolated static func applyChromeScale(
+        _ tokens: ChromeScaleTokens,
+        to appearance: inout BonsplitConfiguration.Appearance
+    ) {
+        appearance.tabBarHeight              = tokens.surfaceTabBarHeight
+        appearance.tabTitleFontSize          = tokens.surfaceTabTitle
+        appearance.tabMinWidth               = tokens.surfaceTabMinWidth
+        appearance.tabMaxWidth               = tokens.surfaceTabMaxWidth
+        appearance.tabIconSize               = tokens.surfaceTabIcon
+        appearance.tabItemHeight             = tokens.surfaceTabItemHeight
+        appearance.tabHorizontalPadding      = tokens.surfaceTabHorizontalPadding
+        appearance.tabCloseIconSize          = tokens.surfaceTabCloseIconSize
+        appearance.tabContentSpacing         = tokens.surfaceTabContentSpacing
+        appearance.tabDirtyIndicatorSize     = tokens.surfaceTabDirtyIndicatorSize
+        appearance.tabNotificationBadgeSize  = tokens.surfaceTabNotificationBadgeSize
+        appearance.tabActiveIndicatorHeight  = tokens.surfaceTabActiveIndicatorHeight
+        appearance.splitToolbarButtonIconSize  = tokens.splitToolbarButtonIcon
+        appearance.splitToolbarButtonFrameSize = tokens.splitToolbarButtonFrame
+        appearance.splitToolbarSeparatorHeight = tokens.splitToolbarSeparatorHeight
+    }
+
+    /// Live-update path for chrome-scale changes. Mirrors `applyGhosttyChrome`'s
+    /// shape: pull current appearance, mutate via the pure helper, no-op guard
+    /// across every routed knob, then assign back. Called by the KVO observer
+    /// on `UserDefaults.standard.chromeScalePreset`. (C11-6)
+    func applyChromeScale(reason: String = "unspecified") {
+        let tokens = ChromeScaleTokens.resolved(from: .standard)
+        var next = bonsplitController.configuration.appearance
+        Workspace.applyChromeScale(tokens, to: &next)
+        let current = bonsplitController.configuration.appearance
+        let unchanged =
+            current.tabBarHeight              == next.tabBarHeight &&
+            current.tabTitleFontSize          == next.tabTitleFontSize &&
+            current.tabMinWidth               == next.tabMinWidth &&
+            current.tabMaxWidth               == next.tabMaxWidth &&
+            current.tabIconSize               == next.tabIconSize &&
+            current.tabItemHeight             == next.tabItemHeight &&
+            current.tabHorizontalPadding      == next.tabHorizontalPadding &&
+            current.tabCloseIconSize          == next.tabCloseIconSize &&
+            current.tabContentSpacing         == next.tabContentSpacing &&
+            current.tabDirtyIndicatorSize     == next.tabDirtyIndicatorSize &&
+            current.tabNotificationBadgeSize  == next.tabNotificationBadgeSize &&
+            current.tabActiveIndicatorHeight  == next.tabActiveIndicatorHeight &&
+            current.splitToolbarButtonIconSize  == next.splitToolbarButtonIconSize &&
+            current.splitToolbarButtonFrameSize == next.splitToolbarButtonFrameSize &&
+            current.splitToolbarSeparatorHeight == next.splitToolbarSeparatorHeight
+        guard !unchanged else { return }
+        var nextConfiguration = bonsplitController.configuration
+        nextConfiguration.appearance = next
+        bonsplitController.configuration = nextConfiguration
     }
 
     func applyGhosttyChrome(from config: GhosttyConfig, reason: String = "unspecified") {
@@ -5428,12 +5589,11 @@ final class Workspace: Identifiable, ObservableObject {
         var appearance = Self.bonsplitAppearance(
             from: GhosttyApp.shared.defaultBackgroundColor,
             backgroundOpacity: GhosttyApp.shared.defaultBackgroundOpacity,
-            context: nil
+            context: nil,
+            tokens: ChromeScaleTokens.resolved(from: .standard)
         )
-        let initialChromeState = TabBarChromeSettings.state(
-            for: UserDefaults.standard.string(forKey: TabBarChromeSettings.stateKey)
-        )
-        appearance.showsTabBar = initialChromeState == .full
+        // C11-41: tab bar chrome state was removed; always show the full tab bar.
+        appearance.showsTabBar = true
         let config = BonsplitConfiguration(
             allowSplits: true,
             allowCloseTabs: true,
@@ -5448,10 +5608,25 @@ final class Workspace: Identifiable, ObservableObject {
             autoCloseEmptyPanes: true,
             contentViewLifecycle: .keepAllAlive,
             newTabPosition: .current,
+            // C11-26: left-anchored always-visible close X + two-item
+            // right-click menu (Close Tab, Close Pane). Sidesteps the
+            // right-edge hit-collision bug and matches native macOS
+            // Cocoa tab convention (Finder, Terminal.app, Notes).
+            simplifiedTabContextMenu: true,
             appearance: appearance
         )
         self.bonsplitController = BonsplitController(configuration: config)
         bonsplitController.contextMenuShortcuts = Self.buildContextMenuShortcuts()
+        bonsplitController.tabColorPalette = Self.bonsplitTabColorPalette()
+
+        // Subscribe to UserDefaults.standard.chromeScalePreset so chrome scale
+        // changes from any writer (Settings UI, `defaults write`, future
+        // migrations) propagate to this Workspace's Bonsplit configuration.
+        // The observer is constructed AFTER bonsplitController so its callback
+        // can safely read/write `bonsplitController.configuration`. (C11-6)
+        self.chromeScaleObserver = ChromeScaleObserver { [weak self] in
+            self?.applyChromeScale(reason: "userdefaults-change")
+        }
 
         // Remove the default "Welcome" tab that bonsplit creates
         let welcomeTabIds = bonsplitController.allTabIds
@@ -5522,12 +5697,40 @@ final class Workspace: Identifiable, ObservableObject {
         activeRemoteSessionControllerID = nil
         remoteSessionController?.stop()
         mailboxDispatcher?.stop()
+        // CMUX-10: invalidate any in-flight persistent-flash timers so the
+        // run loop drops its retain on them. Direct invalidate here rather
+        // than `cancelAllPersistentFlashes()` — the panel/pane/teardown paths
+        // already remove surface metadata, and routing through the metadata
+        // store during deallocation is unnecessary noise. `Workspace` is
+        // `@MainActor` so the last release must run on main; `assumeIsolated`
+        // lets the iso-checker see that.
+        MainActor.assumeIsolated {
+            for state in persistentFlashPanels.values {
+                state.timer.invalidate()
+            }
+            persistentFlashPanels.removeAll()
+        }
     }
 
     /// Creates a per-workspace mailbox dispatcher bound to this workspace's
     /// UUID and starts watching `$C11_STATE/workspaces/<id>/mailboxes/_outbox/`.
     /// Idempotent. A no-op `silent` handler is registered so topic-silent
     /// flows work before Step 10 lands the real stdin handler.
+    ///
+    /// The `stdin` handler writes via `TextBoxSubmit.send(_:via:)` rather
+    /// than raw `sendText`. Ghostty wraps `sendText` bytes in bracketed-paste
+    /// markers (`ESC[200~…ESC[201~`), and bracketed paste is specifically
+    /// designed so embedded `\n`/`\r` do NOT auto-execute — line discipline
+    /// (zsh ZLE, bash readline) and TUI raw-mode input handlers only submit
+    /// when a real Return arrives outside the paste. So `sendText` alone
+    /// leaves the framed `<c11-msg>` block sitting in the recipient's
+    /// input buffer without ever reaching the agent. `TextBoxSubmit.send`
+    /// bracketed-pastes the content and then dispatches a synthetic Return
+    /// key (with the 200 ms gap Claude CLI's paste-processing requires),
+    /// which submits the multi-line block as one user turn for TUI
+    /// recipients (Claude Code, codex) and as a (failing) command for
+    /// cooked-mode shells — the latter being undefined behavior anyway,
+    /// since `mailbox.delivery=stdin` only makes sense on agent surfaces.
     func startMailboxDispatcher() {
         guard mailboxDispatcher == nil else { return }
         let stateURL: URL
@@ -5564,7 +5767,7 @@ final class Workspace: Identifiable, ObservableObject {
             guard let terminalPanel = panel as? TerminalPanel else {
                 return .surfaceNotTerminal
             }
-            terminalPanel.sendText(text)
+            TextBoxSubmit.send(text, via: terminalPanel.surface)
             return .ok(bytes: text.utf8.count)
         }
         dispatcher.registerHandler(
@@ -5659,6 +5862,7 @@ final class Workspace: Identifiable, ObservableObject {
         let directory: String?
         let cachedTitle: String?
         let customTitle: String?
+        let customColor: String?
         let manuallyUnread: Bool
     }
 
@@ -5865,6 +6069,72 @@ final class Workspace: Identifiable, ObservableObject {
         panels[panelId] as? BrowserPanel
     }
 
+    /// C11-25 commit 8: rehydrate workspace + panel lifecycle state from
+    /// `lifecycle_state` canonical metadata after a `c11 restore` /
+    /// blueprint apply. Called by `WorkspaceLayoutExecutor` once all
+    /// surfaces and metadata are materialized.
+    ///
+    /// For browser panels with `lifecycle_state == "hibernated"`:
+    ///   `setHibernated(true)` re-triggers the snapshot+terminate path
+    ///   so the restored panel ends up in the same operator-pinned
+    ///   state. Snapshots are in-memory only in C11-25, so the
+    ///   placeholder will render a neutral background until the
+    ///   operator resumes — operator accepted in §0a.
+    ///
+    /// For terminals/markdown the canonical metadata is preserved but
+    /// no runtime change is dispatched (auto-throttle handles
+    /// visibility; explicit terminal hibernate is deferred).
+    ///
+    /// `isHibernated` is rebuilt from "any browser panel hibernated".
+    func restoreLifecycleStateFromMetadata() {
+        var anyHibernated = false
+        for (panelId, panel) in panels {
+            let snapshot = SurfaceMetadataStore.shared.getMetadata(
+                workspaceId: id,
+                surfaceId: panelId
+            )
+            guard let stateStr = snapshot.metadata[MetadataKey.lifecycleState] as? String,
+                  let state = SurfaceLifecycleState(rawValue: stateStr) else {
+                continue
+            }
+            if state == .hibernated {
+                anyHibernated = true
+                if let browser = panel as? BrowserPanel {
+                    browser.setHibernated(true)
+                }
+            }
+        }
+        if isHibernated != anyHibernated {
+            isHibernated = anyHibernated
+        }
+    }
+
+    /// C11-25: hibernate every browser panel in the workspace and flip
+    /// the workspace-level flag. Terminals stay on the auto-throttle
+    /// path (workspace deselect already pauses libghostty rendering;
+    /// SIGSTOP for terminals is deferred). Markdown surfaces are
+    /// unaffected. Idempotent.
+    func hibernate() {
+        for panel in panels.values {
+            if let browser = panel as? BrowserPanel {
+                browser.setHibernated(true)
+            }
+        }
+        isHibernated = true
+    }
+
+    /// C11-25: resume the workspace. Browser panels transition out of
+    /// `.hibernated` (back to `.active`); the auto-throttle path takes
+    /// it from there based on visibility. Idempotent.
+    func resume() {
+        for panel in panels.values {
+            if let browser = panel as? BrowserPanel {
+                browser.setHibernated(false)
+            }
+        }
+        isHibernated = false
+    }
+
     func markdownPanel(for panelId: UUID) -> MarkdownPanel? {
         panels[panelId] as? MarkdownPanel
     }
@@ -5986,6 +6256,37 @@ final class Workspace: Identifiable, ObservableObject {
         syncPanelTitleFromMetadata(panelId: panelId)
     }
 
+    /// Set or clear the surface tab color for a panel. Pass nil or an empty/whitespace
+    /// string to clear; otherwise the input is normalized to `#RRGGBB` via
+    /// `WorkspaceTabColorSettings.normalizedHex`. Invalid hex inputs are ignored
+    /// (state unchanged) so callers can pass user input directly.
+    func setPanelCustomColor(panelId: UUID, color: String?) {
+        guard panels[panelId] != nil else { return }
+        let next: String?
+        if let raw = color?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+            guard let normalized = WorkspaceTabColorSettings.normalizedHex(raw) else { return }
+            next = normalized
+        } else {
+            next = nil
+        }
+        let previous = panelCustomColors[panelId]
+        guard previous != next else { return }
+        if let next {
+            panelCustomColors[panelId] = next
+        } else {
+            panelCustomColors.removeValue(forKey: panelId)
+        }
+        if let tabId = surfaceIdFromPanelId(panelId) {
+            bonsplitController.updateTab(tabId, customColorHex: .some(next))
+        }
+    }
+
+    /// Returns the current normalized surface tab color for a panel, or nil if
+    /// none is set.
+    func panelCustomColor(panelId: UUID) -> String? {
+        panelCustomColors[panelId]
+    }
+
     func isPanelPinned(_ panelId: UUID) -> Bool {
         pinnedPanelIds.contains(panelId)
     }
@@ -6016,7 +6317,7 @@ final class Workspace: Identifiable, ObservableObject {
         let isVisibleSelection =
             bonsplitController.focusedPaneId == paneId &&
             bonsplitController.selectedTab(inPane: paneId)?.id == tabId &&
-            terminalPanel.hostedView.window != nil &&
+            terminalPanel.surface.isViewInWindow &&
             terminalPanel.hostedView.superview != nil
 
         if isVisibleSelection {
@@ -6221,6 +6522,22 @@ final class Workspace: Identifiable, ObservableObject {
         }
     }
 
+    /// C11-104 — write the resolved worktree+branch chip context for a
+    /// panel. Nil means "not a git directory"; we still write the nil
+    /// entry so the sidebar can render the absence (no chips) instead
+    /// of a stale prior value.
+    func updatePanelGitContext(panelId: UUID, context: ResolvedGitContext?) {
+        // Flatten the subscript's outer optional so "missing key" and
+        // "key present with nil value" compare identically.
+        let prior: ResolvedGitContext? = panelGitContexts[panelId] ?? nil
+        if prior == context { return }
+        panelGitContexts[panelId] = context
+    }
+
+    func clearPanelGitContext(panelId: UUID) {
+        panelGitContexts.removeValue(forKey: panelId)
+    }
+
     func updatePanelPullRequest(
         panelId: UUID,
         number: Int,
@@ -6292,6 +6609,7 @@ final class Workspace: Identifiable, ObservableObject {
         progress = nil
         gitBranch = nil
         panelGitBranches.removeAll()
+        panelGitContexts.removeAll()
         pullRequest = nil
         panelPullRequests.removeAll()
         surfaceListeningPorts.removeAll()
@@ -6644,8 +6962,14 @@ final class Workspace: Identifiable, ObservableObject {
             let persistedSources = panelSnapshot.metadataSources ?? [:]
             let newPanelId = oldToNewPanelIds[panelSnapshot.id] ?? panelSnapshot.id
             guard panels[newPanelId] != nil else { continue }
-            let values = PersistedMetadataBridge.decodeValues(persistedValues)
-            let sources = PersistedMetadataBridge.decodeSources(persistedSources)
+            var values = PersistedMetadataBridge.decodeValues(persistedValues)
+            var sources = PersistedMetadataBridge.decodeSources(persistedSources)
+            // CMUX-10: persistent-flash timers are process-local and never
+            // survive a restart. Drop any persisted `flash_state` entry on
+            // restore so external agents reading `surface.get_metadata`
+            // do not see an attention state with no live timer behind it.
+            values.removeValue(forKey: FlashState.metadataKey)
+            sources.removeValue(forKey: FlashState.metadataKey)
             SurfaceMetadataStore.shared.restoreFromSnapshot(
                 workspaceId: id,
                 surfaceId: newPanelId,
@@ -6712,9 +7036,11 @@ final class Workspace: Identifiable, ObservableObject {
         panelDirectories = panelDirectories.filter { validSurfaceIds.contains($0.key) }
         panelTitles = panelTitles.filter { validSurfaceIds.contains($0.key) }
         panelCustomTitles = panelCustomTitles.filter { validSurfaceIds.contains($0.key) }
+        panelCustomColors = panelCustomColors.filter { validSurfaceIds.contains($0.key) }
         pinnedPanelIds = pinnedPanelIds.filter { validSurfaceIds.contains($0) }
         manualUnreadPanelIds = manualUnreadPanelIds.filter { validSurfaceIds.contains($0) }
         panelGitBranches = panelGitBranches.filter { validSurfaceIds.contains($0.key) }
+        panelGitContexts = panelGitContexts.filter { validSurfaceIds.contains($0.key) }
         manualUnreadMarkedAt = manualUnreadMarkedAt.filter { validSurfaceIds.contains($0.key) }
         surfaceListeningPorts = surfaceListeningPorts.filter { validSurfaceIds.contains($0.key) }
         surfaceTTYNames = surfaceTTYNames.filter { validSurfaceIds.contains($0.key) }
@@ -6767,21 +7093,13 @@ final class Workspace: Identifiable, ObservableObject {
         sidebarGitBranchesInDisplayOrder(orderedPanelIds: sidebarOrderedPanelIds())
     }
 
-    func sidebarBranchDirectoryEntriesInDisplayOrder(
-        orderedPanelIds: [UUID]
-    ) -> [SidebarBranchOrdering.BranchDirectoryEntry] {
-        SidebarBranchOrdering.orderedUniqueBranchDirectoryEntries(
-            orderedPanelIds: orderedPanelIds,
-            panelBranches: panelGitBranches,
-            panelDirectories: panelDirectories,
-            defaultDirectory: currentDirectory,
-            fallbackBranch: gitBranch
-        )
-    }
-
-    func sidebarBranchDirectoryEntriesInDisplayOrder() -> [SidebarBranchOrdering.BranchDirectoryEntry] {
-        sidebarBranchDirectoryEntriesInDisplayOrder(orderedPanelIds: sidebarOrderedPanelIds())
-    }
+    // (C11-106) `sidebarBranchDirectoryEntriesInDisplayOrder` (both
+    // overloads) was retired here. AC24 (C11-104) replaced the legacy
+    // text branch+directory sidebar row with the worktree+branch chip
+    // row; no production caller for these helpers survived. See the
+    // dead-code-cleanup commit on this branch for the safety protocol
+    // (grep → compile both `c11-logic` and `c11-unit` schemes → audit
+    // snapshot-restore + persistence migration paths).
 
     func sidebarPullRequestsInDisplayOrder(orderedPanelIds: [UUID]) -> [SidebarPullRequestState] {
         let validPanelPullRequests = panelPullRequests.filter { panelId, state in
@@ -7531,7 +7849,23 @@ final class Workspace: Identifiable, ObservableObject {
         return command
     }
 
+    /// C11-14: cwd to feed the agent resolver for project `.c11/agents.json`
+    /// discovery. Falls back through focused panel → workspace currentDirectory
+    /// → process cwd so something is always available to walk upward from.
+    func resolverCwdForAgentLaunch() -> String {
+        if let panel = focusedTerminalPanel, !panel.directory.isEmpty {
+            return panel.directory
+        }
+        let dir = currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !dir.isEmpty { return dir }
+        return FileManager.default.currentDirectoryPath
+    }
+
     /// Create a new browser panel split
+    /// - Parameter pendingHibernate: C11-25 fix S4+E1. When `true`, the
+    ///   panel is constructed natively in `.hibernated` and the initial
+    ///   URL navigate is suppressed. Used by `c11 restore` when the plan
+    ///   declares `lifecycle_state == "hibernated"` for the surface.
     @discardableResult
     func newBrowserSplit(
         from panelId: UUID,
@@ -7539,7 +7873,8 @@ final class Workspace: Identifiable, ObservableObject {
         insertFirst: Bool = false,
         url: URL? = nil,
         preferredProfileID: UUID? = nil,
-        focus: Bool = true
+        focus: Bool = true,
+        pendingHibernate: Bool = false
     ) -> BrowserPanel? {
         guard let paneId = paneIdForPanel(panelId) else { return nil }
 
@@ -7553,7 +7888,8 @@ final class Workspace: Identifiable, ObservableObject {
             initialURL: url,
             proxyEndpoint: remoteProxyEndpoint,
             isRemoteWorkspace: isRemoteWorkspace,
-            remoteWebsiteDataStoreIdentifier: isRemoteWorkspace ? id : nil
+            remoteWebsiteDataStoreIdentifier: isRemoteWorkspace ? id : nil,
+            pendingHibernate: pendingHibernate
         )
         panels[browserPanel.id] = browserPanel
         panelTitles[browserPanel.id] = browserPanel.displayTitle
@@ -7608,6 +7944,10 @@ final class Workspace: Identifiable, ObservableObject {
     /// - Parameter focus: nil = focus only if the target pane is already focused (default UI behavior),
     ///                    true = force focus/selection of the new surface,
     ///                    false = never focus (used for internal placeholder repair paths).
+    /// - Parameter pendingHibernate: C11-25 fix S4+E1. When `true`, the
+    ///   panel is constructed natively in `.hibernated` and the initial
+    ///   URL navigate is suppressed. Used by `c11 restore` when the plan
+    ///   declares `lifecycle_state == "hibernated"` for the surface.
     @discardableResult
     func newBrowserSurface(
         inPane paneId: PaneID,
@@ -7616,7 +7956,8 @@ final class Workspace: Identifiable, ObservableObject {
         insertAtEnd: Bool = false,
         preferredProfileID: UUID? = nil,
         bypassInsecureHTTPHostOnce: String? = nil,
-        panelId: UUID? = nil
+        panelId: UUID? = nil,
+        pendingHibernate: Bool = false
     ) -> BrowserPanel? {
         let shouldFocusNewTab = focus ?? (bonsplitController.focusedPaneId == paneId)
         let sourcePanelId = effectiveSelectedPanelId(inPane: paneId)
@@ -7634,7 +7975,8 @@ final class Workspace: Identifiable, ObservableObject {
             bypassInsecureHTTPHostOnce: bypassInsecureHTTPHostOnce,
             proxyEndpoint: remoteProxyEndpoint,
             isRemoteWorkspace: isRemoteWorkspace,
-            remoteWebsiteDataStoreIdentifier: isRemoteWorkspace ? id : nil
+            remoteWebsiteDataStoreIdentifier: isRemoteWorkspace ? id : nil,
+            pendingHibernate: pendingHibernate
         )
         panels[browserPanel.id] = browserPanel
         panelTitles[browserPanel.id] = browserPanel.displayTitle
@@ -7792,6 +8134,14 @@ final class Workspace: Identifiable, ObservableObject {
         paneInteractionRuntime.clearAll()
         paneCloseInteractionRuntime.clearAll()
         paneCloseOverlayController.cleanup()
+        workspaceCloseInteractionRuntime.clear()
+        workspaceCloseOverlayController.cleanup()
+
+        // CMUX-10: cancel every persistent-flash timer + manifest entry so
+        // teardown does not leak repeating timers or stale `flash_state`
+        // metadata. Must precede `panels.removeAll` since the cancel path
+        // is keyed on panel id.
+        cancelAllPersistentFlashes()
 
         let panelEntries = Array(panels)
         for (panelId, panel) in panelEntries {
@@ -8281,6 +8631,11 @@ final class Workspace: Identifiable, ObservableObject {
         if let customTitle = detached.customTitle {
             panelCustomTitles[detached.panelId] = customTitle
         }
+        if let customColor = detached.customColor {
+            panelCustomColors[detached.panelId] = customColor
+        } else {
+            panelCustomColors.removeValue(forKey: detached.panelId)
+        }
         if detached.isPinned {
             pinnedPanelIds.insert(detached.panelId)
         } else {
@@ -8303,12 +8658,14 @@ final class Workspace: Identifiable, ObservableObject {
             isDirty: detached.panel.isDirty,
             isLoading: detached.isLoading,
             isPinned: detached.isPinned,
+            customColorHex: detached.customColor,
             inPane: paneId
         ) else {
             panels.removeValue(forKey: detached.panelId)
             panelDirectories.removeValue(forKey: detached.panelId)
             panelTitles.removeValue(forKey: detached.panelId)
             panelCustomTitles.removeValue(forKey: detached.panelId)
+            panelCustomColors.removeValue(forKey: detached.panelId)
             pinnedPanelIds.remove(detached.panelId)
             manualUnreadPanelIds.remove(detached.panelId)
             manualUnreadMarkedAt.removeValue(forKey: detached.panelId)
@@ -8687,13 +9044,188 @@ final class Workspace: Identifiable, ObservableObject {
                 shortcuts[contextAction] = KeyboardShortcut(key, modifiers: stored.eventModifiers)
             }
         }
+        // C11-26: ⌘W routes through AppDelegate's keyDown handler, not a
+        // SwiftUI .keyboardShortcut on a Button. Surface the hint in the
+        // context menu anyway so the gesture is discoverable. Hardcoded
+        // because there's no KeyboardShortcutSettings.Action for it.
+        shortcuts[.closeTab] = KeyboardShortcut("w", modifiers: .command)
         return shortcuts
+    }
+
+    /// Snapshot of the workspace tab color palette mapped into the Bonsplit
+    /// menu shape. Built once at workspace init; the user-defaults-backed
+    /// palette can grow during a session, but we accept the slight staleness
+    /// here in exchange for not adding a defaults observer in slice 4. A
+    /// follow-up can refresh this on UserDefaults change if needed.
+    static func bonsplitTabColorPalette() -> [BonsplitTabColorMenuItem] {
+        WorkspaceTabColorSettings.palette().map { entry in
+            BonsplitTabColorMenuItem(
+                id: entry.id,
+                label: entry.name,
+                hex: entry.hex
+            )
+        }
     }
 
     // MARK: - Flash/Notification Support
 
+    /// CMUX-10: typed values for the `flash_state` surface-manifest key.
+    /// The JSON wire format stays a plain string ("persistent"), so existing
+    /// socket clients (CLI, Python e2e, agent polling) keep working unchanged.
+    /// The enum exists only to narrow the in-process write/read sites so a
+    /// future second state value cannot drift across call sites as a typo.
+    enum FlashState: String {
+        case persistent
+
+        /// Manifest key under which the value is written. Centralized here so
+        /// the start, cancel, and session-restore paths all reference the
+        /// same constant instead of repeating the literal.
+        static let metadataKey = "flash_state"
+    }
+
+    /// Single fan-out for a focus flash. Drives, in order:
+    ///   (a) the targeted panel's pane-content flash (existing behavior),
+    ///   (b) the Bonsplit tab strip — scrolls the matching tab into view and
+    ///       plays a brief pulse on it (visual-only; selection is unchanged),
+    ///   (c) the sidebar workspace row — gentle accent pulse so the operator
+    ///       can locate the workspace at a glance even when viewing another.
+    /// Gated on `NotificationPaneFlashSettings` so disabling the user-facing
+    /// "Pane Flash" toggle silences all three channels consistently.
     func triggerFocusFlash(panelId: UUID) {
-        panels[panelId]?.triggerFlash()
+        triggerFocusFlash(panelId: panelId, appearance: FlashAppearance.current(envelope: .paneRing))
+    }
+
+    /// CMUX-10: variant that threads a per-call appearance (color override
+    /// from the CLI / socket) through to the pane and sidebar render paths.
+    /// Bonsplit's `flashTab` does not accept a color callback, so the tab-
+    /// strip pulse stays on the bonsplit-internal accent and is intentionally
+    /// not retinted here.
+    func triggerFocusFlash(panelId: UUID, appearance: FlashAppearance, persistent: Bool = false) {
+        guard NotificationPaneFlashSettings.isEnabled() else { return }
+
+        // CMUX-10: persistent on the focused surface in the focused window
+        // degrades to a one-shot. Persistence is "look at this when you
+        // eventually look back" — meaningless when the operator is already
+        // looking. The color override is still honored.
+        if persistent && isFocusedTargetForPersistentFlash(panelId: panelId) {
+            runFlashPulse(panelId: panelId, appearance: appearance)
+            return
+        }
+
+        runFlashPulse(panelId: panelId, appearance: appearance)
+
+        guard persistent else { return }
+
+        // Replace any existing timer for this panel before installing a new one,
+        // so back-to-back persistent triggers don't leak timers.
+        if let existing = persistentFlashPanels[panelId] {
+            existing.timer.invalidate()
+        }
+
+        let interval = appearance.envelope.duration + 0.6
+        let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                guard var state = self.persistentFlashPanels[panelId] else { return }
+                let now = Date()
+                let lastEmittedAt = state.lastBreadcrumbAt ?? state.startedAt
+                if state.lastBreadcrumbAt == nil || now.timeIntervalSince(lastEmittedAt) >= 60 {
+                    sentryBreadcrumb("flash.persistent.tick", category: "flash", data: [
+                        "panelId": panelId.uuidString,
+                        "seconds_active": Int(now.timeIntervalSince(state.startedAt)),
+                        "seconds_since_last_tick_breadcrumb": Int(now.timeIntervalSince(lastEmittedAt)),
+                        "app_active": NSApp?.isActive ?? false
+                    ])
+                    state.lastBreadcrumbAt = now
+                    self.persistentFlashPanels[panelId] = state
+                }
+                self.runFlashPulse(panelId: panelId, appearance: appearance)
+            }
+        }
+        persistentFlashPanels[panelId] = PersistentFlashState(
+            appearance: appearance,
+            timer: timer,
+            startedAt: Date(),
+            lastBreadcrumbAt: nil
+        )
+
+        // Manifest overlay: write once on start so external agents asking
+        // "is this surface still calling for attention?" can find out via
+        // get-metadata without subscribing to per-frame state. Failure is
+        // non-fatal (the timer still drives the visual pulse) but the
+        // manifest contract is briefly out of sync, so log instead of
+        // silently swallowing.
+        do {
+            try SurfaceMetadataStore.shared.setMetadata(
+                workspaceId: id,
+                surfaceId: panelId,
+                partial: [FlashState.metadataKey: FlashState.persistent.rawValue],
+                mode: .merge,
+                source: .declare
+            )
+        } catch {
+#if DEBUG
+            dlog("flash.manifest.set workspace=\(id.uuidString.prefix(8)) panel=\(panelId.uuidString.prefix(8)) error=\(error)")
+#endif
+        }
+    }
+
+    /// CMUX-10: clear a persistent flash on a single panel. Idempotent —
+    /// safe to call from click-to-dismiss handlers without checking state.
+    func cancelPersistentFlash(panelId: UUID) {
+        guard let state = persistentFlashPanels.removeValue(forKey: panelId) else { return }
+        state.timer.invalidate()
+        do {
+            try SurfaceMetadataStore.shared.clearMetadata(
+                workspaceId: id,
+                surfaceId: panelId,
+                keys: [FlashState.metadataKey],
+                source: .declare
+            )
+        } catch {
+#if DEBUG
+            dlog("flash.manifest.clear workspace=\(id.uuidString.prefix(8)) panel=\(panelId.uuidString.prefix(8)) error=\(error)")
+#endif
+        }
+    }
+
+    /// CMUX-10: clear all persistent flashes on this workspace. Used by the
+    /// sidebar-row tap-to-dismiss path so clicking a workspace clears any
+    /// pending persistent flashes inside it.
+    func cancelAllPersistentFlashes() {
+        guard !persistentFlashPanels.isEmpty else { return }
+        let panelIds = Array(persistentFlashPanels.keys)
+        for panelId in panelIds {
+            cancelPersistentFlash(panelId: panelId)
+        }
+    }
+
+    /// CMUX-10: shared fan-out used by both one-shot and persistent flash
+    /// pulses. Stays small to keep pulse-firing predictable; lifecycle and
+    /// timer management live in `triggerFocusFlash` / `cancelPersistentFlash`.
+    private func runFlashPulse(panelId: UUID, appearance: FlashAppearance) {
+        panels[panelId]?.triggerFlash(appearance: appearance)
+        if let tabId = surfaceIdFromPanelId(panelId) {
+            bonsplitController.flashTab(tabId)
+        }
+        // CMUX-10: thread the per-call appearance into the sidebar pulse so
+        // `--color` tints the workspace row, not just the terminal pane ring.
+        // Stored as a hex string so `TabItemView.==` can fold it in without
+        // tripping NSColor reference equality.
+        sidebarFlashColorHex = appearance.color.hexString(includeAlpha: true)
+        sidebarFlashToken &+= 1
+    }
+
+    /// CMUX-10: true when a persistent-flash request would target the panel
+    /// the operator is already looking at — i.e. this workspace is selected,
+    /// the panel is the focused panel, and the focused window owns the app.
+    /// Used to degrade `--persistent` to a one-shot pulse in that case.
+    private func isFocusedTargetForPersistentFlash(panelId: UUID) -> Bool {
+        guard let tabManager = AppDelegate.shared?.tabManager else { return false }
+        guard tabManager.selectedTabId == self.id else { return false }
+        guard self.focusedPanelId == panelId else { return false }
+        guard NSApp.isActive else { return false }
+        return true
     }
 
     func triggerNotificationFocusFlash(
@@ -8701,7 +9233,7 @@ final class Workspace: Identifiable, ObservableObject {
         requiresSplit: Bool = false,
         shouldFocus: Bool = true
     ) {
-        guard let terminalPanel = terminalPanel(for: panelId) else { return }
+        guard terminalPanel(for: panelId) != nil else { return }
         if shouldFocus {
             focusPanel(panelId)
         }
@@ -8709,7 +9241,7 @@ final class Workspace: Identifiable, ObservableObject {
         if requiresSplit && !isSplit {
             return
         }
-        terminalPanel.triggerFlash()
+        triggerFocusFlash(panelId: panelId)
     }
 
     func triggerDebugFlash(panelId: UUID) {
@@ -9041,8 +9573,14 @@ final class Workspace: Identifiable, ObservableObject {
         guard layoutFollowUpTimeoutWorkItem != nil, !isAttemptingLayoutFollowUp else { return }
         isAttemptingLayoutFollowUp = true
         defer { isAttemptingLayoutFollowUp = false }
+#if DEBUG
+        let attemptStart = CACurrentMediaTime()
+#endif
 
         flushWorkspaceWindowLayouts()
+#if DEBUG
+        let postFlushMs = (CACurrentMediaTime() - attemptStart) * 1000
+#endif
 
         let geometryPendingBefore = layoutFollowUpNeedsGeometryPass
         let terminalPortalPendingBefore = terminalPortalVisibilityNeedsFollowUp()
@@ -9140,24 +9678,39 @@ final class Workspace: Identifiable, ObservableObject {
         } else {
             layoutFollowUpStalledAttemptCount += 1
         }
+#if DEBUG
+        let totalMs = (CACurrentMediaTime() - attemptStart) * 1000
+        dlog(
+            "ws.layoutFollowUp.attempt workspace=\(id.uuidString.prefix(5)) " +
+            "totalMs=\(String(format: "%.2f", totalMs)) " +
+            "flushMs=\(String(format: "%.2f", postFlushMs)) " +
+            "didMakeProgress=\(didMakeProgress ? 1 : 0) needsMoreWork=\(needsMoreWork ? 1 : 0) " +
+            "stalled=\(layoutFollowUpStalledAttemptCount) reason=\(layoutFollowUpReason ?? "nil")"
+        )
+#endif
     }
 
     /// Reconcile remaining terminal view geometries after split topology changes.
     /// This keeps AppKit bounds and Ghostty surface sizes in sync in the next runloop turn.
     private func reconcileTerminalGeometryPass() -> Bool {
         var needsFollowUpPass = false
+#if DEBUG
+        let passStart = CACurrentMediaTime()
+        var refreshedCount = 0
+        var skippedCount = 0
+#endif
 
-        // Flush pending AppKit layout first so terminal-host bounds reflect latest split topology.
-        for window in NSApp.windows {
-            window.contentView?.layoutSubtreeIfNeeded()
-        }
+        // `attemptEventDrivenLayoutFollowUp` already flushes all window layouts via
+        // `flushWorkspaceWindowLayouts()` before invoking this pass, so we do not re-flush
+        // here. Phase 3 — removing the duplicate `layoutSubtreeIfNeeded` loop saves a
+        // full-window layout pass on every reconcile attempt.
 
         for panel in panels.values {
             guard let terminalPanel = panel as? TerminalPanel else { continue }
             let hostedView = terminalPanel.hostedView
             let hasUsableBounds = hostedView.bounds.width > 1 && hostedView.bounds.height > 1
             let hasSurface = terminalPanel.surface.surface != nil
-            let isAttached = hostedView.window != nil && hostedView.superview != nil
+            let isAttached = terminalPanel.surface.isViewInWindow && hostedView.superview != nil
 
             // Split close/reparent churn can transiently detach a surviving terminal view.
             // Force one SwiftUI representable update so the portal binding reattaches it.
@@ -9169,14 +9722,35 @@ final class Workspace: Identifiable, ObservableObject {
             hostedView.reconcileGeometryNow()
             // Re-check surface after reconcileGeometryNow() which can trigger AppKit
             // layout and view lifecycle changes that free surfaces (#432).
-            if terminalPanel.surface.surface != nil {
+            //
+            // Phase 3 — only refresh when the surface is actually attachable. The
+            // `forceRefresh()` body already early-returns on detached / zero-bounds
+            // views, but skipping the call entirely avoids the per-panel dlog
+            // emission and the entry into the Ghostty C bridge during the cascade
+            // of follow-up passes that fire on every workspace switch.
+            if terminalPanel.surface.surface != nil, isAttached, hasUsableBounds {
                 terminalPanel.surface.forceRefresh()
+#if DEBUG
+                refreshedCount += 1
+#endif
+            } else {
+#if DEBUG
+                skippedCount += 1
+#endif
             }
             if terminalPanel.surface.surface == nil, isAttached && hasUsableBounds {
                 terminalPanel.surface.requestBackgroundSurfaceStartIfNeeded()
                 needsFollowUpPass = true
             }
         }
+#if DEBUG
+        let passMs = (CACurrentMediaTime() - passStart) * 1000
+        dlog(
+            "ws.geometryReconcile.pass workspace=\(id.uuidString.prefix(5)) " +
+            "ms=\(String(format: "%.2f", passMs)) refreshed=\(refreshedCount) skipped=\(skippedCount) " +
+            "needsFollowUp=\(needsFollowUpPass ? 1 : 0)"
+        )
+#endif
 
         return needsFollowUpPass
     }
@@ -9247,7 +9821,7 @@ final class Workspace: Identifiable, ObservableObject {
             let hostedView = terminalPanel.hostedView
 
             if shouldBeVisible {
-                if hostedView.isHidden || hostedView.window == nil || hostedView.superview == nil {
+                if hostedView.isHidden || !terminalPanel.surface.isViewInWindow || hostedView.superview == nil {
                     return true
                 }
             } else if !hostedView.isHidden {
@@ -9738,6 +10312,48 @@ extension Workspace: BonsplitDelegate {
         }
     }
 
+    /// Present the workspace-scoped close confirmation overlay and await the
+    /// user's decision. Returns `true` only on explicit accept — `.cancelled`
+    /// and `.dismissed` both map to `false` so callers don't fire teardown on
+    /// a workspace whose state may have drifted (e.g. closed mid-prompt).
+    ///
+    /// The overlay is anchored on this workspace's content area (sidebar
+    /// stays visible). At most one workspace-close interaction can be active
+    /// per workspace; re-presenting while one is live dismisses the existing
+    /// one with `.dismissed`.
+    @MainActor
+    func presentConfirmCloseWorkspace(
+        title: String,
+        message: String,
+        source: InteractionSource,
+        dedupeToken: String? = nil
+    ) async -> Bool {
+        await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+            let content = ConfirmContent(
+                title: title,
+                message: message.isEmpty ? nil : message,
+                confirmLabel: String(
+                    localized: "dialog.closeWorkspace.confirmButton",
+                    defaultValue: "Close Workspace"
+                ),
+                cancelLabel: String(
+                    localized: "dialog.pane.confirm.cancel",
+                    defaultValue: "Cancel"
+                ),
+                role: .destructive,
+                style: .standard,
+                source: source,
+                completion: { result in
+                    cont.resume(returning: result == .confirmed)
+                }
+            )
+            workspaceCloseInteractionRuntime.present(
+                content: content,
+                dedupeToken: dedupeToken
+            )
+        }
+    }
+
     /// Present a `.textInput` pane interaction on the given panel and await the
     /// user's submitted value. Returns `nil` if the user cancelled or the
     /// interaction was dismissed (panel torn down, workspace closed, etc.) so
@@ -10034,7 +10650,7 @@ extension Workspace: BonsplitDelegate {
 
     private func activationWindow(for panel: any Panel) -> NSWindow? {
         if let terminalPanel = panel as? TerminalPanel {
-            return terminalPanel.hostedView.window ?? NSApp.keyWindow ?? NSApp.mainWindow
+            return terminalPanel.surface.uiWindow ?? NSApp.keyWindow ?? NSApp.mainWindow
         }
         if let browserPanel = panel as? BrowserPanel {
             return browserPanel.webView.window ?? browserPanel.portalAnchorView.window ?? NSApp.keyWindow ?? NSApp.mainWindow
@@ -10219,6 +10835,16 @@ extension Workspace: BonsplitDelegate {
                     // If the tab disappeared while we were scheduling, do nothing.
                     guard self.panelIdFromSurfaceId(tabId) != nil else { return }
 
+                    // C11-117: clicking X on a background pane-tab anchors the
+                    // confirm overlay on a panel that isn't on-screen (the pane
+                    // only renders the selected tab's panel), so the operator
+                    // doesn't see the dialog until they manually click the tab.
+                    // Bring the tab to the front first so the overlay mounts
+                    // where the operator is looking.
+                    if self.bonsplitController.selectedTab(inPane: pane)?.id != tabId {
+                        self.bonsplitController.selectTab(tabId)
+                    }
+
                     let confirmed = await self.confirmClosePanel(for: tabId)
                     guard confirmed else { return }
 
@@ -10275,6 +10901,7 @@ extension Workspace: BonsplitDelegate {
                 directory: panelDirectories[panelId],
                 cachedTitle: cachedTitle,
                 customTitle: panelCustomTitles[panelId],
+                customColor: panelCustomColors[panelId],
                 manuallyUnread: manualUnreadPanelIds.contains(panelId)
             )
         } else {
@@ -10290,6 +10917,11 @@ extension Workspace: BonsplitDelegate {
         // still resolves against a consistent view.
         paneInteractionRuntime.clear(panelId: panelId)
 
+        // CMUX-10: clear any persistent-flash timer + manifest entry before
+        // removing the panel. Without this, the repeating timer keeps firing
+        // and increments `sidebarFlashToken` for a panel that no longer exists.
+        cancelPersistentFlash(panelId: panelId)
+
         panels.removeValue(forKey: panelId)
         untrackRemoteTerminalSurface(panelId)
         surfaceIdToPanelId.removeValue(forKey: tabId)
@@ -10298,6 +10930,7 @@ extension Workspace: BonsplitDelegate {
         panelPullRequests.removeValue(forKey: panelId)
         panelTitles.removeValue(forKey: panelId)
         panelCustomTitles.removeValue(forKey: panelId)
+        panelCustomColors.removeValue(forKey: panelId)
         pinnedPanelIds.remove(panelId)
         manualUnreadPanelIds.remove(panelId)
         manualUnreadMarkedAt.removeValue(forKey: panelId)
@@ -10442,6 +11075,20 @@ extension Workspace: BonsplitDelegate {
         // pane-close confirmation that survived the close path) so its
         // continuation resolves with .dismissed instead of leaking.
         paneCloseInteractionRuntime.clear(panelId: paneId.id)
+        // Authoritative anchor cleanup for the close-pane overlay. AnchorView
+        // dismantleNSView deliberately does NOT remove the anchor (SwiftUI
+        // dismantles transient AnchorViews during sibling re-layout, and
+        // removing on every dismantle orphans surviving panes). This is the
+        // one place where we know the pane is actually gone.
+        paneCloseOverlayController.removeAnchor(paneIdentity: paneId.id)
+        // After Bonsplit removes a pane, surviving siblings get reflowed into
+        // their new positions but the existing reportFrame paths (SwiftUI
+        // updateNSView, AppKit viewDidMoveToWindow) all fire DURING the
+        // reflow and capture transient/half-applied coordinates. Without
+        // this nudge the controller's anchors map stays stale and the
+        // confirmation overlay mounts at the wrong pane position. Triggers
+        // twice (next tick + ~60ms) to cover multi-pass layouts.
+        paneCloseOverlayController.refreshAllAnchorsAfterReflow()
 
         let closedPanelIds = pendingPaneClosePanelIds.removeValue(forKey: paneId.id) ?? []
         let shouldScheduleFocusReconcile = !isDetachingCloseTransaction
@@ -10453,6 +11100,10 @@ extension Workspace: BonsplitDelegate {
                 // with .dismissed. Matches the cleanup invariant in
                 // teardownAllPanels (synthesis-standard §1.1).
                 paneInteractionRuntime.clear(panelId: panelId)
+                // CMUX-10: drop any persistent-flash timer + manifest entry
+                // before the panel disappears. Same invariant as the
+                // single-panel close path above.
+                cancelPersistentFlash(panelId: panelId)
                 panels[panelId]?.close()
                 panels.removeValue(forKey: panelId)
                 untrackRemoteTerminalSurface(panelId)
@@ -10461,6 +11112,7 @@ extension Workspace: BonsplitDelegate {
                 panelPullRequests.removeValue(forKey: panelId)
                 panelTitles.removeValue(forKey: panelId)
                 panelCustomTitles.removeValue(forKey: panelId)
+                panelCustomColors.removeValue(forKey: panelId)
                 pinnedPanelIds.remove(panelId)
                 manualUnreadPanelIds.remove(panelId)
                 panelSubscriptions.removeValue(forKey: panelId)
@@ -10718,35 +11370,53 @@ extension Workspace: BonsplitDelegate {
         }
     }
 
-    /// Create a new terminal and immediately send the configured agent launcher
+    /// Create a new terminal and immediately send the configured agent launch
     /// command. Uses the same "queue sendText before ready, flush on ready"
     /// pattern as the welcome workspace.
-    private func launchAgentSurface(inPane pane: PaneID) {
-        guard let panel = newTerminalSurface(inPane: pane) else { return }
-        let command = AgentLauncherSettings.current().shellCommand
-        guard !command.isEmpty else { return }
-        panel.sendText(command + "\n")
+    ///
+    /// `explicitAgent` lets the caller override the configured default —
+    /// used by the right-click menu's "launch this one now" affordance and
+    /// the `c11 default-agent launch --agent <type>` socket command.
+    func launchAgentSurface(inPane pane: PaneID, explicitAgent: AgentType? = nil) {
+        let userDefault = DefaultAgentConfigStore.shared.current
+        let projectConfig = DefaultAgentProjectConfig.find(from: resolverCwdForAgentLaunch())
+        let resolved = DefaultAgentResolver.resolve(
+            explicitAgent: explicitAgent,
+            userDefault: userDefault,
+            projectConfig: projectConfig
+        )
+        guard !resolved.launch.command.isEmpty else { return }
+        guard let panel = newTerminalSurface(
+            inPane: pane,
+            startupEnvironment: resolved.launch.envOverrides
+        ) else { return }
+        // The launch command goes to bash; for claude-code the initial prompt
+        // is already baked in as a positional arg by the resolver. Other
+        // agents preserve the prompt in their config but don't auto-deliver
+        // (different TUI input contracts; per-agent post-ready delivery is
+        // a follow-up).
+        panel.sendText(resolved.launch.command + "\n")
     }
 
     func splitTabBar(_ controller: BonsplitController, menuItemsForNewTabKind kind: String, inPane pane: PaneID) -> [BonsplitNewTabMenuItem] {
         guard kind == "agent" else { return [] }
-        let current = AgentLauncherSettings.current().kind
-        return AgentLauncherSettings.Kind.allCases.map { k in
+        let current = DefaultAgentConfigStore.shared.current.defaultAgent
+        return AgentType.allCases.map { type in
             BonsplitNewTabMenuItem(
-                id: k.rawValue,
-                label: k.displayName,
-                isCurrent: k == current
+                id: type.rawValue,
+                label: type.displayName,
+                isCurrent: type == current
             )
         }
     }
 
     func splitTabBar(_ controller: BonsplitController, didSelectNewTabMenuItem itemId: String, forKind kind: String, inPane pane: PaneID) {
         guard kind == "agent",
-              let chosen = AgentLauncherSettings.Kind(rawValue: itemId) else { return }
+              let chosen = AgentType(rawValue: itemId) else { return }
         // Update the default only; the next left-click on A spawns the chosen
         // agent. Launching here would contradict right-click semantics (a
         // preference gesture, not an action gesture).
-        UserDefaults.standard.set(chosen.rawValue, forKey: AgentLauncherSettings.kindKey)
+        DefaultAgentConfigStore.shared.setDefaultAgent(chosen)
         refreshSplitButtonTooltips()
     }
 
@@ -10805,6 +11475,14 @@ extension Workspace: BonsplitDelegate {
                 _ = self.newTerminalSurface(inPane: pane)
             } else {
                 guard self.bonsplitController.allPaneIds.contains(pane) else { return }
+                // Pre-load forceCloseTabIds so Bonsplit's shouldClosePane veto
+                // (which fires when any terminal in the pane is busy / not at
+                // an idle prompt) doesn't silently swallow the close after the
+                // user already confirmed the pane-level action. Mirrors the
+                // isOnlyPane branch above.
+                for tab in self.bonsplitController.tabs(inPane: pane) {
+                    self.forceCloseTabIds.insert(tab.id)
+                }
                 _ = self.bonsplitController.closePane(pane)
             }
         }
@@ -10912,6 +11590,18 @@ extension Workspace: BonsplitDelegate {
         case .clearName:
             guard let panelId = panelIdFromSurfaceId(tab.id) else { return }
             setPanelCustomTitle(panelId: panelId, title: nil)
+        case .closeTab:
+            // Route through the same path as clicking the close X so the
+            // shouldCloseTab gate (pin protection, dirty-confirm dialog,
+            // workspace-on-last-surface routing) runs identically.
+            markExplicitClose(surfaceId: tab.id)
+            _ = controller.closeTab(tab.id, inPane: pane)
+        case .closePane:
+            // Reuse the existing pane-close confirmation flow (same as
+            // clicking the trailing-toolbar X on the tab bar). Handles the
+            // only-pane-in-workspace degenerate case via "Reset entire pane?"
+            // — the pane is reset with a fresh terminal rather than torn down.
+            splitTabBar(controller, didRequestClosePane: pane)
         case .closeToLeft:
             closeTabs(tabIdsToLeft(of: tab.id, inPane: pane))
         case .closeToRight:
@@ -10943,9 +11633,78 @@ extension Workspace: BonsplitDelegate {
         case .toggleZoom:
             guard let panelId = panelIdFromSurfaceId(tab.id) else { return }
             toggleSplitZoom(panelId: panelId)
+        case .clearColor:
+            guard let panelId = panelIdFromSurfaceId(tab.id) else { return }
+            setPanelCustomColor(panelId: panelId, color: nil)
+        case .chooseCustomColor:
+            guard let panelId = panelIdFromSurfaceId(tab.id) else { return }
+            promptCustomTabColor(panelId: panelId)
         @unknown default:
             break
         }
+    }
+
+    func splitTabBar(_ controller: BonsplitController, didSelectTabColorPaletteEntry hex: String, for tab: Bonsplit.Tab, inPane pane: PaneID) {
+        guard let panelId = panelIdFromSurfaceId(tab.id) else { return }
+        setPanelCustomColor(panelId: panelId, color: hex)
+    }
+
+    private func promptCustomTabColor(panelId: UUID) {
+        let seed = panelCustomColors[panelId] ?? "#1565C0"
+        let alert = NSAlert()
+        alert.messageText = String(
+            localized: "alert.tabColor.title",
+            defaultValue: "Custom Tab Color"
+        )
+        alert.informativeText = String(
+            localized: "alert.tabColor.message",
+            defaultValue: "Enter a hex color in the format #RRGGBB."
+        )
+
+        let input = NSTextField(string: seed)
+        input.placeholderString = "#1565C0"
+        input.frame = NSRect(x: 0, y: 0, width: 240, height: 22)
+        alert.accessoryView = input
+        alert.addButton(withTitle: String(
+            localized: "alert.tabColor.apply",
+            defaultValue: "Apply"
+        ))
+        alert.addButton(withTitle: String(
+            localized: "alert.tabColor.cancel",
+            defaultValue: "Cancel"
+        ))
+
+        let alertWindow = alert.window
+        alertWindow.initialFirstResponder = input
+        DispatchQueue.main.async {
+            alertWindow.makeFirstResponder(input)
+            input.selectText(nil)
+        }
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+        let raw = input.stringValue
+        guard let normalized = WorkspaceTabColorSettings.addCustomColor(raw) else {
+            // Reuse the existing invalid-color path; mirror messaging used by
+            // the workspace color flow so users see a consistent explanation.
+            let invalid = NSAlert()
+            invalid.alertStyle = .warning
+            invalid.messageText = String(
+                localized: "alert.invalidColor.title",
+                defaultValue: "Invalid Color"
+            )
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            invalid.informativeText = trimmed.isEmpty
+                ? String(localized: "alert.invalidColor.emptyMessage", defaultValue: "Enter a hex color in the format #RRGGBB.")
+                : String(localized: "alert.invalidColor.invalidMessage", defaultValue: "\"\(trimmed)\" is not a valid hex color. Use #RRGGBB.")
+            invalid.addButton(withTitle: String(localized: "alert.invalidColor.ok", defaultValue: "OK"))
+            _ = invalid.runModal()
+            return
+        }
+        setPanelCustomColor(panelId: panelId, color: normalized)
+        // Refresh the bonsplit palette so newly-added custom colors are
+        // immediately visible in subsequent submenu opens.
+        bonsplitController.tabColorPalette = Self.bonsplitTabColorPalette()
     }
 
     func splitTabBar(_ controller: BonsplitController, didChangeGeometry snapshot: LayoutSnapshot) {

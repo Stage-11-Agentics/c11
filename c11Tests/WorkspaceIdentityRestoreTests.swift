@@ -41,9 +41,15 @@ final class WorkspaceIdentityRestoreTests: XCTestCase {
         let manager = TabManager()
         let first = try XCTUnwrap(manager.selectedWorkspace)
         first.setCustomTitle("First")
-        let second = manager.addWorkspace(select: false)
+        // Force append-to-end placement so the test's index-based assertions on
+        // restored.tabs[1] / [2] don't depend on the operator's
+        // WorkspacePlacementSettings (which defaults to .afterCurrent — that
+        // inserts each new workspace right after the currently-selected one,
+        // making the second `addWorkspace(select: true)` push Second after
+        // Third).
+        let second = manager.addWorkspace(select: false, placementOverride: .end)
         second.setCustomTitle("Second")
-        let third = manager.addWorkspace(select: true)
+        let third = manager.addWorkspace(select: true, placementOverride: .end)
         third.setCustomTitle("Third")
 
         let orderedIds = manager.tabs.map(\.id)

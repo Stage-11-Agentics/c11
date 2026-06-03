@@ -1,0 +1,5 @@
+=== c11 health --rail ips --rail sentry (--rail duplicate) ===
+exit=1
+--- stdout ---
+--- stderr ---
+Error: c11 health: --rail may only be specified once

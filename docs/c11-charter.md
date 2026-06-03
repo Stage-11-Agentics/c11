@@ -33,7 +33,7 @@ This keeps c11's surface area small, its mutation cost low, and its identity cle
 
 ## Distribution posture
 
-- **Public fork, Stage 11 branded.** Lives on Stage 11's public GitHub, ships via homebrew tap (`stage11/c11mux` or similar).
+- **Public fork, Stage 11 branded.** Lives on Stage 11's public GitHub, ships via the `Stage-11-Agentics/homebrew-c11` tap.
 - **Credit upstream.** Top of README acknowledges manaflow-ai/cmux as the origin; we are an explicit fork.
 - **Regular upstream pulls.** Cadence TBD but not lazy — we want manaflow-ai's velocity on core terminal/browser work.
 - **Upstream our general-purpose wins when appropriate.** Not everything stays in the fork — features that would benefit all cmux users (e.g., richer socket API for pane metadata) are good candidates to contribute back.
@@ -88,7 +88,7 @@ Each pane's sidebar entry shows the detected-or-declared agent with a small icon
 ### 5. Stage 11 brand identity
 
 - Custom app icon aligned with the void/gold aesthetic from `company/brand/visual-aesthetic.md`.
-- Custom bundle name (`c11mux`, bundle ID `com.stage11.c11mux` — sibling agent is handling the rename mechanics).
+- Custom bundle name (`c11`, bundle ID `com.stage11.c11`).
 - Default color palette tuned for Stage 11 look. Users can still apply their own Ghostty terminal themes; the c11 default gives Stage 11 operators the intended look for free.
 
 ### 6. Markdown surface polish
@@ -131,7 +131,7 @@ Named so they're recoverable without having to re-derive them. None of these are
 
 ### Metadata delivery
 - Push/subscribe delivery for pane metadata changes (`pane.broadcast.changed` events). Ship only if consumer count grows beyond what pull-on-demand serves well.
-- Canonical JSON-broadcast writers shipped per TUI (wrappers/hooks that auto-populate canonical keys as each TUI runs). May not be needed if the integration installers from Module 4 handle this.
+- Canonical JSON-broadcast writers shipped per TUI (wrappers/hooks that auto-populate canonical keys as each TUI runs).
 
 ### Agent-to-agent coordination
 - Pane-to-pane structured messaging (not just keystroke injection) — an agent in one pane sends a typed message to another, discoverable by role/tag.
@@ -152,7 +152,7 @@ Named so they're recoverable without having to re-derive them. None of these are
 ## Open questions
 
 - **Upstream pull cadence.** Weekly? Biweekly? On-signal? Not decided.
-- **Homebrew tap name.** Probably `stage11/c11mux`; not confirmed.
+- **Homebrew tap name.** Shipped as `Stage-11-Agentics/homebrew-c11` (vendored as the `homebrew-c11` submodule).
 - **Integration installer UX.** Menubar item + CLI command is decided; the exact confirmation-diff UX is not.
 - **Branding specifics.** The Stage 11 visual aesthetic is canonical; the specific icon design and palette mapping for c11 are still open.
 

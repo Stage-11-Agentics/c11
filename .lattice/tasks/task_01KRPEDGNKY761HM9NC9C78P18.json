@@ -1,0 +1,46 @@
+{
+  "assigned_to": "agent:c11-26-impl",
+  "branch_links": [],
+  "comment_count": 2,
+  "complexity": null,
+  "created_at": "2026-05-15T18:29:41Z",
+  "created_by": "agent:claude-opus-4-7",
+  "custom_fields": {},
+  "description": "Make closing a tab trivial regardless of tab strip scroll position, title length, or how many vertical splits crowd the pane.\n\n## Problem\n\nThe current close affordance is an X anchored at the right edge of each tab. Two failure modes compound:\n\n1. **Hit-target collision at the pane boundary.** When the X sits flush against a pane separator (especially with vertical splits crowding the strip), it 'fades out behind the tab bar menu items' \u2014 clicks land on the separator/adjacent pane's toolbar instead of the X. Visible, but unclickable.\n2. **Scroll-dependent close.** Long titles push the X past the visible clip boundary. Reaching it requires horizontal scroll, which mouse-wheel-only users (single vertical axis) cannot perform.\n\nRepro: open enough tabs with long titles in a pane that's vertically split against another pane. Try to close a tab whose X visually sits at the pane boundary. Click does nothing.\n\n## Design (agreed)\n\n- **Close button:** anchor a small precise X on the **left** edge of each tab (~14\u201316px hit target). The rest of the tab remains the switch-to hit region. X visible at rest, not hover-only. This matches the native macOS Cocoa tab convention (Finder, Terminal.app, Notes) and structurally sidesteps the right-edge hit-collision bug \u2014 the left side of a tab has no adjacent controls.\n- **Title:** fills the remaining width and truncates with '\u2026' on the right when needed. The X is never the thing that gets clipped.\n- **Right-click context menu** \u2014 intentionally minimal, two items:\n  - Close Tab\n  - Close Panel\n  No 'Close Others' or 'Close to the Right'. Two clear concepts is better user education than four.\n- **Keyboard:** \u2318W closes the focused tab. Verify it's already wired; add if not.\n- **Tab strip overflow:** keep horizontal scroll as-is. With the left-anchored X, scroll is only ever for *finding* a tab, never for *closing* one.\n\n## Explicitly deferred / out of scope\n\n- Middle-click to close (deliberately not adding; revisit if users ask)\n- \u2318\u21e7W to close panel via keyboard (deliberately deferred)\n- Hover-reveal X (rejected \u2014 discoverability cost)\n- Overflow dropdown / tab compression (rejected \u2014 current scroll is fine once close is decoupled from layout)\n\n## Implementation notes / decisions to make at build time\n\n- **'Close Panel' degenerate case:** when the panel contains the only tab of the only pane, what does 'Close Panel' do? Close the window? Refuse? Collapse to neighbor? Worth a 30-second decision when implementing.\n- **Verify \u2318W:** check existing keyboard map before adding; this likely exists already and just needs documentation if so.\n- **X hit zone tuning:** target ~14\u201316px. The goal is 'has to be aimed for' so users clicking 'on' a tab to switch don't accidentally close it.\n\n## Context\n\nCaptured from a dialogue with @atin on 2026-05-15. Triggered by a real instance where the X next to 'Percepta Builds a\u2026' in a vertically-split pane was visible but unclickable.",
+  "done_at": "2026-05-15T23:28:32Z",
+  "evidence_refs": [
+    {
+      "id": "art_01KRPZFPHBN4W0G2G3JRTHW3BV",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01KRPZGQW60R04DBQ2HP47DPYJ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KRPZGQW60R04DBQ2HP47DPYH",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KRPEDGNKY761HM9NC9C78P18",
+  "last_event_id": "ev_01KRPZGQW60R04DBQ2HP47DPYM",
+  "last_status_changed_at": "2026-05-15T23:28:32Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-26",
+  "status": "done",
+  "tags": [
+    "ux",
+    "tabs"
+  ],
+  "title": "Tab close UX: anchor X on left, add right-click Close Tab / Close Panel",
+  "type": "task",
+  "updated_at": "2026-05-15T23:28:32Z",
+  "urgency": null
+}

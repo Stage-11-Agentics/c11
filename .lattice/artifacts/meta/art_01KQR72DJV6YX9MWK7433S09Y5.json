@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-04T00:44:04Z",
+  "created_by": "agent:opus-c11-6",
+  "custom_fields": {},
+  "id": "art_01KQR72DJV6YX9MWK7433S09Y5",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KQR72DJV6YX9MWK7433S09Y5.md",
+    "size_bytes": 17687
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "plan-review (claude)",
+  "token_usage": null,
+  "type": "file"
+}

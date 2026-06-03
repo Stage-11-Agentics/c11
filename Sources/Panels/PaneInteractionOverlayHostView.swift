@@ -45,9 +45,16 @@ struct PaneInteractionOverlayHostView: View {
         }
 
         static func dismantleNSView(_ nsView: AnchorView, coordinator: ()) {
-            if let id = nsView.paneIdentity {
-                nsView.controller?.removeAnchor(paneIdentity: id)
-            }
+            // Intentionally NOT calling removeAnchor here. SwiftUI dismantles
+            // AnchorViews during transient layout reconfigurations (e.g. the
+            // sibling subtree replacement that follows closing a neighbor
+            // pane), and the replacement AnchorView for the SAME paneId
+            // doesn't always re-reportFrame promptly afterward. Removing the
+            // anchor on every dismantle therefore orphans surviving panes
+            // until the user forces a resize. Authoritative cleanup lives in
+            // Workspace.splitTabBar(_:didClosePane:), which fires once per
+            // truly-removed pane. weak anchor.window also covers the case
+            // where the host NSWindow deallocates underneath us.
         }
     }
 
@@ -65,6 +72,12 @@ struct PaneInteractionOverlayHostView: View {
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
+            if window != nil {
+                // Register so the controller can ask us to re-poll our
+                // window-coord frame after a sibling-pane close reflow.
+                // The hash table is weak — no explicit unregister needed.
+                controller?.registerAnchorView(self)
+            }
             reportFrame()
         }
 
@@ -76,7 +89,17 @@ struct PaneInteractionOverlayHostView: View {
         func reportFrame() {
             guard let id = paneIdentity, let controller else { return }
             guard let window else {
-                controller.removeAnchor(paneIdentity: id)
+                // Transient detachment during SwiftUI split-tree reparenting
+                // can flip our window to nil for a single layout pass while
+                // the AppKit view is being moved between superviews. The
+                // re-attachment fires viewDidMoveToWindow / updateNSView and
+                // we'll reportFrame again with a valid window. Removing the
+                // anchor on every nil-window blip leaves surviving panes
+                // orphaned because subsequent layout passes can settle
+                // without touching this AnchorView. Authoritative cleanup
+                // happens in Workspace.splitTabBar(_:didClosePane:);
+                // weak anchor.window naturally goes nil when the host
+                // NSWindow deallocates.
                 return
             }
             let frameInWindow = convert(bounds, to: nil)

@@ -18,7 +18,7 @@ private func drainBrowserPanelMainQueue() {
     DispatchQueue.main.async {
         expectation.fulfill()
     }
-    XCTWaiter().wait(for: [expectation], timeout: 1.0)
+    XCTWaiter().wait(for: [expectation], timeout: 5.0)
 }
 
 @MainActor

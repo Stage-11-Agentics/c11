@@ -14,7 +14,7 @@ import XCTest
 /// Per `CLAUDE.md`, never run locally — CI only.
 final class AgentRestartRegistryTests: XCTestCase {
 
-    // MARK: - Phase 1 cc row
+    // MARK: - Phase 1 claude row
 
     func testClaudeCodeWithSessionIdReturnsResumeCommandWithTrailingNewline() {
         let registry = AgentRestartRegistry.phase1
@@ -23,10 +23,37 @@ final class AgentRestartRegistryTests: XCTestCase {
             sessionId: "abc12345-ef67-890a-bcde-f0123456789a",
             metadata: [:]
         )
-        // Exact-equal — the trailing newline is load-bearing. Without it
-        // the synthesised command sits at the prompt unsubmitted and
-        // resume silently no-ops.
-        XCTAssertEqual(cmd, "cc --resume abc12345-ef67-890a-bcde-f0123456789a\n")
+        // Exact-equal pins both the command shape AND the registry's
+        // "submit form" trailing newline. The newline itself is no longer
+        // the submission signal — `TerminalSurface.sendSubmitFormText`
+        // trims it and dispatches a synthetic Return — but it is
+        // preserved here for snapshot consumers that may sample the
+        // literal string.
+        XCTAssertEqual(
+            cmd,
+            "claude --dangerously-skip-permissions --resume abc12345-ef67-890a-bcde-f0123456789a\n"
+        )
+    }
+
+    /// Regression: the registry must NOT use the `cc` shorthand. In c11
+    /// terminal environments `cc` resolves to the C compiler (clang), not
+    /// Claude. The Phase 1 row must spell out `claude --dangerously-skip-permissions`
+    /// so the wrapper at `Resources/bin/claude` handles the `--resume` path.
+    func testPhase1RowDoesNotUseCcShorthand() {
+        let registry = AgentRestartRegistry.phase1
+        let cmd = registry.resolveCommand(
+            terminalType: "claude-code",
+            sessionId: "abc12345-ef67-890a-bcde-f0123456789a",
+            metadata: [:]
+        ) ?? ""
+        XCTAssertFalse(
+            cmd.hasPrefix("cc "),
+            "phase1 must not start with `cc ` (resolves to clang in c11 terminals)"
+        )
+        XCTAssertTrue(
+            cmd.contains("claude --dangerously-skip-permissions --resume"),
+            "phase1 must use `claude --dangerously-skip-permissions --resume`"
+        )
     }
 
     func testClaudeCodeWithoutSessionIdDeclines() {
@@ -97,7 +124,10 @@ final class AgentRestartRegistryTests: XCTestCase {
             sessionId: "cccc1111-2222-3333-4444-555566667777",
             metadata: [:]
         )
-        XCTAssertEqual(cmd, "cc --resume cccc1111-2222-3333-4444-555566667777\n")
+        XCTAssertEqual(
+            cmd,
+            "claude --dangerously-skip-permissions --resume cccc1111-2222-3333-4444-555566667777\n"
+        )
     }
 
     func testNamedUnknownReturnsNilInsteadOfErroring() {
@@ -238,7 +268,7 @@ final class AgentRestartRegistryTests: XCTestCase {
         )
         XCTAssertEqual(
             cmd,
-            "cc --resume AaBbCcDd-1111-2222-3333-AABBCCDDEEFF\n",
+            "claude --dangerously-skip-permissions --resume AaBbCcDd-1111-2222-3333-AABBCCDDEEFF\n",
             "UUID grammar is case-insensitive for hex"
         )
     }
@@ -265,13 +295,13 @@ final class AgentRestartRegistryTests: XCTestCase {
         )
     }
 
-    /// Opencode has no verified resume flag — launches fresh.
+    /// Opencode has no verified resume flag — launches fresh with --dangerously-skip-permissions.
     func testOpencodeRowReturnsBareCommand() {
         let registry = AgentRestartRegistry.phase1
         XCTAssertEqual(
             registry.resolveCommand(terminalType: "opencode", sessionId: nil, metadata: [:]),
-            "opencode\n",
-            "opencode row returns bare launch (no resume flag)"
+            "opencode run --dangerously-skip-permissions\n",
+            "opencode row returns fresh launch with --dangerously-skip-permissions (no resume flag)"
         )
         XCTAssertEqual(
             registry.resolveCommand(
@@ -279,8 +309,8 @@ final class AgentRestartRegistryTests: XCTestCase {
                 sessionId: "11111111-2222-3333-4444-555566667777",
                 metadata: [:]
             ),
-            "opencode\n",
-            "opencode row ignores session id and returns bare launch"
+            "opencode run --dangerously-skip-permissions\n",
+            "opencode row ignores session id and returns fresh launch"
         )
     }
 

@@ -34,6 +34,32 @@ func isAdvisoryHookConnectivityError(_ error: CLIError) -> Bool {
     CLIAdvisoryConnectivity.isAdvisoryHookConnectivity(message: error.message)
 }
 
+/// Probe c11's terminating state via `system.ping` for the
+/// `claude-hook session-end` shutdown guard. The bounded 250ms timeout
+/// keeps the hook (timeout-budgeted at 1s by Claude Code's settings) from
+/// stalling on a slow or partially-torn-down socket. Any failure (timeout,
+/// socket gone, malformed payload) collapses to `.failure` — the policy
+/// above treats that as "preserve metadata," matching the
+/// "never tombstone on socket-uncertainty" rule from synthesis-action B4.
+func queryC11ShutdownState(client: SocketClient) -> SessionEndShutdownPolicy.PingOutcome {
+    do {
+        let response = try client.sendV2(
+            method: "system.ping",
+            deadline: .custom(0.25)
+        )
+        if let result = response["result"] as? [String: Any],
+           let isTerminating = result["is_terminating_app"] as? Bool {
+            return .success(isTerminating: isTerminating)
+        }
+        // Old c11 binary without the field: the response is a successful
+        // `{pong: true}`. Report `isTerminating: false` so the existing
+        // clear-always behavior is preserved against pre-fix c11 builds.
+        return .success(isTerminating: false)
+    } catch {
+        return .failure
+    }
+}
+
 // Mirrors CMUX_* ↔ C11_* env vars so callers can use either prefix.
 // Why: binary rename from `cmux` to `c11` keeps both namespaces live during transition.
 func mirrorC11CmuxEnv() {
@@ -164,7 +190,7 @@ private final class CLISocketSentryTelemetry {
         self.command = command.lowercased()
         self.subcommand = commandArgs.first?.lowercased() ?? "help"
         self.socketPath = socketPath
-        self.envSocketPath = processEnv["CMUX_SOCKET_PATH"] ?? processEnv["CMUX_SOCKET"]
+        self.envSocketPath = processEnv["C11_SOCKET"] ?? processEnv["CMUX_SOCKET_PATH"] ?? processEnv["CMUX_SOCKET"]
         self.workspaceId = processEnv["CMUX_WORKSPACE_ID"]
         self.surfaceId = processEnv["CMUX_SURFACE_ID"]
         self.disabledByEnv =
@@ -259,7 +285,7 @@ private final class CLISocketSentryTelemetry {
         if CLISocketPathResolver.isImplicitDefaultPath(socketPath),
            (envSocketPath?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
            !taggedSockets.isEmpty {
-            context["possible_root_cause"] = "CMUX_SOCKET_PATH/CMUX_SOCKET missing while tagged sockets exist"
+            context["possible_root_cause"] = "C11_SOCKET/CMUX_SOCKET_PATH/CMUX_SOCKET missing while tagged sockets exist"
         }
 
         return context
@@ -757,6 +783,10 @@ private enum CLISocketPathResolver {
     }
 
     private static func readLastSocketPath() -> String? {
+        return readLastSocketPathWithSource()?.value
+    }
+
+    private static func readLastSocketPathWithSource() -> (value: String, source: String)? {
         let primaryCandidate: String? = stableSocketDirectoryURL()?
             .appendingPathComponent(lastSocketPathFileName, isDirectory: false)
             .path
@@ -767,7 +797,29 @@ private enum CLISocketPathResolver {
                 continue
             }
             if let value = normalized(data) {
-                return value
+                return (value: value, source: candidate)
+            }
+        }
+        return nil
+    }
+
+    /// Best-effort attribution for an auto-discovered socket path.
+    ///
+    /// Returns a human-readable hint identifying *where* `resolvedPath` came
+    /// from — the pointer file path when the resolver matched the
+    /// `last-socket-path` breadcrumb, or a short `CMUX_TAG=...` tag when the
+    /// path matches a tag-derived candidate. Returns `nil` when the source is
+    /// unclear (default fallback, /tmp scan, etc.) so callers can fall back
+    /// to a generic "(auto-discovered)" message.
+    static func discoverySourceHint(resolvedPath: String, environment: [String: String]) -> String? {
+        if let last = readLastSocketPathWithSource(), last.value == resolvedPath {
+            return last.source
+        }
+        if let tag = normalized(environment["CMUX_TAG"]) {
+            let slug = sanitizeTagSlug(tag)
+            if resolvedPath == "/tmp/cmux-debug-\(slug).sock"
+                || resolvedPath == "/tmp/cmux-\(slug).sock" {
+                return "CMUX_TAG=\(tag)"
             }
         }
         return nil
@@ -1421,8 +1473,10 @@ struct CMUXCLI {
     }
 
     private static func defaultSocketPath(environment: [String: String]) -> String {
-        if let explicit = normalizedEnvValue(environment["CMUX_SOCKET_PATH"]) {
-            return explicit
+        for key in ["C11_SOCKET", "CMUX_SOCKET_PATH", "CMUX_SOCKET"] {
+            if let explicit = normalizedEnvValue(environment[key]) {
+                return explicit
+            }
         }
 #if DEBUG
         if let hinted = debugSocketPathFromHintFile() {
@@ -1434,10 +1488,42 @@ struct CMUXCLI {
 #endif
     }
 
+    /// Print one stderr line attributing an auto-discovered socket so the
+    /// operator can see they are not on the implicit default. Suppressed by
+    /// `C11_QUIET_DISCOVERY=1` (any non-empty, non-"0" value). The value
+    /// names both the picked socket and, when known, the source it came from
+    /// (the `last-socket-path` pointer file or a `CMUX_TAG=` env var).
+    private func emitAutoDiscoveryNotice(
+        resolvedPath: String,
+        environment: [String: String]
+    ) {
+        if let suppress = environment["C11_QUIET_DISCOVERY"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !suppress.isEmpty, suppress != "0" {
+            return
+        }
+        let line: String
+        if let source = CLISocketPathResolver.discoverySourceHint(
+            resolvedPath: resolvedPath,
+            environment: environment
+        ) {
+            line = String(
+                localized: "cli.socket.autoDiscoveredWithSource",
+                defaultValue: "c11: using socket \(resolvedPath) (auto-discovered from \(source))"
+            )
+        } else {
+            line = String(
+                localized: "cli.socket.autoDiscovered",
+                defaultValue: "c11: using socket \(resolvedPath) (auto-discovered)"
+            )
+        }
+        FileHandle.standardError.write(Data((line + "\n").utf8))
+    }
+
     func run() throws {
         let processEnv = ProcessInfo.processInfo.environment
         let envSocketPath: String? = {
-            for key in ["CMUX_SOCKET_PATH", "CMUX_SOCKET"] {
+            for key in ["C11_SOCKET", "CMUX_SOCKET_PATH", "CMUX_SOCKET"] {
                 guard let raw = processEnv[key] else { continue }
                 let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty {
@@ -1557,6 +1643,16 @@ struct CMUXCLI {
             return
         }
 
+        if command == "health" {
+            try runHealth(commandArgs: commandArgs, jsonOutput: jsonOutput)
+            return
+        }
+
+        if command == "doctor" {
+            try runDoctor(commandArgs: commandArgs, jsonOutput: jsonOutput)
+            return
+        }
+
         if command == "welcome" {
             printWelcome()
             return
@@ -1604,19 +1700,6 @@ struct CMUXCLI {
             return
         }
 
-        if command == "install" || command == "uninstall" {
-            // Integration installers (Module 4) are filesystem-local; they do
-            // not connect to the running cmux socket. Exit codes are carried
-            // via a dedicated thrown error type that CMUXTermMain routes to
-            // the proper numeric exit.
-            try runIntegrationInstallerCommand(
-                command: command,
-                commandArgs: commandArgs,
-                jsonOutput: jsonOutput
-            )
-            return
-        }
-
         let client = SocketClient(path: resolvedSocketPath)
         if resolvedSocketPath != socketPath {
             cliTelemetry.breadcrumb(
@@ -1625,6 +1708,10 @@ struct CMUXCLI {
                     "requested_path": socketPath,
                     "resolved_path": resolvedSocketPath
                 ]
+            )
+            emitAutoDiscoveryNotice(
+                resolvedPath: resolvedSocketPath,
+                environment: processEnv
             )
         }
         cliTelemetry.breadcrumb(
@@ -1921,14 +2008,19 @@ struct CMUXCLI {
 
         case "new-workspace":
             let (commandOpt, rem0) = parseOption(commandArgs, name: "--command")
-            let (cwdOpt, remaining) = parseOption(rem0, name: "--cwd")
+            let (cwdOpt, rem1) = parseOption(rem0, name: "--cwd")
+            let (layoutOpt, remaining) = parseOption(rem1, name: "--layout")
             if let unknown = remaining.first(where: { $0.hasPrefix("--") }) {
-                throw CLIError(message: "new-workspace: unknown flag '\(unknown)'. Known flags: --command <text>, --cwd <path>")
+                throw CLIError(message: "new-workspace: unknown flag '\(unknown)'. Known flags: --command <text>, --cwd <path>, --layout <path|name>")
             }
             var params: [String: Any] = [:]
             if let cwdOpt {
                 let resolved = resolvePath(cwdOpt)
                 params["cwd"] = resolved
+            }
+            if let layoutRef = layoutOpt {
+                // Resolve blueprint path or name -> {plan: ...} dict for workspace.create layout param.
+                params["layout"] = try resolveBlueprintPlan(layoutRef, client: client)
             }
             let response = try client.sendV2(method: "workspace.create", params: params)
             let wsId = (response["workspace_ref"] as? String) ?? (response["workspace_id"] as? String) ?? ""
@@ -2048,6 +2140,7 @@ struct CMUXCLI {
             let paneRaw = optionValue(commandArgs, name: "--pane")
             let url = optionValue(commandArgs, name: "--url")
             let file = optionValue(commandArgs, name: "--file")
+            let noFocus = commandArgs.contains("--no-focus")
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
@@ -2056,6 +2149,7 @@ struct CMUXCLI {
             if let type { params["type"] = type }
             if let url { params["url"] = url }
             if let file { params["file"] = file }
+            if noFocus { params["focus"] = false }
             let payload = try client.sendV2(method: "surface.create", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
 
@@ -2187,12 +2281,31 @@ struct CMUXCLI {
             let tfWsFlag = optionValue(commandArgs, name: "--workspace")
             let workspaceArg = tfWsFlag ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             let surfaceArg = optionValue(commandArgs, name: "--surface") ?? optionValue(commandArgs, name: "--panel") ?? (tfWsFlag == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
+            let colorArg = optionValue(commandArgs, name: "--color")
+            if let colorArg, !isValidFlashColorHex(colorArg) {
+                throw CLIError(message: "--color must be a hex value like #F5C518.")
+            }
+            let persistent = hasFlag(commandArgs, name: "--persistent")
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
             if let sfId { params["surface_id"] = sfId }
+            if let colorArg { params["color"] = colorArg }
+            if persistent { params["persistent"] = true }
             let payload = try client.sendV2(method: "surface.trigger_flash", params: params)
+            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
+
+        case "cancel-flash":
+            let cfWsFlag = optionValue(commandArgs, name: "--workspace")
+            let workspaceArg = cfWsFlag ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
+            let surfaceArg = optionValue(commandArgs, name: "--surface") ?? optionValue(commandArgs, name: "--panel") ?? (cfWsFlag == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
+            var params: [String: Any] = [:]
+            let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
+            if let wsId { params["workspace_id"] = wsId }
+            let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
+            if let sfId { params["surface_id"] = sfId }
+            let payload = try client.sendV2(method: "surface.cancel_flash", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
         case "list-panels":
@@ -2315,12 +2428,21 @@ struct CMUXCLI {
         case "send":
             let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
             let (sfArg, rem1) = parseOption(rem0, name: "--surface")
+            let (noSubmit, rem2) = parseBoolFlag(rem1, name: "--no-submit")
             let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
-            let rawText = rem1.dropFirst(rem1.first == "--" ? 1 : 0).joined(separator: " ")
+            // Require explicit surface targeting. Shell-integrated callers inside a c11
+            // surface have CMUX_SURFACE_ID set automatically. External callers must pass
+            // --surface. The windowId path is excluded: --window without --surface still
+            // routes to ws.focusedPanelId, which is the ambient misdirection we're removing.
+            guard sfArg != nil
+                || ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] != nil else {
+                throw CLIError(message: "send requires --surface <id|ref> (or run inside a c11 surface so CMUX_SURFACE_ID is set)")
+            }
+            let rawText = rem2.dropFirst(rem2.first == "--" ? 1 : 0).joined(separator: " ")
             guard !rawText.isEmpty else { throw CLIError(message: "send requires text") }
             let text = unescapeSendText(rawText)
-            var params: [String: Any] = ["text": text]
+            var params: [String: Any] = ["text": text, "submit": !noSubmit]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
@@ -2333,6 +2455,12 @@ struct CMUXCLI {
             let (sfArg, rem1) = parseOption(rem0, name: "--surface")
             let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
+            // Require explicit surface targeting (same policy as send).
+            // windowId alone is excluded for the same reason: it still routes to focusedPanelId.
+            guard sfArg != nil
+                || ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] != nil else {
+                throw CLIError(message: "send-key requires --surface <id|ref> (or run inside a c11 surface so CMUX_SURFACE_ID is set)")
+            }
             let keyArgs = rem1.first == "--" ? Array(rem1.dropFirst()) : rem1
             guard let key = keyArgs.first else { throw CLIError(message: "send-key requires a key") }
             var params: [String: Any] = ["key": key]
@@ -2346,14 +2474,15 @@ struct CMUXCLI {
         case "send-panel":
             let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
             let (panelArg, rem1) = parseOption(rem0, name: "--panel")
+            let (noSubmit, rem2) = parseBoolFlag(rem1, name: "--no-submit")
             let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             guard let panelArg else {
                 throw CLIError(message: "send-panel requires --panel")
             }
-            let rawText = rem1.dropFirst(rem1.first == "--" ? 1 : 0).joined(separator: " ")
+            let rawText = rem2.dropFirst(rem2.first == "--" ? 1 : 0).joined(separator: " ")
             guard !rawText.isEmpty else { throw CLIError(message: "send-panel requires text") }
             let text = unescapeSendText(rawText)
-            var params: [String: Any] = ["text": text]
+            var params: [String: Any] = ["text": text, "submit": !noSubmit]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(panelArg, client: client, workspaceHandle: wsId)
@@ -2536,6 +2665,12 @@ struct CMUXCLI {
                 jsonOutput: jsonOutput,
                 idFormat: idFormat,
                 windowOverride: windowId
+            )
+
+        case "default-agent":
+            try runDefaultAgentCommand(
+                commandArgs: commandArgs,
+                client: client
             )
 
         case "set-metadata":
@@ -2744,6 +2879,9 @@ struct CMUXCLI {
         case "workspace-color":
             try runWorkspaceColor(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput)
 
+        case "surface-color":
+            try runSurfaceColor(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput)
+
         // C11-13 Stage 2: inter-agent mailbox (send/recv/trace/tail + helpers).
         case "mailbox":
             try runMailboxCommand(
@@ -2756,6 +2894,69 @@ struct CMUXCLI {
             print(usage())
             throw CLIError(message: "Unknown command: \(command)")
         }
+    }
+
+    /// Classification of an executor `ApplyFailure` for human-readable
+    /// rendering. CMUX-37 workstream 3: the wire shape carried by
+    /// `Sources/WorkspaceApplyPlan.swift`'s `ApplyFailure` stays unchanged;
+    /// only this client-side classifier decides what surfaces under
+    /// `failure:` versus the new `info:` line. A future caller with a
+    /// different opinion can ignore this and read the structured payload.
+    enum FailureSeverity {
+        case failure
+        case info
+    }
+
+    /// Classify a single failure entry. Two codes are treated as info-level
+    /// because the executor emits them on every clean snapshot/restore round
+    /// trip:
+    ///
+    /// - `metadata_override` — fires when a SurfaceSpec sets both `.title`
+    ///   and `metadata["title"]` (or both descriptions). The capture-side
+    ///   fix in `Sources/WorkspacePlanCapture.swift` strips the dup, so this
+    ///   should rarely fire on a clean round-trip; the classification is the
+    ///   belt for the suspenders.
+    /// - `working_directory_not_applied` with a "seed terminal reuse" marker
+    ///   in the message — fires on every restore whose first terminal had a
+    ///   captured cwd. The seed shell is already running by the time the
+    ///   executor sees the spec, so the cwd cannot apply. Expected, not a
+    ///   real failure.
+    ///
+    /// Other emission sites of `working_directory_not_applied` (browser /
+    /// markdown split, in-pane creation) are still real failures; they
+    /// indicate the operator passed a cwd to a kind that can't accept one.
+    ///
+    /// CAUTION: detection of the seed-terminal case relies on the executor's
+    /// emitted message containing the substring "seed terminal reuse". If
+    /// `Sources/WorkspaceLayoutExecutor.swift`'s
+    /// `reportWorkingDirectoryNotApplicable` call for the seedTerminal
+    /// context (around L656) ever changes its `context:` argument, update
+    /// the matcher below.
+    static func failureSeverity(code: String, message: String) -> FailureSeverity {
+        if code == "metadata_override" { return .info }
+        if code == "working_directory_not_applied",
+           message.contains("seed terminal reuse") {
+            return .info
+        }
+        return .failure
+    }
+
+    /// Split an executor failure list into (real failures, info-level lines)
+    /// while preserving original order so output stays stable across runs.
+    static func partitionFailures(
+        _ failures: [[String: Any]]
+    ) -> (failures: [[String: Any]], info: [[String: Any]]) {
+        var realFailures: [[String: Any]] = []
+        var infoLines: [[String: Any]] = []
+        for f in failures {
+            let code = (f["code"] as? String) ?? ""
+            let msg = (f["message"] as? String) ?? ""
+            switch failureSeverity(code: code, message: msg) {
+            case .failure: realFailures.append(f)
+            case .info:    infoLines.append(f)
+            }
+        }
+        return (failures: realFailures, info: infoLines)
     }
 
     private func localizedBlueprintSourceLabel(_ raw: String) -> String {
@@ -2825,12 +3026,24 @@ struct CMUXCLI {
                 for w in warnings { print("  - \(w)") }
             }
             if !failures.isEmpty {
-                print("failures: \(failures.count)")
-                for f in failures {
-                    let code = (f["code"] as? String) ?? "?"
-                    let step = (f["step"] as? String) ?? "?"
-                    let msg = (f["message"] as? String) ?? ""
-                    print("  - [\(code)] \(step): \(msg)")
+                let (realFailures, infoLines) = Self.partitionFailures(failures)
+                if !realFailures.isEmpty {
+                    print("failures: \(realFailures.count)")
+                    for f in realFailures {
+                        let code = (f["code"] as? String) ?? "?"
+                        let step = (f["step"] as? String) ?? "?"
+                        let msg = (f["message"] as? String) ?? ""
+                        print("  - [\(code)] \(step): \(msg)")
+                    }
+                }
+                if !infoLines.isEmpty {
+                    print("info: \(infoLines.count)")
+                    for f in infoLines {
+                        let code = (f["code"] as? String) ?? "?"
+                        let step = (f["step"] as? String) ?? "?"
+                        let msg = (f["message"] as? String) ?? ""
+                        print("  - [\(code)] \(step): \(msg)")
+                    }
                 }
             }
         }
@@ -2864,13 +3077,7 @@ struct CMUXCLI {
             guard let data = FileManager.default.contents(atPath: resolved) else {
                 throw CLIError(message: "workspace new: could not read '\(resolved)'")
             }
-            guard
-                let file = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                let plan = file["plan"]
-            else {
-                throw CLIError(message: "workspace new: '\(resolved)' is not a valid blueprint file (missing 'plan' key)")
-            }
-            planObject = plan
+            planObject = try blueprintPlanFromFile(at: resolved, data: data, client: client)
         } else {
             planObject = try workspaceBlueprintPicker(client: client, jsonOutput: jsonOutput)
         }
@@ -2889,11 +3096,18 @@ struct CMUXCLI {
                 for w in warnings { print("  warning: \(w)") }
             }
             if !failures.isEmpty {
-                for f in failures {
+                let (realFailures, infoLines) = Self.partitionFailures(failures)
+                for f in realFailures {
                     let code = (f["code"] as? String) ?? "?"
                     let step = (f["step"] as? String) ?? "?"
                     let msg = (f["message"] as? String) ?? ""
                     print("  failure: [\(code)] \(step): \(msg)")
+                }
+                for f in infoLines {
+                    let code = (f["code"] as? String) ?? "?"
+                    let step = (f["step"] as? String) ?? "?"
+                    let msg = (f["message"] as? String) ?? ""
+                    print("  info: [\(code)] \(step): \(msg)")
                 }
             }
         }
@@ -2952,20 +3166,78 @@ struct CMUXCLI {
         guard let data = FileManager.default.contents(atPath: resolved) else {
             throw CLIError(message: "workspace new: could not read blueprint at '\(resolved)'")
         }
+        return try blueprintPlanFromFile(at: resolved, data: data, client: client)
+    }
+
+    /// Resolve a blueprint file's bytes to a layout plan dict suitable for
+    /// `workspace.apply`. Dispatches on extension: `.md` files are routed
+    /// through the `workspace.parse_blueprint` v2 method (so the markdown
+    /// parser stays out of the CLI binary's link surface); `.json` and
+    /// other extensions are decoded as `WorkspaceBlueprintFile` JSON
+    /// envelopes.
+    private func blueprintPlanFromFile(at path: String, data: Data, client: SocketClient) throws -> Any {
+        let ext = (path as NSString).pathExtension.lowercased()
+        if ext == "md" {
+            guard let content = String(data: data, encoding: .utf8) else {
+                throw CLIError(message: "workspace new: '\(path)' is not valid UTF-8")
+            }
+            let parsed = try client.sendV2(
+                method: "workspace.parse_blueprint",
+                params: ["format": "md", "content": content]
+            )
+            guard let plan = parsed["plan"] else {
+                throw CLIError(message: "workspace new: '\(path)' parse returned no plan")
+            }
+            return plan
+        }
         guard
             let file = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let plan = file["plan"]
         else {
-            throw CLIError(message: "workspace new: '\(resolved)' is not a valid blueprint file (missing 'plan' key)")
+            throw CLIError(message: "workspace new: '\(path)' is not a valid blueprint file (missing 'plan' key)")
         }
         return plan
     }
 
+    /// Resolve a blueprint reference (file path or name) to a layout dict
+    /// `{plan: ...}` suitable for `workspace.create`'s `layout` param.
+    private func resolveBlueprintPlan(_ ref: String, client: SocketClient) throws -> [String: Any] {
+        let pathToTry = resolvePath(ref)
+        if FileManager.default.fileExists(atPath: pathToTry) {
+            guard let data = FileManager.default.contents(atPath: pathToTry) else {
+                throw CLIError(message: "new-workspace: could not read blueprint file '\(pathToTry)'")
+            }
+            guard let file = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                throw CLIError(message: "new-workspace: blueprint file '\(pathToTry)' is not a valid JSON object")
+            }
+            guard let plan = file["plan"] else {
+                throw CLIError(message: "new-workspace: blueprint file '\(pathToTry)' does not contain a 'plan' key")
+            }
+            return ["plan": plan]
+        }
+        // Not a direct path — search by name in the blueprint store.
+        let cwd = FileManager.default.currentDirectoryPath
+        let payload = try client.sendV2(method: "workspace.list_blueprints", params: ["cwd": cwd])
+        let blueprints = payload["blueprints"] as? [[String: Any]] ?? []
+        let trimmed = ref.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let match = blueprints.first(where: { ($0["name"] as? String) == trimmed }),
+              let url = match["url"] as? String,
+              let data = FileManager.default.contents(atPath: resolvePath(url)),
+              let file = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let plan = file["plan"] else {
+            throw CLIError(message: "new-workspace: blueprint '\(ref)' not found (tried as path and name)")
+        }
+        return ["plan": plan]
+    }
+
     /// `c11 workspace export-blueprint --name <name> [--workspace <ref>]
-    /// [--description <text>] [--out <path>] [--force]`. Captures the current
-    /// (or named) workspace as a `WorkspaceBlueprintFile` JSON and writes it.
-    /// Without `--out`, prints the default path written by the socket handler.
-    /// `--force` allows overwriting an existing blueprint with the same name.
+    /// [--description <text>] [--format md|json] [--out <path>] [--force]`.
+    /// Captures the current (or named) workspace as a
+    /// `WorkspaceBlueprintFile` and writes it. Default format is `md`
+    /// (Obsidian-friendly markdown under `~/.config/c11/blueprints/`); pass
+    /// `--format json` for the legacy JSON envelope. Without `--out`,
+    /// prints the default path written by the socket handler. `--force`
+    /// allows overwriting an existing blueprint with the same name.
     private func runWorkspaceExportBlueprint(
         _ args: [String],
         client: SocketClient,
@@ -2974,17 +3246,25 @@ struct CMUXCLI {
         let (workspaceOpt, a1) = parseOption(args, name: "--workspace")
         let (nameOpt, a2) = parseOption(a1, name: "--name")
         let (descOpt, a3) = parseOption(a2, name: "--description")
-        let (outOpt, a4) = parseOption(a3, name: "--out")
-        let forceFlag = a4.contains("--force")
-        let a5 = a4.filter { $0 != "--force" }
-        if let unknown = a5.first(where: { $0.hasPrefix("--") }) {
-            throw CLIError(message: "workspace export-blueprint: unknown flag '\(unknown)'. Known flags: --workspace <ref>, --name <name>, --description <text>, --out <path>, --force")
+        let (formatOpt, a4) = parseOption(a3, name: "--format")
+        let (outOpt, a5) = parseOption(a4, name: "--out")
+        let forceFlag = a5.contains("--force")
+        let a6 = a5.filter { $0 != "--force" }
+        if let unknown = a6.first(where: { $0.hasPrefix("--") }) {
+            throw CLIError(message: "workspace export-blueprint: unknown flag '\(unknown)'. Known flags: --workspace <ref>, --name <name>, --description <text>, --format md|json, --out <path>, --force")
         }
         guard let name = nameOpt else {
             throw CLIError(message: "workspace export-blueprint: --name <name> is required")
         }
+        let format: String = {
+            guard let raw = formatOpt?.lowercased(), !raw.isEmpty else { return "md" }
+            return (raw == "markdown") ? "md" : raw
+        }()
+        if format != "md" && format != "json" {
+            throw CLIError(message: "workspace export-blueprint: --format must be md or json (got '\(format)')")
+        }
 
-        var params: [String: Any] = ["name": name]
+        var params: [String: Any] = ["name": name, "format": format]
         if let wsRaw = workspaceOpt {
             params["workspace_id"] = try resolveWorkspaceId(wsRaw, client: client)
         }
@@ -3021,7 +3301,7 @@ struct CMUXCLI {
             mutable["path"] = resolvedPath
             print(jsonString(mutable))
         } else {
-            print("OK blueprint=\(name) path=\(resolvedPath)")
+            print("OK blueprint=\(name) format=\(format) path=\(resolvedPath)")
         }
     }
 
@@ -3074,11 +3354,19 @@ struct CMUXCLI {
                     let id = (snap["snapshot_id"] as? String) ?? "?"
                     let path = (snap["path"] as? String) ?? "?"
                     let count = (snap["surface_count"] as? Int) ?? 0
-                    print("OK snapshot=\(id) surfaces=\(count) workspace=\(wsRef) path=\(path)")
+                    let selected = (snap["selected"] as? Bool) == true ? " (selected)" : ""
+                    print("OK snapshot=\(id) surfaces=\(count) workspace=\(wsRef) path=\(path)\(selected)")
                 }
             }
+            if let setId = payload["set_id"] as? String,
+               let setPath = payload["set_path"] as? String {
+                print("OK set=\(setId) path=\(setPath)")
+            } else if let setErr = payload["set_error"] as? String {
+                print("ERROR manifest reason=\(setErr)")
+                anyFailure = true
+            }
             if anyFailure {
-                throw CLIError(message: "snapshot --all: one or more workspaces failed to write")
+                throw CLIError(message: "snapshot --all: one or more writes failed")
             }
             return
         }
@@ -3173,6 +3461,7 @@ struct CMUXCLI {
             throw CLIError(message: "restore: unexpected trailing argument '\(positional[1])'")
         }
         var params: [String: Any] = [:]
+        var isSetRestore = false
         // Path-like targets (absolute / `~` / extension `.json`) get
         // resolved in the CLI. Everything else is treated as a snapshot
         // id and submitted as-is; the handler's traversal guard catches
@@ -3182,16 +3471,34 @@ struct CMUXCLI {
             || target.hasPrefix("~")
             || target.contains("/") {
             let resolvedPath = resolvePath(target)
-            let snapshotId = try importSnapshotFileForRestore(pathOnDisk: resolvedPath)
-            params["snapshot_id"] = snapshotId
+            let (id, kind) = try importSnapshotOrSetFileForRestore(pathOnDisk: resolvedPath)
+            switch kind {
+            case .single:
+                params["snapshot_id"] = id
+            case .set:
+                isSetRestore = true
+                params["set_id"] = id
+            }
         } else {
-            params["snapshot_id"] = target
+            // Bare-id form: probe `~/.c11-snapshots/sets/<id>.json` first
+            // (the manifest path) and only fall through to single-snapshot
+            // restore if no manifest exists. Both ids share the ULID
+            // grammar so we cannot disambiguate by shape alone.
+            if isLocalSnapshotSetId(target) {
+                isSetRestore = true
+                params["set_id"] = target
+            } else {
+                params["snapshot_id"] = target
+            }
         }
         // Env gate: mirrored by `mirrorC11CmuxEnv()` so either variable works.
         let env = ProcessInfo.processInfo.environment
         let raw = env["C11_SESSION_RESUME"] ?? env["CMUX_SESSION_RESUME"]
         if let raw, isTruthyFlag(raw) {
             params["restart_registry"] = "phase1"
+        }
+        if isSetRestore && inPlace {
+            throw CLIError(message: "restore: --in-place is not supported for snapshot sets (a set creates several fresh workspaces)")
         }
         if inPlace {
             params["in_place"] = true
@@ -3221,9 +3528,35 @@ struct CMUXCLI {
                 }
             }
         }
-        let payload = try client.sendV2(method: "snapshot.restore", params: params)
+        let method = isSetRestore ? "snapshot.restore_set" : "snapshot.restore"
+        let payload = try client.sendV2(method: method, params: params)
         if jsonOutput {
             print(jsonString(formatIDs(payload, mode: idFormat)))
+            return
+        }
+        if isSetRestore {
+            let setId = (payload["set_id"] as? String) ?? "?"
+            let workspaces = payload["workspaces"] as? [[String: Any]] ?? []
+            let selected = (payload["selected_workspace_ref"] as? String) ?? ""
+            print("OK set=\(setId) workspaces=\(workspaces.count)\(selected.isEmpty ? "" : " selected=\(selected)")")
+            for entry in workspaces {
+                if let err = entry["error"] as? String {
+                    let snap = (entry["snapshot_id"] as? String) ?? "?"
+                    let wsRef = (entry["original_workspace_ref"] as? String) ?? (entry["workspace_ref"] as? String) ?? "?"
+                    print("  ERROR snapshot=\(snap) original=\(wsRef) reason=\(err)")
+                    continue
+                }
+                let snap = (entry["snapshot_id"] as? String) ?? "?"
+                let ref = (entry["workspaceRef"] as? String) ?? "?"
+                let surfaceRefs = entry["surfaceRefs"] as? [String: String] ?? [:]
+                let isSel = (entry["selected"] as? Bool) == true ? " (selected)" : ""
+                print("  OK snapshot=\(snap) workspace=\(ref) surfaces=\(surfaceRefs.count)\(isSel)")
+            }
+            let warnings = payload["warnings"] as? [String] ?? []
+            if !warnings.isEmpty {
+                print("warnings: \(warnings.count)")
+                for w in warnings { print("  - \(w)") }
+            }
             return
         }
         let ref = (payload["workspaceRef"] as? String) ?? "?"
@@ -3237,14 +3570,41 @@ struct CMUXCLI {
             for w in warnings { print("  - \(w)") }
         }
         if !failures.isEmpty {
-            print("failures: \(failures.count)")
-            for f in failures {
-                let code = (f["code"] as? String) ?? "?"
-                let step = (f["step"] as? String) ?? "?"
-                let msg = (f["message"] as? String) ?? ""
-                print("  - [\(code)] \(step): \(msg)")
+            let (realFailures, infoLines) = Self.partitionFailures(failures)
+            if !realFailures.isEmpty {
+                print("failures: \(realFailures.count)")
+                for f in realFailures {
+                    let code = (f["code"] as? String) ?? "?"
+                    let step = (f["step"] as? String) ?? "?"
+                    let msg = (f["message"] as? String) ?? ""
+                    print("  - [\(code)] \(step): \(msg)")
+                }
+            }
+            if !infoLines.isEmpty {
+                print("info: \(infoLines.count)")
+                for f in infoLines {
+                    let code = (f["code"] as? String) ?? "?"
+                    let step = (f["step"] as? String) ?? "?"
+                    let msg = (f["message"] as? String) ?? ""
+                    print("  - [\(code)] \(step): \(msg)")
+                }
             }
         }
+    }
+
+    /// Whether `~/.c11-snapshots/sets/<id>.json` exists. Used by the
+    /// polymorphic `c11 restore <id>` dispatch.
+    private func isLocalSnapshotSetId(_ id: String) -> Bool {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              trimmed.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }) else {
+            return false
+        }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let url = home
+            .appendingPathComponent(".c11-snapshots/sets")
+            .appendingPathComponent("\(trimmed).json")
+        return FileManager.default.fileExists(atPath: url.path)
     }
 
     /// Read a snapshot file at `pathOnDisk`, extract `snapshot_id`, and
@@ -3256,6 +3616,24 @@ struct CMUXCLI {
     /// CLI holds the user's real FS permissions, so reading and copying
     /// the file here is safe in a way reading via the socket is not.
     private func importSnapshotFileForRestore(pathOnDisk: String) throws -> String {
+        let (id, kind) = try importSnapshotOrSetFileForRestore(pathOnDisk: pathOnDisk)
+        guard kind == .single else {
+            throw CLIError(message: "restore: '\(pathOnDisk)' is a set manifest; use `c11 restore <set-id>` directly")
+        }
+        return id
+    }
+
+    private enum SnapshotImportKind { case single, set }
+
+    /// Read a snapshot or snapshot-set file on disk (with the user's real
+    /// FS permissions), classify it, and stage it under the canonical
+    /// `~/.c11-snapshots/` location so the v2 id-based handlers can find
+    /// it. Returns the id and which kind of artifact it was.
+    ///
+    /// Classification: a single snapshot envelope carries a top-level
+    /// `snapshot_id` and `plan` key; a set manifest carries `set_id` and
+    /// `snapshots` (list). Anything else is rejected.
+    private func importSnapshotOrSetFileForRestore(pathOnDisk: String) throws -> (id: String, kind: SnapshotImportKind) {
         let srcURL = URL(fileURLWithPath: pathOnDisk)
         let data: Data
         do {
@@ -3263,41 +3641,55 @@ struct CMUXCLI {
         } catch {
             throw CLIError(message: "restore: failed to read '\(pathOnDisk)': \(error)")
         }
-        let snapshotId: String
+        let dict: [String: Any]
         do {
             let obj = try JSONSerialization.jsonObject(with: data, options: [])
-            guard let dict = obj as? [String: Any],
-                  let id = dict["snapshot_id"] as? String,
-                  !id.isEmpty else {
-                throw CLIError(message: "restore: file '\(pathOnDisk)' is not a valid snapshot envelope (missing snapshot_id)")
+            guard let asDict = obj as? [String: Any] else {
+                throw CLIError(message: "restore: '\(pathOnDisk)' is not a JSON object")
             }
-            snapshotId = id
+            dict = asDict
         } catch let err as CLIError {
             throw err
         } catch {
             throw CLIError(message: "restore: file '\(pathOnDisk)' is not valid JSON: \(error)")
         }
+
+        let id: String
+        let kind: SnapshotImportKind
+        let stagingSubdir: String
+        if let setId = dict["set_id"] as? String, !setId.isEmpty,
+           dict["snapshots"] is [Any] {
+            id = setId
+            kind = .set
+            stagingSubdir = ".c11-snapshots/sets"
+        } else if let snapId = dict["snapshot_id"] as? String, !snapId.isEmpty,
+                  dict["plan"] != nil {
+            id = snapId
+            kind = .single
+            stagingSubdir = ".c11-snapshots"
+        } else {
+            throw CLIError(message: "restore: '\(pathOnDisk)' is not a recognised snapshot envelope (missing snapshot_id+plan or set_id+snapshots)")
+        }
+
         // Reject traversal-shaped ids before we touch disk — matches the
         // grammar the v2 handler enforces on the other side.
-        let idRange = NSRange(location: 0, length: (snapshotId as NSString).length)
+        let idRange = NSRange(location: 0, length: (id as NSString).length)
         let safePattern = try NSRegularExpression(
             pattern: "^[A-Za-z0-9_-]{1,128}$",
             options: []
         )
-        if safePattern.firstMatch(in: snapshotId, options: [], range: idRange) == nil {
-            throw CLIError(message: "restore: snapshot_id '\(snapshotId)' is not a safe filename stem")
+        if safePattern.firstMatch(in: id, options: [], range: idRange) == nil {
+            throw CLIError(message: "restore: id '\(id)' is not a safe filename stem")
         }
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let defaultDir = home.appendingPathComponent(".c11-snapshots", isDirectory: true)
-        let destURL = defaultDir.appendingPathComponent("\(snapshotId).json")
-        // If the user passed in a path that already is the default
-        // location, there's nothing to copy.
+        let stagingDir = home.appendingPathComponent(stagingSubdir, isDirectory: true)
+        let destURL = stagingDir.appendingPathComponent("\(id).json")
         if destURL.standardizedFileURL.path == srcURL.standardizedFileURL.path {
-            return snapshotId
+            return (id, kind)
         }
         do {
             try FileManager.default.createDirectory(
-                at: defaultDir,
+                at: stagingDir,
                 withIntermediateDirectories: true
             )
             if FileManager.default.fileExists(atPath: destURL.path) {
@@ -3305,37 +3697,101 @@ struct CMUXCLI {
             }
             try FileManager.default.copyItem(at: srcURL, to: destURL)
         } catch {
-            throw CLIError(message: "restore: failed to stage '\(pathOnDisk)' into ~/.c11-snapshots/: \(error)")
+            throw CLIError(message: "restore: failed to stage '\(pathOnDisk)' into ~/\(stagingSubdir)/: \(error)")
         }
-        return snapshotId
+        return (id, kind)
     }
 
-    /// `c11 list-snapshots [--json]`. Columns:
+    /// `c11 list-snapshots [--json] [--sets] [--all]`. Columns by default:
     /// SNAPSHOT_ID, CREATED_AT, WORKSPACE_TITLE, SURFACES, ORIGIN, SOURCE.
     ///
-    /// `--json` is accepted both as a global pre-subcommand flag (handled
-    /// by the main parser and threaded in via `jsonOutput`) and as a
-    /// subcommand-local flag. The help text advertises
-    /// `c11 list-snapshots --json`; callers writing that literally should
-    /// not have to know about the global/local distinction.
+    /// `--sets` switches to the manifest table
+    /// (SET_ID, CREATED_AT, COUNT, C11_VERSION). `--all` prints both
+    /// tables back-to-back. `--json` is accepted both as a global
+    /// pre-subcommand flag (handled by the main parser and threaded in
+    /// via `jsonOutput`) and as a subcommand-local flag.
     private func runListSnapshots(
         _ args: [String],
         client: SocketClient,
         jsonOutput: Bool
     ) throws {
         var localJson = false
+        var listSets = false
+        var listAll = false
         for arg in args {
             switch arg {
             case "--json":
                 localJson = true
+            case "--sets":
+                listSets = true
+            case "--all":
+                listAll = true
             default:
                 if arg.hasPrefix("--") {
-                    throw CLIError(message: "list-snapshots: unknown flag '\(arg)'. Known flags: --json")
+                    throw CLIError(message: "list-snapshots: unknown flag '\(arg)'. Known flags: --json, --sets, --all")
                 }
                 throw CLIError(message: "list-snapshots: unexpected argument '\(arg)'")
             }
         }
         let wantJson = jsonOutput || localJson
+        if listSets && listAll {
+            throw CLIError(message: "list-snapshots: --sets and --all are mutually exclusive")
+        }
+        // --sets: only the manifest table.
+        if listSets {
+            try printSnapshotSetsTable(client: client, wantJson: wantJson)
+            return
+        }
+        // --all: per-snapshot table, blank line, then the manifest table.
+        if listAll {
+            try printSnapshotsTable(client: client, wantJson: wantJson)
+            if !wantJson { print("") }
+            try printSnapshotSetsTable(client: client, wantJson: wantJson)
+            return
+        }
+        try printSnapshotsTable(client: client, wantJson: wantJson)
+    }
+
+    /// `c11 list-snapshots --sets`: enumerate set manifests under
+    /// `~/.c11-snapshots/sets/`. Columns: SET_ID, CREATED_AT, COUNT,
+    /// C11_VERSION.
+    private func printSnapshotSetsTable(client: SocketClient, wantJson: Bool) throws {
+        let payload = try client.sendV2(method: "snapshot.list_sets", params: [:])
+        if wantJson {
+            print(jsonString(payload))
+            return
+        }
+        let sets = payload["sets"] as? [[String: Any]] ?? []
+        if sets.isEmpty {
+            print("no snapshot sets")
+            return
+        }
+        func pad(_ s: String, _ width: Int) -> String {
+            if s.count >= width { return s }
+            return s + String(repeating: " ", count: width - s.count)
+        }
+        print(
+            pad("SET_ID", 26) + "  "
+            + pad("CREATED_AT", 24) + "  "
+            + pad("COUNT", 6) + "  "
+            + pad("C11_VERSION", 18)
+        )
+        for entry in sets {
+            let id = (entry["set_id"] as? String) ?? "?"
+            let created = (entry["created_at"] as? String) ?? "?"
+            let count = (entry["snapshot_count"] as? Int).map(String.init) ?? "?"
+            let version = (entry["c11_version"] as? String) ?? ""
+            print(
+                pad(id, 26) + "  "
+                + pad(created, 24) + "  "
+                + pad(count, 6) + "  "
+                + pad(version, 18)
+            )
+        }
+    }
+
+    /// `c11 list-snapshots`: enumerate per-workspace snapshots.
+    private func printSnapshotsTable(client: SocketClient, wantJson: Bool) throws {
         let payload = try client.sendV2(method: "snapshot.list", params: [:])
         guard let snapshotsAny = payload["snapshots"] as? [[String: Any]] else {
             if wantJson {
@@ -3981,14 +4437,26 @@ struct CMUXCLI {
             throw CLIError(message: "Invalid workspace handle: \(trimmed) (expected UUID, ref like workspace:1, or index)")
         }
 
-        var params: [String: Any] = [:]
         if let windowHandle {
-            params["window_id"] = windowHandle
-        }
-        let listed = try client.sendV2(method: "workspace.list", params: params)
-        let items = listed["workspaces"] as? [[String: Any]] ?? []
-        for item in items where intFromAny(item["index"]) == wantedIndex {
-            return (item["ref"] as? String) ?? (item["id"] as? String)
+            // Caller scoped to a specific window — list only that window's workspaces.
+            let listed = try client.sendV2(method: "workspace.list", params: ["window_id": windowHandle])
+            let items = listed["workspaces"] as? [[String: Any]] ?? []
+            for item in items where intFromAny(item["index"]) == wantedIndex {
+                return (item["ref"] as? String) ?? (item["id"] as? String)
+            }
+        } else {
+            // No window filter: scan all windows so --workspace 1 finds the correct workspace
+            // even if it lives in a different window than the socket's default context.
+            let windowsPayload = try client.sendV2(method: "window.list")
+            let windows = windowsPayload["windows"] as? [[String: Any]] ?? []
+            for window in windows {
+                guard let windowId = window["id"] as? String else { continue }
+                let listed = try client.sendV2(method: "workspace.list", params: ["window_id": windowId])
+                let items = listed["workspaces"] as? [[String: Any]] ?? []
+                for item in items where intFromAny(item["index"]) == wantedIndex {
+                    return (item["ref"] as? String) ?? (item["id"] as? String)
+                }
+            }
         }
         throw CLIError(message: "Workspace index not found")
     }
@@ -5522,13 +5990,13 @@ struct CMUXCLI {
         let downloadURL = entry?.downloadURL ?? "unknown"
         let checksumsAssetName = manifest?.checksumsAssetName ?? "unknown"
         let checksumsURL = manifest?.checksumsURL ?? "unknown"
-        let downloadCommand = "gh release download \(releaseTag) --repo manaflow-ai/cmux --pattern \(assetName)"
-        let downloadChecksumsCommand = "gh release download \(releaseTag) --repo manaflow-ai/cmux --pattern \(checksumsAssetName)"
+        let downloadCommand = "gh release download \(releaseTag) --repo Stage-11-Agentics/c11 --pattern \(assetName)"
+        let downloadChecksumsCommand = "gh release download \(releaseTag) --repo Stage-11-Agentics/c11 --pattern \(checksumsAssetName)"
         let checksumVerifyCommand = "shasum -a 256 -c \(checksumsAssetName) --ignore-missing"
         let signerWorkflow = releaseTag == "nightly"
-            ? "manaflow-ai/cmux/.github/workflows/nightly.yml"
-            : "manaflow-ai/cmux/.github/workflows/release.yml"
-        let verifyCommand = "gh attestation verify ./\(assetName) --repo manaflow-ai/cmux --signer-workflow \(signerWorkflow)"
+            ? "Stage-11-Agentics/c11/.github/workflows/nightly.yml"
+            : "Stage-11-Agentics/c11/.github/workflows/release.yml"
+        let verifyCommand = "gh attestation verify ./\(assetName) --repo Stage-11-Agentics/c11 --signer-workflow \(signerWorkflow)"
 
         let payload: [String: Any] = [
             "app_version": remoteDaemonVersionString(from: info),
@@ -7139,6 +7607,13 @@ struct CMUXCLI {
     }
 
     private func resolveWorkspaceId(_ raw: String?, client: SocketClient) throws -> String {
+        // An explicit empty value almost always means an unset env var leaked
+        // into `--workspace ""`. Refuse to fall back to the focused workspace —
+        // that silent fallback has landed agent work on the wrong tab. Pass a
+        // real ref or omit the flag.
+        if let raw, raw.isEmpty {
+            throw CLIError(message: "--workspace received an empty value (likely from an unset shell variable). Pass a real ref or omit the flag.")
+        }
         if let raw, isUUID(raw) {
             return raw
         }
@@ -7172,6 +7647,12 @@ struct CMUXCLI {
     }
 
     private func resolveSurfaceId(_ raw: String?, workspaceId: String, client: SocketClient) throws -> String {
+        // See resolveWorkspaceId — same hazard. Empty string is a programming
+        // error, not a request for "focused surface". Fall through to focused
+        // is reserved for the nil case where no flag was passed at all.
+        if let raw, raw.isEmpty {
+            throw CLIError(message: "--surface received an empty value (likely from an unset shell variable, e.g. $C11_SURFACE_ID). Pass a real ref or omit the flag.")
+        }
         if let raw, isUUID(raw) {
             return raw
         }
@@ -7201,8 +7682,11 @@ struct CMUXCLI {
         throw CLIError(message: "Unable to resolve surface ID")
     }
 
-    /// Return the help/usage text for a subcommand, or nil if the command is unknown.
-    private func subcommandUsage(_ command: String) -> String? {
+    /// Return the help/usage text for a subcommand, or nil if the command is
+    /// unknown. `commandArgs` is the slice after the top-level command token,
+    /// allowing two-level dispatch for commands like `workspace` that have
+    /// their own subcommand surface (e.g. `c11 workspace new --help`).
+    private func subcommandUsage(_ command: String, commandArgs: [String] = []) -> String? {
         switch command {
         case "ping":
             return """
@@ -7609,18 +8093,21 @@ struct CMUXCLI {
             """
         case "new-workspace":
             return """
-            Usage: c11 new-workspace [--cwd <path>] [--command <text>]
+            Usage: c11 new-workspace [--cwd <path>] [--command <text>] [--layout <path|name>]
 
-            Create a new workspace in the current window.
+            Create a new workspace.
 
             Flags:
-              --cwd <path>      Set the working directory for the new workspace
-              --command <text>   Send text+Enter to the new workspace after creation
+              --cwd <path>           Set the working directory for the new workspace
+              --command <text>       Send text+Enter to the new workspace after creation
+              --layout <path|name>   Apply a blueprint plan (file path or blueprint name)
 
             Example:
               c11 new-workspace
               c11 new-workspace --cwd ~/projects/myapp
               c11 new-workspace --cwd . --command "npm test"
+              c11 new-workspace --layout my-review-room
+              c11 new-workspace --layout /path/to/blueprint.json
             """
         case "list-workspaces":
             return """
@@ -7659,6 +8146,58 @@ struct CMUXCLI {
             Example:
               c11 remote-daemon-status
               c11 remote-daemon-status --os linux --arch arm64
+            """
+        case "health":
+            return """
+            Usage: c11 health [--since <duration> | --since-boot] [--rail <name>] [--json]
+
+            Read-only crash-visibility sweep across four local rails: Apple IPS reports,
+            queued Sentry envelopes, MetricKit diagnostic payloads, and the c11 launch
+            sentinel (catches Force Quit and SIGKILL where Sentry cannot).
+
+            Flags:
+              --since <duration>     Time window: 30m, 2h, 24h, 3d. Default 24h.
+              --since-boot           Limit to events since the last system boot.
+              --rail <name>          Filter to one rail: ips, sentry, metrickit, sentinel. Specify at most once. Default: all rails.
+              --json                 Emit structured JSON instead of the default table.
+
+            Example:
+              c11 health
+              c11 health --since 30m
+              c11 health --since-boot --rail sentinel
+              c11 health --json
+            """
+        case "doctor":
+            return """
+            Usage: c11 doctor [--json]
+
+            Live-environment introspection for CLI resolution: which `c11` and
+            `cmux` binaries the current shell will invoke, what the active
+            bundle's CLI is, and whether they agree. Companion to `c11 health`,
+            which inspects post-mortem crash rails.
+
+            Best run inside a c11 terminal so CMUX_BUNDLED_CLI_PATH is set.
+
+            Flags:
+              --json     Emit a stable lowercase-snake JSON object instead of
+                         the default table. Schema:
+                           status               ok | mismatch | missing | no_bundle
+                           bundled_cli_path     absolute path | omitted
+                           c11_on_path          absolute path | omitted
+                           cmux_on_path         absolute path | omitted
+                           bundled_cli_version  first line of `--version` | omitted
+                           c11_on_path_version  first line of `--version` | omitted
+                           path_fix_applied     bool — true when the bundled
+                                                CLI's directory is the first
+                                                entry on PATH (structural
+                                                proxy for the shell
+                                                integration having run)
+                           path                 PATH split into entries
+                           notes                array of human-readable warnings
+
+            Example:
+              c11 doctor
+              c11 doctor --json
             """
         case "new-split":
             return """
@@ -7792,11 +8331,13 @@ struct CMUXCLI {
               --workspace <id|ref>                Target workspace (default: $CMUX_WORKSPACE_ID)
               --url <url>                         URL for browser surfaces
               --file <path>                       File path for markdown surfaces
+              --no-focus                          Create surface without stealing focus
 
             Example:
               c11 new-surface
               c11 new-surface --type browser --pane pane:1 --url https://example.com
               c11 new-surface --type markdown --file ~/docs/notes.md
+              c11 new-surface --no-focus
             """
         case "close-surface":
             return """
@@ -7855,7 +8396,7 @@ struct CMUXCLI {
             """
         case "trigger-flash":
             return """
-            Usage: c11 trigger-flash [--workspace <id|ref>] [--surface <id|ref>] [--panel <id|ref>]
+            Usage: c11 trigger-flash [--workspace <id|ref>] [--surface <id|ref>] [--panel <id|ref>] [--color <#hex>] [--persistent]
 
             Trigger the unread flash indicator for a surface.
 
@@ -7863,10 +8404,38 @@ struct CMUXCLI {
               --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
               --surface <id|ref>     Target surface (default: $CMUX_SURFACE_ID)
               --panel <id|ref>       Alias for --surface
+              --color <#hex>         One-shot color override (e.g. "#F5C518" or "#F5C518FF").
+                                     Defaults to the c11 yellow signal color. Tints the
+                                     terminal pane ring and the sidebar workspace-row pulse.
+                                     Browser and Markdown panel overlays and the Bonsplit
+                                     tab pulse keep their default accent — color override
+                                     for those surfaces is a follow-up.
+              --persistent           Keep pulsing until the operator clicks the surface or
+                                     `c11 cancel-flash` is called. Auto-degrades to a single
+                                     one-shot when the target is the focused surface in the
+                                     focused window.
 
             Example:
               c11 trigger-flash
               c11 trigger-flash --workspace workspace:2 --surface surface:3
+              c11 trigger-flash --surface surface:3 --color "#FF00FF"
+              c11 trigger-flash --surface surface:3 --persistent
+            """
+        case "cancel-flash":
+            return """
+            Usage: c11 cancel-flash [--workspace <id|ref>] [--surface <id|ref>] [--panel <id|ref>]
+
+            Cancel any in-flight persistent flash on a surface. No-op for one-shot flashes
+            and for surfaces with no active persistent flash.
+
+            Flags:
+              --workspace <id|ref>   Workspace context (default: $CMUX_WORKSPACE_ID)
+              --surface <id|ref>     Target surface (default: $CMUX_SURFACE_ID)
+              --panel <id|ref>       Alias for --surface
+
+            Example:
+              c11 cancel-flash
+              c11 cancel-flash --workspace workspace:2 --surface surface:3
             """
         case "list-panels":
             return """
@@ -8405,6 +8974,49 @@ struct CMUXCLI {
               c11 set-agent --type claude-code --model claude-opus-4-7
               c11 set-agent --type opencode --task task-42 --surface surface:1
             """
+        case "default-agent":
+            return """
+            Usage: c11 default-agent {get | set <type> | launch [flags]}
+
+            Read or change the operator's configured default agent, or launch
+            an agent surface programmatically. The launch path is the
+            recommended way to spawn sub-agents: c11 owns per-TUI prompt
+            delivery, so the same call works whether the operator's default is
+            claude-code, codex, opencode, kimi, or a custom agent.
+
+            Subcommands:
+              get                              Print the configured default agent type.
+              set <type>                       Set the default agent (claude-code | codex | kimi | opencode | custom).
+              launch [flags]                   Launch the default (or --agent <type>) agent.
+
+            launch flags:
+              --in-surface <id|ref|index>      Launch into an existing surface's PTY. The
+                                               orchestrator pattern: create a surface with
+                                               `c11 new-split` or `c11 new-pane`, then
+                                               launch into it.
+              --pane <uuid|index>              Legacy A-button mimic: create a NEW agent
+                                               surface in the named pane (focused pane if
+                                               omitted). Mutually exclusive with
+                                               --in-surface.
+              --agent <type>                   Override the configured default for this
+                                               call only.
+              --cwd <path>                     Prepend `cd <path> && ` to the launch line.
+                                               Used with --in-surface when the existing
+                                               surface's cwd needs adjusting.
+              --prompt <text>                  Initial prompt to deliver to the agent. For
+                                               claude-code: appended as a positional arg.
+                                               For other agents: typed in after a fixed
+                                               post-launch delay.
+              --prompt-file <path>             Like --prompt, but read the text from a file.
+                                               Recommended for non-trivial prompts (no shell
+                                               escaping needed).
+
+            Examples:
+              c11 default-agent get
+              c11 default-agent set codex
+              c11 default-agent launch --in-surface surface:5 --prompt-file /tmp/bootstrap.md
+              c11 default-agent launch --pane 0 --agent claude-code
+            """
         case "set-metadata":
             return """
             Usage: c11 set-metadata [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
@@ -8681,7 +9293,12 @@ struct CMUXCLI {
             Flags:
               --workspace <ref>   Workspace to capture (ref or UUID)
               --out <path>        Override the default output path
-              --all               Capture every open workspace in one pass
+              --all               Capture every open workspace in one pass.
+                                  Writes one per-workspace file AND a
+                                  manifest at
+                                  `~/.c11-snapshots/sets/<set-ulid>.json`
+                                  that lists them. Pass the set ulid back
+                                  to `c11 restore` to rehydrate them all.
               --json              Emit raw snapshot.create result as JSON
 
             Note: --all and --workspace / --out are mutually exclusive.
@@ -8703,12 +9320,15 @@ struct CMUXCLI {
                     "Running `c11 restore <id>` twice creates two workspaces unless --in-place is passed."
             )
             return """
-            Usage: c11 restore <snapshot-id-or-path> [--in-place] [--json]
+            Usage: c11 restore <snapshot-or-set-id-or-path> [--in-place] [--json]
 
             Restore a workspace layout from a snapshot written by `c11 snapshot`.
-            The argument is either a ULID (resolved under `~/.c11-snapshots/` or
-            the legacy `~/.cmux-snapshots/`) or an absolute path to a `.json`
-            snapshot file.
+            The argument is either a ULID (resolved under `~/.c11-snapshots/`,
+            the legacy `~/.cmux-snapshots/`, or — for set manifests written by
+            `c11 snapshot --all` — `~/.c11-snapshots/sets/`), or an absolute
+            path to a `.json` snapshot or set-manifest file. Set manifests
+            rehydrate every workspace they reference; `--in-place` is rejected
+            for sets.
 
             \(inPlaceNote)
 
@@ -8732,7 +9352,7 @@ struct CMUXCLI {
             """
         case "list-snapshots":
             return """
-            Usage: c11 list-snapshots [--json]
+            Usage: c11 list-snapshots [--json] [--sets|--all]
 
             List snapshots under `~/.c11-snapshots/` merged with the legacy
             `~/.cmux-snapshots/` path. Newest first.
@@ -8740,10 +9360,106 @@ struct CMUXCLI {
             Columns: SNAPSHOT_ID, CREATED_AT, WORKSPACE_TITLE, SURFACES, ORIGIN, SOURCE.
             SOURCE is `current` for `~/.c11-snapshots/`, `legacy` for the fallback.
 
+            Flags:
+              --json    Emit raw snapshot.list result as JSON.
+              --sets    List snapshot-set manifests under `~/.c11-snapshots/sets/`
+                        (written by `c11 snapshot --all`) instead of per-workspace
+                        snapshots. Columns: SET_ID, CREATED_AT, COUNT, C11_VERSION.
+              --all     Print both tables back-to-back (per-workspace, then sets).
+
             Examples:
               c11 list-snapshots
               c11 list-snapshots --json
+              c11 list-snapshots --sets
+              c11 list-snapshots --all
             """
+        case "workspace":
+            // CMUX-37: two-level dispatch. Without a subcommand, list the
+            // three known workspace subcommands. With one, return its
+            // per-subcommand help text.
+            let sub = commandArgs.first(where: { !$0.hasPrefix("-") })
+            switch sub {
+            case "apply":
+                return """
+                Usage: c11 workspace apply --file <path|->
+
+                Apply a `WorkspaceApplyPlan` JSON document. Materializes the
+                plan into a fresh workspace via `workspace.apply` v2.
+
+                Flags:
+                  --file <path|->   Plan source. `-` reads from stdin.
+
+                Example:
+                  c11 workspace apply --file ./plan.json
+                  cat ./plan.json | c11 workspace apply --file -
+                """
+            case "new":
+                return """
+                Usage: c11 workspace new [--blueprint <path>]
+
+                Create a new workspace from a blueprint. Without `--blueprint`,
+                drops into an interactive picker that lists the built-in
+                blueprints plus any discovered under
+                `~/.config/c11/blueprints/`, `<repo>/.c11/blueprints/`, and
+                their legacy `cmux` siblings. Both `.md` (operator-edited
+                markdown) and `.json` blueprint files are accepted.
+
+                Flags:
+                  --blueprint <path>   Apply the blueprint at the given path
+                                       directly, skipping the picker.
+
+                Examples:
+                  c11 workspace new
+                  c11 workspace new --blueprint ~/.config/c11/blueprints/agent-room.md
+                """
+            case "export-blueprint":
+                return """
+                Usage: c11 workspace export-blueprint --name <name>
+                                                      [--workspace <id|ref|index>]
+                                                      [--description <text>]
+                                                      [--format md|json]
+                                                      [--out <path>]
+                                                      [--force]
+
+                Capture the current (or named) workspace as a
+                `WorkspaceBlueprintFile` and write it to disk. Default
+                destination is `~/.config/c11/blueprints/<name>.md`. Pass
+                `--format json` for the legacy JSON envelope.
+
+                Flags:
+                  --name <name>            Required. Blueprint name (also the file stem).
+                  --workspace <ref>        Source workspace. Defaults to the caller's workspace.
+                  --description <text>     Optional description embedded in the blueprint envelope.
+                  --format md|json         Output format. Default: md.
+                  --out <path>             Move the written file to this path.
+                  --force                  Overwrite an existing blueprint with the same name.
+
+                Examples:
+                  c11 workspace export-blueprint --name agent-room
+                  c11 workspace export-blueprint --name agent-room --format json --workspace workspace:1 --force
+                """
+            case nil:
+                return """
+                Usage: c11 workspace <subcommand> [options]
+
+                Workspace persistence and blueprint commands.
+
+                Subcommands:
+                  apply              Apply a WorkspaceApplyPlan JSON document.
+                  new                Create a workspace from a blueprint (interactive or by path).
+                  export-blueprint   Capture a workspace as a reusable blueprint file.
+
+                Run `c11 workspace <subcommand> --help` for per-subcommand flags.
+                """
+            default:
+                return """
+                Usage: c11 workspace <subcommand> [options]
+
+                Unknown workspace subcommand: '\(sub ?? "")'.
+                Known subcommands: apply, new, export-blueprint.
+                Run `c11 workspace --help` for the full list.
+                """
+            }
         default:
             return nil
         }
@@ -8752,8 +9468,16 @@ struct CMUXCLI {
     /// Dispatch help for a subcommand. Returns true if help was printed.
     private func dispatchSubcommandHelp(command: String, commandArgs: [String]) -> Bool {
         guard commandArgs.contains("--help") || commandArgs.contains("-h") else { return false }
-        guard let text = subcommandUsage(command) else { return false }
-        print("c11 \(command)")
+        guard let text = subcommandUsage(command, commandArgs: commandArgs) else { return false }
+        // For two-level commands (e.g. `c11 workspace new --help`) include the
+        // resolved subcommand in the header so the operator can tell which
+        // help block they got back.
+        let subToken = commandArgs.first(where: { !$0.hasPrefix("-") })
+        if let subToken {
+            print("c11 \(command) \(subToken)")
+        } else {
+            print("c11 \(command)")
+        }
         print("")
         print(text)
         return true
@@ -9521,12 +10245,143 @@ struct CMUXCLI {
         }
     }
 
+    private func resolveCurrentWorkspaceId(client: SocketClient) throws -> String {
+        if let id = try normalizeWorkspaceHandle(nil, client: client, allowCurrent: true) {
+            return id
+        }
+        throw CLIError(message: "No current workspace available")
+    }
+
     private func resolveWorkspaceColorTarget(_ raw: String?, client: SocketClient) throws -> String? {
         let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if value == nil || value?.isEmpty == true || value == "@current" || value == "@focused" {
+        if value == "@current" || value == "@focused" {
+            return try normalizeWorkspaceHandle(nil, client: client, allowCurrent: true)
+        }
+        if value == nil || value?.isEmpty == true {
+            // No --workspace flag: prefer caller's env workspace so commands launched
+            // from an unfocused surface still target the caller's own workspace
+            // (matches the env-first pattern used at CLI/c11.swift:1762 'identify').
+            let env = ProcessInfo.processInfo.environment
+            if let envWs = env["CMUX_WORKSPACE_ID"]?.trimmingCharacters(in: .whitespacesAndNewlines), !envWs.isEmpty {
+                return try normalizeWorkspaceHandle(envWs, client: client)
+            }
+            if let envWs = env["C11_WORKSPACE_ID"]?.trimmingCharacters(in: .whitespacesAndNewlines), !envWs.isEmpty {
+                return try normalizeWorkspaceHandle(envWs, client: client)
+            }
             return try normalizeWorkspaceHandle(nil, client: client, allowCurrent: true)
         }
         return try normalizeWorkspaceHandle(value, client: client)
+    }
+
+    // MARK: - `c11 surface-color` (C11-10)
+    //
+    // Per-surface tab color: identifies a single surface tab in a pane,
+    // distinct from the workspace-level chrome accent. Help text says
+    // "surface tab in a pane" to disambiguate from workspace tabs.
+
+    private func runSurfaceColor(commandArgs: [String], client: SocketClient, jsonOutput: Bool) throws {
+        guard let first = commandArgs.first else {
+            throw CLIError(message: "surface-color requires a subcommand. Try: c11 surface-color get (operates on the surface tab in a pane)")
+        }
+        let sub = first.lowercased()
+        let rest = Array(commandArgs.dropFirst())
+        switch sub {
+        case "set":
+            try runSurfaceColorSet(args: rest, client: client, jsonOutput: jsonOutput)
+        case "clear":
+            try runSurfaceColorClear(args: rest, client: client, jsonOutput: jsonOutput)
+        case "get":
+            try runSurfaceColorGet(args: rest, client: client, jsonOutput: jsonOutput)
+        case "list-palette":
+            // Shares the workspace-color palette — same list, same names.
+            try runWorkspaceColorListPalette(client: client, jsonOutput: jsonOutput)
+        default:
+            throw CLIError(message: "Unknown surface-color subcommand: \(first)")
+        }
+    }
+
+    private func runSurfaceColorSet(args: [String], client: SocketClient, jsonOutput: Bool) throws {
+        let (workspaceOpt, rest1) = parseOption(args, name: "--workspace")
+        let (surfaceOpt, rest2) = parseOption(rest1, name: "--surface")
+        let positional = rest2.filter { !$0.hasPrefix("-") }
+        guard let hex = positional.first else {
+            throw CLIError(message: "surface-color set <hex> [--workspace <ref>] [--surface <ref>] (quote hex starting with '#': c11 surface-color set \"#RRGGBB\")")
+        }
+
+        let workspaceHandle = try resolveWorkspaceColorTarget(workspaceOpt, client: client)
+        let surfaceRef = surfaceOpt ?? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
+        let surfaceId = try resolveSurfaceId(
+            surfaceRef,
+            workspaceId: workspaceHandle ?? (try resolveCurrentWorkspaceId(client: client)),
+            client: client
+        )
+
+        var params: [String: Any] = ["hex": hex, "surface_id": surfaceId]
+        if let workspaceHandle { params["workspace_id"] = workspaceHandle }
+        let response = try client.sendV2(method: "surface.set_custom_color", params: params)
+        if jsonOutput {
+            print(jsonString(response))
+        } else {
+            let applied = response["custom_color"] as? String ?? hex
+            print("OK surface_color=\(applied)")
+        }
+    }
+
+    private func runSurfaceColorClear(args: [String], client: SocketClient, jsonOutput: Bool) throws {
+        let (workspaceOpt, rest1) = parseOption(args, name: "--workspace")
+        let (surfaceOpt, rest2) = parseOption(rest1, name: "--surface")
+        let extras = rest2.filter { !$0.hasPrefix("-") }
+        if !extras.isEmpty {
+            throw CLIError(message: "surface-color clear takes no positional arguments. Use 'surface-color set <hex>' to set a color.")
+        }
+        let workspaceHandle = try resolveWorkspaceColorTarget(workspaceOpt, client: client)
+        let surfaceRef = surfaceOpt ?? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
+        let surfaceId = try resolveSurfaceId(
+            surfaceRef,
+            workspaceId: workspaceHandle ?? (try resolveCurrentWorkspaceId(client: client)),
+            client: client
+        )
+
+        var params: [String: Any] = ["clear": true, "surface_id": surfaceId]
+        if let workspaceHandle { params["workspace_id"] = workspaceHandle }
+        let response = try client.sendV2(method: "surface.set_custom_color", params: params)
+        if jsonOutput {
+            print(jsonString(response))
+        } else {
+            print("OK surface color cleared")
+        }
+    }
+
+    private func runSurfaceColorGet(args: [String], client: SocketClient, jsonOutput: Bool) throws {
+        let (workspaceOpt, rest1) = parseOption(args, name: "--workspace")
+        let (surfaceOpt, _) = parseOption(rest1, name: "--surface")
+        let workspaceHandle = try resolveWorkspaceColorTarget(workspaceOpt, client: client)
+        let resolvedWorkspaceId = try workspaceHandle ?? resolveCurrentWorkspaceId(client: client)
+        let surfaceRef = surfaceOpt ?? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
+        let surfaceId = try resolveSurfaceId(
+            surfaceRef,
+            workspaceId: resolvedWorkspaceId,
+            client: client
+        )
+
+        let response = try client.sendV2(method: "surface.list", params: ["workspace_id": resolvedWorkspaceId])
+        let items = (response["surfaces"] as? [[String: Any]]) ?? []
+        guard let match = items.first(where: { ($0["id"] as? String) == surfaceId }) else {
+            // Match the v2 server's not_found semantics. resolveSurfaceId short-circuits
+            // any UUID-shaped string without validating membership, so a stale or wrong
+            // UUID would otherwise print 'color: (none)' and exit 0 — silently lying.
+            throw CLIError(message: "Surface not found: \(surfaceRef ?? surfaceId)")
+        }
+
+        if jsonOutput {
+            print(jsonString(match))
+            return
+        }
+        if let color = match["custom_color"] as? String {
+            print("color: \(color)")
+        } else {
+            print("color: (none)")
+        }
     }
 
     private func availableThemeNames() -> [String] {
@@ -9915,6 +10770,39 @@ struct CMUXCLI {
         args.contains(name)
     }
 
+    /// Extract a boolean flag, returning (present, remaining). Respects `--` terminator
+    /// so callers that join the remainder as text don't accidentally treat a post-`--`
+    /// occurrence of `name` as the flag.
+    private func parseBoolFlag(_ args: [String], name: String) -> (Bool, [String]) {
+        var present = false
+        var remaining: [String] = []
+        var pastTerminator = false
+        for arg in args {
+            if arg == "--" {
+                pastTerminator = true
+                remaining.append(arg)
+                continue
+            }
+            if !pastTerminator, arg == name {
+                present = true
+                continue
+            }
+            remaining.append(arg)
+        }
+        return (present, remaining)
+    }
+
+    /// CMUX-10: client-side hex validation for `--color`. The socket re-validates
+    /// authoritatively (server is the source of truth), but rejecting obviously
+    /// wrong shapes here gives the operator a fast, clear error without a
+    /// round-trip. Accepts `#RRGGBB`, `#RRGGBBAA`, with or without leading `#`.
+    private func isValidFlashColorHex(_ raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stripped = trimmed.hasPrefix("#") ? String(trimmed.dropFirst()) : trimmed
+        guard stripped.count == 6 || stripped.count == 8 else { return false }
+        return stripped.allSatisfy { $0.isHexDigit }
+    }
+
     private func replaceToken(_ args: [String], from: String, to: String) -> [String] {
         args.map { $0 == from ? to : $0 }
     }
@@ -10030,6 +10918,119 @@ struct CMUXCLI {
             windowOverride: windowOverride
         )
         return .surface(workspaceId: workspaceId, surfaceId: surfaceId)
+    }
+
+    /// `c11 default-agent {get|set|launch}` — sugar over the v1 `default_agent`
+    /// socket command. Resolves surface refs client-side to UUIDs (the v1
+    /// handler accepts UUIDs only), then forwards the composed v1 string.
+    private func runDefaultAgentCommand(
+        commandArgs: [String],
+        client: SocketClient
+    ) throws {
+        guard let sub = commandArgs.first else {
+            throw CLIError(message: "default-agent requires a subcommand: get | set <type> | launch [flags]")
+        }
+
+        switch sub {
+        case "get":
+            let response = try sendV1Command("default_agent get", client: client)
+            print(response)
+
+        case "set":
+            guard commandArgs.count >= 2 else {
+                let valid = ["claude-code", "codex", "kimi", "opencode", "custom"].joined(separator: ", ")
+                throw CLIError(message: "default-agent set requires <type>. Valid: \(valid)")
+            }
+            let response = try sendV1Command("default_agent set \(commandArgs[1])", client: client)
+            print(response)
+
+        case "launch":
+            try runDefaultAgentLaunchCommand(
+                commandArgs: Array(commandArgs.dropFirst()),
+                client: client
+            )
+
+        default:
+            throw CLIError(message: "default-agent: unknown subcommand '\(sub)' (expected get|set|launch)")
+        }
+    }
+
+    private func runDefaultAgentLaunchCommand(
+        commandArgs: [String],
+        client: SocketClient
+    ) throws {
+        let agentArg = optionValue(commandArgs, name: "--agent")
+        let inSurfaceRaw = optionValue(commandArgs, name: "--in-surface")
+        let paneArg = optionValue(commandArgs, name: "--pane")
+        let cwdArg = optionValue(commandArgs, name: "--cwd")
+        let promptArg = optionValue(commandArgs, name: "--prompt")
+        let promptFileArg = optionValue(commandArgs, name: "--prompt-file")
+
+        if inSurfaceRaw != nil && paneArg != nil {
+            throw CLIError(message: "default-agent launch: --in-surface and --pane are mutually exclusive")
+        }
+        if promptArg != nil && promptFileArg != nil {
+            throw CLIError(message: "default-agent launch: --prompt and --prompt-file are mutually exclusive")
+        }
+
+        // Resolve --in-surface ref → UUID. The v1 handler accepts UUIDs only;
+        // short refs and indexes get resolved here via surface.list.
+        var inSurfaceUUID: String? = nil
+        if let raw = inSurfaceRaw {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if isUUID(trimmed) {
+                inSurfaceUUID = trimmed
+            } else {
+                let listed = try client.sendV2(method: "surface.list", params: [:])
+                let items = listed["surfaces"] as? [[String: Any]] ?? []
+                let asIndex = Int(trimmed)
+                for item in items {
+                    if (item["ref"] as? String) == trimmed, let id = item["id"] as? String {
+                        inSurfaceUUID = id
+                        break
+                    }
+                    if let asIndex, intFromAny(item["index"]) == asIndex, let id = item["id"] as? String {
+                        inSurfaceUUID = id
+                        break
+                    }
+                }
+                if inSurfaceUUID == nil {
+                    throw CLIError(message: "Surface not found: \(raw)")
+                }
+            }
+        }
+
+        // Compose v1 command. Multi-word values get quoted so tokenizeArgs
+        // on the server reconstructs them as single tokens.
+        var parts: [String] = ["default_agent", "launch"]
+        if let agentArg { parts.append("--agent"); parts.append(agentArg) }
+        if let inSurfaceUUID { parts.append("--in-surface"); parts.append(inSurfaceUUID) }
+        if let paneArg { parts.append("--pane"); parts.append(paneArg) }
+        if let cwdArg { parts.append("--cwd"); parts.append(v1QuoteForTokenizer(cwdArg)) }
+        if let promptArg { parts.append("--prompt"); parts.append(v1QuoteForTokenizer(promptArg)) }
+        if let promptFileArg { parts.append("--prompt-file"); parts.append(v1QuoteForTokenizer(promptFileArg)) }
+
+        let v1Cmd = parts.joined(separator: " ")
+        let response = try sendV1Command(v1Cmd, client: client)
+        print(response)
+    }
+
+    /// Quote a string for the v1 server-side `tokenizeArgs` parser. Uses
+    /// double quotes with backslash escapes (the tokenizer's escape grammar:
+    /// `\\`, `\"`, `\n`, `\r`, `\t`).
+    private func v1QuoteForTokenizer(_ value: String) -> String {
+        var escaped = ""
+        for char in value {
+            switch char {
+            case "\\": escaped += "\\\\"
+            case "\"": escaped += "\\\""
+            case "\n": escaped += "\\n"
+            case "\r": escaped += "\\r"
+            case "\t": escaped += "\\t"
+            default: escaped.append(char)
+            }
+        }
+        return "\"\(escaped)\""
     }
 
     /// `cmux set-agent` — M1 sugar over `surface.set_metadata { source: declare, mode: merge }`.
@@ -12166,7 +13167,7 @@ struct CMUXCLI {
 
     private func claudeTeamsResolvedSocketPath(processEnvironment: [String: String]) -> String {
         let envSocketPath: String? = {
-            for key in ["CMUX_SOCKET_PATH", "CMUX_SOCKET"] {
+            for key in ["C11_SOCKET", "CMUX_SOCKET_PATH", "CMUX_SOCKET"] {
                 guard let raw = processEnvironment[key] else { continue }
                 let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty {
@@ -13183,6 +14184,17 @@ struct CMUXCLI {
         let workspaceArg = hookWsFlag ?? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
         let surfaceArg = optionValue(hookArgs, name: "--surface") ?? (hookWsFlag == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
         let rawInput = String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        // C11-24 diagnostic: when CMUX_HOOK_DEBUG_PATH is set, dump the
+        // raw stdin JSON to that path before parsing. Used to verify the
+        // exact shape of the SessionStart payload Claude Code emits when
+        // session_id capture appears to be silently dropping. Best-effort —
+        // any I/O error is swallowed so a misconfigured debug path can
+        // never break the hook itself.
+        if let debugPath = ProcessInfo.processInfo.environment["CMUX_HOOK_DEBUG_PATH"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !debugPath.isEmpty {
+            try? rawInput.write(toFile: debugPath, atomically: true, encoding: .utf8)
+        }
         let parsedInput = parseClaudeHookInput(rawInput: rawInput)
         let sessionStore = ClaudeHookSessionStore()
         telemetry.breadcrumb(
@@ -13237,9 +14249,25 @@ struct CMUXCLI {
                     // `Sources/WorkspaceMetadataKeys.swift` is linked into
                     // both the c11 app target and the c11-cli target, so the
                     // reserved-key constant has one spelling in one place.
-                    let metadata: [String: Any] = [
+                    var metadata: [String: Any] = [
                         SurfaceMetadataKeyName.claudeSessionId: trimmedSessionId
                     ]
+                    // Pair the session id with the project directory it was
+                    // created in. `claude --resume` resolves the session JSONL
+                    // relative to the shell's cwd, so a session captured in a
+                    // worktree subdir cannot be resumed from its parent.
+                    // Recording the project_dir lets the restart registry `cd`
+                    // there before issuing the resume command. Re-validate
+                    // here: the store rejects malformed values, but skipping
+                    // the write entirely on an invalid path keeps the
+                    // session_id capture intact rather than failing the
+                    // whole metadata-merge call.
+                    if let cwd = parsedInput.cwd?
+                        .trimmingCharacters(in: .whitespacesAndNewlines),
+                       !cwd.isEmpty,
+                       isValidClaudeSessionProjectDir(cwd) {
+                        metadata[SurfaceMetadataKeyName.claudeSessionProjectDir] = cwd
+                    }
                     var params: [String: Any] = [
                         "surface_id": surfaceId,
                         "metadata": metadata,
@@ -13393,6 +14421,23 @@ struct CMUXCLI {
 
         case "session-end":
             telemetry.breadcrumb("claude-hook.session-end")
+            // SessionEnd-during-shutdown race: c11 kills its terminals when
+            // the app is quitting, claude exits, this hook fires while c11
+            // is still tearing down. Without the guard below we'd clear
+            // `claude.session_id` from surface metadata and race the
+            // snapshot capture in `applicationShouldTerminate`, losing the
+            // per-pane id and breaking auto-resume on next launch (the
+            // registry's resolver returns nil with no session id, so the
+            // wrapper just launches a fresh claude). See
+            // `SessionEndShutdownPolicy` for the policy and PR #95
+            // (conversation-store) for the architecture that supersedes
+            // this rail.
+            let pingOutcome = queryC11ShutdownState(client: client)
+            if SessionEndShutdownPolicy.shouldPreserve(outcome: pingOutcome) {
+                telemetry.breadcrumb("claude-hook.session-end.preserved-during-shutdown")
+                print("OK")
+                return
+            }
             // Final cleanup when Claude process exits.
             // Only clear when we are the primary cleanup path (Stop didn't fire first).
             // If Stop already consumed the session, consumedSession is nil and we skip
@@ -13407,6 +14452,36 @@ struct CMUXCLI {
                 _ = try? clearClaudeStatus(client: client, workspaceId: workspaceId)
                 _ = try? sendV1Command("clear_agent_pid claude_code --tab=\(workspaceId)", client: client)
                 _ = try? sendV1Command("clear_notifications --tab=\(workspaceId)", client: client)
+                // C11-24: clear `claude.session_id` from the surface metadata
+                // so a subsequent c11 restart doesn't auto-resume an
+                // already-ended session. The paired `claude.session_project_dir`
+                // is cleared in the same call — they're written atomically
+                // at SessionStart and only meaningful as a pair.
+                // `terminal_type` stays — it's a per-surface configuration
+                // ("this surface is a claude terminal"), not a per-session
+                // pointer.
+                let surfaceId = consumedSession.surfaceId
+                if !surfaceId.isEmpty {
+                    var params: [String: Any] = [
+                        "surface_id": surfaceId,
+                        "keys": [
+                            SurfaceMetadataKeyName.claudeSessionId,
+                            SurfaceMetadataKeyName.claudeSessionProjectDir
+                        ],
+                        "source": "explicit"
+                    ]
+                    if !workspaceId.isEmpty {
+                        params["workspace_id"] = workspaceId
+                    }
+                    do {
+                        _ = try client.sendV2(method: "surface.clear_metadata", params: params)
+                        telemetry.breadcrumb("claude-hook.session-id.metadata-clear.ok")
+                    } catch let error as CLIError where isAdvisoryHookConnectivityError(error) {
+                        telemetry.breadcrumb("claude-hook.session-id.metadata-clear.skipped")
+                    } catch {
+                        telemetry.breadcrumb("claude-hook.session-id.metadata-clear.failed")
+                    }
+                }
             }
             print("OK")
 
@@ -13921,7 +14996,7 @@ struct CMUXCLI {
         print()
         print("  \(bold)Stage 11\(reset)\(subdued)            https://stage11.ai\(reset)")
         print("  \(bold)The Spike\(reset)\(subdued)           https://stage11.ai/spike\(reset)")
-        print("  \(bold)Upstream\(reset)\(subdued)            https://github.com/manaflow-ai/cmux (cmux — the project we forked)\(reset)")
+        print("  \(bold)Repo\(reset)\(subdued)                https://github.com/Stage-11-Agentics/c11\(reset)")
         print()
         print("  \(subdued)Run \(reset)\(bold)c11 --help\(reset)\(subdued) for all commands.\(reset)")
         print("  \(subdued)Run \(reset)\(bold)c11 shortcuts\(reset)\(subdued) to edit shortcuts.\(reset)")
@@ -14217,6 +15292,11 @@ struct CMUXCLI {
           `tab-action` also accepts `tab:<n>` in addition to `surface:<n>`.
           Output defaults to refs; pass --id-format uuids or --id-format both to include UUIDs.
 
+        Socket Path:
+          Resolution precedence: --socket flag → C11_SOCKET → CMUX_SOCKET_PATH → CMUX_SOCKET → auto-discovery.
+          When auto-discovery picks a non-default socket, c11 prints one stderr line attributing the source.
+          Suppress that line with C11_QUIET_DISCOVERY=1.
+
         Socket Auth:
           --password takes precedence, then CMUX_SOCKET_PASSWORD env var, then password saved in Settings.
 
@@ -14242,6 +15322,10 @@ struct CMUXCLI {
           workspace-action --action <name> [--workspace <id|ref|index>] [--title <text>]
           list-workspaces
           new-workspace [--cwd <path>] [--command <text>]
+          workspace                                        (workspace persistence subcommands)
+          workspace apply --file <path|->                  (apply a WorkspaceApplyPlan JSON)
+          workspace new [--blueprint <path>]               (create from a blueprint, interactive picker without --blueprint)
+          workspace export-blueprint --name <name> [--workspace <ref>] [--description <text>] [--out <path>] [--force]
           ssh <destination> [--name <title>] [--port <n>] [--identity <path>] [--ssh-option <opt>] [-- <remote-command-args>]
           remote-daemon-status [--os <darwin|linux>] [--arch <arm64|amd64>]
           new-split <left|right|up|down> [--workspace <id|ref>] [--surface <id|ref>] [--panel <id|ref>] [--title <text>]
@@ -14262,7 +15346,10 @@ struct CMUXCLI {
           drag-surface-to-split --surface <id|ref> <left|right|up|down>
           refresh-surfaces
           surface-health [--workspace <id|ref>]
-          trigger-flash [--workspace <id|ref>] [--surface <id|ref>]
+          health [--since <duration> | --since-boot] [--rail <name>] [--json]
+          doctor [--json]
+          trigger-flash [--workspace <id|ref>] [--surface <id|ref>] [--color <#hex>] [--persistent]
+          cancel-flash [--workspace <id|ref>] [--surface <id|ref>]
           list-panels [--workspace <id|ref>]
           focus-panel --panel <id|ref> [--workspace <id|ref>]
           close-workspace --workspace <id|ref>
@@ -14281,6 +15368,7 @@ struct CMUXCLI {
           clear-notifications
           claude-hook <session-start|stop|notification> [--workspace <id|ref>] [--surface <id|ref>]
           set-agent --type <terminal_type> [--model <id>] [--task <id>] [--role <id>] [--surface <id|ref>] [--workspace <id|ref>]
+          default-agent {get | set <type> | launch [--in-surface <id|ref> | --pane <id>] [--agent <type>] [--cwd <path>] [--prompt <text> | --prompt-file <path>]}
           set-metadata (--json '{...}' | --key <K> --value <V> [--type string|number|bool|json]) [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>] [--mode merge|replace] [--source <src>]
           get-metadata [--key <K> ...] [--sources] [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
           clear-metadata [--key <K> ...] [--source <src>] [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
@@ -14355,8 +15443,11 @@ struct CMUXCLI {
                               ALL commands (send, list-panels, new-split, notify, etc.).
           CMUX_TAB_ID         Optional alias used by `tab-action`/`rename-tab` as default --tab.
           CMUX_SURFACE_ID     Auto-set in c11 terminals. Used as default --surface.
-          CMUX_SOCKET_PATH    Override the Unix socket path. Without this, the CLI defaults
-                              to ~/Library/Application Support/cmux/cmux.sock and auto-discovers tagged/debug sockets.
+          C11_SOCKET          Override the Unix socket path (preferred). Takes precedence over
+                              CMUX_SOCKET_PATH and CMUX_SOCKET.
+          CMUX_SOCKET_PATH    Legacy alias for C11_SOCKET. Still accepted; loses to C11_SOCKET when both set.
+          CMUX_SOCKET         Older alias for the same. Loses to both above.
+          C11_QUIET_DISCOVERY Set to 1 to suppress the stderr line c11 prints when auto-discovering a non-default socket.
         """
     }
 
@@ -14370,6 +15461,16 @@ struct CMUXCLI {
         idFormat: CLIIDFormat = .refs
     ) -> String {
         formatDebugTerminalsPayload(payload, idFormat: idFormat)
+    }
+
+    static func debugFailureSeverityForTesting(code: String, message: String) -> FailureSeverity {
+        failureSeverity(code: code, message: message)
+    }
+
+    static func debugPartitionFailuresForTesting(
+        _ failures: [[String: Any]]
+    ) -> (failures: [[String: Any]], info: [[String: Any]]) {
+        partitionFailures(failures)
     }
 #endif
 }
@@ -14394,2346 +15495,26 @@ struct CMUXTermMain {
     static func main() {
         // CLI tools should ignore SIGPIPE so closed stdout pipes do not terminate the process.
         _ = signal(SIGPIPE, SIG_IGN)
+        NSSetUncaughtExceptionHandler { exception in
+            // NSFileHandle.writeData: raises NSFileHandleOperationException when writing to a
+            // closed pipe. SIGPIPE is already SIG_IGN; treat a broken-pipe write as a clean exit.
+            if exception.name == .fileHandleOperationException {
+                exit(0)
+            }
+            FileHandle.standardError.write(
+                Data("c11: uncaught exception \(exception.name): \(exception.reason ?? "(none)")\n".utf8)
+            )
+            exit(1)
+        }
         mirrorC11CmuxEnv()
         let cli = CMUXCLI(args: CommandLine.arguments)
         do {
             try cli.run()
-        } catch let installerError as IntegrationInstallerError {
-            // Installer errors carry their own exit code + structured payload.
-            installerError.emit()
-            exit(installerError.exitCode)
         } catch {
             FileHandle.standardError.write(Data("Error: \(error)\n".utf8))
             exit(1)
         }
     }
-}
-
-// MARK: - Module 4: Integration installers
-//
-// c11 Module 4 — `cmux install <tui>` / `cmux uninstall <tui>`.
-// One-command wiring of cmux's notification shims and agent-declaration
-// calls into each first-class TUI's configuration.
-//
-// Spec: docs/c11mux-module-4-integration-installers-spec.md
-//
-// Everything here is filesystem-local; install does not touch the running
-// cmux socket. Menubar integration lives in Sources/AppDelegate.swift and
-// goes through the existing v2 surface.create + surface.send_text path.
-
-public enum IntegrationInstallerTUI: String, CaseIterable {
-    case claudeCode = "claude-code"
-    case codex = "codex"
-    case opencode = "opencode"
-    case kimi = "kimi"
-
-    public static func parse(_ raw: String) -> IntegrationInstallerTUI? {
-        let lowered = raw.lowercased()
-        if let direct = IntegrationInstallerTUI(rawValue: lowered) { return direct }
-        if lowered == "claude" { return .claudeCode }
-        return nil
-    }
-
-    public var displayName: String {
-        switch self {
-        case .claudeCode: return "Claude Code"
-        case .codex: return "Codex"
-        case .opencode: return "OpenCode"
-        case .kimi: return "Kimi"
-        }
-    }
-
-    public var usesNativeHooks: Bool { self == .claudeCode }
-
-    public func defaultConfigPath(home: String) -> String {
-        switch self {
-        case .claudeCode: return "\(home)/.claude/settings.json"
-        case .codex: return "\(home)/.codex/config.toml"
-        case .opencode: return "\(home)/.config/opencode/opencode.json"
-        case .kimi: return "\(home)/.kimi/config.toml"
-        }
-    }
-
-    public func binaryName() -> String {
-        // `claude-code` ships as `claude`, other three match rawValue.
-        switch self {
-        case .claudeCode: return "claude"
-        default: return rawValue
-        }
-    }
-
-    public func shimPath(home: String) -> String {
-        return "\(home)/.local/bin/cmux-shims/\(rawValue)"
-    }
-}
-
-public enum IntegrationInstallerState: String {
-    case notInstalled = "not_installed"
-    case installedCurrent = "installed_current"
-    case installedOutdated = "installed_outdated"
-    case schemaMismatch = "schema_mismatch"
-    case configMalformed = "config_malformed"
-    case markerHandEdit = "marker_hand_edit"
-}
-
-public struct IntegrationInstallerError: Error {
-    public let code: String
-    public let message: String
-    public let exitCode: Int32
-    public let path: String?
-    public let parserError: String?
-    public let jsonOutput: Bool
-
-    public init(
-        code: String,
-        message: String,
-        exitCode: Int32,
-        path: String? = nil,
-        parserError: String? = nil,
-        jsonOutput: Bool = false
-    ) {
-        self.code = code
-        self.message = message
-        self.exitCode = exitCode
-        self.path = path
-        self.parserError = parserError
-        self.jsonOutput = jsonOutput
-    }
-
-    public func emit() {
-        if jsonOutput {
-            var errorPayload: [String: Any] = [
-                "code": code,
-                "message": message
-            ]
-            if let path { errorPayload["path"] = path }
-            if let parserError { errorPayload["parser_error"] = parserError }
-            let payload: [String: Any] = [
-                "ok": false,
-                "error": errorPayload
-            ]
-            let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])) ?? Data()
-            if let line = String(data: data, encoding: .utf8) {
-                FileHandle.standardError.write(Data((line + "\n").utf8))
-            }
-        } else {
-            FileHandle.standardError.write(Data(("Error: \(message)\n").utf8))
-        }
-    }
-}
-
-enum InstallExitCode {
-    static let userAborted: Int32 = 1
-    static let unknownTui: Int32 = 2
-    static let configMissing: Int32 = 3
-    static let configPermissionDenied: Int32 = 4
-    static let configMalformed: Int32 = 5
-    static let schemaVersionMismatch: Int32 = 6
-    static let outdatedInstallRequiresForce: Int32 = 7
-    static let tuiBinaryNotFound: Int32 = 8
-    static let shimDirNotWritable: Int32 = 9
-    static let markerHandEditDetected: Int32 = 10
-}
-
-struct IntegrationInstallerConstants {
-    static let schemaVersion = 1
-    static let markerId = "c11mux-v1"
-    static let tomlFenceBegin = "# cmux-install-begin"
-    static let tomlFenceEnd = "# cmux-install-end"
-}
-
-/// Canonical hook entries c11 writes into `~/.claude/settings.json`.
-/// Identity is established by content-hash match against the `x-cmux.entries`
-/// table. See `docs/c11mux-module-4-integration-installers-spec.md`.
-private func claudeCanonicalEntries() -> [(event: String, entry: [String: Any])] {
-    return [
-        ("SessionStart", [
-            "matcher": "",
-            "hooks": [
-                ["type": "command", "command": "c11 claude-hook session-start", "timeout": 10],
-                ["type": "command", "command": "c11 set-agent --type claude-code --source declare", "timeout": 5]
-            ]
-        ]),
-        ("Stop", [
-            "matcher": "",
-            "hooks": [
-                ["type": "command", "command": "c11 claude-hook stop", "timeout": 10]
-            ]
-        ]),
-        ("SessionEnd", [
-            "matcher": "",
-            "hooks": [
-                ["type": "command", "command": "c11 claude-hook session-end", "timeout": 1]
-            ]
-        ]),
-        ("Notification", [
-            "matcher": "",
-            "hooks": [
-                ["type": "command", "command": "c11 claude-hook notification", "timeout": 10]
-            ]
-        ]),
-        ("UserPromptSubmit", [
-            "matcher": "",
-            "hooks": [
-                ["type": "command", "command": "c11 claude-hook prompt-submit", "timeout": 10]
-            ]
-        ]),
-        ("PreToolUse", [
-            "matcher": "",
-            "hooks": [
-                ["type": "command", "command": "c11 claude-hook pre-tool-use", "timeout": 5, "async": true]
-            ]
-        ])
-    ]
-}
-
-func integrationInstallerCanonicalJSON(_ object: Any) -> Data {
-    // Sorted keys, no whitespace. Safe for SHA256 content addressing.
-    return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data()
-}
-
-func integrationInstallerSHA256(_ data: Data) -> String {
-    let digest = SHA256.hash(data: data)
-    return digest.map { String(format: "%02x", $0) }.joined()
-}
-
-func integrationInstallerSHA256(of string: String) -> String {
-    return integrationInstallerSHA256(Data(string.utf8))
-}
-
-func integrationInstallerShimScript(for tui: IntegrationInstallerTUI) -> String {
-    let type = tui.rawValue
-    let binary = tui.binaryName()
-    return """
-    #!/usr/bin/env bash
-    # c11 integration shim (do not edit — regenerate via `cmux install \(type)`)
-    set -u
-    CMUX_MARKER_ID=\"\(IntegrationInstallerConstants.markerId)\"
-    if [[ -n \"${CMUX_SURFACE_ID:-}\" ]]; then
-      cmux set-agent --type \(type) --source declare >/dev/null 2>&1 || true
-      cmux claude-hook session-start </dev/null >/dev/null 2>&1 || true
-    fi
-    SELF_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"
-    REAL=\"\"
-    OLD_IFS=$IFS
-    IFS=:
-    for d in $PATH; do
-      [[ \"$d\" == \"$SELF_DIR\" ]] && continue
-      if [[ -x \"$d/\(binary)\" ]]; then REAL=\"$d/\(binary)\"; break; fi
-    done
-    IFS=$OLD_IFS
-    if [[ -z \"$REAL\" ]]; then
-      echo \"cmux-shim: \(binary) not found in PATH\" >&2
-      exit 127
-    fi
-    \"$REAL\" \"$@\"
-    STATUS=$?
-    if [[ -n \"${CMUX_SURFACE_ID:-}\" ]]; then
-      cmux claude-hook session-end </dev/null >/dev/null 2>&1 || true
-    fi
-    exit $STATUS
-    """
-}
-
-struct IntegrationInstallerPlan {
-    let tui: IntegrationInstallerTUI
-    let configPath: String
-    let homePath: String
-    let preConfigText: String?          // nil if the file did not exist
-    let postConfigText: String?         // nil if no change to the config file
-    let shimPath: String?               // nil for native-hook TUIs
-    let preShimText: String?
-    let postShimText: String?
-    let priorState: IntegrationInstallerState
-    let newInstalledAt: String
-    let noop: Bool
-    let summary: [String]
-    let unifiedDiff: String
-    let tuiBinaryFound: Bool
-    let tuiBinaryPath: String?
-    let createdConfig: Bool             // true when config file didn't exist pre-install
-}
-
-struct IntegrationInstallerStatus {
-    let tui: IntegrationInstallerTUI
-    let configPath: String
-    let shimPath: String?
-    let state: IntegrationInstallerState
-    let schemaVersion: Int?
-    let markerId: String?
-    let installedAt: String?
-    let tuiBinaryFound: Bool
-    let tuiBinaryPath: String?
-    let expectedHashes: [String: String]   // event -> sha for claude-code; "shim" -> sha for shim TUIs
-    let actualHashes: [String: String]     // parallel
-    let parserError: String?
-    let note: String?
-}
-
-extension CMUXCLI {
-    fileprivate func runIntegrationInstallerCommand(
-        command: String,
-        commandArgs: [String],
-        jsonOutput: Bool
-    ) throws {
-        switch command {
-        case "install":
-            try runIntegrationInstallCommand(commandArgs: commandArgs, jsonOutput: jsonOutput)
-        case "uninstall":
-            try runIntegrationUninstallCommand(commandArgs: commandArgs, jsonOutput: jsonOutput)
-        default:
-            throw CLIError(message: "Unknown integration command: \(command)")
-        }
-    }
-
-    fileprivate func runIntegrationInstallCommand(commandArgs: [String], jsonOutput: Bool) throws {
-        // --list and --status are sub-commands implemented as flags.
-        if commandArgs.contains("--list") {
-            try runIntegrationInstallerList(commandArgs: commandArgs, jsonOutput: jsonOutput)
-            return
-        }
-        if commandArgs.contains("--status") {
-            try runIntegrationInstallerStatus(commandArgs: commandArgs, jsonOutput: jsonOutput)
-            return
-        }
-
-        // Parse flags and positional <tui>.
-        var dryRun = false
-        var noConfirm = false
-        var force = false
-        var configPathOverride: String? = nil
-        var homeOverride: String? = nil
-        var tuiArg: String? = nil
-
-        var index = 0
-        while index < commandArgs.count {
-            let arg = commandArgs[index]
-            switch arg {
-            case "--dry-run": dryRun = true
-            case "--no-confirm": noConfirm = true
-            case "--force": force = true
-            case "--json": break  // handled by top-level --json flag
-            case "--config-path":
-                guard index + 1 < commandArgs.count else {
-                    throw IntegrationInstallerError(
-                        code: "usage",
-                        message: "--config-path requires a path",
-                        exitCode: 2,
-                        jsonOutput: jsonOutput
-                    )
-                }
-                configPathOverride = commandArgs[index + 1]
-                index += 1
-            case "--home":
-                guard index + 1 < commandArgs.count else {
-                    throw IntegrationInstallerError(
-                        code: "usage",
-                        message: "--home requires a path",
-                        exitCode: 2,
-                        jsonOutput: jsonOutput
-                    )
-                }
-                homeOverride = commandArgs[index + 1]
-                index += 1
-            default:
-                if arg.hasPrefix("-") {
-                    throw IntegrationInstallerError(
-                        code: "usage",
-                        message: "Unknown flag: \(arg)",
-                        exitCode: 2,
-                        jsonOutput: jsonOutput
-                    )
-                }
-                if tuiArg == nil {
-                    tuiArg = arg
-                } else {
-                    throw IntegrationInstallerError(
-                        code: "usage",
-                        message: "Unexpected argument: \(arg)",
-                        exitCode: 2,
-                        jsonOutput: jsonOutput
-                    )
-                }
-            }
-            index += 1
-        }
-
-        guard let tuiRaw = tuiArg else {
-            throw IntegrationInstallerError(
-                code: "usage",
-                message: "Missing <tui> argument. Run `cmux install --list` to see supported TUIs.",
-                exitCode: 2,
-                jsonOutput: jsonOutput
-            )
-        }
-        guard let tui = IntegrationInstallerTUI.parse(tuiRaw) else {
-            throw IntegrationInstallerError(
-                code: "unknown_tui",
-                message: "Unknown TUI '\(tuiRaw)'. Supported: \(IntegrationInstallerTUI.allCases.map { $0.rawValue }.joined(separator: ", "))",
-                exitCode: InstallExitCode.unknownTui,
-                jsonOutput: jsonOutput
-            )
-        }
-
-        let home = resolveIntegrationInstallerHome(override: homeOverride)
-        let configPath = configPathOverride.map { resolveIntegrationInstallerPath($0, home: home) }
-            ?? tui.defaultConfigPath(home: home)
-
-        let plan: IntegrationInstallerPlan
-        do {
-            plan = try integrationInstallerPlan(
-                tui: tui,
-                configPath: configPath,
-                home: home,
-                force: force,
-                jsonOutput: jsonOutput
-            )
-        } catch let err as IntegrationInstallerError {
-            throw err
-        }
-
-        // Apply gates unrelated to the diff (schema mismatch, malformed, etc.)
-        if plan.priorState == .schemaMismatch && !force {
-            throw IntegrationInstallerError(
-                code: "schema_version_mismatch",
-                message: "Existing cmux install uses a different schema; re-run with --force to overwrite.",
-                exitCode: InstallExitCode.schemaVersionMismatch,
-                path: configPath,
-                jsonOutput: jsonOutput
-            )
-        }
-        if plan.priorState == .installedOutdated && noConfirm && !force {
-            throw IntegrationInstallerError(
-                code: "outdated_install_requires_force",
-                message: "Existing cmux install is outdated; pass --force to overwrite in non-interactive mode.",
-                exitCode: InstallExitCode.outdatedInstallRequiresForce,
-                path: configPath,
-                jsonOutput: jsonOutput
-            )
-        }
-
-        if dryRun {
-            emitInstallerResultOutput(
-                plan: plan,
-                action: "install",
-                applied: false,
-                jsonOutput: jsonOutput,
-                extraNote: plan.noop ? "would no-op" : "would apply"
-            )
-            return
-        }
-
-        if plan.noop {
-            emitInstallerResultOutput(
-                plan: plan,
-                action: "install",
-                applied: false,
-                jsonOutput: jsonOutput,
-                extraNote: "already installed, current"
-            )
-            return
-        }
-
-        if !noConfirm {
-            // Require TTY for interactive prompt.
-            let stdinTTY = isatty(STDIN_FILENO) == 1
-            let stdoutTTY = isatty(STDOUT_FILENO) == 1
-            if !stdinTTY || !stdoutTTY {
-                throw IntegrationInstallerError(
-                    code: "user_aborted",
-                    message: "Interactive confirmation requires a TTY; pass --no-confirm to apply without prompting.",
-                    exitCode: InstallExitCode.userAborted,
-                    jsonOutput: jsonOutput
-                )
-            }
-
-            if !jsonOutput {
-                print(plan.unifiedDiff)
-                print("")
-                if plan.createdConfig {
-                    print("Config not found at \(configPath). Install will create it.")
-                }
-                print("Apply these changes? [y/N] ", terminator: "")
-            }
-            let response = (readLine() ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            if response != "y" && response != "yes" {
-                throw IntegrationInstallerError(
-                    code: "user_aborted",
-                    message: "Install aborted by user.",
-                    exitCode: InstallExitCode.userAborted,
-                    jsonOutput: jsonOutput
-                )
-            }
-        }
-
-        try applyIntegrationInstallerPlan(plan: plan, jsonOutput: jsonOutput)
-
-        emitInstallerResultOutput(
-            plan: plan,
-            action: "install",
-            applied: true,
-            jsonOutput: jsonOutput,
-            extraNote: nil
-        )
-    }
-
-    fileprivate func runIntegrationUninstallCommand(commandArgs: [String], jsonOutput: Bool) throws {
-        var dryRun = false
-        var noConfirm = false
-        var force = false
-        var configPathOverride: String? = nil
-        var homeOverride: String? = nil
-        var tuiArg: String? = nil
-
-        var index = 0
-        while index < commandArgs.count {
-            let arg = commandArgs[index]
-            switch arg {
-            case "--dry-run": dryRun = true
-            case "--no-confirm": noConfirm = true
-            case "--force": force = true
-            case "--json": break
-            case "--config-path":
-                guard index + 1 < commandArgs.count else {
-                    throw IntegrationInstallerError(
-                        code: "usage",
-                        message: "--config-path requires a path",
-                        exitCode: 2,
-                        jsonOutput: jsonOutput
-                    )
-                }
-                configPathOverride = commandArgs[index + 1]
-                index += 1
-            case "--home":
-                guard index + 1 < commandArgs.count else {
-                    throw IntegrationInstallerError(
-                        code: "usage",
-                        message: "--home requires a path",
-                        exitCode: 2,
-                        jsonOutput: jsonOutput
-                    )
-                }
-                homeOverride = commandArgs[index + 1]
-                index += 1
-            default:
-                if arg.hasPrefix("-") {
-                    throw IntegrationInstallerError(
-                        code: "usage",
-                        message: "Unknown flag: \(arg)",
-                        exitCode: 2,
-                        jsonOutput: jsonOutput
-                    )
-                }
-                if tuiArg == nil {
-                    tuiArg = arg
-                } else {
-                    throw IntegrationInstallerError(
-                        code: "usage",
-                        message: "Unexpected argument: \(arg)",
-                        exitCode: 2,
-                        jsonOutput: jsonOutput
-                    )
-                }
-            }
-            index += 1
-        }
-
-        guard let tuiRaw = tuiArg else {
-            throw IntegrationInstallerError(
-                code: "usage",
-                message: "Missing <tui> argument.",
-                exitCode: 2,
-                jsonOutput: jsonOutput
-            )
-        }
-        guard let tui = IntegrationInstallerTUI.parse(tuiRaw) else {
-            throw IntegrationInstallerError(
-                code: "unknown_tui",
-                message: "Unknown TUI '\(tuiRaw)'.",
-                exitCode: InstallExitCode.unknownTui,
-                jsonOutput: jsonOutput
-            )
-        }
-
-        let home = resolveIntegrationInstallerHome(override: homeOverride)
-        let configPath = configPathOverride.map { resolveIntegrationInstallerPath($0, home: home) }
-            ?? tui.defaultConfigPath(home: home)
-
-        let plan = try integrationUninstallerPlan(
-            tui: tui,
-            configPath: configPath,
-            home: home,
-            force: force,
-            jsonOutput: jsonOutput
-        )
-
-        if dryRun {
-            emitInstallerResultOutput(
-                plan: plan,
-                action: "uninstall",
-                applied: false,
-                jsonOutput: jsonOutput,
-                extraNote: plan.noop ? "nothing to uninstall" : "would remove cmux install"
-            )
-            return
-        }
-
-        if plan.noop {
-            emitInstallerResultOutput(
-                plan: plan,
-                action: "uninstall",
-                applied: false,
-                jsonOutput: jsonOutput,
-                extraNote: "nothing to uninstall"
-            )
-            return
-        }
-
-        if !noConfirm {
-            let stdinTTY = isatty(STDIN_FILENO) == 1
-            let stdoutTTY = isatty(STDOUT_FILENO) == 1
-            if !stdinTTY || !stdoutTTY {
-                throw IntegrationInstallerError(
-                    code: "user_aborted",
-                    message: "Interactive confirmation requires a TTY; pass --no-confirm to apply without prompting.",
-                    exitCode: InstallExitCode.userAborted,
-                    jsonOutput: jsonOutput
-                )
-            }
-            if !jsonOutput {
-                print(plan.unifiedDiff)
-                print("")
-                print("Remove cmux integration from \(tui.displayName)? [y/N] ", terminator: "")
-            }
-            let response = (readLine() ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            if response != "y" && response != "yes" {
-                throw IntegrationInstallerError(
-                    code: "user_aborted",
-                    message: "Uninstall aborted by user.",
-                    exitCode: InstallExitCode.userAborted,
-                    jsonOutput: jsonOutput
-                )
-            }
-        }
-
-        try applyIntegrationInstallerPlan(plan: plan, jsonOutput: jsonOutput)
-
-        emitInstallerResultOutput(
-            plan: plan,
-            action: "uninstall",
-            applied: true,
-            jsonOutput: jsonOutput,
-            extraNote: nil
-        )
-    }
-
-    fileprivate func runIntegrationInstallerList(commandArgs: [String], jsonOutput: Bool) throws {
-        let home = resolveIntegrationInstallerHome(override: optionValue(commandArgs, name: "--home"))
-        var rows: [[String: Any]] = []
-        for tui in IntegrationInstallerTUI.allCases {
-            let configPath = tui.defaultConfigPath(home: home)
-            let status = integrationInstallerStatusSnapshot(tui: tui, configPath: configPath, home: home)
-            rows.append([
-                "tui": tui.rawValue,
-                "display_name": tui.displayName,
-                "installed": status.state == .installedCurrent || status.state == .installedOutdated,
-                "state": status.state.rawValue,
-                "schema_version": status.schemaVersion ?? NSNull(),
-                "config_path": configPath,
-                "shim_path": status.shimPath ?? NSNull(),
-                "tui_binary_found": status.tuiBinaryFound,
-                "tui_binary_path": status.tuiBinaryPath ?? NSNull()
-            ])
-        }
-        if jsonOutput {
-            let payload: [String: Any] = ["ok": true, "integrations": rows]
-            print(jsonString(payload))
-            return
-        }
-        // Plain table.
-        func pad(_ s: String, _ width: Int) -> String {
-            if s.count >= width { return s }
-            return s + String(repeating: " ", count: width - s.count)
-        }
-        print("TUI           INSTALLED     SCHEMA  TUI-BIN   CONFIG")
-        for row in rows {
-            let tuiName = (row["tui"] as? String) ?? ""
-            let state = (row["state"] as? String) ?? ""
-            let schema = row["schema_version"]
-            let schemaText = (schema as? Int).map(String.init) ?? "-"
-            let binFound = (row["tui_binary_found"] as? Bool) == true ? "yes" : "no"
-            let configPath = (row["config_path"] as? String) ?? ""
-            print("\(pad(tuiName, 13)) \(pad(state, 13)) \(pad(schemaText, 7)) \(pad(binFound, 9)) \(configPath)")
-        }
-    }
-
-    fileprivate func runIntegrationInstallerStatus(commandArgs: [String], jsonOutput: Bool) throws {
-        let home = resolveIntegrationInstallerHome(override: optionValue(commandArgs, name: "--home"))
-        guard let tuiRaw = optionValue(commandArgs, name: "--status") else {
-            throw IntegrationInstallerError(
-                code: "usage",
-                message: "--status requires a <tui> value",
-                exitCode: 2,
-                jsonOutput: jsonOutput
-            )
-        }
-        guard let tui = IntegrationInstallerTUI.parse(tuiRaw) else {
-            throw IntegrationInstallerError(
-                code: "unknown_tui",
-                message: "Unknown TUI '\(tuiRaw)'.",
-                exitCode: InstallExitCode.unknownTui,
-                jsonOutput: jsonOutput
-            )
-        }
-        let configPath = optionValue(commandArgs, name: "--config-path").map { resolveIntegrationInstallerPath($0, home: home) }
-            ?? tui.defaultConfigPath(home: home)
-        let status = integrationInstallerStatusSnapshot(tui: tui, configPath: configPath, home: home)
-
-        if jsonOutput {
-            var payload: [String: Any] = [
-                "ok": true,
-                "tui": tui.rawValue,
-                "display_name": tui.displayName,
-                "state": status.state.rawValue,
-                "config_path": status.configPath,
-                "shim_path": status.shimPath ?? NSNull(),
-                "schema_version": status.schemaVersion ?? NSNull(),
-                "marker_id": status.markerId ?? NSNull(),
-                "installed_at": status.installedAt ?? NSNull(),
-                "tui_binary_found": status.tuiBinaryFound,
-                "tui_binary_path": status.tuiBinaryPath ?? NSNull(),
-                "expected_hashes": status.expectedHashes,
-                "actual_hashes": status.actualHashes
-            ]
-            if let note = status.note { payload["note"] = note }
-            if let parserError = status.parserError { payload["parser_error"] = parserError }
-            print(jsonString(payload))
-            return
-        }
-
-        print("TUI:          \(tui.displayName) (\(tui.rawValue))")
-        print("State:        \(status.state.rawValue)")
-        print("Config path:  \(status.configPath)")
-        if let shimPath = status.shimPath {
-            print("Shim path:    \(shimPath)")
-        }
-        if let schema = status.schemaVersion {
-            print("Schema:       \(schema)")
-        }
-        if let installed = status.installedAt {
-            print("Installed at: \(installed)")
-        }
-        print("TUI binary:   \(status.tuiBinaryFound ? (status.tuiBinaryPath ?? "yes") : "not found")")
-        if let note = status.note {
-            print("Note:         \(note)")
-        }
-    }
-
-    fileprivate func emitInstallerResultOutput(
-        plan: IntegrationInstallerPlan,
-        action: String,
-        applied: Bool,
-        jsonOutput: Bool,
-        extraNote: String?
-    ) {
-        if jsonOutput {
-            var payload: [String: Any] = [
-                "ok": true,
-                "action": action,
-                "applied": applied,
-                "noop": plan.noop,
-                "tui": plan.tui.rawValue,
-                "display_name": plan.tui.displayName,
-                "config_path": plan.configPath,
-                "prior_state": plan.priorState.rawValue,
-                "created_config": plan.createdConfig,
-                "tui_binary_found": plan.tuiBinaryFound,
-                "tui_binary_path": plan.tuiBinaryPath ?? NSNull(),
-                "summary": plan.summary
-            ]
-            if let shimPath = plan.shimPath {
-                payload["shim_path"] = shimPath
-            }
-            if let note = extraNote {
-                payload["note"] = note
-            }
-            print(jsonString(payload))
-            return
-        }
-
-        if applied {
-            print("\(plan.tui.displayName): \(action) OK")
-        } else if let note = extraNote {
-            print("\(plan.tui.displayName): \(note)")
-        } else {
-            print("\(plan.tui.displayName): (no changes)")
-        }
-        for line in plan.summary {
-            print("  - \(line)")
-        }
-        if action == "install" && !plan.tuiBinaryFound {
-            print("  warning: \(plan.tui.binaryName()) binary not found in PATH (\(plan.tui.rawValue))")
-        }
-        if plan.shimPath != nil && action == "install" && applied {
-            let dir = IntegrationInstallerHelpers.parentDirectory(of: plan.shimPath!)
-            print("  note: ensure \(dir) is on your PATH to route \(plan.tui.binaryName()) through the cmux shim.")
-        }
-    }
-}
-
-// MARK: - Installer helpers
-
-enum IntegrationInstallerHelpers {
-    static func parentDirectory(of path: String) -> String {
-        return (path as NSString).deletingLastPathComponent
-    }
-
-    static func ensureDirectoryExists(_ path: String, mode: Int = 0o755) throws {
-        var isDir: ObjCBool = false
-        if FileManager.default.fileExists(atPath: path, isDirectory: &isDir) {
-            if isDir.boolValue { return }
-            throw IntegrationInstallerError(
-                code: "config_permission_denied",
-                message: "Path exists and is not a directory: \(path)",
-                exitCode: InstallExitCode.configPermissionDenied,
-                path: path
-            )
-        }
-        do {
-            try FileManager.default.createDirectory(
-                atPath: path,
-                withIntermediateDirectories: true,
-                attributes: [.posixPermissions: NSNumber(value: mode)]
-            )
-        } catch {
-            throw IntegrationInstallerError(
-                code: "config_permission_denied",
-                message: "Could not create directory \(path): \(error.localizedDescription)",
-                exitCode: InstallExitCode.configPermissionDenied,
-                path: path
-            )
-        }
-    }
-
-    /// Atomic write: writes to a sibling tempfile then renames into place.
-    static func atomicWrite(_ text: String, to path: String, mode: Int = 0o644) throws {
-        let dir = parentDirectory(of: path)
-        try ensureDirectoryExists(dir)
-
-        let tempPath = "\(path).cmux-install.\(getpid()).tmp"
-        let data = Data(text.utf8)
-        let fm = FileManager.default
-        fm.createFile(atPath: tempPath, contents: data, attributes: [.posixPermissions: NSNumber(value: mode)])
-        if rename(tempPath, path) != 0 {
-            let savedErrno = errno
-            _ = unlink(tempPath)
-            if savedErrno == EACCES || savedErrno == EPERM {
-                throw IntegrationInstallerError(
-                    code: "config_permission_denied",
-                    message: "Cannot write to \(path) (EACCES)",
-                    exitCode: InstallExitCode.configPermissionDenied,
-                    path: path
-                )
-            }
-            throw IntegrationInstallerError(
-                code: "config_permission_denied",
-                message: "Atomic rename failed for \(path) (errno=\(savedErrno))",
-                exitCode: InstallExitCode.configPermissionDenied,
-                path: path
-            )
-        }
-    }
-
-    static func readUTF8IfExists(_ path: String) throws -> String? {
-        if !FileManager.default.fileExists(atPath: path) { return nil }
-        do {
-            let data = try Data(contentsOf: URL(fileURLWithPath: path))
-            guard let text = String(data: data, encoding: .utf8) else {
-                throw IntegrationInstallerError(
-                    code: "config_malformed",
-                    message: "File is not valid UTF-8: \(path)",
-                    exitCode: InstallExitCode.configMalformed,
-                    path: path
-                )
-            }
-            return text
-        } catch let err as IntegrationInstallerError {
-            throw err
-        } catch {
-            let e = error as NSError
-            if e.domain == NSCocoaErrorDomain && e.code == NSFileReadNoPermissionError {
-                throw IntegrationInstallerError(
-                    code: "config_permission_denied",
-                    message: "Cannot read \(path): permission denied",
-                    exitCode: InstallExitCode.configPermissionDenied,
-                    path: path
-                )
-            }
-            throw IntegrationInstallerError(
-                code: "config_permission_denied",
-                message: "Cannot read \(path): \(error.localizedDescription)",
-                exitCode: InstallExitCode.configPermissionDenied,
-                path: path
-            )
-        }
-    }
-
-    static func removeFileIfExists(_ path: String) throws {
-        if !FileManager.default.fileExists(atPath: path) { return }
-        do {
-            try FileManager.default.removeItem(atPath: path)
-        } catch {
-            throw IntegrationInstallerError(
-                code: "config_permission_denied",
-                message: "Cannot remove \(path): \(error.localizedDescription)",
-                exitCode: InstallExitCode.configPermissionDenied,
-                path: path
-            )
-        }
-    }
-
-    static func nowISO8601() -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: Date())
-    }
-
-    /// Finds `binary` in PATH, skipping the shim dir under `home`.
-    static func findBinary(named binary: String, home: String) -> String? {
-        let pathEnv = ProcessInfo.processInfo.environment["PATH"] ?? ""
-        let shimDir = "\(home)/.local/bin/cmux-shims"
-        for component in pathEnv.split(separator: ":") {
-            let dir = String(component)
-            if dir == shimDir { continue }
-            let candidate = "\(dir)/\(binary)"
-            if access(candidate, X_OK) == 0 {
-                return candidate
-            }
-        }
-        return nil
-    }
-
-    static func prettyJSON(_ obj: Any) -> String {
-        var options: JSONSerialization.WritingOptions = [.prettyPrinted]
-        options.insert(.withoutEscapingSlashes)
-        options.insert(.sortedKeys)
-        guard JSONSerialization.isValidJSONObject(obj),
-              let data = try? JSONSerialization.data(withJSONObject: obj, options: options),
-              let text = String(data: data, encoding: .utf8) else {
-            return "{}"
-        }
-        return text
-    }
-
-    /// Pretty-prints a JSON object with 2-space indent, sorted keys, and a
-    /// trailing newline — matches the convention the claude-code installer
-    /// writes. `sortedKeys` keeps roundtrip diffs clean across runs.
-    static func claudeCodeJSONDump(_ obj: Any) -> String {
-        return prettyJSON(obj) + "\n"
-    }
-
-    /// Unified diff between two strings. Simple implementation: per-line,
-    /// prints the full before block as `-` and the full after block as `+`.
-    /// This is sufficient for the confirmation prompt; it is not a real
-    /// Myers diff.
-    static func simpleUnifiedDiff(before: String?, after: String?, label: String) -> String {
-        let beforeLines = (before ?? "").split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        let afterLines = (after ?? "").split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        var lines: [String] = []
-        lines.append("--- a/\(label)\(before == nil ? " (new file)" : "")")
-        lines.append("+++ b/\(label)\(after == nil ? " (removed)" : "")")
-        for line in beforeLines {
-            lines.append("-\(line)")
-        }
-        for line in afterLines {
-            lines.append("+\(line)")
-        }
-        return lines.joined(separator: "\n")
-    }
-}
-
-fileprivate func resolveIntegrationInstallerHome(override: String?) -> String {
-    if let override, !override.isEmpty {
-        return resolveIntegrationInstallerPath(override, home: NSHomeDirectory())
-    }
-    return NSHomeDirectory()
-}
-
-fileprivate func resolveIntegrationInstallerPath(_ path: String, home: String) -> String {
-    let expanded: String
-    if path.hasPrefix("~/") {
-        expanded = home + String(path.dropFirst(1))
-    } else if path == "~" {
-        expanded = home
-    } else {
-        expanded = path
-    }
-    if expanded.hasPrefix("/") { return expanded }
-    let cwd = FileManager.default.currentDirectoryPath
-    return (cwd as NSString).appendingPathComponent(expanded)
-}
-
-// MARK: - Planning (install)
-
-fileprivate func integrationInstallerPlan(
-    tui: IntegrationInstallerTUI,
-    configPath: String,
-    home: String,
-    force: Bool,
-    jsonOutput: Bool
-) throws -> IntegrationInstallerPlan {
-    switch tui {
-    case .claudeCode:
-        return try claudeCodeInstallerPlan(configPath: configPath, home: home, force: force, jsonOutput: jsonOutput)
-    case .codex, .kimi:
-        return try tomlShimInstallerPlan(tui: tui, configPath: configPath, home: home, force: force, jsonOutput: jsonOutput)
-    case .opencode:
-        return try opencodeShimInstallerPlan(configPath: configPath, home: home, force: force, jsonOutput: jsonOutput)
-    }
-}
-
-fileprivate func integrationUninstallerPlan(
-    tui: IntegrationInstallerTUI,
-    configPath: String,
-    home: String,
-    force: Bool,
-    jsonOutput: Bool
-) throws -> IntegrationInstallerPlan {
-    switch tui {
-    case .claudeCode:
-        return try claudeCodeUninstallerPlan(configPath: configPath, home: home, force: force, jsonOutput: jsonOutput)
-    case .codex, .kimi:
-        return try tomlShimUninstallerPlan(tui: tui, configPath: configPath, home: home, force: force, jsonOutput: jsonOutput)
-    case .opencode:
-        return try opencodeShimUninstallerPlan(configPath: configPath, home: home, force: force, jsonOutput: jsonOutput)
-    }
-}
-
-fileprivate func applyIntegrationInstallerPlan(
-    plan: IntegrationInstallerPlan,
-    jsonOutput: Bool
-) throws {
-    // Config file write / delete.
-    if let postText = plan.postConfigText {
-        try IntegrationInstallerHelpers.atomicWrite(postText, to: plan.configPath)
-    } else {
-        // nil means delete (empty round-trip on a file we created).
-        try IntegrationInstallerHelpers.removeFileIfExists(plan.configPath)
-    }
-    // Shim script write / delete.
-    if let shimPath = plan.shimPath {
-        if let postShim = plan.postShimText {
-            do {
-                try IntegrationInstallerHelpers.atomicWrite(postShim, to: shimPath, mode: 0o755)
-            } catch let err as IntegrationInstallerError {
-                if err.code == "config_permission_denied" {
-                    throw IntegrationInstallerError(
-                        code: "shim_dir_not_writable",
-                        message: "Could not write shim at \(shimPath): \(err.message)",
-                        exitCode: InstallExitCode.shimDirNotWritable,
-                        path: shimPath,
-                        jsonOutput: jsonOutput
-                    )
-                }
-                throw err
-            }
-        } else {
-            try IntegrationInstallerHelpers.removeFileIfExists(shimPath)
-        }
-    }
-}
-
-// MARK: - Status snapshots
-
-fileprivate func integrationInstallerStatusSnapshot(
-    tui: IntegrationInstallerTUI,
-    configPath: String,
-    home: String
-) -> IntegrationInstallerStatus {
-    let tuiBinaryPath = IntegrationInstallerHelpers.findBinary(named: tui.binaryName(), home: home)
-    let tuiBinaryFound = tuiBinaryPath != nil
-    switch tui {
-    case .claudeCode:
-        return claudeCodeStatusSnapshot(configPath: configPath, tuiBinaryFound: tuiBinaryFound, tuiBinaryPath: tuiBinaryPath)
-    case .codex, .kimi:
-        return tomlShimStatusSnapshot(tui: tui, configPath: configPath, home: home, tuiBinaryFound: tuiBinaryFound, tuiBinaryPath: tuiBinaryPath)
-    case .opencode:
-        return opencodeShimStatusSnapshot(configPath: configPath, home: home, tuiBinaryFound: tuiBinaryFound, tuiBinaryPath: tuiBinaryPath)
-    }
-}
-
-// MARK: - Claude Code native-hook installer
-
-fileprivate func claudeCodeBuildBlock(installedAt: String) -> (root: [String: Any], entryHashes: [String: String]) {
-    let canonicals = claudeCanonicalEntries()
-    var hashes: [String: String] = [:]
-    var entriesBySha: [[String: Any]] = []
-    for (event, entry) in canonicals {
-        let hash = integrationInstallerSHA256(integrationInstallerCanonicalJSON(entry))
-        hashes[event] = hash
-        entriesBySha.append(["event": event, "sha256": hash])
-    }
-    let xCmux: [String: Any] = [
-        "schema": IntegrationInstallerConstants.schemaVersion,
-        "id": IntegrationInstallerConstants.markerId,
-        "installed_at": installedAt,
-        "entries": entriesBySha
-    ]
-    var hooks: [String: Any] = [:]
-    for (event, entry) in canonicals {
-        hooks[event] = [entry]
-    }
-    let root: [String: Any] = [
-        "hooks": hooks,
-        "x-cmux": xCmux
-    ]
-    return (root, hashes)
-}
-
-fileprivate func claudeCodeMergeInto(existing: [String: Any], with fresh: [String: Any], freshHashes: [String: String], installedAt: String) -> (root: [String: Any], priorHashes: [String: String]) {
-    var result = existing
-
-    // Track prior per-event hashes from existing x-cmux.entries, if any.
-    var priorHashes: [String: String] = [:]
-    if let xCmux = existing["x-cmux"] as? [String: Any],
-       let entries = xCmux["entries"] as? [[String: Any]] {
-        for e in entries {
-            if let event = e["event"] as? String, let sha = e["sha256"] as? String {
-                priorHashes[event] = sha
-            }
-        }
-    }
-
-    var hooks = (existing["hooks"] as? [String: Any]) ?? [:]
-    let canonicals = claudeCanonicalEntries()
-    for (event, entry) in canonicals {
-        let freshEntryHash = freshHashes[event] ?? ""
-        var arr = (hooks[event] as? [Any]) ?? []
-        // Try to find an entry with a hash matching any prior-stored hash for this event.
-        var replacedIndex: Int? = nil
-        if let prior = priorHashes[event] {
-            for (idx, item) in arr.enumerated() {
-                if let dict = item as? [String: Any] {
-                    let itemHash = integrationInstallerSHA256(integrationInstallerCanonicalJSON(dict))
-                    if itemHash == prior {
-                        replacedIndex = idx
-                        break
-                    }
-                }
-            }
-        }
-        if let idx = replacedIndex {
-            arr[idx] = entry
-        } else {
-            // If an entry with the exact fresh hash already exists, don't duplicate.
-            var alreadyPresent = false
-            for item in arr {
-                if let dict = item as? [String: Any] {
-                    let itemHash = integrationInstallerSHA256(integrationInstallerCanonicalJSON(dict))
-                    if itemHash == freshEntryHash {
-                        alreadyPresent = true
-                        break
-                    }
-                }
-            }
-            if !alreadyPresent {
-                arr.append(entry)
-            }
-        }
-        hooks[event] = arr
-    }
-
-    result["hooks"] = hooks
-
-    // Build x-cmux with current fresh hashes.
-    var entriesOut: [[String: Any]] = []
-    for (event, _) in canonicals {
-        entriesOut.append(["event": event, "sha256": freshHashes[event] ?? ""])
-    }
-    result["x-cmux"] = [
-        "schema": IntegrationInstallerConstants.schemaVersion,
-        "id": IntegrationInstallerConstants.markerId,
-        "installed_at": installedAt,
-        "entries": entriesOut
-    ] as [String: Any]
-
-    return (result, priorHashes)
-}
-
-fileprivate func claudeCodeInstallerPlan(
-    configPath: String,
-    home: String,
-    force: Bool,
-    jsonOutput: Bool
-) throws -> IntegrationInstallerPlan {
-    let preText = try IntegrationInstallerHelpers.readUTF8IfExists(configPath)
-    let createdConfig = preText == nil
-
-    // Parse existing config if present. Empty file is treated as {} for merge purposes.
-    var existing: [String: Any] = [:]
-    if let text = preText, !text.isEmpty {
-        guard let data = text.data(using: .utf8) else {
-            throw IntegrationInstallerError(
-                code: "config_malformed",
-                message: "Config is not valid UTF-8",
-                exitCode: InstallExitCode.configMalformed,
-                path: configPath,
-                jsonOutput: jsonOutput
-            )
-        }
-        do {
-            let obj = try JSONSerialization.jsonObject(with: data, options: [])
-            guard let dict = obj as? [String: Any] else {
-                throw IntegrationInstallerError(
-                    code: "config_malformed",
-                    message: "Config is not a JSON object",
-                    exitCode: InstallExitCode.configMalformed,
-                    path: configPath,
-                    jsonOutput: jsonOutput
-                )
-            }
-            existing = dict
-        } catch let err as IntegrationInstallerError {
-            throw err
-        } catch {
-            throw IntegrationInstallerError(
-                code: "config_malformed",
-                message: "Config is not valid JSON: \(error.localizedDescription)",
-                exitCode: InstallExitCode.configMalformed,
-                path: configPath,
-                parserError: error.localizedDescription,
-                jsonOutput: jsonOutput
-            )
-        }
-    }
-
-    // Determine prior state.
-    let (priorState, _, priorSchema) = claudeCodeExistingState(existing: existing)
-    if priorState == .schemaMismatch && !force {
-        // Short-circuit: return a plan but signal no-op with the schema_mismatch state.
-        let summary = ["cmux install uses schema \(priorSchema ?? 0); expected \(IntegrationInstallerConstants.schemaVersion). Re-run with --force to overwrite."]
-        return IntegrationInstallerPlan(
-            tui: .claudeCode,
-            configPath: configPath,
-            homePath: home,
-            preConfigText: preText,
-            postConfigText: nil,
-            shimPath: nil,
-            preShimText: nil,
-            postShimText: nil,
-            priorState: .schemaMismatch,
-            newInstalledAt: IntegrationInstallerHelpers.nowISO8601(),
-            noop: true,
-            summary: summary,
-            unifiedDiff: "",
-            tuiBinaryFound: IntegrationInstallerHelpers.findBinary(named: "claude", home: home) != nil,
-            tuiBinaryPath: IntegrationInstallerHelpers.findBinary(named: "claude", home: home),
-            createdConfig: false
-        )
-    }
-
-    // Build fresh hashes.
-    let installedAt = IntegrationInstallerHelpers.nowISO8601()
-    let (_, freshHashes) = claudeCodeBuildBlock(installedAt: installedAt)
-    let (merged, _) = claudeCodeMergeInto(existing: existing, with: [:], freshHashes: freshHashes, installedAt: installedAt)
-
-    let newText = IntegrationInstallerHelpers.claudeCodeJSONDump(merged)
-
-    // Detect noop: if priorState is installedCurrent (all hashes match), AND
-    // the serialized post matches pre-byte-identical (modulo re-serialization),
-    // we treat as noop. Because sortedKeys gives stable output, re-serializing
-    // the same structure twice yields identical bytes.
-    let noop: Bool
-    if priorState == .installedCurrent {
-        // Re-serialize existing with sorted keys for comparison.
-        let canonicalPre = IntegrationInstallerHelpers.claudeCodeJSONDump(existing)
-        noop = canonicalPre == newText
-    } else {
-        noop = false
-    }
-
-    let diff: String
-    if noop {
-        diff = "(no changes)"
-    } else {
-        diff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: preText, after: newText, label: configPath)
-    }
-
-    var summary: [String] = []
-    switch priorState {
-    case .notInstalled:
-        summary.append(createdConfig ? "create \(configPath)" : "add cmux hooks to \(configPath)")
-    case .installedCurrent:
-        summary.append("cmux install is current (no changes)")
-    case .installedOutdated:
-        summary.append("update cmux hooks to schema \(IntegrationInstallerConstants.schemaVersion)")
-    case .schemaMismatch:
-        summary.append("schema mismatch: rewriting at schema \(IntegrationInstallerConstants.schemaVersion)")
-    case .configMalformed, .markerHandEdit:
-        summary.append("rewriting cmux hooks (prior state: \(priorState.rawValue))")
-    }
-
-    let binaryPath = IntegrationInstallerHelpers.findBinary(named: "claude", home: home)
-
-    return IntegrationInstallerPlan(
-        tui: .claudeCode,
-        configPath: configPath,
-        homePath: home,
-        preConfigText: preText,
-        postConfigText: noop ? preText : newText,
-        shimPath: nil,
-        preShimText: nil,
-        postShimText: nil,
-        priorState: priorState,
-        newInstalledAt: installedAt,
-        noop: noop,
-        summary: summary,
-        unifiedDiff: diff,
-        tuiBinaryFound: binaryPath != nil,
-        tuiBinaryPath: binaryPath,
-        createdConfig: createdConfig
-    )
-}
-
-fileprivate func claudeCodeExistingState(existing: [String: Any]) -> (state: IntegrationInstallerState, markerId: String?, schema: Int?) {
-    guard let xCmux = existing["x-cmux"] as? [String: Any] else {
-        return (.notInstalled, nil, nil)
-    }
-    let schema = xCmux["schema"] as? Int
-    let markerId = xCmux["id"] as? String
-    if let schema, schema != IntegrationInstallerConstants.schemaVersion {
-        return (.schemaMismatch, markerId, schema)
-    }
-    // Verify each canonical event hash matches and that a live entry with that hash exists.
-    var entriesByEvent: [String: String] = [:]
-    if let entries = xCmux["entries"] as? [[String: Any]] {
-        for e in entries {
-            if let event = e["event"] as? String, let sha = e["sha256"] as? String {
-                entriesByEvent[event] = sha
-            }
-        }
-    }
-    let hooks = (existing["hooks"] as? [String: Any]) ?? [:]
-    var anyOutdated = false
-    var anyMissing = false
-    for (event, freshEntry) in claudeCanonicalEntries() {
-        let freshHash = integrationInstallerSHA256(integrationInstallerCanonicalJSON(freshEntry))
-        let storedHash = entriesByEvent[event]
-        let entries = (hooks[event] as? [Any]) ?? []
-        var liveHasStored = false
-        for item in entries {
-            if let dict = item as? [String: Any] {
-                let h = integrationInstallerSHA256(integrationInstallerCanonicalJSON(dict))
-                if storedHash != nil && h == storedHash {
-                    liveHasStored = true
-                    break
-                }
-            }
-        }
-        if storedHash == nil {
-            anyMissing = true
-        } else if storedHash != freshHash {
-            anyOutdated = true
-        } else if !liveHasStored {
-            anyMissing = true
-        }
-    }
-    if anyMissing { return (.installedOutdated, markerId, schema) }
-    if anyOutdated { return (.installedOutdated, markerId, schema) }
-    return (.installedCurrent, markerId, schema)
-}
-
-fileprivate func claudeCodeUninstallerPlan(
-    configPath: String,
-    home: String,
-    force: Bool,
-    jsonOutput: Bool
-) throws -> IntegrationInstallerPlan {
-    let preText = try IntegrationInstallerHelpers.readUTF8IfExists(configPath)
-    guard let preText else {
-        // Nothing to uninstall.
-        return IntegrationInstallerPlan(
-            tui: .claudeCode,
-            configPath: configPath,
-            homePath: home,
-            preConfigText: nil,
-            postConfigText: nil,
-            shimPath: nil,
-            preShimText: nil,
-            postShimText: nil,
-            priorState: .notInstalled,
-            newInstalledAt: "",
-            noop: true,
-            summary: ["no config at \(configPath)"],
-            unifiedDiff: "",
-            tuiBinaryFound: false,
-            tuiBinaryPath: nil,
-            createdConfig: false
-        )
-    }
-
-    guard !preText.isEmpty else {
-        return IntegrationInstallerPlan(
-            tui: .claudeCode,
-            configPath: configPath,
-            homePath: home,
-            preConfigText: preText,
-            postConfigText: preText,
-            shimPath: nil,
-            preShimText: nil,
-            postShimText: nil,
-            priorState: .notInstalled,
-            newInstalledAt: "",
-            noop: true,
-            summary: ["config is empty"],
-            unifiedDiff: "",
-            tuiBinaryFound: false,
-            tuiBinaryPath: nil,
-            createdConfig: false
-        )
-    }
-
-    guard let data = preText.data(using: .utf8),
-          let existing = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
-        throw IntegrationInstallerError(
-            code: "config_malformed",
-            message: "Config at \(configPath) is not valid JSON",
-            exitCode: InstallExitCode.configMalformed,
-            path: configPath,
-            jsonOutput: jsonOutput
-        )
-    }
-
-    guard let xCmux = existing["x-cmux"] as? [String: Any] else {
-        return IntegrationInstallerPlan(
-            tui: .claudeCode,
-            configPath: configPath,
-            homePath: home,
-            preConfigText: preText,
-            postConfigText: preText,
-            shimPath: nil,
-            preShimText: nil,
-            postShimText: nil,
-            priorState: .notInstalled,
-            newInstalledAt: "",
-            noop: true,
-            summary: ["no cmux install detected"],
-            unifiedDiff: "",
-            tuiBinaryFound: false,
-            tuiBinaryPath: nil,
-            createdConfig: false
-        )
-    }
-
-    // Detect hand-edit: any stored entry whose hash no longer matches a live
-    // entry. If so, error unless --force.
-    var storedHashes: [String: String] = [:]
-    if let entries = xCmux["entries"] as? [[String: Any]] {
-        for e in entries {
-            if let event = e["event"] as? String, let sha = e["sha256"] as? String {
-                storedHashes[event] = sha
-            }
-        }
-    }
-    let storedSchema = xCmux["schema"] as? Int
-    if let storedSchema, storedSchema != IntegrationInstallerConstants.schemaVersion, !force {
-        throw IntegrationInstallerError(
-            code: "marker_hand_edit_detected",
-            message: "x-cmux.schema differs from current (\(storedSchema) vs \(IntegrationInstallerConstants.schemaVersion)); re-run uninstall with --force to proceed.",
-            exitCode: InstallExitCode.markerHandEditDetected,
-            path: configPath,
-            jsonOutput: jsonOutput
-        )
-    }
-
-    // Build post: remove matching cmux entries from hooks; remove x-cmux key.
-    var hooks = (existing["hooks"] as? [String: Any]) ?? [:]
-    var anyLiveMissing = false
-    for (event, storedHash) in storedHashes {
-        let arr = (hooks[event] as? [Any]) ?? []
-        var filtered: [Any] = []
-        var removed = false
-        for item in arr {
-            if let dict = item as? [String: Any] {
-                let h = integrationInstallerSHA256(integrationInstallerCanonicalJSON(dict))
-                if h == storedHash {
-                    removed = true
-                    continue
-                }
-            }
-            filtered.append(item)
-        }
-        if !removed { anyLiveMissing = true }
-        if filtered.isEmpty {
-            hooks.removeValue(forKey: event)
-        } else {
-            hooks[event] = filtered
-        }
-    }
-    if anyLiveMissing && !force {
-        throw IntegrationInstallerError(
-            code: "marker_hand_edit_detected",
-            message: "cmux-owned entries were hand-edited; re-run uninstall with --force to proceed. Unmatched entries left in place.",
-            exitCode: InstallExitCode.markerHandEditDetected,
-            path: configPath,
-            jsonOutput: jsonOutput
-        )
-    }
-
-    var result = existing
-    if hooks.isEmpty {
-        result.removeValue(forKey: "hooks")
-    } else {
-        result["hooks"] = hooks
-    }
-    result.removeValue(forKey: "x-cmux")
-
-    let postText: String?
-    if result.isEmpty {
-        // Delete the file entirely.
-        postText = nil
-    } else {
-        postText = IntegrationInstallerHelpers.claudeCodeJSONDump(result)
-    }
-    let diff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: preText, after: postText, label: configPath)
-
-    return IntegrationInstallerPlan(
-        tui: .claudeCode,
-        configPath: configPath,
-        homePath: home,
-        preConfigText: preText,
-        postConfigText: postText,
-        shimPath: nil,
-        preShimText: nil,
-        postShimText: nil,
-        priorState: .installedCurrent,
-        newInstalledAt: "",
-        noop: false,
-        summary: postText == nil
-            ? ["remove cmux install and delete empty config at \(configPath)"]
-            : ["remove cmux install from \(configPath)"],
-        unifiedDiff: diff,
-        tuiBinaryFound: false,
-        tuiBinaryPath: nil,
-        createdConfig: false
-    )
-}
-
-fileprivate func claudeCodeStatusSnapshot(
-    configPath: String,
-    tuiBinaryFound: Bool,
-    tuiBinaryPath: String?
-) -> IntegrationInstallerStatus {
-    guard let text = (try? IntegrationInstallerHelpers.readUTF8IfExists(configPath)) ?? nil else {
-        return IntegrationInstallerStatus(
-            tui: .claudeCode,
-            configPath: configPath,
-            shimPath: nil,
-            state: .notInstalled,
-            schemaVersion: nil,
-            markerId: nil,
-            installedAt: nil,
-            tuiBinaryFound: tuiBinaryFound,
-            tuiBinaryPath: tuiBinaryPath,
-            expectedHashes: [:],
-            actualHashes: [:],
-            parserError: nil,
-            note: nil
-        )
-    }
-    if text.isEmpty {
-        return IntegrationInstallerStatus(
-            tui: .claudeCode,
-            configPath: configPath,
-            shimPath: nil,
-            state: .notInstalled,
-            schemaVersion: nil,
-            markerId: nil,
-            installedAt: nil,
-            tuiBinaryFound: tuiBinaryFound,
-            tuiBinaryPath: tuiBinaryPath,
-            expectedHashes: [:],
-            actualHashes: [:],
-            parserError: nil,
-            note: "empty config"
-        )
-    }
-
-    guard let data = text.data(using: .utf8),
-          let existing = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
-        return IntegrationInstallerStatus(
-            tui: .claudeCode,
-            configPath: configPath,
-            shimPath: nil,
-            state: .configMalformed,
-            schemaVersion: nil,
-            markerId: nil,
-            installedAt: nil,
-            tuiBinaryFound: tuiBinaryFound,
-            tuiBinaryPath: tuiBinaryPath,
-            expectedHashes: [:],
-            actualHashes: [:],
-            parserError: "invalid JSON",
-            note: nil
-        )
-    }
-
-    let (state, markerId, schema) = claudeCodeExistingState(existing: existing)
-    var expected: [String: String] = [:]
-    for (event, entry) in claudeCanonicalEntries() {
-        expected[event] = integrationInstallerSHA256(integrationInstallerCanonicalJSON(entry))
-    }
-    var actual: [String: String] = [:]
-    if let xCmux = existing["x-cmux"] as? [String: Any],
-       let entries = xCmux["entries"] as? [[String: Any]] {
-        for e in entries {
-            if let event = e["event"] as? String, let sha = e["sha256"] as? String {
-                actual[event] = sha
-            }
-        }
-    }
-    let installedAt = (existing["x-cmux"] as? [String: Any])?["installed_at"] as? String
-
-    return IntegrationInstallerStatus(
-        tui: .claudeCode,
-        configPath: configPath,
-        shimPath: nil,
-        state: state,
-        schemaVersion: schema,
-        markerId: markerId,
-        installedAt: installedAt,
-        tuiBinaryFound: tuiBinaryFound,
-        tuiBinaryPath: tuiBinaryPath,
-        expectedHashes: expected,
-        actualHashes: actual,
-        parserError: nil,
-        note: nil
-    )
-}
-
-// MARK: - TOML shim installer (codex, kimi)
-
-fileprivate func tomlShimBlock(tui: IntegrationInstallerTUI, installedAt: String, shimPath: String, shimSHA: String) -> String {
-    return """
-    \(IntegrationInstallerConstants.tomlFenceBegin)
-    [x-cmux]
-    schema = \(IntegrationInstallerConstants.schemaVersion)
-    id = "\(IntegrationInstallerConstants.markerId)"
-    installed_at = "\(installedAt)"
-    shim_path = "\(shimPath)"
-    shim_sha256 = "\(shimSHA)"
-    # Managed by `cmux install \(tui.rawValue)`.
-    \(IntegrationInstallerConstants.tomlFenceEnd)
-    """
-}
-
-fileprivate func tomlStripExistingCmuxBlock(_ text: String) -> (stripped: String, removedRange: Range<String.Index>?) {
-    guard let beginRange = text.range(of: IntegrationInstallerConstants.tomlFenceBegin) else {
-        return (text, nil)
-    }
-    // Expand begin to include the leading newline if present.
-    var start = beginRange.lowerBound
-    if start > text.startIndex {
-        let before = text.index(before: start)
-        if text[before] == "\n" {
-            start = before
-        }
-    }
-    let endRange = text.range(
-        of: IntegrationInstallerConstants.tomlFenceEnd,
-        options: [],
-        range: beginRange.upperBound..<text.endIndex
-    )
-    guard let endRange else {
-        return (text, nil)
-    }
-    var end = endRange.upperBound
-    // Include a trailing newline after the fence if present.
-    if end < text.endIndex, text[end] == "\n" {
-        end = text.index(after: end)
-    }
-    var stripped = text
-    let cutRange = start..<end
-    stripped.removeSubrange(cutRange)
-    return (stripped, cutRange)
-}
-
-fileprivate func tomlShimInstallerPlan(
-    tui: IntegrationInstallerTUI,
-    configPath: String,
-    home: String,
-    force: Bool,
-    jsonOutput: Bool
-) throws -> IntegrationInstallerPlan {
-    precondition(tui == .codex || tui == .kimi, "tomlShimInstallerPlan supports codex/kimi only")
-
-    let preText = try IntegrationInstallerHelpers.readUTF8IfExists(configPath)
-    let createdConfig = preText == nil
-
-    let shimPath = tui.shimPath(home: home)
-    let shimText = integrationInstallerShimScript(for: tui)
-    let shimSHA = integrationInstallerSHA256(of: shimText)
-    let installedAt = IntegrationInstallerHelpers.nowISO8601()
-    let block = tomlShimBlock(tui: tui, installedAt: installedAt, shimPath: shimPath, shimSHA: shimSHA)
-
-    // Strip any existing cmux block first.
-    let (stripped, _) = tomlStripExistingCmuxBlock(preText ?? "")
-
-    // Determine prior state.
-    let priorState: IntegrationInstallerState
-    var priorShimSHA: String? = nil
-    var priorSchema: Int? = nil
-    if let preText, let beginRange = preText.range(of: IntegrationInstallerConstants.tomlFenceBegin),
-       let endRange = preText.range(of: IntegrationInstallerConstants.tomlFenceEnd, options: [], range: beginRange.upperBound..<preText.endIndex) {
-        let blockText = String(preText[beginRange.lowerBound..<endRange.upperBound])
-        priorShimSHA = tomlExtractValue(from: blockText, key: "shim_sha256")
-        if let schemaStr = tomlExtractValue(from: blockText, key: "schema"), let parsed = Int(schemaStr) {
-            priorSchema = parsed
-        }
-        if let priorSchema, priorSchema != IntegrationInstallerConstants.schemaVersion {
-            priorState = .schemaMismatch
-        } else {
-            // Check shim on disk.
-            let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
-            let liveShimSHA = liveShim.map { integrationInstallerSHA256(of: $0) }
-            if priorShimSHA == shimSHA && liveShimSHA == shimSHA {
-                priorState = .installedCurrent
-            } else {
-                priorState = .installedOutdated
-            }
-        }
-    } else {
-        priorState = .notInstalled
-    }
-
-    if priorState == .schemaMismatch && !force {
-        return IntegrationInstallerPlan(
-            tui: tui,
-            configPath: configPath,
-            homePath: home,
-            preConfigText: preText,
-            postConfigText: nil,
-            shimPath: shimPath,
-            preShimText: try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath),
-            postShimText: nil,
-            priorState: .schemaMismatch,
-            newInstalledAt: installedAt,
-            noop: true,
-            summary: ["cmux install uses schema \(priorSchema ?? 0); expected \(IntegrationInstallerConstants.schemaVersion). Re-run with --force."],
-            unifiedDiff: "",
-            tuiBinaryFound: IntegrationInstallerHelpers.findBinary(named: tui.binaryName(), home: home) != nil,
-            tuiBinaryPath: IntegrationInstallerHelpers.findBinary(named: tui.binaryName(), home: home),
-            createdConfig: false
-        )
-    }
-
-    // Build new text.
-    let strippedEndsWithNewline = stripped.hasSuffix("\n") || stripped.isEmpty
-    var newText: String = stripped
-    if !stripped.isEmpty && !strippedEndsWithNewline {
-        newText += "\n"
-    }
-    if !stripped.isEmpty {
-        // separate existing content from our block with a blank line.
-        newText += "\n"
-    }
-    newText += block + "\n"
-
-    let noop: Bool
-    if priorState == .installedCurrent {
-        // Compare our new block to what's there; shims match; config content unchanged => noop.
-        let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
-        noop = (preText == newText) && (liveShim == shimText)
-    } else {
-        noop = false
-    }
-
-    let diff: String
-    if noop {
-        diff = "(no changes)"
-    } else {
-        let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
-        let configDiff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: preText, after: newText, label: configPath)
-        let shimDiff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: liveShim ?? nil, after: shimText, label: shimPath)
-        diff = configDiff + "\n" + shimDiff
-    }
-
-    var summary: [String] = []
-    switch priorState {
-    case .notInstalled:
-        summary.append(createdConfig ? "create \(configPath)" : "append [x-cmux] block to \(configPath)")
-        summary.append("install shim at \(shimPath)")
-    case .installedCurrent:
-        summary.append("cmux install is current (no changes)")
-    case .installedOutdated:
-        summary.append("refresh [x-cmux] block in \(configPath)")
-        summary.append("refresh shim at \(shimPath)")
-    case .schemaMismatch:
-        summary.append("schema mismatch: rewriting [x-cmux] at schema \(IntegrationInstallerConstants.schemaVersion)")
-        summary.append("refresh shim at \(shimPath)")
-    case .configMalformed, .markerHandEdit:
-        summary.append("rewriting cmux block (prior state: \(priorState.rawValue))")
-    }
-
-    let tuiBinaryPath = IntegrationInstallerHelpers.findBinary(named: tui.binaryName(), home: home)
-    return IntegrationInstallerPlan(
-        tui: tui,
-        configPath: configPath,
-        homePath: home,
-        preConfigText: preText,
-        postConfigText: noop ? preText : newText,
-        shimPath: shimPath,
-        preShimText: try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath),
-        postShimText: noop ? (try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)) ?? shimText : shimText,
-        priorState: priorState,
-        newInstalledAt: installedAt,
-        noop: noop,
-        summary: summary,
-        unifiedDiff: diff,
-        tuiBinaryFound: tuiBinaryPath != nil,
-        tuiBinaryPath: tuiBinaryPath,
-        createdConfig: createdConfig
-    )
-}
-
-fileprivate func tomlExtractValue(from block: String, key: String) -> String? {
-    for rawLine in block.split(separator: "\n") {
-        let line = rawLine.trimmingCharacters(in: .whitespaces)
-        if line.hasPrefix("\(key) =") {
-            let parts = line.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
-            guard parts.count == 2 else { continue }
-            var value = parts[1]
-            if value.hasPrefix("\"") && value.hasSuffix("\"") && value.count >= 2 {
-                value = String(value.dropFirst().dropLast())
-            }
-            return value
-        }
-    }
-    return nil
-}
-
-fileprivate func tomlShimUninstallerPlan(
-    tui: IntegrationInstallerTUI,
-    configPath: String,
-    home: String,
-    force: Bool,
-    jsonOutput: Bool
-) throws -> IntegrationInstallerPlan {
-    let preText = try IntegrationInstallerHelpers.readUTF8IfExists(configPath)
-    let shimPath = tui.shimPath(home: home)
-    let preShim = try IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
-
-    guard let preText else {
-        return IntegrationInstallerPlan(
-            tui: tui,
-            configPath: configPath,
-            homePath: home,
-            preConfigText: nil,
-            postConfigText: nil,
-            shimPath: shimPath,
-            preShimText: preShim,
-            postShimText: nil,
-            priorState: .notInstalled,
-            newInstalledAt: "",
-            noop: preShim == nil,
-            summary: preShim == nil ? ["nothing to uninstall"] : ["remove shim at \(shimPath)"],
-            unifiedDiff: "",
-            tuiBinaryFound: false,
-            tuiBinaryPath: nil,
-            createdConfig: false
-        )
-    }
-
-    guard preText.range(of: IntegrationInstallerConstants.tomlFenceBegin) != nil else {
-        return IntegrationInstallerPlan(
-            tui: tui,
-            configPath: configPath,
-            homePath: home,
-            preConfigText: preText,
-            postConfigText: preText,
-            shimPath: shimPath,
-            preShimText: preShim,
-            postShimText: preShim == nil ? nil : nil,
-            priorState: .notInstalled,
-            newInstalledAt: "",
-            noop: preShim == nil,
-            summary: preShim == nil ? ["nothing to uninstall"] : ["remove shim at \(shimPath)"],
-            unifiedDiff: "",
-            tuiBinaryFound: false,
-            tuiBinaryPath: nil,
-            createdConfig: false
-        )
-    }
-
-    // Hand-edit detection (force bypass).
-    if let beginRange = preText.range(of: IntegrationInstallerConstants.tomlFenceBegin),
-       let endRange = preText.range(of: IntegrationInstallerConstants.tomlFenceEnd, options: [], range: beginRange.upperBound..<preText.endIndex) {
-        let blockText = String(preText[beginRange.lowerBound..<endRange.upperBound])
-        let storedSchema = tomlExtractValue(from: blockText, key: "schema").flatMap(Int.init)
-        if let storedSchema, storedSchema != IntegrationInstallerConstants.schemaVersion, !force {
-            throw IntegrationInstallerError(
-                code: "marker_hand_edit_detected",
-                message: "x-cmux.schema differs from current; re-run uninstall with --force.",
-                exitCode: InstallExitCode.markerHandEditDetected,
-                path: configPath,
-                jsonOutput: jsonOutput
-            )
-        }
-    }
-
-    let (stripped, _) = tomlStripExistingCmuxBlock(preText)
-
-    // If resulting content is empty, delete the file entirely.
-    let postText: String?
-    if stripped.isEmpty {
-        postText = nil
-    } else {
-        postText = stripped
-    }
-
-    let diff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: preText, after: postText, label: configPath)
-    var summary: [String] = ["remove [x-cmux] block from \(configPath)"]
-    if preShim != nil { summary.append("remove shim at \(shimPath)") }
-    if postText == nil { summary.append("delete empty config file") }
-
-    return IntegrationInstallerPlan(
-        tui: tui,
-        configPath: configPath,
-        homePath: home,
-        preConfigText: preText,
-        postConfigText: postText,
-        shimPath: shimPath,
-        preShimText: preShim,
-        postShimText: nil,
-        priorState: .installedCurrent,
-        newInstalledAt: "",
-        noop: false,
-        summary: summary,
-        unifiedDiff: diff,
-        tuiBinaryFound: false,
-        tuiBinaryPath: nil,
-        createdConfig: false
-    )
-}
-
-fileprivate func tomlShimStatusSnapshot(
-    tui: IntegrationInstallerTUI,
-    configPath: String,
-    home: String,
-    tuiBinaryFound: Bool,
-    tuiBinaryPath: String?
-) -> IntegrationInstallerStatus {
-    let shimPath = tui.shimPath(home: home)
-    guard let text = (try? IntegrationInstallerHelpers.readUTF8IfExists(configPath)) ?? nil else {
-        return IntegrationInstallerStatus(
-            tui: tui,
-            configPath: configPath,
-            shimPath: shimPath,
-            state: .notInstalled,
-            schemaVersion: nil,
-            markerId: nil,
-            installedAt: nil,
-            tuiBinaryFound: tuiBinaryFound,
-            tuiBinaryPath: tuiBinaryPath,
-            expectedHashes: [:],
-            actualHashes: [:],
-            parserError: nil,
-            note: nil
-        )
-    }
-    guard let beginRange = text.range(of: IntegrationInstallerConstants.tomlFenceBegin),
-          let endRange = text.range(of: IntegrationInstallerConstants.tomlFenceEnd, options: [], range: beginRange.upperBound..<text.endIndex) else {
-        return IntegrationInstallerStatus(
-            tui: tui,
-            configPath: configPath,
-            shimPath: shimPath,
-            state: .notInstalled,
-            schemaVersion: nil,
-            markerId: nil,
-            installedAt: nil,
-            tuiBinaryFound: tuiBinaryFound,
-            tuiBinaryPath: tuiBinaryPath,
-            expectedHashes: [:],
-            actualHashes: [:],
-            parserError: nil,
-            note: nil
-        )
-    }
-    let blockText = String(text[beginRange.lowerBound..<endRange.upperBound])
-    let schema = tomlExtractValue(from: blockText, key: "schema").flatMap(Int.init)
-    let markerId = tomlExtractValue(from: blockText, key: "id")
-    let installedAt = tomlExtractValue(from: blockText, key: "installed_at")
-    let storedShimSHA = tomlExtractValue(from: blockText, key: "shim_sha256")
-    let expectedShimSHA = integrationInstallerSHA256(of: integrationInstallerShimScript(for: tui))
-    let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
-    let liveShimSHA = liveShim.map { integrationInstallerSHA256(of: $0) }
-
-    let state: IntegrationInstallerState
-    if let schema, schema != IntegrationInstallerConstants.schemaVersion {
-        state = .schemaMismatch
-    } else if storedShimSHA == expectedShimSHA && liveShimSHA == expectedShimSHA {
-        state = .installedCurrent
-    } else {
-        state = .installedOutdated
-    }
-
-    return IntegrationInstallerStatus(
-        tui: tui,
-        configPath: configPath,
-        shimPath: shimPath,
-        state: state,
-        schemaVersion: schema,
-        markerId: markerId,
-        installedAt: installedAt,
-        tuiBinaryFound: tuiBinaryFound,
-        tuiBinaryPath: tuiBinaryPath,
-        expectedHashes: ["shim": expectedShimSHA],
-        actualHashes: ["shim": storedShimSHA ?? "", "shim_live": liveShimSHA ?? ""],
-        parserError: nil,
-        note: nil
-    )
-}
-
-// MARK: - OpenCode shim installer (JSON + shim)
-
-fileprivate func opencodeShimInstallerPlan(
-    configPath: String,
-    home: String,
-    force: Bool,
-    jsonOutput: Bool
-) throws -> IntegrationInstallerPlan {
-    let preText = try IntegrationInstallerHelpers.readUTF8IfExists(configPath)
-    let createdConfig = preText == nil
-
-    let shimPath = IntegrationInstallerTUI.opencode.shimPath(home: home)
-    let shimText = integrationInstallerShimScript(for: .opencode)
-    let shimSHA = integrationInstallerSHA256(of: shimText)
-    let installedAt = IntegrationInstallerHelpers.nowISO8601()
-
-    var existing: [String: Any] = [:]
-    if let text = preText, !text.isEmpty {
-        guard let data = text.data(using: .utf8),
-              let dict = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
-            throw IntegrationInstallerError(
-                code: "config_malformed",
-                message: "Config at \(configPath) is not a valid JSON object",
-                exitCode: InstallExitCode.configMalformed,
-                path: configPath,
-                jsonOutput: jsonOutput
-            )
-        }
-        existing = dict
-    }
-
-    let priorState: IntegrationInstallerState
-    var priorSchema: Int? = nil
-    if let xCmux = existing["x-cmux"] as? [String: Any] {
-        priorSchema = xCmux["schema"] as? Int
-        if let priorSchema, priorSchema != IntegrationInstallerConstants.schemaVersion {
-            priorState = .schemaMismatch
-        } else {
-            let storedShim = xCmux["shim_sha256"] as? String
-            let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
-            let liveSHA = liveShim.map { integrationInstallerSHA256(of: $0) }
-            if storedShim == shimSHA && liveSHA == shimSHA {
-                priorState = .installedCurrent
-            } else {
-                priorState = .installedOutdated
-            }
-        }
-    } else {
-        priorState = .notInstalled
-    }
-
-    if priorState == .schemaMismatch && !force {
-        return IntegrationInstallerPlan(
-            tui: .opencode,
-            configPath: configPath,
-            homePath: home,
-            preConfigText: preText,
-            postConfigText: nil,
-            shimPath: shimPath,
-            preShimText: try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath),
-            postShimText: nil,
-            priorState: .schemaMismatch,
-            newInstalledAt: installedAt,
-            noop: true,
-            summary: ["cmux install uses schema \(priorSchema ?? 0); expected \(IntegrationInstallerConstants.schemaVersion). Re-run with --force."],
-            unifiedDiff: "",
-            tuiBinaryFound: IntegrationInstallerHelpers.findBinary(named: "opencode", home: home) != nil,
-            tuiBinaryPath: IntegrationInstallerHelpers.findBinary(named: "opencode", home: home),
-            createdConfig: false
-        )
-    }
-
-    var result = existing
-    result["x-cmux"] = [
-        "schema": IntegrationInstallerConstants.schemaVersion,
-        "id": IntegrationInstallerConstants.markerId,
-        "installed_at": installedAt,
-        "shim_path": shimPath,
-        "shim_sha256": shimSHA
-    ] as [String: Any]
-    let newText = IntegrationInstallerHelpers.claudeCodeJSONDump(result)
-
-    let noop: Bool
-    if priorState == .installedCurrent {
-        let canonicalPre = IntegrationInstallerHelpers.claudeCodeJSONDump(existing)
-        let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
-        noop = canonicalPre == newText && liveShim == shimText
-    } else {
-        noop = false
-    }
-
-    let diff: String
-    if noop {
-        diff = "(no changes)"
-    } else {
-        let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
-        let configDiff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: preText, after: newText, label: configPath)
-        let shimDiff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: liveShim ?? nil, after: shimText, label: shimPath)
-        diff = configDiff + "\n" + shimDiff
-    }
-
-    var summary: [String] = []
-    switch priorState {
-    case .notInstalled:
-        summary.append(createdConfig ? "create \(configPath)" : "add x-cmux key to \(configPath)")
-        summary.append("install shim at \(shimPath)")
-    case .installedCurrent:
-        summary.append("cmux install is current (no changes)")
-    case .installedOutdated:
-        summary.append("refresh x-cmux in \(configPath)")
-        summary.append("refresh shim at \(shimPath)")
-    case .schemaMismatch:
-        summary.append("schema mismatch: rewriting x-cmux at schema \(IntegrationInstallerConstants.schemaVersion)")
-        summary.append("refresh shim at \(shimPath)")
-    case .configMalformed, .markerHandEdit:
-        summary.append("rewriting x-cmux (prior state: \(priorState.rawValue))")
-    }
-
-    let tuiBinaryPath = IntegrationInstallerHelpers.findBinary(named: "opencode", home: home)
-    return IntegrationInstallerPlan(
-        tui: .opencode,
-        configPath: configPath,
-        homePath: home,
-        preConfigText: preText,
-        postConfigText: noop ? preText : newText,
-        shimPath: shimPath,
-        preShimText: try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath),
-        postShimText: noop ? (try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)) ?? shimText : shimText,
-        priorState: priorState,
-        newInstalledAt: installedAt,
-        noop: noop,
-        summary: summary,
-        unifiedDiff: diff,
-        tuiBinaryFound: tuiBinaryPath != nil,
-        tuiBinaryPath: tuiBinaryPath,
-        createdConfig: createdConfig
-    )
-}
-
-fileprivate func opencodeShimUninstallerPlan(
-    configPath: String,
-    home: String,
-    force: Bool,
-    jsonOutput: Bool
-) throws -> IntegrationInstallerPlan {
-    let preText = try IntegrationInstallerHelpers.readUTF8IfExists(configPath)
-    let shimPath = IntegrationInstallerTUI.opencode.shimPath(home: home)
-    let preShim = try IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
-
-    guard let preText else {
-        return IntegrationInstallerPlan(
-            tui: .opencode,
-            configPath: configPath,
-            homePath: home,
-            preConfigText: nil,
-            postConfigText: nil,
-            shimPath: shimPath,
-            preShimText: preShim,
-            postShimText: nil,
-            priorState: .notInstalled,
-            newInstalledAt: "",
-            noop: preShim == nil,
-            summary: preShim == nil ? ["nothing to uninstall"] : ["remove shim at \(shimPath)"],
-            unifiedDiff: "",
-            tuiBinaryFound: false,
-            tuiBinaryPath: nil,
-            createdConfig: false
-        )
-    }
-
-    guard !preText.isEmpty,
-          let data = preText.data(using: .utf8),
-          let existing = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
-        throw IntegrationInstallerError(
-            code: "config_malformed",
-            message: "Config at \(configPath) is not valid JSON",
-            exitCode: InstallExitCode.configMalformed,
-            path: configPath,
-            jsonOutput: jsonOutput
-        )
-    }
-
-    guard let xCmux = existing["x-cmux"] as? [String: Any] else {
-        return IntegrationInstallerPlan(
-            tui: .opencode,
-            configPath: configPath,
-            homePath: home,
-            preConfigText: preText,
-            postConfigText: preText,
-            shimPath: shimPath,
-            preShimText: preShim,
-            postShimText: preShim == nil ? nil : nil,
-            priorState: .notInstalled,
-            newInstalledAt: "",
-            noop: preShim == nil,
-            summary: preShim == nil ? ["nothing to uninstall"] : ["remove shim at \(shimPath)"],
-            unifiedDiff: "",
-            tuiBinaryFound: false,
-            tuiBinaryPath: nil,
-            createdConfig: false
-        )
-    }
-
-    let storedSchema = xCmux["schema"] as? Int
-    if let storedSchema, storedSchema != IntegrationInstallerConstants.schemaVersion, !force {
-        throw IntegrationInstallerError(
-            code: "marker_hand_edit_detected",
-            message: "x-cmux.schema differs from current; re-run uninstall with --force.",
-            exitCode: InstallExitCode.markerHandEditDetected,
-            path: configPath,
-            jsonOutput: jsonOutput
-        )
-    }
-
-    var result = existing
-    result.removeValue(forKey: "x-cmux")
-
-    let postText: String?
-    if result.isEmpty {
-        postText = nil
-    } else {
-        postText = IntegrationInstallerHelpers.claudeCodeJSONDump(result)
-    }
-
-    let diff = IntegrationInstallerHelpers.simpleUnifiedDiff(before: preText, after: postText, label: configPath)
-    var summary: [String] = ["remove x-cmux from \(configPath)"]
-    if preShim != nil { summary.append("remove shim at \(shimPath)") }
-    if postText == nil { summary.append("delete empty config file") }
-
-    return IntegrationInstallerPlan(
-        tui: .opencode,
-        configPath: configPath,
-        homePath: home,
-        preConfigText: preText,
-        postConfigText: postText,
-        shimPath: shimPath,
-        preShimText: preShim,
-        postShimText: nil,
-        priorState: .installedCurrent,
-        newInstalledAt: "",
-        noop: false,
-        summary: summary,
-        unifiedDiff: diff,
-        tuiBinaryFound: false,
-        tuiBinaryPath: nil,
-        createdConfig: false
-    )
-}
-
-fileprivate func opencodeShimStatusSnapshot(
-    configPath: String,
-    home: String,
-    tuiBinaryFound: Bool,
-    tuiBinaryPath: String?
-) -> IntegrationInstallerStatus {
-    let shimPath = IntegrationInstallerTUI.opencode.shimPath(home: home)
-    guard let text = (try? IntegrationInstallerHelpers.readUTF8IfExists(configPath)) ?? nil, !text.isEmpty else {
-        return IntegrationInstallerStatus(
-            tui: .opencode,
-            configPath: configPath,
-            shimPath: shimPath,
-            state: .notInstalled,
-            schemaVersion: nil,
-            markerId: nil,
-            installedAt: nil,
-            tuiBinaryFound: tuiBinaryFound,
-            tuiBinaryPath: tuiBinaryPath,
-            expectedHashes: [:],
-            actualHashes: [:],
-            parserError: nil,
-            note: nil
-        )
-    }
-    guard let data = text.data(using: .utf8),
-          let existing = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
-        return IntegrationInstallerStatus(
-            tui: .opencode,
-            configPath: configPath,
-            shimPath: shimPath,
-            state: .configMalformed,
-            schemaVersion: nil,
-            markerId: nil,
-            installedAt: nil,
-            tuiBinaryFound: tuiBinaryFound,
-            tuiBinaryPath: tuiBinaryPath,
-            expectedHashes: [:],
-            actualHashes: [:],
-            parserError: "invalid JSON",
-            note: nil
-        )
-    }
-    guard let xCmux = existing["x-cmux"] as? [String: Any] else {
-        return IntegrationInstallerStatus(
-            tui: .opencode,
-            configPath: configPath,
-            shimPath: shimPath,
-            state: .notInstalled,
-            schemaVersion: nil,
-            markerId: nil,
-            installedAt: nil,
-            tuiBinaryFound: tuiBinaryFound,
-            tuiBinaryPath: tuiBinaryPath,
-            expectedHashes: [:],
-            actualHashes: [:],
-            parserError: nil,
-            note: nil
-        )
-    }
-    let schema = xCmux["schema"] as? Int
-    let markerId = xCmux["id"] as? String
-    let installedAt = xCmux["installed_at"] as? String
-    let storedShim = xCmux["shim_sha256"] as? String ?? ""
-    let expectedShim = integrationInstallerSHA256(of: integrationInstallerShimScript(for: .opencode))
-    let liveShim = try? IntegrationInstallerHelpers.readUTF8IfExists(shimPath)
-    let liveShimSHA = liveShim.map { integrationInstallerSHA256(of: $0) } ?? ""
-
-    let state: IntegrationInstallerState
-    if let schema, schema != IntegrationInstallerConstants.schemaVersion {
-        state = .schemaMismatch
-    } else if storedShim == expectedShim && liveShimSHA == expectedShim {
-        state = .installedCurrent
-    } else {
-        state = .installedOutdated
-    }
-
-    return IntegrationInstallerStatus(
-        tui: .opencode,
-        configPath: configPath,
-        shimPath: shimPath,
-        state: state,
-        schemaVersion: schema,
-        markerId: markerId,
-        installedAt: installedAt,
-        tuiBinaryFound: tuiBinaryFound,
-        tuiBinaryPath: tuiBinaryPath,
-        expectedHashes: ["shim": expectedShim],
-        actualHashes: ["shim": storedShim, "shim_live": liveShimSHA],
-        parserError: nil,
-        note: nil
-    )
 }
 
 // MARK: - `cmux skill` subcommand
@@ -17178,6 +15959,9 @@ extension CMUXCLI {
     private func mailboxUsage() -> String {
         """
         c11 mailbox — inter-agent messaging
+
+        Per-workspace messaging primitive for coordinating between c11 surfaces.
+        Full guide: docs/c11-mailbox-guide.md (agent quick-reference: skills/c11/SKILL.md).
 
           send       write an envelope to the per-workspace outbox
           recv       drain or peek the caller's inbox

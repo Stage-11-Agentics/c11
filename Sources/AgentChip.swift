@@ -1,13 +1,11 @@
 import Foundation
 
-/// Module 3 — Sidebar TUI identity chip.
+/// Sidebar TUI identity chip.
 ///
 /// An `AgentChip` is the precomputed display state rendered on each workspace
 /// row's sidebar entry. The chip reflects the metadata of a workspace's
 /// focused surface — specifically the canonical `terminal_type` and `model`
 /// keys plus the non-canonical `model_label` display hint.
-///
-/// Spec: `docs/c11mux-module-3-and-6-sidebar-and-markdown-spec.md`.
 struct AgentChip: Equatable {
     let terminalType: String          // canonical terminal_type, or "unknown"
     let model: String?                // canonical model, if set

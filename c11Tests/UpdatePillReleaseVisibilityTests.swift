@@ -192,3 +192,22 @@ final class TitlebarControlsHoverPolicyTests: XCTestCase {
         XCTAssertFalse(titlebarControlsShouldTrackButtonHover(config: TitlebarControlsStyle.softButtons.config))
     }
 }
+
+final class TitlebarTooltipUAFGuardTests: XCTestCase {
+    func testTitlebarControlsStyleConfigDefaultsAreStable() {
+        // Smoke test verifying TitlebarControlsStyleConfig instances can be constructed
+        // without crashing. The NSToolTipManager UAF (Pick 6) was triggered by
+        // .safeHelp() being applied to high-churn titlebar buttons — those calls have
+        // been removed. The accessibility labels remain on all three buttons to
+        // preserve VoiceOver discoverability. The full UAF is a runtime crash that
+        // requires concurrent mount/unmount cycles; this test guards the structural
+        // baseline that the button configurations are valid.
+        let classic = TitlebarControlsStyle.classic.config
+        let compact = TitlebarControlsStyle.compact.config
+        let pillGroup = TitlebarControlsStyle.pillGroup.config
+
+        XCTAssertGreaterThan(classic.buttonSize, 0)
+        XCTAssertGreaterThan(compact.buttonSize, 0)
+        XCTAssertGreaterThan(pillGroup.buttonSize, 0)
+    }
+}

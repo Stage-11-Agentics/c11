@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-04T00:44:06Z",
+  "created_by": "agent:opus-c11-6",
+  "custom_fields": {},
+  "id": "art_01KQR72FB2JPWQBPHTBFASA8FE",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KQR72FB2JPWQBPHTBFASA8FE.md",
+    "size_bytes": 6225
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "plan-review (codex)",
+  "token_usage": null,
+  "type": "file"
+}

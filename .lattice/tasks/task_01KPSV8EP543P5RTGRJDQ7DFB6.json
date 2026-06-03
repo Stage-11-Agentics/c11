@@ -3,7 +3,7 @@
   "branch_links": [],
   "cmux_surface": "57ACDFF5-5A76-417D-A1F7-BF5DEF3948C1",
   "cmux_workspace": "48438BFA-8D65-468D-8174-5BC2CD9F93A0",
-  "comment_count": 0,
+  "comment_count": 3,
   "complexity": "medium",
   "created_at": "2026-04-22T05:40:26Z",
   "created_by": "agent:codex",
@@ -12,8 +12,8 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KPSV8EP543P5RTGRJDQ7DFB6",
-  "last_event_id": "ev_01KPSVAK8JATFPRKGVXWF44J0B",
-  "last_status_changed_at": "2026-04-22T05:40:26Z",
+  "last_event_id": "ev_01KQTVQ7K8EE50XFEJ66TP4Q6G",
+  "last_status_changed_at": "2026-05-05T01:17:39Z",
   "linked_files": [
     "Sources/Workspace.swift",
     "Sources/SessionPersistence.swift",
@@ -35,7 +35,7 @@
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-10",
-  "status": "in_planning",
+  "status": "planned",
   "tags": [
     "ui",
     "tab-color",
@@ -45,6 +45,6 @@
   ],
   "title": "Per-surface tab colors inside panes",
   "type": "task",
-  "updated_at": "2026-04-22T05:41:36Z",
+  "updated_at": "2026-05-05T01:23:26Z",
   "urgency": "normal"
 }

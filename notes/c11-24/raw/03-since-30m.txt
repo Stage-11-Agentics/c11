@@ -1,0 +1,5 @@
+=== c11 health --since 30m ===
+c11 health: nothing in the last 30m across ips, sentry, metrickit, sentinel.
+
+Warnings:
+  - Sentry cache empty across c11 bundles: telemetry may be off, or events shipped on last launch and cleared the cache.

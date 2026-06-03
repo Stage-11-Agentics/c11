@@ -1,0 +1,29 @@
+=== c11 health --since-boot --json ===
+{
+  "events" : [
+
+  ],
+  "rails" : {
+    "ips" : {
+      "count" : 0
+    },
+    "metrickit" : {
+      "count" : 0
+    },
+    "sentinel" : {
+      "count" : 0
+    },
+    "sentry" : {
+      "count" : 0
+    }
+  },
+  "schema_version" : 1,
+  "warnings" : [
+    "Sentry cache empty across c11 bundles: telemetry may be off, or events shipped on last launch and cleared the cache."
+  ],
+  "window" : {
+    "mode" : "since-boot",
+    "since" : "2026-05-02T19:32:22.372Z",
+    "until" : "2026-05-03T22:37:37.501Z"
+  }
+}

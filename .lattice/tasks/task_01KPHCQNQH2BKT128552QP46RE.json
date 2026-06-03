@@ -1,27 +1,38 @@
 {
   "assigned_to": null,
   "branch_links": [],
-  "comment_count": 4,
+  "comment_count": 5,
   "complexity": null,
   "created_at": "2026-04-18T22:52:41Z",
   "created_by": "agent:claude",
   "custom_fields": {},
   "description": "Deliver a unified, TOML-schema-driven theme engine for c11mux chrome surfaces (sidebar, top bar, tab bar, pane dividers, outer workspace frame, pane title bars), while leaving Ghostty-owned surfaces (terminal cells, cursor, prompt) untouched.\n\nPlan source of truth: docs/c11mux-theming-plan.md (v2.1 @ commit 302105c8).\n\nScope highlights (\u00a712 locks, 16 items):\n- Public, outward-facing utility (\u00a712 #8) \u2014 held to public-product polish on error UX, CLI ergonomics, docs, localization.\n- Two built-ins ship: stage11 (brand default, void-dominant + gold accent) and phosphor (subtle matrix/CRT-phosphor aesthetic, validates theme-switching + demonstrates aesthetic range) (\u00a712 #15).\n- Workspace frame is a structural primitive with per-surface addressable state and animation-ready rendering (\u00a712 #9). M2c ships decorative baseline; M5+ hooks agent state, drop zones, mode indicators.\n- $workspaceColor stays a pure color token. Categorical state (environment, risk, mode, tags) flows through a sibling workspaceState channel on ThemeContext \u2014 reserved in v1, implemented in v1.x (\u00a712 #10).\n- Themes are mode-agnostic; light/dark binding lives one level up as two @AppStorage slots an operator binds to any installed theme (\u00a712 #12).\n- Agent socket access: read-only theme methods; agents signal workspace state via metadata, never change the active theme (\u00a712 #13).\n- Per-bundle-ID @AppStorage isolation; shared themes directory (\u00a712 #14).\n- Hand-written TOML subset parser, zero deps (\u00a712 #7).\n- Explicit theme inheritance (`[identity].inherits`) reserved but deferred to M5+ (\u00a712 #16).\n- No formal process gates; normal operator workflow (\u00a712 #11).\n\nMilestone rollout (\u00a710 of plan):\n- M1a \u2014 engine + parser + default theme (no call-sites)\n- M1b \u2014 surface-by-surface adoption with 24-dim sidebar snapshot test\n- M2a \u2014 bonsplit DividerStyle sibling struct (submodule)\n- M2b \u2014 c11mux wires dividers through theme\n- M2c \u2014 outer workspace frame + sidebar overlay\n- M3 \u2014 user themes dir + hot reload + phosphor ships\n- M4 \u2014 Settings picker (two slots) + CLI (cmux ui themes *)\n- M5 \u2014 stretch; evaluated after M4\n\nPer cmux forward-only Lattice policy, milestone child tickets are created only when each milestone's work actually starts. This ticket is the parent anchor.",
-  "done_at": null,
-  "evidence_refs": [],
+  "done_at": "2026-05-05T01:11:27Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01KQTV18H1WNTTSEK08YDZNHR4",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KQTV18H1WNTTSEK08YDZNHR3",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
   "id": "task_01KPHCQNQH2BKT128552QP46RE",
-  "last_event_id": "ev_01KPMKAT1KYFZQ4AZ6VYR58M1V",
-  "last_status_changed_at": "2026-04-19T06:36:06Z",
+  "last_event_id": "ev_01KQTV18H1WNTTSEK08YDZNHR6",
+  "last_status_changed_at": "2026-05-05T01:11:27Z",
   "linked_files": [],
   "priority": "medium",
   "relationships_out": [],
   "reopened_count": 1,
   "schema_version": 1,
   "short_id": "CMUX-9",
-  "status": "planned",
+  "status": "done",
   "tags": null,
   "title": "c11mux custom theming system",
   "type": "task",
-  "updated_at": "2026-04-20T04:45:42Z",
+  "updated_at": "2026-05-05T01:11:27Z",
   "urgency": null
 }

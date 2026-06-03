@@ -9,6 +9,7 @@ import Sentry
 import Bonsplit
 import IOSurface
 import UniformTypeIdentifiers
+import os
 
 #if os(macOS)
 func cmuxShouldUseTransparentBackgroundWindow() -> Bool {
@@ -97,11 +98,21 @@ private enum GhosttyPasteboardHelper {
                 .joined(separator: " ")
         }
 
-        if let value = pasteboard.string(forType: .string) {
+        // Prefer the explicit UTF-8 plain-text type when available. On modern
+        // macOS `.string` is aliased to `public.utf8-plain-text`, but legacy
+        // pasteboard producers (or apps writing both types) can leave a
+        // Latin-1/ASCII-truncated `.string` value alongside a clean UTF-8
+        // entry; reading UTF-8 first preserves bytes >= 0x80 (Hangul,
+        // Cyrillic, Qt-emitted non-ASCII). See cmux#3069 / #2756 / #2891.
+        //
+        // Skip an empty UTF-8 entry so a pathological producer that registers
+        // utf8PlainTextType with an empty value but populates `.string`
+        // doesn't cause us to return empty.
+        if let value = pasteboard.string(forType: utf8PlainTextType), !value.isEmpty {
             return value
         }
 
-        if let value = pasteboard.string(forType: utf8PlainTextType) {
+        if let value = pasteboard.string(forType: .string) {
             return value
         }
 
@@ -125,7 +136,7 @@ private enum GhosttyPasteboardHelper {
     static func hasString(for location: ghostty_clipboard_e) -> Bool {
         guard let pasteboard = pasteboard(for: location) else { return false }
         let types = pasteboard.types ?? []
-        if types.contains(.fileURL) || types.contains(.string) || types.contains(utf8PlainTextType)
+        if types.contains(.fileURL) || types.contains(utf8PlainTextType) || types.contains(.string)
             || types.contains(.html) || types.contains(.rtf) || types.contains(.rtfd) {
             return true
         }
@@ -2327,6 +2338,16 @@ class GhosttyApp {
                 #endif
                 return false
             }
+            // Opt/Alt held at click time forces external browser, bypassing
+            // BrowserLinkOpenSettings routing (cmuxBrowser default, host whitelist, regex).
+            if NSEvent.modifierFlags.contains(.option) {
+                #if DEBUG
+                dlog("link.openURL opt-held, forcing external url=\(target.url)")
+                #endif
+                return performOnMain {
+                    NSWorkspace.shared.open(target.url)
+                }
+            }
             if !BrowserLinkOpenSettings.openTerminalLinksInCmuxBrowser() {
                 #if DEBUG
                 dlog("link.openURL cmuxBrowser=disabled, opening externally url=\(target.url)")
@@ -2547,12 +2568,31 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
     private(set) var surface: ghostty_surface_t?
     private weak var attachedView: GhosttyNSView?
-    /// Whether the terminal surface view is currently attached to a window.
+    /// The user-facing window backing the hosted view. Returns `nil` when the view is
+    /// only parented to the internal headless bootstrap window used to start a Ghostty
+    /// surface ahead of the real portal. Callers that want "is this visible/focusable
+    /// to the operator" should use this instead of `hostedView.window` directly.
+    var uiWindow: NSWindow? {
+        guard let window = hostedView.window else { return nil }
+        if let headlessStartupWindow, window === headlessStartupWindow {
+            return nil
+        }
+        return window
+    }
+
+    /// Whether the terminal surface view is currently attached to a user-visible window.
     ///
     /// Use the hosted view rather than the inner surface view, since the surface can be
     /// temporarily unattached (surface not yet created / reparenting) even while the panel
-    /// is already in the window.
-    var isViewInWindow: Bool { hostedView.window != nil }
+    /// is already in the window. The headless bootstrap window does not count.
+    var isViewInWindow: Bool { uiWindow != nil }
+
+    /// True when `window` is the internal headless bootstrap window used to start the
+    /// Ghostty runtime before AppKit moves the view into a real window.
+    func isHeadlessStartupWindow(_ window: NSWindow?) -> Bool {
+        guard let window, let headlessStartupWindow else { return false }
+        return window === headlessStartupWindow
+    }
     let id: UUID
     private(set) var tabId: UUID
     /// Port ordinal for CMUX_PORT range assignment
@@ -2587,7 +2627,20 @@ final class TerminalSurface: Identifiable, ObservableObject {
     private var pendingTextQueue: [Data] = []
     private var pendingTextBytes: Int = 0
     private let maxPendingTextBytes = 1_048_576
+    /// Set by `sendSubmitFormText` when the surface is not yet attached.
+    /// `flushPendingTextIfNeeded` consumes the flag after writing the
+    /// queued bytes, scheduling a synthetic Return outside the
+    /// bracketed-paste sequence so the receiving shell or TUI actually
+    /// submits the typed line on cold start.
+    private var pendingSubmitOnFlush: Bool = false
     private var backgroundSurfaceStartQueued = false
+    /// Borderless, off-screen `NSWindow` used to bootstrap Ghostty's runtime surface
+    /// before AppKit moves the view into a real portal-backed window. Required because
+    /// `ghostty_surface_new` (via `attachToView`) gates on `view.window != nil`; for
+    /// offscreen surfaces (e.g. `c11 new-surface --no-focus`) the real window never
+    /// arrives until the user selects the tab. We attach into this window, let the
+    /// PTY spawn, and release it when the real window arrives (`reconcileAttachedWindowIfNeeded`).
+    private var headlessStartupWindow: NSWindow?
     private var surfaceCallbackContext: Unmanaged<GhosttySurfaceCallbackContext>?
     /// Tracks the last focus state to avoid sending redundant focus events.
     /// This prevents prompt redraw issues with zsh themes like Powerlevel10k.
@@ -2692,6 +2745,17 @@ final class TerminalSurface: Identifiable, ObservableObject {
         // Surface is created when attached to a view
         hostedView.attachSurface(self)
         TerminalSurfaceRegistry.shared.register(self)
+
+        // Surfaces with startup work (`initialCommand`) must spawn their PTY before
+        // the user focuses the workspace; otherwise the agent restore / cold-boot
+        // path stalls until the operator selects the tab. Ghostty's surface creation
+        // expects a non-nil `view.window`, so we install the view in a hidden
+        // bootstrap window now and swap to the real window when AppKit moves it there.
+        if self.initialCommand != nil {
+            MainActor.assumeIsolated {
+                scheduleHeadlessRuntimeStartIfNeeded(reason: "startup")
+            }
+        }
     }
 
 
@@ -2699,6 +2763,113 @@ final class TerminalSurface: Identifiable, ObservableObject {
         tabId = newTabId
         attachedView?.tabId = newTabId
         surfaceView.tabId = newTabId
+    }
+
+    // MARK: - Headless startup window
+    //
+    // Ghostty's surface creation gates on `view.window != nil` so that constructing
+    // a `TerminalSurface` (e.g. for a model-only restore, a unit test, or a
+    // background workspace) does not spawn a PTY. The trouble is real surfaces
+    // created via `c11 new-surface --no-focus` are also off-window — SwiftUI never
+    // mounts an unselected tab's view, so `attachToView` defers indefinitely and
+    // `c11 send` quietly queues into oblivion.
+    //
+    // The fix (mirrored from manaflow-ai/cmux PR #4233) is to install the view in
+    // a borderless, off-screen `NSWindow` long enough for `ghostty_surface_new` to
+    // succeed, then swap to the real window when AppKit eventually mounts the view
+    // for real. The headless window is invisible to the operator (`alphaValue = 0`,
+    // `.ignoresMouseEvents`, excluded from the windows menu) and is released as
+    // soon as `attachToView` fires for the real portal window.
+    @MainActor
+    private func scheduleHeadlessRuntimeStartIfNeeded(reason: String) {
+        startRuntimeUsingHeadlessWindowIfNeeded(reason: reason)
+    }
+
+    @MainActor
+    private func startRuntimeUsingHeadlessWindowIfNeeded(reason: String) {
+        guard surface == nil else { return }
+        ensureHeadlessStartupWindowIfNeeded(reason: reason)
+        hostedView.attachSurface(self)
+    }
+
+    @MainActor
+    private func ensureHeadlessStartupWindowIfNeeded(reason: String) {
+        guard headlessStartupWindow == nil else { return }
+        guard hostedView.window == nil else { return }
+
+        let width = max(surfaceView.bounds.width, CGFloat(800))
+        let height = max(surfaceView.bounds.height, CGFloat(600))
+        let frame = NSRect(x: 0, y: 0, width: width, height: height)
+        let window = NSWindow(
+            contentRect: frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.hasShadow = false
+        window.alphaValue = 0
+        window.ignoresMouseEvents = true
+        window.collectionBehavior = [.transient, .ignoresCycle, .stationary]
+        window.isExcludedFromWindowsMenu = true
+
+        let contentView = NSView(frame: frame)
+        hostedView.frame = contentView.bounds
+        hostedView.autoresizingMask = [.width, .height]
+        contentView.addSubview(hostedView)
+        window.contentView = contentView
+        headlessStartupWindow = window
+        hostedView.setVisibleInUI(false)
+        hostedView.setActive(false)
+
+#if DEBUG
+        dlog(
+            "surface.headless_window.create surface=\(id.uuidString.prefix(8)) " +
+            "reason=\(reason) window=\(ObjectIdentifier(window))"
+        )
+#endif
+    }
+
+    @MainActor
+    private func releaseHeadlessStartupWindowIfNeeded(for view: GhosttyNSView) {
+        guard let window = headlessStartupWindow else { return }
+        guard let currentWindow = view.window, currentWindow !== window else { return }
+        headlessStartupWindow = nil
+        window.contentView = nil
+        window.close()
+#if DEBUG
+        dlog(
+            "surface.headless_window.release surface=\(id.uuidString.prefix(8)) " +
+            "realWindow=\(ObjectIdentifier(currentWindow))"
+        )
+#endif
+    }
+
+    private func closeHeadlessStartupWindowIfNeeded() {
+        let startupWindow = headlessStartupWindow
+        headlessStartupWindow = nil
+        guard let startupWindow else { return }
+
+        let closeStartupWindow = {
+            startupWindow.contentView = nil
+            startupWindow.close()
+        }
+        if Thread.isMainThread {
+            closeStartupWindow()
+        } else {
+            DispatchQueue.main.async(execute: closeStartupWindow)
+        }
+    }
+
+    @MainActor
+    func reconcileAttachedWindowIfNeeded(for view: GhosttyNSView) {
+        guard attachedView === view else { return }
+        releaseHeadlessStartupWindowIfNeeded(for: view)
+        guard let screen = view.window?.screen ?? NSScreen.main,
+              let displayID = screen.displayID,
+              displayID != 0 else { return }
+        guard let s = self.surface else { return }
+        ghostty_surface_set_display_id(s, displayID)
     }
 
     private static func mergedNormalizedEnvironment(
@@ -2936,6 +3107,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
     func teardownSurface() {
         recordTeardownRequest(reason: "surface.teardown")
         markPortalLifecycleClosed(reason: "teardown")
+        closeHeadlessStartupWindowIfNeeded()
 
         let callbackContext = surfaceCallbackContext
         surfaceCallbackContext = nil
@@ -3034,6 +3206,9 @@ final class TerminalSurface: Identifiable, ObservableObject {
         // markers, visibility flags), so avoid forcing a geometry refresh when the attachment
         // itself is unchanged.
         if attachedView === view && surface != nil {
+            MainActor.assumeIsolated {
+                releaseHeadlessStartupWindowIfNeeded(for: view)
+            }
 #if DEBUG
             dlog("surface.attach.reuse surface=\(id.uuidString.prefix(5)) view=\(Unmanaged.passUnretained(view).toOpaque())")
 #endif
@@ -3057,9 +3232,15 @@ final class TerminalSurface: Identifiable, ObservableObject {
         }
 
         attachedView = view
+        MainActor.assumeIsolated {
+            releaseHeadlessStartupWindowIfNeeded(for: view)
+        }
 
         // If surface doesn't exist yet, create it once the view is in a real window so
         // content scale and pixel geometry are derived from the actual backing context.
+        // Off-window panels (model-only restore, background workspace tabs) stay
+        // deferred; the headless bootstrap path above handles the offscreen-but-must-spawn
+        // case explicitly via `scheduleHeadlessRuntimeStartIfNeeded`.
         if surface == nil {
             guard view.window != nil else {
 #if DEBUG
@@ -3170,6 +3351,34 @@ final class TerminalSurface: Identifiable, ObservableObject {
         }
         if let bundleId = Bundle.main.bundleIdentifier, !bundleId.isEmpty {
             setManagedEnvironmentValue("CMUX_BUNDLE_ID", bundleId)
+        }
+
+        // C11_DEFAULT_AGENT_LAUNCH carries the bare launcher command (no
+        // operator-configured seed prompt) so callers can append their own
+        // positional args without colliding with a baked-in prompt. The seed,
+        // when configured, ships as a separate env var; orchestrators that
+        // want the operator's A-button shape should call
+        // `c11 default-agent launch ...` instead of building the shell line
+        // themselves. Resolved per shell at spawn time; preference changes
+        // only affect newly-spawned shells.
+        do {
+            let resolverCwd: String = {
+                if let wd = workingDirectory, !wd.isEmpty { return wd }
+                return FileManager.default.homeDirectoryForCurrentUser.path
+            }()
+            let userDefault = DefaultAgentConfigStore.shared.current
+            let projectConfig = DefaultAgentProjectConfig.find(from: resolverCwd)
+            let resolved = DefaultAgentResolver.resolve(
+                explicitAgent: nil,
+                userDefault: userDefault,
+                projectConfig: projectConfig
+            )
+            if !resolved.launch.bareCommand.isEmpty {
+                setManagedEnvironmentValue("C11_DEFAULT_AGENT_LAUNCH", resolved.launch.bareCommand)
+            }
+            if !resolved.launch.initialPrompt.isEmpty {
+                setManagedEnvironmentValue("C11_DEFAULT_AGENT_SEED_PROMPT", resolved.launch.initialPrompt)
+            }
         }
 
         // Port range for this workspace (base/range snapshotted once per app session)
@@ -3458,23 +3667,26 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
     /// Force a full size recalculation and surface redraw.
+    ///
+    /// `uiWindow` is used instead of `view.window` so the headless bootstrap window
+    /// does not trigger refresh work — that window is invisible and unfocusable, so
+    /// draws into it are wasted wakeups on the typing hot path.
     func forceRefresh(reason: String = "unspecified") {
+#if DEBUG
         let hasSurface = surface != nil
         let viewState: String
         if let view = attachedView {
-            let inWindow = view.window != nil
+            let inWindow = uiWindow != nil
             let bounds = view.bounds
             let metalOK = (view.layer as? CAMetalLayer) != nil
             viewState = "inWindow=\(inWindow) bounds=\(bounds) metalOK=\(metalOK) hasSurface=\(hasSurface)"
         } else {
             viewState = "NO_ATTACHED_VIEW hasSurface=\(hasSurface)"
         }
-        #if DEBUG
         dlog("forceRefresh: \(id) reason=\(reason) \(viewState)")
-        #endif
+#endif
         guard let view = attachedView,
-              let surface,
-              view.window != nil,
+              let window = uiWindow,
               view.bounds.width > 0,
               view.bounds.height > 0 else {
             return
@@ -3489,7 +3701,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         // Reassert display id on topology churn (split close/reparent) before forcing a refresh.
         // This avoids a first-run stuck-vsync state where Ghostty believes vsync is active
         // but callbacks have not resumed for the current display.
-        if let displayID = (view.window?.screen ?? NSScreen.main)?.displayID,
+        if let displayID = (window.screen ?? NSScreen.main)?.displayID,
            displayID != 0 {
             ghostty_surface_set_display_id(currentSurface, displayID)
         }
@@ -3546,6 +3758,51 @@ final class TerminalSurface: Identifiable, ObservableObject {
             return
         }
         writeTextData(data, to: surface)
+    }
+
+    /// Type `text` and submit it by dispatching a synthetic Return key
+    /// once the bytes have actually reached the surface.
+    ///
+    /// `sendText` writes through `ghostty_surface_text`, which wraps every
+    /// call in bracketed-paste markers (`ESC[200~ … ESC[201~`). Bracketed
+    /// paste is specifically designed so embedded `\n`/`\r` do NOT
+    /// auto-execute — shell line discipline (zsh ZLE, bash readline) and
+    /// TUI raw-mode handlers (Claude CLI, codex) only submit when a real
+    /// Return arrives outside the paste sequence. So this helper types
+    /// the trimmed text and then dispatches `sendKey(.returnKey)` to
+    /// actually submit.
+    ///
+    /// Readiness matters: `sendKey` requires `view.window` to be non-nil
+    /// (see `sendSyntheticKey`). For a freshly-created surface — the
+    /// agent-restart-on-restore case — the view is not yet in a window,
+    /// so a fixed timer would silently drop the Return. This method
+    /// instead:
+    ///   * dispatches Return after a paste-processing delay when the
+    ///     surface is already up, and
+    ///   * defers the Return until the pending-text queue flushes (which
+    ///     happens on surface attach, when `view.window` is guaranteed
+    ///     non-nil) when the surface is not yet ready.
+    func sendSubmitFormText(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .newlines)
+        guard !trimmed.isEmpty else { return }
+        sendText(trimmed)
+        if surface == nil {
+            pendingSubmitOnFlush = true
+        } else {
+            scheduleSubmitReturnAfterPasteDelay()
+        }
+    }
+
+    private func scheduleSubmitReturnAfterPasteDelay() {
+        let delayMs = TextBoxBehavior.returnKeyDelayMs
+        if delayMs <= 0 {
+            sendKey(.returnKey)
+            return
+        }
+        let delay = TimeInterval(delayMs) / 1000.0
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.sendKey(.returnKey)
+        }
     }
 
     // MARK: - [TextBox] TextBoxInput integration helpers
@@ -3620,6 +3877,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
         _ = performBindingAction("scroll_to_row:\(row)")
     }
 
+    // Socket / API operations are an explicit runtime demand: they must be able to
+    // start a terminal in a background workspace without selecting that workspace.
+    // When there is no real window yet, bootstrap Ghostty in a hidden window and
+    // reconcile display/window state when the terminal is later presented for real.
     func requestBackgroundSurfaceStartIfNeeded() {
         if !Thread.isMainThread {
             DispatchQueue.main.async { [weak self] in
@@ -3628,24 +3889,35 @@ final class TerminalSurface: Identifiable, ObservableObject {
             return
         }
 
-        guard surface == nil, attachedView != nil else { return }
+        guard surface == nil else { return }
         guard !backgroundSurfaceStartQueued else { return }
         backgroundSurfaceStartQueued = true
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.backgroundSurfaceStartQueued = false
-            guard self.surface == nil, let view = self.attachedView else { return }
-            #if DEBUG
-            let startedAt = ProcessInfo.processInfo.systemUptime
-            #endif
-            self.createSurface(for: view)
-            #if DEBUG
-            let elapsedMs = (ProcessInfo.processInfo.systemUptime - startedAt) * 1000.0
-            dlog(
-                "surface.background_start surface=\(self.id.uuidString.prefix(8)) inWindow=\(view.window != nil ? 1 : 0) ready=\(self.surface != nil ? 1 : 0) ms=\(String(format: "%.2f", elapsedMs))"
-            )
-            #endif
+            MainActor.assumeIsolated {
+                self.backgroundSurfaceStartQueued = false
+                guard self.surface == nil else { return }
+                #if DEBUG
+                let startedAt = ProcessInfo.processInfo.systemUptime
+                #endif
+                if let view = self.attachedView, view.window != nil {
+                    // The view is in a real window already — straightforward create.
+                    self.createSurface(for: view)
+                } else {
+                    // Offscreen surface. Install the view in a hidden bootstrap window
+                    // so `ghostty_surface_new` has a non-nil `view.window`; the real
+                    // window will swap in via `reconcileAttachedWindowIfNeeded`.
+                    self.scheduleHeadlessRuntimeStartIfNeeded(reason: "background-input")
+                }
+                #if DEBUG
+                let elapsedMs = (ProcessInfo.processInfo.systemUptime - startedAt) * 1000.0
+                let inWindow = (self.attachedView?.window != nil) ? 1 : 0
+                dlog(
+                    "surface.background_start surface=\(self.id.uuidString.prefix(8)) inWindow=\(inWindow) ready=\(self.surface != nil ? 1 : 0) ms=\(String(format: "%.2f", elapsedMs))"
+                )
+                #endif
+            }
         }
     }
 
@@ -3681,6 +3953,14 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
         for chunk in queued {
             writeTextData(chunk, to: surface)
+        }
+        // If `sendSubmitFormText` was called before the surface attached, it
+        // set this flag so submission is deferred until the queued bytes have
+        // actually reached the surface. `view.window` is guaranteed non-nil
+        // here because surface creation gates on it (createSurface(for:)).
+        if pendingSubmitOnFlush {
+            pendingSubmitOnFlush = false
+            scheduleSubmitReturnAfterPasteDelay()
         }
         #if DEBUG
         dlog(
@@ -3749,6 +4029,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
     deinit {
         markPortalLifecycleClosed(reason: "deinit")
+        closeHeadlessStartupWindowIfNeeded()
 
         let callbackContext = surfaceCallbackContext
         surfaceCallbackContext = nil
@@ -4055,6 +4336,12 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         tabId = surface.tabId
         if !isAlreadyAttached {
             surface.attachToView(self)
+        } else {
+            // The surface is already attached (typically created in the headless
+            // bootstrap window). The view is now being mounted into the real
+            // portal; swap windows and re-assert display id so vsync resumes on
+            // the correct screen.
+            surface.reconcileAttachedWindowIfNeeded(for: self)
         }
         surface.setKeyboardCopyModeActive(keyboardCopyModeActive)
         if !isAlreadyAttached {
@@ -4759,6 +5046,12 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             // If we become first responder before the ghostty surface exists (e.g. during
             // split/tab creation while the surface is still being created), record the desired focus.
             desiredFocus = true
+            // Re-snapshot modifier state from the global accessor on focus gain
+            // so the next flagsChanged diff is against ground truth, not the
+            // stale snapshot from before focus loss. Closes a stuck-modifier
+            // window where Option held during focus transitions could
+            // misclassify the subsequent press/release.
+            lastModifierFlags = NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
             // During programmatic splits, SwiftUI reparents the old NSView which triggers
             // becomeFirstResponder. Suppress onFocus + ghostty_surface_set_focus to prevent
@@ -4828,6 +5121,12 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         let result = super.resignFirstResponder()
         if result {
             desiredFocus = false
+            // Drop the modifier snapshot so we don't diff a future flagsChanged
+            // against stale state. While focus lives elsewhere, modifier
+            // transitions go to another responder; the next event we see should
+            // be treated as a fresh PRESS against an empty baseline (or the
+            // baseline re-established in becomeFirstResponder below).
+            lastModifierFlags = []
         }
         if result, let surface = surface {
             let now = CACurrentMediaTime()
@@ -4842,6 +5141,14 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     private var keyTextAccumulator: [String]? = nil
     private var markedText = NSMutableAttributedString()
     private var lastPerformKeyEvent: TimeInterval?
+    // Snapshot of modifier flags from the most recent flagsChanged event so we
+    // can compute press/release deltas. AppKit fires flagsChanged on every
+    // modifier transition without telling us whether the bit was set or
+    // cleared; diffing against this snapshot is how we know which to send.
+    // OptionSet operations on NSEvent.ModifierFlags are allocation-free, so
+    // updating and diffing this snapshot stays cheap on the typing-latency
+    // hot path.
+    private var lastModifierFlags: NSEvent.ModifierFlags = []
     private struct SelectionSnapshot {
         let range: NSRange
         let string: String
@@ -5177,6 +5484,38 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             if handled { return }
         }
 
+        // Fast path for Option+Delete (alt+backspace).
+        //
+        // AppKit's interpretKeyEvents would translate Option+Delete to a
+        // deleteWordBackward: action selector or to insertText with a
+        // pre-deleted string, both of which strip the alt prefix Ghostty
+        // needs to encode the backward-kill-word escape sequence
+        // (ESC DEL = \x1b\x7f) that lazygit, vim, fish, zsh, Claude Code,
+        // and Codex all expect for word-deletion in TUI input fields.
+        //
+        // Mirrors the Ctrl fast path above. See cmux#1153 (@sldx report,
+        // @judekim0507 diagnosis, @pandec PR #2246 root-cause).
+        if event.keyCode == 51, // kVK_ANSI_Delete (Backspace)
+           flags.contains(.option),
+           !flags.contains(.command),
+           !flags.contains(.control),
+           !hasMarkedText() {
+            ghostty_surface_set_focus(surface, true)
+            var keyEvent = ghostty_input_key_s()
+            keyEvent.action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
+            keyEvent.keycode = UInt32(event.keyCode)
+            keyEvent.mods = modsFromEvent(event)
+            // consumed_mods intentionally NONE: Delete has no glyph form, so
+            // macos-option-as-alt doesn't apply. Copying this pattern to a
+            // glyph keycode would silently break option-as-alt; route those
+            // through ghostty_surface_key_translation_mods instead.
+            keyEvent.consumed_mods = GHOSTTY_MODS_NONE
+            keyEvent.composing = false
+            keyEvent.unshifted_codepoint = unshiftedCodepointFromEvent(event)
+            keyEvent.text = nil
+            if ghostty_surface_key(surface, keyEvent) { return }
+        }
+
         let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
 
         // Translate mods to respect Ghostty config (e.g., macos-option-as-alt)
@@ -5501,14 +5840,72 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             return
         }
 
+        // AppKit's flagsChanged fires on every modifier transition without
+        // telling us whether the bit was set or cleared. Without a press/
+        // release distinction Ghostty's input state always thinks modifiers
+        // are held: that breaks alt+backspace word-delete in TUI apps after
+        // Option releases (cmux#1153) and breaks IME composition flows where
+        // Shift/Cmd are tapped during preedit (cmux#2949).
+        //
+        // Diff against the previous snapshot (allocation-free OptionSet
+        // operations) and emit the appropriate action. New bits = PRESS,
+        // cleared bits = RELEASE. When the aggregate diff is empty (e.g.
+        // holding left Option, then pressing and releasing right Option --
+        // the .option bit stays set both times), disambiguate via the
+        // side-specific NX device mask in the raw modifier flags. Mirrors
+        // Ghostty's upstream AppKit handler.
+        let newFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let oldFlags = lastModifierFlags
+        lastModifierFlags = newFlags
+
         var keyEvent = ghostty_input_key_s()
-        keyEvent.action = GHOSTTY_ACTION_PRESS
         keyEvent.keycode = UInt32(event.keyCode)
         keyEvent.mods = modsFromEvent(event)
         keyEvent.consumed_mods = GHOSTTY_MODS_NONE
         keyEvent.text = nil
         keyEvent.composing = false
+
+        if !newFlags.subtracting(oldFlags).isEmpty {
+            keyEvent.action = GHOSTTY_ACTION_PRESS
+        } else if !oldFlags.subtracting(newFlags).isEmpty {
+            keyEvent.action = GHOSTTY_ACTION_RELEASE
+        } else if let sideMask = Self.sideMaskForModifierKeyCode(event.keyCode) {
+            // Aggregate diff is empty but a known modifier keyCode fired:
+            // same-modifier opposite-side transition. The post-event raw
+            // modifierFlags carry the side-specific NX bit; use it to pick
+            // PRESS (this side now held) vs RELEASE (this side now cleared,
+            // other side still held).
+            let sideHeld = (event.modifierFlags.rawValue & sideMask) != 0
+            keyEvent.action = sideHeld ? GHOSTTY_ACTION_PRESS : GHOSTTY_ACTION_RELEASE
+        } else {
+            // No recognized modifier bit changed. Covers numericPad/function
+            // flags stripped by deviceIndependentFlagsMask and synthetic
+            // events from accessibility. Default to PRESS for backwards
+            // compatibility: these transitions are rare and Ghostty ignores
+            // unknown keycodes gracefully.
+            keyEvent.action = GHOSTTY_ACTION_PRESS
+        }
+
         _ = ghostty_surface_key(surface, keyEvent)
+    }
+
+    // Side-specific NX device mask for a left/right modifier keycode, or nil
+    // for non-modifier or single-side keys (e.g. caps lock, function). Used
+    // by flagsChanged to disambiguate same-modifier opposite-side transitions
+    // when the aggregate deviceIndependentFlagsMask diff is empty. Mirrors
+    // upstream Ghostty's AppKit handler in SurfaceView_AppKit.swift.
+    private static func sideMaskForModifierKeyCode(_ keyCode: UInt16) -> UInt? {
+        switch keyCode {
+        case 0x38: return UInt(NX_DEVICELSHIFTKEYMASK) // kVK_Shift
+        case 0x3C: return UInt(NX_DEVICERSHIFTKEYMASK) // kVK_RightShift
+        case 0x3B: return UInt(NX_DEVICELCTLKEYMASK)   // kVK_Control
+        case 0x3E: return UInt(NX_DEVICERCTLKEYMASK)   // kVK_RightControl
+        case 0x3A: return UInt(NX_DEVICELALTKEYMASK)   // kVK_Option
+        case 0x3D: return UInt(NX_DEVICERALTKEYMASK)   // kVK_RightOption
+        case 0x37: return UInt(NX_DEVICELCMDKEYMASK)   // kVK_Command
+        case 0x36: return UInt(NX_DEVICERCMDKEYMASK)   // kVK_RightCommand
+        default: return nil
+        }
     }
 
     private func modsFromEvent(_ event: NSEvent) -> ghostty_input_mods_e {
@@ -5620,7 +6017,12 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
     private func shouldSendCommittedIMEConfirmKey(event: NSEvent, markedTextBefore: Bool) -> Bool {
         guard markedTextBefore, markedText.length == 0 else { return false }
-        return event.keyCode == 36 || event.keyCode == 76
+        guard event.keyCode == 36 || event.keyCode == 76 else { return false }
+        // Korean IME: Enter commits the syllable AND executes the command (single step).
+        // Japanese/Chinese IME: Enter only confirms the conversion; a second Enter executes.
+        // Only send the extra Return key for Korean input sources.
+        guard let sourceId = KeyboardLayout.id else { return false }
+        return sourceId.range(of: "korean", options: .caseInsensitive) != nil
     }
 
     private func ghosttyKeyEvent(for event: NSEvent, surface: ghostty_surface_t) -> ghostty_input_key_s {
@@ -5723,6 +6125,12 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         requestPointerFocusRecovery()
         window?.makeFirstResponder(self)
         if let terminalSurface {
+            // CMUX-10: click cancels any persistent flash on this surface. Mouse-only
+            // path; the keyDown / typing hot path is not touched here.
+            if let workspace = AppDelegate.shared?.tabManager?.tabs.first(where: { $0.id == terminalSurface.tabId }),
+               workspace.persistentFlashPanels[terminalSurface.id] != nil {
+                workspace.cancelPersistentFlash(panelId: terminalSurface.id)
+            }
             AppDelegate.shared?.tabManager?.dismissNotificationOnDirectInteraction(
                 tabId: terminalSurface.tabId,
                 surfaceId: terminalSurface.id
@@ -5836,7 +6244,29 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             systemSymbolName: "rectangle.righthalf.inset.filled",
             accessibilityDescription: nil
         )
+        if tabId != nil, terminalSurface?.id != nil {
+            menu.addItem(.separator())
+            let manifestItem = menu.addItem(
+                withTitle: String(
+                    localized: "surfaceManifest.menuItem",
+                    defaultValue: "Show surface manifest…"
+                ),
+                action: #selector(showSurfaceManifest(_:)),
+                keyEquivalent: ""
+            )
+            manifestItem.target = self
+        }
         return menu
+    }
+
+    @objc private func showSurfaceManifest(_ sender: Any?) {
+        guard let workspaceId = tabId,
+              let surfaceId = terminalSurface?.id else { return }
+        SurfaceManifestViewerWindowController.show(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId,
+            kind: .terminal
+        )
     }
 
     private func canSplitCurrentSurface() -> Bool {
@@ -6273,6 +6703,16 @@ final class GhosttySurfaceScrollView: NSView {
     private var userScrolledAwayFromBottom = false
     /// [TextBox] Read-only accessor used by `TerminalSurface.isScrolledUp`.
     var isUserScrolledAwayFromBottom: Bool { userScrolledAwayFromBottom }
+
+    /// The user-facing window backing this scroll view, treating the headless
+    /// startup window as "not in a window" so focus and visibility logic does
+    /// not run against the invisible bootstrap surface.
+    var uiWindow: NSWindow? {
+        if let terminalSurface = surfaceView.terminalSurface {
+            return terminalSurface.uiWindow
+        }
+        return window
+    }
     /// [TextBox] Read-only accessor used by `TerminalSurface.scrollbarOffset`.
     var currentScrollbarOffset: UInt64? { surfaceView.scrollbar?.offset }
     /// Threshold in points from bottom to consider "at bottom" (allows for minor float drift)
@@ -6405,11 +6845,14 @@ final class GhosttySurfaceScrollView: NSView {
         setDropZoneOverlay(zone: nil)
         return (before, after, bounds.size)
     }
+#endif
 
+    /// Reachable from always-on `WorkspaceSwitchSignpost` events that fire
+    /// in both Debug and Release. Body has no DEBUG-only dependencies, so
+    /// keep it outside `#if DEBUG`.
     var debugSurfaceId: UUID? {
         surfaceView.terminalSurface?.id
     }
-#endif
 
     func portalBindingGuardState() -> (surfaceId: UUID?, generation: UInt64?, state: String) {
         guard let terminalSurface = surfaceView.terminalSurface else {
@@ -6516,11 +6959,14 @@ final class GhosttySurfaceScrollView: NSView {
         flashOverlayView.layer?.masksToBounds = false
         flashOverlayView.autoresizingMask = [.width, .height]
         flashLayer.fillColor = NSColor.clear.cgColor
-        flashLayer.strokeColor = NSColor.systemBlue.cgColor
+        // CMUX-10: color sourced via FlashAppearance seam (still gold here in
+        // commit 1; commit 2 swaps the default and adds per-call overrides).
+        let initialFlashColor = FlashAppearance.current(envelope: .paneRing).color
+        flashLayer.strokeColor = initialFlashColor.cgColor
         flashLayer.lineWidth = 3
         flashLayer.lineJoin = .round
         flashLayer.lineCap = .round
-        flashLayer.shadowColor = NSColor.systemBlue.cgColor
+        flashLayer.shadowColor = initialFlashColor.cgColor
         flashLayer.shadowOpacity = 0.6
         flashLayer.shadowRadius = 6
         flashLayer.shadowOffset = .zero
@@ -7455,6 +7901,14 @@ final class GhosttySurfaceScrollView: NSView {
 #endif
 
     func triggerFlash(style: FlashStyle = .standardFocus) {
+        triggerFlash(style: style, appearance: FlashAppearance.current(envelope: .paneRing))
+    }
+
+    /// CMUX-10: variant that re-tints the flash layer with a per-call color
+    /// before firing the animation. Color is applied off the layer's
+    /// presentation tree (sublayer property), not via a redraw of the surface,
+    /// so this stays out of the typing hot path.
+    func triggerFlash(style: FlashStyle, appearance: FlashAppearance) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
 #if DEBUG
@@ -7465,6 +7919,8 @@ final class GhosttySurfaceScrollView: NSView {
             self.updateFlashPath(style: style)
             self.flashLayer.removeAllAnimations()
             self.flashLayer.opacity = 0
+            self.flashLayer.strokeColor = appearance.color.cgColor
+            self.flashLayer.shadowColor = appearance.color.cgColor
             let animation = CAKeyframeAnimation(keyPath: "opacity")
             animation.values = FocusFlashPattern.values.map { NSNumber(value: $0) }
             animation.keyTimes = FocusFlashPattern.keyTimes.map { NSNumber(value: $0) }
@@ -7525,7 +7981,7 @@ final class GhosttySurfaceScrollView: NSView {
     }
 
     var debugPortalFrameInWindow: CGRect {
-        guard window != nil else { return .zero }
+        guard uiWindow != nil else { return .zero }
         return convert(bounds, to: nil)
     }
 
@@ -7908,9 +8364,10 @@ final class GhosttySurfaceScrollView: NSView {
 
     /// Returns true if the terminal's actual Ghostty surface view is (or contains) the window first responder.
     /// This is stricter than checking `hostedView` descendants, since the scroll view can sometimes become
-    /// first responder transiently while focus is being applied.
+    /// first responder transiently while focus is being applied. Uses `uiWindow` so the headless bootstrap
+    /// window — which has no real first responder of interest — does not produce phantom matches.
     func isSurfaceViewFirstResponder() -> Bool {
-        guard let window, let fr = window.firstResponder as? NSView else { return false }
+        guard let window = uiWindow, let fr = window.firstResponder as? NSView else { return false }
         return fr === surfaceView || fr.isDescendant(of: surfaceView)
     }
 
@@ -7946,7 +8403,7 @@ final class GhosttySurfaceScrollView: NSView {
     private func refreshSurfaceAfterFocusIfNeeded(reason: String) {
         guard let terminalSurface = surfaceView.terminalSurface,
               isActive,
-              let window,
+              let window = uiWindow,
               window.isKeyWindow,
               surfaceView.isVisibleInUI else { return }
 
@@ -8544,7 +9001,16 @@ final class GhosttySurfaceScrollView: NSView {
         // Reserving extra overlay-scroller gutter here causes AppKit and libghostty to fight
         // over terminal columns during split churn. The width can flap by one scrollbar gutter,
         // which redraws the shell prompt multiple times on Cmd+D. Favor stable columns.
-        let width = max(0, scrollView.contentSize.width)
+        var width = max(0, scrollView.contentSize.width)
+        // When the system uses legacy (always-visible) scrollers, the vertical scrollbar
+        // takes up physical column space not reflected in contentSize because the scroll view
+        // was initialized with .overlay style. Subtract the scroller gutter only in that case
+        // to prevent text from extending under the scrollbar. Do NOT apply in .overlay mode —
+        // that is the prior deliberate decision that prevents the column-flap on split churn.
+        if scrollView.scrollerStyle == .legacy {
+            let gutterWidth = NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy)
+            width = max(0, width - gutterWidth)
+        }
         let height = surfaceView.frame.height
         guard width > 0, height > 0 else { return false }
         return surfaceView.pushTargetSurfaceSize(CGSize(width: width, height: height))
@@ -9148,6 +9614,16 @@ struct GhosttyTerminalView: NSViewRepresentable {
             }
         }
 #endif
+        if desiredStateChanged,
+           let signpostID = AppDelegate.shared?.tabManager?.currentSwitchSignpostID {
+            WorkspaceSwitchSignpost.event(
+                signpostID,
+                "swiftui.update",
+                "surface=\(terminalSurface.id.uuidString.prefix(5)) " +
+                "visible=\(isVisibleInUI ? 1 : 0) active=\(isActive ? 1 : 0) z=\(portalZPriority) " +
+                "hostWindow=\(nsView.window != nil ? 1 : 0)"
+            )
+        }
 
         let hostContainer = nsView as? HostContainerView
         let hostOwnsPortalNow = hostContainer.map { host in
@@ -9224,6 +9700,28 @@ struct GhosttyTerminalView: NSViewRepresentable {
                 ) else { return }
                 guard host.window != nil else { return }
                 guard portalBindingStillLive() else { return }
+                // Phase 2: skip the bind here when the host's frame hasn't been laid
+                // out yet. AppKit fires `viewDidMoveToWindow` during `addSubview`,
+                // BEFORE SwiftUI's layout pass sizes the host. Binding now would
+                // run with a zero anchor frame, hide the hosted view, and force
+                // a second bind+sync cycle once the frame became real, which is
+                // the source of the post-handoff layout cascade. `onGeometryChanged`
+                // below performs the bind on the first geometry tick — by that
+                // point the host has its real frame and the hosted view appears
+                // in one pass.
+                let hostBounds = host.bounds
+                let geometryReady = hostBounds.width > 1 && hostBounds.height > 1
+                if !geometryReady {
+#if DEBUG
+                    dlog(
+                        "ws.hostState.deferBindOnDidMove surface=\(terminalSurface.id.uuidString.prefix(5)) " +
+                        "reason=hostBoundsNotReady visible=\(coordinator.desiredIsVisibleInUI ? 1 : 0) " +
+                        "active=\(coordinator.desiredIsActive ? 1 : 0) z=\(coordinator.desiredPortalZPriority) " +
+                        "bounds=\(String(format: "%.1fx%.1f", hostBounds.width, hostBounds.height))"
+                    )
+#endif
+                    return
+                }
                 TerminalWindowPortalRegistry.bind(
                     hostedView: hostedView,
                     to: host,
@@ -9406,6 +9904,15 @@ struct GhosttyTerminalView: NSViewRepresentable {
             }
         }
 #endif
+        if let hostedView,
+           let signpostID = AppDelegate.shared?.tabManager?.currentSwitchSignpostID {
+            WorkspaceSwitchSignpost.event(
+                signpostID,
+                "swiftui.dismantle",
+                "surface=\(hostedView.debugSurfaceId?.uuidString.prefix(5) ?? "nil") " +
+                "inWindow=\(hostedView.window != nil ? 1 : 0)"
+            )
+        }
 
         if let host = nsView as? HostContainerView {
             host.onDidMoveToWindow = nil

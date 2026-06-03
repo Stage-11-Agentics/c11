@@ -609,8 +609,12 @@ final class CloseWorkspaceCmdDUITests: XCTestCase {
                 app.dialogs.containing(.staticText, identifier: "Close workspace?").firstMatch.exists ||
                 app.alerts.containing(.staticText, identifier: "Close workspace?").firstMatch.exists ||
                 // M10: pane-interaction overlay detection (accessibility identifier
-                // set in Sources/Panels/PaneInteractionCardView.swift).
+                // set in Sources/Panels/PaneInteractionCardView.swift). Retained
+                // so the test still finds older builds; current workspace-close
+                // path lands on WorkspaceCloseOverlay.card (C11-30).
                 app.otherElements["PaneInteraction.confirm.card"].firstMatch.exists ||
+                // C11-30: workspace-scoped close overlay (Sources/Panels/WorkspaceCloseCardView.swift).
+                app.otherElements["WorkspaceCloseOverlay.card"].firstMatch.exists ||
                 app.staticTexts["Close workspace?"].exists
             },
             object: NSObject()

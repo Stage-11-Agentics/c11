@@ -29,6 +29,15 @@ func isValidClaudeSessionId(_ candidate: String) -> Bool {
     return claudeSessionIdUUIDPattern.firstMatch(in: candidate, options: [], range: range) != nil
 }
 
+/// Wrap a path in single quotes for safe interpolation into a shell
+/// command. `isValidClaudeSessionProjectDir` already rejects single
+/// quotes; this helper still escapes them defensively so a bypass of the
+/// validator (direct in-process writer, future regression) cannot become
+/// a command-injection vector.
+nonisolated func shellSingleQuote(_ value: String) -> String {
+    "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+}
+
 /// Pure-value lookup table mapping a known terminal type + session hint to
 /// the shell command that resumes it. Phase 1 ships a single row for
 /// `claude-code`; rows for `codex`, `opencode`, `kimi` land in Phase 5
@@ -104,33 +113,60 @@ struct AgentRestartRegistry: Sendable {
         }
     }
 
-    /// Phase 1 ships cc resume. Phase 5 added codex / opencode / kimi rows.
+    /// Phase 1 ships claude resume. Phase 5 added codex / opencode / kimi rows.
     ///
-    /// The cc closure re-validates `sessionId` against the UUIDv4 grammar even
-    /// though `SurfaceMetadataStore` already rejects non-UUID writes for the
-    /// `claude.session_id` reserved key. The "never trust the metadata
+    /// The claude closure re-validates `sessionId` against the UUIDv4 grammar
+    /// even though `SurfaceMetadataStore` already rejects non-UUID writes for
+    /// the `claude.session_id` reserved key. The "never trust the metadata
     /// layer solely" belt-and-braces is deliberate: the synthesised string
     /// is interpolated into a shell command that runs on restore, and any
     /// future in-process writer that bypasses the store must not become a
     /// command-injection vector.
     ///
-    /// The trailing `"\n"` is part of the row's output: the registry
-    /// returns the **submit form** of the command, not the typed form.
-    /// How to submit is the registry's concern, not the executor's —
-    /// otherwise every executor caller would have to remember to append
-    /// one. Without it, `TerminalPanel.sendText` writes the bytes verbatim
-    /// and the command sits at the prompt unexecuted. Phase 5 rows for
-    /// codex/opencode/kimi follow the same "return submit form" contract.
+    /// The trailing `"\n"` is preserved in the row's output for
+    /// compatibility with callers and snapshot consumers that may inspect
+    /// the literal string. Submission no longer depends on it:
+    /// `ghostty_surface_text` wraps every write in bracketed-paste markers
+    /// (`ESC[200~ … ESC[201~`), and bracketed paste is specifically
+    /// designed so embedded `\n`/`\r` do NOT auto-execute — shells and
+    /// TUI raw-mode handlers only submit when a real Return arrives
+    /// outside the paste sequence. Both the executor and the boot-time
+    /// restart path route registry output through
+    /// `TerminalSurface.sendSubmitFormText`, which trims the trailing
+    /// newline, types the bytes via paste, and dispatches a synthetic
+    /// Return key outside the paste so the receiving shell or TUI
+    /// actually submits the line.
+    ///
+    /// Use `claude --dangerously-skip-permissions --resume <id>` rather than
+    /// `cc`: `cc` resolves to the C compiler in c11 terminal environments,
+    /// not Claude. The c11 wrapper at `Resources/bin/claude` intercepts the
+    /// command, sees `--resume`, skips its own `--session-id` injection, and
+    /// forwards to real claude with the hooks settings JSON intact.
     ///
     /// Codex uses `--last` best-effort to resume the most recent session
     /// globally. Opencode and kimi have no verified resume flag and launch
     /// fresh — best-effort is preferable to a broken flag.
     static let phase1: AgentRestartRegistry = .init(name: "phase1", rows: [
-        Row(terminalType: "claude-code") { sessionId, _ in
+        Row(terminalType: "claude-code") { sessionId, metadata in
             guard let raw = sessionId?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !raw.isEmpty,
                   isValidClaudeSessionId(raw) else { return nil }
-            return "cc --resume \(raw)\n"
+            let resume = "claude --dangerously-skip-permissions --resume \(raw)"
+            // `claude --resume <id>` resolves the session JSONL relative to
+            // the current shell's cwd encoding (`~/.claude/projects/<encoded-cwd>/<id>.jsonl`).
+            // A session captured in a worktree subdir cannot be resumed
+            // from its parent. When the hook recorded a project_dir, `cd`
+            // there first — re-validating defensively in case a future
+            // bypass slipped a malformed value past the store. The
+            // single-quote escape is belt-and-braces: the validator
+            // already rejects single quotes.
+            if let raw = metadata[SurfaceMetadataKeyName.claudeSessionProjectDir]?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+               !raw.isEmpty,
+               isValidClaudeSessionProjectDir(raw) {
+                return "cd \(shellSingleQuote(raw)) && \(resume)\n"
+            }
+            return "\(resume)\n"
         },
         Row(terminalType: "codex") { _, _ in
             // codex resume --last resumes the most recent codex session globally.
@@ -139,7 +175,7 @@ struct AgentRestartRegistry: Sendable {
         },
         Row(terminalType: "opencode") { _, _ in
             // no stable resume flag known; launches fresh.
-            "opencode\n"
+            "opencode run --dangerously-skip-permissions\n"
         },
         Row(terminalType: "kimi") { _, _ in
             // no stable resume flag known; launches fresh.

@@ -73,7 +73,11 @@ enum WorkspacePlanCapture {
                 let isFirstInPane = ids.count == 1
                 let kind = kind(for: panel)
                 let title = workspace.panelCustomTitles[panelId]
-                let metadata = surfaceMetadata(for: panelId)
+                let metadata = strippingRedundantCanonicalFields(
+                    surfaceMetadata(for: panelId),
+                    title: title,
+                    description: nil
+                )
                 let paneMetaForSurface = isFirstInPane && !paneLevelMetadata.isEmpty
                     ? paneLevelMetadata
                     : [String: PersistedJSONValue]()
@@ -134,13 +138,47 @@ enum WorkspacePlanCapture {
 
         // MARK: Metadata reads
 
+        /// Drop `metadata["title"]` / `metadata["description"]` when their
+        /// values match the canonical SurfaceSpec fields the executor will
+        /// write through dedicated setters. Without this, every clean
+        /// round-trip through capture → restore re-emits the dup and the
+        /// executor fires a `metadata_override` warning even though the
+        /// values agree (CMUX-37 workstream 3, capture-side fix).
+        ///
+        /// Strip only on exact value match: a divergent metadata value
+        /// (operator wrote `set-metadata --key title --value "Foo"` separate
+        /// from `set-title "Bar"`) is a real conflict and still warrants the
+        /// override warning.
+        private func strippingRedundantCanonicalFields(
+            _ metadata: [String: PersistedJSONValue],
+            title: String?,
+            description: String?
+        ) -> [String: PersistedJSONValue] {
+            var result = metadata
+            if let title,
+               case .string(let metaTitle) = result["title"],
+               metaTitle == title {
+                result.removeValue(forKey: "title")
+            }
+            if let description,
+               case .string(let metaDesc) = result["description"],
+               metaDesc == description {
+                result.removeValue(forKey: "description")
+            }
+            return result
+        }
+
         private func surfaceMetadata(for panelId: UUID) -> [String: PersistedJSONValue] {
             let snapshot = SurfaceMetadataStore.shared.getMetadata(
                 workspaceId: workspace.id,
                 surfaceId: panelId
             )
             guard !snapshot.metadata.isEmpty else { return [:] }
-            return PersistedMetadataBridge.encodeValues(snapshot.metadata, surfaceIdForLog: panelId)
+            return PersistedMetadataBridge.encodeValues(
+                snapshot.metadata,
+                surfaceIdForLog: panelId,
+                sources: snapshot.sources
+            )
         }
 
         private func paneMetadata(for paneID: PaneID?) -> [String: PersistedJSONValue] {
@@ -150,7 +188,11 @@ enum WorkspacePlanCapture {
                 paneId: paneID.id
             )
             guard !snapshot.metadata.isEmpty else { return [:] }
-            return PersistedMetadataBridge.encodeValues(snapshot.metadata, surfaceIdForLog: paneID.id)
+            return PersistedMetadataBridge.encodeValues(
+                snapshot.metadata,
+                surfaceIdForLog: paneID.id,
+                sources: snapshot.sources
+            )
         }
 
         // MARK: Pane / tab lookup

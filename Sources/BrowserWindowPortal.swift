@@ -2205,6 +2205,9 @@ final class WindowBrowserPortal: NSObject {
         installedReferenceView?.layoutSubtreeIfNeeded()
         hostView.superview?.layoutSubtreeIfNeeded()
         hostView.layoutSubtreeIfNeeded()
+        // See TerminalWindowPortal.hideOrphanEntriesIfNeeded for the rationale.
+        // notes/launch-white-line-artifact.md tracks the bug this closes.
+        hideOrphanEntriesIfNeeded()
         synchronizeAllWebViews(excluding: nil, source: "externalGeometry")
 
         for entry in entriesByWebViewId.values {
@@ -2219,6 +2222,51 @@ final class WindowBrowserPortal: NSObject {
             )
         }
         chromeOverlayView.needsDisplay = true
+    }
+
+    /// Walk the registry once and hide any entry whose anchor has definitively
+    /// left this window's view tree. See TerminalWindowPortal's twin for the
+    /// "definitively" definition and rationale.
+    @discardableResult
+    private func hideOrphanEntriesIfNeeded() -> Bool {
+        var didHide = false
+        for webViewId in entriesByWebViewId.keys {
+            guard var entry = entriesByWebViewId[webViewId] else { continue }
+            let anchor = entry.anchorView
+            let isOrphan: Bool
+            if anchor == nil {
+                isOrphan = true
+            } else if let anchorWindow = anchor?.window, anchorWindow !== window {
+                isOrphan = true
+            } else {
+                isOrphan = false
+            }
+            guard isOrphan else { continue }
+            let wasContributing = entry.visibleInUI || (entry.containerView?.isHidden == false)
+            guard wasContributing else { continue }
+
+            entry.visibleInUI = false
+            entriesByWebViewId[webViewId] = entry
+            entry.containerView?.isHidden = true
+            didHide = true
+#if DEBUG
+            let anchorWindowDesc: String
+            if anchor == nil {
+                anchorWindowDesc = "deallocated"
+            } else if anchor?.window === nil {
+                anchorWindowDesc = "nil"
+            } else if anchor?.window === window {
+                anchorWindowDesc = "self"
+            } else {
+                anchorWindowDesc = "other"
+            }
+            dlog(
+                "browser.portal.orphan.hide web=\(browserPortalDebugToken(entry.webView)) " +
+                "anchor=\(browserPortalDebugToken(anchor)) anchorWindow=\(anchorWindowDesc)"
+            )
+#endif
+        }
+        return didHide
     }
 
     private func ensureChromeOverlayOnTop() {
@@ -2261,6 +2309,10 @@ final class WindowBrowserPortal: NSObject {
                   let containerView = entry.containerView,
                   !containerView.isHidden,
                   containerView.superview === hostView,
+                  // Belt-and-suspenders: see TerminalWindowPortal twin and
+                  // notes/launch-white-line-artifact.md.
+                  let anchor = entry.anchorView,
+                  anchor.window === window,
                   let color = PortalWorkspaceFrameOverlay.color(from: style) else {
                 continue
             }

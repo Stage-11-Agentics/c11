@@ -55,6 +55,16 @@ struct WorkspaceSnapshotStore: Sendable {
         return home.appendingPathComponent(".cmux-snapshots", isDirectory: true)
     }
 
+    /// `~/.c11-snapshots/sets/`. Where `c11 snapshot --all` manifests
+    /// land. The `sets/` subdirectory is naturally excluded from
+    /// per-snapshot enumeration: `enumerate(directory:source:)` uses
+    /// non-recursive `contentsOfDirectory(...)` and filters on
+    /// `.json` files at the top level only, so a sibling subdirectory
+    /// does not appear in `list()`.
+    func defaultSetsDirectory() -> URL {
+        currentDirectory.appendingPathComponent("sets", isDirectory: true)
+    }
+
     // MARK: - Write
 
     enum StoreError: Error, Equatable, CustomStringConvertible {
@@ -180,6 +190,148 @@ struct WorkspaceSnapshotStore: Sendable {
             snapshot,
             to: currentDirectory.appendingPathComponent("\(snapshot.snapshotId).json")
         )
+    }
+
+    // MARK: - Set (manifest) I/O
+
+    /// Atomic write for a `WorkspaceSnapshotSetFile` under
+    /// `<currentDirectory>/sets/<set_id>.json`. Same date-encoding
+    /// strategy as the per-workspace path (fractional seconds), same
+    /// snapshot-id filename safety check (the set id must satisfy
+    /// `isSafeSnapshotId`), atomic write semantics. The set itself
+    /// references already-written per-workspace files; no inner
+    /// snapshot data is duplicated here.
+    @discardableResult
+    func writeSet(_ set: WorkspaceSnapshotSetFile) throws -> URL {
+        guard WorkspaceSnapshotStore.isSafeSnapshotId(set.setId) else {
+            throw StoreError.invalidSnapshotId(set.setId)
+        }
+        let dir = defaultSetsDirectory()
+        let target = dir.appendingPathComponent("\(set.setId).json")
+        do {
+            try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        } catch {
+            throw StoreError.createDirectoryFailed(dir.path, underlying: "\(error)")
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        encoder.dateEncodingStrategy = .custom { date, encoder in
+            var container = encoder.singleValueContainer()
+            try container.encode(workspaceSnapshotDateFormatter.string(from: date))
+        }
+        let data: Data
+        do {
+            data = try encoder.encode(set)
+        } catch {
+            throw StoreError.encodeFailed("\(error)")
+        }
+        do {
+            try data.write(to: target, options: .atomic)
+        } catch {
+            throw StoreError.writeFailed(target.path, underlying: "\(error)")
+        }
+        return target
+    }
+
+    /// Read a manifest by id. Looks under `<currentDirectory>/sets/`
+    /// only (the legacy `~/.cmux-snapshots/` layout never had set files
+    /// to begin with). Throws `.notFound` when no file exists.
+    func readSet(byId setId: String) throws -> WorkspaceSnapshotSetFile {
+        guard WorkspaceSnapshotStore.isSafeSnapshotId(setId) else {
+            throw StoreError.invalidSnapshotId(setId)
+        }
+        let url = defaultSetsDirectory().appendingPathComponent("\(setId).json")
+        guard fileManager.fileExists(atPath: url.path) else {
+            throw StoreError.notFound(setId)
+        }
+        try assertPathUnderSnapshotRoots(url)
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            throw StoreError.readFailed(url.path, underlying: "\(error)")
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let raw = try container.decode(String.self)
+            if let date = workspaceSnapshotDateFormatter.date(from: raw) {
+                return date
+            }
+            let legacy = ISO8601DateFormatter()
+            legacy.formatOptions = [.withInternetDateTime]
+            if let date = legacy.date(from: raw) {
+                return date
+            }
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Expected ISO-8601 date string, got '\(raw)'"
+            )
+        }
+        do {
+            return try decoder.decode(WorkspaceSnapshotSetFile.self, from: data)
+        } catch {
+            throw StoreError.decodeFailed(url.path, underlying: "\(error)")
+        }
+    }
+
+    /// Whether a manifest with this id exists on disk. Used by the
+    /// CLI's polymorphic `c11 restore <id>` to decide between
+    /// `snapshot.restore` and `snapshot.restore_set`.
+    func setManifestExists(id: String) -> Bool {
+        guard WorkspaceSnapshotStore.isSafeSnapshotId(id) else { return false }
+        let url = defaultSetsDirectory().appendingPathComponent("\(id).json")
+        return fileManager.fileExists(atPath: url.path)
+    }
+
+    /// Enumerate manifests under `<currentDirectory>/sets/`. Each row
+    /// lists set id, path, capture time, inner snapshot count, and
+    /// the c11 version captured. Sorted newest-first to match
+    /// `list()`. Unreadable rows are silently skipped — the manifest
+    /// listing is a discoverability aid, not the auth wire.
+    func listSets() throws -> [WorkspaceSnapshotSetIndex] {
+        let dir = defaultSetsDirectory()
+        guard fileManager.fileExists(atPath: dir.path) else { return [] }
+        let entries: [URL]
+        do {
+            entries = try fileManager.contentsOfDirectory(
+                at: dir,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            )
+        } catch {
+            return []
+        }
+        var out: [WorkspaceSnapshotSetIndex] = []
+        for url in entries where url.pathExtension.lowercased() == "json" {
+            guard let data = try? Data(contentsOf: url),
+                  let root = try? JSONSerialization.jsonObject(with: data, options: []),
+                  let dict = root as? [String: Any],
+                  let setId = dict["set_id"] as? String, !setId.isEmpty,
+                  let rawCreatedAt = dict["created_at"] as? String else {
+                continue
+            }
+            let createdAt: Date
+            if let d = workspaceSnapshotDateFormatter.date(from: rawCreatedAt) {
+                createdAt = d
+            } else {
+                let legacy = ISO8601DateFormatter()
+                legacy.formatOptions = [.withInternetDateTime]
+                guard let d = legacy.date(from: rawCreatedAt) else { continue }
+                createdAt = d
+            }
+            let count = (dict["snapshots"] as? [Any])?.count ?? 0
+            let version = dict["c11_version"] as? String
+            out.append(WorkspaceSnapshotSetIndex(
+                setId: setId,
+                path: url.path,
+                createdAt: createdAt,
+                snapshotCount: count,
+                c11Version: version
+            ))
+        }
+        out.sort { $0.createdAt > $1.createdAt }
+        return out
     }
 
     // MARK: - Read

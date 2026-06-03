@@ -67,7 +67,17 @@ final class WorkspaceStressProfileTests: XCTestCase {
         }
     }
 
-    func testWorkspaceCreationAndSwitchingStressProfile() {
+    func testWorkspaceCreationAndSwitchingStressProfile() throws {
+        // 480 surface creations + ~576 workspace switches with main-queue drains
+        // legitimately runs longer than the CI build job's test step allows.
+        // Opt-in via env var so the profile is still available on demand
+        // (locally, on a perf runner, or under a future workspace-stress
+        // nightly job) without gating every PR.
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["C11_RUN_STRESS_TESTS"] == "1",
+            "Workspace stress profile is opt-in. Set C11_RUN_STRESS_TESTS=1 to enable."
+        )
+
         let config = StressConfig.current()
         let welcomeWasShown = UserDefaults.standard.object(forKey: WelcomeSettings.shownKey)
         UserDefaults.standard.set(true, forKey: WelcomeSettings.shownKey)

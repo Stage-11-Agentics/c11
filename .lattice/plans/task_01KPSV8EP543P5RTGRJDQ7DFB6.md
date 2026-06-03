@@ -173,12 +173,12 @@ Naming alternative: `c11 tab-color ...` is friendlier but ambiguous with workspa
 - **State loss on detach/move**: cross-workspace transfer paths need explicit color copying; same-workspace moves likely work by panel ID.
 - **Settings key naming debt**: existing `WorkspaceTabColorSettings` predates this meaning of tab; avoid large migrations in the first slice.
 
-## Open Questions
+## Resolved Decisions (operator call 2026-05-04)
 
-1. Should agent/Lattice writes use the new socket API only, or should c11 also mirror the value into surface metadata under a canonical key such as `tab_color`?
-2. Should a newly created tab inherit the current tab's color, the workspace color, or start uncolored? Conservative default: start uncolored.
-3. Should duplicate browser tab copy the source tab color? Recommendation: yes, duplicate should preserve identity unless the user clears it.
-4. Should pinned tabs render the color differently due to limited width? Recommendation: keep the same indicator and avoid adding text.
+1. **Socket API only.** No surface-metadata mirror in v1. Source of truth stays on `Workspace.panelCustomColors`; agents read tab color via `surface.list` / `surface.current` / `surface.get` payloads (which include `custom_color`) and write via `surface.set_custom_color`. Reserve the canonical metadata key `tab_color` for future use *only if* a metadata-only consumer materializes; do not implement the mirror speculatively.
+2. **Newly created tabs start uncolored.** Tab color is an explicit identity marker the user opts into. Do not inherit the current tab's color (would silently propagate identity on split/new-tab), and do not inherit the workspace color (redundant with workspace-level chrome).
+3. **No duplicate-browser-tab capability is added in this ticket.** Out of scope. The "duplicate preserves color?" question is therefore moot. If a duplicate path is added later in a separate ticket, it should preserve color, but that's that ticket's call.
+4. **Pinned tabs render the same indicator as unpinned tabs.** The restrained marker (top accent rail + small leading dot/swatch) works at any tab width. No special-cased pinned rendering. No text labels regardless of pin state.
 
 ## Linked Code Areas
 

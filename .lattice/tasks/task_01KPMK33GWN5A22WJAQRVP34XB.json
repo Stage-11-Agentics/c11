@@ -1,17 +1,33 @@
 {
   "assigned_to": null,
   "branch_links": [],
-  "comment_count": 0,
+  "comment_count": 1,
   "complexity": "high",
   "created_at": "2026-04-20T04:41:30Z",
   "created_by": "human:atin",
   "custom_fields": {},
   "description": "Bundled M2a + M2b + M2c from docs/c11mux-theming-plan.md v2.1 \u00a710.\n\nParent: CMUX-9 (anchor for full theme-engine delivery).\nScope decision: single ticket covering all three M2 sub-slices, per operator call 2026-04-20.\nPlan source of truth: docs/c11mux-theming-plan.md v2.1.\n\nM2a \u2014 Bonsplit DividerStyle (submodule-only):\n- vendor/bonsplit ships DividerStyle struct (\u00a77.1) + ThemedSplitView.dividerThickness override.\n- Files: BonsplitConfiguration.swift, SplitContainerView.swift, ThemedSplitView.swift, BonsplitDividerThicknessTests.\n- CLAUDE.md submodule safety: branch off bonsplit main, commit, push to Stage-11-Agentics/bonsplit, verify 'git merge-base --is-ancestor HEAD origin/main', bonsplit CI green before M2b.\n- Parent repo NOT bumped in M2a.\n- Rollback: none (additive, no c11mux callers).\n\nM2b \u2014 Parent repo wires divider color + thickness through bonsplit:\n- Bump bonsplit submodule pointer to M2a commit (separate commit).\n- Workspace.bonsplitAppearance takes ThemeContext; applyGhosttyChrome no-op guard extended to borderHex + dividerStyle.thicknessPt + customColor.\n- WorkspaceContentView subscribes to Workspace.customColorDidChange for live divider re-apply.\n- Tests: WorkspaceDividerColorPropagationTests; XCUITest live workspace-color change.\n- Rollback: CMUX_DISABLE_THEME_ENGINE=1.\n\nM2c \u2014 Outer workspace frame + sidebar tint overlay:\n- New: Sources/Theme/WorkspaceFrame.swift (fills .idle rendering), ThemeManager+WorkspaceColor.swift.\n- WorkspaceContentView gets .overlay(WorkspaceFrame). ContentView sidebar tint overlays chrome.sidebar.tintOverlay.\n- Tests: WorkspaceFrameRenderTests, inactive-workspace frame opacity, unfocused-window frame opacity, divider-thickness no-op guard, rounded-corner geometry.\n- Risks audited in PR: typing-latency paths, workspace crossfade flicker, portal-hosted terminal z-ordering, minimal-mode persistence.\n- Rollback: theme.workspaceFrame.enabled AppStorage kill switch.\n\nPartial-ship protocol: M2a\u2192M2b\u2192M2c sequential; each shippable independently (M2a alone = additive API, M2b alone = live dividers sans frame, full bundle = full workspace-color prevalence).\n\nHard constraints (CLAUDE.md + plan locks):\n- Submodule safety workflow strict (see M2a checklist).\n- Typing-latency paths untouched.\n- No xcodebuild test locally; tests run in CI.\n- All user-facing strings localized.\n- Per-bundle-ID @AppStorage isolation (\u00a712 #14).\n\nBranch: TBD (cmux-9-m2-workspace-color suggested).",
-  "done_at": null,
-  "evidence_refs": [],
+  "done_at": "2026-05-05T01:11:09Z",
+  "evidence_refs": [
+    {
+      "id": "art_01KQTV0BQ866KS4S23JYFR32V1",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01KQTV0PYT5AYAVMVZ05N92R1D",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KQTV0PYT5AYAVMVZ05N92R1C",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
   "id": "task_01KPMK33GWN5A22WJAQRVP34XB",
-  "last_event_id": "ev_01KPMKASXCX41P1T17N2831FVT",
-  "last_status_changed_at": "2026-04-20T04:41:30Z",
+  "last_event_id": "ev_01KQTV0PYT5AYAVMVZ05N92R1F",
+  "last_status_changed_at": "2026-05-05T01:11:09Z",
   "linked_files": [],
   "priority": "medium",
   "relationships_out": [
@@ -26,10 +42,10 @@
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "CMUX-32",
-  "status": "backlog",
+  "status": "done",
   "tags": null,
   "title": "CMUX-9 M2: Workspace color prevalence + frame + dividers (bundled M2a+M2b+M2c)",
   "type": "task",
-  "updated_at": "2026-04-20T04:45:42Z",
+  "updated_at": "2026-05-05T01:11:09Z",
   "urgency": null
 }

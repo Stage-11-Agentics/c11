@@ -18,6 +18,10 @@ permissions:
 jobs:
   update-cask:
     runs-on: ubuntu-latest
+    # 10-min cap; the cask-rewrite path is a curl + sha256 + heredoc + push.
+    # GitHub's job default is 6 hours, which would let a stuck DMG-fetch
+    # retry loop sit silently for the rest of the day.
+    timeout-minutes: 10
     # Only run if the release workflow succeeded (or manual trigger)
     if: >-
       github.event_name == 'workflow_dispatch' ||

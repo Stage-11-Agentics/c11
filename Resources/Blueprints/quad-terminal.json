@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "name": "quad-terminal",
+  "description": "Four terminals in a 2x2 grid",
+  "plan": {
+    "version": 1,
+    "workspace": {},
+    "layout": {
+      "type": "split",
+      "split": {
+        "orientation": "horizontal",
+        "dividerPosition": 0.5,
+        "first": {
+          "type": "split",
+          "split": {
+            "orientation": "vertical",
+            "dividerPosition": 0.5,
+            "first": {
+              "type": "pane",
+              "pane": { "surfaceIds": ["s1"] }
+            },
+            "second": {
+              "type": "pane",
+              "pane": { "surfaceIds": ["s2"] }
+            }
+          }
+        },
+        "second": {
+          "type": "split",
+          "split": {
+            "orientation": "vertical",
+            "dividerPosition": 0.5,
+            "first": {
+              "type": "pane",
+              "pane": { "surfaceIds": ["s3"] }
+            },
+            "second": {
+              "type": "pane",
+              "pane": { "surfaceIds": ["s4"] }
+            }
+          }
+        }
+      }
+    },
+    "surfaces": [
+      { "id": "s1", "kind": "terminal" },
+      { "id": "s2", "kind": "terminal" },
+      { "id": "s3", "kind": "terminal" },
+      { "id": "s4", "kind": "terminal" }
+    ]
+  }
+}

@@ -158,6 +158,38 @@
 				<string>public.data</string>
 			</array>
 		</dict>
+		<dict>
+			<!-- Declared by upstream Bonsplit in
+			     vendor/bonsplit/Sources/Bonsplit/Internal/Models/TabItem.swift:8
+			     via UTType(exportedAs:). Mirrored here so it has an
+			     Info.plist anchor — without this, every construction logs
+			     a "Type was expected to be declared and exported in the
+			     Info.plist" runtime warning. Each warning is cheap on
+			     Apple Silicon but accumulates expensively on shared-tenant
+			     CI runners (root cause of the 100s slow test on CI). -->
+			<key>UTTypeIdentifier</key>
+			<string>com.splittabbar.tabitem</string>
+			<key>UTTypeDescription</key>
+			<string>Bonsplit Tab Item</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+		<dict>
+			<!-- Declared by upstream Bonsplit in
+			     vendor/bonsplit/Sources/Bonsplit/Internal/Models/TabItem.swift:12
+			     via UTType(exportedAs:, conformingTo: .data). See the
+			     com.splittabbar.tabitem entry above for context. -->
+			<key>UTTypeIdentifier</key>
+			<string>com.splittabbar.tabtransfer</string>
+			<key>UTTypeDescription</key>
+			<string>Bonsplit Tab Transfer (upstream id)</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>

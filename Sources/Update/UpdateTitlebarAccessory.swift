@@ -367,7 +367,6 @@ struct TitlebarControlsView: View {
             }
             .accessibilityIdentifier("titlebarControl.toggleSidebar")
             .accessibilityLabel(String(localized: "titlebar.sidebar.accessibilityLabel", defaultValue: "Toggle Sidebar"))
-            .safeHelp(KeyboardShortcutSettings.Action.toggleSidebar.tooltip(String(localized: "titlebar.sidebar.tooltip", defaultValue: "Show or hide the sidebar")))
 
             TitlebarControlButton(config: config, action: {
                 #if DEBUG
@@ -394,7 +393,6 @@ struct TitlebarControlsView: View {
             .accessibilityIdentifier("titlebarControl.showNotifications")
             .background(NotificationsAnchorView { viewModel.notificationsAnchorView = $0 })
             .accessibilityLabel(String(localized: "titlebar.notifications.accessibilityLabel", defaultValue: "Notifications"))
-            .safeHelp(KeyboardShortcutSettings.Action.showNotifications.tooltip(String(localized: "titlebar.notifications.tooltip", defaultValue: "Show notifications")))
 
             TitlebarControlButton(config: config, action: {
                 #if DEBUG
@@ -406,7 +404,6 @@ struct TitlebarControlsView: View {
             }
             .accessibilityIdentifier("titlebarControl.newTab")
             .accessibilityLabel(String(localized: "titlebar.newWorkspace.accessibilityLabel", defaultValue: "New Workspace"))
-            .safeHelp(KeyboardShortcutSettings.Action.newTab.tooltip(String(localized: "titlebar.newWorkspace.tooltip", defaultValue: "New workspace")))
         }
 
         let paddedContent = content.padding(config.groupPadding)
@@ -565,7 +562,13 @@ struct HiddenTitlebarSidebarControlsView: View {
                     anchorView: viewModel.notificationsAnchorView
                 )
             },
-            onNewTab: { _ = AppDelegate.shared?.tabManager?.addTab() },
+            onNewTab: {
+                if let appDelegate = AppDelegate.shared {
+                    appDelegate.presentCreateWorkspaceSheet()
+                } else {
+                    _ = AppDelegate.shared?.tabManager?.addTab()
+                }
+            },
             visibilityMode: .onHover
         )
         .frame(width: hostWidth, height: hostHeight, alignment: .leading)
@@ -789,7 +792,13 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
         self.notificationStore = notificationStore
         let toggleSidebar = { _ = AppDelegate.shared?.sidebarState?.toggle() }
         let toggleNotifications: () -> Void = { _ = AppDelegate.shared?.toggleNotificationsPopover(animated: true) }
-        let newTab = { _ = AppDelegate.shared?.tabManager?.addTab() }
+        let newTab = {
+            if let appDelegate = AppDelegate.shared {
+                appDelegate.presentCreateWorkspaceSheet()
+            } else {
+                _ = AppDelegate.shared?.tabManager?.addTab()
+            }
+        }
 
         hostingView = NonDraggableHostingView(
             rootView: TitlebarControlsView(

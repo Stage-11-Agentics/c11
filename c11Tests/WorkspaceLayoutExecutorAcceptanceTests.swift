@@ -152,7 +152,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
     /// order (apply first, close second): at the moment of close, tab
     /// count is 2, so the guard passes.
     func testInPlaceRestoreReplacesSingleWorkspaceWithoutDuplicating() throws {
-        let existing = tabManager.addWorkspace()
+        let existing = try XCTUnwrap(tabManager.selectedWorkspace)
         XCTAssertEqual(tabManager.tabs.count, 1, "test seeded with exactly one workspace")
         let existingId = existing.id
 
@@ -189,7 +189,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
     /// Multi-workspace case: target is replaced, sibling is untouched,
     /// and the overall tab count is stable.
     func testInPlaceRestoreReplacesTargetAndLeavesSiblingIntact() throws {
-        let target = tabManager.addWorkspace()
+        let target = try XCTUnwrap(tabManager.selectedWorkspace)
         let sibling = tabManager.addWorkspace()
         XCTAssertEqual(tabManager.tabs.count, 2)
         let targetId = target.id
@@ -218,7 +218,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
     /// A missing target UUID surfaces `invalid_params` without touching
     /// any existing workspace (non-destructive failure).
     func testInPlaceRestoreMissingTargetReturnsInvalidParams() throws {
-        let existing = tabManager.addWorkspace()
+        let existing = try XCTUnwrap(tabManager.selectedWorkspace)
         let existingId = existing.id
         let bogusId = UUID()
         XCTAssertNotEqual(bogusId, existingId)
@@ -246,7 +246,7 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
     /// A plan with an unsupported version short-circuits in `validate`
     /// before touching any workspace. The target stays intact.
     func testInPlaceRestoreValidationFailureLeavesTargetIntact() throws {
-        let existing = tabManager.addWorkspace()
+        let existing = try XCTUnwrap(tabManager.selectedWorkspace)
         let existingId = existing.id
 
         let plan = WorkspaceApplyPlan(
@@ -476,8 +476,14 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         let panelUUIDToPlanId = Dictionary(
             uniqueKeysWithValues: planSurfaceIdToPanelUUID.map { ($0.value, $0.key) }
         )
+        // `ExternalTab.id` is a stringified UUID (bonsplit's external view),
+        // but `Workspace.panelIdFromSurfaceId(_:)` is typed on the opaque
+        // `TabID` wrapper. Parse the string back to UUID and wrap before
+        // looking up — same conversion `WorkspacePlanCapture.panelID(forTabIDString:)`
+        // does at the v2 socket boundary.
         let livePlanIds: [String] = livePane.tabs.map { tab in
-            guard let panelId = workspace.panelIdFromSurfaceId(tab.id),
+            guard let tabUUID = UUID(uuidString: tab.id),
+                  let panelId = workspace.panelIdFromSurfaceId(TabID(uuid: tabUUID)),
                   let planId = panelUUIDToPlanId[panelId] else {
                 return "unknown(\(tab.id))"
             }
@@ -497,9 +503,13 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
                 XCTFail("[\(fixtureName) @ \(path)] could not resolve expected selected surface \(expectedSurfaceId)")
                 return
             }
+            // `livePane.selectedTabId` is `String?` (bonsplit's external
+            // view); `expectedTabId` is `TabID`. Project the wrapper to
+            // its canonical UUID-string form so the comparison stays in
+            // the same value space.
             XCTAssertEqual(
                 livePane.selectedTabId,
-                expectedTabId,
+                expectedTabId.uuid.uuidString,
                 "[\(fixtureName) @ \(path)] selectedTabId mismatch (expected surface \(expectedSurfaceId))"
             )
         }
@@ -702,5 +712,42 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
                 "\(qualifier): container round-trip"
             )
         }
+    }
+}
+
+final class WorkspaceColorResolutionTests: XCTestCase {
+    func testResolveColorToHexAcceptsValidHex() {
+        XCTAssertEqual(
+            WorkspaceLayoutExecutor.resolveColorToHex("#1565C0"),
+            "#1565C0"
+        )
+    }
+
+    func testResolveColorToHexNormalizesHexCase() {
+        XCTAssertEqual(
+            WorkspaceLayoutExecutor.resolveColorToHex("1565c0"),
+            "#1565C0"
+        )
+    }
+
+    func testResolveColorToHexResolvesNamedColor() {
+        // "Red" is in the default palette as #C0392B
+        let result = WorkspaceLayoutExecutor.resolveColorToHex("Red")
+        XCTAssertNotNil(result, "Named palette color 'Red' must resolve to a hex")
+        XCTAssertEqual(result, "#C0392B")
+    }
+
+    func testResolveColorToHexResolvesNamedColorCaseInsensitive() {
+        let lower = WorkspaceLayoutExecutor.resolveColorToHex("red")
+        let upper = WorkspaceLayoutExecutor.resolveColorToHex("RED")
+        XCTAssertNotNil(lower)
+        XCTAssertEqual(lower, upper)
+    }
+
+    func testResolveColorToHexReturnsNilForUnknownName() {
+        XCTAssertNil(
+            WorkspaceLayoutExecutor.resolveColorToHex("NotAColorName"),
+            "Unknown color name must return nil"
+        )
     }
 }

@@ -16,8 +16,12 @@ if [[ -z "${SPARKLE_PRIVATE_KEY:-}" ]]; then
 fi
 
 SPARKLE_VERSION="${SPARKLE_VERSION:-2.8.1}"
-DOWNLOAD_URL_PREFIX="${DOWNLOAD_URL_PREFIX:-https://github.com/manaflow-ai/cmux/releases/download/$TAG/}"
-RELEASE_NOTES_URL="${RELEASE_NOTES_URL:-https://github.com/manaflow-ai/cmux/releases/tag/$TAG}"
+# Defaults reflect the c11 fork's release path. release.yml + nightly.yml
+# both override these explicitly with the same URLs; the defaults guard
+# against a human regenerating an appcast locally and silently writing
+# upstream URLs that would never resolve under the fork.
+DOWNLOAD_URL_PREFIX="${DOWNLOAD_URL_PREFIX:-https://github.com/Stage-11-Agentics/c11/releases/download/$TAG/}"
+RELEASE_NOTES_URL="${RELEASE_NOTES_URL:-https://github.com/Stage-11-Agentics/c11/releases/tag/$TAG}"
 
 work_dir="$(mktemp -d)"
 cleanup() {

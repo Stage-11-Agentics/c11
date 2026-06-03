@@ -1,0 +1,4 @@
+=== c11 health --rail metrickit ===
+TIME             | RAIL      | SEVERITY     | SUMMARY
+(TIME reflects the OS-reported event time when available, file mtime otherwise)
+2026-05-03 18:19 | metrickit | hang         | hang3

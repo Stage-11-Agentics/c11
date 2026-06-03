@@ -1,0 +1,46 @@
+{
+  "assigned_to": "agent:claude-opus-4",
+  "branch_links": [],
+  "cmux_surface": "614DBBD6-046A-4EE9-93A5-67502890427E",
+  "cmux_workspace": "FDB5ABC8-FA52-49F6-B58B-E5FA2D8A1186",
+  "comment_count": 5,
+  "complexity": null,
+  "created_at": "2026-05-13T16:37:59Z",
+  "created_by": "agent:claude-opus-4",
+  "custom_fields": {},
+  "description": "Build `code/c11/Resources/bin/c11-spawn-agent` (bash). Launches a Claude Code agent in a named tmux window on dedicated `-L agents` socket. Idempotent on session; errors on existing window. Auth comes from `claude login` already on the box. Validate on Atlas: spawn a haiku-writing agent, verify it survives SSH detach, verify the output file appears. See note for the implementation plan.",
+  "done_at": "2026-05-16T18:44:36Z",
+  "evidence_refs": [
+    {
+      "id": "art_01KRS1N75BFX0PHVA9NKV1AW6F",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KRH37JCVT18YJS2TRDRGW3RY",
+  "last_event_id": "ev_01KRS1NJC3S7QGTB88Y8RHE1MC",
+  "last_status_changed_at": "2026-05-16T18:44:36Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-05-13T16:38:00Z",
+      "created_by": "agent:claude-opus-4",
+      "note": null,
+      "target_task_id": "task_01KRH37JANZRSSECT0M1209D7K",
+      "type": "subtask_of"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-37",
+  "status": "done",
+  "tags": [
+    "remote-agents",
+    "bash"
+  ],
+  "title": "Slice 1 \u2014 c11-spawn-agent server-side primitive",
+  "type": "task",
+  "updated_at": "2026-05-16T18:44:36Z",
+  "urgency": null
+}

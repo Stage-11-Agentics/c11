@@ -1,5 +1,4 @@
 import XCTest
-import AppKit
 import Darwin
 
 #if canImport(c11_DEV)
@@ -41,11 +40,11 @@ final class TerminalControllerSocketSecurityTests: XCTestCase {
 
         TerminalController.shared.stop()
 
-        let restrictedPath = makeSocketPath("cmux-only")
+        let restrictedPath = makeSocketPath("c11-only")
         TerminalController.shared.start(
             tabManager: tabManager,
             socketPath: restrictedPath,
-            accessMode: .cmuxOnly
+            accessMode: .c11Only
         )
         try waitForSocket(at: restrictedPath)
         XCTAssertEqual(try socketMode(at: restrictedPath), 0o600)

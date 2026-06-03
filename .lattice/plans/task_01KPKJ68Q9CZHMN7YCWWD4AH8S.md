@@ -537,3 +537,5 @@ During Phases 1–2, the deprecated fields behave as follows:
 Phase 3 removes all three. Because by then c11mux is no longer the consumer of them and the `splitButtons` internal default is deleted.
 
 ## Reset 2026-04-20 by human:atin
+
+## Reset 2026-05-05 by human:atin

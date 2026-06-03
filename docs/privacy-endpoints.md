@@ -1,0 +1,36 @@
+# Outbound network endpoints
+
+This document tracks every outbound HTTP host c11 can contact, broken
+down by feature. Treat this as the single source of truth: if you add
+a feature that talks to a new host, add a section here in the same PR.
+
+## AI Usage Monitoring
+
+User-opted. With no accounts configured, none of these calls are made.
+
+| Host | Path | Why | Frequency |
+|------|------|-----|-----------|
+| `status.claude.com` | `/api/v2/incidents.json` | Claude.ai status banner | every 5th tick (~5 min) when any Claude account exists |
+| `status.openai.com` | `/api/v2/incidents.json` | Codex status banner | every 5th tick (~5 min) when any Codex account exists |
+
+Claude usage data is read locally from `~/.claude/projects/` — no
+network call is made for Claude usage.
+
+Codex usage data is read locally from `~/.codex/state_5.sqlite` — no
+network call is made for Codex usage.
+
+Hard guarantees:
+
+- Status hosts are enforced via `AIUsageStatusPagePoller.allowedHosts`;
+  the poller rejects any host not in that set, plus any host containing
+  `/` or `:`. Adding a provider that needs a new statuspage host
+  requires updating that allowlist AND this doc.
+- Credentials are stored in macOS Keychain only, with
+  `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` and
+  `kSecAttrSynchronizable = false`.
+- Network requests use an ephemeral `URLSession` with no cookie storage
+  and no `URLCache`. The `Cookie`, `Authorization`, and
+  `chatgpt-account-id` headers are sanitized via
+  `AIUsageHTTP.sanitizeHeaderValue` before being attached.
+- Fetchers log only error domain/code; never URL or header values.
+- The poller skips ticks while the app window is occluded.

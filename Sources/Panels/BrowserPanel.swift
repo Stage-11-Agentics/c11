@@ -1862,6 +1862,24 @@ final class BrowserPanel: Panel, ObservableObject {
     /// The workspace ID this panel belongs to
     private(set) var workspaceId: UUID
 
+    /// Per-surface lifecycle controller (C11-25). Owns the canonical
+    /// `lifecycle_state` metadata mirror. Cheap-tier detach (when a
+    /// workspace is deselected, `isVisibleInUI` flips false and the
+    /// existing `WebViewRepresentable.shouldAttachWebView` gate calls
+    /// `BrowserWindowPortalRegistry.hide` — see BrowserPanelView line
+    /// 6087 area) continues to be the implementation path; this
+    /// controller adds the metadata seam and is the hook the ARC-grade
+    /// hibernate path replaces in C11-25 commit 5.
+    ///
+    /// IUO because it's set at the end of `init` once all other stored
+    /// properties are assigned, so the handler can capture `[weak self]`.
+    private(set) var lifecycle: SurfaceLifecycleController!
+
+    /// Published mirror of `lifecycle.state` so SwiftUI can re-render
+    /// (e.g. swap the live WKWebView for a placeholder NSImage when
+    /// hibernated). Updated by the lifecycle controller's handler.
+    @Published private(set) var lifecycleState: SurfaceLifecycleState = .active
+
     @Published private(set) var profileID: UUID
     @Published private(set) var historyStore: BrowserHistoryStore
 
@@ -2500,10 +2518,36 @@ final class BrowserPanel: Panel, ObservableObject {
         webView.onContextMenuOpenLinkInNewTab = { [weak self] url in
             self?.openLinkInNewTab(url: url)
         }
+        webView.onShowSurfaceManifest = { [weak self] in
+            guard let self else { return }
+            SurfaceManifestViewerWindowController.show(
+                workspaceId: self.workspaceId,
+                surfaceId: self.id,
+                kind: .browser
+            )
+        }
         configureNavigationDelegateCallbacks()
         webView.navigationDelegate = navigationDelegate
         webView.uiDelegate = uiDelegate
         setupObservers(for: webView)
+        // C11-25: refresh the cached WebContent pid for the metrics sampler
+        // on the main actor. The pid may still be 0 at bind time (the
+        // WebContent process spins up on first navigation) — `didFinish`
+        // refreshes again to pick it up.
+        refreshCachedWebContentPid()
+    }
+
+    /// Read `webView.c11_webProcessIdentifier` on the main actor and
+    /// push the scalar into `SurfaceMetricsSampler`'s lock-protected
+    /// cache. Called from every webview-binding seam (bindWebView,
+    /// replaceWebViewPreservingState, replaceWebViewForHibernate) and
+    /// from `didFinish` so process-per-origin or post-crash pid changes
+    /// are picked up. The sampler's off-main `tick()` reads the scalar
+    /// without ever touching `WKWebView` itself.
+    @MainActor
+    func refreshCachedWebContentPid() {
+        let pid = webView.c11_webProcessIdentifier
+        SurfaceMetricsSampler.shared.setPid(surfaceId: self.id, pid: pid)
     }
 
     private func configureNavigationDelegateCallbacks() {
@@ -2519,6 +2563,10 @@ final class BrowserPanel: Panel, ObservableObject {
                 self.applyBrowserThemeModeIfNeeded()
                 // Keep find-in-page open through load completion and refresh matches for the new DOM.
                 self.restoreFindStateAfterNavigation(replaySearch: true)
+                // C11-25: refresh the cached WebContent pid for the metrics
+                // sampler. didFinish lands after the WebContent process is
+                // alive, and process-per-origin reloads can change the pid.
+                self.refreshCachedWebContentPid()
             }
         }
         navigationDelegate.didFailNavigation = { [weak self] failedWebView, failedURL in
@@ -2544,6 +2592,14 @@ final class BrowserPanel: Panel, ObservableObject {
     /// - Parameter id: Stable panel UUID. Pass `nil` for fresh creation; pass a
     ///   snapshot's panel id during session restore to keep IDs stable across
     ///   app restarts (Tier 1 persistence, Phase 1).
+    /// - Parameter pendingHibernate: C11-25 fix S4+E1. When `true`, the
+    ///   panel comes up natively in `.hibernated` and the initial
+    ///   `WKWebView.load(URLRequest:)` is suppressed — no cookies attach,
+    ///   no pageview is billed against `initialURL` until the operator
+    ///   resumes. Used by `WorkspaceLayoutExecutor` when a `c11 restore`
+    ///   plan declares `lifecycle_state == "hibernated"` for the surface.
+    ///   The `initialURL` is still recorded (in `currentURL` and the
+    ///   snapshot store) so `Resume Workspace` has a destination.
     init(
         id: UUID? = nil,
         workspaceId: UUID,
@@ -2552,7 +2608,8 @@ final class BrowserPanel: Panel, ObservableObject {
         bypassInsecureHTTPHostOnce: String? = nil,
         proxyEndpoint: BrowserProxyEndpoint? = nil,
         isRemoteWorkspace: Bool = false,
-        remoteWebsiteDataStoreIdentifier: UUID? = nil
+        remoteWebsiteDataStoreIdentifier: UUID? = nil,
+        pendingHibernate: Bool = false
     ) {
         self.id = id ?? UUID()
         self.workspaceId = workspaceId
@@ -2669,10 +2726,72 @@ final class BrowserPanel: Panel, ObservableObject {
             self?.webView.window ?? NSApp.keyWindow ?? NSApp.mainWindow
         }
 
-        // Navigate to initial URL if provided
+        // Initialize the per-surface lifecycle controller AFTER all stored
+        // properties are set so the handler can capture `self` weakly.
+        // C11-25: cheap-tier detach is auto-driven by the existing
+        // `WebViewRepresentable.shouldAttachWebView` gate in BrowserPanelView
+        // (~line 6087). The controller mirrors the canonical `lifecycle_state`
+        // metadata key, updates `lifecycleState` for SwiftUI re-render, and
+        // dispatches snapshot+terminate on the ARC-grade hibernate path.
+        //
+        // C11-25 fix S4+E1: when `pendingHibernate` is set the controller
+        // starts at `.hibernated` so the SwiftUI body branches straight to
+        // `BrowserHibernatedPlaceholderView` and the WKWebView is never
+        // attached. `lifecycleState` is set explicitly because the
+        // controller's initial-state assignment does not fire the
+        // transition handler (handler runs on real transitions only).
+        let initialLifecycle: SurfaceLifecycleState = pendingHibernate ? .hibernated : .active
+        self.lifecycle = SurfaceLifecycleController(
+            workspaceId: workspaceId,
+            surfaceId: self.id,
+            initial: initialLifecycle
+        ) { [weak self] from, target in
+            guard let self else { return }
+            self.lifecycleState = target
+            self.dispatchLifecycleTransition(from: from, to: target)
+        }
+        if pendingHibernate {
+            self.lifecycleState = .hibernated
+        }
+
+        // C11-25 commit 6 (review fix B4): register with the per-surface
+        // CPU/RSS sampler. WebContent pid is cached on the main actor
+        // (in `bindWebView` and on `didFinish`) and read off-main as a
+        // scalar by the sampler's `tick()`. The sampler never touches
+        // `WKWebView` itself off-main — that would be a `@MainActor`
+        // isolation violation against an AppKit/WebKit object.
+        SurfaceMetricsSampler.shared.register(surfaceId: self.id)
+
+        // Navigate to initial URL if provided.
+        //
+        // C11-25 fix S4+E1: when this panel is being constructed in
+        // `.hibernated` (operator restored a hibernated workspace), skip
+        // the initial navigate entirely so no request fires for
+        // `initialURL` — closes the privacy/billing leak where cookies
+        // attach and a billable pageview lands during the brief window
+        // between construction and the legacy re-hibernate dispatch.
+        // Resume reads the URL from `currentURL` (or the snapshot store
+        // entry primed below) when the operator unfreezes the workspace.
         if let url = initialURL {
-            shouldRenderWebView = true
-            navigate(to: url)
+            if pendingHibernate {
+                self.currentURL = url
+                BrowserSnapshotStore.shared.storeMetadataOnly(
+                    surfaceId: self.id,
+                    url: url
+                )
+            } else {
+                // Seed `currentURL` synchronously so snapshot capture (and
+                // any caller that reads the omnibar/url before WebKit has
+                // fired its first KVO callback) sees the requested URL.
+                // The `url` observer in `setupObservers` will overwrite this
+                // with the live WKWebView URL once navigation actually
+                // resolves (handling redirects/normalizations). Matches the
+                // hibernate branch above; closes the C11-99 Area C round-trip
+                // gap where workspace snapshot wrote nil for SurfaceSpec.url.
+                self.currentURL = url
+                shouldRenderWebView = true
+                navigate(to: url)
+            }
         }
     }
 
@@ -2737,6 +2856,146 @@ final class BrowserPanel: Panel, ObservableObject {
 
     func updateWorkspaceId(_ newWorkspaceId: UUID) {
         workspaceId = newWorkspaceId
+        lifecycle.updateWorkspaceId(newWorkspaceId)
+    }
+
+    // MARK: - Lifecycle dispatch
+
+    /// Translate the panel's `isVisibleInUI` from SwiftUI into a lifecycle
+    /// transition. Idempotent; called on workspace-selection edge events
+    /// (`.onChange`) and at panel mount (`.onAppear`). Operator-pinned
+    /// `hibernated` is preserved — only `active ↔ throttled` flips on
+    /// auto-visibility changes.
+    func applyVisibility(_ isVisibleInUI: Bool) {
+        if lifecycle.state.isOperatorPinned { return }
+        lifecycle.transition(to: isVisibleInUI ? .active : .throttled)
+    }
+
+    /// Operator-driven transition into / out of `.hibernated`. Invoked
+    /// from `TabManager.hibernateWorkspace` / `resumeWorkspace`
+    /// (C11-25 commit 7). Hibernating captures the current snapshot
+    /// and tears down the WebContent process; resuming refires
+    /// `load(URLRequest:)` against the captured URL.
+    func setHibernated(_ on: Bool) {
+        if on {
+            lifecycle.transition(to: .hibernated)
+        } else if lifecycle.state == .hibernated {
+            lifecycle.transition(to: .active)
+        }
+    }
+
+    /// React to a lifecycle transition. Called from the controller's
+    /// handler closure, which already updated `lifecycleState`. Splits
+    /// the work by transition direction:
+    ///
+    /// - `* → .hibernated`: capture snapshot, then release the live
+    ///   WKWebView so ARC reaps the WebContent process. The panel's
+    ///   `webView` is replaced with a fresh, unloaded WKWebView; the
+    ///   body branches to `BrowserHibernatedPlaceholderView` until
+    ///   resume.
+    /// - `.hibernated → .active`: read the captured snapshot's URL
+    ///   and refire `navigate(to:)`. Cookies survive because the
+    ///   `WKHTTPCookieStore` lives at the process-pool level.
+    ///   Best-effort scroll restore is deferred (operator accepted in
+    ///   §0a of the C11-25 plan).
+    /// - `* → .throttled`, `.throttled → .active`: cheap-tier detach
+    ///   is auto-driven by the existing `shouldAttachWebView` gate;
+    ///   no extra dispatch needed here.
+    /// - `* → .suspended`: not entered in C11-25.
+    private func dispatchLifecycleTransition(
+        from: SurfaceLifecycleState,
+        to target: SurfaceLifecycleState
+    ) {
+        switch (from, target) {
+        case (let prior, .hibernated) where prior != .hibernated:
+            performHibernate()
+        case (.hibernated, .active):
+            performResumeFromHibernate()
+        default:
+            break
+        }
+    }
+
+    /// ARC-grade hibernate. Captures a snapshot of the current page,
+    /// then replaces the WKWebView with a fresh inert one and releases
+    /// the prior reference so ARC reaps the WebContent process. The
+    /// panel's body branches to placeholder via `lifecycleState`.
+    ///
+    /// `currentURL` is passed as `fallbackURL` so cold-restore
+    /// hibernate (where `webView.url` may still be nil because the
+    /// freshly-mounted webview's initial navigation hasn't completed)
+    /// still records a URL for resume to navigate back to.
+    private func performHibernate() {
+        let liveWebView = webView
+        BrowserSnapshotStore.shared.capture(
+            surfaceId: self.id,
+            webView: liveWebView,
+            fallbackURL: currentURL
+        ) { [weak self] _ in
+            guard let self else { return }
+            // Lifecycle-state guard at completion time, not just identity.
+            // If the operator hit Resume between `performHibernate` kicking
+            // off the async capture and the completion firing, the live
+            // webview is still bound and the panel is back to `.active`.
+            // Identity (oldWebView === webView) would still hold, so the
+            // identity-only guard inside `replaceWebViewForHibernate` is
+            // not enough — it would tear down the freshly-resumed browser.
+            // Bail out here when the operator already raced past hibernate.
+            guard self.lifecycle.state == .hibernated else { return }
+            self.replaceWebViewForHibernate(oldWebView: liveWebView)
+        }
+    }
+
+    /// Resume from hibernate. The WKWebView is fresh-and-empty (was
+    /// replaced during hibernate) — refire `navigate(to:)` with the
+    /// snapshot's URL so the WebContent process spins back up. Drops
+    /// the cached snapshot once the navigation is initiated.
+    ///
+    /// Falls back to `currentURL` when the snapshot's URL is nil
+    /// (cold-restore hibernate captures whatever `webView.url` was at
+    /// capture time, which is nil if the initial navigation hadn't
+    /// landed yet). Without the fallback the resumed panel renders an
+    /// empty page with no recovery short of typing into the omnibar.
+    private func performResumeFromHibernate() {
+        let snapshot = BrowserSnapshotStore.shared.snapshot(forSurfaceId: self.id)
+        BrowserSnapshotStore.shared.clear(forSurfaceId: self.id)
+        let resumeURL = snapshot?.url ?? currentURL
+        shouldRenderWebView = true
+        if let url = resumeURL {
+            navigate(to: url)
+        }
+    }
+
+    /// Hibernate-time companion to `replaceWebViewPreservingState`.
+    /// Tears down the live WKWebView (graceful: stopLoading + delegates
+    /// nil + portal detach + ARC release via reference replacement)
+    /// and installs a fresh inert webview in its place. Unlike the
+    /// post-crash variant, the new webview is NOT loaded with the
+    /// original URL — the panel renders a placeholder until resume.
+    ///
+    /// The replacement IS bound through `bindWebView` so navigation /
+    /// UI delegates, KVO observers, and context-menu callbacks are in
+    /// place when the operator resumes (resume calls `navigate(to:)`
+    /// against the already-bound webview, and the regular
+    /// `shouldAttachWebView` path handles portal attachment once
+    /// `lifecycleState` flips back to `.active`).
+    private func replaceWebViewForHibernate(oldWebView: WKWebView) {
+        guard oldWebView === webView else { return }
+        webViewObservers.removeAll()
+        webViewCancellables.removeAll()
+        faviconTask?.cancel()
+        faviconTask = nil
+        BrowserWindowPortalRegistry.detach(webView: oldWebView)
+        BrowserWebContentTerminator.tearDownGracefully(oldWebView)
+
+        let replacement = Self.makeWebView(
+            profileID: profileID,
+            websiteDataStore: websiteDataStore
+        )
+        webViewInstanceID = UUID()
+        webView = replacement
+        bindWebView(replacement)
+        applyBrowserThemeModeIfNeeded()
     }
 
     func reattachToWorkspace(
@@ -2747,6 +3006,7 @@ final class BrowserPanel: Panel, ObservableObject {
         remoteStatus: BrowserRemoteWorkspaceStatus?
     ) {
         workspaceId = newWorkspaceId
+        lifecycle.updateWorkspaceId(newWorkspaceId)
         usesRemoteWorkspaceProxy = isRemoteWorkspace
         let targetStore = isRemoteWorkspace
             ? WKWebsiteDataStore(forIdentifier: remoteWebsiteDataStoreIdentifier ?? newWorkspaceId)
@@ -3120,6 +3380,12 @@ final class BrowserPanel: Panel, ObservableObject {
         webViewCancellables.removeAll()
         faviconTask?.cancel()
         faviconTask = nil
+        SurfaceMetricsSampler.shared.unregister(surfaceId: self.id)
+        // C11-25 review fix I2: drop any cached hibernate snapshot. Without
+        // this, an operator who closes a hibernated panel without resuming
+        // first leaks the captured NSImage indefinitely (snapshots are 2-8
+        // MB each; the store is unbounded).
+        BrowserSnapshotStore.shared.clear(forSurfaceId: self.id)
     }
 
     // MARK: - Popup window management

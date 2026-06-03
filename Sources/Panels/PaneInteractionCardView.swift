@@ -208,22 +208,26 @@ private struct ConfirmCard: View {
         let matches = regex.matches(in: string, range: fullRange)
         guard !matches.isEmpty else { return Text(string) }
 
+        // Build a flat AttributedString instead of `Text + Text` accumulation —
+        // see commandPaletteHighlightedTitleText for the recursion hazard (C11-26).
         var cursor = 0
-        var result = Text("")
+        var attributed = AttributedString()
         for match in matches {
             if match.range.location > cursor {
                 let plainRange = NSRange(location: cursor, length: match.range.location - cursor)
-                result = result + Text(nsString.substring(with: plainRange))
+                attributed.append(AttributedString(nsString.substring(with: plainRange)))
             }
-            let emphasized = nsString.substring(with: match.range)
-            result = result + Text(emphasized).underline().bold()
+            var emphasized = AttributedString(nsString.substring(with: match.range))
+            emphasized.inlinePresentationIntent = .stronglyEmphasized
+            emphasized.underlineStyle = .single
+            attributed.append(emphasized)
             cursor = match.range.location + match.range.length
         }
         if cursor < nsString.length {
             let tailRange = NSRange(location: cursor, length: nsString.length - cursor)
-            result = result + Text(nsString.substring(with: tailRange))
+            attributed.append(AttributedString(nsString.substring(with: tailRange)))
         }
-        return result
+        return Text(attributed)
     }
 }
 

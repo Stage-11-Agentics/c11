@@ -7,6 +7,124 @@ import Bonsplit
 private var cmuxWindowTerminalPortalKey: UInt8 = 0
 private var cmuxWindowTerminalPortalCloseObserverKey: UInt8 = 0
 
+// MARK: - C11-18 portal diagnostics
+//
+// Env-var-gated structured logger for portal lifecycle events. Off by default
+// (zero work in shipped builds when the gate is unset). Enable with
+// C11_PORTAL_DEBUG=1 (CMUX_PORTAL_DEBUG=1 also accepted, for parity with the
+// existing CMUX_DEBUG_* family) to capture state during reproduction of
+// C11-18 (Ghostty surface duplicated/overdraws above pane bounds during
+// portal sync).
+//
+// Default sink: /tmp/c11-portal.log. Override with C11_PORTAL_LOG=<path>.
+// First call after process start truncates the log; subsequent calls append.
+// Pattern mirrors `logBackground` at Sources/GhosttyTerminalView.swift:2470-2492
+// (NSLock + monotonic UInt64 sequence + open/seek-to-end/close per write).
+//
+// Hot-path safety: emit sites must NOT include WindowTerminalHostView.hitTest(),
+// TerminalSurface.forceRefresh(), or TabItemView body. Portal lifecycle paths
+// (bind / detach / hideEntry / synchronizeHostedView / external geometry sync /
+// orphan hide) are off the typing/per-frame hot paths and are the only call sites.
+
+enum C11PortalDebug {
+    static let isEnabled: Bool = {
+        let env = ProcessInfo.processInfo.environment
+        let truthy: (String?) -> Bool = { value in
+            guard let value, !value.isEmpty else { return false }
+            let lowered = value.lowercased()
+            return lowered != "0" && lowered != "false" && lowered != "no" && lowered != "off"
+        }
+        return truthy(env["C11_PORTAL_DEBUG"]) || truthy(env["CMUX_PORTAL_DEBUG"])
+    }()
+
+    static let logPath: String = {
+        if let override = ProcessInfo.processInfo.environment["C11_PORTAL_LOG"], !override.isEmpty {
+            return override
+        }
+        return "/tmp/c11-portal.log"
+    }()
+
+    private static let lock = NSLock()
+    private nonisolated(unsafe) static var sequence: UInt64 = 0
+    private nonisolated(unsafe) static var hasTruncated = false
+    private static let startUptime = ProcessInfo.processInfo.systemUptime
+    private static let timestampFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    fileprivate static func write(event: String, fields: String) {
+        let timestamp = timestampFormatter.string(from: Date())
+        let uptimeMs = (ProcessInfo.processInfo.systemUptime - startUptime) * 1000
+        let threadLabel = Thread.isMainThread ? "main" : "bg"
+        let suffix = fields.isEmpty ? "" : " \(fields)"
+
+        lock.lock()
+        defer { lock.unlock() }
+        sequence &+= 1
+        let seq = sequence
+        let line =
+            "\(timestamp) seq=\(seq) t+\(String(format: "%.3f", uptimeMs))ms " +
+            "thread=\(threadLabel) portal: \(event)\(suffix)\n"
+        guard let data = line.data(using: .utf8) else { return }
+
+        let url = URL(fileURLWithPath: logPath)
+        if !hasTruncated {
+            hasTruncated = true
+            // Truncate-on-first-call so each cold start gives the operator a clean
+            // log corresponding to one repro run (avoids unbounded growth across
+            // repeated `repro-c11-18.sh` invocations).
+            try? Data().write(to: url)
+        } else if !FileManager.default.fileExists(atPath: logPath) {
+            FileManager.default.createFile(atPath: logPath, contents: nil)
+        }
+        if let handle = try? FileHandle(forWritingTo: url) {
+            defer { try? handle.close() }
+            try? handle.seekToEnd()
+            try? handle.write(contentsOf: data)
+        }
+    }
+}
+
+/// Emit a structured portal lifecycle event when `C11_PORTAL_DEBUG` is set.
+///
+/// The `fields` autoclosure is only evaluated when the env-var gate is on, so
+/// shipped builds pay nothing beyond the boolean check. Callers should pass a
+/// pre-formatted "k=v k=v" string for the event-specific fields.
+@inline(__always)
+func portalLog(_ event: String, _ fields: @autoclosure () -> String = "") {
+    guard C11PortalDebug.isEnabled else { return }
+    C11PortalDebug.write(event: event, fields: fields())
+}
+
+/// Compact pointer token (NSView opaque pointer) for diagnostics. Stable
+/// across calls for the same object instance, and empty/`nil` for missing
+/// references. Available from release builds (not gated on `#if DEBUG` like
+/// `portalDebugToken`).
+@inline(__always)
+func portalLogToken(_ view: NSView?) -> String {
+    guard let view else { return "nil" }
+    let ptr = Unmanaged.passUnretained(view).toOpaque()
+    return String(describing: ptr)
+}
+
+/// Hashed handle (NOT a real pointer) for `ObjectIdentifier` diagnostics.
+/// Returns a hex rendering of `id.hashValue`; comparable across log lines that
+/// share the same `ObjectIdentifier` namespace, but not directly comparable to
+/// the NSView pointer overload above even when both reference the same
+/// underlying view.
+@inline(__always)
+func portalLogToken(_ id: ObjectIdentifier?) -> String {
+    guard let id else { return "nil" }
+    return "0x" + String(UInt(bitPattern: id.hashValue), radix: 16)
+}
+
+@inline(__always)
+func portalLogFrame(_ rect: NSRect) -> String {
+    String(format: "%.1f,%.1f %.1fx%.1f", rect.origin.x, rect.origin.y, rect.size.width, rect.size.height)
+}
+
 #if DEBUG
 private func portalDebugToken(_ view: NSView?) -> String {
     guard let view else { return "nil" }
@@ -790,6 +908,10 @@ final class WindowTerminalPortal: NSObject {
     private var installConstraints: [NSLayoutConstraint] = []
     private var hasDeferredFullSyncScheduled = false
     private var hasExternalGeometrySyncScheduled = false
+    // Per-entry dirty set consumed by scheduleDeferredFullSynchronizeAll's deferred body.
+    // Each schedule caller marks the hosted ids it touched; the deferred body iterates only
+    // those entries (skipping entirely when nothing's dirty) instead of sweeping all entries.
+    private var dirtyHostedIds: Set<ObjectIdentifier> = []
     private var geometryObservers: [NSObjectProtocol] = []
 #if DEBUG
     private var lastLoggedBonsplitContainerSignature: String?
@@ -840,7 +962,7 @@ final class WindowTerminalPortal: NSObject {
             queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.scheduleExternalGeometrySynchronize()
+                self?.scheduleExternalGeometrySynchronize(trigger: "windowResize")
             }
         })
         geometryObservers.append(center.addObserver(
@@ -849,7 +971,7 @@ final class WindowTerminalPortal: NSObject {
             queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.scheduleExternalGeometrySynchronize()
+                self?.scheduleExternalGeometrySynchronize(trigger: "windowEndLiveResize")
             }
         })
         geometryObservers.append(center.addObserver(
@@ -862,7 +984,7 @@ final class WindowTerminalPortal: NSObject {
                       let splitView = notification.object as? NSSplitView,
                       let window = self.window,
                       splitView.window === window else { return }
-                self.scheduleExternalGeometrySynchronize()
+                self.scheduleExternalGeometrySynchronize(trigger: "splitViewResize")
             }
         })
         geometryObservers.append(center.addObserver(
@@ -871,7 +993,7 @@ final class WindowTerminalPortal: NSObject {
             queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.scheduleExternalGeometrySynchronize()
+                self?.scheduleExternalGeometrySynchronize(trigger: "frameDidChange")
             }
         })
         geometryObservers.append(center.addObserver(
@@ -880,7 +1002,7 @@ final class WindowTerminalPortal: NSObject {
             queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.scheduleExternalGeometrySynchronize()
+                self?.scheduleExternalGeometrySynchronize(trigger: "boundsDidChange")
             }
         })
     }
@@ -892,7 +1014,7 @@ final class WindowTerminalPortal: NSObject {
         geometryObservers.removeAll()
     }
 
-    fileprivate func scheduleExternalGeometrySynchronize() {
+    fileprivate func scheduleExternalGeometrySynchronize(trigger: String) {
         guard !hasExternalGeometrySyncScheduled else { return }
         hasExternalGeometrySyncScheduled = true
         let isDragEvent = TerminalWindowPortalRegistry.isInteractiveGeometryResizeActive
@@ -901,7 +1023,7 @@ final class WindowTerminalPortal: NSObject {
             guard let self else { return }
             let performSync = {
                 self.hasExternalGeometrySyncScheduled = false
-                self.synchronizeAllEntriesFromExternalGeometryChange()
+                self.synchronizeAllEntriesFromExternalGeometryChange(trigger: trigger)
             }
             if requiresSettledLayout {
                 DispatchQueue.main.async(execute: performSync)
@@ -948,8 +1070,13 @@ final class WindowTerminalPortal: NSObject {
         return frameInContainer.width > 1 && frameInContainer.height > 1
     }
 
-    fileprivate func synchronizeAllEntriesFromExternalGeometryChange() {
+    fileprivate func synchronizeAllEntriesFromExternalGeometryChange(trigger: String) {
         guard ensureInstalled() else { return }
+        portalLog("geom.external",
+            "windowNumber=\(window?.windowNumber ?? -1) " +
+            "trigger=\(trigger) " +
+            "entryCount=\(entriesByHostedId.count)"
+        )
         synchronizeLayoutHierarchy()
         // An orphan entry is one whose anchor is no longer attached to this window:
         // either the weak reference deallocated, or the AppKit view was detached
@@ -1013,7 +1140,6 @@ final class WindowTerminalPortal: NSObject {
             entriesByHostedId[hostedId] = entry
             entry.hostedView?.isHidden = true
             didHide = true
-#if DEBUG
             let anchorWindowDesc: String
             if anchor == nil {
                 anchorWindowDesc = "deallocated"
@@ -1024,11 +1150,19 @@ final class WindowTerminalPortal: NSObject {
             } else {
                 anchorWindowDesc = "other"
             }
+#if DEBUG
             dlog(
                 "portal.orphan.hide hosted=\(portalDebugToken(entry.hostedView)) " +
                 "anchor=\(portalDebugToken(anchor)) anchorWindow=\(anchorWindowDesc)"
             )
 #endif
+            portalLog("orphan.hide",
+                "hostedId=\(portalLogToken(hostedId)) " +
+                "anchorId=\(portalLogToken(anchor.map { ObjectIdentifier($0) })) " +
+                "anchor=\(anchorWindowDesc) " +
+                "frame=\(portalLogFrame(entry.hostedView?.frame ?? .zero)) " +
+                "entryCount=\(entriesByHostedId.count)"
+            )
         }
         return didHide
     }
@@ -1310,13 +1444,19 @@ final class WindowTerminalPortal: NSObject {
         if let anchor = entry.anchorView {
             hostedByAnchorId.removeValue(forKey: ObjectIdentifier(anchor))
         }
-#if DEBUG
         let hadSuperview = (entry.hostedView?.superview === hostView) ? 1 : 0
+#if DEBUG
         dlog(
             "portal.detach hosted=\(portalDebugToken(entry.hostedView)) " +
             "anchor=\(portalDebugToken(entry.anchorView)) hadSuperview=\(hadSuperview)"
         )
 #endif
+        portalLog("detach",
+            "hostedId=\(portalLogToken(hostedId)) " +
+            "anchorId=\(portalLogToken(entry.anchorView.map { ObjectIdentifier($0) })) " +
+            "hadSuperview=\(hadSuperview) " +
+            "entryCount=\(entriesByHostedId.count)"
+        )
         if let hostedView = entry.hostedView, hostedView.superview === hostView {
             hostedView.removeFromSuperview()
         }
@@ -1336,6 +1476,11 @@ final class WindowTerminalPortal: NSObject {
 #if DEBUG
         dlog("portal.hideEntry hosted=\(portalDebugToken(entry.hostedView)) reason=workspaceUnmount")
 #endif
+        portalLog("hideEntry",
+            "hostedId=\(portalLogToken(hostedId)) " +
+            "anchorId=\(portalLogToken(entry.anchorView.map { ObjectIdentifier($0) })) " +
+            "entryCount=\(entriesByHostedId.count)"
+        )
     }
 
     /// Update the visibleInUI flag on an existing entry without rebinding.
@@ -1369,6 +1514,25 @@ final class WindowTerminalPortal: NSObject {
         let hostedId = ObjectIdentifier(hostedView)
         let anchorId = ObjectIdentifier(anchorView)
         let previousEntry = entriesByHostedId[hostedId]
+
+        if C11PortalDebug.isEnabled {
+            let prevHostedAtAnchor = hostedByAnchorId[anchorId]
+            let prevEntryHostedAtAnchor: NSView? = prevHostedAtAnchor.flatMap {
+                entriesByHostedId[$0]?.hostedView
+            }
+            let anchorWindowNumber = anchorView.window?.windowNumber ?? -1
+            let anchorSuperviewToken = portalLogToken(anchorView.superview)
+            portalLog("bind.before",
+                "hostedId=\(portalLogToken(hostedId)) " +
+                "anchorId=\(portalLogToken(anchorId)) " +
+                "anchorWindowNumber=\(anchorWindowNumber) " +
+                "anchorSuperviewPtr=\(anchorSuperviewToken) " +
+                "visibleInUI=\(visibleInUI ? 1 : 0) " +
+                "prevHostedIdForAnchor=\(portalLogToken(prevHostedAtAnchor)) " +
+                "prevEntryHostedViewPtr=\(portalLogToken(prevEntryHostedAtAnchor)) " +
+                "entryCount=\(entriesByHostedId.count)"
+            )
+        }
 
         if let previousHostedId = hostedByAnchorId[anchorId], previousHostedId != hostedId {
 #if DEBUG
@@ -1467,8 +1631,19 @@ final class WindowTerminalPortal: NSObject {
         ensureDividerOverlayOnTop()
 
         synchronizeHostedView(withId: hostedId)
+        // Re-check this hosted view on the next tick — the bind just reparented/resized it
+        // and ancestor layout may still settle. Other entries are unaffected by this bind.
+        dirtyHostedIds.insert(hostedId)
         scheduleDeferredFullSynchronizeAll()
         pruneDeadEntries()
+
+        portalLog("bind.after",
+            "hostedId=\(portalLogToken(hostedId)) " +
+            "anchorId=\(portalLogToken(anchorId)) " +
+            "seededFrame=\(portalLogFrame(hostedView.frame)) " +
+            "superviewIsHostView=\(hostedView.superview === hostView ? 1 : 0) " +
+            "entryCount=\(entriesByHostedId.count)"
+        )
     }
 
     func synchronizeHostedViewForAnchor(_ anchorView: NSView) {
@@ -1485,6 +1660,13 @@ final class WindowTerminalPortal: NSObject {
         // geometry callback while another fires. Reconcile all mapped hosted views so no stale
         // frame remains "stuck" onscreen until the next interaction.
         synchronizeAllHostedViews(excluding: primaryHostedId)
+        // Only the primary hosted view (whose anchor moved) needs a deferred re-check after
+        // layout settles. Other entries were just synchronized inline above. When primaryHostedId
+        // is nil (anchor not bound to any hosted view), there's nothing to defer — the deferred
+        // body will skip cleanly.
+        if let primaryHostedId {
+            dirtyHostedIds.insert(primaryHostedId)
+        }
         scheduleDeferredFullSynchronizeAll()
     }
 
@@ -1505,7 +1687,38 @@ final class WindowTerminalPortal: NSObject {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.hasDeferredFullSyncScheduled = false
-            self.synchronizeAllHostedViews(excluding: nil)
+            self.runDeferredHostedSync()
+        }
+    }
+
+    /// Body of the deferred sync. Iterates only entries marked dirty since the schedule
+    /// call; skips entirely when nothing's dirty. Re-entrant marks added during iteration
+    /// (e.g., transient-recovery retries) re-arm a fresh deferred via the schedule call,
+    /// so they're handled on the next tick rather than in the current sweep.
+    private func runDeferredHostedSync() {
+        guard ensureInstalled() else {
+            dirtyHostedIds.removeAll(keepingCapacity: true)
+            return
+        }
+        let snapshot = dirtyHostedIds
+        dirtyHostedIds.removeAll(keepingCapacity: true)
+        guard !snapshot.isEmpty else {
+#if DEBUG
+            dlog("portal.deferredSync.skip count=0")
+#endif
+            return
+        }
+#if DEBUG
+        dlog("portal.deferredSync.run count=\(snapshot.count) full=0")
+#endif
+        synchronizeLayoutHierarchy()
+        pruneDeadEntries()
+        for hostedId in snapshot {
+            // Skip ids that no longer correspond to a live entry (detached/unbound between
+            // schedule and run). synchronizeHostedView would no-op anyway, but skipping here
+            // avoids the lookup churn.
+            guard entriesByHostedId[hostedId] != nil else { continue }
+            synchronizeHostedView(withId: hostedId)
         }
     }
 
@@ -1547,6 +1760,9 @@ final class WindowTerminalPortal: NSObject {
         )
 #endif
         if entry.transientRecoveryRetriesRemaining > 0 {
+            // Retry only the entry whose recovery is in flight; other entries aren't
+            // affected by this transient-recovery cycle.
+            dirtyHostedIds.insert(hostedId)
             scheduleDeferredFullSynchronizeAll()
         }
         return true
@@ -1560,6 +1776,13 @@ final class WindowTerminalPortal: NSObject {
             return
         }
         guard let anchorView = entry.anchorView, let window else {
+            portalLog("sync.skip.orphan",
+                "hostedId=\(portalLogToken(hostedId)) " +
+                "anchorWindow=\(entry.anchorView == nil ? "anchorNil" : "windowNil") " +
+                "visibleInUI=\(entry.visibleInUI ? 1 : 0) " +
+                "frame=\(portalLogFrame(hostedView.frame)) " +
+                "reason=missingAnchorOrWindow"
+            )
             // Only hide if the entry is not marked visibleInUI. When a workspace is
             // remounting, updateNSView sets visibleInUI=true before the deferred bind
             // provides an anchor — hiding here would race with that and cause a flash.
@@ -1582,6 +1805,14 @@ final class WindowTerminalPortal: NSObject {
             return
         }
         guard anchorView.window === window else {
+            let anchorWindowDesc: String = (anchorView.window == nil) ? "nil" : "other"
+            portalLog("sync.skip.orphan",
+                "hostedId=\(portalLogToken(hostedId)) " +
+                "anchorWindow=\(anchorWindowDesc) " +
+                "visibleInUI=\(entry.visibleInUI ? 1 : 0) " +
+                "frame=\(portalLogFrame(hostedView.frame)) " +
+                "reason=anchorWindowMismatch"
+            )
 #if DEBUG
             if !hostedView.isHidden {
                 dlog(
@@ -1674,6 +1905,9 @@ final class WindowTerminalPortal: NSObject {
                         reason: "hostBoundsNotReady"
                     )
                 } else {
+                    // Legacy fallback (transient recovery disabled): retry only this hosted
+                    // view on the next tick once host bounds settle.
+                    dirtyHostedIds.insert(hostedId)
                     scheduleDeferredFullSynchronizeAll()
                 }
             }
@@ -1844,6 +2078,16 @@ final class WindowTerminalPortal: NSObject {
             "hostBounds=\(portalDebugFrame(hostBounds))"
         )
 #endif
+
+        portalLog("sync.result",
+            "hostedId=\(portalLogToken(hostedId)) " +
+            "oldFrame=\(portalLogFrame(oldFrame)) " +
+            "targetFrame=\(portalLogFrame(targetFrame)) " +
+            "shouldHide=\(shouldHide ? 1 : 0) " +
+            "revealReady=\(revealReadyForDisplay ? 1 : 0) " +
+            "hostedHidden=\(hostedView.isHidden ? 1 : 0) " +
+            "entryCount=\(entriesByHostedId.count)"
+        )
 
         ensureDividerOverlayOnTop()
     }
@@ -2152,7 +2396,9 @@ enum TerminalWindowPortalRegistry {
            oldWindowId != windowId {
             portalsByWindowId[oldWindowId]?.detachHostedView(withId: hostedId)
         }
-
+#if DEBUG
+        let bindStart = CACurrentMediaTime()
+#endif
         nextPortal.bind(
             hostedView: hostedView,
             to: anchorView,
@@ -2162,6 +2408,15 @@ enum TerminalWindowPortalRegistry {
         )
         hostedToWindowId[hostedId] = windowId
         pruneHostedMappings(for: windowId, validHostedIds: nextPortal.hostedIds())
+#if DEBUG
+        let bindMs = (CACurrentMediaTime() - bindStart) * 1000
+        if bindMs > 5 {
+            dlog(
+                "portal.bind.timing hosted=\(portalDebugToken(hostedView)) " +
+                "bindMs=\(String(format: "%.2f", bindMs))"
+            )
+        }
+#endif
     }
 
     static func synchronizeForAnchor(_ anchorView: NSView) {
@@ -2170,8 +2425,8 @@ enum TerminalWindowPortalRegistry {
         portal.synchronizeHostedViewForAnchor(anchorView)
     }
 
-    static func scheduleExternalGeometrySynchronize(for window: NSWindow) {
-        existingPortal(for: window)?.scheduleExternalGeometrySynchronize()
+    static func scheduleExternalGeometrySynchronize(for window: NSWindow, trigger: String) {
+        existingPortal(for: window)?.scheduleExternalGeometrySynchronize(trigger: trigger)
     }
 
     static func beginInteractiveGeometryResize() {
@@ -2182,7 +2437,7 @@ enum TerminalWindowPortalRegistry {
         interactiveGeometryResizeCount = max(0, interactiveGeometryResizeCount - 1)
     }
 
-    static func scheduleExternalGeometrySynchronizeForAllWindows() {
+    static func scheduleExternalGeometrySynchronizeForAllWindows(trigger: String) {
         guard !Self.hasPendingExternalGeometrySyncForAllWindows else { return }
         Self.hasPendingExternalGeometrySyncForAllWindows = true
         let isDragEvent = Self.isInteractiveGeometryResizeActive
@@ -2190,7 +2445,7 @@ enum TerminalWindowPortalRegistry {
             let performSync = {
                 Self.hasPendingExternalGeometrySyncForAllWindows = false
                 for portal in Self.portalsByWindowId.values {
-                    portal.synchronizeAllEntriesFromExternalGeometryChange()
+                    portal.synchronizeAllEntriesFromExternalGeometryChange(trigger: trigger)
                 }
             }
             if isDragEvent {

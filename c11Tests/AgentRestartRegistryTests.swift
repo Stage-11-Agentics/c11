@@ -23,9 +23,12 @@ final class AgentRestartRegistryTests: XCTestCase {
             sessionId: "abc12345-ef67-890a-bcde-f0123456789a",
             metadata: [:]
         )
-        // Exact-equal — the trailing newline is load-bearing. Without it
-        // the synthesised command sits at the prompt unsubmitted and
-        // resume silently no-ops.
+        // Exact-equal pins both the command shape AND the registry's
+        // "submit form" trailing newline. The newline itself is no longer
+        // the submission signal — `TerminalSurface.sendSubmitFormText`
+        // trims it and dispatches a synthetic Return — but it is
+        // preserved here for snapshot consumers that may sample the
+        // literal string.
         XCTAssertEqual(
             cmd,
             "claude --dangerously-skip-permissions --resume abc12345-ef67-890a-bcde-f0123456789a\n"
@@ -292,13 +295,13 @@ final class AgentRestartRegistryTests: XCTestCase {
         )
     }
 
-    /// Opencode has no verified resume flag — launches fresh.
+    /// Opencode has no verified resume flag — launches fresh with --dangerously-skip-permissions.
     func testOpencodeRowReturnsBareCommand() {
         let registry = AgentRestartRegistry.phase1
         XCTAssertEqual(
             registry.resolveCommand(terminalType: "opencode", sessionId: nil, metadata: [:]),
-            "opencode\n",
-            "opencode row returns bare launch (no resume flag)"
+            "opencode run --dangerously-skip-permissions\n",
+            "opencode row returns fresh launch with --dangerously-skip-permissions (no resume flag)"
         )
         XCTAssertEqual(
             registry.resolveCommand(
@@ -306,8 +309,8 @@ final class AgentRestartRegistryTests: XCTestCase {
                 sessionId: "11111111-2222-3333-4444-555566667777",
                 metadata: [:]
             ),
-            "opencode\n",
-            "opencode row ignores session id and returns bare launch"
+            "opencode run --dangerously-skip-permissions\n",
+            "opencode row ignores session id and returns fresh launch"
         )
     }
 

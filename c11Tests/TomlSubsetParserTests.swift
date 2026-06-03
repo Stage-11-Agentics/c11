@@ -23,7 +23,7 @@ final class TomlSubsetParserTests: XCTestCase {
         XCTAssertEqual(stringValue(in: root, path: ["identity", "name"]), "stage11")
         XCTAssertEqual(intValue(in: root, path: ["identity", "schema"]), 1)
         XCTAssertEqual(boolValue(in: root, path: ["identity", "enabled"]), true)
-        XCTAssertEqual(doubleValue(in: root, path: ["identity", "opacity"]), 0.85, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(doubleValue(in: root, path: ["identity", "opacity"])), 0.85, accuracy: 0.0001)
         XCTAssertEqual(stringValue(in: root, path: ["identity", "quoted"]), "#FF0000")
     }
 

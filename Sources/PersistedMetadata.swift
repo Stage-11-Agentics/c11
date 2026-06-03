@@ -66,7 +66,7 @@ enum PersistedJSONValue: Codable, Sendable, Equatable {
 /// Codable sidecar preserving the `(source, ts)` record alongside a persisted
 /// metadata value so the precedence chain survives a restart.
 struct PersistedMetadataSource: Codable, Sendable, Equatable {
-    /// `MetadataSource` raw value: `"explicit" | "declare" | "osc" | "heuristic"`.
+    /// `MetadataSource` raw value: `"explicit" | "declare" | "osc" | "derived" | "heuristic"`.
     /// Unknown strings decode cleanly (no Codable error); the bridge downgrades
     /// them to `.heuristic` with a debug log on the way back into the store.
     var source: String
@@ -138,12 +138,21 @@ enum PersistedMetadataBridge {
     /// Values that cannot be represented as JSON are dropped with a debug
     /// log; the rest of the blob survives. Never throws — snapshot writes
     /// must be side-effect-free with respect to persistence failures.
+    ///
+    /// C11-104 — derived keys are excluded by checking the parallel
+    /// `sources` sidecar (when provided): a value whose recorded source
+    /// is `.derived` is dropped from the persisted blob because it will
+    /// be recomputed on session resume.
     static func encodeValues(
         _ values: [String: Any],
-        surfaceIdForLog: UUID? = nil
+        surfaceIdForLog: UUID? = nil,
+        sources: [String: [String: Any]]? = nil
     ) -> [String: PersistedJSONValue] {
         var result: [String: PersistedJSONValue] = [:]
         for (key, value) in values {
+            if isDerivedKey(key: key, sources: sources) {
+                continue
+            }
             if let persisted = encode(value: value, key: key, surfaceIdForLog: surfaceIdForLog) {
                 result[key] = persisted
             }
@@ -153,17 +162,25 @@ enum PersistedMetadataBridge {
 
     /// Convert sidecar entries as returned by
     /// `SurfaceMetadataStore.getMetadata().sources` (`[String: [String: Any]]`
-    /// via `SourceRecord.toJSON()`) into persisted form.
+    /// via `SourceRecord.toJSON()`) into persisted form. Derived sources
+    /// are dropped to match the value-side filter.
     static func encodeSources(
         _ sources: [String: [String: Any]]
     ) -> [String: PersistedMetadataSource] {
         var result: [String: PersistedMetadataSource] = [:]
         for (key, record) in sources {
             guard let source = record["source"] as? String else { continue }
+            if source == MetadataSource.derived.rawValue { continue }
             let ts = (record["ts"] as? Double) ?? 0.0
             result[key] = PersistedMetadataSource(source: source, ts: ts)
         }
         return result
+    }
+
+    private static func isDerivedKey(key: String, sources: [String: [String: Any]]?) -> Bool {
+        guard let sources, let record = sources[key],
+              let raw = record["source"] as? String else { return false }
+        return raw == MetadataSource.derived.rawValue
     }
 
     // MARK: - Restore-direction bridge (persisted → [String: Any])

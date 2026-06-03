@@ -1,17 +1,28 @@
 {
   "assigned_to": null,
   "branch_links": [],
-  "comment_count": 1,
+  "comment_count": 2,
   "complexity": null,
   "created_at": "2026-04-26T04:02:53Z",
   "created_by": "agent:claude-opus-4-7",
   "custom_fields": {},
   "description": "Themed bundle of 7 open issues filed in the upstream parent project manaflow-ai/cmux that align tightly with c11's documented Socket focus policy and CLI hygiene. These are NOT c11 issue numbers; every #N in this ticket refers to an issue in manaflow-ai/cmux. Picks: #3098, #1418, #2839, #2984, #3129, #3065, #2951. Reporters to credit: @andy5090, @jasonkuhrt, @hummer98, @nengqi, @EtanHey, @austinywang, @shaun0927. Full rationale and per-pick credits in task note.",
-  "done_at": null,
-  "evidence_refs": [],
+  "done_at": "2026-06-02T21:00:04Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01KT525TYT0N4E68BRY0GHHHV8",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KT525TYT0N4E68BRY0GHHHV7",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
   "id": "task_01KQ3Z8PZR6BTZNN77783YVE7J",
-  "last_event_id": "ev_01KQ414CPPBD80EJXRZSVSWZJ9",
-  "last_status_changed_at": "2026-04-26T04:02:53Z",
+  "last_event_id": "ev_01KT525TYT0N4E68BRY0GHHHVA",
+  "last_status_changed_at": "2026-06-02T21:00:04Z",
   "linked_files": [],
   "priority": "medium",
   "relationships_out": [
@@ -33,7 +44,7 @@
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-20",
-  "status": "backlog",
+  "status": "done",
   "tags": [
     "upstream-pull",
     "cmux-upstream",
@@ -41,6 +52,6 @@
   ],
   "title": "Upstream cmux issues: CLI hygiene and focus policy (7 picks)",
   "type": "task",
-  "updated_at": "2026-04-26T04:35:29Z",
+  "updated_at": "2026-06-02T21:00:04Z",
   "urgency": null
 }

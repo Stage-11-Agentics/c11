@@ -1,0 +1,1 @@
+Reconciliation: PR #169 (c11mux → c11 rebrand pass) merged 2026-05-17; rebrand shipped. Operator (atin) confirmed close on 2026-06-03. Residual cleanup branches (c11-1-rebrand-cleanup +11 commits, rename/c11mux-paths-to-c11 +4) remain unmerged; if that work is still wanted it should get a fresh ticket.

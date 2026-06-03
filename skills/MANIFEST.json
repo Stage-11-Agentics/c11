@@ -4,6 +4,7 @@
     "c11",
     "c11-browser",
     "c11-markdown",
-    "c11-debug-windows"
+    "c11-debug-windows",
+    "lattice-orchestrator"
   ]
 }

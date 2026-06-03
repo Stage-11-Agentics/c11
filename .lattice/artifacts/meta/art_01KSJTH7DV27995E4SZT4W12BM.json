@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-26T19:00:09Z",
+  "created_by": "agent:claude-opus-4-7-orchestrator",
+  "custom_fields": {},
+  "id": "art_01KSJTH7DV27995E4SZT4W12BM",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KSJTH7DV27995E4SZT4W12BM.md",
+    "size_bytes": 172
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "PR #211 merged to main as 58069f5f9 (squash). All 6 CI checks green. HCI spec adhered to. Worktree + local + remote branches cleaned. Operator merge-approved on 2026-05-26.",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

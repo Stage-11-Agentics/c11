@@ -1,0 +1,31 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": null,
+  "created_at": "2026-05-06T20:21:55Z",
+  "created_by": "agent:claude-opus-4-7-c11-32",
+  "custom_fields": {},
+  "description": "## Problem\n\nShells spawned by \\`c11 new-split\\` and \\`c11 new-pane\\` start in \\`\\$HOME\\`. They do not inherit:\n- the parent pane's terminal cwd, or\n- the orchestrator's Bash-subprocess cwd (the agent calling the split).\n\nResult: every sub-agent launched into a fresh pane to work on a project must be sent a \\`cd /path && claude ...\\` prefix in the spawn command. Forgetting it (easy to do during multi-agent orchestration) means the sub-agent boots in \\`~\\`, fails to find the repo, and either errors out or compensates by cd'ing itself based on prompt context. Both wastes tokens and creates a class of subtle ordering bugs.\n\nHit live during C11-32 orchestration (Phase 4 + Phase 7 sub-agent spawn) on 2026-05-06.\n\n## Proposed fix\n\nAdd \\`--cwd <path>\\` to:\n- \\`c11 new-split\\`\n- \\`c11 new-pane\\`\n\nSets the new shell's working directory at creation time, before the PTY is wired up. Optional flag; defaults to current behavior (\\$HOME) for backwards compat.\n\nStretch consideration: also \\`--cwd inherit\\` to mean \"use the parent pane's terminal cwd\" via standard TTY foreground-process introspection.\n\n## Relevant files (likely)\n\nWherever \\`new-split\\` / \\`new-pane\\` socket handlers spawn the PTY shell.\n\n## Out of scope\n\nAuto-inheriting cwd by default would be a behavior change with potential blast radius (existing scripts/keybindings rely on \\$HOME default). Keep this opt-in via flag.\n\n## Workaround until shipped\n\nDocumented in c11 SKILL.md (\"\\`cd\\` to the project before \\`claude\\` / \\`codex\\`\" callout) and in agent prompts: always prefix \\`cd /repo && \\` to the launch line.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KQZF8HR7T6HJFB928WP5PQSY",
+  "last_event_id": "ev_01KQZF8HR8KDQEZTPWF2CCK83V",
+  "last_status_changed_at": "2026-05-06T20:21:55Z",
+  "linked_files": [],
+  "priority": "low",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-33",
+  "status": "backlog",
+  "tags": [
+    "ergonomics",
+    "cli",
+    "sub-agent-orchestration"
+  ],
+  "title": "c11 new-split / new-pane: --cwd flag to set new shell's cwd at creation",
+  "type": "task",
+  "updated_at": "2026-05-06T20:21:55Z",
+  "urgency": null
+}

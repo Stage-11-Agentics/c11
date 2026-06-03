@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-03T17:25:17Z",
+  "created_by": "agent:claude-cli",
+  "custom_fields": {},
+  "id": "art_01KT78983FK5M7N7ZQ943MDMMQ",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KT78983FK5M7N7ZQ943MDMMQ.md",
+    "size_bytes": 105
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "PR #214 (Waiting Agent + workspace nav cluster in sidebar) merged into main 2026-06-03. Closing on merge.",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

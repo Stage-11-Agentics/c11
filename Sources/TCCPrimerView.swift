@@ -3,19 +3,39 @@ import AppKit
 
 // MARK: - First-run TCC primer sheet
 
+/// Auto-advance state for the TCC primer. Driven from `AppDelegate` when
+/// the FDA grant probe observes a successful grant; the sheet rerenders
+/// to a brief confirmation card before the window closes.
+enum AutoAdvanceState {
+    case idle
+    case granted
+}
+
+/// Holds the auto-advance state for the TCC primer sheet. Owned by
+/// `AppDelegate` for the lifetime of the primer window and observed by
+/// `TCCPrimerSheet`. Lives outside `enum TCCPrimer` because that namespace
+/// is stateless `@MainActor` and this object carries published state.
+@MainActor
+final class TCCPrimerCoordinator: ObservableObject {
+    @Published var autoAdvanceState: AutoAdvanceState = .idle
+}
+
 /// Shown before the first shell spawns, giving the user the choice to
 /// pre-grant Full Disk Access (recommended by iTerm2, Warp, and Ghostty)
 /// or proceed and respond to per-folder TCC prompts individually.
 struct TCCPrimerSheet: View {
+    @ObservedObject var coordinator: TCCPrimerCoordinator
     let onGrantFDA: () -> Void
     let onContinueWithout: () -> Void
     let onDismiss: () -> Void
 
     init(
+        coordinator: TCCPrimerCoordinator,
         onGrantFDA: @escaping () -> Void = {},
         onContinueWithout: @escaping () -> Void = {},
         onDismiss: @escaping () -> Void = {}
     ) {
+        self.coordinator = coordinator
         self.onGrantFDA = onGrantFDA
         self.onContinueWithout = onContinueWithout
         self.onDismiss = onDismiss
@@ -24,25 +44,54 @@ struct TCCPrimerSheet: View {
     @State private var selectedAction: TCCPrimerAction = .grantFDA
 
     var body: some View {
+        contentView
+            .padding(24)
+            .frame(width: 540)
+            .background(OnboardingKeyboardMonitor(
+                onMove: { direction in
+                    selectedAction = TCCPrimerAction.moved(
+                        from: selectedAction,
+                        direction: direction
+                    )
+                },
+                onActivate: { activateSelectedAction() },
+                onCancel: { onContinueWithout() }
+            ))
+            .environment(\.colorScheme, .dark)
+    }
+
+    @ViewBuilder
+    private var contentView: some View {
+        switch coordinator.autoAdvanceState {
+        case .idle:
+            idleContent
+        case .granted:
+            grantedContent
+        }
+    }
+
+    private var idleContent: some View {
         VStack(alignment: .leading, spacing: 18) {
             header
             bodyCopy
             learnMoreSection
             footer
         }
-        .padding(24)
-        .frame(width: 540)
-        .background(OnboardingKeyboardMonitor(
-            onMove: { direction in
-                selectedAction = TCCPrimerAction.moved(
-                    from: selectedAction,
-                    direction: direction
-                )
-            },
-            onActivate: { activateSelectedAction() },
-            onCancel: { onContinueWithout() }
-        ))
-        .environment(\.colorScheme, .dark)
+    }
+
+    private var grantedContent: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            Text(String(
+                localized: "tccPrimer.body.granted",
+                defaultValue: "Thanks — Full Disk Access granted. Continuing…"
+            ))
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(BrandColors.whiteSwiftUI)
+            .multilineTextAlignment(.center)
+            Spacer(minLength: 0)
+        }
+        .frame(minHeight: 380)
     }
 
     private var header: some View {

@@ -28,7 +28,14 @@ struct UpdatePill: View {
     private var pillButton: some View {
         Button(action: {
             if model.showsDetectedBackgroundUpdate {
-                showPopover = false
+                // Open the popover immediately so the user sees the install prompt
+                // as soon as Sparkle's user-driver check completes — instead of having
+                // to click the pill again after the background-detected version flips
+                // to a checked-and-available state.
+                if case .idle = model.state {
+                    model.state = .checking(.init(cancel: {}))
+                }
+                showPopover = true
                 AppDelegate.shared?.checkForUpdates(nil)
                 return
             }

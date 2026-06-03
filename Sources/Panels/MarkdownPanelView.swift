@@ -30,6 +30,18 @@ struct MarkdownPanelView: View {
                 markdownContentView
             }
         }
+        .contextMenu {
+            Button(String(
+                localized: "surfaceManifest.menuItem",
+                defaultValue: "Show surface manifest…"
+            )) {
+                SurfaceManifestViewerWindowController.show(
+                    workspaceId: panel.workspaceId,
+                    surfaceId: panel.id,
+                    kind: .markdown
+                )
+            }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(backgroundColor)
         .overlay {
@@ -99,7 +111,7 @@ struct MarkdownPanelView: View {
                 .textSelection(.enabled)
                 .padding(.horizontal, 24)
                 .padding(.vertical, 8)
-        case .fencedCode(_, let language, let code, let image):
+        case .fencedCode(_, let language, let code, let image, let errorHint):
             if let image {
                 Image(nsImage: image)
                     .resizable()
@@ -108,13 +120,17 @@ struct MarkdownPanelView: View {
                     .padding(.horizontal, 24)
                     .padding(.vertical, 8)
             } else {
-                fencedCodeFallbackView(language: language, code: code)
+                fencedCodeFallbackView(language: language, code: code, errorHint: errorHint)
             }
         }
     }
 
-    private func fencedCodeFallbackView(language: String, code: String) -> some View {
-        let renderer = FencedCodeRendererRegistry.shared.renderer(for: language)
+    private func fencedCodeFallbackView(language: String, code: String, errorHint: String?) -> some View {
+        // Per-render hint wins over the renderer's static install hint, since
+        // the segment-level hint reflects the actual cause of *this* render's
+        // failure (e.g. missing chrome-headless-shell) rather than a generic
+        // "tool not installed" message.
+        let hint = errorHint ?? FencedCodeRendererRegistry.shared.renderer(for: language)?.installHint
         return VStack(alignment: .leading, spacing: 4) {
             ScrollView(.horizontal, showsIndicators: true) {
                 Text(code)
@@ -130,10 +146,11 @@ struct MarkdownPanelView: View {
                 : Color(nsColor: NSColor(white: 0.93, alpha: 1.0)))
             .clipShape(RoundedRectangle(cornerRadius: 6))
 
-            if let renderer, !renderer.isAvailable, let hint = renderer.installHint {
+            if let hint {
                 Text(hint)
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
+                    .textSelection(.enabled)
             }
         }
         .padding(.horizontal, 24)

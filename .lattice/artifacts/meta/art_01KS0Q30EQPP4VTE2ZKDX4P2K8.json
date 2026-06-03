@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-19T18:13:38Z",
+  "created_by": "agent:claude-cli",
+  "custom_fields": {},
+  "id": "art_01KS0Q30EQPP4VTE2ZKDX4P2K8",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KS0Q30EQPP4VTE2ZKDX4P2K8.md",
+    "size_bytes": 2484
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Skill-only edit landed in d27284216 on main.\n\nWhat changed:\n- skills/c11/SKILL.md: added a new paragraph + sub-block to the \"Orient first\" section, placed right after the existing \"absent or ambiguous",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

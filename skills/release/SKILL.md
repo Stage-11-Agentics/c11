@@ -7,6 +7,25 @@ description: "Prepare and ship a c11 release end-to-end: choose the next version
 
 Run this workflow to prepare and publish a c11 release.
 
+## Pre-flight
+
+Surface these four facts in one batch before touching anything else:
+
+1. **Branch state.** `git branch --show-current` + `git status -s`. If HEAD
+   isn't on `main`, surface it — the operator may not realize. Wrong-branch
+   is easy to miss and load-bearing for every step downstream.
+2. **Dirty tree disposition.** Enumerate tracked diffs. For each, surface
+   what it does and ask: commit on the release branch, stash, or discard?
+   Untracked files are usually fine; tracked code needs an explicit call.
+3. **In-flight PRs.** `gh pr list --state open --json number,title,headRefName`.
+   Each open PR is an explicit include-or-defer decision.
+4. **In-flight sub-agents (c11 only).** `c11 tree --no-layout`; read each
+   surface's `role` / `task` / `status` metadata. If another agent has
+   unfinished work that belongs in the release, surface it now — not
+   after the release branch is cut.
+
+If the operator says "skip pre-flight," skip. Otherwise run all four every time.
+
 ## Workflow
 
 1. Determine the version:
@@ -36,10 +55,63 @@ Run this workflow to prepare and publish a c11 release.
   - `./scripts/bump-version.sh patch|major|X.Y.Z`
 - Ensure both `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` are updated.
 
+### Security threat-model recheck
+
+Before the version bump lands, look at whether this release moved any
+security-sensitive surface. The canonical posture lives in
+`docs/security-threat-model.md`; the diff signals below tell you when a
+re-read is warranted. Run this grep against the release range and read
+the threat-model doc end-to-end if any signal fires:
+
+```bash
+git diff "$(git describe --tags --abbrev=0)..HEAD" -- \
+  Resources/Info.plist \
+  c11.entitlements \
+  Resources/c11.sdef \
+  Sources/SocketControlSettings.swift \
+  'Sources/SocketControl*' \
+  Sources/AppDelegate.swift \
+  Sources/Panels/BrowserPanel.swift \
+  Sources/Panels/BrowserPanelView.swift \
+  Sources/BrowserWindowPortal.swift
+```
+
+The URL handler around `Sources/AppDelegate.swift:2301` (`application(_:open:)`)
+and any new `WKWebViewConfiguration` / `WKContentController` configuration
+are the highest-attention sub-targets — they are the chief untrusted-input
+vectors into the app. If a signal fires, update
+`docs/security-threat-model.md` to match the new posture and surface
+the change in the release notes so reviewers can see the security
+posture moved. Benign diffs (NSUsageDescription string tweaks, version
+bumps that touch the plist incidentally) do not require an update —
+acknowledge the diff and continue.
+
+This is a checklist trigger, not a CI gate.
+
 6. Commit and push branch:
 - Stage release files (changelog + version updates).
 - Commit with `Bump version to X.Y.Z`.
 - `git push -u origin release/vX.Y.Z`.
+
+6.5. Build the tagged staging artifact:
+- `./scripts/reloads.sh --tag rel-vX.Y.Z` produces `c11 STAGING rel-vX.Y.Z.app`
+  (`com.stage11.c11.staging`), Release configuration, runs side-by-side with
+  the operator's prod c11.
+- Hand off to the operator for a smoke pass against the changelog's
+  user-facing bullets. The smoke list should mirror what goes in the PR's
+  test plan.
+
+6.6. When staging surfaces a bug:
+- Fix on the release branch. Commit. Push.
+- Then choose explicitly:
+  - **Rebuild staging** (default when the fix touches anything timing- or
+    layout-sensitive — SwiftUI layout, animation, focus, paste, anything
+    Release-mode could behave differently from Debug). The 0.47.0 New
+    Workspace dialog regression was exactly this shape: dev/staging Debug
+    masked a prod-only bug.
+  - **Ship without re-test** (acceptable only for trivial cosmetic / doc /
+    build-script changes AND only with explicit operator accept-the-risk).
+- Don't drift past this decision. Default is rebuild; deviating is explicit.
 
 7. Create release PR:
 - `gh pr create --title "Release vX.Y.Z" --body "..."`

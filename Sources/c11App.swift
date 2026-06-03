@@ -16,21 +16,6 @@ enum WorkspaceTitlebarSettings {
     }
 }
 
-enum TabBarChromeState: String {
-    case full
-    case shrunk
-    case hidden
-}
-
-enum TabBarChromeSettings {
-    static let stateKey = "tabBarChromeState"
-    static let defaultState: TabBarChromeState = .full
-
-    static func state(for rawValue: String?) -> TabBarChromeState {
-        TabBarChromeState(rawValue: rawValue ?? "") ?? defaultState
-    }
-}
-
 enum WorkspacePresentationModeSettings {
     static let modeKey = "workspacePresentationMode"
 
@@ -189,8 +174,16 @@ struct cmuxApp: App {
     @AppStorage(KeyboardShortcutSettings.Action.renameWorkspace.defaultsKey) private var renameWorkspaceShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.openFolder.defaultsKey) private var openFolderShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.closeWorkspace.defaultsKey) private var closeWorkspaceShortcutData = Data()
-    @AppStorage(TabBarChromeSettings.stateKey) private var tabBarChromeStateRaw = TabBarChromeState.full.rawValue
-    @AppStorage(KeyboardShortcutSettings.Action.toggleTabBarChrome.defaultsKey) private var toggleTabBarChromeShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.focusLeft.defaultsKey) private var focusLeftShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.focusRight.defaultsKey) private var focusRightShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.focusUp.defaultsKey) private var focusUpShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.focusDown.defaultsKey) private var focusDownShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.toggleSplitZoom.defaultsKey) private var toggleSplitZoomShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.newSurface.defaultsKey) private var newSurfaceShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.openBrowser.defaultsKey) private var openBrowserShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.renameTab.defaultsKey) private var renameTabShortcutData = Data()
+    @AppStorage(ChromeScaleSettings.presetKey) private var chromeScalePresetRaw = ChromeScaleSettings.defaultPreset.rawValue
+    @AppStorage(ChromeScaleSettings.customMultiplierKey) private var chromeScaleCustomMultiplier: Double = Double(ChromeScaleSettings.defaultCustomMultiplier)
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     private var browserToolbarAccessorySpacing: Int {
@@ -222,7 +215,7 @@ struct cmuxApp: App {
                 defaults.set(migrated.rawValue, forKey: SocketControlSettings.appStorageKey)
             }
         } else if let legacy = defaults.object(forKey: SocketControlSettings.legacyEnabledKey) as? Bool {
-            defaults.set(legacy ? SocketControlMode.cmuxOnly.rawValue : SocketControlMode.off.rawValue,
+            defaults.set(legacy ? SocketControlMode.c11Only.rawValue : SocketControlMode.off.rawValue,
                          forKey: SocketControlSettings.appStorageKey)
         }
         // Skip keychain migration for DEV/staging builds. Each tagged build gets a
@@ -362,6 +355,12 @@ struct cmuxApp: App {
                 .environmentObject(notificationStore)
                 .environmentObject(sidebarState)
                 .environmentObject(sidebarSelectionState)
+                .environment(\.chromeScaleTokens, ChromeScaleTokens(
+                    multiplier: ChromeScaleSettings.multiplier(
+                        presetRaw: chromeScalePresetRaw,
+                        customMultiplier: chromeScaleCustomMultiplier
+                    )
+                ))
                 .onAppear {
 #if DEBUG
                     if ProcessInfo.processInfo.environment["CMUX_UI_TEST_MODE"] == "1" {
@@ -412,26 +411,6 @@ struct cmuxApp: App {
                 .keyboardShortcut(",", modifiers: [.command, .shift])
             }
 
-#if DEBUG
-            CommandMenu("Update Pill") {
-                Button("Show Update Pill") {
-                    appDelegate.showUpdatePill(nil)
-                }
-                Button("Show Long Nightly Pill") {
-                    appDelegate.showUpdatePillLongNightly(nil)
-                }
-                Button("Show Loading State") {
-                    appDelegate.showUpdatePillLoading(nil)
-                }
-                Button("Hide Update Pill") {
-                    appDelegate.hideUpdatePill(nil)
-                }
-                Button("Automatic Update Pill") {
-                    appDelegate.clearUpdatePillOverride(nil)
-                }
-            }
-#endif
-
             CommandMenu(String(localized: "menu.notifications.title", defaultValue: "Notifications")) {
                 let snapshot = notificationMenuSnapshot
 
@@ -471,311 +450,29 @@ struct cmuxApp: App {
             }
 
 #if DEBUG
-            CommandMenu("Debug") {
-                Button("New Tab With Lorem Search Text") {
-                    appDelegate.openDebugLoremTab(nil)
-                }
-
-                Button("New Tab With Large Scrollback") {
-                    appDelegate.openDebugScrollbackTab(nil)
-                }
-
-                Button("Open Workspaces for All Workspace Colors") {
-                    appDelegate.openDebugColorComparisonWorkspaces(nil)
-                }
-
-                Button(
-                    String(
-                        localized: "debug.menu.openStressWorkspacesWithLoadedSurfaces",
-                        defaultValue: "Open Stress Workspaces and Load All Terminals"
-                    )
-                ) {
-                    appDelegate.openDebugStressWorkspacesWithLoadedSurfaces(nil)
-                }
-
-                Divider()
-                Button(
-                    String(
-                        localized: "debug.theme.dumpActive",
-                        defaultValue: "Debug: Dump Active Theme"
-                    )
-                ) {
-                    dumpActiveThemeToMarkdownSurface()
-                }
-
-                Button {
-                    ThemeManager.shared.toggleRuntimeDisabled()
-                    themeEngineDisabledRuntime = ThemeAppStorage.bool(
-                        forKey: ThemeAppStorage.Keys.engineDisabledRuntime,
-                        default: false
-                    )
-                    refreshThemeDrivenChrome(reason: "debug.theme.toggleEngine")
-                } label: {
-                    debugCheckedMenuLabel(
-                        String(
-                            localized: "debug.theme.toggleEngine",
-                            defaultValue: "Debug: Toggle Theme Engine"
-                        ),
-                        checked: themeEngineDisabledRuntime
-                    )
-                }
-
-                Button(
-                    String(
-                        localized: "debug.theme.showThemeFolder",
-                        defaultValue: "Debug: Show Theme Folder"
-                    )
-                ) {
-                    revealBundledThemeFileInFinder()
-                }
-
-                Menu(
-                    String(
-                        localized: "debug.theme.showResolutionTrace",
-                        defaultValue: "Debug: Show Resolution Trace"
-                    )
-                ) {
-                    ForEach(ThemeRole.allCases, id: \.self) { role in
-                        Button(role.definition.path) {
-                            logThemeResolutionTrace(for: role)
-                        }
-                    }
-                }
-
-                Menu(
-                    String(
-                        localized: "debug.theme.m1b.menuTitle",
-                        defaultValue: "Debug: Theme M1b"
-                    )
-                ) {
-                    Button {
-                        m1bSurfaceTitleBarMigrated.toggle()
-                    } label: {
-                        debugCheckedMenuLabel(
-                            String(
-                                localized: "debug.theme.m1b.toggle.surfaceTitleBar",
-                                defaultValue: "Debug: Theme M1b / Toggle SurfaceTitleBarView"
-                            ),
-                            checked: m1bSurfaceTitleBarMigrated
-                        )
-                    }
-
-                    Button {
-                        m1bBrowserChromeMigrated.toggle()
-                    } label: {
-                        debugCheckedMenuLabel(
-                            String(
-                                localized: "debug.theme.m1b.toggle.browserChrome",
-                                defaultValue: "Debug: Theme M1b / Toggle BrowserPanelView"
-                            ),
-                            checked: m1bBrowserChromeMigrated
-                        )
-                    }
-
-                    Button {
-                        m1bMarkdownChromeMigrated.toggle()
-                    } label: {
-                        debugCheckedMenuLabel(
-                            String(
-                                localized: "debug.theme.m1b.toggle.markdownChrome",
-                                defaultValue: "Debug: Theme M1b / Toggle MarkdownPanelView"
-                            ),
-                            checked: m1bMarkdownChromeMigrated
-                        )
-                    }
-
-                    Button {
-                        m1bBonsplitAppearanceMigrated.toggle()
-                        refreshThemeDrivenChrome(reason: "debug.theme.toggleM1bBonsplitAppearance")
-                    } label: {
-                        debugCheckedMenuLabel(
-                            String(
-                                localized: "debug.theme.m1b.toggle.bonsplitAppearance",
-                                defaultValue: "Debug: Theme M1b / Toggle Workspace.bonsplitAppearance"
-                            ),
-                            checked: m1bBonsplitAppearanceMigrated
-                        )
-                    }
-
-                    Button {
-                        m1bSidebarTabItemMigrated.toggle()
-                    } label: {
-                        debugCheckedMenuLabel(
-                            String(
-                                localized: "debug.theme.m1b.toggle.sidebarTabItem",
-                                defaultValue: "Debug: Theme M1b / Toggle ContentView.TabItemView"
-                            ),
-                            checked: m1bSidebarTabItemMigrated
-                        )
-                    }
-
-                    Button {
-                        m1bCustomTitlebarMigrated.toggle()
-                    } label: {
-                        debugCheckedMenuLabel(
-                            String(
-                                localized: "debug.theme.m1b.toggle.customTitlebar",
-                                defaultValue: "Debug: Theme M1b / Toggle ContentView.customTitlebar"
-                            ),
-                            checked: m1bCustomTitlebarMigrated
-                        )
-                    }
-
-                    Button {
-                        m1bWorkspaceContentViewContextMigrated.toggle()
-                    } label: {
-                        debugCheckedMenuLabel(
-                            String(
-                                localized: "debug.theme.m1b.toggle.workspaceContentContext",
-                                defaultValue: "Debug: Theme M1b / Toggle WorkspaceContentView Context"
-                            ),
-                            checked: m1bWorkspaceContentViewContextMigrated
-                        )
-                    }
-                }
-
-                Divider()
-                Menu("Debug Windows") {
-                    Button("Debug Window Controls…") {
-                        DebugWindowControlsWindowController.shared.show()
-                    }
-
-                    Button("Browser Import Hint Debug…") {
-                        BrowserImportHintDebugWindowController.shared.show()
-                    }
-
-                    Button(
-                        String(
-                            localized: "debug.menu.browserProfilePopoverDebug",
-                            defaultValue: "Browser Profile Popover Debug…"
-                        )
-                    ) {
-                        BrowserProfilePopoverDebugWindowController.shared.show()
-                    }
-
-                    Button("Settings/About Titlebar Debug…") {
-                        SettingsAboutTitlebarDebugWindowController.shared.show()
-                    }
-
-                    Divider()
-                    Button("Sidebar Debug…") {
-                        SidebarDebugWindowController.shared.show()
-                    }
-
-                    Button("Background Debug…") {
-                        BackgroundDebugWindowController.shared.show()
-                    }
-
-                    Button("Menu Bar Extra Debug…") {
-                        MenuBarExtraDebugWindowController.shared.show()
-                    }
-
-                    Divider()
-
-                    Button("Open All Debug Windows") {
-                        openAllDebugWindows()
-                    }
-                }
-
-                Menu(
-                    String(
-                        localized: "debug.menu.browserToolbarButtonSpacing",
-                        defaultValue: "Browser Toolbar Button Spacing"
-                    )
-                ) {
-                    ForEach(BrowserToolbarAccessorySpacingDebugSettings.supportedValues, id: \.self) { spacing in
-                        Button {
-                            browserToolbarAccessorySpacingRaw = spacing
-                        } label: {
-                            if browserToolbarAccessorySpacing == spacing {
-                                Label {
-                                    Text(verbatim: "\(spacing)")
-                                } icon: {
-                                    Image(systemName: "checkmark")
-                                }
-                            } else {
-                                Text(verbatim: "\(spacing)")
-                            }
-                        }
-                    }
-                }
-
-                Toggle("Always Show Shortcut Hints", isOn: $alwaysShowShortcutHints)
-                Toggle(
-                    String(localized: "debug.devBuildBanner.show", defaultValue: "Show Dev Build Banner"),
-                    isOn: $showSidebarDevBuildBanner
-                )
-
-                Divider()
-
-                Picker("Titlebar Controls Style", selection: $titlebarControlsStyle) {
-                    ForEach(TitlebarControlsStyle.allCases) { style in
-                        Text(style.menuTitle).tag(style.rawValue)
-                    }
-                }
-
-                Divider()
-
-                Button(String(localized: "menu.updateLogs.copyUpdateLogs", defaultValue: "Copy Update Logs")) {
-                    appDelegate.copyUpdateLogs(nil)
-                }
-                Button(String(localized: "menu.updateLogs.copyFocusLogs", defaultValue: "Copy Focus Logs")) {
-                    appDelegate.copyFocusLogs(nil)
-                }
-
-                Divider()
-
-                Button("Trigger Sentry Test Crash") {
-                    appDelegate.triggerSentryTestCrash(nil)
-                }
-            }
+            debugMenus
 #endif
 
-            // New tab commands
+            // File menu: New Workspace is the entry point for new work.
+            // New Window lives in View; Close Other Tabs in Pane lives in Pane.
+            // Close Tab / Close Workspace / Close Window are intentionally
+            // menu-less — ⌘W / ⌘⇧W / ⌃⌘W still work through the AppDelegate
+            // keyDown handler.
             CommandGroup(replacing: .newItem) {
-                splitCommandButton(title: String(localized: "menu.file.newWindow", defaultValue: "New Window"), shortcut: newWindowMenuShortcut) {
-                    appDelegate.openNewMainWindow(nil)
-                }
-
-                splitCommandButton(title: String(localized: "menu.file.newWorkspace", defaultValue: "New Workspace"), shortcut: newWorkspaceMenuShortcut) {
+                splitCommandButton(title: String(localized: "menu.workspace.new", defaultValue: "New Workspace"), shortcut: newWorkspaceMenuShortcut) {
                     if let appDelegate = AppDelegate.shared {
-                        if appDelegate.addWorkspaceInPreferredMainWindow(debugSource: "menu.newWorkspace") == nil {
-#if DEBUG
-                            FocusLogStore.shared.append(
-                                "cmdn.route phase=fallback_new_window src=menu.newWorkspace reason=workspace_creation_returned_nil"
-                            )
-#endif
-                            appDelegate.openNewMainWindow(nil)
-                        }
+                        appDelegate.presentCreateWorkspaceSheet()
                     } else {
                         activeTabManager.addTab()
                     }
                 }
-
-                splitCommandButton(title: String(localized: "menu.file.openFolder", defaultValue: "Open Folder…"), shortcut: openFolderMenuShortcut) {
-                    let panel = NSOpenPanel()
-                    panel.canChooseFiles = false
-                    panel.canChooseDirectories = true
-                    panel.allowsMultipleSelection = false
-                    panel.title = String(localized: "menu.file.openFolder.panelTitle", defaultValue: "Open Folder")
-                    panel.prompt = String(localized: "menu.file.openFolder.panelPrompt", defaultValue: "Open")
-                    if panel.runModal() == .OK, let url = panel.url {
-                        if let appDelegate = AppDelegate.shared {
-                            if appDelegate.addWorkspaceInPreferredMainWindow(
-                                workingDirectory: url.path,
-                                debugSource: "menu.openFolder"
-                            ) == nil {
-                                appDelegate.openNewMainWindow(nil)
-                            }
-                        } else {
-                            activeTabManager.addWorkspace(workingDirectory: url.path)
-                        }
-                    }
-                }
             }
 
-            // Close tab/workspace
-            CommandGroup(after: .newItem) {
+            // C11-41: Command palettes live in the c11 menu — keeping them out
+            // of File matches the broader reorg's "File is minimal" stance.
+            CommandGroup(after: .appInfo) {
+                Divider()
+
                 Button(String(localized: "menu.file.goToWorkspace", defaultValue: "Go to Workspace…")) {
                     let targetWindow = NSApp.keyWindow ?? NSApp.mainWindow
                     NotificationCenter.default.post(name: .commandPaletteSwitcherRequested, object: targetWindow)
@@ -787,207 +484,426 @@ struct cmuxApp: App {
                     NotificationCenter.default.post(name: .commandPaletteRequested, object: targetWindow)
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
+            }
+
+            // AppKit auto-injects a Help menu (with its search field) whenever
+            // there isn't one — and reliably suppressing it from a SwiftUI app
+            // is an open battle. Embrace the slot instead: put a real action
+            // here so the menu earns its space. About c11 doubles as the app's
+            // identity card and a useful answer to "what is this thing?"
+            CommandGroup(replacing: .help) {
+                Button(String(localized: "menu.help.about", defaultValue: "About c11")) {
+                    showAboutPanel()
+                }
+            }
+
+            // C11-41 Edit menu: Find items go flat (match Safari/Mail/Notes).
+            CommandGroup(after: .textEditing) {
+                Button(String(localized: "menu.find.find", defaultValue: "Find…")) {
+#if DEBUG
+                    dlog("find.menu Cmd+F fired")
+#endif
+                    activeTabManager.startSearch()
+                }
+                .keyboardShortcut("f", modifiers: .command)
+
+                Button(String(localized: "menu.find.findNext", defaultValue: "Find Next")) {
+                    activeTabManager.findNext()
+                }
+                .keyboardShortcut("g", modifiers: .command)
+
+                Button(String(localized: "menu.find.findPrevious", defaultValue: "Find Previous")) {
+                    activeTabManager.findPrevious()
+                }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
+
+                Button(String(localized: "menu.find.useSelectionForFind", defaultValue: "Use Selection for Find")) {
+                    activeTabManager.searchSelection()
+                }
+                .keyboardShortcut("e", modifiers: .command)
+                .disabled(!(activeTabManager.canUseSelectionForFind))
+
+                Button(String(localized: "menu.find.hideFindBar", defaultValue: "Hide Find Bar")) {
+                    activeTabManager.hideFind()
+                }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
+                .disabled(!(activeTabManager.isFindVisible))
+            }
+
+            // View menu: chrome + Appearance + window-level toggles.
+            // Browser verbs, workspace switching, splits, surface focus, and
+            // notifications live in their own intent-named menus.
+            CommandGroup(replacing: .toolbar) {
+                splitCommandButton(title: String(localized: "menu.view.newWindow", defaultValue: "New Window"), shortcut: newWindowMenuShortcut) {
+                    appDelegate.openNewMainWindow(nil)
+                }
 
                 Divider()
 
-                // Terminal semantics:
-                // Cmd+W closes the focused tab/surface (with confirmation if needed). By
-                // default, closing the last surface also closes the workspace and the window
-                // if it was also the last workspace. Users can opt into keeping the workspace
-                // open instead.
-                Button(String(localized: "menu.file.closeTab", defaultValue: "Close Tab")) {
-                    closePanelOrWindow()
-                }
-                .keyboardShortcut("w", modifiers: .command)
-
-                Button(String(localized: "menu.file.closeOtherTabs", defaultValue: "Close Other Tabs in Pane")) {
-                    closeOtherTabsInFocusedPane()
-                }
-                .keyboardShortcut("t", modifiers: [.command, .option])
-                .disabled(!activeTabManager.canCloseOtherTabsInFocusedPane())
-
-                // Cmd+Shift+W closes the current workspace (with confirmation if needed). If this
-                // is the last workspace, it closes the window.
-                splitCommandButton(title: String(localized: "menu.file.closeWorkspace", defaultValue: "Close Workspace"), shortcut: closeWorkspaceMenuShortcut) {
-                    closeTabOrWindow()
-                }
-
-                Menu(String(localized: "commandPalette.switcher.workspaceLabel", defaultValue: "Workspace")) {
-                    workspaceCommandMenuContent(manager: activeTabManager)
-                }
-
-                Button(String(localized: "menu.file.reopenClosedBrowserPanel", defaultValue: "Reopen Closed Browser Pane")) {
-                    _ = activeTabManager.reopenMostRecentlyClosedBrowserPanel()
-                }
-                .keyboardShortcut("t", modifiers: [.command, .shift])
-            }
-
-            // Find
-            CommandGroup(after: .textEditing) {
-                Menu(String(localized: "menu.find.title", defaultValue: "Find")) {
-                    Button(String(localized: "menu.find.find", defaultValue: "Find…")) {
-#if DEBUG
-                        dlog("find.menu Cmd+F fired")
-#endif
-                        activeTabManager.startSearch()
-                    }
-                    .keyboardShortcut("f", modifiers: .command)
-
-                    Button(String(localized: "menu.find.findNext", defaultValue: "Find Next")) {
-                        activeTabManager.findNext()
-                    }
-                    .keyboardShortcut("g", modifiers: .command)
-
-                    Button(String(localized: "menu.find.findPrevious", defaultValue: "Find Previous")) {
-                        activeTabManager.findPrevious()
-                    }
-                    .keyboardShortcut("g", modifiers: [.command, .shift])
-
-                    Divider()
-
-                    Button(String(localized: "menu.find.hideFindBar", defaultValue: "Hide Find Bar")) {
-                        activeTabManager.hideFind()
-                    }
-                    .keyboardShortcut("f", modifiers: [.command, .shift])
-                    .disabled(!(activeTabManager.isFindVisible))
-
-                    Divider()
-
-                    Button(String(localized: "menu.find.useSelectionForFind", defaultValue: "Use Selection for Find")) {
-                        activeTabManager.searchSelection()
-                    }
-                    .keyboardShortcut("e", modifiers: .command)
-                    .disabled(!(activeTabManager.canUseSelectionForFind))
-                }
-            }
-
-            // Tab navigation
-            CommandGroup(after: .toolbar) {
                 splitCommandButton(title: String(localized: "menu.view.toggleSidebar", defaultValue: "Toggle Sidebar"), shortcut: toggleSidebarMenuShortcut) {
                     if AppDelegate.shared?.toggleSidebarInActiveMainWindow() != true {
                         sidebarState.toggle()
                     }
                 }
 
-                Menu(String(localized: "menu.view.tabBar", defaultValue: "Tab Bar")) {
-                    Button(String(localized: "menu.view.tabBar.full", defaultValue: "Full")) {
-                        tabBarChromeStateRaw = TabBarChromeState.full.rawValue
-                    }
-                    Button(String(localized: "menu.view.tabBar.shrunk", defaultValue: "Shrunk")) {
-                        tabBarChromeStateRaw = TabBarChromeState.shrunk.rawValue
-                    }
-                    Button(String(localized: "menu.view.tabBar.hidden", defaultValue: "Hidden")) {
-                        tabBarChromeStateRaw = TabBarChromeState.hidden.rawValue
+                Divider()
+
+                Menu(String(localized: "menu.view.appearance", defaultValue: "Appearance")) {
+                    ForEach(AppearanceMode.allCases) { mode in
+                        Button {
+                            appearanceMode = mode.rawValue
+                        } label: {
+                            if appearanceMode == mode.rawValue {
+                                Label {
+                                    Text(mode.displayName)
+                                } icon: {
+                                    Image(systemName: "checkmark")
+                                }
+                            } else {
+                                Text(mode.displayName)
+                            }
+                        }
                     }
                 }
 
-                splitCommandButton(
-                    title: String(localized: "menu.view.tabBar.cycle", defaultValue: "Cycle Tab Bar"),
-                    shortcut: toggleTabBarChromeMenuShortcut
-                ) {
-                    cycleTabBarChromeState()
+                Menu(String(localized: "menu.view.titlebarControls", defaultValue: "Titlebar Controls")) {
+                    Picker(String(localized: "menu.view.titlebarControls", defaultValue: "Titlebar Controls"), selection: $titlebarControlsStyle) {
+                        ForEach(TitlebarControlsStyle.allCases) { style in
+                            Text(style.menuTitle).tag(style.rawValue)
+                        }
+                    }
+                    .pickerStyle(.inline)
                 }
 
                 Divider()
 
-                splitCommandButton(title: String(localized: "menu.view.nextSurface", defaultValue: "Next Surface"), shortcut: nextSurfaceMenuShortcut) {
-                    activeTabManager.selectNextSurface()
+                Toggle(
+                    String(localized: "menu.view.alwaysShowShortcutHints", defaultValue: "Always Show Shortcut Hints"),
+                    isOn: $alwaysShowShortcutHints
+                )
+            }
+
+            // C11-41: extract the new top-level menus to a computed property so
+            // the parent .commands builder stays under its 10-element cap
+            // (Notifications + Debug + Update Pill push the DEBUG count high).
+            workspacePaneBrowserMenus
+        }
+    }
+
+#if DEBUG
+    @CommandsBuilder
+    private var debugMenus: some Commands {
+        debugUpdatePillMenu
+        debugMenu
+    }
+
+    @CommandsBuilder
+    private var debugUpdatePillMenu: some Commands {
+        CommandMenu("Update Pill") {
+            Button("Show Update Pill") {
+                appDelegate.showUpdatePill(nil)
+            }
+            Button("Show Long Nightly Pill") {
+                appDelegate.showUpdatePillLongNightly(nil)
+            }
+            Button("Show Loading State") {
+                appDelegate.showUpdatePillLoading(nil)
+            }
+            Button("Hide Update Pill") {
+                appDelegate.hideUpdatePill(nil)
+            }
+            Button("Automatic Update Pill") {
+                appDelegate.clearUpdatePillOverride(nil)
+            }
+        }
+    }
+
+    @CommandsBuilder
+    private var debugMenu: some Commands {
+        CommandMenu("Debug") {
+            Button("New Tab With Lorem Search Text") {
+                appDelegate.openDebugLoremTab(nil)
+            }
+
+            Button("New Tab With Large Scrollback") {
+                appDelegate.openDebugScrollbackTab(nil)
+            }
+
+            Button("Open Workspaces for All Workspace Colors") {
+                appDelegate.openDebugColorComparisonWorkspaces(nil)
+            }
+
+            Button(
+                String(
+                    localized: "debug.menu.openStressWorkspacesWithLoadedSurfaces",
+                    defaultValue: "Open Stress Workspaces and Load All Terminals"
+                )
+            ) {
+                appDelegate.openDebugStressWorkspacesWithLoadedSurfaces(nil)
+            }
+
+            Divider()
+            Button(
+                String(
+                    localized: "debug.theme.dumpActive",
+                    defaultValue: "Debug: Dump Active Theme"
+                )
+            ) {
+                dumpActiveThemeToMarkdownSurface()
+            }
+
+            Button {
+                ThemeManager.shared.toggleRuntimeDisabled()
+                themeEngineDisabledRuntime = ThemeAppStorage.bool(
+                    forKey: ThemeAppStorage.Keys.engineDisabledRuntime,
+                    default: false
+                )
+                refreshThemeDrivenChrome(reason: "debug.theme.toggleEngine")
+            } label: {
+                debugCheckedMenuLabel(
+                    String(
+                        localized: "debug.theme.toggleEngine",
+                        defaultValue: "Debug: Toggle Theme Engine"
+                    ),
+                    checked: themeEngineDisabledRuntime
+                )
+            }
+
+            Button(
+                String(
+                    localized: "debug.theme.showThemeFolder",
+                    defaultValue: "Debug: Show Theme Folder"
+                )
+            ) {
+                revealBundledThemeFileInFinder()
+            }
+
+            Menu(
+                String(
+                    localized: "debug.theme.showResolutionTrace",
+                    defaultValue: "Debug: Show Resolution Trace"
+                )
+            ) {
+                ForEach(ThemeRole.allCases, id: \.self) { role in
+                    Button(role.definition.path) {
+                        logThemeResolutionTrace(for: role)
+                    }
+                }
+            }
+
+            Menu(
+                String(
+                    localized: "debug.theme.m1b.menuTitle",
+                    defaultValue: "Debug: Theme M1b"
+                )
+            ) {
+                Button {
+                    m1bSurfaceTitleBarMigrated.toggle()
+                } label: {
+                    debugCheckedMenuLabel(
+                        String(
+                            localized: "debug.theme.m1b.toggle.surfaceTitleBar",
+                            defaultValue: "Debug: Theme M1b / Toggle SurfaceTitleBarView"
+                        ),
+                        checked: m1bSurfaceTitleBarMigrated
+                    )
                 }
 
-                splitCommandButton(title: String(localized: "menu.view.previousSurface", defaultValue: "Previous Surface"), shortcut: prevSurfaceMenuShortcut) {
-                    activeTabManager.selectPreviousSurface()
+                Button {
+                    m1bBrowserChromeMigrated.toggle()
+                } label: {
+                    debugCheckedMenuLabel(
+                        String(
+                            localized: "debug.theme.m1b.toggle.browserChrome",
+                            defaultValue: "Debug: Theme M1b / Toggle BrowserPanelView"
+                        ),
+                        checked: m1bBrowserChromeMigrated
+                    )
                 }
 
-                Button(String(localized: "menu.view.back", defaultValue: "Back")) {
-                    activeTabManager.focusedBrowserPanel?.goBack()
+                Button {
+                    m1bMarkdownChromeMigrated.toggle()
+                } label: {
+                    debugCheckedMenuLabel(
+                        String(
+                            localized: "debug.theme.m1b.toggle.markdownChrome",
+                            defaultValue: "Debug: Theme M1b / Toggle MarkdownPanelView"
+                        ),
+                        checked: m1bMarkdownChromeMigrated
+                    )
                 }
-                .keyboardShortcut("[", modifiers: .command)
 
-                Button(String(localized: "menu.view.forward", defaultValue: "Forward")) {
-                    activeTabManager.focusedBrowserPanel?.goForward()
+                Button {
+                    m1bBonsplitAppearanceMigrated.toggle()
+                    refreshThemeDrivenChrome(reason: "debug.theme.toggleM1bBonsplitAppearance")
+                } label: {
+                    debugCheckedMenuLabel(
+                        String(
+                            localized: "debug.theme.m1b.toggle.bonsplitAppearance",
+                            defaultValue: "Debug: Theme M1b / Toggle Workspace.bonsplitAppearance"
+                        ),
+                        checked: m1bBonsplitAppearanceMigrated
+                    )
                 }
-                .keyboardShortcut("]", modifiers: .command)
 
-                Button(String(localized: "menu.view.reloadPage", defaultValue: "Reload Page")) {
-                    activeTabManager.focusedBrowserPanel?.reload()
+                Button {
+                    m1bSidebarTabItemMigrated.toggle()
+                } label: {
+                    debugCheckedMenuLabel(
+                        String(
+                            localized: "debug.theme.m1b.toggle.sidebarTabItem",
+                            defaultValue: "Debug: Theme M1b / Toggle ContentView.TabItemView"
+                        ),
+                        checked: m1bSidebarTabItemMigrated
+                    )
                 }
-                .keyboardShortcut("r", modifiers: .command)
 
-                splitCommandButton(title: String(localized: "menu.view.toggleDevTools", defaultValue: "Toggle Developer Tools"), shortcut: toggleBrowserDeveloperToolsMenuShortcut) {
-                    let manager = activeTabManager
-                    if !manager.toggleDeveloperToolsFocusedBrowser() {
-                        NSSound.beep()
+                Button {
+                    m1bCustomTitlebarMigrated.toggle()
+                } label: {
+                    debugCheckedMenuLabel(
+                        String(
+                            localized: "debug.theme.m1b.toggle.customTitlebar",
+                            defaultValue: "Debug: Theme M1b / Toggle ContentView.customTitlebar"
+                        ),
+                        checked: m1bCustomTitlebarMigrated
+                    )
+                }
+
+                Button {
+                    m1bWorkspaceContentViewContextMigrated.toggle()
+                } label: {
+                    debugCheckedMenuLabel(
+                        String(
+                            localized: "debug.theme.m1b.toggle.workspaceContentContext",
+                            defaultValue: "Debug: Theme M1b / Toggle WorkspaceContentView Context"
+                        ),
+                        checked: m1bWorkspaceContentViewContextMigrated
+                    )
+                }
+            }
+
+            Divider()
+            Menu("Debug Windows") {
+                Button("Debug Window Controls…") {
+                    DebugWindowControlsWindowController.shared.show()
+                }
+
+                Button("Browser Import Hint Debug…") {
+                    BrowserImportHintDebugWindowController.shared.show()
+                }
+
+                Button(
+                    String(
+                        localized: "debug.menu.browserProfilePopoverDebug",
+                        defaultValue: "Browser Profile Popover Debug…"
+                    )
+                ) {
+                    BrowserProfilePopoverDebugWindowController.shared.show()
+                }
+
+                Button("Settings/About Titlebar Debug…") {
+                    SettingsAboutTitlebarDebugWindowController.shared.show()
+                }
+
+                Divider()
+                Button("Sidebar Debug…") {
+                    SidebarDebugWindowController.shared.show()
+                }
+
+                Button("Background Debug…") {
+                    BackgroundDebugWindowController.shared.show()
+                }
+
+                Button("Menu Bar Extra Debug…") {
+                    MenuBarExtraDebugWindowController.shared.show()
+                }
+
+                Divider()
+
+                Button("Open All Debug Windows") {
+                    openAllDebugWindows()
+                }
+            }
+
+            Menu(
+                String(
+                    localized: "debug.menu.browserToolbarButtonSpacing",
+                    defaultValue: "Browser Toolbar Button Spacing"
+                )
+            ) {
+                ForEach(BrowserToolbarAccessorySpacingDebugSettings.supportedValues, id: \.self) { spacing in
+                    Button {
+                        browserToolbarAccessorySpacingRaw = spacing
+                    } label: {
+                        if browserToolbarAccessorySpacing == spacing {
+                            Label {
+                                Text(verbatim: "\(spacing)")
+                            } icon: {
+                                Image(systemName: "checkmark")
+                            }
+                        } else {
+                            Text(verbatim: "\(spacing)")
+                        }
+                    }
+                }
+            }
+
+            Toggle(
+                String(localized: "debug.devBuildBanner.show", defaultValue: "Show Dev Build Banner"),
+                isOn: $showSidebarDevBuildBanner
+            )
+
+            Divider()
+
+            Button(String(localized: "menu.updateLogs.copyUpdateLogs", defaultValue: "Copy Update Logs")) {
+                appDelegate.copyUpdateLogs(nil)
+            }
+            Button(String(localized: "menu.updateLogs.copyFocusLogs", defaultValue: "Copy Focus Logs")) {
+                appDelegate.copyFocusLogs(nil)
+            }
+
+            Divider()
+
+            Button("Trigger Sentry Test Crash") {
+                appDelegate.triggerSentryTestCrash(nil)
+            }
+        }
+    }
+#endif
+
+    @CommandsBuilder
+    private var workspacePaneBrowserMenus: some Commands {
+        // C11-41 Workspace menu: absorb the old File → Workspace submenu
+        // plus the workspace-switching items that used to live in View.
+        CommandMenu(String(localized: "menu.workspace.title", defaultValue: "Workspace")) {
+                splitCommandButton(title: String(localized: "menu.workspace.new", defaultValue: "New Workspace"), shortcut: newWorkspaceMenuShortcut) {
+                    if let appDelegate = AppDelegate.shared {
+                        appDelegate.presentCreateWorkspaceSheet()
+                    } else {
+                        activeTabManager.addTab()
                     }
                 }
 
-                splitCommandButton(title: String(localized: "menu.view.showJSConsole", defaultValue: "Show JavaScript Console"), shortcut: showBrowserJavaScriptConsoleMenuShortcut) {
-                    let manager = activeTabManager
-                    if !manager.showJavaScriptConsoleFocusedBrowser() {
-                        NSSound.beep()
-                    }
-                }
+                Divider()
 
-                Button(String(localized: "menu.view.zoomIn", defaultValue: "Zoom In")) {
-                    _ = activeTabManager.zoomInFocusedBrowser()
-                }
-                .keyboardShortcut("=", modifiers: .command)
+                workspaceCommandMenuContent(manager: activeTabManager)
 
-                Button(String(localized: "menu.view.zoomOut", defaultValue: "Zoom Out")) {
-                    _ = activeTabManager.zoomOutFocusedBrowser()
-                }
-                .keyboardShortcut("-", modifiers: .command)
+                Divider()
 
-                Button(String(localized: "menu.view.actualSize", defaultValue: "Actual Size")) {
-                    _ = activeTabManager.resetZoomFocusedBrowser()
-                }
-                .keyboardShortcut("0", modifiers: .command)
-
-                Button(String(localized: "menu.view.clearBrowserHistory", defaultValue: "Clear Browser History")) {
-                    BrowserHistoryStore.shared.clearHistory()
-                }
-
-                Button(String(localized: "menu.view.importFromBrowser", defaultValue: "Import Browser Data…")) {
-                    // Defer modal presentation until after AppKit finishes menu tracking.
-                    DispatchQueue.main.async {
-                        BrowserDataImportCoordinator.shared.presentImportDialog()
-                    }
-                }
-
-                splitCommandButton(title: String(localized: "menu.view.nextWorkspace", defaultValue: "Next Workspace"), shortcut: nextWorkspaceMenuShortcut) {
+                splitCommandButton(title: String(localized: "menu.workspace.next", defaultValue: "Next Workspace"), shortcut: nextWorkspaceMenuShortcut) {
                     activeTabManager.selectNextTab()
                 }
 
-                splitCommandButton(title: String(localized: "menu.view.previousWorkspace", defaultValue: "Previous Workspace"), shortcut: prevWorkspaceMenuShortcut) {
+                splitCommandButton(title: String(localized: "menu.workspace.previous", defaultValue: "Previous Workspace"), shortcut: prevWorkspaceMenuShortcut) {
                     activeTabManager.selectPreviousTab()
                 }
 
-                splitCommandButton(title: String(localized: "menu.view.renameWorkspace", defaultValue: "Rename Workspace…"), shortcut: renameWorkspaceMenuShortcut) {
-                    _ = AppDelegate.shared?.requestRenameWorkspaceViaCommandPalette()
-                }
-
                 Divider()
 
-                splitCommandButton(title: String(localized: "menu.view.splitRight", defaultValue: "Split Right"), shortcut: splitRightMenuShortcut) {
-                    performSplitFromMenu(direction: .right)
-                }
-
-                splitCommandButton(title: String(localized: "menu.view.splitDown", defaultValue: "Split Down"), shortcut: splitDownMenuShortcut) {
-                    performSplitFromMenu(direction: .down)
-                }
-
-                splitCommandButton(title: String(localized: "menu.view.splitBrowserRight", defaultValue: "Split Browser Right"), shortcut: splitBrowserRightMenuShortcut) {
-                    performBrowserSplitFromMenu(direction: .right)
-                }
-
-                splitCommandButton(title: String(localized: "menu.view.splitBrowserDown", defaultValue: "Split Browser Down"), shortcut: splitBrowserDownMenuShortcut) {
-                    performBrowserSplitFromMenu(direction: .down)
-                }
-
-                Divider()
-
-                // Cmd+1 through Cmd+9 for workspace selection (9 = last workspace)
+                // Cmd+1 through Cmd+9 for workspace selection (9 = last workspace).
                 ForEach(1...9, id: \.self) { number in
-                    Button(String(localized: "menu.view.workspace", defaultValue: "Workspace \(number)")) {
+                    Button(String(localized: "menu.workspace.numbered", defaultValue: "Workspace \(number)")) {
                         let manager = activeTabManager
                         if let targetIndex = WorkspaceShortcutMapper.workspaceIndex(forCommandDigit: number, workspaceCount: manager.tabs.count) {
                             manager.selectTab(at: targetIndex)
@@ -995,18 +911,155 @@ struct cmuxApp: App {
                     }
                     .keyboardShortcut(KeyEquivalent(Character("\(number)")), modifiers: .command)
                 }
+            }
+
+            // C11-41 Pane menu: splits, directional focus, surface ops.
+            CommandMenu(String(localized: "menu.pane.title", defaultValue: "Pane")) {
+                splitCommandButton(title: String(localized: "menu.pane.splitRight", defaultValue: "Split Right"), shortcut: splitRightMenuShortcut) {
+                    performSplitFromMenu(direction: .right)
+                }
+
+                splitCommandButton(title: String(localized: "menu.pane.splitDown", defaultValue: "Split Down"), shortcut: splitDownMenuShortcut) {
+                    performSplitFromMenu(direction: .down)
+                }
+
+                splitCommandButton(title: String(localized: "menu.pane.splitBrowserRight", defaultValue: "Split Browser Right"), shortcut: splitBrowserRightMenuShortcut) {
+                    performBrowserSplitFromMenu(direction: .right)
+                }
+
+                splitCommandButton(title: String(localized: "menu.pane.splitBrowserDown", defaultValue: "Split Browser Down"), shortcut: splitBrowserDownMenuShortcut) {
+                    performBrowserSplitFromMenu(direction: .down)
+                }
+
+                splitCommandButton(title: String(localized: "menu.pane.togglePaneZoom", defaultValue: "Toggle Pane Zoom"), shortcut: toggleSplitZoomMenuShortcut) {
+                    _ = activeTabManager.toggleFocusedSplitZoom()
+                }
 
                 Divider()
 
-                splitCommandButton(title: String(localized: "menu.view.jumpToUnread", defaultValue: "Jump to Latest Unread"), shortcut: jumpToUnreadMenuShortcut) {
-                    AppDelegate.shared?.jumpToLatestUnread()
+                splitCommandButton(title: String(localized: "menu.pane.focusLeft", defaultValue: "Focus Left"), shortcut: focusLeftMenuShortcut) {
+                    activeTabManager.movePaneFocus(direction: .left)
                 }
 
-                splitCommandButton(title: String(localized: "menu.view.showNotifications", defaultValue: "Show Notifications"), shortcut: showNotificationsMenuShortcut) {
-                    showNotificationsPopover()
+                splitCommandButton(title: String(localized: "menu.pane.focusRight", defaultValue: "Focus Right"), shortcut: focusRightMenuShortcut) {
+                    activeTabManager.movePaneFocus(direction: .right)
+                }
+
+                splitCommandButton(title: String(localized: "menu.pane.focusUp", defaultValue: "Focus Up"), shortcut: focusUpMenuShortcut) {
+                    activeTabManager.movePaneFocus(direction: .up)
+                }
+
+                splitCommandButton(title: String(localized: "menu.pane.focusDown", defaultValue: "Focus Down"), shortcut: focusDownMenuShortcut) {
+                    activeTabManager.movePaneFocus(direction: .down)
+                }
+
+                Divider()
+
+                Menu(String(localized: "menu.pane.newSurface", defaultValue: "New Surface")) {
+                    splitCommandButton(title: String(localized: "menu.pane.newTerminal", defaultValue: "New Terminal"), shortcut: newSurfaceMenuShortcut) {
+                        activeTabManager.newSurface()
+                    }
+
+                    splitCommandButton(title: String(localized: "menu.pane.newBrowser", defaultValue: "New Browser"), shortcut: openBrowserMenuShortcut) {
+                        _ = AppDelegate.shared?.openBrowserAndFocusAddressBar(insertAtEnd: true)
+                    }
+
+                    Button(String(localized: "menu.pane.newMarkdown", defaultValue: "New Markdown")) {
+                        openNewMarkdownSurface()
+                    }
+                }
+
+                splitCommandButton(title: String(localized: "menu.pane.nextSurface", defaultValue: "Next Surface"), shortcut: nextSurfaceMenuShortcut) {
+                    activeTabManager.selectNextSurface()
+                }
+
+                splitCommandButton(title: String(localized: "menu.pane.previousSurface", defaultValue: "Previous Surface"), shortcut: prevSurfaceMenuShortcut) {
+                    activeTabManager.selectPreviousSurface()
+                }
+
+                splitCommandButton(title: String(localized: "menu.pane.renameTab", defaultValue: "Rename Tab"), shortcut: renameTabMenuShortcut) {
+                    let targetWindow = NSApp.keyWindow ?? NSApp.mainWindow
+                    _ = AppDelegate.shared?.requestCommandPaletteRenameTab(preferredWindow: targetWindow, source: "menu.renameTab")
+                }
+
+                Divider()
+
+                Button(String(localized: "menu.pane.closeOtherTabs", defaultValue: "Close Other Tabs in Pane")) {
+                    closeOtherTabsInFocusedPane()
+                }
+                .keyboardShortcut("t", modifiers: [.command, .option])
+                .disabled(!activeTabManager.canCloseOtherTabsInFocusedPane())
+            }
+
+            // C11-41 Browser menu: every browser-surface verb in one home.
+            CommandMenu(String(localized: "menu.browser.title", defaultValue: "Browser")) {
+                Button(String(localized: "menu.browser.back", defaultValue: "Back")) {
+                    activeTabManager.focusedBrowserPanel?.goBack()
+                }
+                .keyboardShortcut("[", modifiers: .command)
+
+                Button(String(localized: "menu.browser.forward", defaultValue: "Forward")) {
+                    activeTabManager.focusedBrowserPanel?.goForward()
+                }
+                .keyboardShortcut("]", modifiers: .command)
+
+                Button(String(localized: "menu.browser.reload", defaultValue: "Reload Page")) {
+                    activeTabManager.focusedBrowserPanel?.reload()
+                }
+                .keyboardShortcut("r", modifiers: .command)
+
+                Divider()
+
+                Button(String(localized: "menu.browser.zoomIn", defaultValue: "Zoom In")) {
+                    _ = activeTabManager.zoomInFocusedBrowser()
+                }
+                .keyboardShortcut("=", modifiers: .command)
+
+                Button(String(localized: "menu.browser.zoomOut", defaultValue: "Zoom Out")) {
+                    _ = activeTabManager.zoomOutFocusedBrowser()
+                }
+                .keyboardShortcut("-", modifiers: .command)
+
+                Button(String(localized: "menu.browser.actualSize", defaultValue: "Actual Size")) {
+                    _ = activeTabManager.resetZoomFocusedBrowser()
+                }
+                .keyboardShortcut("0", modifiers: .command)
+
+                Divider()
+
+                Button(String(localized: "menu.browser.reopenClosed", defaultValue: "Reopen Closed Browser Pane")) {
+                    _ = activeTabManager.reopenMostRecentlyClosedBrowserPanel()
+                }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+
+                Divider()
+
+                splitCommandButton(title: String(localized: "menu.browser.toggleDevTools", defaultValue: "Toggle Developer Tools"), shortcut: toggleBrowserDeveloperToolsMenuShortcut) {
+                    let manager = activeTabManager
+                    if !manager.toggleDeveloperToolsFocusedBrowser() {
+                        NSSound.beep()
+                    }
+                }
+
+                splitCommandButton(title: String(localized: "menu.browser.showJSConsole", defaultValue: "Show JavaScript Console"), shortcut: showBrowserJavaScriptConsoleMenuShortcut) {
+                    let manager = activeTabManager
+                    if !manager.showJavaScriptConsoleFocusedBrowser() {
+                        NSSound.beep()
+                    }
+                }
+
+                Divider()
+
+                Button(String(localized: "menu.browser.importData", defaultValue: "Import Browser Data…")) {
+                    DispatchQueue.main.async {
+                        BrowserDataImportCoordinator.shared.presentImportDialog()
+                    }
+                }
+
+                Button(String(localized: "menu.browser.clearHistory", defaultValue: "Clear Browser History")) {
+                    BrowserHistoryStore.shared.clearHistory()
                 }
             }
-        }
     }
 
     private func showAboutPanel() {
@@ -1057,21 +1110,6 @@ struct cmuxApp: App {
 
     private var toggleSidebarMenuShortcut: StoredShortcut {
         decodeShortcut(from: toggleSidebarShortcutData, fallback: KeyboardShortcutSettings.Action.toggleSidebar.defaultShortcut)
-    }
-
-    private var toggleTabBarChromeMenuShortcut: StoredShortcut {
-        decodeShortcut(from: toggleTabBarChromeShortcutData, fallback: KeyboardShortcutSettings.Action.toggleTabBarChrome.defaultShortcut)
-    }
-
-    private func cycleTabBarChromeState() {
-        let current = TabBarChromeSettings.state(for: tabBarChromeStateRaw)
-        let next: TabBarChromeState
-        switch current {
-        case .full:   next = .shrunk
-        case .shrunk: next = .hidden
-        case .hidden: next = .full
-        }
-        tabBarChromeStateRaw = next.rawValue
     }
 
     private var newWorkspaceMenuShortcut: StoredShortcut {
@@ -1166,6 +1204,48 @@ struct cmuxApp: App {
             from: closeWorkspaceShortcutData,
             fallback: KeyboardShortcutSettings.Action.closeWorkspace.defaultShortcut
         )
+    }
+
+    private var focusLeftMenuShortcut: StoredShortcut {
+        decodeShortcut(from: focusLeftShortcutData, fallback: KeyboardShortcutSettings.Action.focusLeft.defaultShortcut)
+    }
+
+    private var focusRightMenuShortcut: StoredShortcut {
+        decodeShortcut(from: focusRightShortcutData, fallback: KeyboardShortcutSettings.Action.focusRight.defaultShortcut)
+    }
+
+    private var focusUpMenuShortcut: StoredShortcut {
+        decodeShortcut(from: focusUpShortcutData, fallback: KeyboardShortcutSettings.Action.focusUp.defaultShortcut)
+    }
+
+    private var focusDownMenuShortcut: StoredShortcut {
+        decodeShortcut(from: focusDownShortcutData, fallback: KeyboardShortcutSettings.Action.focusDown.defaultShortcut)
+    }
+
+    private var toggleSplitZoomMenuShortcut: StoredShortcut {
+        decodeShortcut(from: toggleSplitZoomShortcutData, fallback: KeyboardShortcutSettings.Action.toggleSplitZoom.defaultShortcut)
+    }
+
+    private var newSurfaceMenuShortcut: StoredShortcut {
+        decodeShortcut(from: newSurfaceShortcutData, fallback: KeyboardShortcutSettings.Action.newSurface.defaultShortcut)
+    }
+
+    private var openBrowserMenuShortcut: StoredShortcut {
+        decodeShortcut(from: openBrowserShortcutData, fallback: KeyboardShortcutSettings.Action.openBrowser.defaultShortcut)
+    }
+
+    private var renameTabMenuShortcut: StoredShortcut {
+        decodeShortcut(from: renameTabShortcutData, fallback: KeyboardShortcutSettings.Action.renameTab.defaultShortcut)
+    }
+
+    private func openNewMarkdownSurface() {
+        guard let workspace = activeTabManager.selectedWorkspace,
+              let paneId = workspace.bonsplitController.focusedPaneId
+                ?? workspace.bonsplitController.allPaneIds.first else {
+            NSSound.beep()
+            return
+        }
+        _ = workspace.newMarkdownSurface(inPane: paneId, focus: true)
     }
 
     private var notificationMenuSnapshot: NotificationMenuSnapshot {
@@ -1388,6 +1468,29 @@ struct cmuxApp: App {
             closeSelectedWorkspacesAbove(in: manager)
         }
         .disabled(workspaceIndex == nil || workspaceIndex == 0)
+
+        Divider()
+
+        // C11-25: hibernate / resume the workspace. Browser surfaces
+        // capture a snapshot, terminate their WebContent processes, and
+        // render a placeholder until resume; terminals stay on the auto
+        // throttle path. The menu flips between Hibernate and Resume
+        // based on `workspace.isHibernated`.
+        if workspace?.isHibernated == true {
+            Button(String(localized: "contextMenu.resumeWorkspace", defaultValue: "Resume Workspace")) {
+                workspace?.resume()
+            }
+            .disabled(workspace == nil)
+        } else {
+            Button(String(localized: "contextMenu.hibernateWorkspace", defaultValue: "Hibernate Workspace")) {
+                workspace?.hibernate()
+            }
+            .disabled(workspace == nil)
+            .help(String(
+                localized: "contextMenu.hibernateWorkspaceTooltip",
+                defaultValue: "Suspends browser surfaces in this workspace. Terminals stay on auto-throttle (already low-CPU when the workspace isn't focused)."
+            ))
+        }
 
         Divider()
 
@@ -3009,6 +3112,7 @@ enum SettingsNavigationTarget: String {
     case browserImport
     case textBoxInput
     case keyboardShortcuts
+    case aiUsage
 }
 
 enum SettingsNavigationRequest {
@@ -3974,67 +4078,6 @@ enum ClaudeCodeIntegrationSettings {
     }
 }
 
-/// Controls which terminal agent the "A" tab-bar button spawns.
-/// The button creates a new terminal surface and sends `shellCommand` as if
-/// the operator typed it — the agent runs inside the user's login shell, so
-/// quitting the agent leaves the shell running.
-enum AgentLauncherSettings {
-    static let kindKey = "agentLauncherKind"
-
-    enum Kind: String, CaseIterable, Identifiable {
-        case claudeCode
-        case codex
-        case opencode
-        case kimi
-
-        var id: String { rawValue }
-
-        var displayName: String {
-            switch self {
-            case .claudeCode:
-                return String(localized: "agentLauncher.kind.claudeCode", defaultValue: "Claude Code")
-            case .codex:
-                return String(localized: "agentLauncher.kind.codex", defaultValue: "Codex")
-            case .opencode:
-                return String(localized: "agentLauncher.kind.opencode", defaultValue: "OpenCode")
-            case .kimi:
-                return String(localized: "agentLauncher.kind.kimi", defaultValue: "Kimi")
-            }
-        }
-
-        /// Shell command each agent is launched with — hardcoded to the
-        /// launcher form that runs the agent as an interactive TUI inside the
-        /// operator's login shell.
-        fileprivate var builtInCommand: String {
-            switch self {
-            case .claudeCode:
-                return "claude --dangerously-skip-permissions"
-            case .codex:
-                return "codex --yolo"
-            case .opencode:
-                return "opencode"
-            case .kimi:
-                return "kimi"
-            }
-        }
-    }
-
-    static let defaultKind: Kind = .claudeCode
-
-    struct Resolved {
-        let kind: Kind
-        let shellCommand: String
-
-        var displayName: String { kind.displayName }
-    }
-
-    static func current(defaults: UserDefaults = .standard) -> Resolved {
-        let kindRaw = defaults.string(forKey: kindKey) ?? defaultKind.rawValue
-        let kind = Kind(rawValue: kindRaw) ?? defaultKind
-        return Resolved(kind: kind, shellCommand: kind.builtInCommand)
-    }
-}
-
 enum WelcomeSettings {
     static let shownKey = "cmuxWelcomeShown"
     static let spikeURL = "https://stage11.ai"
@@ -4225,13 +4268,17 @@ enum TelemetrySettings {
 
 private enum SettingsPage: String, CaseIterable, Identifiable {
     case general
+    // C11-14: Agents gets its own nav entry, high in the sidebar. The icon
+    // mirrors the per-pane "A" button so operators learn the correlation at
+    // a glance.
+    case agents
     case appearance
     case workspaceSidebar
     case browser
     case notifications
     case input
     case keyboardShortcuts
-    case agentsAutomation
+    case automation
     case dataPrivacy
     case advanced
 
@@ -4241,6 +4288,8 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
         switch self {
         case .general:
             return String(localized: "settings.page.general", defaultValue: "General")
+        case .agents:
+            return String(localized: "settings.page.agents", defaultValue: "Agents")
         case .appearance:
             return String(localized: "settings.page.appearance", defaultValue: "Appearance")
         case .workspaceSidebar:
@@ -4253,8 +4302,8 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
             return String(localized: "settings.page.input", defaultValue: "Input")
         case .keyboardShortcuts:
             return String(localized: "settings.page.keyboardShortcuts", defaultValue: "Keyboard Shortcuts")
-        case .agentsAutomation:
-            return String(localized: "settings.page.agentsAutomation", defaultValue: "Agents & Automation")
+        case .automation:
+            return String(localized: "settings.page.automation", defaultValue: "Automation")
         case .dataPrivacy:
             return String(localized: "settings.page.dataPrivacy", defaultValue: "Data & Privacy")
         case .advanced:
@@ -4266,6 +4315,8 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
         switch self {
         case .general:
             return String(localized: "settings.page.general.helper", defaultValue: "choose the app-level defaults that travel with the room.")
+        case .agents:
+            return String(localized: "settings.page.agents.helper", defaultValue: "the A button on every pane launches an agent. shape what runs and what it knows about c11.")
         case .appearance:
             return String(localized: "settings.page.appearance.helper", defaultValue: "tune the room without touching terminal themes.")
         case .workspaceSidebar:
@@ -4278,8 +4329,8 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
             return String(localized: "settings.page.input.helper", defaultValue: "shape command input before it reaches a surface.")
         case .keyboardShortcuts:
             return String(localized: "settings.page.keyboardShortcuts.helper", defaultValue: "shape the keys that move through the room.")
-        case .agentsAutomation:
-            return String(localized: "settings.page.agentsAutomation.helper", defaultValue: "agents can drive c11 once they know the room.")
+        case .automation:
+            return String(localized: "settings.page.automation.helper", defaultValue: "let external tools drive c11 through its local socket.")
         case .dataPrivacy:
             return String(localized: "settings.page.dataPrivacy.helper", defaultValue: "clear local traces and choose what leaves the machine.")
         case .advanced:
@@ -4290,13 +4341,17 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
     var iconName: String {
         switch self {
         case .general: return "gearshape"
+        // C11-14: matches the per-pane "A" button — "A in a circle" SF Symbol.
+        // The visual rhyme between the sidebar nav and the in-pane button
+        // teaches the operator what the A button is for.
+        case .agents: return "a.circle"
         case .appearance: return "paintpalette"
         case .workspaceSidebar: return "sidebar.left"
         case .browser: return "globe"
         case .notifications: return "bell"
         case .input: return "text.cursor"
         case .keyboardShortcuts: return "keyboard"
-        case .agentsAutomation: return "point.3.connected.trianglepath.dotted"
+        case .automation: return "point.3.connected.trianglepath.dotted"
         case .dataPrivacy: return "lock.shield"
         case .advanced: return "slider.horizontal.3"
         }
@@ -4310,6 +4365,8 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
             return .input
         case .keyboardShortcuts:
             return .keyboardShortcuts
+        case .aiUsage:
+            return .agents
         }
     }
 }
@@ -4330,8 +4387,6 @@ struct SettingsView: View {
     @AppStorage(SocketControlSettings.appStorageKey) private var socketControlMode = SocketControlSettings.defaultMode.rawValue
     @AppStorage(ClaudeCodeIntegrationSettings.hooksEnabledKey)
     private var claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
-    @AppStorage(AgentLauncherSettings.kindKey)
-    private var agentLauncherKindRaw = AgentLauncherSettings.defaultKind.rawValue
     @AppStorage(TelemetrySettings.sendAnonymousTelemetryKey)
     private var sendAnonymousTelemetry = TelemetrySettings.defaultSendAnonymousTelemetry
     @AppStorage("cmuxPortBase") private var cmuxPortBase = 9100
@@ -4356,6 +4411,7 @@ struct SettingsView: View {
     @AppStorage(NotificationBadgeSettings.dockBadgeEnabledKey) private var notificationDockBadgeEnabled = NotificationBadgeSettings.defaultDockBadgeEnabled
     @AppStorage(NotificationPaneRingSettings.enabledKey) private var notificationPaneRingEnabled = NotificationPaneRingSettings.defaultEnabled
     @AppStorage(NotificationPaneFlashSettings.enabledKey) private var notificationPaneFlashEnabled = NotificationPaneFlashSettings.defaultEnabled
+    @AppStorage(NotificationFlashDurationSettings.storageKey) private var notificationFlashDurationMs: Int = NotificationFlashDurationSettings.defaultMs
     @AppStorage(MenuBarExtraSettings.showInMenuBarKey) private var showMenuBarExtra = MenuBarExtraSettings.defaultShowInMenuBar
     @AppStorage(QuitWarningSettings.warnBeforeQuitKey) private var warnBeforeQuitShortcut = QuitWarningSettings.defaultWarnBeforeQuit
     @AppStorage(CommandPaletteRenameSelectionSettings.selectAllOnFocusKey)
@@ -4375,6 +4431,10 @@ struct SettingsView: View {
     @AppStorage(SidebarBranchLayoutSettings.key) private var sidebarBranchVerticalLayout = SidebarBranchLayoutSettings.defaultVerticalLayout
     @AppStorage(SidebarActiveTabIndicatorSettings.styleKey)
     private var sidebarActiveTabIndicatorStyle = SidebarActiveTabIndicatorSettings.defaultStyle.rawValue
+    @AppStorage(ChromeScaleSettings.presetKey)
+    private var chromeScalePresetRaw = ChromeScaleSettings.defaultPreset.rawValue
+    @AppStorage(ChromeScaleSettings.customMultiplierKey)
+    private var chromeScaleCustomMultiplier: Double = Double(ChromeScaleSettings.defaultCustomMultiplier)
     @AppStorage("sidebarShowBranchDirectory") private var sidebarShowBranchDirectory = true
     @AppStorage("sidebarShowPullRequest") private var sidebarShowPullRequest = true
     @AppStorage(BrowserLinkOpenSettings.openSidebarPullRequestLinksInCmuxBrowserKey)
@@ -4417,6 +4477,15 @@ struct SettingsView: View {
     @State private var isResettingSettings = false
     @State private var workspaceTabDefaultEntries = WorkspaceTabColorSettings.defaultPaletteWithOverrides()
     @State private var workspaceTabCustomColors = WorkspaceTabColorSettings.customColors()
+
+    @StateObject private var aiUsageStore = AIUsageAccountStore.shared
+    @StateObject private var aiUsagePoller = AIUsagePoller.shared
+    @StateObject private var aiUsageColorSettings = AIUsageColorSettings.shared
+    @State private var aiUsageEditorRequest: AIUsageEditorRequest?
+    @State private var aiUsageAccountToRemove: AIUsageAccount?
+    @State private var showAIUsageRemoveConfirmation = false
+    @State private var aiUsageRemoveError: String?
+    @State private var showAIUsageRemoveError = false
 
     private var selectedWorkspacePlacement: NewWorkspacePlacement {
         NewWorkspacePlacement(rawValue: newWorkspacePlacement) ?? WorkspacePlacementSettings.defaultPlacement
@@ -4952,6 +5021,81 @@ struct SettingsView: View {
         } message: {
             Text(notificationCustomSoundErrorAlertMessage)
         }
+        .sheet(item: $aiUsageEditorRequest) { request in
+            AIUsageEditorSheet(
+                provider: request.provider,
+                editingAccount: request.account,
+                onClose: { aiUsageEditorRequest = nil }
+            )
+        }
+        .confirmationDialog(
+            String(
+                localized: "aiusage.remove.confirm.title",
+                defaultValue: "Remove this account?"
+            ),
+            isPresented: $showAIUsageRemoveConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(
+                String(
+                    localized: "aiusage.remove.confirm.action",
+                    defaultValue: "Remove"
+                ),
+                role: .destructive
+            ) {
+                guard let target = aiUsageAccountToRemove else { return }
+                Task { @MainActor in
+                    do {
+                        try await aiUsageStore.remove(id: target.id)
+                    } catch let error as AIUsageStoreError {
+                        aiUsageRemoveError = error.errorDescription
+                        showAIUsageRemoveError = true
+                    } catch let error as LocalizedError {
+                        aiUsageRemoveError = error.errorDescription
+                        showAIUsageRemoveError = true
+                    } catch {
+                        aiUsageRemoveError = String(
+                            localized: "aiusage.remove.error.unknown",
+                            defaultValue: "An unknown error occurred."
+                        )
+                        showAIUsageRemoveError = true
+                    }
+                    aiUsageAccountToRemove = nil
+                }
+            }
+            Button(
+                String(
+                    localized: "aiusage.remove.cancel",
+                    defaultValue: "Cancel"
+                ),
+                role: .cancel
+            ) {
+                aiUsageAccountToRemove = nil
+            }
+        } message: {
+            Text(String(
+                localized: "aiusage.remove.confirm.body",
+                defaultValue: "The saved credentials will be deleted from Keychain."
+            ))
+        }
+        .alert(
+            String(
+                localized: "aiusage.remove.error.title",
+                defaultValue: "Could not remove account"
+            ),
+            isPresented: $showAIUsageRemoveError
+        ) {
+            Button(String(
+                localized: "aiusage.remove.error.ok",
+                defaultValue: "OK"
+            )) {
+                aiUsageRemoveError = nil
+            }
+        } message: {
+            if let aiUsageRemoveError {
+                Text(aiUsageRemoveError)
+            }
+        }
     }
 
     @ViewBuilder
@@ -4959,6 +5103,8 @@ struct SettingsView: View {
         switch selectedPage {
         case .general:
             generalSettingsPage
+        case .agents:
+            agentsSettingsPage
         case .appearance:
             appearanceSettingsPage
         case .workspaceSidebar:
@@ -4971,8 +5117,8 @@ struct SettingsView: View {
             inputSettingsPage
         case .keyboardShortcuts:
             keyboardShortcutSettingsPage
-        case .agentsAutomation:
-            agentsAutomationSettingsPage
+        case .automation:
+            automationSettingsPage
         case .dataPrivacy:
             dataPrivacySettingsPage
         case .advanced:
@@ -5037,6 +5183,48 @@ struct SettingsView: View {
             SettingsCardDivider()
 
             SettingsCardNote(String(localized: "settings.appearance.c11Theme.note", defaultValue: "c11 theme changes app chrome only; Ghostty terminal themes stay untouched."))
+        }
+
+        SettingsSectionHeader(title: String(localized: "settings.section.chromeScale", defaultValue: "App Chrome UI Scale"))
+        SettingsCard {
+            SettingsPickerRow(
+                String(localized: "settings.chromeScale.title", defaultValue: "App Chrome UI Scale"),
+                subtitle: String(
+                    localized: "settings.chromeScale.subtitle",
+                    defaultValue: "Scale c11 sidebar text and surface tab strip without changing terminal font size."
+                ),
+                controlWidth: pickerColumnWidth,
+                selection: $chromeScalePresetRaw
+            ) {
+                ForEach(ChromeScaleSettings.Preset.allCases) { preset in
+                    Text(preset.displayName).tag(preset.rawValue)
+                }
+            }
+
+            if ChromeScaleSettings.preset(for: chromeScalePresetRaw) == .custom {
+                SettingsCardDivider()
+                SettingsCardRow(
+                    String(localized: "settings.chromeScale.custom.label", defaultValue: "Custom Multiplier"),
+                    subtitle: String(
+                        localized: "settings.chromeScale.custom.subtitle",
+                        defaultValue: "Drag to fine-tune scale. Range 0.50× to 3.00×."
+                    )
+                ) {
+                    HStack(spacing: 8) {
+                        Slider(
+                            value: $chromeScaleCustomMultiplier,
+                            in: Double(ChromeScaleSettings.customMultiplierRange.lowerBound)
+                                ... Double(ChromeScaleSettings.customMultiplierRange.upperBound),
+                            step: 0.05
+                        )
+                        Text(String(format: "%.2f×", chromeScaleCustomMultiplier))
+                            .font(.caption)
+                            .monospacedDigit()
+                            .frame(width: 56, alignment: .trailing)
+                    }
+                    .frame(width: pickerColumnWidth)
+                }
+            }
         }
 
         SettingsSectionHeader(title: String(localized: "settings.section.workspaceColors", defaultValue: "Workspace Colors"))
@@ -5301,8 +5489,18 @@ struct SettingsView: View {
             SettingsCardDivider()
 
             SettingsCardRow(
-                String(localized: "settings.app.showBranchDirectory", defaultValue: "Show Branch + Directory in Sidebar"),
-                subtitle: String(localized: "settings.app.showBranchDirectory.subtitle", defaultValue: "Show the git branch and working directory row.")
+                // C11-104 v2 — relabeled. The toggle key
+                // `sidebarShowBranchDirectory` is preserved so existing
+                // user prefs survive the migration; the surface it gates
+                // is now the worktree+branch chip row.
+                String(
+                    localized: "settings.app.showWorktreeBranchChips",
+                    defaultValue: "Show worktree + branch chips in sidebar"
+                ),
+                subtitle: String(
+                    localized: "settings.app.showWorktreeBranchChips.subtitle",
+                    defaultValue: "Render worktree (colored-dot prefix) and branch chips on each workspace row — derived from cwd and gitfs."
+                )
             ) {
                 Toggle("", isOn: $sidebarShowBranchDirectory)
                     .labelsHidden()
@@ -5684,6 +5882,40 @@ struct SettingsView: View {
                         String(localized: "settings.notifications.paneFlash.title", defaultValue: "Pane Flash")
                     )
             }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                String(localized: "settings.notifications.flashDuration.title", defaultValue: "Flash Duration"),
+                subtitle: String(localized: "settings.notifications.flashDuration.subtitle", defaultValue: "How long the flash pulse lasts before fading.")
+            ) {
+                HStack(spacing: 8) {
+                    Slider(
+                        value: Binding<Double>(
+                            get: { Double(notificationFlashDurationMs) },
+                            set: { newValue in
+                                let clamped = min(
+                                    Double(NotificationFlashDurationSettings.maxMs),
+                                    max(Double(NotificationFlashDurationSettings.minMs), newValue)
+                                )
+                                notificationFlashDurationMs = Int((clamped / 100.0).rounded()) * 100
+                            }
+                        ),
+                        in: Double(NotificationFlashDurationSettings.minMs)...Double(NotificationFlashDurationSettings.maxMs),
+                        step: 100
+                    )
+                    .controlSize(.small)
+                    .frame(width: 140)
+                    .accessibilityLabel(
+                        String(localized: "settings.notifications.flashDuration.title", defaultValue: "Flash Duration")
+                    )
+                    Text(String(format: String(localized: "settings.notifications.flashDuration.unit.ms", defaultValue: "%d ms"), notificationFlashDurationMs))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .frame(minWidth: 56, alignment: .trailing)
+                }
+            }
         }
 
         SettingsSectionHeader(title: String(localized: "settings.section.systemSignals", defaultValue: "System Signals"))
@@ -5952,36 +6184,47 @@ struct SettingsView: View {
             .accessibilityIdentifier("ShortcutRecordingHint")
     }
 
+    // C11-14: Agents gets its own Settings page. c11 skills install first
+    // (they're what makes the agents actually understand c11); default agent
+    // controls what the per-pane A button launches.
     @ViewBuilder
-    private var agentsAutomationSettingsPage: some View {
-        SettingsSectionHeader(title: String(localized: "settings.section.agentSkills", defaultValue: "Agent Skills"))
+    private var agentsSettingsPage: some View {
+        AIUsageSettingsSection(
+            store: aiUsageStore,
+            poller: aiUsagePoller,
+            colorSettings: aiUsageColorSettings,
+            editorRequest: $aiUsageEditorRequest,
+            accountToRemove: $aiUsageAccountToRemove,
+            showRemoveConfirmation: $showAIUsageRemoveConfirmation
+        )
+        .id(SettingsNavigationTarget.aiUsage)
+
+        SettingsSectionHeader(title: String(localized: "settings.section.c11Skills", defaultValue: "c11 skills"))
+        SettingsCardNote(String(
+            localized: "settings.c11Skills.note",
+            defaultValue: "c11's skill files install into each agent's skill folder (Claude Code, Codex, …) with your approval. linked folders are shown as shared so removing once cannot silently affect another agent."
+        ))
         SettingsCard {
             AgentSkillsSettingsSection()
         }
-        SettingsCardNote(String(
-            localized: "settings.agentSkills.note",
-            defaultValue: "c11 installs its skill files into detected agent skill folders only with your approval. Linked skill folders are shown as shared so one remove action cannot silently affect another agent."
+
+        SettingsSectionHeader(title: String(
+            localized: "settings.section.defaultAgent",
+            defaultValue: "default agent"
         ))
-
-        SettingsSectionHeader(title: String(localized: "settings.section.agentLauncher", defaultValue: "Agent Launcher Button"))
+        SettingsCardNote(String(
+            localized: "settings.defaultAgent.note",
+            defaultValue: "the A button on every pane launches this. new terminal still opens bash. drop a `.c11/agents.json` in any repo to override these settings for terminals opened there."
+        ))
         SettingsCard {
-            SettingsPickerRow(
-                String(localized: "settings.agentLauncher.kind", defaultValue: "Launch Agent"),
-                subtitle: String(localized: "settings.agentLauncher.kind.subtitle", defaultValue: "The \"A\" button in each pane's tab bar spawns a new terminal and runs this agent."),
-                controlWidth: pickerColumnWidth,
-                selection: $agentLauncherKindRaw,
-                accessibilityId: "SettingsAgentLauncherKindPicker"
-            ) {
-                ForEach(AgentLauncherSettings.Kind.allCases) { kind in
-                    Text(kind.displayName).tag(kind.rawValue)
-                }
-            }
-
-            SettingsCardDivider()
-
-            SettingsCardNote(String(localized: "settings.agentLauncher.note", defaultValue: "The agent runs as a child of the new terminal's login shell, so quitting the agent leaves the shell available."))
+            DefaultAgentSettingsSection()
         }
+    }
 
+    // C11-14: Automation page now hosts the permissions + socket-access +
+    // integrations sections that used to share a page with Agents.
+    @ViewBuilder
+    private var automationSettingsPage: some View {
         SettingsSectionHeader(title: String(
             localized: "settings.section.permissions",
             defaultValue: "Permissions"
@@ -6309,6 +6552,7 @@ struct SettingsView: View {
         textBoxShortcutBehavior = TextBoxInputSettings.defaultShortcutBehavior.rawValue
         WorkspaceTabColorSettings.reset()
         reloadWorkspaceTabColorSettings()
+        AIUsageColorSettings.shared.resetToDefaults()
         shortcutResetToken = UUID()
         DispatchQueue.main.async { isResettingSettings = false }
     }
@@ -6388,7 +6632,7 @@ private struct SettingsTitleLeadingInsetReader: NSViewRepresentable {
     }
 }
 
-private struct SettingsSectionHeader: View {
+struct SettingsSectionHeader: View {
     let title: String
 
     var body: some View {
@@ -6400,7 +6644,7 @@ private struct SettingsSectionHeader: View {
     }
 }
 
-private struct SettingsCard<Content: View>: View {
+struct SettingsCard<Content: View>: View {
     @ViewBuilder let content: Content
 
     init(@ViewBuilder content: () -> Content) {
@@ -6422,7 +6666,7 @@ private struct SettingsCard<Content: View>: View {
     }
 }
 
-private struct SettingsCardRow<Trailing: View>: View {
+struct SettingsCardRow<Trailing: View>: View {
     let title: String
     let subtitle: String?
     let controlWidth: CGFloat?
@@ -6538,7 +6782,7 @@ private extension View {
     }
 }
 
-private struct SettingsCardDivider: View {
+struct SettingsCardDivider: View {
     var body: some View {
         Rectangle()
             .fill(Color(nsColor: NSColor.separatorColor).opacity(0.5))

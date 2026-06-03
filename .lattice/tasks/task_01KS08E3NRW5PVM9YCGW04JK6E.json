@@ -1,0 +1,72 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": null,
+  "created_at": "2026-05-19T13:57:33Z",
+  "created_by": {
+    "agent_type": "delegator",
+    "base_name": "C11-106-D1",
+    "framework": "claude-code",
+    "model": "claude-opus-4-7",
+    "name": "C11-106-D1-1",
+    "serial": 1,
+    "session": "sess_01KS06SSN5BGBQV8PX13YQV11M"
+  },
+  "custom_fields": {},
+  "description": "Deferred from C11-104 (PR #181) as v2 deferral item I5, and from C11-106 plan-review M5.\n\n## Problem\n\nOn workspace restore from a snapshot, c11 re-paints surfaces with their last known title, cwd, metadata, etc. But for the worktree + branch sidebar chips that landed in PR #181, `panelGitContexts` starts empty on restore \u2014 the chips are blank until the next probe completes (typically fast, but visible).\n\nThe v2 SPEC's AC19 specified the warm-path behavior: snapshotted `gitBranch` (and the new worktree-derived metadata) should paint initially, then the deriver runs in the background and updates the chip if the value has changed.\n\n## Scope\n\n- Touches `Workspace.swift` snapshot capture/restore code paths and `WorkspacePlanCapture.swift`.\n- Decide what to snapshot: only `gitBranch` (current state) or also the `worktree` derived metadata.\n- Decide TTL / staleness policy: do we paint snapshotted values forever-stale, or skip paint if snapshot is > N hours old?\n- Tests: restore from a snapshot containing `branch`/`worktree` derived metadata; assert chip paints before deriver completes; assert deriver result overwrites if changed.\n\n## References\n\n- C11-104 (parent): task_01KRYWXX6ECSCVRGFTYYA594HK\n- PR #181: https://github.com/Stage-11-Agentics/c11/pull/181\n- C11-104 validation report AC19 (FAIL): .lattice/orchestration/c11-104/validation-report.md\n- C11-106 plan-review pack M5: .lattice/orchestration/c11-106/c11-106-plan-review-pack-2026-05-19T0935/synthesis-action.md\n\n## Out of scope\n\n- The general 'derived metadata snapshot exclusion' policy is already in place per AC18 (derived keys are filtered from snapshot capture). This ticket is about the *exception* for git context on restore.\n- Anything that would change the user-visible non-restore behavior of the chips.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KS08E3NRW5PVM9YCGW04JK6E",
+  "last_event_id": "ev_01KS08EAH4DKBR08N86HXH5CWX",
+  "last_status_changed_at": "2026-05-19T13:57:33Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-05-19T13:57:40Z",
+      "created_by": {
+        "agent_type": "delegator",
+        "base_name": "C11-106-D1",
+        "framework": "claude-code",
+        "model": "claude-opus-4-7",
+        "name": "C11-106-D1-1",
+        "serial": 1,
+        "session": "sess_01KS06SSN5BGBQV8PX13YQV11M"
+      },
+      "note": null,
+      "target_task_id": "task_01KRYWXX6ECSCVRGFTYYA594HK",
+      "type": "spawned_by"
+    },
+    {
+      "created_at": "2026-05-19T13:57:40Z",
+      "created_by": {
+        "agent_type": "delegator",
+        "base_name": "C11-106-D1",
+        "framework": "claude-code",
+        "model": "claude-opus-4-7",
+        "name": "C11-106-D1-1",
+        "serial": 1,
+        "session": "sess_01KS06SSN5BGBQV8PX13YQV11M"
+      },
+      "note": null,
+      "target_task_id": "task_01KS06C8QZ43D6NH203QFE3SMQ",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-107",
+  "status": "backlog",
+  "tags": [
+    "ui",
+    "sidebar",
+    "metadata",
+    "worktree",
+    "follow-up"
+  ],
+  "title": "C11-104 follow-up: restore-warmpath snapshot pre-paint for sidebar chips",
+  "type": "task",
+  "updated_at": "2026-05-19T13:57:40Z",
+  "urgency": null
+}

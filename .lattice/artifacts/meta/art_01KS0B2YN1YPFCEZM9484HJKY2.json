@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-19T14:43:53Z",
+  "created_by": "agent:claude-cli",
+  "custom_fields": {},
+  "id": "art_01KS0B2YN1YPFCEZM9484HJKY2",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KS0B2YN1YPFCEZM9484HJKY2.md",
+    "size_bytes": 781
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Shipped as PR #185 (commit e34006e69 + skill-timelessness fixup d4dcb6803). c11 send auto-submits by default; --no-submit preserves the original type-without-execute behavior. Server: v2SurfaceSendTex",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

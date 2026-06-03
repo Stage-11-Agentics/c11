@@ -6,9 +6,7 @@ description: Browser automation for c11 browser surfaces (WKWebView-backed). Use
 
 # c11 Browser Automation
 
-Use this skill for browser tasks inside c11 webviews. c11 browser surfaces are a native surface type — scriptable alongside terminals and markdown viewers in the same workspace, from the same `c11` CLI. The binary is `c11`.
-
-Prefer this over Chrome MCP when running inside c11: lighter, integrated into the workspace, no stray Chrome windows.
+Use this skill for browser tasks inside c11 webviews. Browser surfaces are a native surface type, scriptable alongside terminals and markdown viewers from the same `c11` CLI. Prefer this over Chrome MCP whenever c11 is running: lighter, integrated, no stray Chrome windows.
 
 ## Core Workflow
 
@@ -45,6 +43,7 @@ Notes:
 - CLI output defaults to short refs (`surface:N`, `pane:N`, `workspace:N`, `window:N`).
 - UUIDs are still accepted on input; only request UUID output when needed (`--id-format uuids|both`).
 - Keep using one `surface:N` per task unless you intentionally switch.
+- **Default to a tab in the existing browser pane.** If the workspace already has a browser pane, open new pages as tabs inside it rather than spawning a new browser pane — browsers are tabbed by default, and a fresh pane each time is the awkward interaction to avoid. Find the browser pane in `c11 tree --json` and add the tab with `c11 new-surface --type browser --url <url> --pane <browser-pane-ref>`. Open a new browser pane (`c11 new-pane --type browser`) only when none exists yet, or when the operator explicitly wants pages side by side. `c11 browser open` reuses an existing browser surface when one is available.
 
 ## Wait Support
 

@@ -1,0 +1,39 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": null,
+  "created_at": "2026-05-18T20:31:57Z",
+  "created_by": "agent:claude-opus-4-7",
+  "custom_fields": {},
+  "description": "Make `xcodebuild test -scheme c11-unit` safe to run on the operator's Hyperion without stomping their primary c11. Parent: C11-98.\n\n**Root cause** (from audit): the XCTest host launches an untagged `c11 DEV.app` whose bundle id is `com.stage11.c11.debug`. `SocketControlSettings.socketPath()` resolves that to `/tmp/c11-debug.sock` \u2014 the same path any debug build the operator is running uses. The test host's `applicationDidFinishLaunching` calls `TerminalController.shared.start(socketPath: ...)` at `Sources/AppDelegate.swift:2903-2916` under XCTest, binding (and on teardown, unlinking) that socket.\n\n**Changes**\n1. **Runtime guard** in `Sources/SocketControlSettings.swift:438-462`. After existing branches: if `XCTestConfigurationFilePath` is in env and the resolver would return `/tmp/c11-debug.sock`, return `/tmp/c11-test-\\(getpid()).sock` instead. ~6 lines + a test in `c11LogicTests`.\n2. **Scheme env var** in `GhosttyTabs.xcodeproj/xcshareddata/xcschemes/c11-unit.xcscheme` TestAction:\n   ```xml\n   <EnvironmentVariables>\n     <EnvironmentVariable key=\"CMUX_TAG\" value=\"local-xctest\" isEnabled=\"YES\"/>\n   </EnvironmentVariables>\n   ```\n   Belt-and-braces; self-documents the isolation.\n3. **Wrapper script** `scripts/test-unit-local.sh` (recipe in audit section 6): exports `CMUX_SOCKET_PATH=/tmp/c11-test-${USER}-$$.sock`, `CMUX_ALLOW_SOCKET_OVERRIDE=1`, `CMUX_TAG=xctest-${USER}-$$`, then execs `xcodebuild test`.\n4. **Drop the rule.** Update `code/c11/CLAUDE.md` to remove \"Don't run xcodebuild test on c11 locally\" + the PR #164 reference. Replace with: \"Use `scripts/test-unit-local.sh` for local c11-unit iteration.\"\n\n**Acceptance**\n- Operator can run `scripts/test-unit-local.sh` on Hyperion with `/Applications/c11.app` *and* a `c11 DEV.app` running, and neither dies\n- The new c11LogicTests case verifies the socket path is per-PID under XCTest\n- CLAUDE.md no longer mentions the prohibition\n\n**Not blocking** the stabilization ticket but should land before it; lets the stabilization owner iterate locally.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KRYCKJ3KX94D107R2ST9K5AV",
+  "last_event_id": "ev_01KRYD575GQPPTZV0MEHE3P7BE",
+  "last_status_changed_at": "2026-05-18T20:31:57Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-05-18T20:32:39Z",
+      "created_by": "agent:claude-opus-4-7",
+      "note": null,
+      "target_task_id": "task_01KRYCJGPG13GS6H01TGNH1V8H",
+      "type": "subtask_of"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-100",
+  "status": "backlog",
+  "tags": [
+    "ci",
+    "developer-experience",
+    "socket"
+  ],
+  "title": "Local test runnability: socket isolation under XCTest",
+  "type": "task",
+  "updated_at": "2026-05-18T20:41:36Z",
+  "urgency": null
+}

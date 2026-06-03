@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-23T00:51:18Z",
+  "created_by": "agent:claude-c11-111-plan-reviewer",
+  "custom_fields": {},
+  "id": "art_01KS951AQKH3689XHP626A6E9W",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KS951AQKH3689XHP626A6E9W.md",
+    "size_bytes": 4403
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Inline: review",
+  "token_usage": null,
+  "type": "note"
+}

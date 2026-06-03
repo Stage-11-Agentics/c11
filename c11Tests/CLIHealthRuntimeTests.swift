@@ -254,7 +254,18 @@ final class CLIHealthRuntimeTests: XCTestCase {
         let dir = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("c11-health-runtime-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
+        // Resolve `/var/folders/...` → `/private/var/folders/...` via libc's
+        // `realpath` so the path passed to `redactHomePath(_:home:)` matches
+        // the resolved form FileManager enumeration returns for the same
+        // files. Neither `URL.resolvingSymlinksInPath()` nor
+        // `NSString.resolvingSymlinksInPath` resolves macOS's top-level `/var`
+        // → `/private/var` symlink; only realpath(3) does the kernel-level
+        // lookup.
+        guard let resolved = dir.path.withCString({ realpath($0, nil) }) else {
+            return dir
+        }
+        defer { free(resolved) }
+        return URL(fileURLWithPath: String(cString: resolved), isDirectory: true)
     }
 
     private func scaffoldAllRails(in home: URL) throws {

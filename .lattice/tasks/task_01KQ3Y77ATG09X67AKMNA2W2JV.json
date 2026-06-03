@@ -18,15 +18,15 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KQ3Y77ATG09X67AKMNA2W2JV",
-  "last_event_id": "ev_01KQ3Y77AV3TK31S4TBNXSXXFX",
-  "last_status_changed_at": "2026-04-26T03:44:36Z",
+  "last_event_id": "ev_01KT525WQHN8N97QBW4XJCJZ18",
+  "last_status_changed_at": "2026-06-02T21:00:06Z",
   "linked_files": [],
   "priority": "high",
   "relationships_out": [],
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-18",
-  "status": "backlog",
+  "status": "review",
   "tags": [
     "ui",
     "portal",
@@ -35,6 +35,6 @@
   ],
   "title": "Ghostty surface duplicated/overdraws above pane bounds during portal sync",
   "type": "bug",
-  "updated_at": "2026-04-26T03:44:36Z",
+  "updated_at": "2026-06-02T21:00:06Z",
   "urgency": null
 }

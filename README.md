@@ -13,9 +13,11 @@
 </p>
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/e0211428-1021-428c-8217-813a69d7d513" controls muted playsinline width="85%"></video>
+  <a href="https://videos.stage11.dev/c11-intro.mp4">
+    <img src="./docs/assets/c11-intro-poster.png" alt="watch the c11 intro video (90 seconds)" width="85%" />
+  </a>
 </p>
-<p align="center"><sub><i>ninety seconds inside c11. composing terminals, agents, browsers, and markdown surfaces into one workspace.</i></sub></p>
+<p align="center"><sub><i>ninety seconds inside c11. composing terminals, agents, browsers, and markdown surfaces into one workspace. <a href="https://videos.stage11.dev/c11-intro.mp4">click to play</a>.</i></sub></p>
 
 ---
 
@@ -76,9 +78,11 @@ agents don't just run inside c11. they reshape your spatial interface as they wo
 the operator isn't managing a layout. the agents aren't waiting for instructions. both are first-class. both carve out the space they need and announce themselves. c11 is unopinionated about which side originates which move: splits, resizes, spawns, metadata writes are peers.
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/21ca3700-a6be-44ad-9f5e-add380d940b3" controls muted playsinline width="85%"></video>
+  <a href="https://videos.stage11.dev/c11-reshape.mp4">
+    <img src="./docs/assets/c11-reshape-poster.png" alt="watch c11 reshape itself around the work" width="85%" />
+  </a>
 </p>
-<p align="center"><sub><i>splits, spawns, surface manifests, sidebar telemetry. the workspace reshapes around the work.</i></sub></p>
+<p align="center"><sub><i>splits, spawns, surface manifests, sidebar telemetry. the workspace reshapes around the work. <a href="https://videos.stage11.dev/c11-reshape.mp4">click to play</a>.</i></sub></p>
 
 ### example prompts to Spark the Light.
 

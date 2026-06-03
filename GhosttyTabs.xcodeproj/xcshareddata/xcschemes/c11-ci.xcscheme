@@ -8,12 +8,18 @@
       <BuildActionEntry buildForTesting="YES" buildForRunning="NO" buildForProfiling="NO" buildForArchiving="NO" buildForAnalyzing="NO">
         <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="F1000004A1B2C3D4E5F60718" BuildableName="c11Tests.xctest" BlueprintName="c11Tests" ReferencedContainer="container:GhosttyTabs.xcodeproj"/>
       </BuildActionEntry>
+      <BuildActionEntry buildForTesting="YES" buildForRunning="NO" buildForProfiling="NO" buildForArchiving="NO" buildForAnalyzing="NO">
+        <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="CD94D227305EFBE6181A6A82" BuildableName="c11LogicTests.xctest" BlueprintName="c11LogicTests" ReferencedContainer="container:GhosttyTabs.xcodeproj"/>
+      </BuildActionEntry>
     </BuildActionEntries>
   </BuildAction>
   <TestAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.DebuggerFoundation.Launcher.LLDB" shouldUseLaunchSchemeArgsEnv="YES">
     <Testables>
       <TestableReference skipped="NO">
         <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="F1000004A1B2C3D4E5F60718" BuildableName="c11Tests.xctest" BlueprintName="c11Tests" ReferencedContainer="container:GhosttyTabs.xcodeproj"/>
+      </TestableReference>
+      <TestableReference skipped="NO">
+        <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="CD94D227305EFBE6181A6A82" BuildableName="c11LogicTests.xctest" BlueprintName="c11LogicTests" ReferencedContainer="container:GhosttyTabs.xcodeproj"/>
       </TestableReference>
       <TestableReference skipped="NO">
         <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="CB450DF0F0B3839599082C4D" BuildableName="c11UITests.xctest" BlueprintName="c11UITests" ReferencedContainer="container:GhosttyTabs.xcodeproj"/>

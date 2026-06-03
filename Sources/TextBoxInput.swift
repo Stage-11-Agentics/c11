@@ -287,7 +287,9 @@ private enum TextBoxInputViewLayout {
 }
 
 /// Behavioral constants for TextBox (timing, thresholds, etc.).
-private enum TextBoxBehavior {
+/// `internal` so siblings like `TerminalSurface.sendSubmitFormText` can
+/// reuse the same paste-processing delay rather than redeclaring it.
+enum TextBoxBehavior {
     /// Delay (ms) between sending pasted text and the Return key.
     /// Apps using bracket paste mode (zsh, Claude CLI) need time to process
     /// the paste before receiving Return. 50ms/100ms are insufficient;

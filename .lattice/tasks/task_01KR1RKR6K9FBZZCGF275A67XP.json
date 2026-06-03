@@ -1,0 +1,45 @@
+{
+  "assigned_to": "agent:claude-opus-4-7-tcc-mig",
+  "branch_links": [],
+  "comment_count": 5,
+  "complexity": null,
+  "created_at": "2026-05-07T17:43:48Z",
+  "created_by": "agent:claude-opus-4-7-tcc-mig",
+  "custom_fields": {},
+  "description": "## Problem\n\n`AppDelegate.migrateLegacyPreferencesIfNeeded` (Sources/AppDelegate.swift:2314) copies all keys from legacy bundle ids (`ai.manaflow.cmuxterm`, `com.cmuxterm.app`) into the current bundle's UserDefaults on first launch. On a dev machine with cmuxterm history, this carries `cmuxWelcomeShown=1` into the c11 debug bundle (`com.stage11.c11.debug`).\n\nThen `TCCPrimer.migrateExistingUserIfNeeded` (Sources/TCCPrimerView.swift:227) sees `cmuxWelcomeShown=true` + `cmuxTCCPrimerShown=nil` and sets `cmuxTCCPrimerShown=true` \u2014 suppressing the primer on the assumption the user has already navigated TCC dialogs the old way. That assumption is wrong for the test/dev environment.\n\nNet effect: the TCC primer never appears on tagged-build / DEV launches if cmux history exists on the machine. Same masking applies to any first-run UX gated on `cmuxWelcomeShown` (the welcome workspace itself, etc.).\n\nDiscovered by C11-16 Codex Validate (Test 1 FAIL: 'TCC primer did not appear after pre-validation reset and tagged launch'). C11-16 PR #138 documents the chain in its body.\n\n## Fix\n\nGate `migrateLegacyPreferencesIfNeeded` to skip when bundle id is a debug variant (`com.stage11.c11.debug` and any future `com.stage11.c11.debug.<suffix>` pattern). Add `CMUX_DISABLE_LEGACY_MIGRATION=1` env var as an escape hatch for either direction.\n\nReal users run Release (`com.stage11.c11`); they still get the legacy migration. Dev/test runs start with a clean profile.\n\n## Acceptance\n\n- DEV launches do NOT inherit legacy bundle keys; primer presents normally on a machine with cmuxterm history.\n- Release launch behavior unchanged.\n- Unit test for the gate-decision matrix.\n- Build green.\n\n## Out of scope\n\n- Refactor of TCCPrimer.migrateExistingUserIfNeeded itself (the heuristic is correct for its actual inputs).",
+  "done_at": "2026-05-16T18:44:30Z",
+  "evidence_refs": [
+    {
+      "id": "art_01KR1S9XWH0ASVDNFZS2FN6JQ0",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KRS1MVX81A88H1K58D56WZH8",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KR1RKR6K9FBZZCGF275A67XP",
+  "last_event_id": "ev_01KRY5X1J8A7VM0DVPASM23JM7",
+  "last_status_changed_at": "2026-05-16T18:44:30Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-44",
+  "status": "done",
+  "tags": [
+    "tcc",
+    "primer",
+    "bundle-id",
+    "debug",
+    "migration",
+    "follow-up-c11-16"
+  ],
+  "title": "Debug-bundle isolation: legacy-prefs migration masks TCCPrimer + welcome on dev builds",
+  "type": "bug",
+  "updated_at": "2026-05-18T18:34:48Z",
+  "urgency": null
+}

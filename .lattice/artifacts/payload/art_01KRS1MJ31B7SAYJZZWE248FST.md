@@ -1,0 +1,2 @@
+Drain review (human:atin via Claude review-pile drainer):
+PR #139 merged to main 2026-05-14T19:03Z (commit 2e17eca4d). Verified via git log + gh pr view. Workspace-scoped close-confirmation overlay landed at all six trigger sites; legacy NSAlert path removed; translator pass present. Acceptance criteria satisfied by the merged code path.

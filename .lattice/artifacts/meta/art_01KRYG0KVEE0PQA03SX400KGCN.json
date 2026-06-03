@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-18T21:31:31Z",
+  "created_by": "agent:claude-c11-99-d1",
+  "custom_fields": {},
+  "id": "art_01KRYG0KVEE0PQA03SX400KGCN",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KRYG0KVEE0PQA03SX400KGCN.md",
+    "size_bytes": 484
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "inline attachment",
+  "token_usage": null,
+  "type": "note"
+}

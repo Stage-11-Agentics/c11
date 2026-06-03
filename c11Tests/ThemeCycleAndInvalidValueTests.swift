@@ -23,7 +23,7 @@ final class ThemeCycleAndInvalidValueTests: XCTestCase {
         """
 
         let table = try TomlSubsetParser.parse(file: "cycle.toml", source: source)
-        XCTAssertThrowsError(try C11muxTheme.fromToml(table)) { error in
+        XCTAssertThrowsError(try C11Theme.fromToml(table)) { error in
             guard case ThemeLoadError.variableCycle = error else {
                 return XCTFail("expected variableCycle, got \(error)")
             }
@@ -50,7 +50,7 @@ final class ThemeCycleAndInvalidValueTests: XCTestCase {
         """
 
         let table = try TomlSubsetParser.parse(file: "invalid.toml", source: source)
-        XCTAssertThrowsError(try C11muxTheme.fromToml(table)) { error in
+        XCTAssertThrowsError(try C11Theme.fromToml(table)) { error in
             guard case ThemeLoadError.invalidHex = error else {
                 return XCTFail("expected invalidHex, got \(error)")
             }
@@ -77,7 +77,7 @@ final class ThemeCycleAndInvalidValueTests: XCTestCase {
         """
 
         let table = try TomlSubsetParser.parse(file: "unknown-mod.toml", source: source)
-        XCTAssertThrowsError(try C11muxTheme.fromToml(table)) { error in
+        XCTAssertThrowsError(try C11Theme.fromToml(table)) { error in
             guard case ThemeLoadError.variableExpression = error else {
                 return XCTFail("expected variableExpression, got \(error)")
             }
@@ -85,7 +85,7 @@ final class ThemeCycleAndInvalidValueTests: XCTestCase {
     }
 
     func testOpacityValuesClampIntoUnitInterval() throws {
-        var theme = C11muxTheme.fallbackStage11
+        var theme = C11Theme.fallbackStage11
         theme.chrome.sidebar.tintBaseOpacity = 1.5
 
         let snapshot = ResolvedThemeSnapshot(theme: theme)
@@ -103,7 +103,7 @@ final class ThemeCycleAndInvalidValueTests: XCTestCase {
     }
 
     func testThicknessValuesClampToRange() throws {
-        var theme = C11muxTheme.fallbackStage11
+        var theme = C11Theme.fallbackStage11
         theme.chrome.dividers.thicknessPt = -4
         theme.chrome.windowFrame.thicknessPt = 99
 

@@ -43,26 +43,26 @@ Most commands default to the caller's context via env vars — no flags needed w
 
 ## Environment variables
 
-`C11_*` variants are the primary names going forward; the legacy `CMUX_*` names continue to work via dual-read. The table below lists the legacy names because they're still what you'll see exported in most environments today.
+Auto-exported into every c11 surface child process.
 
 | Var | Purpose |
 |-----|---------|
-| `CMUX_WORKSPACE_ID` | Auto-set in c11 terminals; default for `--workspace` |
-| `CMUX_SURFACE_ID` | Auto-set; default for `--surface` |
-| `CMUX_TAB_ID` | Optional alias for tab commands |
-| `CMUX_SOCKET_PATH` | Override socket path (default `/tmp/cmux.sock`; auto-discovers tagged/debug sockets) |
-| `CMUX_SOCKET_PASSWORD` | Socket auth password (if set in Settings) |
-| `CMUX_SHELL_INTEGRATION` | Set to `1` in c11 terminals — use to detect you're inside c11 (also exported as `C11_SHELL_INTEGRATION=1`) |
-| `CMUX_AGENT_TYPE` | Declared agent TUI type (`claude-code`, `codex`, `kimi`, `opencode`, kebab-case custom); read at surface start |
-| `CMUX_AGENT_MODEL` | Declared agent model identifier |
-| `CMUX_AGENT_TASK` | Declared agent task ID |
+| `C11_WORKSPACE_ID` | Auto-set in c11 terminals; default for `--workspace` |
+| `C11_SURFACE_ID` | Auto-set; default for `--surface` |
+| `C11_TAB_ID` | Optional alias for tab commands |
+| `C11_SOCKET_PATH` | Override socket path (auto-discovers tagged/debug sockets) |
+| `C11_SOCKET_PASSWORD` | Socket auth password (if set in Settings) |
+| `C11_SHELL_INTEGRATION` | Set to `1` in c11 terminals — use to detect you're inside c11 |
+| `C11_AGENT_TYPE` | Declared agent TUI type (`claude-code`, `codex`, `kimi`, `opencode`, kebab-case custom); read at surface start |
+| `C11_AGENT_MODEL` | Declared agent model identifier |
+| `C11_AGENT_TASK` | Declared agent task ID |
 
 ## Discovery & state
 
 ```bash
 c11 identify                         # JSON: caller's workspace/surface/pane refs + focused context
 c11 tree                             # Current workspace with ASCII floor plan (default)
-c11 tree --window                    # All workspaces in current window (pre-M8 default)
+c11 tree --window                    # All workspaces in current window
 c11 tree --all                       # Every window
 c11 tree --json                      # Structured JSON with pixel/percent coordinates
 c11 list-workspaces                  # Workspace list (* = selected)
@@ -121,7 +121,7 @@ c11 new-split down --surface surface:10
 `new-surface` does **not** default to the caller's pane. With no `--pane`, it adds the tab to whichever pane is currently *focused* — often **not** the pane your agent is running in. To add a tab to your own pane, read `caller.pane_ref` from `c11 identify` and pass it:
 
 ```bash
-CALLER_PANE=$(c11 identify --surface "$CMUX_SURFACE_ID" | grep -o '"pane_ref" : "pane:[0-9]*"' | head -1 | cut -d'"' -f4)
+CALLER_PANE=$(c11 identify --surface "$C11_SURFACE_ID" | grep -o '"pane_ref" : "pane:[0-9]*"' | head -1 | cut -d'"' -f4)
 c11 new-surface --type terminal --pane "$CALLER_PANE"
 ```
 
@@ -145,20 +145,13 @@ c11 read-screen [--lines <n>] [--scrollback]
 c11 read-screen --workspace workspace:2 --surface surface:3 --lines 50
 
 # Send text to a terminal
-c11 send "echo hello"                # Types text — does NOT submit
-c11 send "npm test\n"                # \n sends Enter, \r also sends Enter, \t sends Tab
-c11 send-key enter                   # Send a keypress directly
-c11 send --workspace workspace:2 --surface surface:3 "ls\n"
+c11 send "echo hello"                # Types text AND submits (default behavior)
+c11 send --no-submit "cd /tmp/"      # Types text only, no Return — for partial-line construction
+c11 send-key enter                   # Send a keypress directly (no text)
+c11 send --workspace workspace:2 --surface surface:3 "ls"
 ```
 
-**`c11 send` does NOT auto-submit.** Include `\n` or call `c11 send-key enter` separately.
-
-**`\n` gotcha from Claude Code's Bash tool:** the newline is stripped before reaching c11. Always send the text, then `send-key enter` as two separate calls:
-
-```bash
-c11 send --workspace $WS --surface $SURF "your command"
-c11 send-key --workspace $WS --surface $SURF enter
-```
+**`c11 send` types the text and submits.** A synthetic Return is dispatched on the same turn as the text, so the receiving TUI sees one user turn. Pass `--no-submit` to type into the prompt without executing — typically to build a partial line across multiple sends, or to stage text before the operator hits Enter manually.
 
 ## Per-surface metadata
 
@@ -182,13 +175,13 @@ c11 set-agent --type opencode --model <model-id>
 ```
 
 - `--type` accepts canonical values (`claude-code`, `codex`, `kimi`, `opencode`) and any kebab-case custom value.
-- Writes land as `source: declare` in the M2 metadata store, overriding heuristic auto-detection but not user-explicit writes.
-- Environment declaration: `CMUX_AGENT_TYPE`, `CMUX_AGENT_MODEL`, `CMUX_AGENT_TASK` in the surface's startup env are read once at surface-child-process start. `C11_*` variants are the primary names going forward; `CMUX_*` still works.
+- Writes land as `source: declare` in the metadata store, overriding heuristic auto-detection but not user-explicit writes.
+- Environment declaration: `C11_AGENT_TYPE`, `C11_AGENT_MODEL`, `C11_AGENT_TASK` in the surface's startup env are read once at surface-child-process start.
 - Clear with `c11 clear-metadata --key terminal_type` (no `c11 unset-agent`).
 
 ## Title & description
 
-Sugar over metadata writes to the canonical `title` and `description` keys. Rendered in the surface's title bar (M7).
+Sugar over metadata writes to the canonical `title` and `description` keys. Rendered in the surface's title bar.
 
 ```bash
 c11 set-title "SIG Delegator — reviewing PR #42"
@@ -248,7 +241,7 @@ Also responds to standard terminal escape sequences: OSC 9, OSC 99, OSC 777.
 
 ```bash
 c11 install claude-code              # Writes hooks into ~/.claude/settings.json
-c11 install codex                    # Installs a PATH shim at ~/.local/bin/cmux-shims/codex
+c11 install codex                    # Installs a PATH shim under ~/.local/bin/
 c11 install opencode
 c11 install kimi
 c11 install --list                   # State of all four TUIs
@@ -265,12 +258,12 @@ Consent is always requested before any write. The installer also installs the c1
 - **"Surface not found"** — target surface was closed or the ref is stale. Run `c11 tree --all` for current refs.
 - **"Surface is not a terminal"** — you used `--surface` without `--workspace`. Always pass both when targeting remote surfaces.
 - **Browser commands fail with "not a browser"** — you're targeting a terminal surface. Find the browser surface ref with `c11 tree` and pass `--surface <ref>`.
-- **Commands do nothing** — check `CMUX_SOCKET_PATH` matches the running instance. Default is `/tmp/cmux.sock`; tagged debug builds use `/tmp/cmux-debug-<tag>.sock`. (`C11_SOCKET_PATH` is the primary name going forward; `CMUX_SOCKET_PATH` still works.)
+- **Commands do nothing** — check `C11_SOCKET_PATH` matches the running instance. Tagged debug builds use a per-tag socket path; the CLI auto-discovers it when launched from a tagged surface.
 - **Surface doesn't respond after creation** — it may not be initialized. Run `c11 select-workspace --workspace workspace:N && sleep 2` to trigger the layout pass.
-- **Sub-agent can't call `c11`** — happens with `claude -p` (headless). Interactive `claude --dangerously-skip-permissions` launched via `c11 send "claude --dangerously-skip-permissions\n"` + `send-key enter` maintains the auth chain.
+- **Sub-agent can't call `c11`** — happens with `claude -p` (headless). Interactive `claude --dangerously-skip-permissions` launched via `c11 send "claude --dangerously-skip-permissions"` maintains the auth chain.
 - **Metadata write returns `applied: false` with `lower_precedence`** — a higher-precedence source already owns that key. See [metadata.md](metadata.md) precedence table.
 
 ## Notes
 
 - c11 is a **local** multiplexer — not a remote session manager. For SSH work, install tmux on the remote.
-- Socket access modes: disabled, c11-spawned processes only (`cmuxOnly`), or all local processes. Check with `c11 capabilities`.
+- Socket access modes: disabled, c11-spawned processes only (`c11Only`), or all local processes. Check with `c11 capabilities`.

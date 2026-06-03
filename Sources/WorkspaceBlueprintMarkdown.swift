@@ -187,7 +187,13 @@ enum WorkspaceBlueprintMarkdown {
         out += "## Layout\n\n"
         out += "```yaml\n"
         out += "layout:\n"
-        out += emitLayoutNode(file.plan.layout, surfaces: file.plan.surfaces, indent: 2, listItem: true)
+        // C11-35: emit list items at indent 4 so the leading dash sits at
+        // column 2 (under `layout:` at column 0). Previously emitted at
+        // indent 2, putting the dash at column 0 — valid compact YAML, but
+        // the in-tree `YAML` subset parser only accepts list items strictly
+        // deeper than their parent key, which collapsed `layout:` to an
+        // empty scalar and failed every `.md` round-trip.
+        out += emitLayoutNode(file.plan.layout, surfaces: file.plan.surfaces, indent: 4, listItem: true)
         out += "```\n"
         return out.data(using: .utf8) ?? Data()
     }

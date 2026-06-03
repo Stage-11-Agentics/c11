@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-02T21:00:03Z",
+  "created_by": "agent:claude-cli",
+  "custom_fields": {},
+  "id": "art_01KT525S7Z222RA3HV7Z09Z2KN",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KT525S7Z222RA3HV7Z09Z2KN.md",
+    "size_bytes": 95
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Reconciliation: PR #186 merged into main; deliverable shipped. Board was stale; moving to done.",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

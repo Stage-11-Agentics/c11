@@ -4,6 +4,249 @@ All notable changes to c11 (and, before the fork, cmux) are documented here.
 
 Note: historical entries below pre-date the `c11mux` → `c11` rename and reference the old binary / cask / artifact / bundle-ID names (`cmux`, `c11mux`, `c11mux-macos.dmg`, `stage-11-agentics/c11mux`, `com.stage11.c11mux`). Those entries are preserved as-is for historical accuracy; see the 0.38.0 section for the rename.
 
+## [Unreleased]
+
+## [0.50.0] - 2026-05-22
+
+Feature release. Headline: **state-aware skill install/update** — the Agent Skills onboarding sheet now keeps a per-(target, skill) dismissal store keyed against the bundled skill's content hash, so a new c11 release that updates a skill's body automatically re-surfaces the affected row instead of staying silenced forever (the v0.49.0 silence-flag bug, fixed for upgraders via a one-shot migration). Alongside it: the New Workspace dialog gets a recents-as-panel redesign with sort and pin, blueprint icons gain letter-labeled cells, the Lattice Orchestrator workflow ships as a first-class installable c11 skill, and `$C11_DEFAULT_AGENT_LAUNCH` stops smuggling the operator's seed prompt into sub-agent launches.
+
+### Added
+
+- **State-aware skill install/update flow.** Replaces v0.47.0's global `cmuxAgentSkillsOnboardingShown` silence flag (which short-circuited `shouldPresent` before the content-drift check could fire) with a per-(target, skill) dismissed-against-hash store. A target's row is suppressed only while every bundled skill's hash matches what was last dismissed; when a new c11 release ships revised skill content, the affected target re-surfaces automatically. A one-shot migration of the legacy flag pre-populates dismissals for skills already `.installedCurrent`, so upgraders from 0.49.0 actually get the fix. Independent "Don't ask again" key (cleared via Help → "Re-enable agent skills install prompts") is the only flag that honors a hard opt-out regardless of content drift. ([#203](https://github.com/Stage-11-Agentics/c11/pull/203))
+- **"Update all" is the default primary action on the install sheet.** Flips to "Update selected" the moment the operator narrows the set. Both actions pass `force: true` so `.installedNoManifest`, `.schemaMismatch`, and local-edits drift all resolve in one click. ([#203](https://github.com/Stage-11-Agentics/c11/pull/203))
+- **Celebratory all-current state when the install sheet is opened manually and nothing needs install.** Friendly header, "Done" primary button, optional "Refresh all" affordance. The Help → "Re-enable agent skills install prompts" entry only appears when the operator has actually silenced something. ([#203](https://github.com/Stage-11-Agentics/c11/pull/203))
+- **Lattice Orchestrator workflow ships as an installable c11 skill.** Lives at `skills/lattice-orchestrator/`, registered in `skills/MANIFEST.json` so it appears alongside c11, c11-browser, c11-markdown, and c11-debug-windows in the Agent Skills install UI. Includes a Preflight section that verifies the substrate (`lattice` on PATH, git repo, concurrent agent surfaces reachable) before the workflow runs, catching missing deps up front instead of mid-Phase-2. ([a27953eac](https://github.com/Stage-11-Agentics/c11/commit/a27953eac))
+- **New-workspace sheet redesign: recents-as-panel.** Recents are now a first-class vertical panel inside the base-directory block — project name, full path, last-opened relative time, open count, and a pin star per row. Sort toggle (Most recent / Most opened) in the footer. Click selects the row, double-click or Return opens immediately with the last-used layout. Arrow ↑/↓ navigate when focus is not in an input. Drag a folder from Finder onto the block to set the base directory. Empty state shows a dashed plus icon with an invitation to browse or drag. Underlying store migrated from the legacy `[String]` UserDefaults key to a `RecentDirectory { path, lastOpenedAt, openCount, pinned }` record; hard cap raised from 8 to 50. ([#201](https://github.com/Stage-11-Agentics/c11/pull/201))
+- **Letter-labeled blueprint cells in a 2×3 grid on the New Workspace sheet.** The blueprint icons now carry single-letter labels and live in a compact 2×3 layout so the picker reads as a deliberate grid rather than a horizontal scroll. ([#201](https://github.com/Stage-11-Agentics/c11/pull/201))
+
+### Changed
+
+- **Lattice Orchestrator skill: three workflow modes per ticket.** The skill now formally enumerates fast-track (inline, no headless reviews — clear root cause, single-file or config-tweak work), inline-full (default for medium work — single delegator session with headless `lattice plan-review` + `lattice code-review` between phases), and sub-agent-full (escalation only — full planner/impl/fix sub-agent dance, reserved for genuinely enormous tickets). Selection criteria live in the skill so the orchestrator picks the right mode per ticket instead of defaulting to sub-agents for every piece of work. ([#204](https://github.com/Stage-11-Agentics/c11/pull/204))
+- **Lattice Orchestrator skill: "build for debuggability" principle.** The Architect now propagates a structured-logs + programmatic-access + legible-failures principle into each project's CLAUDE.md (Step 1.5), so every delegator on every future run starts with that bias instead of having to be told. ([1ff6e07aa](https://github.com/Stage-11-Agentics/c11/commit/1ff6e07aa))
+
+### Fixed
+
+- **`$C11_DEFAULT_AGENT_LAUNCH` no longer concatenates the operator's seed prompt onto the launcher.** The exported value used to expand to `claude --dangerously-skip-permissions 'seed prompt'`, which silently broke the documented sub-agent launch pattern: `c11 send "cd /path && $C11_DEFAULT_AGENT_LAUNCH \"Read /tmp/bootstrap.md...\""` produced a claude command with two positional prompts, and claude keeps only the first — headless orchestrators were shipping the operator's seed instead of the bootstrap. The env var now exports the bare launcher; the AppKit A-button launch path continues to bake the seed in via `ResolvedAgentLaunch.command`, but the two consumers now diverge cleanly. Sibling `$C11_DEFAULT_AGENT_SEED_PROMPT` carries the seed for callers that want to opt-in. ([#202](https://github.com/Stage-11-Agentics/c11/pull/202))
+
+### Thanks to 1 contributor!
+
+- [@BenevolentFutures](https://github.com/BenevolentFutures)
+
+### Built and shipped by
+
+Stage 11 Agentics. Operator:agent, fused.
+
+## [0.49.3] - 2026-05-22
+
+Single-fix patch release: offscreen helper surfaces created via `c11 new-surface --no-focus` now actually start a PTY, instead of silently producing a zombie surface that swallows every `c11 send` byte.
+
+### Fixed
+
+- **`c11 new-surface --no-focus` no longer produces a zombie surface that swallows `c11 send` bytes.** `surface.create` was missing from `focusIntentV2Methods`, so `v2FocusAllowed` clamped `focus` to `false` regardless of the `--no-focus` flag's intent. The tab landed without selection, SwiftUI never mounted the cell, AppKit never moved the view into a window, and `attachToView`'s `view.window != nil` guard kept `ghostty_surface_t` nil — every subsequent `c11 send` queued bytes that never reached a shell. The fix is a minimal port of upstream cmux PR #4233 (`5cb4715a8`): install the view in a borderless, alpha-zero, mouse-ignoring helper window long enough for `ghostty_surface_new` to succeed, then swap to the real portal window when AppKit eventually mounts the view. Unblocks every lattice-orchestrator pattern and every socket-driven script that creates offscreen surfaces. ([#199](https://github.com/Stage-11-Agentics/c11/pull/199))
+
+### Built and shipped by
+
+Stage 11 Agentics. Operator:agent, fused.
+
+## [0.49.2] - 2026-05-21
+
+Single-fix patch release for a Japanese / Chinese IME regression reported against 0.49.x. Korean IME behaviour is unchanged.
+
+### Fixed
+
+- **Japanese / Chinese IME Enter no longer leaks into the underlying TUI.** Confirming a Japanese (Hiragana) or Chinese (Pinyin) IME conversion with Return was forwarding a second Return into the terminal surface, so TUIs like Claude Code interpreted the conversion-confirm as a submit. Root cause: `shouldSendCommittedIMEConfirmKey` was returning `true` for any post-composition Return; it now matches upstream cmux by gating the extra Return on a Korean-only input-source check (Korean two-set IMEs commit+execute in a single Enter; Japanese / Chinese require a second Enter). ([#197](https://github.com/Stage-11-Agentics/c11/pull/197) — thanks [@hummer98](https://github.com/hummer98) for the report and the upstream diff bisection!)
+
+### Thanks to 2 contributors!
+
+- [@BenevolentFutures](https://github.com/BenevolentFutures)
+- [@hummer98](https://github.com/hummer98)
+
+### Built and shipped by
+
+Stage 11 Agentics. Operator:agent, fused.
+
+## [0.49.1] - 2026-05-19
+
+Patch release. Two correctness follow-ups to v0.49.0: a SwiftUI render-thread crash from a `Text + Text` concat path in the workspace chrome, and a restored-session execution bug where `c11 restore` typed the resume command into the recipient surface's prompt but never submitted it.
+
+### Fixed
+
+- **`Text + Text` recursion no longer blows the render-thread stack.** A concat path in the workspace chrome (sidebar + pane interaction card) recursed through SwiftUI's `Text + Text` operator deeply enough to overflow the render thread on some configurations, taking the window down. Switched the construction to a flattened form. ([#195](https://github.com/Stage-11-Agentics/c11/pull/195))
+- **`c11 restore` now actually executes the resume command on restored surfaces.** `TerminalSurface.sendText` wraps every write in bracketed-paste markers (`ESC[200~ … ESC[201~`), so any embedded `\n` or `\r` is treated as data by zsh ZLE / bash readline / TUI raw-mode handlers and never submits. Session restore was typing the `claude --resume <id>` command into the prompt and then leaving it stranded — every restored Claude Code surface came up showing the resume line waiting for the operator to press Enter. The restart-registry executor now dispatches a real Return outside the bracketed-paste sequence so the command actually runs. ([7cb87a5e6](https://github.com/Stage-11-Agentics/c11/commit/7cb87a5e6))
+
+### Built and shipped by
+
+Stage 11 Agentics. Operator:agent, fused.
+
+## [0.49.0] - 2026-05-19
+
+Stability + ergonomics release. Headline: **worktree and branch chips on every workspace's sidebar row** make git context visible at a glance — the operator running parallel worktrees never has to read `cwd` to know which workspace is on which branch. Underneath, the long-running C11-105 mystery is closed out: the c11 CLI socket no longer goes unreachable while the app is alive. State-directory migration from c11mux gets a per-entry merge so mixed-state homes survive. `c11 send` learns to submit by default — agents that drop the `send-key enter` follow-up no longer leave messages stranded in the recipient's input box. Workspace snapshots now persist browser surface URLs across restore. Terminal links pick up an Opt+click escape hatch to the system browser. Update pill opens its popover on the first click. And the close-workspace confirm overlay actually shows up when the target workspace is off-screen.
+
+### Added
+
+- **Worktree and branch sidebar chips on every workspace.** The sidebar surfaces each workspace's current git branch alongside a worktree indicator, color-hinted so worktrees are visually distinct from the main checkout. The operator running parallel worktrees no longer has to read `cwd` to know which workspace is on which branch. ([#181](https://github.com/Stage-11-Agentics/c11/pull/181))
+- **Opt+click on a terminal link forces the system default browser.** Adds an Option/Alt modifier override at the `GHOSTTY_ACTION_OPEN_URL` routing site so a single click can bypass `BrowserLinkOpenSettings` (cmuxBrowser default, host whitelist, regex patterns) and open externally. `Cmd+click` behavior is unchanged. ([e45489764](https://github.com/Stage-11-Agentics/c11/commit/e45489764))
+
+### Changed
+
+- **`c11 send` now submits by default.** The previous behavior typed text into the recipient's PTY but never appended Return — every sender had to follow up with `c11 send-key enter`, and agents missed the second call repeatedly in practice. The text would land in the recipient's input box and sit unsubmitted, blocking the workflow. `send` now types AND submits in one call. Pass `--no-submit` when you genuinely want to type without executing (partial-line construction, staging text before manual Enter). The matching skill examples collapse from two calls to one. ([#185](https://github.com/Stage-11-Agentics/c11/pull/185))
+- **State-directory migration is now per-entry, not blanket-copy.** Users with both a legacy `~/.c11mux/` state dir and a partial `~/.c11/` from earlier sessions used to get one or the other; the migration now merges entry-by-entry so neither side overwrites the other. ([#179](https://github.com/Stage-11-Agentics/c11/pull/179))
+- **Default agent prompt now orients new sub-agents before the c11 skill loads.** Sub-agents launched into a c11 surface get a brief orientation pass (workspace/surface refs, role context) up front so the first turn isn't spent rediscovering the environment. ([#178](https://github.com/Stage-11-Agentics/c11/pull/178))
+- **Update pill opens its popover on the first click for background-detected updates.** Previously a background-detected update required two clicks: one to "wake" the pill, one to actually open. Now opens directly on first click. ([ff2711b6d](https://github.com/Stage-11-Agentics/c11/commit/ff2711b6d))
+
+### Fixed
+
+- **CLI socket no longer goes unreachable while the app is still alive (C11-105).** Root cause: `TerminalControllerSocketSecurityTests.swift` was a member of the `c11LogicTests` target despite living in `c11Tests/` on disk. Its `setUp` calls `TerminalController.shared.stop()`, and `TerminalController.socketPath` was default-initialized to the stable production socket path — so any local `xcodebuild -scheme c11-logic test` run would `unlink()` the prod c11's bind dentry while its FD stayed live in-kernel. Symptom: every `c11 <cmd>` errored with `Socket not found at ~/Library/Application Support/c11/c11.sock` even though the app process was running and the UI / panes / agents were fully interactive. The fix moves the test back into `c11Tests`, empties the field's default, and gates `stop()`'s unlink on a non-empty path. A kqueue diagnostic remains in `tools/socket-watcher/` as a canary for any future unlink source. ([#180](https://github.com/Stage-11-Agentics/c11/pull/180))
+- **Workspace snapshots now persist browser surface URLs across restore.** `SurfaceSpec.url` was dropped in `WorkspacePlanCapture` so any browser pane restored from a snapshot landed on a blank new-tab. The capture now round-trips the URL alongside the rest of the surface spec and the previously-disabled `testCaptureAndRestoreBrowserFirstLayout` is re-enabled in CI. ([#184](https://github.com/Stage-11-Agentics/c11/pull/184))
+- **Close-workspace confirm overlay actually shows up when the target workspace is off-screen.** Off-screen workspaces are `isHidden=true` (the perf #127 visibility gate); their `AnchorView` does not report a window-coord frame, so the overlay controller bailed silently and the operator saw "I clicked Close, nothing happened." The host-vs-target split now anchors the overlay on the currently-displayed workspace; the dialog message already names the workspace being closed, so the anchor change doesn't lose context.
+- **Sidebar first workspace row no longer has its highlight clipped by the top scrim.** The blur-gradient scrim that sits over the traffic-light strip is still ~40% opaque where the first row's rounded-corner highlight used to land, so the corners read as cut off. The first row now begins past the scrim's significant-opacity band; the scrim itself is unchanged.
+- **Custom titlebar text now sits symmetrically inside its bar.** The previous frame + asymmetric top padding made "Workspace 1" read bottom-heavy against the 1pt bottom border. The text now centers within `titlebarPadding` so the breathing room above and below is equal.
+- **Bonsplit drag-and-drop UTTypes are now declared in `Info.plist`.** Resolves the runtime warning "Type was expected to be declared and exported in the Info.plist" emitted on every Bonsplit `UTType(exportedAs:)` construction. Cheap on Apple Silicon, expensive on shared-tenant CI runners — fix also unblocks a slow test that the warning storm was paging over its timeout. ([#182](https://github.com/Stage-11-Agentics/c11/pull/182))
+
+### Built and shipped by
+
+Stage 11 Agentics. Operator:agent, fused.
+
+## [0.48.0] - 2026-05-18
+
+Feature release. Headline: **default terminal agent** — a workspace-scoped + user-scoped resolver so the A-button on every new terminal opens the right tool for the job (claude, codex, gemini, kimi, raw shell) without the operator picking each time. Alongside it, a second menu-bar pass: the File menu now leads with New Workspace (the real entry point for new work), Open Folder retires, New Window moves to View where it sits with the rest of the chrome toggles, Close Other Tabs lands in Pane where the verb actually applies, and the Browse panel inside New Workspace now offers the New Folder affordance so starting a workspace can include creating its directory. Plus: About c11 inside Help, Full Disk Access auto-detect, faster workspace switching, tab close X moved to the left.
+
+### Added
+
+- **Default terminal agent: workspace-scoped + user-scoped resolver.** Every new terminal launches the right agent without the operator picking each time. User default lives in Settings → Agents; per-project override is discovered from `.c11/default-agent` (or `.cmux/default-agent`) when present, so a repo can declare "use codex here." The resolver threads through the CLI, the Workspace model, the New Surface menu, and the Settings UI. The Agents sidebar page is the single canonical home; the old per-action launcher knobs are gone. ([#168](https://github.com/Stage-11-Agentics/c11/pull/168), [#173](https://github.com/Stage-11-Agentics/c11/pull/173))
+- **`C11_DEFAULT_AGENT_LAUNCH` exported in every new shell.** Resolved per-shell at spawn time so the c11 skill can teach a single sub-agent launch pattern (`exec $C11_DEFAULT_AGENT_LAUNCH`) regardless of which agent the operator picked. Preference changes only affect newly-spawned shells. ([#173](https://github.com/Stage-11-Agentics/c11/pull/173))
+- **New Workspace in File menu.** The canonical entry point for starting a new work item now sits where users instinctively reach for it. Duplicates the Workspace menu entry so discovery is doubled, shortcut binding unchanged. ([#168](https://github.com/Stage-11-Agentics/c11/pull/168))
+- **New Folder affordance inside the Browse panel of New Workspace.** Starting a workspace can now include creating its directory in the same flow — the NSOpenPanel's New Folder button shows up where previously the panel was browse-only. ([#168](https://github.com/Stage-11-Agentics/c11/pull/168))
+- **About c11 lives inside the Help menu, in addition to the c11 app menu.** macOS auto-injects a Help menu (with its search field) whenever the slot is empty and SwiftUI can't reliably suppress it; populating the slot with a real action makes the menu earn its space. About c11 still lives in the c11 app menu too. ([#170](https://github.com/Stage-11-Agentics/c11/pull/170))
+- **Tab close X has a right-click menu with Close Tab + Close Pane.** Right-click the X to disambiguate "close this tab" from "close this whole pane" without remembering modifier keys. The X itself anchors on the left of the tab to match macOS convention. ([#165](https://github.com/Stage-11-Agentics/c11/pull/165))
+- **Full Disk Access grant is now runtime-detected, auto-continuing the TCC primer.** The primer no longer requires the operator to click Continue after granting FDA in System Settings — c11 detects the grant and advances the primer on its own. ([#138](https://github.com/Stage-11-Agentics/c11/pull/138))
+
+### Changed
+
+- **New Window moves from File to View.** Window-level toggles cluster with chrome controls (Toggle Sidebar, Appearance, Titlebar Controls); File is now reserved for new-work verbs. Shortcut binding unchanged. ([#168](https://github.com/Stage-11-Agentics/c11/pull/168))
+- **Close Other Tabs in Pane moves from File to Pane.** The verb's "in Pane" now actually lives in the Pane menu, ⌥⌘T preserved. ([#168](https://github.com/Stage-11-Agentics/c11/pull/168))
+- **Open Folder retires from the File menu.** New Workspace covers the same flow with the blueprint picker and agent-launch toggle; the Command Palette entry and Keyboard Shortcut Settings row remain intact for muscle-memory carryover. ([#168](https://github.com/Stage-11-Agentics/c11/pull/168))
+- **Workspace switching is faster after Phase 4a perf work.** Empty deferred portal-sync passes are now short-circuited so swapping between workspaces feels snappier, especially when the destination workspace's surfaces are already settled. ([#135](https://github.com/Stage-11-Agentics/c11/pull/135))
+- **Sidebar "Next Notification" button is taller (2× vertical) for prominence.** Easier to spot, easier to hit when triaging an unread queue.
+- **`c11mux` is gone from active code paths.** State directory migration, theme rename, and test fixes complete the c11mux → c11 transition begun in 0.38.0. Anyone still on a c11mux state dir is silently migrated. ([#164](https://github.com/Stage-11-Agentics/c11/pull/164))
+
+### Fixed
+
+- **Close Pane confirmation no longer shows literal "%lld" instead of the pane count.** The body string had an unsubstituted printf token that surfaced when the dialog actually rendered (e.g., "This will close 7 panes" showed up as "%lld panes"). Now formats correctly. ([b03f12592](https://github.com/Stage-11-Agentics/c11/commit/b03f12592))
+- **App Hang triggers around the Sparkle probe and persistent flash are now instrumented.** Internal observability lift so hang patterns we'd been chasing in support reports get attributed to the right culprit. ([#169](https://github.com/Stage-11-Agentics/c11/pull/169))
+
+## [0.47.1] - 2026-05-15
+
+Hotfix release. Triggered by a New Workspace dialog regression observed in the 0.47.0 prod build (the dialog opened tiny on first show — only snapped to its intended size after focus moved away and back). The fix went out alongside a batch of operator-facing polish that had stacked up on `main` over the same day: a second-pass on the New Workspace dialog, a macOS menu-bar reorganization, and a few smaller correctness fixes.
+
+### Added
+
+- **Workspace name field on the New Workspace dialog.** The dialog now collects a workspace name alongside the working directory. Empty input falls back to the directory's basename; the placeholder previews the fallback so the operator can see what they'd get without committing. Threads through `WorkspaceSpec.title → Workspace.setCustomTitle` — the existing custom-title plumbing, no new persistence surface. ([#160](https://github.com/Stage-11-Agentics/c11/pull/160))
+
+- **Top-level Workspace, Pane, and Browser menus on the macOS menu bar.** Workspace-scoped actions (New Workspace, Rename, Pin, Move, Hibernate, Mark Read/Unread, Workspace 1–9) live under their own Workspace menu instead of being sprinkled across File / View / Window. Pane-scoped actions (splits, focus moves, zoom, new surface, surface navigation, Rename Tab) move out of Window and into a dedicated Pane menu. Browser actions (Back / Forward / Reload / Zoom / Reopen Closed Browser Pane / DevTools / Import Browser Data) get their own Browser menu. The top bar now reads: 🍎 c11 File Edit View Workspace Pane Browser Notifications Window. ([#161](https://github.com/Stage-11-Agentics/c11/pull/161))
+
+### Changed
+
+- **New Workspace dialog UX pass.** "Layout selection" / "Saved blueprints" headers renamed to **Default layouts** / **Custom blueprints** to clarify the split between starters c11 ships and what the operator (or repo) has saved. The Recent-directories control is now an always-visible bordered menu button labelled `Recent` with a clock icon (was a flat glyph that vanished entirely on fresh installs when the recents list was empty); the empty state shows a single disabled "No recent directories yet" item so the affordance stays discoverable. Browse… upgraded to a bordered button with folder icon at `.controlSize(.large)` so it reads as a primary action next to Recent rather than as inline text. Hint copy under the name field tightened to the c11 register. ([#160](https://github.com/Stage-11-Agentics/c11/pull/160))
+
+- **`agent-room` built-in blueprint reshuffled.** Browser moves to **top-right** and a server-terminal surface moves to **bottom-right** (was: log-tail top-right, browser bottom-right) — the browser is the higher-glance-rate surface and earns the eye-line slot. Browser defaults to `https://www.stage11.ai` instead of a blank new-tab so the workspace has a recognisable orient point on first run. Surface titles renamed to onboarding-friendly placeholders (`example main terminal` / `example browser` / `example server terminal`) — operators rename them once each pane has a purpose; the placeholder names tell newcomers what the layout is *for* without making them read the description. ([#160](https://github.com/Stage-11-Agentics/c11/pull/160))
+
+- **Close-workspace confirm dialog now names the workspace and defaults to Cancel.** The destructive confirm card previously read "This will close the workspace and all of its panes." with the workspace identity supplied only by the surrounding scrim; it now reads "This will close the workspace "Foo" and all of its panes." and the keyboard default is **Cancel** rather than Close — destructive actions stop being a Return-press away.
+
+- **Promoted Appearance Mode picker, Titlebar Controls Style picker, and Always Show Shortcut Hints toggle from the DEBUG-only Debug menu into View.** These are production-relevant — they shouldn't have lived behind a debug-build gate. ([#161](https://github.com/Stage-11-Agentics/c11/pull/161))
+
+### Fixed
+
+- **New Workspace dialog opens at full size on first show. Prod-build-only regression.** The dialog rendered tiny on first show (~200pt tall — only the middle slice of layout rows visible) and only snapped to its intended ~600pt size after focus moved off and back. Two compounding causes: (1) `presentCreateWorkspaceSheet` assigned an `NSHostingView` to `window.contentView`, which pins the window at its initial 600×480 content rect and never propagates SwiftUI's intrinsic size back to the `NSWindow`; (2) `CreateWorkspaceSheet` seeded `@State entries` to `[]` and loaded them in `.onAppear`, so the first SwiftUI layout pass measured an empty layout-options list. Fix switches to `NSHostingController` with `sizingOptions = [.preferredContentSize]` (window content size now tracks SwiftUI's intrinsic size reactively) and seeds entries + recents synchronously in `init` via a new static `computeEntries(forDirectory:)`. The bug only surfaced in the 0.47.0 prod build — dev and staging builds masked it via release-mode timing differences in the hosting-view layout handshake. ([#159](https://github.com/Stage-11-Agentics/c11/pull/159))
+
+- **Mailbox `stdin` delivery actually submits to the recipient.** The `stdin` mailbox handler was writing the framed `<c11-msg>` block via `terminalPanel.sendText`, which Ghostty wraps in bracketed-paste markers — by design suppressing embedded `\n`/`\r` so TUI raw-mode handlers and shell line discipline don't auto-execute pasted content. Result: the block landed in the recipient's input box but was never submitted until a human pressed Return, defeating the point of stdin delivery. The production writer in `startMailboxDispatcher` now uses `TextBoxSubmit.send`, the same helper `scheduleAgentRestart` uses for exactly this reason: it bracketed-pastes the content, waits 200ms (the documented minimum for Claude CLI's paste-processing), then dispatches a synthetic Return. The `skills/c11/SKILL.md` "Opting in to stdin delivery" snippet documents the canonical `mailbox.delivery=stdin` form (comma-separated string, not JSON array — `["stdin"]` silently registers zero handlers). ([#158](https://github.com/Stage-11-Agentics/c11/pull/158))
+
+- **Tab Bar chrome modes (shrunk / hidden) removed; canonical state is Full.** `TabBarChromeState` enum, `TabBarChromeSettings` helper, the `tabBarChromeStateRaw` AppStorage key, `cycleTabBarChromeState()`, the `Action.toggleTabBarChrome` action, the `TabBarChromeHandle` overlay, and the unused `Workspace.setTabBarVisible(_:)` are all deleted. Users on shrunk/hidden are silently migrated to Full. The two non-Full modes were rarely set deliberately and routinely produced "where did my tabs go" support questions. ([#161](https://github.com/Stage-11-Agentics/c11/pull/161))
+
+- **Surface title bar's description region sizes to its content and only scrolls when capped.** Previously, the description's container had an unconditional minimum width that produced a long empty stripe when the description was short or empty, and content that *did* exceed the cap fought layout. Region now collapses to fit its text and only engages the scroll cap when the description's natural width would otherwise overflow.
+
+- **⌘R now reloads the browser surface (was: previously bound to another action).** Frees Reload for its native-app convention while still routing through the c11 keymap.
+
+- **Help menu removed.** The Help menu was empty (no items) and only existed to satisfy AppKit's default menu structure. macOS hides empty Help menus from the menu bar; the explicit `CommandGroup(replacing: .help) { }` makes the absence intentional rather than incidental. ([#161](https://github.com/Stage-11-Agentics/c11/pull/161))
+
+### Built and shipped by
+
+Stage 11 Agentics. Operator:agent, fused.
+
+## [0.47.0] - 2026-05-15
+
+### Added
+
+- **New Workspace dialog with layout blueprints + recents.** ⌘N, File → New Workspace, and the tab-strip / titlebar "+" buttons now open a dialog instead of materializing the legacy auto-quad. Pick a working directory, a layout (One column / Two columns / 2×2 / 3×2 / saved blueprints), and whether to launch the configured coding agent in the initial pane. Recently-used directories persist via UserDefaults and surface via a clock-icon menu beside Browse; cwd pre-fills from the focused workspace's current directory. Routes through the existing `WorkspaceApplyPlan` + `WorkspaceLayoutExecutor.apply` primitive — same path as socket `workspace.apply` and CLI `export-blueprint` — so saved user/repo blueprints surface automatically. `File → Open Folder…` keeps its immediate-create behavior for the power-user quick path. ([#146](https://github.com/Stage-11-Agentics/c11/pull/146))
+
+- **`c11 doctor` CLI subcommand.** Surfaces CLI resolution state so you can diagnose path/launcher issues without spelunking: which `c11` / `cmux` is on PATH, what `CMUX_BUNDLED_CLI_PATH` points at, whether the path-fix has been applied, and an `ok | mismatch | missing | no_bundle` status. Pure-Swift collector with a thin CLI shim; JSON output uses lowercase-snake field names matching `c11 health --json`. The c11 skill's Troubleshooting blurb points at this command. ([#144](https://github.com/Stage-11-Agentics/c11/pull/144))
+
+- **Right-click "Show surface manifest…" on every surface kind.** A new context-menu entry on terminal, browser, and markdown surfaces opens a read-only floating utility window that pretty-prints the surface's manifest JSON. Inspection is no longer CLI-only — one gesture to see what each surface advertises (`role`, `status`, `task`, `model`, `progress`, `terminal_type`, `title`, `description`, plus any third-party keys from Lattice / Mycelium / agents). Live demos, debugging, and post-write verification all collapse to a right-click. ([#143](https://github.com/Stage-11-Agentics/c11/pull/143))
+
+- **Workspace-scoped close-confirmation overlay.** Closing a workspace now presents a near-black scrim covering the entire workspace content area (the sidebar stays visible) with a centered Cancel / "Close Workspace" card. The previous pane-anchored confirmation card was correct for closing a single pane but undersized for tearing down an entire workspace; the new scrim makes the destructive scope unmistakable. 120–180 ms fade in/out, first-responder swallow, hit-test isolated to the overlay. ([#139](https://github.com/Stage-11-Agentics/c11/pull/139))
+
+- **`Resources/bin/c11-spawn-agent` — server-side primitive for Autonomous Connections.** Portable bash script (macOS bash 3.2 / Linux bash 5+) that launches one Claude Code agent in a named tmux window on a dedicated `tmux -L agents` socket, so the agent fleet stays isolated from operator-driven tmux sessions and survives SSH detach on the host. Required flags: `--workspace`, `--window`, exactly one of `--prompt-file` / `--prompt`. Optional: `--cwd` (default `$HOME`), `--model` (default `claude-opus-4-7`), `--socket` (default `agents`). A duplicate-window guard refuses to clobber a live agent — re-running the same invocation errors out rather than racing against the running window. The script handles no credentials; auth is whatever `claude login` already wrote on the target host. Slice 1 of C11-36 (Autonomous Connections). ([#151](https://github.com/Stage-11-Agentics/c11/pull/151))
+
+### Changed
+
+- **High-frequency v1 telemetry sockets moved off the main-sync dispatcher.** Extends the v2 socket-worker pattern from C11-26 to the highest-volume v1 commands — `report_pwd`, `report_shell_state`, `report_git_branch`, `clear_git_branch`, `ports_kick`, and `agent_skills_*` — so they parse off-main and only hop to main for the actual UI mutation. Reduces main-queue contention under heavy concurrent shell-prompt updates from many panes. Part of the C11-4 audit-findings cleanup. ([#144](https://github.com/Stage-11-Agentics/c11/pull/144))
+
+- **`claude` wrapper passes through Agent View subcommands.** Claude Code 2.1.139 (shipped 2026-05-11) introduced **Agent View** — `claude agents` opens a TUI dashboard, and `attach`, `logs`, `stop`, `kill`, `respawn`, and `rm` operate on the per-user supervisor's pool of background sessions by short id. The c11 `claude` wrapper at `Resources/bin/claude` was injecting `--session-id` / `--settings` into these invocations too, wedging the dashboard into spawning a fresh interactive session instead of listing existing background sessions. All seven subcommands now pass through unaltered; regular `claude` / `claude -c` / `claude --resume` still get session-id and hooks injection. ([#150](https://github.com/Stage-11-Agentics/c11/pull/150))
+
+- **Agent-skills onboarding sheet now fires on app activation.** The skill-install prompt was previously reachable only from Help → Welcome — fresh installs took the auto-welcome path which silently bypassed it, so users with `~/.claude` (or any other supported agent installed) never saw the prompt. Now hooked into `applicationDidBecomeActive`, so both first-launch and "installed an agent after c11 was already running" surface the prompt. Idempotent (one prompt per launch; "Don't ask again" honored permanently); skipped under XCTest. ([#148](https://github.com/Stage-11-Agentics/c11/pull/148))
+
+### Fixed
+
+- **Pane-close confirmation overlay no longer mounts on the wrong pane after a sibling-close reflow.** Third bug in the C11-40 chain, caught in v0.47.0 staging validation. After #155 fixed "X click does nothing" by keeping anchors alive through SwiftUI's transient dismantle cycles, a second failure mode emerged: when a sibling pane closed and the survivors reflowed, the existing reportFrame paths fired *during* the reflow — SwiftUI's `updateNSView` and AppKit's `viewDidMoveToWindow` both called `convert(bounds, to: nil)` at moments when the conversion returned transient half-applied coordinates (a 461-wide pane briefly reporting a 923-wide frame; a survivor settling at origin (1124,-545) entirely below the visible window). No post-settle event corrected them, so the controller's `anchors` map stayed stale and the confirmation overlay mounted at whichever stale position the pane *used to be in*. `PaneCloseOverlayController` now keeps a weak hash table of every live AnchorView; after Bonsplit fires its authoritative `didClosePane`, the controller schedules a re-poll of every AnchorView's window-coord frame on the next runloop tick (and again at +60 ms to cover multi-layout-pass reflows). The deferred `convert()` hits settled geometry. ([#157](https://github.com/Stage-11-Agentics/c11/pull/157))
+
+- **Pane close reliability — X click now always opens the confirm dialog, on any pane, in any state.** Three independent bugs converged into "click X, nothing happens" on busy or recently-rearranged panes. (1) The multi-pane close branch in `splitTabBar(_:didRequestClosePane:)` was calling `bonsplitController.closePane(pane)` without pre-loading `forceCloseTabIds`, so Bonsplit's `shouldClosePane` vetoed whenever any terminal in the pane reported `panelNeedsConfirmClose == true` (active PTY) — busy right-side panes (where agents run) silently absorbed the click while idle panes closed normally. Now mirrors the existing single-pane branch's force-close insert loop. (2) `AnchorView.reportFrame` called `removeAnchor` whenever its `NSWindow` transiently went nil during a SwiftUI split-tree reparent — the replacement `AnchorView` for the same `paneId` then settled without re-`reportFrame`, leaving the pane orphaned. (3) `AnchorRepresentable.dismantleNSView` called `removeAnchor` on every SwiftUI dismantle, so after closing a neighbor, the surviving panes' AnchorViews got dismantled as part of the sibling subtree swap and never recovered — every X click for the rest of the session was silently dropped until the user forced a window resize. C11-40, in two PRs: Mode A first, then Mode B once the harder anchor-lifecycle variant was isolated. ([#154](https://github.com/Stage-11-Agentics/c11/pull/154), [#155](https://github.com/Stage-11-Agentics/c11/pull/155))
+
+- **New Workspace dialog now actually runs the agent command.** Same root cause as the close fix above, different surface: `AppDelegate.applyWorkspacePlanInPreferredMainWindow` injected `AgentLauncherSettings.shellCommand` into `SurfaceSpec.command` without a trailing newline; `WorkspaceLayoutExecutor`'s Phase 0 parity rule delivered it verbatim via `sendText`, so the agent command sat literally at the prompt instead of executing. The tab-bar **A** button worked only because `Workspace.launchAgentSurface` appended `"\n"` at its own call site. Layout-plan injection now mirrors that. ([#154](https://github.com/Stage-11-Agentics/c11/pull/154))
+
+- **TCC primer no longer masked on debug bundle ids.** The legacy-preference migration in `AppDelegate.migrateLegacyPreferencesIfNeeded` was copying `cmuxWelcomeShown=1` from `ai.manaflow.cmuxterm` / `com.cmuxterm.app` into the c11 debug bundle (`com.stage11.c11.debug`) on first launch. That flag in turn suppressed the TCC primer on tagged builds — the C11-16 Codex-validation regression. Migration now skips when the bundle id ends with `.debug` (or contains `.debug.` for future tagged-debug forms), and an escape hatch `CMUX_DISABLE_LEGACY_MIGRATION=1` lets release bundles force-skip for CI fixtures and clean-install validation. ([#145](https://github.com/Stage-11-Agentics/c11/pull/145))
+
+### Built and shipped by
+
+Stage 11 Agentics. Operator:agent, fused.
+
+## [0.46.0] - 2026-05-06
+
+### Added
+
+- **Hibernate Workspace + per-surface lifecycle (active / throttled / suspended / hibernated).** A right-click "Hibernate Workspace" / "Resume Workspace" entry on sidebar tabs, mirrored in the App menu's Workspace submenu, aggressively reclaims resources from workspaces you're not using. Browsers in non-focused workspaces detach their NSView so compositor cost drops to ~0%; hibernated workspaces snapshot to an NSImage placeholder and `WKWebView.close()` terminates the WebContent processes (~200 MB freed across two browsers in validation). Terminal renderers in non-focused workspaces drop to <2 Hz via libghostty `setOcclusion(false)` — ~3.3× CPU reduction on a producer pegging the render loop. Per-surface CPU and RSS now show in the sidebar (also exposed in `c11 tree --json` as `metrics.cpu_pct` / `metrics.rss_mb`) so you can see what's expensive at a glance. Hibernated workspaces persist across `c11 restore`; resume fires the URL exactly once. ([#125](https://github.com/Stage-11-Agentics/c11/pull/125))
+
+- **Per-surface tab colors inside panes.** Right-click a tab → **Tab Color** submenu picks a swatch from the palette, opens the system color picker for a custom hex, or clears the color. The color follows the surface across reorder, cross-pane move, detach/reattach, cross-workspace move, and session restore. Programmatic control via `c11 surface-color {set|clear|get|list-palette}` and the `surface.set_custom_color` v2 socket method (non-focus-stealing). All new menu strings localized for ja / uk / ko / zh-Hans / zh-Hant / ru in both c11 and the Bonsplit tab strip. ([#124](https://github.com/Stage-11-Agentics/c11/pull/124))
+
+- **App Chrome UI Scale (Compact / Default / Large / Extra Large).** Settings → Appearance → **App Chrome UI Scale** scales c11-owned chrome — sidebar workspace cards, the Bonsplit tab strip (titles, icons, accessories, item height, padding, close glyph, dirty indicator, notification badge, active-tab underbar), and the surface title bar — without touching Ghostty terminal cells, browser content, or markdown content. Default preset is byte-exact with the previous tab bar shell height (30 pt). Live update on UserDefaults change (Settings UI, `defaults write com.stage11.c11 chromeScalePreset large`, future migrations) via per-Workspace KVO; typing-latency hot paths (`TabItemView`) preserved by routing tokens through precomputed `let` parameters. Picker localized for en / ja / uk / ko / zh-Hans / zh-Hant / ru. ([#123](https://github.com/Stage-11-Agentics/c11/pull/123))
+
+- **Persistent themable surface flash with custom color and duration.** `c11 trigger-flash --persistent` keeps a surface pulsing — sidebar row + pane content + Bonsplit tab strip in unison — until the operator clicks the pane or sidebar row to dismiss, or programmatic `c11 cancel-flash --surface <ref>` cancels it. Default flash color is yellow `#F5C518` with `--color <hex>` per-call override and a forward-compatible `flash.color` theme key. Settings → Notifications → **Flash Duration** slider (500–4000 ms, default 1500 ms) scales pane and sidebar pulses together. Click-cancel hook stays out of the keystroke path; persistent timers invalidate on close + deinit. ([#126](https://github.com/Stage-11-Agentics/c11/pull/126))
+
+### Changed
+
+- **Workspace switch latency: 1–6 s → ~325 ms median, 90 s tail eliminated.** Heavy switches were dominated by `-[NSView _layoutSubtreeWithOldSize:]` recursing ~30 levels deep across every mounted workspace's bonsplit pane tree, even when only one was visible (~64% of main thread time in production samples). Three landed phases attack this:
+    - **Phase 0** wires an always-on `WorkspaceSwitchSignpost` (`os_signpost` subsystem `com.stage11.c11`, category `WorkspaceSwitch`) that graphs the switch path in Instruments.app, plus a release-safe `workspace.switch.complete` Sentry breadcrumb with `dt_ms` so production switch latency is observable.
+    - **Phase 1** wraps every `WorkspaceContentView` in `AppKitHiddenWrapper` (`NSHostingController` whose `view.isHidden` tracks visibility). `_layoutSubtreeWithOldSize:` short-circuits at hidden subviews; off-screen workspaces' subtrees are skipped entirely. SwiftUI subtree is preserved — surfaces don't dismount, so terminal scrollback and browser state survive switches unchanged.
+    - **Phase 2** skips the deferred portal bind when the host frame is zero, eliminating a second AppKit layout cascade triggered by `onDidMoveToWindow` after the first cascade had already settled.
+
+  Real-world numbers, 11 workspaces / ~20 agents loaded, after Phases 0+1+2:
+
+  | Metric | Baseline | After |
+  |---|---|---|
+  | `handoff.start` (SwiftUI cascade) | ~1,500 ms | 17–77 ms (~30–80×) |
+  | `asyncDone` median | ~1,000 ms | ~325 ms (~3×) |
+  | `asyncDone` p95 | ~6,000 ms | ~1,200 ms (~5×) |
+  | `asyncDone` worst seen | 90,790 ms | 2,426 ms |
+
+  Typing-latency hot paths (`TerminalSurface.forceRefresh()`, `TabItemView` Equatable/`.equatable()`, `WindowTerminalHostView.hitTest()`) verified intact. Phase 3 (split queued `selectedTabId.didSet` async block to defer non-essential work past the visible flip) is in flight on a separate branch and will land in a follow-up release. ([#127](https://github.com/Stage-11-Agentics/c11/pull/127), [#128](https://github.com/Stage-11-Agentics/c11/pull/128))
+
+### Fixed
+
+- **Claude Code session resume across c11 restart.** Two paired bugs broke session resume after the C11-26 socket dispatch refactor: the `claude` PATH wrapper resolution leaked into worktree subdirs, and a SessionEnd shutdown race could lose the final `claude.session_id` write. Restart now records `claude.session_project_dir` paired atomically with `claude.session_id` at SessionStart, validates the path on synthesis, and synthesizes `cd '<path>' && claude --dangerously-skip-permissions --resume <id>` only when the path is present and reachable. Existing surfaces with id-only metadata keep working unchanged. (`cc0f1fc5b`)
+
+### Built and shipped by
+
+Stage 11 Agentics. Operator:agent, fused.
+
 ## [0.45.2] - 2026-05-04
 
 ### Fixed

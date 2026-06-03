@@ -136,7 +136,7 @@ The panel renders markdown with rich formatting and auto-updates when the file c
 ## Routing
 
 ```bash
-# Open in the caller's workspace (default -- uses CMUX_WORKSPACE_ID; C11_WORKSPACE_ID is the primary name going forward, CMUX_WORKSPACE_ID still works)
+# Open in the caller's workspace (default — uses C11_WORKSPACE_ID)
 c11 markdown open plan.md
 
 # Open in a specific workspace

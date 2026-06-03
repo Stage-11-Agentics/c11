@@ -1,0 +1,1 @@
+PR #211 merged to main as 58069f5f9 (squash). All 6 CI checks green. HCI spec adhered to. Worktree + local + remote branches cleaned. Operator merge-approved on 2026-05-26.

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-16T05:43:52Z",
+  "created_by": "agent:c11-27-reviewer",
+  "custom_fields": {},
+  "id": "art_01KRQMZZVWD31767FTRSB7T4BW",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KRQMZZVWD31767FTRSB7T4BW.md",
+    "size_bytes": 10168
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "code-review (merged)",
+  "token_usage": null,
+  "type": "file"
+}

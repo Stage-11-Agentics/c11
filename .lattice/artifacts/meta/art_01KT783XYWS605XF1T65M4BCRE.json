@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-03T17:22:22Z",
+  "created_by": "human:atin",
+  "custom_fields": {},
+  "id": "art_01KT783XYWS605XF1T65M4BCRE",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KT783XYWS605XF1T65M4BCRE.md",
+    "size_bytes": 305
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Reconciliation: PR #169 (c11mux \u2192 c11 rebrand pass) merged 2026-05-17; rebrand shipped. Operator (atin) confirmed close on 2026-06-03. Residual cleanup branches (c11-1-rebrand-cleanup +11 commits, ren",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

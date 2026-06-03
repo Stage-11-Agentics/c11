@@ -1,0 +1,3 @@
+# C11-39: Slice 3 — c11 remote CLI subcommand (add/bootstrap/spawn/attach)
+
+Combines architecture-doc slices 4 + 5. New `CLI/Sources/Remote/` subcommand. Commands: `c11 remote add/ls/rm` (host registry in c11 config dir); `c11 remote bootstrap <host>` (scp Resources/bin/c11-* + run installer); `c11 remote spawn --host --workspace --window --prompt-file [--cwd]` (wraps slice 1); `c11 remote agents <host>` (list running windows); `c11 remote attach --host --workspace --window` (opens a c11 terminal pane wired via SSH to the remote tmux window — makes the workspace<->session / surface<->window mapping literal).

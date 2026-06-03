@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-05-07T03:12:50Z",
+  "created_by": "agent:overnight-c11-24",
+  "custom_fields": {
+    "url": "https://github.com/Stage-11-Agentics/c11/pull/143"
+  },
+  "id": "art_01KR06RYZBWR1F0NZNHJKFQQRZ",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": null,
+    "size_bytes": null
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "PR",
+  "token_usage": null,
+  "type": "reference"
+}

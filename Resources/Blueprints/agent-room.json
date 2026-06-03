@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "agent-room",
-  "description": "Three-pane agent layout: main terminal left, log tail top-right, browser bottom-right",
+  "description": "Three-pane agent layout: main terminal left, browser top-right, server terminal bottom-right",
   "plan": {
     "version": 1,
     "workspace": {},
@@ -21,11 +21,11 @@
             "dividerPosition": 0.5,
             "first": {
               "type": "pane",
-              "pane": { "surfaceIds": ["s2"] }
+              "pane": { "surfaceIds": ["s3"] }
             },
             "second": {
               "type": "pane",
-              "pane": { "surfaceIds": ["s3"] }
+              "pane": { "surfaceIds": ["s2"] }
             }
           }
         }
@@ -35,16 +35,18 @@
       {
         "id": "s1",
         "kind": "terminal",
-        "title": "main"
+        "title": "example main terminal"
       },
       {
         "id": "s2",
         "kind": "terminal",
-        "title": "logs"
+        "title": "example server terminal"
       },
       {
         "id": "s3",
-        "kind": "browser"
+        "kind": "browser",
+        "title": "example browser",
+        "url": "https://www.stage11.ai"
       }
     ]
   }

@@ -4,7 +4,18 @@ import SwiftUI
 import Sparkle
 
 class UpdateViewModel: ObservableObject {
-    @Published var state: UpdateState = .idle
+    @Published var state: UpdateState = .idle {
+        didSet {
+            let oldLabel = oldValue.caseLabel
+            let newLabel = state.caseLabel
+            guard oldLabel != newLabel else { return }
+            sentryBreadcrumb("update.viewmodel.state_changed", category: "update", data: [
+                "from": oldLabel,
+                "to": newLabel,
+                "app_active": NSApp?.isActive ?? false
+            ])
+        }
+    }
     @Published var overrideState: UpdateState?
     @Published var detectedUpdateVersion: String?
     #if DEBUG
@@ -407,6 +418,20 @@ enum UpdateState: Equatable {
             return true
         default:
             return false
+        }
+    }
+
+    var caseLabel: String {
+        switch self {
+        case .idle: return "idle"
+        case .permissionRequest: return "permissionRequest"
+        case .checking: return "checking"
+        case .updateAvailable: return "updateAvailable"
+        case .notFound: return "notFound"
+        case .error: return "error"
+        case .downloading: return "downloading"
+        case .extracting: return "extracting"
+        case .installing: return "installing"
         }
     }
 

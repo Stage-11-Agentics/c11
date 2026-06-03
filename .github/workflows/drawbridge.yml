@@ -299,7 +299,11 @@ jobs:
           scripts/drawbridge/upsert-comment.sh "$GITHUB_REPOSITORY" "$ITEM_NUMBER" "<!-- drawbridge:gate -->" /tmp/gate/comment.md
 
           if [[ "$MODE" == "live" ]]; then
-            gh pr merge "$ITEM_NUMBER" --squash
+            # Pin the merge to the exact SHA the gates evaluated: if the author
+            # pushes between gate-pass and merge, this fails cleanly and the
+            # synchronize event re-judges the new head.
+            gh pr merge "$ITEM_NUMBER" --squash \
+              --match-head-commit "$(jq -r '.head.sha' /tmp/gate/pr.json)"
           fi
 
       - name: Upload gate result (audit trail)

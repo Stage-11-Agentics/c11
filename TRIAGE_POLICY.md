@@ -86,6 +86,15 @@ protocol, audit 1–2 weeks of would-act decisions first, then go live for the n
 scope (drop categories from the tier lists below to narrow further), widening
 path-by-path as trust accrues. False positives are policy edits, not code edits.
 
+### Operational notes (live mode)
+
+- Auto-merges are pinned to the exact head SHA the gates evaluated
+  (`--match-head-commit`); a push racing the merge fails it cleanly and the new
+  head is re-judged.
+- Merges are performed with the workflow's `GITHUB_TOKEN`, which does not cascade
+  events — post-merge `main` CI will not run on the squash commit. Accepted: the
+  judged head SHA already had fully green CI as a gate.
+
 ## Audit trail
 
 Every verdict is uploaded as a workflow artifact (`drawbridge-verdict-*`) on the run,

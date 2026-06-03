@@ -1,24 +1,35 @@
 {
   "assigned_to": null,
   "branch_links": [],
-  "comment_count": 1,
+  "comment_count": 2,
   "complexity": null,
   "created_at": "2026-04-26T04:02:53Z",
   "created_by": "agent:claude-opus-4-7",
   "custom_fields": {},
   "description": "Themed bundle of 10 open issues filed in the upstream parent project manaflow-ai/cmux covering stability, rendering, theme, crashes, perf, config parsers, and infrastructure. These are NOT c11 issue numbers; every #N in this ticket refers to an issue in manaflow-ai/cmux. Picks: #3162, #2950, #1764, #3075, #2922, #1036, #2738, #2996, #2997, #2708. Reporters to credit: @knight42, @shaun0927, @gilsiun, @zacharygutt, @Corey-T1000, @austinywang, @tmad4000, @lawrencecchen, @Thinkscape, @exlaw. Plus related-issue reporter whose duplicate closes with the same fix: @tuzisang (#2718). Full rationale and per-pick credits in task note.",
-  "done_at": null,
-  "evidence_refs": [],
+  "done_at": "2026-06-02T21:00:05Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01KT525VGCEZA9C81DH8V6CXQY",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KT525VGCEZA9C81DH8V6CXQX",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
   "id": "task_01KQ3Z8Q5N35SSSM50M23V77D8",
-  "last_event_id": "ev_01KQ414CWRBKEQP9PAMVCT661K",
-  "last_status_changed_at": "2026-04-26T04:02:53Z",
+  "last_event_id": "ev_01KT525VGCEZA9C81DH8V6CXR0",
+  "last_status_changed_at": "2026-06-02T21:00:05Z",
   "linked_files": [],
   "priority": "medium",
   "relationships_out": [],
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-22",
-  "status": "backlog",
+  "status": "done",
   "tags": [
     "upstream-pull",
     "cmux-upstream",
@@ -26,6 +37,6 @@
   ],
   "title": "Upstream cmux issues: Stability, render, theme, crashes, perf, config, infra (10 picks)",
   "type": "task",
-  "updated_at": "2026-04-26T04:35:29Z",
+  "updated_at": "2026-06-02T21:00:05Z",
   "urgency": null
 }

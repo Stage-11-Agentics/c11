@@ -3052,6 +3052,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard !didHandleExplicitOpenIntentAtStartup else { return }
         guard let primaryContext = contextForMainTerminalWindow(primaryWindow) else { return }
 
+        // C11-34: per-workspace resume picker. Sits between
+        // snapshot-load and snapshot-apply: the operator picks which
+        // workspaces from the previous session come back. Policy lives
+        // under `c11.launch.resumePolicy` (default `.ask`); `.always`
+        // keeps the legacy "restore everything" behavior, `.never`
+        // skips restore entirely.
+        let policy = LaunchResumePolicy.current()
+        if policy == .ask,
+           let snapshot = startupSessionSnapshot,
+           snapshot.windows.contains(where: { !$0.tabManager.workspaces.isEmpty }) {
+            LaunchResumePicker.presentSheet(on: primaryWindow, snapshot: snapshot) { [weak self] decision in
+                guard let self else { return }
+                switch decision {
+                case .resumeAll:
+                    break  // startupSessionSnapshot stays as-is
+                case .skipAll:
+                    self.startupSessionSnapshot = nil
+                case .resumeSelected(let keep):
+                    self.startupSessionSnapshot = LaunchResumePicker.filtered(
+                        snapshot: snapshot,
+                        keep: keep
+                    )
+                }
+                self.applyResolvedStartupSessionRestore(
+                    primaryWindow: primaryWindow,
+                    primaryContext: primaryContext
+                )
+            }
+            return
+        }
+        if policy == .never {
+            startupSessionSnapshot = nil
+        }
+        applyResolvedStartupSessionRestore(
+            primaryWindow: primaryWindow,
+            primaryContext: primaryContext
+        )
+    }
+
+    /// Apply `startupSessionSnapshot` (already resolved by policy and
+    /// the picker, if any) to the primary window and any additional
+    /// windows the snapshot declares. Extracted from the old body of
+    /// `attemptStartupSessionRestoreIfNeeded` so the picker callback
+    /// has a clean continuation point.
+    private func applyResolvedStartupSessionRestore(
+        primaryWindow: NSWindow,
+        primaryContext: MainWindowContext
+    ) {
         let startupSnapshot = startupSessionSnapshot
         let primaryWindowSnapshot = startupSnapshot?.windows.first
         if let primaryWindowSnapshot {

@@ -1,0 +1,40 @@
+{
+  "assigned_to": "agent:claude-opus-4-7",
+  "branch_links": [
+    {
+      "branch": "c11-117-focus-tab-before-close-confirm",
+      "linked_at": "2026-05-23T04:12:09Z",
+      "linked_by": "agent:claude-opus-4-7",
+      "repo": null
+    }
+  ],
+  "comment_count": 3,
+  "complexity": "low",
+  "created_at": "2026-05-23T04:04:29Z",
+  "created_by": "agent:claude-opus-4-7",
+  "custom_fields": {},
+  "description": "Repro: open at least two workspaces in a sidebar; while viewing workspace A, click the X on background tab B (any state that triggers the close-confirm overlay \u2014 running process, etc.).\n\nObserved: the confirm overlay appears (per the comment in TabManager.closeWorkspaceIfRunningProcess, anchored on the currently-selected workspace because the off-screen workspace's anchor view is hidden and reports no frame). The operator's view never switches to B, so the dialog references a workspace the operator isn't looking at.\n\nExpected: clicking the X on a background tab should first select that tab (bring it into view), then present the close-confirm overlay on that tab. The overlay mounts on the workspace being closed.\n\nScope: single-workspace close path triggered by the sidebar X button. The multi-close path (multiple sidebar selection or Cmd+Shift+W with multi-select) is intentionally anchored on the currently-selected workspace and out of scope.\n\nTouch points:\n- Sources/TabManager.swift closeWorkspaceIfRunningProcess (requiresConfirmation branch; current 'host = selectedWorkspace ?? workspace' line)\n- c11Tests/TabManagerUnitTests.swift \u2014 add a c11LogicTests-safe unit test asserting selection switches to the workspace being closed before the confirmation handler fires.",
+  "done_at": "2026-05-23T05:24:56Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01KS9MPBFDPZ8D4Y3QFGWD41F7",
+      "role": "review",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01KS9G31KAZ0ZZYQ3Z9Z8RWK16",
+  "last_event_id": "ev_01KS9MPBJ4F56WHM7GGMFW4YCK",
+  "last_status_changed_at": "2026-05-23T05:24:56Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-117",
+  "status": "done",
+  "tags": null,
+  "title": "Sidebar X on a background tab: focus that tab before showing the close-confirm overlay",
+  "type": "bug",
+  "updated_at": "2026-05-23T05:24:56Z",
+  "urgency": null
+}

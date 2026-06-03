@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-05-26T18:18:39Z",
+  "created_by": "agent:claude-opus-4-7-delegator-c11-118-reviewer",
+  "custom_fields": {},
+  "id": "art_01KSJR57CPACEDXRAW9AWANXSN",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KSJR57CPACEDXRAW9AWANXSN.md",
+    "size_bytes": 2583
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Inline: review",
+  "token_usage": null,
+  "type": "note"
+}

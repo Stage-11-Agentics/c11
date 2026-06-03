@@ -2902,18 +2902,18 @@ struct ContentView: View {
             // Sidebar width changes are pure SwiftUI layout updates, so portal-hosted
             // terminals need an explicit post-layout geometry resync.
             if let observedWindow {
-                TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronize(for: observedWindow)
+                TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronize(for: observedWindow, trigger: "sidebarWidthChange")
             } else {
-                TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronizeForAllWindows()
+                TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronizeForAllWindows(trigger: "sidebarWidthChange")
             }
             updateSidebarResizerBandState()
         })
 
         view = AnyView(view.onChange(of: sidebarState.isVisible) { _ in
             if let observedWindow {
-                TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronize(for: observedWindow)
+                TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronize(for: observedWindow, trigger: "sidebarVisibilityChange")
             } else {
-                TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronizeForAllWindows()
+                TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronizeForAllWindows(trigger: "sidebarVisibilityChange")
             }
             updateSidebarResizerBandState()
         })
@@ -3327,7 +3327,7 @@ struct ContentView: View {
         let availableWidth = window.contentView?.bounds.width ?? window.contentLayoutRect.width
         clampSidebarWidthIfNeeded(availableWidth: availableWidth)
         updateSidebarResizerBandState()
-        TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronize(for: window)
+        TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronize(for: window, trigger: "mainWindowGeometryReconcile")
 
         updateTitlebarPadding(from: window)
     }

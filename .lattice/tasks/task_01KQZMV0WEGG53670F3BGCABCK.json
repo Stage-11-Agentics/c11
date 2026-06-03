@@ -10,15 +10,15 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KQZMV0WEGG53670F3BGCABCK",
-  "last_event_id": "ev_01KQZR712B8RQENR031AJF6TJA",
-  "last_status_changed_at": "2026-05-06T21:59:23Z",
+  "last_event_id": "ev_01KT525X0VXPM0CACH4V55R7SV",
+  "last_status_changed_at": "2026-06-02T21:00:07Z",
   "linked_files": [],
   "priority": "medium",
   "relationships_out": [],
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-34",
-  "status": "backlog",
+  "status": "review",
   "tags": [
     "ux",
     "session-resume",
@@ -27,6 +27,6 @@
   ],
   "title": "Per-workspace resume picker on launch + reliable Enter after resume command",
   "type": "task",
-  "updated_at": "2026-05-06T22:58:22Z",
+  "updated_at": "2026-06-02T21:00:07Z",
   "urgency": null
 }

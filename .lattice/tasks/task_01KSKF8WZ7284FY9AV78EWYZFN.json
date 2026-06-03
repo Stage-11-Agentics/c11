@@ -1,0 +1,38 @@
+{
+  "assigned_to": "agent:c11-119-delegator",
+  "branch_links": [],
+  "comment_count": 2,
+  "complexity": "medium",
+  "created_at": "2026-05-27T01:02:37Z",
+  "created_by": "human:atin",
+  "custom_fields": {},
+  "description": "Replace the existing 'Next Notification' sidebar button with a two-row cluster: (1) a renamed 'Waiting Agent' button with off-white lit-state inversion and gold hairline accent, and (2) a horizontally-split row of filled-triangle up/down workspace navigation buttons. Full design spec at docs/c11-waiting-agent-cluster-plan.md. Key decisions: off-white paper fill on lit (not solid yellow), void-fill paper-white-glyph rest state, gold-stroke hover for arrows, thin gold hairline on lit Waiting Agent, two-tier adaptive sizing (drop shortcut first then halve both rows), no wraparound on nav, press-and-hold auto-repeat.",
+  "done_at": "2026-06-03T17:25:17Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01KT78983FK5M7N7ZQ943MDMMR",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KT78983FK5M7N7ZQ943MDMMQ",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KSKF8WZ7284FY9AV78EWYZFN",
+  "last_event_id": "ev_01KT78983FK5M7N7ZQ943MDMMT",
+  "last_status_changed_at": "2026-06-03T17:25:17Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-119",
+  "status": "done",
+  "tags": null,
+  "title": "Sidebar cluster: Waiting Agent button + workspace nav arrows",
+  "type": "task",
+  "updated_at": "2026-06-03T17:25:17Z",
+  "urgency": null
+}

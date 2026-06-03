@@ -1,27 +1,38 @@
 {
   "assigned_to": "agent:claude-cli",
   "branch_links": [],
-  "comment_count": 1,
+  "comment_count": 2,
   "complexity": null,
   "created_at": "2026-05-19T14:44:46Z",
   "created_by": "agent:claude-cli",
   "custom_fields": {},
   "description": "**Problem**\n\nThe advisory `Host-bound unit tests` step in CI (.github/workflows/ci.yml ~line 200) runs the full c11Tests target via `-only-testing:c11Tests` and takes ~6 minutes. Most of that wall time is consumed by 32 expectation-timeout failures (~10s each) clustered in 7 named classes \u2014 these are the exact classes that C11-99 Area C is supposed to stabilize. Until Area C lands, those classes contribute zero signal: the step is `continue-on-error: true`, so the failures don't block merges, they just burn build minutes and make PRs feel sticky.\n\n**Fix**\n\nAdd `-skip-testing:c11Tests/<ClassName>` for the 7 named classes. The remaining ~20 c11Tests still run and still provide host-runtime signal (AppKit responder chain, Ghostty surface, WKWebView, UNNotificationCenter). Estimated wall-time drop: 6min \u2192 <90s.\n\n**Classes to skip** (all confirmed against c11Tests/ source):\n\n- AppDelegateShortcutRoutingTests\n- GhosttyConfigTests\n- NotificationBurstCoalescerTests\n- TabManagerReopenClosedBrowserFocusTests\n- TerminalNotificationDirectInteractionTests\n- BrowserDeveloperToolsVisibilityPersistenceTests\n- BrowserPanelHostContainerViewTests\n\n**Reverse path**\n\nWhen C11-99 Area C lands 5+ consecutive green runs, drop the `-skip-testing` flags and flip `continue-on-error` back to false (per the comment block on the step already). The skip list is a temporary scaffolding, documented inline so the next agent knows what to remove and when.\n\n**Out of scope**\n\n- Splitting the advisory step into a separate job (would surface gate conclusion faster but doesn't save wall time).\n- Parallelization (`-parallel-testing-enabled YES`) \u2014 risky given shared-state in c11Tests (sockets, NSWorkspace).\n- Fixing the flaky tests themselves \u2014 that's C11-99 Area C.",
-  "done_at": null,
-  "evidence_refs": [],
+  "done_at": "2026-06-02T21:00:03Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01KT525SB1T498DZPS7ZWQ63XD",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KT525SB1T498DZPS7ZWQ63XC",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
   "id": "task_01KS0B4HW71APVV2H06YYFDJ65",
-  "last_event_id": "ev_01KS0BDH3QE8D9V2VWVY23FQH8",
-  "last_status_changed_at": "2026-05-19T14:49:40Z",
+  "last_event_id": "ev_01KT525SB1T498DZPS7ZWQ63XF",
+  "last_status_changed_at": "2026-06-02T21:00:03Z",
   "linked_files": [],
   "priority": "high",
   "relationships_out": [],
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-109",
-  "status": "review",
+  "status": "done",
   "tags": null,
   "title": "CI: skip 7 flaky host-bound test classes to drop advisory step from ~6min to ~90s",
   "type": "chore",
-  "updated_at": "2026-05-19T14:49:40Z",
+  "updated_at": "2026-06-02T21:00:03Z",
   "urgency": null
 }

@@ -96,6 +96,10 @@ See `skills/c11-hotload/SKILL.md` for the full workflow — `reload.sh --tag` bu
 
 The one-liner: after any code change, `./scripts/reload.sh --tag <your-branch-slug>`. Never `open` an untagged `c11 DEV.app`.
 
+## Diagnostics
+
+- **Portal lifecycle (C11-18):** launch c11 with `C11_PORTAL_DEBUG=1` (or `CMUX_PORTAL_DEBUG=1`) to write structured `bind`/`detach`/`sync.skip.orphan`/`sync.result`/`orphan.hide`/`geom.external` events to `/tmp/c11-portal.log` (override path with `C11_PORTAL_LOG`). The log truncates on first call after process start; one repro run per file. Drive churn with `scripts/repro-c11-18.sh [iterations]` and attach the log range covering the artifact to the C11-18 ticket.
+
 ## Pitfalls
 
 - **Custom UTTypes** for drag-and-drop must be declared in `Resources/Info.plist` under `UTExportedTypeDeclarations` (e.g. `com.stage11.c11.tabtransfer`, `com.stage11.c11.sidebar-tab-reorder`).

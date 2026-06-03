@@ -1,0 +1,1 @@
+Reconciliation: PR #180 (C11-105: fix socket unlink + keep kqueue watcher as canary) merged 2026-05-19. Work shipped and documented in CLAUDE.md Pitfalls. Board was stale at 'review'.

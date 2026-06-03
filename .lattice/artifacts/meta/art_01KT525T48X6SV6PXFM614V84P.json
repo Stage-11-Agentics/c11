@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-02T21:00:04Z",
+  "created_by": "agent:claude-cli",
+  "custom_fields": {},
+  "id": "art_01KT525T48X6SV6PXFM614V84P",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KT525T48X6SV6PXFM614V84P.md",
+    "size_bytes": 62
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Reconciliation: PR #179 merged into main; deliverable shipped.",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

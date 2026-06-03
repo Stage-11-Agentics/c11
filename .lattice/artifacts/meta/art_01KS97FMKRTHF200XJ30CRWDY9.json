@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-05-23T01:34:04Z",
+  "created_by": "agent:claude-c11-111-d1",
+  "custom_fields": {
+    "url": "https://github.com/Stage-11-Agentics/c11/pull/203"
+  },
+  "id": "art_01KS97FMKRTHF200XJ30CRWDY9",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": null,
+    "size_bytes": null
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "PR #203 (c11-111-skill-onboarding)",
+  "token_usage": null,
+  "type": "reference"
+}

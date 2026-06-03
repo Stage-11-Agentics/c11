@@ -9560,7 +9560,7 @@ struct GhosttyTerminalView: NSViewRepresentable {
         // the current layout turn. Re-entrant syncs here can wedge window resize
         // handling and leave the app spinning on the wait cursor.
         guard let window else { return }
-        TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronize(for: window)
+        TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronize(for: window, trigger: "hostGeometryRevision")
     }
 
     func makeNSView(context: Context) -> NSView {

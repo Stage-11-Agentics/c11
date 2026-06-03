@@ -377,7 +377,7 @@ struct SessionPanelSnapshot: Codable, Sendable {
     var surfaceConversations: SurfaceConversations? = nil
 
     private enum CodingKeys: String, CodingKey {
-        case id, type, title, customTitle, directory, isPinned,
+        case id, type, title, customTitle, customColor, directory, isPinned,
              isManuallyUnread, gitBranch, listeningPorts, ttyName,
              terminal, browser, markdown, metadata, metadataSources
         case surfaceConversations = "surface_conversations"

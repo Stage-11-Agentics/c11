@@ -13,6 +13,57 @@ extension Notification.Name {
     static let browserDownloadEventDidArrive = Notification.Name("cmux.browserDownloadEventDidArrive")
 }
 
+/// Pure validation for the `--cwd` flag on `new-split` / `new-pane`
+/// (socket methods `surface.split` / `pane.create`).
+///
+/// Kept free of any TerminalController/AppKit state so it is exercisable from
+/// `c11LogicTests` without launching the app. The socket handler adapts the
+/// `Outcome` onto its result envelope.
+enum CwdParamResolution {
+    /// The result of validating a raw `cwd` param value.
+    enum Outcome: Equatable {
+        /// No cwd supplied (or the `inherit` keyword): use the default
+        /// inheritance chain (parent panel cwd → workspace cwd → $HOME).
+        case inherit
+        /// A validated, absolute, existing directory path to spawn the shell in.
+        case path(String)
+        /// The supplied value is unusable; `code`/`message` map to the socket
+        /// error envelope, `path` is the offending standardized path when known.
+        case invalid(code: String, message: String, path: String?)
+    }
+
+    /// Validate a raw `cwd` param value (as received off the socket / CLI).
+    ///
+    /// - A missing value, a non-string, an empty string, or the literal
+    ///   `"inherit"` (case-insensitive) → `.inherit`.
+    /// - A non-empty string → tilde-expanded + standardized, then required to be
+    ///   absolute, to exist, and to be a directory. Any failure → `.invalid`
+    ///   so the spawn never silently lands in $HOME.
+    static func resolve(_ raw: Any?) -> Outcome {
+        guard let raw else { return .inherit }
+        guard let rawStr = raw as? String else {
+            return .invalid(code: "invalid_params", message: "cwd must be a string", path: nil)
+        }
+        let trimmed = rawStr.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed.lowercased() == "inherit" {
+            return .inherit
+        }
+        let expandedPath = NSString(string: trimmed).expandingTildeInPath
+        let resolvedPath = NSString(string: expandedPath).standardizingPath
+        guard resolvedPath.hasPrefix("/") else {
+            return .invalid(code: "invalid_params", message: "cwd must be an absolute path: \(resolvedPath)", path: resolvedPath)
+        }
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: resolvedPath, isDirectory: &isDir) else {
+            return .invalid(code: "not_found", message: "cwd directory not found: \(resolvedPath)", path: resolvedPath)
+        }
+        guard isDir.boolValue else {
+            return .invalid(code: "invalid_params", message: "cwd is not a directory: \(resolvedPath)", path: resolvedPath)
+        }
+        return .path(resolvedPath)
+    }
+}
+
 /// Unix socket-based controller for programmatic terminal control
 /// Allows automated testing and external control of terminal tabs
 @MainActor
@@ -4126,6 +4177,35 @@ class TerminalController {
         return nil
     }
 
+    /// Validate and resolve a `cwd` param for surface.split / pane.create.
+    ///
+    /// Outcomes encoded into `resolved`:
+    /// - No `cwd` param, or the literal `"inherit"` → `resolved = nil`, return
+    ///   `nil` (no error). A nil working directory falls through to the existing
+    ///   inheritance chain (parent panel cwd → workspace cwd → $HOME).
+    /// - A non-empty path → expanded, standardized, and checked: it must be
+    ///   absolute, must exist, and must be a directory. On success `resolved`
+    ///   holds the absolute directory path. On failure returns a `V2CallResult`
+    ///   error so the spawn never silently falls back to $HOME.
+    ///
+    /// The validation logic itself lives in the pure, testable
+    /// `CwdParamResolution.resolve(_:)` enum so it can be exercised from
+    /// `c11LogicTests` without standing up a TerminalController; this method is
+    /// the thin adapter that maps the outcome onto the socket result envelope.
+    private func v2ResolveCwdParam(_ params: [String: Any], resolved: inout String?) -> V2CallResult? {
+        resolved = nil
+        switch CwdParamResolution.resolve(params["cwd"]) {
+        case .inherit:
+            return nil
+        case .path(let dir):
+            resolved = dir
+            return nil
+        case .invalid(let code, let message, let path):
+            let data: [String: Any]? = path.map { ["path": $0] }
+            return .err(code: code, message: message, data: data)
+        }
+    }
+
     // MARK: - V2 Context Resolution
 
     private func v2ResolveTabManager(params: [String: Any]) -> TabManager? {
@@ -6688,6 +6768,13 @@ class TerminalController {
         }
         let titleSeed = v2String(params, "title")
 
+        // Validate the optional --cwd override server-side before spawning so a
+        // bad path returns a clear error instead of silently landing in $HOME.
+        var cwdOverride: String?
+        if let err = v2ResolveCwdParam(params, resolved: &cwdOverride) {
+            return err
+        }
+
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to create split", data: nil)
         v2MainSync {
             guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
@@ -6707,7 +6794,7 @@ class TerminalController {
             v2MaybeFocusWindow(for: tabManager)
             v2MaybeSelectWorkspace(tabManager, workspace: ws)
 
-            if let newId = tabManager.newSplit(tabId: ws.id, surfaceId: targetSurfaceId, direction: direction) {
+            if let newId = tabManager.newSplit(tabId: ws.id, surfaceId: targetSurfaceId, direction: direction, workingDirectory: cwdOverride) {
                 let paneUUID = ws.paneId(forPanelId: newId)?.id
                 // Seed pane title atomic with pane id becoming valid.
                 v2SeedPaneTitle(workspaceId: ws.id, paneUUID: paneUUID, title: titleSeed)
@@ -8645,6 +8732,14 @@ class TerminalController {
             }
         }
 
+        // Validate the optional --cwd override server-side. Only meaningful for
+        // terminal panes (browser/markdown have no shell), but validate
+        // regardless so a bad path is rejected rather than silently ignored.
+        var cwdOverride: String?
+        if let err = v2ResolveCwdParam(params, resolved: &cwdOverride) {
+            return err
+        }
+
         let orientation = direction.orientation
         let insertFirst = direction.insertFirst
 
@@ -8684,7 +8779,8 @@ class TerminalController {
                     from: focusedPanelId,
                     orientation: orientation,
                     insertFirst: insertFirst,
-                    focus: self.v2FocusAllowed()
+                    focus: self.v2FocusAllowed(),
+                    workingDirectory: cwdOverride
                 )?.id
             }
 

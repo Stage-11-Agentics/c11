@@ -72,6 +72,7 @@
 		6ADA7A21C4FA1DC2682E16B4 /* StatusBarButtonDisplayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5C36031 /* StatusBarButtonDisplayTests.swift */; };
 		6B3658A83D3C83E088A1FD10 /* SurfaceActivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E25359D87534E2AF54EA0E5F /* SurfaceActivityTests.swift */; };
 		6B524A0BA34FD46A771335AB /* WorkspaceUnitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71F8ED91A4B55D34BE6A0668 /* WorkspaceUnitTests.swift */; };
+		C1133000000000000000A001 /* CwdParamResolutionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1133000000000000000A002 /* CwdParamResolutionTests.swift */; };
 		6CDD46A471F60855ED673AD4 /* AIUsageStatusRanking.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5361E7EEB9278540B58A3406 /* AIUsageStatusRanking.swift */; };
 		6E7E7BF7FE70B34844D472DB /* PaneMetadataStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7011BF1A1B2C3D4E5F60718 /* PaneMetadataStoreTests.swift */; };
 		6F3E766AEE928B3A98ADC170 /* MailboxDispatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D710FBF1A1B2C3D4E5F60718 /* MailboxDispatcherTests.swift */; };
@@ -449,6 +450,7 @@
 		70285867B5CB845DED588AC9 /* AIUsageProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AIUsageProvider.swift; sourceTree = "<group>"; };
 		7188E93AC1CCD7CE055EF03C /* CodexLocalUsageFetcher.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CodexLocalUsageFetcher.swift; sourceTree = "<group>"; };
 		71F8ED91A4B55D34BE6A0668 /* WorkspaceUnitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceUnitTests.swift; sourceTree = "<group>"; };
+		C1133000000000000000A002 /* CwdParamResolutionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CwdParamResolutionTests.swift; sourceTree = "<group>"; };
 		73BA14BD0FBD702EC2D571CA /* AIUsageAccountStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AIUsageAccountStore.swift; sourceTree = "<group>"; };
 		76375733F860DAB840D28800 /* DefaultAgentProjectConfig.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DefaultAgentProjectConfig.swift; sourceTree = "<group>"; };
 		769EE7948D46144F598DFB3B /* ClaudeAIProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClaudeAIProvider.swift; sourceTree = "<group>"; };
@@ -1219,6 +1221,7 @@
 				C11106F01 /* GitContextResolverCacheWiringTests.swift */,
 				C11106F02 /* ProcessGitRunnerTimeoutTests.swift */,
 				C11106F03 /* SocketDerivedSourceRejectionTests.swift */,
+				C1133000000000000000A002 /* CwdParamResolutionTests.swift */,
 				640FFC63239B7B1756F50523 /* AIUsageTests.swift */,
 				F81492660FA7D00E8115BD46 /* ConversationRefTests.swift */,
 				7CC7DA94810490BDE375738E /* ConversationScraperTests.swift */,
@@ -1539,6 +1542,7 @@
 				C11106B01 /* GitContextResolverCacheWiringTests.swift in Sources */,
 				C11106B02 /* ProcessGitRunnerTimeoutTests.swift in Sources */,
 				C11106B03 /* SocketDerivedSourceRejectionTests.swift in Sources */,
+				C1133000000000000000A001 /* CwdParamResolutionTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

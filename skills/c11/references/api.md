@@ -82,8 +82,8 @@ The `caller` block in `c11 identify` always reflects the pane invoking the comma
 # Create
 c11 <path>                           # Open directory in new workspace (launches c11 if needed)
 c11 new-workspace [--cwd <path>] [--command <text>]
-c11 new-split <left|right|up|down>   # Split any pane; the new pane is always a terminal
-c11 new-pane [--type <terminal|browser|markdown>] [--direction <dir>] [--url <url>]
+c11 new-split <left|right|up|down> [--cwd <path|inherit>]   # Split any pane; the new pane is always a terminal
+c11 new-pane [--type <terminal|browser|markdown>] [--direction <dir>] [--url <url>] [--cwd <path|inherit>]
 c11 new-surface [--type <terminal|browser|markdown>] [--pane <id|ref>] [--workspace <id|ref>]
 
 # Navigate
@@ -115,6 +115,22 @@ c11 new-split down
 # RIGHT — splits the pane containing surface:10
 c11 new-split down --surface surface:10
 ```
+
+### `--cwd` — set the new shell's working directory
+
+`new-split` and `new-pane` spawn a terminal whose default working directory is inherited from the parent surface. Pass `--cwd <path>` to start the shell in a specific directory instead — set at creation, before the PTY is wired up, so the agent lands there with no `cd`:
+
+```bash
+c11 new-split right --cwd /Users/me/project   # new shell starts in /Users/me/project
+c11 new-split down --cwd .                     # relative path, resolved against your cwd
+c11 new-pane --cwd ~/code/api                  # tilde-expanded
+```
+
+- The path is resolved relative to where the CLI runs (so `--cwd .` is your current dir) and validated server-side: a nonexistent path or a file (not a directory) returns a clear error rather than silently falling back to `$HOME`.
+- Omitting `--cwd` — or passing `--cwd inherit` — keeps the default: inherit the parent surface's cwd.
+- Browser/markdown panes have no shell, so `--cwd` has no effect there (it's still validated if supplied).
+
+This removes the orchestrator habit of prefixing every spawned command with `cd /path && …` just to keep a sub-agent out of `~`.
 
 ### `new-surface` targeting (gotcha — opposite of `new-split`)
 

@@ -2010,9 +2010,10 @@ struct CMUXCLI {
             let (panelArg, rem1) = parseOption(rem0, name: "--panel")
             let (sfArg, rem2) = parseOption(rem1, name: "--surface")
             let (titleArg, rem3) = parseOption(rem2, name: "--title")
+            let (cwdArg, rem4) = parseOption(rem3, name: "--cwd")
             let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             let surfaceRaw = sfArg ?? panelArg ?? (wsArg == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
-            guard let direction = rem3.first else {
+            guard let direction = rem4.first else {
                 throw CLIError(message: "new-split requires a direction")
             }
             var params: [String: Any] = ["direction": direction]
@@ -2021,6 +2022,13 @@ struct CMUXCLI {
             let sfId = try normalizeSurfaceHandle(surfaceRaw, client: client, workspaceHandle: wsId)
             if let sfId { params["surface_id"] = sfId }
             if let titleArg, !titleArg.isEmpty { params["title"] = titleArg }
+            // --cwd <path> sets the new shell's working directory. `inherit`
+            // (or omitting the flag) keeps the default: inherit the parent
+            // surface's cwd. An explicit path is resolved relative to where the
+            // CLI ran so `--cwd .` works; the app validates it server-side.
+            if let cwdArg = cwdArg?.trimmingCharacters(in: .whitespaces), !cwdArg.isEmpty {
+                params["cwd"] = cwdArg.lowercased() == "inherit" ? "inherit" : resolvePath(cwdArg)
+            }
             let payload = try client.sendV2(method: "surface.split", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
@@ -2098,6 +2106,7 @@ struct CMUXCLI {
             let url = optionValue(commandArgs, name: "--url")
             let file = optionValue(commandArgs, name: "--file")
             let title = optionValue(commandArgs, name: "--title")
+            let cwd = optionValue(commandArgs, name: "--cwd")
             var params: [String: Any] = ["direction": direction]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
@@ -2105,6 +2114,13 @@ struct CMUXCLI {
             if let url { params["url"] = url }
             if let file { params["file"] = file }
             if let title, !title.isEmpty { params["title"] = title }
+            // --cwd <path> sets the new terminal's working directory. `inherit`
+            // (or omitting the flag) keeps the default: inherit the parent
+            // surface's cwd. Resolved relative to the CLI's cwd; validated
+            // server-side.
+            if let cwd = cwd?.trimmingCharacters(in: .whitespaces), !cwd.isEmpty {
+                params["cwd"] = cwd.lowercased() == "inherit" ? "inherit" : resolvePath(cwd)
+            }
             let payload = try client.sendV2(method: "pane.create", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
 
@@ -8191,11 +8207,19 @@ struct CMUXCLI {
               --surface <id|ref>     Surface to split from (default: $CMUX_SURFACE_ID)
               --panel <id|ref>       Alias for --surface
               --title <text>         Seed the new pane's title metadata atomically with creation
+              --cwd <path|inherit>   Working directory for the new shell. A path
+                                     (absolute or relative to where the CLI ran,
+                                     so `--cwd .` works) is validated and must be
+                                     an existing directory. `inherit` (the
+                                     default when omitted) uses the parent
+                                     surface's cwd.
 
             Example:
               c11 new-split right
               c11 new-split down --workspace workspace:1
               c11 new-split right --title "Parent :: Code Review"
+              c11 new-split right --cwd /Users/me/project
+              c11 new-split down --cwd .
             """
         case "list-panes":
             return """
@@ -8293,12 +8317,17 @@ struct CMUXCLI {
               --url <url>                         URL for browser panes
               --file <path>                       File path for markdown panes
               --title <text>                      Seed the new pane's title metadata atomically with creation
+              --cwd <path|inherit>                Working directory for the new terminal. A path
+                                                  (absolute or relative to the CLI's cwd) is
+                                                  validated and must be an existing directory.
+                                                  `inherit` (the default) uses the parent surface's cwd.
 
             Example:
               c11 new-pane
               c11 new-pane --type browser --direction down --url https://example.com
               c11 new-pane --type markdown --file ~/docs/README.md
               c11 new-pane --title "Parent :: Code Review"
+              c11 new-pane --cwd /Users/me/project
             """
         case "new-surface":
             return """

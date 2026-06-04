@@ -64,6 +64,57 @@ enum CwdParamResolution {
     }
 }
 
+/// Pure composition for `default-agent launch --in-surface`'s shell line and
+/// prompt-delivery decision.
+///
+/// `launchInExistingSurface` types a single composed line into an existing
+/// terminal's PTY: an optional `cd <cwd> &&` prefix, the agent's bare launcher,
+/// and — for claude-code only — the prompt as a single-quoted positional. For
+/// every other TUI the prompt cannot ride the launch line (those agents don't
+/// accept a positional prompt) so it is delivered after the agent has booted via
+/// a second, delayed `sendText`. This enum captures that decision free of any
+/// TerminalController/AppKit state so it is exercisable from `c11LogicTests`.
+enum DefaultAgentLaunchComposition: Equatable {
+    /// The shell line to type+submit into the surface immediately, plus the
+    /// prompt (if any) that must be delivered after the agent boots.
+    struct Plan: Equatable {
+        /// The composed `[cd <cwd> && ]<launcher>[ '<prompt>']` line.
+        let launchLine: String
+        /// When non-nil, the prompt to deliver via a delayed post-launch
+        /// sendText (non-claude agents). nil means the prompt (if any) already
+        /// rode the launch line, or there was no prompt.
+        let delayedPrompt: String?
+    }
+
+    /// Compose the launch plan.
+    ///
+    /// - `agent`: the resolved agent type — only claude-code accepts a positional prompt.
+    /// - `bareCommand`: the agent's launcher command (already resolved from config).
+    /// - `cwd`: optional working directory; when non-empty a `cd <quoted> &&` prefix is prepended.
+    /// - `prompt`: optional initial prompt.
+    static func plan(
+        agent: AgentType,
+        bareCommand: String,
+        cwd: String?,
+        prompt: String?
+    ) -> Plan {
+        var line = ""
+        if let cwd, !cwd.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            line += "cd \(DefaultAgentResolver.shellQuote(cwd)) && "
+        }
+        let trimmedPrompt = prompt?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasPrompt = (trimmedPrompt?.isEmpty == false)
+        if agent == .claudeCode, let trimmedPrompt, hasPrompt {
+            line += "\(bareCommand) \(DefaultAgentResolver.shellQuote(trimmedPrompt))"
+            return Plan(launchLine: line, delayedPrompt: nil)
+        }
+        line += bareCommand
+        // Non-claude agents: prompt rides a separate post-ready sendText.
+        let delayed = (hasPrompt ? trimmedPrompt : nil)
+        return Plan(launchLine: line, delayedPrompt: delayed)
+    }
+}
+
 /// Unix socket-based controller for programmatic terminal control
 /// Allows automated testing and external control of terminal tabs
 @MainActor
@@ -19512,6 +19563,17 @@ class TerminalController {
     /// Launch into an existing surface's PTY. Composes `[cd <cwd> && ]<launcher>[ <quoted-prompt>]`,
     /// sends it to the surface, and (for non-claude agents with a prompt) schedules
     /// a delayed sendText to deliver the prompt after the agent has booted.
+    ///
+    /// Resolution parity with `send` (C11-121): the surface ref is resolved the
+    /// same way `v2SurfaceSendText` resolves it — `v2RefreshKnownRefs()` is run
+    /// first so a `surface:N` handle minted moments earlier by `new-split` is
+    /// already in the map, and a freshly-split surface whose PTY has not attached
+    /// yet is started in the background and waited on (bounded) before the line is
+    /// sent. This closes the two C11-121 races: (1) a `new-split` ref that send
+    /// resolves but launch did not, and (2) launch erroring/returning a non-truthful
+    /// `OK` while the surface's ghostty PTY was still `nil` (`tty: null`). The
+    /// success envelope is only returned once the line has actually been delivered
+    /// (or durably queued for flush-on-attach via `sendSubmitFormText`).
     private func launchInExistingSurface(
         surfaceArg: String,
         agent: AgentType,
@@ -19524,45 +19586,56 @@ class TerminalController {
         }
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
-        // Compose the launch line. For claude-code with a prompt, the prompt
-        // ships as a single-quoted positional arg in the same line. For other
-        // agents, the prompt is delivered after a fixed post-launch delay so
-        // each TUI's input contract is honored without per-agent ready-string
-        // detection in v1.
-        var line = ""
-        if let cwd, !cwd.isEmpty {
-            line += "cd \(DefaultAgentResolver.shellQuote(cwd)) && "
-        }
-        if agent == .claudeCode, let prompt, !prompt.isEmpty {
-            line += "\(bareCommand) \(DefaultAgentResolver.shellQuote(prompt))"
-        } else {
-            line += bareCommand
-        }
+        let composed = DefaultAgentLaunchComposition.plan(
+            agent: agent,
+            bareCommand: bareCommand,
+            cwd: cwd,
+            prompt: prompt
+        )
 
-        var result = "ERROR: surface not found"
+        var result = "ERROR: surface not found: \(surfaceId.uuidString)"
         v2MainSync {
+            // Resolve the ref → panel exactly like send does. v2RefreshKnownRefs()
+            // guarantees a just-minted `surface:N` handle (e.g. from `new-split`
+            // moments earlier) is already in the resolution map, so launch no
+            // longer races behind send for a brand-new surface.
+            v2RefreshKnownRefs()
+
+            var targetPanel: TerminalPanel?
             for tab in tabManager.tabs {
-                guard let panel = tab.terminalPanel(for: surfaceId) else { continue }
-                // sendSubmitFormText types the text via ghostty_surface_text
-                // (bracketed paste), then dispatches a real synthetic Return
-                // outside the paste sequence — required for shell line
-                // discipline and TUI raw-mode handlers to actually execute.
-                // Falls back to a flush-time submit if the surface is not yet
-                // attached to a window.
-                panel.surface.sendSubmitFormText(line)
-                if agent != .claudeCode, let prompt, !prompt.isEmpty {
-                    // Post-ready delivery. Fixed 2500ms delay: long enough for
-                    // codex/opencode/kimi to boot to a prompt on a typical
-                    // machine, short enough not to feel sluggish. Readiness
-                    // detection (poll for prompt-string-visible) is a v2 follow-up.
-                    let delay: DispatchTimeInterval = .milliseconds(2500)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak panel] in
-                        panel?.surface.sendSubmitFormText(prompt)
-                    }
+                if let panel = tab.terminalPanel(for: surfaceId) {
+                    targetPanel = panel
+                    break
                 }
-                result = "OK"
-                return
             }
+            guard let panel = targetPanel else { return }
+
+            // A freshly-split or background surface may not have attached its
+            // ghostty PTY yet (the `tty: null` symptom). Kick the background
+            // surface start so the shell actually boots; sendSubmitFormText
+            // queues the line and flushes it on attach, so the OK we return is
+            // truthful — the line is durably bound to the surface, not dropped.
+            if panel.surface.surface == nil {
+                panel.surface.requestBackgroundSurfaceStartIfNeeded()
+            }
+
+            // sendSubmitFormText types via ghostty_surface_text (bracketed
+            // paste) then dispatches a real synthetic Return outside the paste
+            // sequence — required for shell line discipline and TUI raw-mode
+            // handlers to execute. Falls back to a flush-time submit if the
+            // surface is not yet attached to a window.
+            panel.surface.sendSubmitFormText(composed.launchLine)
+            if let delayedPrompt = composed.delayedPrompt {
+                // Post-ready delivery. Fixed 2500ms delay: long enough for
+                // codex/opencode/kimi to boot to a prompt on a typical machine,
+                // short enough not to feel sluggish. Readiness detection (poll
+                // for prompt-string-visible) is a v2 follow-up.
+                let delay: DispatchTimeInterval = .milliseconds(2500)
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak panel] in
+                    panel?.surface.sendSubmitFormText(delayedPrompt)
+                }
+            }
+            result = "OK"
         }
         return result
     }

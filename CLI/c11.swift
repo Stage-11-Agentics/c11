@@ -9010,7 +9010,12 @@ struct CMUXCLI {
               --in-surface <id|ref|index>      Launch into an existing surface's PTY. The
                                                orchestrator pattern: create a surface with
                                                `c11 new-split` or `c11 new-pane`, then
-                                               launch into it.
+                                               launch into it. A `surface:N` ref / index is
+                                               resolved across every workspace (not just the
+                                               focused one); pass --workspace to scope it.
+              --workspace <id|ref|index>       Scope --in-surface ref/index resolution to a
+                                               single workspace. Defaults to searching all
+                                               workspaces (or CMUX_WORKSPACE_ID from the env).
               --pane <uuid|index>              Legacy A-button mimic: create a NEW agent
                                                surface in the named pane (focused pane if
                                                omitted). Mutually exclusive with
@@ -11033,22 +11038,55 @@ struct CMUXCLI {
         }
 
         // Resolve --in-surface ref → UUID. The v1 handler accepts UUIDs only;
-        // short refs and indexes get resolved here via surface.list.
+        // short refs and indexes get resolved here.
+        //
+        // C11-121: previously this listed only the *focused* workspace
+        // (`surface.list` with empty params), so a `surface:N` ref belonging to
+        // any other workspace failed with "Surface not found" — even though
+        // `send`/`read-screen`, given an explicit `--workspace`, resolved the
+        // same ref fine. `default-agent launch` has no `--workspace` flag, so we
+        // align with send's resolution by searching every workspace in every
+        // window. A `surface:N` ref / index is unique within a workspace; the
+        // first match across the fleet is the target. An explicit `--workspace`
+        // (or `CMUX_WORKSPACE_ID` in the caller's env) scopes the search when
+        // provided, matching how send narrows resolution.
         var inSurfaceUUID: String? = nil
         if let raw = inSurfaceRaw {
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             if isUUID(trimmed) {
                 inSurfaceUUID = trimmed
             } else {
-                let listed = try client.sendV2(method: "surface.list", params: [:])
-                let items = listed["surfaces"] as? [[String: Any]] ?? []
                 let asIndex = Int(trimmed)
-                for item in items {
-                    if (item["ref"] as? String) == trimmed, let id = item["id"] as? String {
-                        inSurfaceUUID = id
-                        break
+                let matches: (_ item: [String: Any]) -> Bool = { item in
+                    if (item["ref"] as? String) == trimmed { return true }
+                    if let asIndex, intFromAny(item["index"]) == asIndex { return true }
+                    return false
+                }
+
+                // Build the set of workspaces to search: an explicit/env
+                // workspace narrows it; otherwise every workspace in every window.
+                let wsScope = workspaceFromArgsOrEnv(commandArgs)
+                var workspaceIds: [String] = []
+                let scopedWorkspaceId: String? = wsScope.flatMap { try? normalizeWorkspaceHandle($0, client: client) } ?? nil
+                if let scopedWorkspaceId {
+                    workspaceIds = [scopedWorkspaceId]
+                } else {
+                    let windows = try client.sendV2(method: "window.list")
+                    let windowList = windows["windows"] as? [[String: Any]] ?? []
+                    for window in windowList {
+                        guard let windowId = window["id"] as? String else { continue }
+                        let wsListed = try client.sendV2(method: "workspace.list", params: ["window_id": windowId])
+                        let wsItems = wsListed["workspaces"] as? [[String: Any]] ?? []
+                        for ws in wsItems {
+                            if let id = ws["id"] as? String { workspaceIds.append(id) }
+                        }
                     }
-                    if let asIndex, intFromAny(item["index"]) == asIndex, let id = item["id"] as? String {
+                }
+
+                for wsId in workspaceIds {
+                    let listed = try client.sendV2(method: "surface.list", params: ["workspace_id": wsId])
+                    let items = listed["surfaces"] as? [[String: Any]] ?? []
+                    if let hit = items.first(where: matches), let id = hit["id"] as? String {
                         inSurfaceUUID = id
                         break
                     }

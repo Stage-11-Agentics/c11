@@ -102,6 +102,7 @@ The one-liner: after any code change, `./scripts/reload.sh --tag <your-branch-sl
 
 ## Pitfalls
 
+- **`dlog` is DEBUG-only.** It's bonsplit's `DebugEventLog` free function, defined inside `#if DEBUG`. Every call site must be `#if DEBUG`-gated or the Release configuration fails to compile — and CI's `build` job compiles Debug, so an ungated `dlog` sails through PR CI and only breaks at release-staging time (v0.51.0 staging caught four of these from PR #95). Gate the logging, not the surrounding logic.
 - **Custom UTTypes** for drag-and-drop must be declared in `Resources/Info.plist` under `UTExportedTypeDeclarations` (e.g. `com.stage11.c11.tabtransfer`, `com.stage11.c11.sidebar-tab-reorder`).
 - Do not add an app-level display link or manual `ghostty_surface_draw` loop; rely on Ghostty wakeups/renderer to avoid typing lag.
 - **Typing-latency-sensitive paths** (read carefully before touching these areas):

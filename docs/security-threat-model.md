@@ -136,6 +136,13 @@ browser surface communicates with c11 via `WKContentController` script
 message handlers configured per-panel; new handlers must be added to
 this doc when introduced (the diff signal in section 9 catches this).
 
+Outbound hand-off: the browser toolbar's "Open in Default Browser"
+button (v0.51.0) passes the panel's current URL to
+`NSWorkspace.shared.open(_:)`. It is operator-gesture-gated (explicit
+click, never script-triggered) and refuses empty/`about:` schemes; a
+page can influence *which* URL is handed off only by navigating itself,
+which the operator sees in the address bar before clicking.
+
 Evidence:
 
 ```

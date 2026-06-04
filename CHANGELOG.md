@@ -6,6 +6,43 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.51.0] - 2026-06-04
+
+Feature release. Headline: **session resume, rebuilt** — a TUI-agnostic conversation store replaces the per-TUI wrapper pattern, so Claude Code, Codex, Opencode, and Kimi surfaces each resume their own session instead of racing lifecycle hooks, and a per-workspace launch picker lets the operator choose exactly which workspaces come back. Alongside it: AI subscription usage monitoring lands in the sidebar footer (Claude reads local files, zero credentials; Codex via Keychain-stored API key), the sidebar gains a Waiting Agent + workspace nav cluster, and the CLI grows `--cwd` on `new-split`/`new-pane` and `--title` on `new-workspace`.
+
+### Added
+
+- **AI usage monitoring in the sidebar footer.** Two providers, multi-account: **Claude** reads `~/.claude/projects/**/*.jsonl` locally — no credentials, no network calls for usage — and computes 5-hour session and 7-day weekly windows with cost; **Codex** polls `api.openai.com` with a Keychain-stored key (`WhenUnlockedThisDeviceOnly`, no iCloud sync). 60-second occlusion-aware polling, provider status-page integration, popover + editor sheet + settings section. Claude auto-registers on first launch when local data exists. Fresh implementation inspired by upstream cmux#2827. ([#85](https://github.com/Stage-11-Agentics/c11/pull/85))
+- **TUI-agnostic conversation store for session resume.** Each surface persists its own `Conversation` refs on the workspace snapshot, and per-kind strategies (Claude Code, Codex, Opencode, Kimi) interpret them into resume actions. Fixes two 0.44.0-era failures: multiple Codex panes in one project all restoring to the same global most-recent session, and Claude panes restoring blank when the SessionEnd hook raced shutdown snapshot capture. Explicit `/exit` no longer auto-resumes on reopen (intentional contract). Kill switch: `CMUX_DISABLE_CONVERSATION_STORE=1` falls back to the legacy path for one release window. ([#95](https://github.com/Stage-11-Agentics/c11/pull/95))
+- **Per-workspace launch resume picker.** A sheet at launch lists the prior session's workspaces with checkboxes; resume all, some, or none. Policy lives at `c11.launch.resumePolicy ∈ {ask, always, never}` (default `ask`; `always` is the legacy restore-everything behavior). ([#137](https://github.com/Stage-11-Agentics/c11/pull/137))
+- **Waiting Agent + workspace nav cluster in the sidebar.** Replaces the "Next Notification" button: a Waiting Agent row that lights paper-fill with a gold hairline when agents are waiting, plus ▲/▼ workspace navigation arrows with hover stroke, first/last disabling, and press-and-hold auto-repeat for fast scrubbing. ([#214](https://github.com/Stage-11-Agentics/c11/pull/214))
+- **"Open in Default Browser" button in the browser toolbar.** Pops the current page out to the system default browser. ([#211](https://github.com/Stage-11-Agentics/c11/pull/211))
+- **`--cwd <path>` on `c11 new-split` and `c11 new-pane`.** The spawned shell starts in the given directory (absolute, relative, or tilde-expanded) instead of inheriting the parent surface's cwd — no more `cd /path && …` prefixes on every sub-agent spawn. Bad paths return a clear socket error instead of silently spawning in `$HOME`. ([#226](https://github.com/Stage-11-Agentics/c11/pull/226))
+- **`c11 new-workspace --title <text>`.** Sets the durable workspace title at creation in one call — survives snapshot/restore and wins over blueprint titles when combined with `--layout`. ([#225](https://github.com/Stage-11-Agentics/c11/pull/225))
+- **Double-click a layout tile on the New Workspace dialog to launch immediately.** ([#208](https://github.com/Stage-11-Agentics/c11/pull/208), [#213](https://github.com/Stage-11-Agentics/c11/pull/213))
+
+### Changed
+
+- **CLI rejects empty `--workspace` / `--surface` values instead of silently falling back to the focused surface.** An empty env-var expansion (`--surface ""`) used to write to whatever surface happened to be focused — usually a peer agent's tab. It now errors. ([d6d0f76e9](https://github.com/Stage-11-Agentics/c11/commit/d6d0f76e9))
+- **Resume picker and AI usage strings translated in all six locales** (ja, uk, ko, zh-Hans, zh-Hant, ru). ([#224](https://github.com/Stage-11-Agentics/c11/pull/224))
+
+### Fixed
+
+- **The A (Agent Launcher) button no longer ignores Settings → Default Agent.** A stale pre-v0.48 `~/.c11/agents.json` (legacy array format, or any file without an explicit `defaultAgent` key) decoded into a non-nil config that short-circuited the resolver to Claude before the user's Settings pick was read. A project config now only overrides the agent when it actually states one. ([#217](https://github.com/Stage-11-Agentics/c11/pull/217))
+- **Fresh `new-split` refs are immediately addressable, and `default-agent launch` resolves refs the same way `send` does.** `--in-surface` used to resolve only against the focused workspace (failing client-side on any other workspace, with no `--workspace` flag to scope it), and the server could send the launch line into an unattached PTY. The CLI now resolves across all workspaces (new `--workspace` flag honors explicit scope), and the server refreshes known refs and boots background surfaces before sending, so the returned `OK` is truthful. ([#229](https://github.com/Stage-11-Agentics/c11/pull/229))
+- **`c11 restore` reliably submits the resume command.** The registry-synthesized resume line was typed via the bracketed-paste path, leaving the command stranded at the prompt; it now dispatches a real synthetic Return. ([#137](https://github.com/Stage-11-Agentics/c11/pull/137))
+- **New Workspace dialog centers on the active display** instead of landing off-center on multi-monitor setups (`NSWindow.center()` fired against a pre-layout frame on `NSScreen.main`). ([#208](https://github.com/Stage-11-Agentics/c11/pull/208), [#213](https://github.com/Stage-11-Agentics/c11/pull/213))
+- **Mermaid rendering shows an actionable hint when puppeteer's chrome-headless-shell is missing** (routine after `npm prune` / mmdc upgrade) — a copy-pasteable install command instead of the misleading generic mermaid-cli hint. ([#213](https://github.com/Stage-11-Agentics/c11/pull/213))
+- **Close-confirm overlay focuses its tab before showing**, so the confirmation always appears over the surface it's about to close. ([#206](https://github.com/Stage-11-Agentics/c11/pull/206))
+
+### Thanks to 1 contributor!
+
+- [@BenevolentFutures](https://github.com/BenevolentFutures)
+
+### Built and shipped by
+
+Stage 11 Agentics. Operator:agent, fused.
+
 ## [0.50.0] - 2026-05-22
 
 Feature release. Headline: **state-aware skill install/update** — the Agent Skills onboarding sheet now keeps a per-(target, skill) dismissal store keyed against the bundled skill's content hash, so a new c11 release that updates a skill's body automatically re-surfaces the affected row instead of staying silenced forever (the v0.49.0 silence-flag bug, fixed for upgraders via a one-shot migration). Alongside it: the New Workspace dialog gets a recents-as-panel redesign with sort and pin, blueprint icons gain letter-labeled cells, the Lattice Orchestrator workflow ships as a first-class installable c11 skill, and `$C11_DEFAULT_AGENT_LAUNCH` stops smuggling the operator's seed prompt into sub-agent launches.

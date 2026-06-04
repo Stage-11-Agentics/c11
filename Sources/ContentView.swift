@@ -9616,22 +9616,12 @@ private struct SidebarFooter: View {
 
     var body: some View {
 #if DEBUG
-        VStack(alignment: .leading, spacing: 4) {
-            AIUsageFooterView()
-                .padding(.leading, 6)
-                .padding(.trailing, 10)
-            SidebarDevFooter(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback)
-        }
+        SidebarDevFooter(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback)
 #else
-        VStack(alignment: .leading, spacing: 4) {
-            AIUsageFooterView()
-                .padding(.leading, 6)
-                .padding(.trailing, 10)
-            SidebarFooterButtons(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback)
-                .padding(.leading, 6)
-                .padding(.trailing, 10)
-                .padding(.bottom, 6)
-        }
+        SidebarFooterButtons(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback)
+            .padding(.leading, 6)
+            .padding(.trailing, 10)
+            .padding(.bottom, 6)
 #endif
     }
 }

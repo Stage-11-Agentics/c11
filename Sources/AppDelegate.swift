@@ -2397,6 +2397,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // synchronous snapshot seed, restoring stale .alive/.suspended
         // refs the dirty sentinel was meant to invalidate.
         priorShutdownAtLaunch = priorShutdown
+#if DEBUG
+        // dlog only exists in DEBUG (bonsplit DebugEventLog); the sentinel
+        // logic above/below stays live in Release — only the logging is gated.
         switch priorShutdown {
         case .clean(let at):
             dlog("shutdown.sentinel prior=clean at=\(at.timeIntervalSince1970)")
@@ -2405,6 +2408,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         case .missing:
             dlog("shutdown.sentinel prior=missing — first launch or sentinel unwritable")
         }
+#endif
         ShutdownSentinel.writeDirty(bundleId: bundleId)
 
         // C11-24 review (M3): kill-switch breadcrumb. The store
@@ -2412,10 +2416,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // CONVERSATION_STORE=1 is set; without a startup signal,
         // operators on the legacy fallback path don't notice until
         // something visibly regresses. Emit once at launch and surface
-        // via `c11 conversation list --json` for diagnostics.
+        // via `c11 conversation list --json` for diagnostics. (DEBUG-only:
+        // dlog does not exist in Release builds.)
+#if DEBUG
         if ConversationStorePolicy.isDisabled {
             dlog("conversation.kill_switch.engaged env=CMUX_DISABLE_CONVERSATION_STORE — falling back to AgentRestartRegistry")
         }
+#endif
 
         // Crash visibility (separate rail from ShutdownSentinel above): if a
         // previous launch ended without applicationWillTerminate (Force Quit,

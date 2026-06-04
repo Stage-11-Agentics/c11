@@ -1,5 +1,15 @@
 # c11 — Tier 1 Persistence Plan
 
+> **Rollback scaffolding removed (CMUX-6).** The one-release rollback
+> safety nets this plan describes — the `CMUX_DISABLE_STABLE_PANEL_IDS`,
+> `CMUX_DISABLE_STABLE_WORKSPACE_IDS`, `CMUX_DISABLE_METADATA_PERSIST`,
+> and `CMUX_DISABLE_STATUS_ENTRY_PERSIST` env vars, plus the
+> `oldToNewPanelIds` identity-map remap — have shipped, stabilized, and
+> been deleted. Stable panel/workspace IDs, metadata persistence, and
+> status-entry persistence are now unconditional. The rollback notes
+> below are retained as a planning retrospective; the env vars and remap
+> they reference no longer exist in the codebase.
+
 **Status:** plan (not scheduled). **Author:** conversation 2026-04-18.
 **Revised:** 2026-04-18 after Trident plan review — fixed metadata-type fidelity,
 reframed Phase 1 as a constructor refactor (not a remap removal), added

@@ -94,11 +94,4 @@ final class WorkspaceIdentityRestoreTests: XCTestCase {
         XCTAssertNotNil(manager.selectedTabId)
         XCTAssertEqual(manager.selectedTabId, manager.tabs.first?.id)
     }
-
-    func testStableWorkspaceIdsPolicyIsOnByDefault() {
-        XCTAssertTrue(
-            SessionPersistencePolicy.stableWorkspaceIdsEnabled,
-            "Phase 1.5 default: workspace IDs are stable across restarts unless CMUX_DISABLE_STABLE_WORKSPACE_IDS is set"
-        )
-    }
 }

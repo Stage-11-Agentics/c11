@@ -6,20 +6,9 @@ reload-from-disk cycle via the DEBUG-only `debug.session.save_and_load`
 socket command, then reads the metadata back via `pane.get_metadata` and
 asserts every value plus every source attribution survived.
 
-Mirrors `test_metadata_persistence.py` but on the pane axis. Two variants,
-selected by the `CMUX_DISABLE_METADATA_PERSIST` env var **in the running
-app**:
-
-- Main variant (env var unset in the app):
-    Pane metadata + sources round-trip; the on-disk snapshot's pane layout
-    leaves carry `id`, `metadata`, and `metadataSources`.
-
-- Rollback variant (env var `=1` in the app launch env):
-    Both the live store and the on-disk snapshot omit pane metadata.
-
-CI runs the same test file twice — once without the env var, once with —
-to cover both paths. Setting the env var on the test process alone has no
-effect because the CLI is a separate process from the app.
+Mirrors `test_metadata_persistence.py` but on the pane axis. Pane metadata
++ sources round-trip; the on-disk snapshot's pane layout leaves carry `id`,
+`metadata`, and `metadataSources`.
 """
 
 from __future__ import annotations
@@ -36,7 +25,6 @@ from cmux import cmux, cmuxError
 
 
 SOCKET_PATH = os.environ.get("CMUX_SOCKET", "/tmp/cmux-debug.sock")
-TEST_EXPECTS_ROLLBACK = os.environ.get("CMUX_DISABLE_METADATA_PERSIST") == "1"
 
 
 def _must(cond: bool, msg: str) -> None:
@@ -172,63 +160,7 @@ def _run_main_variant(c: cmux) -> None:
                         )
         _must(found_pane, f"snapshot did not contain our pane id={pane_id}")
 
-        print("PASS: CMUX-11 Phase 3 pane metadata persistence (main variant)")
-    finally:
-        try:
-            c.close_workspace(workspace_id)
-        except Exception:
-            pass
-
-
-def _run_rollback_variant(c: cmux) -> None:
-    workspace_id, pane_id = _fresh_workspace_and_pane(c)
-    try:
-        c._call(
-            "pane.set_metadata",
-            {
-                "workspace_id": workspace_id,
-                "pane_id": pane_id,
-                "mode": "merge",
-                "source": "explicit",
-                "metadata": {"title": "Rollback", "progress": 0.5},
-            },
-        )
-        c._call("debug.session.save_and_load", {})
-        got = c._call(
-            "pane.get_metadata",
-            {
-                "workspace_id": workspace_id,
-                "pane_id": pane_id,
-                "include_sources": True,
-            },
-        ) or {}
-        md = got.get("metadata") or {}
-        sources = got.get("metadata_sources") or {}
-        _must(md == {}, f"Rollback: expected empty pane store, got {md}")
-        _must(sources == {}, f"Rollback: expected empty pane sources, got {sources}")
-
-        snap_path = _snapshot_path()
-        _must(
-            snap_path is not None and snap_path.exists(),
-            f"Rollback: session snapshot file missing at {snap_path}",
-        )
-        snap = json.loads(snap_path.read_text())
-        checked = 0
-        for win in snap.get("windows", []):
-            for ws in (win.get("tabManager") or {}).get("workspaces") or []:
-                for pane in _iter_pane_layout_nodes(ws.get("layout")):
-                    _must(
-                        "metadata" not in pane or pane.get("metadata") is None,
-                        f"Rollback: snapshot pane has metadata: {pane}",
-                    )
-                    _must(
-                        "metadataSources" not in pane
-                        or pane.get("metadataSources") is None,
-                        f"Rollback: snapshot pane has metadataSources: {pane}",
-                    )
-                    checked += 1
-        _must(checked > 0, "Rollback: snapshot contained no pane leaves to check")
-        print("PASS: CMUX-11 Phase 3 pane metadata persistence (rollback variant)")
+        print("PASS: CMUX-11 Phase 3 pane metadata persistence")
     finally:
         try:
             c.close_workspace(workspace_id)
@@ -238,10 +170,7 @@ def _run_rollback_variant(c: cmux) -> None:
 
 def main() -> int:
     with cmux(SOCKET_PATH) as client:
-        if TEST_EXPECTS_ROLLBACK:
-            _run_rollback_variant(client)
-        else:
-            _run_main_variant(client)
+        _run_main_variant(client)
     return 0
 
 

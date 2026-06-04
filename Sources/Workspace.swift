@@ -250,28 +250,19 @@ extension Workspace {
 
         let panelSnapshotsById = Dictionary(uniqueKeysWithValues: snapshot.panels.map { ($0.id, $0) })
         let leafEntries = restoreSessionLayout(snapshot.layout)
-        // When `SessionPersistencePolicy.stablePanelIdsEnabled` is true (default),
-        // this map is an identity: snapshot id == restored panel id, because
-        // `createPanel` threads `snapshot.id` into the panel constructor. When
-        // `CMUX_DISABLE_STABLE_PANEL_IDS=1` is set, restored panels mint fresh
-        // UUIDs and this map genuinely remaps old→new. Both focus restore (below)
-        // and pane selection (inside `restorePane`) route through this map so the
-        // two paths share one lookup.
-        var oldToNewPanelIds: [UUID: UUID] = [:]
+        // Panel UUIDs are stable across restart: `createPanel` threads each
+        // `snapshot.id` into the panel constructor, so a restored panel keeps
+        // the snapshot's id. Restore paths key directly on the snapshot id.
 
         for entry in leafEntries {
             restorePane(
                 entry.paneId,
                 snapshot: entry.snapshot,
-                panelSnapshotsById: panelSnapshotsById,
-                oldToNewPanelIds: &oldToNewPanelIds
+                panelSnapshotsById: panelSnapshotsById
             )
         }
 
-        restoreSurfaceMetadataFromSnapshot(
-            panels: snapshot.panels,
-            oldToNewPanelIds: oldToNewPanelIds
-        )
+        restoreSurfaceMetadataFromSnapshot(panels: snapshot.panels)
 
         // CMUX-11 Phase 3: rehydrate PaneMetadataStore entries from each
         // restored leaf and prune any pane metadata not in the live set.
@@ -304,26 +295,20 @@ extension Workspace {
         // each entry with `staleFromRestart: true` so the sidebar can render
         // them with reduced emphasis until the agent re-announces the value.
         // `agentPIDs` stays cleared — a PID from a prior boot is meaningless.
-        // `CMUX_DISABLE_STATUS_ENTRY_PERSIST=1` reverts to the pre-Phase-3
-        // discard-on-restore behavior.
-        if SessionPersistencePolicy.statusEntryPersistEnabled {
-            statusEntries = snapshot.statusEntries.reduce(into: [:]) { acc, snap in
-                let url = snap.url.flatMap { URL(string: $0) }
-                let format = snap.format.flatMap { SidebarMetadataFormat(rawValue: $0) } ?? .plain
-                acc[snap.key] = SidebarStatusEntry(
-                    key: snap.key,
-                    value: snap.value,
-                    icon: snap.icon,
-                    color: snap.color,
-                    url: url,
-                    priority: snap.priority ?? 0,
-                    format: format,
-                    timestamp: Date(timeIntervalSince1970: snap.timestamp),
-                    staleFromRestart: true
-                )
-            }
-        } else {
-            statusEntries.removeAll()
+        statusEntries = snapshot.statusEntries.reduce(into: [:]) { acc, snap in
+            let url = snap.url.flatMap { URL(string: $0) }
+            let format = snap.format.flatMap { SidebarMetadataFormat(rawValue: $0) } ?? .plain
+            acc[snap.key] = SidebarStatusEntry(
+                key: snap.key,
+                value: snap.value,
+                icon: snap.icon,
+                color: snap.color,
+                url: url,
+                priority: snap.priority ?? 0,
+                format: format,
+                timestamp: Date(timeIntervalSince1970: snap.timestamp),
+                staleFromRestart: true
+            )
         }
         agentPIDs.removeAll()
         logEntries = snapshot.logEntries.map { entry in
@@ -339,11 +324,10 @@ extension Workspace {
 
         recomputeListeningPorts()
 
-        if let focusedOldPanelId = snapshot.focusedPanelId,
-           let focusedNewPanelId = oldToNewPanelIds[focusedOldPanelId],
-           panels[focusedNewPanelId] != nil {
-            focusPanel(focusedNewPanelId)
-        } else if let fallbackFocusedPanelId = focusedPanelId, panels[fallbackFocusedPanelId] != nil {
+        if let focusedPanelId = snapshot.focusedPanelId,
+           panels[focusedPanelId] != nil {
+            focusPanel(focusedPanelId)
+        } else if let fallbackFocusedPanelId = self.focusedPanelId, panels[fallbackFocusedPanelId] != nil {
             focusPanel(fallbackFocusedPanelId)
         } else {
             scheduleFocusReconcile()
@@ -368,14 +352,12 @@ extension Workspace {
         if ConversationStorePolicy.isDisabled {
             scheduleAgentRestartLegacy(
                 from: snapshot,
-                registry: .phase1,
-                oldToNewPanelIds: oldToNewPanelIds
+                registry: .phase1
             )
         } else {
             scheduleAgentRestart(
                 from: snapshot,
-                registry: ConversationStrategyRegistry.v1,
-                oldToNewPanelIds: oldToNewPanelIds
+                registry: ConversationStrategyRegistry.v1
             )
         }
     }
@@ -385,8 +367,7 @@ extension Workspace {
     /// the panel snapshot via AgentRestartRegistry. Removed in 0.46.0/v1.1.
     private func scheduleAgentRestartLegacy(
         from snapshot: SessionWorkspaceSnapshot,
-        registry: AgentRestartRegistry,
-        oldToNewPanelIds: [UUID: UUID]
+        registry: AgentRestartRegistry
     ) {
         guard SessionPersistencePolicy.agentRestartOnRestoreEnabled else { return }
         var commands: [(panelId: UUID, command: String)] = []
@@ -407,9 +388,8 @@ extension Workspace {
             deadline: .now() + SessionPersistencePolicy.agentRestartDelay
         ) { [weak self] in
             guard let self else { return }
-            for (snapshotPanelId, command) in commands {
-                let livePanelId = oldToNewPanelIds[snapshotPanelId] ?? snapshotPanelId
-                guard let terminalPanel = self.panels[livePanelId] as? TerminalPanel else {
+            for (panelId, command) in commands {
+                guard let terminalPanel = self.panels[panelId] as? TerminalPanel else {
                     continue
                 }
                 TextBoxSubmit.send(command, via: terminalPanel.surface)
@@ -521,14 +501,11 @@ extension Workspace {
     /// still nil at the 2.5s mark (and `sendKey` silently drops) no
     /// longer hides the submission.
     ///
-    /// `oldToNewPanelIds` lets the routine remap snapshot panel ids to
-    /// the freshly minted ids when the stable-panel-id rollback flag is
-    /// set. Under default behaviour (`stablePanelIdsEnabled` true) the
-    /// map is an identity and the lookup is the snapshot id directly.
+    /// Panel ids are stable across restart, so the live panel id equals the
+    /// snapshot panel id resolved in `pendingRestartPlans`.
     private func scheduleAgentRestart(
         from snapshot: SessionWorkspaceSnapshot,
-        registry: ConversationStrategyRegistry,
-        oldToNewPanelIds: [UUID: UUID]
+        registry: ConversationStrategyRegistry
     ) {
         let plans = pendingRestartPlans(from: snapshot, registry: registry)
         guard !plans.isEmpty else { return }
@@ -536,9 +513,8 @@ extension Workspace {
             deadline: .now() + SessionPersistencePolicy.agentRestartDelay
         ) { [weak self] in
             guard let self else { return }
-            for (snapshotPanelId, action) in plans {
-                let livePanelId = oldToNewPanelIds[snapshotPanelId] ?? snapshotPanelId
-                self.executeResumeAction(action, on: livePanelId)
+            for (panelId, action) in plans {
+                self.executeResumeAction(action, on: panelId)
             }
         }
     }
@@ -609,13 +585,12 @@ extension Workspace {
 
     /// CMUX-11 Phase 3: pull `PaneMetadataStore` values + sources for a pane,
     /// run them through the persistence bridge, and apply the 64 KiB cap.
-    /// Returns `(nil, nil)` when the store is empty, the rollback flag is
-    /// set, or the pane UUID could not be parsed — keeping snapshots minimal.
+    /// Returns `(nil, nil)` when the store is empty or the pane UUID could
+    /// not be parsed — keeping snapshots minimal.
     private func persistedPaneMetadata(
         forPaneUUID paneUUID: UUID?
     ) -> ([String: PersistedJSONValue]?, [String: PersistedMetadataSource]?) {
         guard let paneUUID else { return (nil, nil) }
-        if PersistedMetadataBridge.isPersistDisabled { return (nil, nil) }
         let snapshot = PaneMetadataStore.shared.getMetadata(workspaceId: id, paneId: paneUUID)
         if snapshot.metadata.isEmpty && snapshot.sources.isEmpty {
             return (nil, nil)
@@ -740,10 +715,7 @@ extension Workspace {
 
         let persistedMetadata: [String: PersistedJSONValue]?
         let persistedMetadataSources: [String: PersistedMetadataSource]?
-        if PersistedMetadataBridge.isPersistDisabled {
-            persistedMetadata = nil
-            persistedMetadataSources = nil
-        } else {
+        do {
             let snapshot = SurfaceMetadataStore.shared.getMetadata(
                 workspaceId: id,
                 surfaceId: panelId
@@ -892,38 +864,31 @@ extension Workspace {
     private func restorePane(
         _ paneId: PaneID,
         snapshot: SessionPaneLayoutSnapshot,
-        panelSnapshotsById: [UUID: SessionPanelSnapshot],
-        oldToNewPanelIds: inout [UUID: UUID]
+        panelSnapshotsById: [UUID: SessionPanelSnapshot]
     ) {
         let existingPanelIds = bonsplitController
             .tabs(inPane: paneId)
             .compactMap { panelIdFromSurfaceId($0.id) }
-        let desiredOldPanelIds = snapshot.panelIds.filter { panelSnapshotsById[$0] != nil }
+        let desiredPanelIds = snapshot.panelIds.filter { panelSnapshotsById[$0] != nil }
 
         var createdPanelIds: [UUID] = []
-        for oldPanelId in desiredOldPanelIds {
-            guard let panelSnapshot = panelSnapshotsById[oldPanelId] else { continue }
+        for desiredPanelId in desiredPanelIds {
+            guard let panelSnapshot = panelSnapshotsById[desiredPanelId] else { continue }
             guard let createdPanelId = createPanel(from: panelSnapshot, inPane: paneId) else { continue }
             createdPanelIds.append(createdPanelId)
-            oldToNewPanelIds[oldPanelId] = createdPanelId
         }
 
         guard !createdPanelIds.isEmpty else { return }
 
-        for oldPanelId in existingPanelIds where !createdPanelIds.contains(oldPanelId) {
-            _ = closePanel(oldPanelId, force: true)
+        for existingPanelId in existingPanelIds where !createdPanelIds.contains(existingPanelId) {
+            _ = closePanel(existingPanelId, force: true)
         }
 
         for (index, panelId) in createdPanelIds.enumerated() {
             _ = reorderSurface(panelId: panelId, toIndex: index)
         }
 
-        let selectedPanelId: UUID? = {
-            if let selectedOldId = snapshot.selectedPanelId {
-                return oldToNewPanelIds[selectedOldId]
-            }
-            return createdPanelIds.first
-        }()
+        let selectedPanelId: UUID? = snapshot.selectedPanelId ?? createdPanelIds.first
 
         if let selectedPanelId,
            let selectedTabId = surfaceIdFromPanelId(selectedPanelId) {
@@ -933,13 +898,11 @@ extension Workspace {
     }
 
     private func createPanel(from snapshot: SessionPanelSnapshot, inPane paneId: PaneID) -> UUID? {
-        // Phase 1 of the Tier 1 persistence plan: restore-time ID injection.
-        // When stable panel IDs are enabled, pass the snapshot's id through to
-        // the panel constructor so external consumers (surface.list callers,
-        // cached-id scripts) see the same UUID across restarts.
-        let restoredPanelId: UUID? = SessionPersistencePolicy.stablePanelIdsEnabled
-            ? snapshot.id
-            : nil
+        // Tier 1 persistence: restore-time ID injection. Pass the snapshot's
+        // id through to the panel constructor so external consumers
+        // (surface.list callers, cached-id scripts) see the same UUID across
+        // restarts.
+        let restoredPanelId: UUID? = snapshot.id
 
         switch snapshot.type {
         case .terminal:
@@ -7101,20 +7064,14 @@ final class Workspace: Identifiable, ObservableObject {
     /// the precedence chain (the snapshot IS the prior session's source of
     /// truth). Runs before `pruneSurfaceMetadata` so anything not in the
     /// current panel set gets cleaned up on the same tick.
-    ///
-    /// Respects `CMUX_DISABLE_METADATA_PERSIST=1` as a rollback safety net —
-    /// when set, the snapshot's metadata is ignored and surfaces start with
-    /// an empty store.
     private func restoreSurfaceMetadataFromSnapshot(
-        panels snapshotPanels: [SessionPanelSnapshot],
-        oldToNewPanelIds: [UUID: UUID]
+        panels snapshotPanels: [SessionPanelSnapshot]
     ) {
-        if PersistedMetadataBridge.isPersistDisabled { return }
         for panelSnapshot in snapshotPanels {
             guard let persistedValues = panelSnapshot.metadata else { continue }
             let persistedSources = panelSnapshot.metadataSources ?? [:]
-            let newPanelId = oldToNewPanelIds[panelSnapshot.id] ?? panelSnapshot.id
-            guard panels[newPanelId] != nil else { continue }
+            let panelId = panelSnapshot.id
+            guard panels[panelId] != nil else { continue }
             var values = PersistedMetadataBridge.decodeValues(persistedValues)
             var sources = PersistedMetadataBridge.decodeSources(persistedSources)
             // CMUX-10: persistent-flash timers are process-local and never
@@ -7125,7 +7082,7 @@ final class Workspace: Identifiable, ObservableObject {
             sources.removeValue(forKey: FlashState.metadataKey)
             SurfaceMetadataStore.shared.restoreFromSnapshot(
                 workspaceId: id,
-                surfaceId: newPanelId,
+                surfaceId: panelId,
                 values: values,
                 sources: sources
             )
@@ -7138,13 +7095,9 @@ final class Workspace: Identifiable, ObservableObject {
     /// new pane UUID, preserving the original `(source, ts)` records so the
     /// precedence chain survives the restart. Silent — same contract as the
     /// surface restore path.
-    ///
-    /// Skipped when `CMUX_DISABLE_METADATA_PERSIST=1` is set in the app's
-    /// launch environment.
     private func restorePaneMetadataFromSnapshot(
         leafEntries: [SessionPaneRestoreEntry]
     ) {
-        if PersistedMetadataBridge.isPersistDisabled { return }
         for entry in leafEntries {
             guard let persistedValues = entry.snapshot.metadata,
                   !persistedValues.isEmpty else { continue }

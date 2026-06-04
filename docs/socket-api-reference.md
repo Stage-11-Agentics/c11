@@ -89,18 +89,11 @@ Legacy values `"full"` and `"notifications"` still accepted.
 ```
 
 Panel IDs (also called surface IDs) are stable across app restarts within the
-same machine. External consumers may cache them across sessions. Set
-`CMUX_DISABLE_STABLE_PANEL_IDS=1` in the app's environment to revert to
-per-restart UUID regeneration (one-release rollback safety net; will be removed
-in a followup release).
+same machine. External consumers may cache them across sessions.
 
 Workspace IDs are also stable across app restarts within the same machine.
 External consumers may cache `(workspace_id, surface_id)` tuples across
-sessions. Set `CMUX_DISABLE_STABLE_WORKSPACE_IDS=1` in the app's launch
-environment (via `launchctl setenv` or the parent shell before launching the
-app — setting it on the `cmux` CLI invocation has no effect) to revert to
-per-restart UUID regeneration. One-release rollback safety net; will be removed
-in a followup release.
+sessions.
 
 ### Input
 
@@ -181,15 +174,6 @@ rest of the blob survives. Numbers round-trip as double-precision
 floats — callers needing integer fidelity should convert explicitly
 after reading.
 
-**Rollback:** set `CMUX_DISABLE_METADATA_PERSIST=1` in the app's launch
-environment (e.g. `launchctl setenv CMUX_DISABLE_METADATA_PERSIST 1`
-then relaunch, or export it in the parent shell that launches the
-`.app`). When set, snapshot writes emit `null` for both `metadata`
-and `metadataSources` and restore ignores any persisted values. The
-variable is **app-launch-scope only** — setting it on a `cmux` CLI
-invocation has no effect, because the CLI is a separate process from
-the running app.
-
 ### c11 Chrome Themes (CMUX-35)
 
 c11 chrome theme lifecycle lives under the `theme.*` method family. Read-only
@@ -234,7 +218,6 @@ macOS focus or raise the app.
 | `CMUX_SOCKET_MODE` | Override access mode (`cmuxOnly`, `allowAll`, `off`) |
 | `CMUX_WORKSPACE_ID` | Auto-set: current workspace ID |
 | `CMUX_SURFACE_ID` | Auto-set: current surface ID |
-| `CMUX_DISABLE_METADATA_PERSIST` | App-launch-scope rollback: `1` skips persist on write and ignores on restore. See Surface Metadata Persistence above. |
 | `TERM_PROGRAM` | Set to `ghostty` |
 | `TERM` | Set to `xterm-ghostty` |
 

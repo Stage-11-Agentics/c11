@@ -322,7 +322,7 @@ All commands resolve `--surface` from `CMUX_SURFACE_ID` if unset, **without fall
 
 ### Per-panel embedded (source of truth)
 
-`SurfaceConversations { active: ConversationRef?, history: [ConversationRef] }` is embedded directly on each `SessionPanelSnapshot`, not as a sibling map keyed by surface id. Embedding makes the conversation follow the panel through `oldToNewPanelIds` remapping naturally, eliminates the orphan-map class of bugs that a sibling map keyed by old surface ids would invite when stable panel ids are disabled, and removes the need for an explicit pruning rule for surfaces that no longer exist.
+`SurfaceConversations { active: ConversationRef?, history: [ConversationRef] }` is embedded directly on each `SessionPanelSnapshot`, not as a sibling map keyed by surface id. Embedding makes the conversation follow the panel across a restart naturally, eliminates the orphan-map class of bugs that a sibling map keyed by old surface ids would invite, and removes the need for an explicit pruning rule for surfaces that no longer exist.
 
 On capture, the `ConversationStore` is asked for active+history refs for each panel and the result is serialized into that panel's snapshot. On restore, the executor reads the field per-panel, populates the in-memory `ConversationStore` for the new surfaces, then schedules the resume pass that already exists in `Workspace.scheduleAgentRestart` — but the pass now consults `ConversationStore` + strategy registry instead of the inline `pendingRestartCommands` registry lookup.
 

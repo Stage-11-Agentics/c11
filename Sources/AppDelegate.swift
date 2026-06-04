@@ -4202,10 +4202,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 let workspace = context.tabManager.tabs[wsIdx]
                 // Clear every live surface- and pane-layer entry on this
                 // workspace so the only surviving data path is "loaded from
-                // disk". Both clears run before the rollback-env gate so the
-                // CMUX_DISABLE_METADATA_PERSIST=1 path also fully drops live
-                // state — otherwise live writes would bleed through an
-                // intended no-op round-trip.
+                // disk".
                 for panelId in workspace.panels.keys {
                     SurfaceMetadataStore.shared.removeSurface(
                         workspaceId: workspace.id,
@@ -4222,10 +4219,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     )
                 }
 
-                // Replay persisted metadata from the snapshot. Skipped when
-                // CMUX_DISABLE_METADATA_PERSIST=1 is set — matches the
-                // production restore path's rollback semantics.
-                if PersistedMetadataBridge.isPersistDisabled { continue }
+                // Replay persisted metadata from the snapshot.
                 for panelSnapshot in wsSnapshot.panels {
                     guard let persistedValues = panelSnapshot.metadata else { continue }
                     let values = PersistedMetadataBridge.decodeValues(persistedValues)

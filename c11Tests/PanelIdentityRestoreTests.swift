@@ -125,12 +125,4 @@ final class PanelIdentityRestoreTests: XCTestCase {
 
         XCTAssertEqual(Set(restored.panels.keys), expected)
     }
-
-    @MainActor
-    func testStablePanelIdsPolicyIsOnByDefault() {
-        XCTAssertTrue(
-            SessionPersistencePolicy.stablePanelIdsEnabled,
-            "Phase 1 default: panel IDs are stable across restarts unless CMUX_DISABLE_STABLE_PANEL_IDS is set"
-        )
-    }
 }

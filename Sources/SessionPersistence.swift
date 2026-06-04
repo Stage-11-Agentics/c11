@@ -21,53 +21,6 @@ enum SessionPersistencePolicy {
     static let maxScrollbackLinesPerTerminal: Int = 4000
     static let maxScrollbackCharactersPerTerminal: Int = 400_000
 
-    /// Tier 1 persistence, Phase 1: stable panel UUIDs across app restarts.
-    ///
-    /// When `true` (default), session-restore injects each `SessionPanelSnapshot.id`
-    /// into the restored panel's constructor so external consumers (Lattice, CLI,
-    /// scripted tests) can cache panel IDs across restarts.
-    ///
-    /// Setting `CMUX_DISABLE_STABLE_PANEL_IDS=1` reverts to the old behavior (fresh
-    /// UUID per restored panel + `oldToNewPanelIds` remap inside the workspace).
-    /// Kept as a one-release rollback safety net; delete in a followup PR.
-    static var stablePanelIdsEnabled: Bool {
-        !envFlagEnabled("CMUX_DISABLE_STABLE_PANEL_IDS")
-    }
-
-    /// Tier 1 persistence, Phase 1.5: stable workspace UUIDs across app restarts.
-    ///
-    /// When `true` (default), `TabManager.restoreSessionSnapshot` injects each
-    /// `SessionWorkspaceSnapshot.id` into the restored workspace's constructor so
-    /// external consumers (Lattice, CLI, scripted tests) can cache the
-    /// `(workspaceId, surfaceId)` tuple across restarts. This is a hard
-    /// prerequisite for Phase 2 (persistent `SurfaceMetadataStore`), which keys
-    /// on that tuple.
-    ///
-    /// Setting `CMUX_DISABLE_STABLE_WORKSPACE_IDS=1` reverts to the old behavior
-    /// (fresh UUID per restored workspace). App launch scope only — set via
-    /// `launchctl setenv` or the parent shell before launching the app; setting
-    /// it on the `cmux` CLI invocation has no effect. Kept as a one-release
-    /// rollback safety net; delete in a followup PR.
-    static var stableWorkspaceIdsEnabled: Bool {
-        !envFlagEnabled("CMUX_DISABLE_STABLE_WORKSPACE_IDS")
-    }
-
-    /// Tier 1 persistence, Phase 3: persist `statusEntries` across app restart.
-    ///
-    /// When `true` (default), restored workspaces rebuild their `statusEntries`
-    /// from the session snapshot with each entry stamped `staleFromRestart: true`.
-    /// The sidebar renders stale entries with reduced emphasis until the agent
-    /// re-announces the status; the first fresh write clears the flag.
-    ///
-    /// Setting `CMUX_DISABLE_STATUS_ENTRY_PERSIST=1` reverts to the pre-Phase-3
-    /// behavior (discard `statusEntries` on restore). App-launch-scope only —
-    /// set via `launchctl setenv` or the parent shell before launching the app;
-    /// setting it on the `cmux` CLI invocation has no effect. Kept as a
-    /// one-release rollback safety net.
-    static var statusEntryPersistEnabled: Bool {
-        !envFlagEnabled("CMUX_DISABLE_STATUS_ENTRY_PERSIST")
-    }
-
     /// C11-24: startup-restore agent restart.
     ///
     /// When `true` (default), `Workspace.restoreSessionSnapshot` consults the
@@ -366,8 +319,8 @@ struct SessionPanelSnapshot: Codable, Sendable {
 
     /// C11-24: per-surface ConversationRefs for the active conversation
     /// (and v1.x history). Embedded directly on the panel snapshot so the
-    /// conversation follows the panel through `oldToNewPanelIds` remapping
-    /// naturally. Optional for backcompat with pre-C11-24 snapshots; the
+    /// conversation follows the panel across a restart naturally. Optional
+    /// for backcompat with pre-C11-24 snapshots; the
     /// read-side bridge in `WorkspaceSnapshotConversationBridge` lifts
     /// legacy `claude.session_id` reserved metadata into a ConversationRef
     /// for one release window (removed in 0.46.0 / v1.1).

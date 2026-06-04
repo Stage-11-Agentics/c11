@@ -51,10 +51,8 @@ enum LaunchResumePolicy: String, CaseIterable {
 /// from `AppSessionSnapshot`; the picker view itself never reaches back
 /// into the snapshot.
 struct LaunchResumePickerEntry: Identifiable, Hashable {
-    /// Stable workspace UUID — survives across restarts when
-    /// `SessionPersistencePolicy.stableWorkspaceIdsEnabled` is true (the
-    /// default). Used as the picker's selection key and to filter the
-    /// snapshot at apply time.
+    /// Stable workspace UUID — survives across restarts. Used as the
+    /// picker's selection key and to filter the snapshot at apply time.
     let id: UUID
     /// Window index in the snapshot (0 = primary). Used to group rows
     /// when more than one window's worth of state is being offered.

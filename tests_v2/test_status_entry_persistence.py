@@ -12,12 +12,7 @@ Flow:
      stale-clearing path exercises the Phase 3 override of
      `shouldReplaceStatusEntry`).
 
-Two variants, selected by `CMUX_DISABLE_STATUS_ENTRY_PERSIST` in the
-running app (not the test process):
-
-- Main variant (env var unset in app): all fields round-trip.
-- Rollback variant (env var `=1` in app launch env): statusEntries
-  are discarded on restore per pre-Phase-3 behavior.
+All fields round-trip across the save/reload cycle.
 """
 
 from __future__ import annotations
@@ -33,7 +28,6 @@ from cmux import cmux, cmuxError
 
 
 SOCKET_PATH = os.environ.get("CMUX_SOCKET", "/tmp/cmux-debug.sock")
-TEST_EXPECTS_ROLLBACK = os.environ.get("CMUX_DISABLE_STATUS_ENTRY_PERSIST") == "1"
 
 STATUS_KEY = "phase3.smoke"
 STATUS_VALUE = "Running"
@@ -160,28 +154,7 @@ def _run_main_variant(client, cli: str) -> None:
             f"Entry missing after re-announce: {still_there!r}",
         )
 
-        print("PASS: Tier 1 Phase 3 statusEntries persistence (main variant)")
-    finally:
-        try:
-            client.close_workspace(workspace_id)
-        except Exception:
-            pass
-
-
-def _run_rollback_variant(client, cli: str) -> None:
-    workspace_id = client.new_workspace()
-    try:
-        _set_status(cli, workspace_id)
-
-        rt = client._call("debug.session.save_and_load", {})
-        _must(rt is not None, "debug.session.save_and_load returned no result")
-
-        after = _list_status(cli, workspace_id)
-        _must(
-            "No status" in after or after == "",
-            f"Rollback: expected empty statusEntries after restore, got {after!r}",
-        )
-        print("PASS: Tier 1 Phase 3 statusEntries persistence (rollback variant)")
+        print("PASS: Tier 1 Phase 3 statusEntries persistence")
     finally:
         try:
             client.close_workspace(workspace_id)
@@ -192,10 +165,7 @@ def _run_rollback_variant(client, cli: str) -> None:
 def main() -> int:
     cli = _find_cli_binary()
     with cmux(SOCKET_PATH) as client:
-        if TEST_EXPECTS_ROLLBACK:
-            _run_rollback_variant(client, cli)
-        else:
-            _run_main_variant(client, cli)
+        _run_main_variant(client, cli)
     return 0
 
 

@@ -8,11 +8,10 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [0.51.0] - 2026-06-04
 
-Feature release. Headline: **session resume, rebuilt** — a TUI-agnostic conversation store replaces the per-TUI wrapper pattern, so Claude Code, Codex, Opencode, and Kimi surfaces each resume their own session instead of racing lifecycle hooks, and a per-workspace launch picker lets the operator choose exactly which workspaces come back. Alongside it: AI subscription usage monitoring lands in the sidebar footer (Claude reads local files, zero credentials; Codex via Keychain-stored API key), the sidebar gains a Waiting Agent + workspace nav cluster, and the CLI grows `--cwd` on `new-split`/`new-pane` and `--title` on `new-workspace`.
+Feature release. Headline: **session resume, rebuilt** — a TUI-agnostic conversation store replaces the per-TUI wrapper pattern, so Claude Code, Codex, Opencode, and Kimi surfaces each resume their own session instead of racing lifecycle hooks, and a per-workspace launch picker lets the operator choose exactly which workspaces come back. Alongside it: the sidebar gains a Waiting Agent + workspace nav cluster, and the CLI grows `--cwd` on `new-split`/`new-pane` and `--title` on `new-workspace`.
 
 ### Added
 
-- **AI usage monitoring in the sidebar footer.** Two providers, multi-account: **Claude** reads `~/.claude/projects/**/*.jsonl` locally — no credentials, no network calls for usage — and computes 5-hour session and 7-day weekly windows with cost; **Codex** polls `api.openai.com` with a Keychain-stored key (`WhenUnlockedThisDeviceOnly`, no iCloud sync). 60-second occlusion-aware polling, provider status-page integration, popover + editor sheet + settings section. Claude auto-registers on first launch when local data exists. Fresh implementation inspired by upstream cmux#2827. ([#85](https://github.com/Stage-11-Agentics/c11/pull/85))
 - **TUI-agnostic conversation store for session resume.** Each surface persists its own `Conversation` refs on the workspace snapshot, and per-kind strategies (Claude Code, Codex, Opencode, Kimi) interpret them into resume actions. Fixes two 0.44.0-era failures: multiple Codex panes in one project all restoring to the same global most-recent session, and Claude panes restoring blank when the SessionEnd hook raced shutdown snapshot capture. Explicit `/exit` no longer auto-resumes on reopen (intentional contract). Kill switch: `CMUX_DISABLE_CONVERSATION_STORE=1` falls back to the legacy path for one release window. ([#95](https://github.com/Stage-11-Agentics/c11/pull/95))
 - **Per-workspace launch resume picker.** A sheet at launch lists the prior session's workspaces with checkboxes; resume all, some, or none. Policy lives at `c11.launch.resumePolicy ∈ {ask, always, never}` (default `ask`; `always` is the legacy restore-everything behavior). ([#137](https://github.com/Stage-11-Agentics/c11/pull/137))
 - **Waiting Agent + workspace nav cluster in the sidebar.** Replaces the "Next Notification" button: a Waiting Agent row that lights paper-fill with a gold hairline when agents are waiting, plus ▲/▼ workspace navigation arrows with hover stroke, first/last disabling, and press-and-hold auto-repeat for fast scrubbing. ([#214](https://github.com/Stage-11-Agentics/c11/pull/214))
@@ -24,7 +23,7 @@ Feature release. Headline: **session resume, rebuilt** — a TUI-agnostic conver
 ### Changed
 
 - **CLI rejects empty `--workspace` / `--surface` values instead of silently falling back to the focused surface.** An empty env-var expansion (`--surface ""`) used to write to whatever surface happened to be focused — usually a peer agent's tab. It now errors. ([d6d0f76e9](https://github.com/Stage-11-Agentics/c11/commit/d6d0f76e9))
-- **Resume picker and AI usage strings translated in all six locales** (ja, uk, ko, zh-Hans, zh-Hant, ru). ([#224](https://github.com/Stage-11-Agentics/c11/pull/224))
+- **Resume picker strings translated in all six locales** (ja, uk, ko, zh-Hans, zh-Hant, ru). ([#224](https://github.com/Stage-11-Agentics/c11/pull/224))
 
 ### Fixed
 

@@ -10635,7 +10635,7 @@ private struct WaitingAgentRow: View {
     private var isLit: Bool { display.isEnabled }
 
     private var label: String {
-        String(localized: "sidebar.waitingAgent.title", defaultValue: "Waiting Agent")
+        String(localized: "statusBar.nextNotification.title", defaultValue: "Next Notification")
     }
 
     private var shortcutText: String {
@@ -10643,15 +10643,29 @@ private struct WaitingAgentRow: View {
     }
 
     private var accessibilityLabel: String {
-        String(localized: "sidebar.waitingAgent.accessibility", defaultValue: "Jump to next waiting agent")
+        String(localized: "statusBar.jumpToUnread.accessibility", defaultValue: "Jump to next unread notification")
     }
 
     var body: some View {
         Button(action: onJump) {
-            HStack(spacing: 0) {
+            HStack(spacing: 6) {
                 Text(label)
                     .font(.system(size: 11, weight: .semibold))
                     .lineLimit(1)
+
+                if let badge = display.badgeText {
+                    Text(badge)
+                        .font(.system(size: 9, weight: .bold))
+                        .monospacedDigit()
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(BrandColors.blackSwiftUI.opacity(0.18))
+                        )
+                        .foregroundColor(BrandColors.blackSwiftUI)
+                        .accessibilityHidden(true)
+                }
 
                 Spacer(minLength: 4)
 
@@ -10668,14 +10682,12 @@ private struct WaitingAgentRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(isLit ? BrandColors.paperFillSwiftUI : BrandColors.surfaceSwiftUI)
+                    .fill(isLit ? cmuxAccentColor() : BrandColors.surfaceSwiftUI)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(
-                        isLit ? BrandColors.goldSwiftUI : BrandColors.ruleSwiftUI,
-                        lineWidth: isLit ? 0.75 : 1
-                    )
+                    .stroke(BrandColors.ruleSwiftUI, lineWidth: 1)
+                    .opacity(isLit ? 0 : 1)
             )
             .foregroundColor(isLit ? BrandColors.blackSwiftUI : BrandColors.whiteSwiftUI.opacity(0.4))
             .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))

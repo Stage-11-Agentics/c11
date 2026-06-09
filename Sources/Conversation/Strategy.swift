@@ -85,6 +85,25 @@ protocol ConversationStrategy: Sendable {
     /// empty/malformed ids. Used by the CLI on `c11 conversation push --id`
     /// before the value reaches the store.
     func isValidId(_ id: String) -> Bool
+
+    /// Crash-recovery verification seam. Given a captured ref and an
+    /// injectable filesystem, return whether on-disk evidence confirms the
+    /// conversation is still resumable.
+    ///
+    /// - `true`: the strategy located the ref's on-disk transcript →
+    ///   `reclassifyAfterCrash` promotes the ref to `.suspended`.
+    /// - `false`: the strategy checked and found nothing → demote to
+    ///   `.unknown`.
+    /// - `nil`: this kind has no on-disk transcript concept (or lacks the
+    ///   inputs to compute the path) → caller treats it conservatively as
+    ///   not-resumable (`.unknown`), matching the prior `markAllUnknown`
+    ///   behavior for kinds that cannot verify.
+    ///
+    /// MUST be stat-only — never open transcript bytes (privacy contract).
+    func transcriptExists(
+        for ref: ConversationRef,
+        filesystem: ConversationFilesystem
+    ) -> Bool?
 }
 
 extension ConversationStrategy {
@@ -93,6 +112,16 @@ extension ConversationStrategy {
     func isValidId(_ id: String) -> Bool {
         let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
         return !trimmed.isEmpty
+    }
+
+    /// Default: no on-disk transcript concept. Kinds that keep transcripts
+    /// (Claude Code) override this; everything else returns `nil` so the
+    /// crash-recovery pass leaves the ref `.unknown`.
+    func transcriptExists(
+        for ref: ConversationRef,
+        filesystem: ConversationFilesystem
+    ) -> Bool? {
+        nil
     }
 }
 

@@ -33,7 +33,7 @@ struct ClaudeCodeStrategy: ConversationStrategy {
                 capturedAt: candidate.mtime,
                 capturedVia: .scrape,
                 state: .unknown,
-                diagnosticReason: "scrape: top-by-mtime in ~/.claude/sessions"
+                diagnosticReason: "scrape: top-by-mtime in ~/.claude/projects"
             )
         }
         // Wrapper-claim only: nothing to resume yet.
@@ -60,5 +60,43 @@ struct ClaudeCodeStrategy: ConversationStrategy {
 
     func isValidId(_ id: String) -> Bool {
         isValidConversationUUID(id)
+    }
+
+    /// Crash-recovery verification: stat the transcript Claude Code keeps at
+    /// `~/.claude/projects/<cwd-slug>/<session-id>.jsonl`. Stat only — the
+    /// transcript bytes are never opened (privacy contract).
+    ///
+    /// Returns `nil` when the inputs to compute the path are missing (no
+    /// `cwd`, invalid id, or no HOME) so the caller leaves the ref
+    /// `.unknown` rather than guessing.
+    func transcriptExists(
+        for ref: ConversationRef,
+        filesystem: ConversationFilesystem
+    ) -> Bool? {
+        guard isValidConversationUUID(ref.id) else { return nil }
+        guard let cwd = ref.cwd, !cwd.isEmpty else { return nil }
+        guard let home = filesystem.homeDirectory else { return nil }
+        let slug = Self.projectSlug(forCwd: cwd)
+        let path = home
+            .appendingPathComponent(".claude", isDirectory: true)
+            .appendingPathComponent("projects", isDirectory: true)
+            .appendingPathComponent(slug, isDirectory: true)
+            .appendingPathComponent("\(ref.id).jsonl", isDirectory: false)
+            .path
+        return filesystem.fileExists(atPath: path)
+    }
+
+    /// Claude Code derives the per-project transcript directory by replacing
+    /// every `/` and `.` in the absolute cwd with `-`. Example:
+    /// `/Users/atin/Projects/Stage11/code/c11` →
+    /// `-Users-atin-Projects-Stage11-code-c11`. A path containing `/.claude`
+    /// collapses to `--claude` (slash + dot both map to `-`).
+    static func projectSlug(forCwd cwd: String) -> String {
+        var out = ""
+        out.reserveCapacity(cwd.count)
+        for ch in cwd {
+            out.append(ch == "/" || ch == "." ? "-" : ch)
+        }
+        return out
     }
 }

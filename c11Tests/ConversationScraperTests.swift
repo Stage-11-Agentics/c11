@@ -21,8 +21,14 @@ final class ConversationScraperTests: XCTestCase {
         var home: URL?
         var directoryEntries: [URL: [ConversationFilesystemEntry]] = [:]
         var recursiveEntries: [URL: [ConversationFilesystemEntry]] = [:]
+        /// Exact paths the mock reports as existing for `fileExists`.
+        var existingPaths: Set<String> = []
 
         var homeDirectory: URL? { home }
+
+        func fileExists(atPath path: String) -> Bool {
+            existingPaths.contains(path)
+        }
 
         func listDirectoryByMtime(_ directory: URL, max: Int) -> [ConversationFilesystemEntry] {
             return Array((directoryEntries[directory] ?? []).prefix(max))
@@ -44,19 +50,21 @@ final class ConversationScraperTests: XCTestCase {
     func testClaudeCodeScraperReturnsTopByMtime() {
         let mock = MockFS()
         mock.home = URL(fileURLWithPath: "/Users/test")
-        let sessionsDir = URL(fileURLWithPath: "/Users/test/.claude/sessions")
+        // Transcripts live one level deep under a project-slug directory.
+        let projectsDir = URL(fileURLWithPath: "/Users/test/.claude/projects")
+        let slugDir = projectsDir.appendingPathComponent("-work-proj")
         let validId = "abc12345-ef67-890a-bcde-f0123456789a"
         let validId2 = "ddd11111-2222-3333-4444-555566667777"
         let now = Date()
-        mock.directoryEntries[sessionsDir] = [
+        mock.recursiveEntries[projectsDir] = [
             ConversationFilesystemEntry(
-                url: sessionsDir.appendingPathComponent("\(validId).jsonl"),
+                url: slugDir.appendingPathComponent("\(validId).jsonl"),
                 fileName: "\(validId).jsonl",
                 mtime: now,
                 size: 1024
             ),
             ConversationFilesystemEntry(
-                url: sessionsDir.appendingPathComponent("\(validId2).jsonl"),
+                url: slugDir.appendingPathComponent("\(validId2).jsonl"),
                 fileName: "\(validId2).jsonl",
                 mtime: now.addingTimeInterval(-30),
                 size: 2048
@@ -72,26 +80,27 @@ final class ConversationScraperTests: XCTestCase {
     func testClaudeCodeScraperFiltersNonUUIDFilenames() {
         let mock = MockFS()
         mock.home = URL(fileURLWithPath: "/Users/test")
-        let sessionsDir = URL(fileURLWithPath: "/Users/test/.claude/sessions")
+        let projectsDir = URL(fileURLWithPath: "/Users/test/.claude/projects")
+        let slugDir = projectsDir.appendingPathComponent("-work-proj")
         let validId = "abc12345-ef67-890a-bcde-f0123456789a"
-        mock.directoryEntries[sessionsDir] = [
+        mock.recursiveEntries[projectsDir] = [
             // valid
             ConversationFilesystemEntry(
-                url: sessionsDir.appendingPathComponent("\(validId).jsonl"),
+                url: slugDir.appendingPathComponent("\(validId).jsonl"),
                 fileName: "\(validId).jsonl",
                 mtime: Date(),
                 size: 1024
             ),
-            // unrelated file
+            // unrelated file (filtered by the recursive extension filter)
             ConversationFilesystemEntry(
-                url: sessionsDir.appendingPathComponent("README.md"),
+                url: slugDir.appendingPathComponent("README.md"),
                 fileName: "README.md",
                 mtime: Date(),
                 size: 50
             ),
-            // non-UUID jsonl
+            // non-UUID jsonl (passes extension, rejected by UUID grammar)
             ConversationFilesystemEntry(
-                url: sessionsDir.appendingPathComponent("garbage.jsonl"),
+                url: slugDir.appendingPathComponent("garbage.jsonl"),
                 fileName: "garbage.jsonl",
                 mtime: Date(),
                 size: 50
@@ -145,15 +154,16 @@ final class ConversationScraperTests: XCTestCase {
     func testScrapersDoNotEverOpenTranscriptContent() {
         let mock = MockFS()
         mock.home = URL(fileURLWithPath: "/Users/test")
-        let sessionsDir = URL(fileURLWithPath: "/Users/test/.claude/sessions")
+        let projectsDir = URL(fileURLWithPath: "/Users/test/.claude/projects")
+        let slugDir = projectsDir.appendingPathComponent("-work-proj")
         let validId = "abc12345-ef67-890a-bcde-f0123456789a"
         // Mock only exposes filename + mtime + size — no transcript bytes
         // are made available to the scraper. Verify the scraper produces
         // a candidate whose payload-shape would never include transcript
         // bytes (the type is structurally incapable of carrying them).
-        mock.directoryEntries[sessionsDir] = [
+        mock.recursiveEntries[projectsDir] = [
             ConversationFilesystemEntry(
-                url: sessionsDir.appendingPathComponent("\(validId).jsonl"),
+                url: slugDir.appendingPathComponent("\(validId).jsonl"),
                 fileName: "\(validId).jsonl",
                 mtime: Date(),
                 size: 999_999

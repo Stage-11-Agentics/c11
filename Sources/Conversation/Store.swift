@@ -183,8 +183,10 @@ extension ConversationStore {
         }
     }
 
-    /// Bulk-transition all active refs to `.unknown`. Called on crash
-    /// recovery before the forced pull-scrape pass classifies them.
+    /// Bulk-transition all active refs to `.unknown`. A blunt primitive
+    /// retained for tests that model "no on-disk evidence available."
+    /// Production crash recovery uses `reclassifyAfterCrash`, which verifies
+    /// each ref against its transcript before deciding.
     func markAllUnknown(at: Date = Date(), reason: String = "crash recovery (dirty sentinel)") {
         for (key, var snap) in bySurface {
             if var active = snap.active {
@@ -194,6 +196,52 @@ extension ConversationStore {
                 snap.active = active
                 bySurface[key] = snap
             }
+        }
+    }
+
+    /// Crash-recovery reclassification. Replaces the blanket `markAllUnknown`
+    /// on the dirty-sentinel path: instead of forcing every ref to
+    /// `.unknown` (which made `resume()` skip the very case it exists for),
+    /// verify each resumable ref against on-disk evidence via its strategy.
+    ///
+    /// For each active ref currently `.alive` or `.suspended`:
+    /// - strategy confirms the transcript on disk → `.suspended`
+    ///   ("crash recovery: transcript verified on disk"), so the resume
+    ///   strategy will type `claude … --resume <id>` on next restore.
+    /// - strategy reports missing / has no verification → `.unknown`
+    ///   ("crash recovery: transcript not found").
+    ///
+    /// Refs already `.unknown`, `.tombstoned`, or `.unsupported` are left
+    /// untouched. This preserves the `/exit`-no-resume contract (a SessionEnd
+    /// tombstone stays a tombstone) and keeps unsupported kinds resumable by
+    /// a future binary.
+    ///
+    /// Verification routes through the strategy seam
+    /// (`ConversationStrategy.transcriptExists`) so other TUI kinds can add
+    /// their own checks later. The filesystem is injectable for tests;
+    /// production passes `DefaultConversationFilesystem`. Stat only — never
+    /// opens transcript bytes.
+    func reclassifyAfterCrash(
+        registry: ConversationStrategyRegistry,
+        filesystem: ConversationFilesystem = DefaultConversationFilesystem(),
+        at: Date = Date()
+    ) {
+        for (key, var snap) in bySurface {
+            guard var active = snap.active else { continue }
+            guard active.state == .alive || active.state == .suspended else { continue }
+            let verified = registry
+                .strategy(forKind: active.kind)?
+                .transcriptExists(for: active, filesystem: filesystem) ?? false
+            if verified {
+                active.state = .suspended
+                active.diagnosticReason = "crash recovery: transcript verified on disk"
+            } else {
+                active.state = .unknown
+                active.diagnosticReason = "crash recovery: transcript not found"
+            }
+            active.capturedAt = at
+            snap.active = active
+            bySurface[key] = snap
         }
     }
 

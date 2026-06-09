@@ -2952,6 +2952,154 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         _ = saveSessionSnapshot(includeScrollback: true, removeWhenEmpty: false)
     }
 
+    // MARK: - C11-131: explicit state save + clean app restart
+
+    /// Result of `forceSessionSave`, surfaced by the `session.save` socket
+    /// verb and `c11 state save`.
+    struct SessionSaveResult: Sendable {
+        var snapshotPath: String
+        var outPath: String?
+        var windows: Int
+        var workspaces: Int
+        var terminalPanels: Int
+        var refs: Int
+    }
+
+    /// Force the same full-app session snapshot that autosave and terminate
+    /// use, synchronously, while the app keeps running. Production cousin of
+    /// the DEBUG-only `debugForceMetadataSaveAndLoad`. Does NOT touch the
+    /// shutdown sentinel and does NOT suspend conversation refs — the app is
+    /// still live, refs stay `.alive`. Optionally copies the canonical
+    /// snapshot to `outPath` for archival or test fixtures.
+    ///
+    /// Returns nil only if the snapshot write fails (e.g. no windows).
+    func forceSessionSave(includeScrollback: Bool, outPath: String?) -> SessionSaveResult? {
+        let ok = saveSessionSnapshot(includeScrollback: includeScrollback, removeWhenEmpty: false)
+        guard ok, let canonicalURL = SessionPersistenceStore.defaultSnapshotFileURL() else {
+            return nil
+        }
+        // Read the just-written snapshot back to compute counts and confirm
+        // the on-disk artifact (parity with the canonical restore reader).
+        guard let snapshot = SessionPersistenceStore.load(fileURL: canonicalURL) else {
+            return nil
+        }
+        var workspaces = 0
+        var terminalPanels = 0
+        var refs = 0
+        for window in snapshot.windows {
+            for ws in window.tabManager.workspaces {
+                workspaces += 1
+                for panel in ws.panels where panel.type == .terminal {
+                    terminalPanels += 1
+                    if panel.surfaceConversations?.active != nil { refs += 1 }
+                }
+            }
+        }
+        var resolvedOut: String?
+        if let outPath, !outPath.isEmpty {
+            let outURL = URL(fileURLWithPath: (outPath as NSString).expandingTildeInPath)
+            do {
+                try FileManager.default.createDirectory(
+                    at: outURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+                if FileManager.default.fileExists(atPath: outURL.path) {
+                    try FileManager.default.removeItem(at: outURL)
+                }
+                try FileManager.default.copyItem(at: canonicalURL, to: outURL)
+                resolvedOut = outURL.path
+            } catch {
+                // Non-fatal: the canonical save succeeded. Surface the miss
+                // by leaving outPath nil; the CLI reports what landed.
+                resolvedOut = nil
+            }
+        }
+        return SessionSaveResult(
+            snapshotPath: canonicalURL.path,
+            outPath: resolvedOut,
+            windows: snapshot.windows.count,
+            workspaces: workspaces,
+            terminalPanels: terminalPanels,
+            refs: refs
+        )
+    }
+
+    /// One-shot sentinel: when present at next launch, the restore path
+    /// suppresses conversation resume (layout restores, nothing is typed
+    /// into panes). Written by `performCleanRestart(resume: false)` and
+    /// consumed-and-deleted in `prepareStartupSessionSnapshotIfNeeded`.
+    static func restartNoResumeSentinelURL(
+        bundleId: String = Bundle.main.bundleIdentifier ?? "com.stage11.c11"
+    ) -> URL? {
+        guard let dir = ShutdownSentinel.defaultDirectory() else { return nil }
+        let safe = bundleId.replacingOccurrences(
+            of: "[^A-Za-z0-9._-]", with: "_", options: .regularExpression
+        )
+        return dir.appendingPathComponent("restart-no-resume.\(safe)", isDirectory: false)
+    }
+
+    /// The "c11 is laggy, give me a clean restart" command. Runs the full
+    /// clean-shutdown choreography (suspendAllAlive → final snapshot →
+    /// promoteToClean), schedules a relaunch of this exact bundle after the
+    /// process exits, then terminates. Restore + resume happen via the
+    /// normal launch path, so the end state is identical to a menu Quit +
+    /// manual relaunch.
+    ///
+    /// `resume == false` writes the no-resume sentinel so the relaunch
+    /// restores layout but types nothing into panes.
+    func performCleanRestart(resume: Bool) {
+        isTerminatingApp = true
+        let bundleId = Bundle.main.bundleIdentifier ?? "com.stage11.c11"
+
+        if !resume, let url = Self.restartNoResumeSentinelURL(bundleId: bundleId) {
+            try? FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+            )
+            try? "1\n".write(to: url, atomically: true, encoding: .utf8)
+        }
+
+        // Mirror applicationWillTerminate: suspend alive refs so they persist
+        // as .suspended (resume-on-next-launch), then a synchronous snapshot,
+        // then promote the sentinel to clean — only after both succeed.
+        let suspendDone = DispatchSemaphore(value: 0)
+        Task.detached(priority: .userInitiated) {
+            await ConversationStore.shared.suspendAllAlive()
+            suspendDone.signal()
+        }
+        _ = suspendDone.wait(timeout: .now() + 1.0)
+
+        let snapshotOK = saveSessionSnapshot(includeScrollback: true, removeWhenEmpty: false)
+        if snapshotOK {
+            ShutdownSentinel.promoteToClean(bundleId: bundleId)
+        }
+
+        scheduleSelfRelaunchAfterExit()
+        stopSessionAutosaveTimer()
+        // Terminate cleanly on the next runloop tick so the socket reply for
+        // app.restart can flush before the process goes away.
+        DispatchQueue.main.async {
+            NSApp.terminate(nil)
+        }
+    }
+
+    /// Spawn a detached helper that waits for this process to exit, then
+    /// relaunches the same bundle via LaunchServices (`open`). Detached from
+    /// our process group so it survives our termination.
+    private func scheduleSelfRelaunchAfterExit() {
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let bundlePath = Bundle.main.bundlePath
+        let helper = Process()
+        helper.executableURL = URL(fileURLWithPath: "/bin/sh")
+        // Single-quote the bundle path for the shell; bundle paths never
+        // contain single quotes in practice, but quote defensively.
+        let quoted = "'" + bundlePath.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        helper.arguments = [
+            "-c",
+            "while kill -0 \(pid) 2>/dev/null; do sleep 0.1; done; /usr/bin/open -n \(quoted)"
+        ]
+        try? helper.run()
+    }
+
     func configure(tabManager: TabManager, notificationStore: TerminalNotificationStore, sidebarState: SidebarState) {
         self.tabManager = tabManager
         self.notificationStore = notificationStore
@@ -3060,26 +3208,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if let snapshot, !ConversationStorePolicy.isDisabled {
             WorkspaceSnapshotConversationBridge.seedFromSnapshot(snapshot)
         }
-        // C11-24 review (B2): now that the snapshot has seeded the store,
-        // act on the prior-shutdown decision captured at launch. On a
-        // dirty sentinel, transition every freshly-seeded ref to
-        // .unknown so panel restore can't auto-resume from stale
-        // .alive/.suspended state. Synchronous bridge so the order is
-        // observable to subsequent restore work on the same dispatch
-        // queue (no Task race against pendingRestartPlans).
-        if case .dirty = priorShutdownAtLaunch, !ConversationStorePolicy.isDisabled {
+        // C11-131: `c11 app restart --no-resume` left a one-shot sentinel.
+        // Honor it by forcing every seeded ref to .unknown so the restore
+        // path types nothing into panes (layout still restores). Consume the
+        // sentinel so it only affects this one launch, and skip the dirty
+        // reclassify below (the sentinel intent wins).
+        var handledNoResume = false
+        if !ConversationStorePolicy.isDisabled,
+           let noResumeURL = Self.restartNoResumeSentinelURL(),
+           FileManager.default.fileExists(atPath: noResumeURL.path) {
+            try? FileManager.default.removeItem(at: noResumeURL)
+            let sema = DispatchSemaphore(value: 0)
+            Task.detached(priority: .userInitiated) {
+                await ConversationStore.shared.markAllUnknown(reason: "app restart --no-resume")
+                sema.signal()
+            }
+            _ = sema.wait(timeout: .now() + 1.0)
+            handledNoResume = true
+        }
+        // C11-131: now that the snapshot has seeded the store, act on the
+        // prior-shutdown decision captured at launch. On a dirty sentinel,
+        // verify each freshly-seeded ref against its on-disk transcript and
+        // reclassify: a verified transcript → .suspended (resume on this
+        // restore), a missing one → .unknown (skip with a clear reason).
+        // This replaces the old blanket markAllUnknown, which forced every
+        // ref to .unknown and made resume skip the crash-recovery case it
+        // exists for. Synchronous bridge so the order is observable to
+        // subsequent restore work on the same dispatch queue (no Task race
+        // against pendingRestartPlans).
+        if case .dirty = priorShutdownAtLaunch, !ConversationStorePolicy.isDisabled, !handledNoResume {
             // C11-24: `Task.detached` so the spawned task does not
             // inherit `@MainActor` isolation from this method. Without
             // it, the body could not run while main is blocked on
             // `sema.wait` and the dirty-recovery transition would never
-            // fire. (`AppDelegate` is `@MainActor`.)
+            // fire. (`AppDelegate` is `@MainActor`.) The transcript stats
+            // are bounded local FS calls; the 1s budget matches the bridge.
             let sema = DispatchSemaphore(value: 0)
             Task.detached(priority: .userInitiated) {
-                await ConversationStore.shared.markAllUnknown()
+                await ConversationStore.shared.reclassifyAfterCrash(
+                    registry: .v1
+                )
                 sema.signal()
             }
-            // Bounded; the actor never blocks on I/O. Matches the
-            // bridge's existing 1s budget.
             _ = sema.wait(timeout: .now() + 1.0)
         }
     }

@@ -1,20 +1,20 @@
 import Foundation
 
-/// Bounded filesystem I/O over `~/.claude/sessions/` (and project-scoped
-/// subdirectories where Claude Code stores per-cwd session files).
+/// Bounded filesystem I/O over `~/.claude/projects/`, where Claude Code
+/// stores per-cwd transcripts as `<cwd-slug>/<session-id>.jsonl`.
 ///
 /// **Privacy contract** (see architecture doc §"Privacy contract for scrape"):
 /// reads metadata only — filename + mtime + size. Filename carries the
 /// session id. Transcript bytes are NEVER opened, copied, or logged.
 ///
 /// Scope:
-/// - At most `maxCandidates` (default 16) most-recent sessions by mtime.
+/// - At most `maxCandidates` (default 16) most-recent transcripts by mtime.
 /// - Filename pattern: `<uuid>.jsonl` where uuid is the Claude session id.
-/// - Optional `cwd` filter: if Claude Code stores sessions under a
-///   project-scoped subdirectory (e.g. `~/.claude/projects/<hash>/...`),
-///   we walk one level into directories whose name encodes the cwd. The
-///   exact path layout is verified at the integration-test boundary,
-///   not pinned in code.
+/// - Transcripts live one level deep under a project-slug directory, so the
+///   recursive lister is used (mirrors `CodexScraper`). The exact-path stat
+///   used by crash-recovery verification lives on the strategy
+///   (`ClaudeCodeStrategy.transcriptExists`); this scraper is the bounded
+///   top-N pull-fallback seam.
 struct ClaudeCodeScraper: Sendable {
     let kind: String = "claude-code"
     static let defaultMaxCandidates: Int = 16
@@ -32,21 +32,26 @@ struct ClaudeCodeScraper: Sendable {
         self.maxCandidates = maxCandidates
     }
 
-    /// Resolve `~/.claude/sessions/`. Returns nil if HOME isn't set.
-    func sessionsRoot() -> URL? {
+    /// Resolve `~/.claude/projects/`. Returns nil if HOME isn't set.
+    func projectsRoot() -> URL? {
         guard let home = filesystem.homeDirectory else { return nil }
         return home
             .appendingPathComponent(".claude", isDirectory: true)
-            .appendingPathComponent("sessions", isDirectory: true)
+            .appendingPathComponent("projects", isDirectory: true)
     }
 
     /// Top-N candidates by mtime. Empty list when the directory doesn't
-    /// exist (Claude Code never ran on this machine).
+    /// exist (Claude Code never ran on this machine). Walks the project-slug
+    /// subdirectories recursively because transcripts are nested one level
+    /// under `<cwd-slug>/`.
     func candidates(cwd: String? = nil) -> [ScrapeCandidate] {
-        guard let root = sessionsRoot() else { return [] }
-        let entries = filesystem.listDirectoryByMtime(root, max: maxCandidates)
+        guard let root = projectsRoot() else { return [] }
+        let entries = filesystem.listSessionsRecursivelyByMtime(
+            root,
+            extensionFilter: "jsonl",
+            max: maxCandidates
+        )
         return entries.compactMap { entry in
-            guard entry.fileName.hasSuffix(".jsonl") else { return nil }
             let id = String(entry.fileName.dropLast(".jsonl".count))
             guard isValidConversationUUID(id) else { return nil }
             return ScrapeCandidate(
@@ -132,6 +137,11 @@ protocol ConversationFilesystem: Sendable {
         extensionFilter: String,
         max: Int
     ) -> [ConversationFilesystemEntry]
+
+    /// Stat-only existence check for a single path. Used by crash-recovery
+    /// transcript verification (`ClaudeCodeStrategy.transcriptExists`).
+    /// Never opens the file — honors the scrape privacy contract.
+    func fileExists(atPath path: String) -> Bool
 }
 
 struct ConversationFilesystemEntry: Sendable, Equatable {
@@ -155,6 +165,10 @@ struct DefaultConversationFilesystem: ConversationFilesystem {
 
     var homeDirectory: URL? {
         FileManager.default.homeDirectoryForCurrentUser
+    }
+
+    func fileExists(atPath path: String) -> Bool {
+        FileManager.default.fileExists(atPath: path)
     }
 
     func listDirectoryByMtime(

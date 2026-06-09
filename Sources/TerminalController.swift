@@ -2844,6 +2844,11 @@ class TerminalController {
             return v2Result(id: id, self.v2SurfaceHealth(params: params))
         case "debug.terminals":
             return v2Result(id: id, self.v2DebugTerminals(params: params))
+        // C11-131: explicit operator-grade state verbs.
+        case "session.save":
+            return v2Result(id: id, self.v2SessionSave(params: params))
+        case "app.restart":
+            return v2Result(id: id, self.v2AppRestart(params: params))
 #if DEBUG
         case "debug.session.save_and_load":
             return v2Result(id: id, self.v2DebugSessionSaveAndLoad(params: params))
@@ -7330,6 +7335,63 @@ class TerminalController {
             return .err(code: "not_found", message: "Workspace not found", data: nil)
         }
         return .ok(payload)
+    }
+
+    /// C11-131 `session.save` — production cousin of the DEBUG-only
+    /// `debug.session.save_and_load`. Forces a synchronous full-app session
+    /// snapshot while the app keeps running and returns the path + counts.
+    ///
+    /// Main-actor handling (`v2MainSync`) is intentional and permitted by the
+    /// socket threading policy: this is an operator-grade, low-frequency verb
+    /// that must build the snapshot from live AppKit/window state and read it
+    /// back — it is not a telemetry hot path.
+    private func v2SessionSave(params: [String: Any]) -> V2CallResult {
+        let includeScrollback = (params["include_scrollback"] as? Bool) ?? false
+        let outPath = (params["out"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        var result: AppDelegate.SessionSaveResult?
+        v2MainSync {
+            guard let app = AppDelegate.shared else { return }
+            result = app.forceSessionSave(
+                includeScrollback: includeScrollback,
+                outPath: (outPath?.isEmpty == false) ? outPath : nil
+            )
+        }
+        guard let result else {
+            return .err(code: "session_save_failed",
+                        message: "forceSessionSave returned nil (no windows or write failed)",
+                        data: nil)
+        }
+        var payload: [String: Any] = [
+            "snapshot_path": result.snapshotPath,
+            "windows": result.windows,
+            "workspaces": result.workspaces,
+            "terminal_panels": result.terminalPanels,
+            "refs": result.refs
+        ]
+        if let out = result.outPath { payload["out_path"] = out }
+        return .ok(payload)
+    }
+
+    /// C11-131 `app.restart` — clean-shutdown choreography then relaunch.
+    /// `no_resume` restores layout without typing resume commands into panes.
+    ///
+    /// Main-actor handling is intentional: it mutates app lifecycle state
+    /// (suspend refs, snapshot, sentinel, terminate). The reply flushes
+    /// before the deferred `NSApp.terminate` fires. This verb does not steal
+    /// focus beyond the operator's explicit restart intent.
+    private func v2AppRestart(params: [String: Any]) -> V2CallResult {
+        let noResume = (params["no_resume"] as? Bool) ?? false
+        var dispatched = false
+        v2MainSync {
+            guard let app = AppDelegate.shared else { return }
+            app.performCleanRestart(resume: !noResume)
+            dispatched = true
+        }
+        guard dispatched else {
+            return .err(code: "app_restart_failed",
+                        message: "AppDelegate unavailable", data: nil)
+        }
+        return .ok(["ok": true, "resume": !noResume])
     }
 
 #if DEBUG

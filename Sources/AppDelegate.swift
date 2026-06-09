@@ -2208,11 +2208,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var mainWindowControllers: [MainWindowController] = []
     private var startupSessionSnapshot: AppSessionSnapshot?
     private var didPrepareStartupSessionSnapshot = false
-    /// C11-24 review (B2): captured at launch in `applicationDidFinishLaunching`
-    /// and consumed in `prepareStartupSessionSnapshotIfNeeded` *after*
-    /// `seedFromSnapshot` runs, so `markAllUnknown` can never race ahead
-    /// of the bridge seed and let stale .alive/.suspended refs through.
+    /// C11-24 review (B2): captured at launch and consumed in
+    /// `prepareStartupSessionSnapshotIfNeeded` *after* `seedFromSnapshot`
+    /// runs, so crash recovery can never race ahead of the bridge seed and
+    /// let stale .alive/.suspended refs through.
     private var priorShutdownAtLaunch: ShutdownSentinel.PriorShutdown = .missing
+    /// C11-131: guards the read-prior-then-write-dirty arming so it runs
+    /// exactly once, at whichever of `applicationDidFinishLaunching` or
+    /// `prepareStartupSessionSnapshotIfNeeded` fires first. The two race
+    /// under the SwiftUI lifecycle (configure → prepare is driven from the
+    /// view tree, not the app-delegate callback), and a direct binary launch
+    /// can invert the order so prepare wins. Reading the sentinel before
+    /// `writeDirty` is load-bearing — afterward this run's own dirty marker
+    /// would masquerade as the prior shutdown — so the capture must be armed
+    /// from whichever path runs first.
+    private var didArmShutdownSentinel = false
     private var didAttemptStartupSessionRestore = false
     private var isApplyingStartupSessionRestore = false
     private var sessionAutosaveTimer: DispatchSourceTimer?
@@ -2380,26 +2390,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return false
     }
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        mirrorC11CmuxEnv()
-
-        // C11-24: write the dirty shutdown sentinel as early as possible
-        // and inspect the prior-shutdown state. The write must precede
-        // any potential crash path. Bundle-scoped so debug, release, and
-        // concurrent c11 instances don't cross-contaminate.
-        // Best-effort — sentinel writes never block launch.
+    /// C11-131: read the prior-shutdown sentinel (capturing the crash/clean
+    /// decision) and then write this run's dirty marker. Idempotent: the
+    /// read MUST precede the write, and must happen exactly once, before
+    /// either `applicationDidFinishLaunching` or
+    /// `prepareStartupSessionSnapshotIfNeeded` consumes `priorShutdownAtLaunch`.
+    /// Called from both; whichever runs first arms it.
+    private func armShutdownSentinelIfNeeded() {
+        guard !didArmShutdownSentinel else { return }
+        didArmShutdownSentinel = true
         let bundleId = Bundle.main.bundleIdentifier ?? "com.stage11.c11"
         let priorShutdown = ShutdownSentinel.readPriorShutdown(bundleId: bundleId)
-        // C11-24 review (B2): capture the decision now but defer the
-        // crash-recovery `markAllUnknown` until *after* `seedFromSnapshot`
-        // runs in `prepareStartupSessionSnapshotIfNeeded`. Previously this
-        // dispatched in an unstructured Task that could race ahead of the
-        // synchronous snapshot seed, restoring stale .alive/.suspended
-        // refs the dirty sentinel was meant to invalidate.
         priorShutdownAtLaunch = priorShutdown
 #if DEBUG
         // dlog only exists in DEBUG (bonsplit DebugEventLog); the sentinel
-        // logic above/below stays live in Release — only the logging is gated.
+        // logic stays live in Release — only the logging is gated.
         switch priorShutdown {
         case .clean(let at):
             dlog("shutdown.sentinel prior=clean at=\(at.timeIntervalSince1970)")
@@ -2410,6 +2415,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 #endif
         ShutdownSentinel.writeDirty(bundleId: bundleId)
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        mirrorC11CmuxEnv()
+
+        // C11-24/C11-131: capture the prior-shutdown decision and arm this
+        // run's dirty sentinel as early as possible — before any potential
+        // crash path. The write must precede crashes; the read must precede
+        // the write. Idempotent so a SwiftUI-driven `prepare` that already
+        // ran does not double-write. Bundle-scoped so debug, release, and
+        // concurrent c11 instances don't cross-contaminate.
+        armShutdownSentinelIfNeeded()
 
         // C11-24 review (M3): kill-switch breadcrumb. The store
         // short-circuits four code paths silently when CMUX_DISABLE_-
@@ -3198,6 +3215,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func prepareStartupSessionSnapshotIfNeeded() {
         guard !didPrepareStartupSessionSnapshot else { return }
         didPrepareStartupSessionSnapshot = true
+        // C11-131: this can run before `applicationDidFinishLaunching` under
+        // the SwiftUI lifecycle (configure → prepare is view-driven). Arm the
+        // shutdown sentinel here too so `priorShutdownAtLaunch` is the real
+        // prior-shutdown decision, not the default `.missing`, before the
+        // dirty-recovery branch below consumes it. Idempotent.
+        armShutdownSentinelIfNeeded()
         guard SessionRestorePolicy.shouldAttemptRestore() else { return }
         let snapshot = SessionPersistenceStore.load()
         startupSessionSnapshot = snapshot

@@ -1674,6 +1674,18 @@ struct CMUXCLI {
             return
         }
 
+        // C11-131: `c11 state verify` is a read-only parse + on-disk stat. It
+        // doubles as a post-crash diagnostic and the Tier-2 test oracle, so it
+        // must work with no running app — handle it before the socket connect.
+        if command == "state",
+           (commandArgs.first?.lowercased() ?? "") == "verify" {
+            try runStateVerify(
+                subArgs: Array(commandArgs.dropFirst()),
+                jsonOutput: jsonOutput
+            )
+            return
+        }
+
         let client = SocketClient(path: resolvedSocketPath)
         if resolvedSocketPath != socketPath {
             cliTelemetry.breadcrumb(
@@ -2744,6 +2756,25 @@ struct CMUXCLI {
 
         case "conversation":
             try runConversationCommand(
+                commandArgs: commandArgs,
+                client: client,
+                jsonOutput: jsonOutput
+            )
+
+        case "state":
+            // C11-131: `c11 state save|verify`. `save` forces a synchronous
+            // full-app snapshot via the running app; `verify` is a read-only
+            // resume-decision dry run that needs no running app.
+            try runStateCommand(
+                commandArgs: commandArgs,
+                client: client,
+                jsonOutput: jsonOutput
+            )
+
+        case "app":
+            // C11-131: `c11 app restart [--no-resume]` — clean bounce of the
+            // running instance.
+            try runAppCommand(
                 commandArgs: commandArgs,
                 client: client,
                 jsonOutput: jsonOutput
@@ -11832,6 +11863,274 @@ struct CMUXCLI {
             print(jsonString(response))
         } else {
             print("OK conversation.clear surface=\(surface)")
+        }
+    }
+
+    // MARK: - C11-131: state save / verify
+
+    private func stateUsage() -> String {
+        return """
+        Usage: c11 state <subcommand> [flags]
+
+        Subcommands:
+          save [--out <path>] [--scrollback]   Force a synchronous full-app
+                                               session snapshot now. Prints the
+                                               snapshot path + counts.
+          verify [<path>]                      Read-only resume-decision dry run.
+                                               Per terminal panel: kind, id,
+                                               persisted state, transcript check,
+                                               and whether it would resume.
+                                               Exit 0 iff every ref would resume.
+                                               Needs no running app.
+        """
+    }
+
+    private func runStateCommand(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool
+    ) throws {
+        let subcommand = commandArgs.first?.lowercased() ?? "help"
+        let subArgs = Array(commandArgs.dropFirst())
+        switch subcommand {
+        case "save":
+            try runStateSave(subArgs: subArgs, client: client, jsonOutput: jsonOutput)
+        case "verify":
+            // Also reachable here when an app is running; the pre-connect
+            // short-circuit handles the no-app case.
+            try runStateVerify(subArgs: subArgs, jsonOutput: jsonOutput)
+        case "help", "--help", "-h":
+            print(stateUsage())
+        default:
+            throw CLIError(message: "Unknown state subcommand: \(subcommand)")
+        }
+    }
+
+    private func runStateSave(
+        subArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool
+    ) throws {
+        var params: [String: Any] = [
+            "include_scrollback": hasFlag(subArgs, name: "--scrollback")
+        ]
+        if let out = optionValue(subArgs, name: "--out"), !out.isEmpty {
+            params["out"] = out
+        }
+        let response = try client.sendV2(method: "session.save", params: params)
+        if jsonOutput {
+            print(jsonString(response))
+            return
+        }
+        let path = response["snapshot_path"] as? String ?? "?"
+        let windows = response["windows"] as? Int ?? 0
+        let workspaces = response["workspaces"] as? Int ?? 0
+        let panels = response["terminal_panels"] as? Int ?? 0
+        let refs = response["refs"] as? Int ?? 0
+        print("OK state save")
+        print("  snapshot: \(path)")
+        if let out = response["out_path"] as? String { print("  copy: \(out)") }
+        print("  windows=\(windows) workspaces=\(workspaces) terminal_panels=\(panels) refs=\(refs)")
+    }
+
+    /// Default canonical snapshot path for the production bundle. `state
+    /// verify` with no argument inspects this; the Tier-2 harness always
+    /// passes an explicit path written by `state save --out`.
+    private func defaultStateSnapshotPath() -> String {
+        let appSupport = (NSSearchPathForDirectoriesInDomains(
+            .applicationSupportDirectory, .userDomainMask, true
+        ).first) ?? (NSHomeDirectory() + "/Library/Application Support")
+        return appSupport + "/c11/session-com.stage11.c11.json"
+    }
+
+    /// Claude Code's per-project transcript directory slug: every `/` and `.`
+    /// in the absolute cwd becomes `-`. Mirrors `ClaudeCodeStrategy.projectSlug`
+    /// (the CLI is a separate build target and cannot import it).
+    private func claudeProjectSlug(_ cwd: String) -> String {
+        return String(cwd.map { ($0 == "/" || $0 == ".") ? "-" : $0 })
+    }
+
+    private func isUUIDv4(_ id: String) -> Bool {
+        let t = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.count == 36 else { return false }
+        let pattern = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        return t.range(of: pattern, options: .regularExpression) != nil
+    }
+
+    /// Per-panel verify result.
+    private struct StateVerifyPanel {
+        let kind: String
+        let id: String
+        let state: String
+        let cwd: String?
+        let transcriptPresent: Bool?
+        let wouldResume: Bool
+        let action: String
+    }
+
+    /// Read-only resume-decision dry run. Parses a snapshot and, per terminal
+    /// panel with a captured conversation, reproduces what the crash-recovery
+    /// path would decide: resumable iff the persisted state is alive/suspended,
+    /// the id is valid, and (for claude-code) the transcript exists on disk.
+    /// Mirrors `ConversationStore.reclassifyAfterCrash` + `ClaudeCodeStrategy`.
+    private func runStateVerify(subArgs: [String], jsonOutput: Bool) throws {
+        let path = subArgs.first(where: { !$0.hasPrefix("-") }) ?? defaultStateSnapshotPath()
+        guard let data = FileManager.default.contents(atPath: path) else {
+            throw CLIError(message: "state verify: snapshot not found at \(path)")
+        }
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let windows = root["windows"] as? [[String: Any]] else {
+            throw CLIError(message: "state verify: \(path) is not a valid session snapshot")
+        }
+        let home = NSHomeDirectory()
+        var panels: [StateVerifyPanel] = []
+        for window in windows {
+            let tm = window["tabManager"] as? [String: Any]
+            let workspaces = tm?["workspaces"] as? [[String: Any]] ?? []
+            for ws in workspaces {
+                let wsPanels = ws["panels"] as? [[String: Any]] ?? []
+                for panel in wsPanels {
+                    guard (panel["type"] as? String) == "terminal" else { continue }
+                    guard let conv = panel["surface_conversations"] as? [String: Any],
+                          let active = conv["active"] as? [String: Any] else { continue }
+                    let kind = active["kind"] as? String ?? "?"
+                    let id = active["id"] as? String ?? "?"
+                    let state = active["state"] as? String ?? "?"
+                    let cwd = active["cwd"] as? String
+                    panels.append(verifyDecision(
+                        kind: kind, id: id, state: state, cwd: cwd, home: home
+                    ))
+                }
+            }
+        }
+        let refPanels = panels.count
+        let resumable = panels.filter { $0.wouldResume }.count
+        let allResume = panels.allSatisfy { $0.wouldResume }
+
+        if jsonOutput {
+            let payload: [String: Any] = [
+                "snapshot_path": path,
+                "ref_panels": refPanels,
+                "would_resume": resumable,
+                "all_resume": allResume,
+                "panels": panels.map { p -> [String: Any] in
+                    var d: [String: Any] = [
+                        "kind": p.kind, "id": p.id, "state": p.state,
+                        "would_resume": p.wouldResume, "action": p.action
+                    ]
+                    if let cwd = p.cwd { d["cwd"] = cwd }
+                    if let t = p.transcriptPresent { d["transcript_present"] = t }
+                    return d
+                }
+            ]
+            print(jsonString(payload))
+        } else {
+            print("state verify: \(path)")
+            if panels.isEmpty {
+                print("  (no terminal panels with captured conversations)")
+            }
+            for p in panels {
+                let mark = p.wouldResume ? "RESUME" : "skip"
+                let t = p.transcriptPresent.map { $0 ? " transcript=present" : " transcript=missing" } ?? ""
+                print("  [\(mark)] kind=\(p.kind) id=\(p.id) state=\(p.state)\(t) — \(p.action)")
+            }
+            print("  \(resumable)/\(refPanels) ref-bearing panels would resume")
+        }
+        // Exit 0 iff every ref-bearing panel would resume (vacuously true when
+        // there are no refs).
+        exit(allResume ? 0 : 1)
+    }
+
+    private func verifyDecision(
+        kind: String, id: String, state: String, cwd: String?, home: String
+    ) -> StateVerifyPanel {
+        // States that are never auto-resumable (preserves the /exit-no-resume
+        // contract and unsupported-kind retention).
+        guard state == "alive" || state == "suspended" else {
+            return StateVerifyPanel(
+                kind: kind, id: id, state: state, cwd: cwd,
+                transcriptPresent: nil, wouldResume: false,
+                action: "skip: state=\(state) not auto-resumable"
+            )
+        }
+        // Only claude-code keeps an on-disk transcript today; that is the kind
+        // the crash-recovery fix verifies. Other kinds demote to unknown on a
+        // crash (no transcript), so they would not auto-resume after a crash.
+        guard kind == "claude-code" else {
+            return StateVerifyPanel(
+                kind: kind, id: id, state: state, cwd: cwd,
+                transcriptPresent: nil, wouldResume: false,
+                action: "skip: no transcript verification for kind '\(kind)'"
+            )
+        }
+        guard isUUIDv4(id) else {
+            return StateVerifyPanel(
+                kind: kind, id: id, state: state, cwd: cwd,
+                transcriptPresent: nil, wouldResume: false,
+                action: "skip: invalid id grammar"
+            )
+        }
+        guard let cwd, !cwd.isEmpty else {
+            return StateVerifyPanel(
+                kind: kind, id: id, state: state, cwd: cwd,
+                transcriptPresent: nil, wouldResume: false,
+                action: "skip: no cwd to locate transcript"
+            )
+        }
+        let slug = claudeProjectSlug(cwd)
+        let transcript = "\(home)/.claude/projects/\(slug)/\(id).jsonl"
+        let present = FileManager.default.fileExists(atPath: transcript)
+        if present {
+            return StateVerifyPanel(
+                kind: kind, id: id, state: state, cwd: cwd,
+                transcriptPresent: true, wouldResume: true,
+                action: "claude --dangerously-skip-permissions --resume \(id)"
+            )
+        }
+        return StateVerifyPanel(
+            kind: kind, id: id, state: state, cwd: cwd,
+            transcriptPresent: false, wouldResume: false,
+            action: "skip: transcript not found"
+        )
+    }
+
+    // MARK: - C11-131: app restart
+
+    private func appUsage() -> String {
+        return """
+        Usage: c11 app <subcommand> [flags]
+
+        Subcommands:
+          restart [--no-resume]   Clean-bounce the running instance: suspend
+                                  conversations, snapshot, promote the shutdown
+                                  sentinel to clean, then relaunch. --no-resume
+                                  restores layout without typing resume commands
+                                  into panes.
+        """
+    }
+
+    private func runAppCommand(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool
+    ) throws {
+        let subcommand = commandArgs.first?.lowercased() ?? "help"
+        let subArgs = Array(commandArgs.dropFirst())
+        switch subcommand {
+        case "restart":
+            var params: [String: Any] = [:]
+            if hasFlag(subArgs, name: "--no-resume") { params["no_resume"] = true }
+            let response = try client.sendV2(method: "app.restart", params: params)
+            if jsonOutput {
+                print(jsonString(response))
+            } else {
+                let resume = (response["resume"] as? Bool) ?? true
+                print("OK app restart — relaunching\(resume ? "" : " (no resume)")")
+            }
+        case "help", "--help", "-h":
+            print(appUsage())
+        default:
+            throw CLIError(message: "Unknown app subcommand: \(subcommand)")
         }
     }
 

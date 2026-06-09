@@ -610,6 +610,35 @@ Conversation resume is on by default in 0.44.0+. The legacy `C11_SESSION_RESUME=
 
 The snapshot wraps a `WorkspaceApplyPlan`; the same shape Blueprints and the debug `c11 workspace apply` use. Explicit `SurfaceSpec.command` always wins over any registry synthesis — the registry only fires when a terminal surface has no command and its metadata declares a known `terminal_type`.
 
+### Whole-app state: save, verify, restart
+
+Beyond per-workspace snapshots, c11 exposes operator-grade verbs for the entire app's session (every window, workspace, pane) plus its conversation-resume state.
+
+```bash
+# Checkpoint the full app session to disk right now, synchronously, while
+# c11 keeps running. Prints the snapshot path + counts.
+c11 state save                       # no scrollback (fast)
+c11 state save --scrollback          # include scrollback buffers
+c11 state save --out /tmp/snap.json  # also write a copy (archival / fixtures)
+
+# Read-only dry run of the resume decision. Per terminal panel: kind, session
+# id, persisted state, whether the transcript is on disk, and the exact resume
+# action. Exits 0 iff every panel with a conversation would resume. Needs NO
+# running app — point it at any snapshot, or omit the path for the live one.
+c11 state verify
+c11 state verify /tmp/snap.json --json
+
+# "c11 is laggy — give me a clean restart." Clean-shutdown choreography
+# (suspend conversations → final snapshot → mark clean) then relaunch; layout
+# and every Claude conversation come back via the normal restore path.
+c11 app restart
+c11 app restart --no-resume          # restore layout, but type nothing into panes
+```
+
+`state save` is cheap insurance an agent (or a cron, or you) can fire anytime. `state verify` makes the resume pipeline observable — reach for it to answer "why didn't pane X resume?" after a crash. `app restart` is the one-command fix for a sluggish instance and exercises exactly the clean-shutdown path, so heavy use continuously validates persistence.
+
+**Crash resume.** After an unclean exit (kill, panic, power loss) c11 relaunches, restores layout, and verifies each Claude conversation against the transcript it keeps at `~/.claude/projects/<cwd-slug>/<id>.jsonl` (stat only — bytes are never read). A verified transcript resumes in place; a missing one is skipped with a clear diagnostic. Sessions you ended with `/exit` are never auto-resumed.
+
 ## Conversation primitives
 
 c11 0.44.0+ owns a first-class **conversation store**: each surface hosts at most one active `ConversationRef` keyed by an opaque, per-kind id, persisted across c11 restarts. Per-TUI strategies (Claude Code, Codex, Opencode, Kimi today) capture and resume conversations using whatever signals each TUI exposes — hooks where available, on-disk file scrape as fallback.

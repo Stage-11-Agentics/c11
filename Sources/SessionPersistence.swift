@@ -287,6 +287,9 @@ struct SessionMarkdownPanelSnapshot: Codable, Sendable {
     /// (empty state — not yet bound to a file). Unbound panels are not
     /// recreated on restore; see Workspace.createPanel(from:inPane:).
     var filePath: String?
+    /// Font scale multiplier (1.0 = default). Optional for backwards
+    /// compatibility; old snapshots decode with nil.
+    var fontScale: Double? = nil
 }
 
 struct SessionPanelSnapshot: Codable, Sendable {

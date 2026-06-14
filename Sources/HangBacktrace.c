@@ -2,6 +2,7 @@
 
 #if defined(__arm64__)
 
+#include <mach/mach_vm.h>
 #include <pthread/stack_np.h>
 
 int c11_capture_thread_backtrace(thread_t thread, uintptr_t *out, int max_frames) {
@@ -25,6 +26,22 @@ int c11_capture_thread_backtrace(thread_t thread, uintptr_t *out, int max_frames
     // from both — the part a pure-Swift walk can't do without ptrauth intrinsics.
     uintptr_t fp = (uintptr_t)__darwin_arm_thread_state64_get_fp(state);
     while (fp != 0 && (fp & 0xF) == 0 && n < max_frames) {
+        // Validate that the 16 bytes at fp ([fp] = next fp, [fp+8] = return
+        // address) are mapped before pthread_stack_frame_decode_np dereferences
+        // them. A corrupt or exhausted chain — exactly the state this tool is
+        // meant to survive and report — must not fault the watchdog. mach_vm_read
+        // returns an error instead of raising, and (unlike malloc) is safe to
+        // call while the target thread is suspended. The thread is parked, so
+        // its stack memory is stable across the probe and the decode.
+        uintptr_t frame[2];
+        mach_vm_size_t read = 0;
+        if (mach_vm_read_overwrite(mach_task_self(),
+                                   (mach_vm_address_t)fp, sizeof(frame),
+                                   (mach_vm_address_t)frame, &read) != KERN_SUCCESS
+            || read != sizeof(frame)) {
+            break;
+        }
+
         uintptr_t ret = 0;
         uintptr_t next = pthread_stack_frame_decode_np(fp, &ret);
         if (ret != 0) {

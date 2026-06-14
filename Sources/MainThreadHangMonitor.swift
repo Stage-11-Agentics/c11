@@ -94,9 +94,17 @@ final class MainThreadHangMonitor: @unchecked Sendable {
     private var mainThread: thread_t = mach_port_t(MACH_PORT_NULL)
     private var installed = false
 
+    /// Reused address buffer for stack capture. Preallocated once so no heap
+    /// allocation ever happens inside the `thread_suspend`/`thread_resume` window
+    /// — a `malloc` there would deadlock if the suspended main thread holds the
+    /// malloc lock. Only ever touched on the watchdog thread, which captures
+    /// serially, so the single shared buffer is safe.
+    private var frameBuffer: [UInt]
+
     private let logURL: URL
 
     private init() {
+        frameBuffer = [UInt](repeating: 0, count: maxFrames)
         logURL = Self.resolveLogURL()
     }
 
@@ -210,21 +218,23 @@ final class MainThreadHangMonitor: @unchecked Sendable {
     /// can't read another thread's frames.
     private func captureMainBacktrace() -> [String] {
         guard mainThread != mach_port_t(MACH_PORT_NULL) else { return [] }
+
+        // Nothing inside the suspend window may allocate or take an app-level
+        // lock: if main is suspended while holding (e.g.) the malloc lock, any
+        // allocation here would block forever and wedge the process. The buffer
+        // is preallocated; the C unwinder only reads memory via mach_vm calls.
         guard thread_suspend(mainThread) == KERN_SUCCESS else {
             return ["<thread_suspend failed>"]
         }
-
-        var raw = [UInt](repeating: 0, count: maxFrames)
-        let frameCount = raw.withUnsafeMutableBufferPointer { buffer -> Int in
+        let frameCount = frameBuffer.withUnsafeMutableBufferPointer { buffer -> Int in
             Int(c11_capture_thread_backtrace(mainThread, buffer.baseAddress!, Int32(maxFrames)))
         }
-
-        // Resume as soon as the raw addresses are copied out — keep the suspend
-        // window to register read + memory walk only.
         thread_resume(mainThread)
 
         guard frameCount > 0 else { return ["<no frames captured>"] }
-        return symbolicate((0..<frameCount).map { UnsafeMutableRawPointer(bitPattern: raw[$0]) })
+        // Symbolication (which allocates and can take locks the suspended thread
+        // may have held) happens only after resume.
+        return symbolicate((0..<frameCount).map { UnsafeMutableRawPointer(bitPattern: frameBuffer[$0]) })
     }
 
     private func symbolicate(_ addrs: [UnsafeMutableRawPointer?]) -> [String] {

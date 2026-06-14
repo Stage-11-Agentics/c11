@@ -2546,6 +2546,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // telemetry consent inside CrashDiagnostics itself.
         CrashDiagnostics.shared.install()
 
+        // Real-time main-thread watchdog: captures a backtrace *while* main is
+        // wedged (the beachball case a CFRunLoopObserver can't see). Writes a
+        // local hang log unconditionally; forwards to Sentry/PostHog only with
+        // telemetry consent. Opt out with C11_HANG_MONITOR=0.
+        MainThreadHangMonitor.shared.installIfNeeded()
+
         if telemetryEnabled && !isRunningUnderXCTest {
             PostHogAnalytics.shared.startIfNeeded()
         }

@@ -81,6 +81,19 @@ final class PostHogAnalytics {
         }
     }
 
+    /// Capture a main-thread hang detected by `MainThreadHangMonitor`. Self-gated
+    /// on telemetry consent (`isEnabled`) and SDK start, like every other event.
+    func captureMainThreadHang(stalledMs: Double, recapture: Bool, topFrame: String) {
+        dispatchAsyncOnWorkQueue { [weak self] in
+            guard let self, self.didStart, self.isEnabled else { return }
+            PostHogSDK.shared.capture("c11_main_thread_hang", properties: [
+                "stalled_ms": Int(stalledMs),
+                "recapture": recapture,
+                "top_frame": topFrame,
+            ])
+        }
+    }
+
     private func startIfNeededOnWorkQueue() {
         guard !didStart else { return }
         guard isEnabled else { return }

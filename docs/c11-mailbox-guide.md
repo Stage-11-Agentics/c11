@@ -10,7 +10,9 @@ This is the practical guide. For the agent-facing quick-reference see the "Inter
 
 ## What it is
 
-A per-workspace tree under `~/Library/Application Support/c11mux/workspaces/<workspace-uuid>/mailboxes/` that holds the outbox, per-recipient inboxes, an append-only dispatch log, and quarantine/processing scratch areas. The c11 process running the workspace owns one `MailboxDispatcher` that watches the outbox and routes whatever shows up.
+A per-workspace tree under `~/Library/Application Support/c11/workspaces/<workspace-uuid>/mailboxes/` that holds the outbox, per-recipient inboxes, an append-only dispatch log, and quarantine/processing scratch areas. The c11 process running the workspace owns one `MailboxDispatcher` that watches the outbox and routes whatever shows up.
+
+Recipients can live in **any** workspace, not just the sender's. `c11 mailbox send` resolves the recipient name across every live workspace in the instance and writes the envelope into the recipient workspace's own outbox, so that workspace's dispatcher delivers it locally (see [Cross-workspace routing](#cross-workspace-routing)).
 
 ```mermaid
 flowchart LR
@@ -98,7 +100,8 @@ Send flags accepted by the CLI:
 
 | Flag                  | Purpose                                                            |
 |-----------------------|--------------------------------------------------------------------|
-| `--to <surface>`      | Recipient surface name. Required in Stage 2 (topic-only rejected). |
+| `--to <surface>`      | Recipient surface name, in any workspace. Required in Stage 2 (topic-only rejected). |
+| `--to-workspace <ref>`| Disambiguate a name that exists in more than one workspace. A workspace UUID or `workspace:*` ref. |
 | `--topic <token>`     | Dotted topic. Stored on the envelope; not used for routing yet.    |
 | `--body <text>`       | Inline body, ≤ 4096 bytes UTF-8.                                   |
 | `--body-ref <path>`   | Absolute path to an external body. `--body` must be empty.         |
@@ -124,6 +127,29 @@ mv "$OUTBOX/.$ULID.tmp" "$OUTBOX/$ULID.msg"
 ```
 
 The dispatcher only sees files that match `*.msg` and do not start with `.`. Always write to a dot-prefixed `.tmp` sibling first and rename. A canonical reference lives at `Resources/bin/c11-mailbox-send-bash-example.sh`.
+
+> **Raw writers are workspace-local.** `outbox-dir` prints *your own* workspace's outbox, and a dispatcher only resolves names within its own workspace. So a raw file write reaches only recipients in your workspace. To deliver across workspaces, use `c11 mailbox send` (which resolves globally and routes for you) — or write into the recipient workspace's outbox directly. A raw envelope whose `to` matches nobody in that workspace is **rejected**, not silently dropped (see below).
+
+---
+
+## Cross-workspace routing
+
+`c11 mailbox send` resolves `--to` against every live surface in the running c11 instance, then writes the envelope into the **recipient's** workspace outbox. The recipient workspace's own dispatcher picks it up and delivers locally — same machinery as a same-workspace send, just a different outbox. The `from` field still names the sender; the dispatch trail lands in the recipient workspace's `_dispatch.log`.
+
+Resolution precedence is deterministic:
+
+1. **Local-first.** If the name matches a surface in *your* workspace, it is delivered there — a same-workspace send never reaches into another workspace, even if a same-named surface exists elsewhere. Existing same-workspace behavior is unchanged.
+2. Otherwise, among the other workspaces: exactly one match → delivered there; **more than one workspace** has the name → the send fails with an *ambiguous* error listing the candidate workspaces; no match anywhere → the send fails *unresolved* with a non-zero exit (the message is not written).
+
+**Name collisions across workspaces** (two surfaces both named `Builder` in different workspaces) are resolved by qualifying with `--to-workspace <ref>`:
+
+```bash
+c11 mailbox send --to Builder --to-workspace workspace:4 --body "go"
+```
+
+Multiple same-named surfaces *within one* workspace still fan out to all of them (unchanged) — that case is unique, not ambiguous.
+
+If the c11 socket is unreachable, `send` falls back to writing into your own workspace's outbox so same-workspace delivery still works offline; cross-workspace recipients then surface as a dispatcher *rejection* rather than a silent drop.
 
 ---
 
@@ -202,6 +228,7 @@ stateDiagram-v2
     Outbox --> Processing: dispatcher moveItem
     Processing --> Rejected: validation fails
     Processing --> Resolved: validate ok
+    Resolved --> Rejected: to matches no live surface
     Resolved --> Copied: per recipient inbox
     Copied --> HandlerRun: per delivery handler
     HandlerRun --> Cleaned: remove from _processing/
@@ -214,7 +241,7 @@ stateDiagram-v2
     end note
 ```
 
-The `received → resolved → copied → handler → cleaned` sequence shows up as discrete NDJSON lines in `_dispatch.log`. The `rejected` branch is the alternate terminal state and writes a `<id>.err` sibling explaining what failed.
+The `received → resolved → copied → handler → cleaned` sequence shows up as discrete NDJSON lines in `_dispatch.log`. The `rejected` branch is the alternate terminal state and writes a `<id>.err` sibling explaining what failed. A well-formed envelope whose `to` resolves to **no live surface** in the dispatching workspace takes the `rejected` branch too (reason: `no live surface named '<to>' …`) — an undeliverable message is quarantined with its sidecar, never silently cleaned.
 
 ---
 

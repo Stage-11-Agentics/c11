@@ -141,3 +141,100 @@ final class MailboxSurfaceResolverTests: XCTestCase {
         XCTAssertEqual(row?.mailboxKeys.keys.sorted(), ["mailbox.delivery"])
     }
 }
+
+/// Cross-workspace recipient resolution. Pure — drives `MailboxGlobalResolver`
+/// with an injected surface list, no app or metadata store needed.
+final class MailboxGlobalResolverTests: XCTestCase {
+
+    private let wsA = UUID()
+    private let wsB = UUID()
+    private let wsC = UUID()
+
+    private func surface(_ ws: UUID, _ name: String) -> MailboxGlobalResolver.Surface {
+        MailboxGlobalResolver.Surface(workspaceId: ws, surfaceId: UUID(), name: name)
+    }
+
+    private func resolver(_ surfaces: [MailboxGlobalResolver.Surface]) -> MailboxGlobalResolver {
+        MailboxGlobalResolver(surfaces: { surfaces })
+    }
+
+    // MARK: - Local-first
+
+    func testLocalMatchWinsOverRemoteSameName() {
+        // "Reviewer" exists in both the sender's workspace and a remote one;
+        // the local one must win so same-workspace sends never reach out.
+        let local = surface(wsA, "Reviewer")
+        let remote = surface(wsB, "Reviewer")
+        let resolution = resolver([local, remote]).resolve(
+            name: "Reviewer",
+            senderWorkspaceId: wsA
+        )
+        XCTAssertEqual(resolution, .unique(workspaceId: wsA, surfaceIds: [local.surfaceId]))
+    }
+
+    func testLocalDuplicateNamesFanOut() {
+        // Two "Builder" surfaces in the sender's workspace → both delivered.
+        let a = surface(wsA, "Builder")
+        let b = surface(wsA, "Builder")
+        let resolution = resolver([a, b]).resolve(name: "Builder", senderWorkspaceId: wsA)
+        guard case let .unique(workspaceId, surfaceIds) = resolution else {
+            return XCTFail("expected unique, got \(resolution)")
+        }
+        XCTAssertEqual(workspaceId, wsA)
+        XCTAssertEqual(Set(surfaceIds), [a.surfaceId, b.surfaceId])
+    }
+
+    // MARK: - Cross-workspace
+
+    func testResolvesToRemoteWorkspaceWhenNoLocalMatch() {
+        // Sender is in wsA; "Reviewer" only lives in wsB → deliver to wsB.
+        let remote = surface(wsB, "Reviewer")
+        let resolution = resolver([surface(wsA, "Builder"), remote]).resolve(
+            name: "Reviewer",
+            senderWorkspaceId: wsA
+        )
+        XCTAssertEqual(resolution, .unique(workspaceId: wsB, surfaceIds: [remote.surfaceId]))
+    }
+
+    func testUnknownNameIsUnresolved() {
+        let resolution = resolver([surface(wsA, "Builder")]).resolve(
+            name: "Nobody",
+            senderWorkspaceId: wsA
+        )
+        XCTAssertEqual(resolution, .unresolved)
+    }
+
+    // MARK: - Collision across workspaces
+
+    func testNameInMultipleRemoteWorkspacesIsAmbiguous() {
+        // Sender wsA has no "Reviewer"; both wsB and wsC do → ambiguous.
+        let b = surface(wsB, "Reviewer")
+        let c = surface(wsC, "Reviewer")
+        let resolution = resolver([b, c]).resolve(name: "Reviewer", senderWorkspaceId: wsA)
+        guard case let .ambiguous(candidates) = resolution else {
+            return XCTFail("expected ambiguous, got \(resolution)")
+        }
+        XCTAssertEqual(Set(candidates.map(\.workspaceId)), [wsB, wsC])
+    }
+
+    func testWorkspaceQualifierDisambiguates() {
+        let b = surface(wsB, "Reviewer")
+        let c = surface(wsC, "Reviewer")
+        let resolution = resolver([b, c]).resolve(
+            name: "Reviewer",
+            senderWorkspaceId: wsA,
+            workspaceQualifier: wsC
+        )
+        XCTAssertEqual(resolution, .unique(workspaceId: wsC, surfaceIds: [c.surfaceId]))
+    }
+
+    func testQualifierWithNoMatchIsUnresolved() {
+        let b = surface(wsB, "Reviewer")
+        let resolution = resolver([b]).resolve(
+            name: "Reviewer",
+            senderWorkspaceId: wsA,
+            workspaceQualifier: wsC
+        )
+        XCTAssertEqual(resolution, .unresolved)
+    }
+}

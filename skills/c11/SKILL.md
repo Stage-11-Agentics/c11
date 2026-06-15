@@ -464,7 +464,7 @@ the sub-agent's PR transitively requires another open PR to land first.
 
 ## Inter-agent messaging (mailbox)
 
-**c11 ships a per-workspace mailbox primitive.** Any agent in a surface can write an envelope to `_outbox/`; the c11-in-process dispatcher validates, resolves the recipient by surface name, copies into the recipient's inbox, and — for stdin-delivery recipients — writes a framed `<c11-msg>` block into the PTY.
+**c11 ships a mailbox primitive that routes across all workspaces.** Any agent in a surface can `c11 mailbox send --to <name>`; c11 resolves the recipient by surface name across every workspace in the instance, delivers into the recipient's inbox, and — for stdin-delivery recipients — writes a framed `<c11-msg>` block into the PTY. A recipient that matches no live surface is **rejected with a non-zero exit**, never silently dropped.
 
 This section is the agent-facing quick-reference. The full guide (filesystem layout, sequence diagrams, schema reference, dispatch log shape, patterns, anti-patterns, Stage 2 limits) lives in [`docs/c11-mailbox-guide.md`](../../docs/c11-mailbox-guide.md).
 
@@ -501,9 +501,11 @@ c11 mailbox send --to watcher --topic ci.status --urgent --body "CI red" \
 
 Auto-fills `version`, `id`, `ts`, `from` (resolved via the caller's surface title). Prints the envelope id on success.
 
+**Cross-workspace + collisions.** `--to` resolves across all workspaces, local-first: a match in your own workspace wins; otherwise the one workspace that has the name receives it. If the name exists in **more than one** other workspace the send fails *ambiguous* — disambiguate with `--to-workspace <ref>` (a workspace UUID or `workspace:*`). No match anywhere → non-zero *unresolved* exit, message not sent.
+
 **Stage 2 requires `--to`.** Topic-only sends (`--topic` with no `--to`) are rejected with a non-zero exit — topic subscribe/fan-out ships in Stage 3. Until then, always pair `--topic` with an explicit `--to <surface-name>`.
 
-**Raw file write (any process, any language):**
+**Raw file write (any process, any language)** — note this reaches only recipients in *your own* workspace (it bypasses global resolution); use the CLI to cross workspaces:
 
 ```bash
 OUTBOX=$(c11 mailbox outbox-dir)

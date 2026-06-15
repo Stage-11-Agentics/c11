@@ -202,8 +202,12 @@ final class MailboxDispatcherTests: XCTestCase {
 
     // MARK: - Unknown recipient
 
-    func testResolveEmptyWhenRecipientNotLive() throws {
-        // No surface named "ghost" — recipient list is empty, no handler fires.
+    /// A `to`-addressed envelope that resolves to nobody must NOT be silently
+    /// cleaned-and-discarded (the cross-workspace silent-drop bug). It is
+    /// quarantined like a validation failure: `_rejected/<id>.msg` + a `.err`
+    /// sidecar + a `rejected` event, and no handler fires.
+    func testUnresolvedRecipientIsRejectedNotSilentlyDropped() throws {
+        // No surface named "ghost" — recipient list is empty.
         let builder = seedSurface(name: "builder")
         let dispatcher = makeDispatcher(surfaces: [builder])
         var handlerCalls = 0
@@ -215,7 +219,9 @@ final class MailboxDispatcherTests: XCTestCase {
         let envelope = try MailboxEnvelope.build(
             from: "builder",
             to: "ghost",
-            body: "anyone home?"
+            body: "anyone home?",
+            id: "01K3A2B7X8PQRTVWYZ0123456G",
+            ts: "2026-04-23T10:15:42Z"
         )
         try writeEnvelope(envelope)
 
@@ -224,9 +230,38 @@ final class MailboxDispatcherTests: XCTestCase {
         dispatcher.dispatchOne(url: outboxPath)
         dispatcher.log.flush()
 
+        // No handler fired; nothing was copied to an inbox.
         XCTAssertEqual(handlerCalls, 0)
-        let events = try readLog()
-        let resolved = events.first { $0["event"] as? String == "resolved" }
+
+        // The envelope landed in _rejected/ with a sidecar, not silently gone.
+        let rejected = MailboxLayout.rejectedURL(state: tempState, workspaceId: workspaceId)
+        let entries = try FileManager.default.contentsOfDirectory(atPath: rejected.path).sorted()
+        XCTAssertEqual(entries, ["\(envelope.id).err", "\(envelope.id).msg"])
+        let reason = try String(
+            contentsOf: rejected.appendingPathComponent("\(envelope.id).err"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(reason.contains("ghost"), "rejection reason names the recipient")
+
+        // Outbox and processing are empty; the envelope was moved, not left behind.
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(
+                atPath: MailboxLayout.outboxURL(state: tempState, workspaceId: workspaceId).path
+            ),
+            []
+        )
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(
+                atPath: MailboxLayout.processingURL(state: tempState, workspaceId: workspaceId).path
+            ),
+            []
+        )
+
+        // Log sequence ends in `rejected`, with no `cleaned`.
+        let events = try readLog().compactMap { $0["event"] as? String }
+        XCTAssertEqual(events, ["received", "resolved", "rejected"])
+        XCTAssertFalse(events.contains("cleaned"))
+        let resolved = try readLog().first { $0["event"] as? String == "resolved" }
         XCTAssertEqual(resolved?["recipients"] as? [String], [])
     }
 

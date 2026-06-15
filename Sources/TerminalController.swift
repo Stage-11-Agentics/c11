@@ -2885,6 +2885,10 @@ class TerminalController {
         case "surface.clear_metadata":
             return v2Result(id: id, self.v2SurfaceClearMetadata(params: params))
 
+        // Mailbox
+        case "mailbox.resolve":
+            return v2Result(id: id, self.v2MailboxResolve(params: params))
+
         // Panes
         case "pane.list":
             return v2Result(id: id, self.v2PaneList(params: params))
@@ -3259,6 +3263,7 @@ class TerminalController {
             "surface.set_metadata",
             "surface.get_metadata",
             "surface.clear_metadata",
+            "mailbox.resolve",
             "pane.list",
             "pane.focus",
             "pane.surfaces",
@@ -8706,6 +8711,107 @@ class TerminalController {
             return .err(code: err.code, message: err.message, data: err.detailData)
         } catch {
             return .err(code: "internal_error", message: "\(error)", data: nil)
+        }
+    }
+
+    // MARK: - Mailbox cross-workspace resolution
+
+    /// Resolves a mailbox recipient name to the workspace its envelope should
+    /// be delivered into, scanning every live surface across all windows.
+    /// Backs `c11 mailbox send`, which routes the envelope into the resolved
+    /// workspace's outbox so that workspace's own dispatcher delivers it.
+    ///
+    /// Params:
+    ///   * `to` (string, required) — recipient surface name.
+    ///   * `sender_workspace_id` (uuid, required) — the sender's workspace, so
+    ///     a local match takes precedence over same-named surfaces elsewhere.
+    ///   * `workspace` (string, optional) — disambiguates a name that lives in
+    ///     more than one workspace; a workspace UUID or a `workspace:*` ref.
+    ///
+    /// Returns `{ resolution: "unique"|"ambiguous"|"unresolved",
+    /// target_workspace_id?, target_workspace_ref?, surface_ids?, candidates }`.
+    private func v2MailboxResolve(params: [String: Any]) -> V2CallResult {
+        guard let to = v2String(params, "to"), !to.isEmpty else {
+            return .err(code: "invalid_to", message: "to is required", data: nil)
+        }
+        guard let senderWorkspaceId = v2UUID(params, "sender_workspace_id") else {
+            return .err(code: "invalid_sender_workspace_id", message: "sender_workspace_id must be a UUID", data: nil)
+        }
+        let qualifierStr = v2String(params, "workspace")
+
+        return v2MainSync {
+            let surfaces = AppDelegate.shared?.mailboxAddressableSurfaces() ?? []
+
+            // Translate the optional workspace qualifier (UUID or ref string)
+            // into a concrete workspace UUID. A raw UUID is honored even when
+            // that workspace currently has no addressable surface (it then
+            // resolves to `unresolved`, the honest answer). Otherwise match the
+            // qualifier against the ref strings of the live workspaces.
+            var qualifierUUID: UUID?
+            if let qualifierStr, !qualifierStr.isEmpty {
+                if let direct = UUID(uuidString: qualifierStr) {
+                    qualifierUUID = direct
+                } else {
+                    let workspaceIds = Set(surfaces.map(\.workspaceId))
+                    qualifierUUID = workspaceIds.first { wsId in
+                        if let ref = v2Ref(kind: .workspace, uuid: wsId) as? String {
+                            return ref == qualifierStr
+                        }
+                        return false
+                    }
+                    if qualifierUUID == nil {
+                        // Unknown workspace ref → nothing can match it.
+                        return .ok([
+                            "resolution": "unresolved",
+                            "candidates": self.mailboxCandidatePayload(
+                                surfaces.filter { $0.name == to }
+                            )
+                        ])
+                    }
+                }
+            }
+
+            let resolver = MailboxGlobalResolver(surfaces: { surfaces })
+            let resolution = resolver.resolve(
+                name: to,
+                senderWorkspaceId: senderWorkspaceId,
+                workspaceQualifier: qualifierUUID
+            )
+
+            let candidates = self.mailboxCandidatePayload(surfaces.filter { $0.name == to })
+            switch resolution {
+            case .unique(let workspaceId, let surfaceIds):
+                return .ok([
+                    "resolution": "unique",
+                    "target_workspace_id": workspaceId.uuidString,
+                    "target_workspace_ref": v2Ref(kind: .workspace, uuid: workspaceId),
+                    "surface_ids": surfaceIds.map(\.uuidString),
+                    "candidates": candidates
+                ])
+            case .ambiguous:
+                return .ok([
+                    "resolution": "ambiguous",
+                    "candidates": candidates
+                ])
+            case .unresolved:
+                return .ok([
+                    "resolution": "unresolved",
+                    "candidates": candidates
+                ])
+            }
+        }
+    }
+
+    private func mailboxCandidatePayload(
+        _ surfaces: [MailboxGlobalResolver.Surface]
+    ) -> [[String: Any]] {
+        surfaces.map { surface in
+            [
+                "workspace_id": surface.workspaceId.uuidString,
+                "workspace_ref": v2Ref(kind: .workspace, uuid: surface.workspaceId),
+                "surface_id": surface.surfaceId.uuidString,
+                "name": surface.name
+            ]
         }
     }
 

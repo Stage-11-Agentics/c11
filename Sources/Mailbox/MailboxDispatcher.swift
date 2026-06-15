@@ -269,6 +269,24 @@ final class MailboxDispatcher {
         let recipients = resolveRecipients(envelope: envelope)
         log.append(.resolved(id: envelope.id, recipients: recipients.map(\.name)))
 
+        // Step 3a: a `to`-addressed envelope that resolves to nobody must NOT
+        // be silently cleaned-and-discarded. Quarantine it like a validation
+        // failure so the drop is observable: `_rejected/<id>.msg` + a `.err`
+        // sidecar + a `rejected` event in the dispatch log. The CLI sender
+        // resolves recipients up front and refuses to send to an unknown name,
+        // so in normal operation this fires only for raw-bash writers or a
+        // recipient that closed between send and dispatch. Topic-only
+        // envelopes (no `to`) keep the Stage-2 accept-but-empty contract and
+        // fall through to the no-op copy/handler steps below.
+        if envelope.to != nil && recipients.isEmpty {
+            rejectUnresolved(
+                id: envelope.id,
+                processingURL: processingURL,
+                to: envelope.to ?? ""
+            )
+            return
+        }
+
         // Step 4: copy into each recipient inbox.
         let envelopeBytes = (try? envelope.encode()) ?? Data()
         for recipient in recipients {
@@ -410,6 +428,32 @@ final class MailboxDispatcher {
                 elapsedMs: result.elapsedMs ?? elapsedMs
             )
         )
+    }
+
+    // MARK: - Unresolved-recipient rejection
+
+    /// A well-formed envelope whose `to` matches no live surface in this
+    /// workspace. Mirrors `quarantine` (rejected dir + `.err` sidecar +
+    /// `rejected` event) so an undeliverable message leaves a trail instead of
+    /// vanishing. Distinct reason string so `c11 mailbox trace` can tell a
+    /// malformed envelope from an unknown recipient.
+    private func rejectUnresolved(id: String, processingURL: URL, to: String) {
+        let reason = "no live surface named '\(to)' in workspace \(workspaceId.uuidString)"
+        let rejectedDir = MailboxLayout.rejectedURL(state: stateURL, workspaceId: workspaceId)
+        let rejectedMsg = rejectedDir.appendingPathComponent(
+            MailboxLayout.envelopeFilename(id: id)
+        )
+        let rejectedErr = rejectedDir.appendingPathComponent(
+            MailboxLayout.rejectedErrorFilename(id: id)
+        )
+        try? FileManager.default.createDirectory(
+            at: rejectedDir,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try? FileManager.default.moveItem(at: processingURL, to: rejectedMsg)
+        try? Data(reason.utf8).write(to: rejectedErr)
+        log.append(.rejected(id: id, reason: reason))
     }
 
     // MARK: - Quarantine

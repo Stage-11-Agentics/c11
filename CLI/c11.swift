@@ -16643,7 +16643,7 @@ extension CMUXCLI {
         Per-workspace messaging primitive for coordinating between c11 surfaces.
         Full guide: docs/c11-mailbox-guide.md (agent quick-reference: skills/c11/SKILL.md).
 
-          send       write an envelope to the per-workspace outbox
+          send       deliver an envelope to a surface in any workspace
           recv       drain or peek the caller's inbox
           trace      pretty-print _dispatch.log lines for an envelope id
           tail       follow _dispatch.log
@@ -16654,7 +16654,8 @@ extension CMUXCLI {
           new-id     print a fresh Crockford base32 ULID (26 chars)
 
         Send flags:
-          --to <surface>          recipient surface name
+          --to <surface>          recipient surface name (any workspace)
+          --to-workspace <ref>    disambiguate a name shared across workspaces
           --topic <topic>         dotted topic token
           --body <text>           inline body (≤ 4096 bytes UTF-8)
           --body-ref <path>       absolute path to external body (body must be empty)
@@ -16744,6 +16745,7 @@ extension CMUXCLI {
         let tsOverride = optionValue(subArgs, name: "--ts")
         let contentType = optionValue(subArgs, name: "--content-type")
         let fromOverride = optionValue(subArgs, name: "--from")
+        let toWorkspace = optionValue(subArgs, name: "--to-workspace")
 
         if to == nil && topic == nil {
             throw CLIError(
@@ -16798,8 +16800,22 @@ extension CMUXCLI {
             contentType: contentType
         )
 
+        // Resolve which workspace actually hosts the recipient. The dispatcher
+        // is per-workspace, so the envelope must land in the recipient's outbox
+        // — which may be a different workspace than the sender's. Resolution
+        // also lets us fail loudly (non-zero exit) when the recipient does not
+        // exist, instead of dropping the message into an outbox where no
+        // dispatcher will ever resolve it. `to` is guaranteed non-nil here
+        // (topic-only sends were rejected above).
+        let targetWorkspaceId = try resolveMailboxTargetWorkspace(
+            client: client,
+            to: to ?? "",
+            senderWorkspaceId: workspaceId,
+            qualifier: toWorkspace
+        )
+
         let stateURL = try MailboxLayout.defaultStateURL()
-        let outboxURL = MailboxLayout.outboxURL(state: stateURL, workspaceId: workspaceId)
+        let outboxURL = MailboxLayout.outboxURL(state: stateURL, workspaceId: targetWorkspaceId)
         try FileManager.default.createDirectory(
             at: outboxURL,
             withIntermediateDirectories: true,
@@ -16815,12 +16831,86 @@ extension CMUXCLI {
             print(jsonString([
                 "id": envelope.id,
                 "outbox_path": targetURL.path,
-                "workspace_id": workspaceId.uuidString,
+                "workspace_id": targetWorkspaceId.uuidString,
+                "sender_workspace_id": workspaceId.uuidString,
                 "from": envelope.from
             ]))
         } else {
             print(envelope.id)
         }
+    }
+
+    /// Resolves which workspace's outbox a `--to` envelope should be written
+    /// into by asking the app for a cross-workspace view of live surfaces
+    /// (`mailbox.resolve`). Throws a non-zero `CLIError` when the recipient is
+    /// unknown (so the sender learns the message was not delivered) or when the
+    /// name is ambiguous across workspaces. Falls back to the sender's own
+    /// workspace if the socket is unreachable, so same-workspace delivery still
+    /// works offline; the dispatcher's unresolved-recipient rejection is the
+    /// backstop against a silent drop in that case.
+    private func resolveMailboxTargetWorkspace(
+        client: SocketClient,
+        to: String,
+        senderWorkspaceId: UUID,
+        qualifier: String?
+    ) throws -> UUID {
+        var params: [String: Any] = [
+            "to": to,
+            "sender_workspace_id": senderWorkspaceId.uuidString
+        ]
+        if let qualifier, !qualifier.isEmpty {
+            params["workspace"] = qualifier
+        }
+
+        let payload: [String: Any]
+        do {
+            payload = try client.sendV2(method: "mailbox.resolve", params: params)
+        } catch {
+            // Socket unreachable (or an older app without mailbox.resolve):
+            // preserve same-workspace delivery rather than failing the send.
+            return senderWorkspaceId
+        }
+
+        switch payload["resolution"] as? String {
+        case "unique":
+            guard
+                let idStr = payload["target_workspace_id"] as? String,
+                let id = UUID(uuidString: idStr)
+            else {
+                throw CLIError(message: "mailbox.resolve returned an invalid target workspace")
+            }
+            return id
+        case "ambiguous":
+            let candidates = (payload["candidates"] as? [[String: Any]]) ?? []
+            throw CLIError(message: mailboxAmbiguityMessage(to: to, candidates: candidates))
+        default:
+            throw CLIError(
+                message: String(
+                    localized: "mailbox.cli.error.unresolved-recipient",
+                    defaultValue: "No live surface named \"%@\" in any workspace. Message not sent."
+                ).replacingOccurrences(of: "%@", with: to)
+            )
+        }
+    }
+
+    private func mailboxAmbiguityMessage(to: String, candidates: [[String: Any]]) -> String {
+        var seenRefs: Set<String> = []
+        var refLines: [String] = []
+        for candidate in candidates {
+            guard let ref = candidate["workspace_ref"] as? String else { continue }
+            if seenRefs.insert(ref).inserted {
+                refLines.append("  \(ref)")
+            }
+        }
+        let header = String(
+            localized: "mailbox.cli.error.ambiguous-header",
+            defaultValue: "Surface \"%@\" exists in more than one workspace:"
+        ).replacingOccurrences(of: "%@", with: to)
+        let hint = String(
+            localized: "mailbox.cli.error.ambiguous-hint",
+            defaultValue: "Disambiguate with --to-workspace <workspace-ref>."
+        )
+        return ([header] + refLines + [hint]).joined(separator: "\n")
     }
 
     // MARK: - recv

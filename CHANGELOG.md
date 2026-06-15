@@ -6,6 +6,41 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-06-14
+
+Feature release. Headline: **two new coding agents and a hang catcher** — GitHub Copilot CLI and Grok Build join as first-class c11 agents with full conversation-store resume wiring, and a real-time main-thread hang monitor now suspends the stalled thread, captures its stack off-thread, and reports to a local log plus Sentry/PostHog (on by default in Release). Alongside it: a batch of resume/reliability fixes (crash-resume, browser-freeze, inspector divider hit-test), a markdown-pane live-reload and font-zoom pass, and a consistent white-outline selection signal in the sidebar.
+
+### Added
+
+- **GitHub Copilot CLI as a built-in agent.** Launches as a first-class c11 coding agent with conversation-store resume wiring, so a Copilot surface resumes its own session on restore; the agent name is localized in all six locales. ([265414a88](https://github.com/Stage-11-Agentics/c11/commit/265414a88), [234022829](https://github.com/Stage-11-Agentics/c11/commit/234022829))
+- **Grok Build as a first-class coding agent.** Same first-class treatment — launcher entry, conversation-store resume, localized name. ([c279a085e](https://github.com/Stage-11-Agentics/c11/commit/c279a085e), [4d8e66a84](https://github.com/Stage-11-Agentics/c11/commit/4d8e66a84))
+- **Real-time main-thread hang monitor.** A watchdog thread detects main-thread stalls, suspends the stuck thread, and captures its stack off-thread, writing a local log and reporting to Sentry/PostHog. On by default in Release builds. Workspace-shape breadcrumbs are attached to each report so hang triage in Sentry shows the layout state at the time of the stall. ([#244](https://github.com/Stage-11-Agentics/c11/pull/244), [#236](https://github.com/Stage-11-Agentics/c11/pull/236))
+- **`c11 state save` / `state verify` / `app restart` CLI.** Operator-grade whole-app session verbs: checkpoint the full app session synchronously while c11 keeps running, dry-run the resume decision per terminal panel (exits non-zero if any conversation wouldn't resume), and perform a clean-shutdown-then-relaunch that brings layout and conversations back. Ships alongside the crash-resume fix below. ([#239](https://github.com/Stage-11-Agentics/c11/pull/239))
+- **Markdown pane: font zoom.** `Cmd+=` / `Cmd+-` / `Cmd+0` zoom the rendered markdown in and out and reset it. ([#241](https://github.com/Stage-11-Agentics/c11/pull/241))
+
+### Changed
+
+- **Markdown pane live-reload is debounced and theme rendering is cached.** Rapid edits to an open markdown file reload smoothly instead of thrashing, and theme application no longer re-parses on every render. ([#241](https://github.com/Stage-11-Agentics/c11/pull/241))
+- **The white outline is now the single, consistent selection signal in the sidebar.** Selected workspaces — including custom-colored ones — get one uniform thick white border instead of the prior mix of selection treatments. ([#234](https://github.com/Stage-11-Agentics/c11/pull/234), [a8870deeb](https://github.com/Stage-11-Agentics/c11/commit/a8870deeb))
+- **Etch session capture enabled (local-only).** Session capture is on for the Etch surface under a local-only, public-repo-safe posture. ([a2cfd1106](https://github.com/Stage-11-Agentics/c11/commit/a2cfd1106))
+- **c11-browser skill prefers `get text` / `get html` over `eval` for content extraction.** `eval` is rejected by strict-CSP sites (e.g. Hacker News); the skill now nudges agents toward the content-read verbs that work everywhere. ([#247](https://github.com/Stage-11-Agentics/c11/pull/247))
+
+### Fixed
+
+- **Crash-resume reliability (C11-131).** After an unclean exit, c11 now restores layout and verifies each conversation against its on-disk transcript before resuming, with an e2e harness covering the path. ([#239](https://github.com/Stage-11-Agentics/c11/pull/239))
+- **Browser portal geometry-sync / browser-freeze (C11-132).** Hardened the browser portal's geometry sync — dirty-ID batching, settled-layout deferral, and an epsilon guard — to stop the WebContent process from freezing during split/workspace churn. ([#237](https://github.com/Stage-11-Agentics/c11/pull/237))
+- **Inspector divider hit-test gated to pointer events (C11-133).** The hosted-inspector divider hit-test no longer runs on keyboard events, and divider candidates are cached — removing work from a typing-latency-sensitive path. ([#240](https://github.com/Stage-11-Agentics/c11/pull/240))
+- **Hang monitor: suspend-window deadlock removed and floating-point reads validated (#245).** Fixes a deadlock in the suspend window and adds validation of the captured FP register reads. ([#245](https://github.com/Stage-11-Agentics/c11/pull/245))
+- **`c11 trigger-flash` / `cancel-flash` resolve cross-workspace surface refs.** A `surface:N` ref owned by another workspace used to fail with "Surface not found" unless `--workspace` was also passed; the flash handlers now resolve the owning workspace globally (a shared `v2ResolveTargetSurface` helper), matching `get-metadata` / `set-metadata` and the title-bar verbs. ([#247](https://github.com/Stage-11-Agentics/c11/pull/247))
+
+### Thanks to 1 contributor!
+
+- [@BenevolentFutures](https://github.com/BenevolentFutures)
+
+### Built and shipped by
+
+Stage 11 Agentics. Operator:agent, fused.
+
 ## [0.51.0] - 2026-06-04
 
 Feature release. Headline: **session resume, rebuilt** — a TUI-agnostic conversation store replaces the per-TUI wrapper pattern, so Claude Code, Codex, Opencode, and Kimi surfaces each resume their own session instead of racing lifecycle hooks, and a per-workspace launch picker lets the operator choose exactly which workspaces come back. Alongside it: the sidebar gains a Waiting Agent + workspace nav cluster, and the CLI grows `--cwd` on `new-split`/`new-pane` and `--title` on `new-workspace`.

@@ -124,10 +124,18 @@ This is a checklist trigger, not a CI gate.
 9. Merge and sync `main`:
 - `gh pr merge --squash --delete-branch`
 - `git checkout main && git pull --ff-only`
+- **Confirm the pull actually moved `main`.** A stale local tag (notably `nightly`) makes `git fetch`/`git pull` exit non-zero on a "would clobber existing tag" error, which aborts the ff-merge — `main` silently stays on the old commit while the fetch line still shows `origin/main` advancing. Prune the offending tag (`git tag -d nightly` / `git fetch --prune --prune-tags origin`) and re-run, or fetch then ff explicitly: `git fetch origin main && git merge --ff-only origin/main`.
 
 10. Create and push tag:
+- **Gate the tag on a HEAD + version assertion — do not tag and sync in the same blind batch.** Tagging stale `main` (see the pull-abort trap above) points `vX.Y.Z` at the previous release's content and the release workflow builds the wrong DMG. Verify first:
+  ```bash
+  test "$(git rev-parse HEAD)" = "<merge-commit-sha>" || echo "STOP: main not at merge commit"
+  grep -m1 MARKETING_VERSION GhosttyTabs.xcodeproj/project.pbxproj   # must read X.Y.Z
+  ```
+  Only tag once both match the release.
 - `git tag -a vX.Y.Z -m "Release vX.Y.Z"` (annotated; lightweight `git tag vX.Y.Z` is rejected with "no tag message?" by local git config)
 - `git push origin vX.Y.Z`
+- **If you tagged the wrong commit and the release run already started:** `gh run cancel <id>` (release builds take ~11 min, so a quick catch publishes nothing), delete the tag both places (`git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z`), fix `main`, re-verify the gate, then re-tag and push.
 
 11. Verify release workflow and assets:
 - `gh run watch --repo Stage-11-Agentics/c11`

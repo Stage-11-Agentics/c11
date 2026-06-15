@@ -8383,6 +8383,43 @@ class TerminalController {
         )
     }
 
+    /// Resolve the (workspace, surface) target for a surface-addressed command.
+    ///
+    /// When an explicit `surface_id` is supplied, its owning workspace is found
+    /// across ALL workspaces, so a cross-workspace `surface:N` ref resolves even
+    /// without `--workspace` — matching how `surface.get_metadata`/`set_metadata`
+    /// and the title-bar verbs already resolve (`v2ResolveSurfaceForMetadata`,
+    /// `v2ResolveWorkspaceForTitleBar`). Only when no `surface_id` is given do we
+    /// fall back to the resolved/focused workspace's focused surface.
+    ///
+    /// Must be called on the main actor (reads TabManager/Workspace state).
+    private func v2ResolveTargetSurface(
+        params: [String: Any],
+        tabManager: TabManager
+    ) -> (workspace: Workspace, surfaceId: UUID)? {
+        if let surfaceId = v2UUID(params, "surface_id") {
+            guard let owner = tabManager.tabs.first(where: { $0.panels[surfaceId] != nil }) else {
+                return nil
+            }
+            return (owner, surfaceId)
+        }
+        guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager),
+              let focused = ws.focusedPanelId else {
+            return nil
+        }
+        return (ws, focused)
+    }
+
+    /// Shared not-found error for the surface-target verbs: distinguishes an
+    /// explicit ref we couldn't locate from the no-surface-and-no-focus case.
+    private func v2SurfaceTargetNotFound(params: [String: Any]) -> V2CallResult {
+        if let surfaceId = v2UUID(params, "surface_id") {
+            return .err(code: "not_found", message: "Surface not found",
+                        data: ["surface_id": surfaceId.uuidString])
+        }
+        return .err(code: "not_found", message: "No focused surface", data: nil)
+    }
+
     private func v2SurfaceTriggerFlash(params: [String: Any]) -> V2CallResult {
         guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
@@ -8407,18 +8444,8 @@ class TerminalController {
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to trigger flash", data: nil)
         v2MainSync {
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
-                result = .err(code: "not_found", message: "Workspace not found", data: nil)
-                return
-            }
-
-            let surfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
-            guard let surfaceId else {
-                result = .err(code: "not_found", message: "No focused surface", data: nil)
-                return
-            }
-            guard ws.panels[surfaceId] != nil else {
-                result = .err(code: "not_found", message: "Surface not found", data: ["surface_id": surfaceId.uuidString])
+            guard let (ws, surfaceId) = v2ResolveTargetSurface(params: params, tabManager: tabManager) else {
+                result = v2SurfaceTargetNotFound(params: params)
                 return
             }
 
@@ -8449,18 +8476,8 @@ class TerminalController {
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to cancel flash", data: nil)
         v2MainSync {
-            guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
-                result = .err(code: "not_found", message: "Workspace not found", data: nil)
-                return
-            }
-
-            let surfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
-            guard let surfaceId else {
-                result = .err(code: "not_found", message: "No focused surface", data: nil)
-                return
-            }
-            guard ws.panels[surfaceId] != nil else {
-                result = .err(code: "not_found", message: "Surface not found", data: ["surface_id": surfaceId.uuidString])
+            guard let (ws, surfaceId) = v2ResolveTargetSurface(params: params, tabManager: tabManager) else {
+                result = v2SurfaceTargetNotFound(params: params)
                 return
             }
 

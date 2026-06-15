@@ -130,6 +130,8 @@ Use supported high-level commands (`click`, `fill`, `press`, `scroll`, `wait`, `
 
 Some complex pages can reject or break the JavaScript used for rich snapshots and ad-hoc evaluation.
 
+**Prefer `get text body` / `get html body` for reading page content; reserve `eval` for interaction and computed checks.** `eval` and `snapshot --interactive` run injected JavaScript that strict-CSP or framebusting sites (Hacker News is a known case) reject with `js_error` — even for something as trivial as `eval "1+1"` — whereas `get text`/`get html` read the already-rendered DOM and keep working. Reach for `eval` when you genuinely need to run script on the page, not as the default way to extract content.
+
 Recovery steps:
 
 ```bash

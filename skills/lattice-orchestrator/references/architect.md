@@ -80,6 +80,12 @@ If CLAUDE.md already exists from prior project work, the Architect *updates* it 
 
 **Second pass at end of Step 2.** After BUILDPLAN.md is locked, the Architect updates CLAUDE.md to fill in tech-stack specifics, build / test / run commands, and any conventions that surfaced during the build plan. Two passes total: one declaration after SPEC.md, one finalization after BUILDPLAN.md.
 
+**Fast-test gate (HARD — see SKILL.md "Build for fast feedback").** Define TWO test commands in the project CLAUDE.md, not one:
+- `test` (fast, default): hermetic + parallel (`pytest -n auto` or the stack's equivalent), **≤60s / 2-min ceiling** for a small project. This is what delegators run every inner loop.
+- `test:full` (slow): integration / model / DB / e2e suite, run once at the validate step and in CI.
+
+Slow + flaky tests carry markers and are deselected from the default gate. If the natural suite is already slow, fixing/splitting it is itself an early ticket — and surface the suite's wall-clock in the BUILDPLAN so it's a decision, not a surprise discovered mid-run.
+
 The CLAUDE.md must include a **`## Lessons learned`** section pointing at `lessons-learned.md` (Step 1.6) and instructing future agents to append entries on failures, confusion, or thrash. Format and trigger conditions live in that section.
 
 ## Phase 1 Step 1.6 — `lessons-learned.md` (→ lessons-learned.md at project root)

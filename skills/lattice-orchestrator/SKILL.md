@@ -169,6 +169,7 @@ Same Architect, carrying spec-context forward. Covers:
 - **Per-screen functionality** (when there's a UI) — what each screen does, what state it owns.
 - **Optional screen layout diagrams** — Mermaid when layout itself is a decision point.
 - **Breakdown into tickets** — the work, sliced into Lattice tickets the Orchestrator spawns delegators against. **Bias toward shapes that maximize parallelism** — independent modules, narrow interfaces, schemas that ship ahead of consumers. Fewer dependencies = more parallel work = faster run. Ticket fidelity (verbose vs minimal) is operator-chosen in Phase 2.
+- **Reconcile against reality before ticketing — ticket the gap, not the plan.** When the build plan targets an existing codebase (a migration, a follow-on, "wire up the rest"), audit what is *already done* before minting tickets — a fast read-only Explore pass over the relevant modules, verdict per work-item (DONE / PARTIAL / MISSING) with file:line evidence. Mint tickets only for PARTIAL/MISSING. Build plans written ahead of the work routinely list items that landed in an earlier increment; ticketing them anyway spawns delegators that discover there's nothing to do. (Substrate wiki run: a Track-B audit found 4 of 5 sketched work-items already shipped — only 1 was real.)
 
 Operator confirms `BUILDPLAN.md` before Phase 2 begins. Iterate as long as needed — the cost of getting the plan wrong here is hours of misdirected delegator work downstream.
 
@@ -368,6 +369,32 @@ Bias toward:
 - **Legible failures.** Errors print why, what, and (when known) what to try. Stack traces alone are evidence, not diagnosis.
 
 Architects call this out explicitly in the project `CLAUDE.md` (Step 1.5) so every future delegator in the project sees it. The Build Plan (Step 2) reflects it in component design — observability is part of the spec, not a Phase-4 retrofit.
+
+---
+
+## Build for fast feedback: the test suite is the orchestrator's clock
+
+A delegator runs the project's tests every review cycle, with N delegators going at once — so
+suite speed is the biggest lever on a run's wall-clock. A slow suite, paid per-delegator
+per-review and serialized under load, turns a multi-hour run into one spent mostly *waiting on
+tests*.
+
+**Hard target: the default test gate runs in ≤60s — 2 minutes at the absolute max — for a small
+or early-stage project.** A slower default suite is a defect to fix, not a cost to absorb. The
+Architect bakes this in at Phase 1; delegators inherit it via the project `CLAUDE.md`.
+
+- **Parallelize by default** (`pytest -n auto` or the stack's equivalent). Serial-only is a harness bug.
+- **Keep the default gate hermetic** — no model load, embedding warmup, DB/container spin-up, or
+  network. Those go in a separate integration suite, run once before PR / in CI, never in the inner loop.
+- **Split the gate in the project CLAUDE.md:** a fast default command + a separately-named full command.
+- **Quarantine flaky + slow tests behind markers**, deselected from the gate. A test that flakes under
+  parallel load forces isolation re-runs and tempts "merge around it" — mark it, exclude it, ticket it.
+- **Measure it.** If the Architect can't state the suite's wall-clock in the BUILDPLAN, close that gap before dispatch.
+
+Worked example (Substrate wiki run, 2026-06-15): a ~22-min full suite (embedding-model + graph-DB
+spin-up) was paid by all 11 delegators per review, and two load-sensitive tests flaked under
+concurrency and forced repeated re-runs — suite latency, not reasoning, dominated the run. A
+hermetic ≤2-min parallel gate with those quarantined would have cut wall-clock by a large multiple.
 
 ---
 

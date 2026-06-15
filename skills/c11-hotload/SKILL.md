@@ -42,6 +42,8 @@ xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Release -de
 
 macOS lets you overwrite a running app's bundle — the already-loaded binary stays in memory, and the rebuilt `.app` is picked up on the next manual launch (⌘Q then relaunch). Use this when collaborating with other agents or when the user explicitly asks to avoid session churn.
 
+**A rebuild-and-relaunch keeps agent resume only on a clean quit.** When a reload does restart the app over a running instance, let the script's clean quit drive the teardown — do **not** `pkill -9` / pre-kill it first. Browser and markdown surfaces restore either way, but agent terminals only resume their conversation when the prior process shut down cleanly; SIGKILL'd, they come back as bare shells.
+
 ## Build-only verification (no launch)
 
 If you only need to verify the build compiles, use a tagged derivedDataPath:
@@ -49,6 +51,10 @@ If you only need to verify the build compiles, use a tagged derivedDataPath:
 ```bash
 xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/c11-<your-tag> build
 ```
+
+## Driving a Release/staging build over the socket
+
+A Release/staging build (`reloads.sh`, or a published `c11 STAGING …`) binds its **own** socket (e.g. `/tmp/c11-rel-<ver>.sock`) that a CLI running in a production-c11 shell cannot write to — the writes fail even with the path pointed at it. To run `c11` CLI or socket checks against such a build, run them from a terminal **inside that build**. For socket-level validation during development, prefer a tagged **Debug** build, whose socket is reachable from any shell via `C11_SOCKET=/tmp/c11-debug-<tag>.sock`.
 
 ## Rebuilding GhosttyKit
 

@@ -11023,11 +11023,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let handled: Bool
             switch action {
             case .zoomIn:
-                handled = manager.zoomInFocusedBrowser()
+                handled = manager.zoomInFocusedBrowser() || manager.zoomInFocusedMarkdown()
             case .zoomOut:
-                handled = manager.zoomOutFocusedBrowser()
+                handled = manager.zoomOutFocusedBrowser() || manager.zoomOutFocusedMarkdown()
             case .reset:
-                handled = manager.resetZoomFocusedBrowser()
+                handled = manager.resetZoomFocusedBrowser() || manager.resetZoomFocusedMarkdown()
             }
             #if DEBUG
             logBrowserZoomShortcutTrace(

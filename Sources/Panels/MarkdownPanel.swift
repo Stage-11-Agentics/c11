@@ -55,6 +55,56 @@ final class MarkdownPanel: Panel, ObservableObject {
     /// Tracks the appearance used for the last mermaid render pass.
     private var lastRenderedDark: Bool?
 
+    // MARK: - Font scale (zoom)
+
+    /// Multiplier applied to all theme font sizes. 1.0 = default.
+    @Published private(set) var fontScale: Double
+
+    static let fontScaleRange: ClosedRange<Double> = 0.5...3.0
+    static let fontScaleStep: Double = 0.1
+    private static let fontScaleDefaultsKey = "markdown.fontScale.lastUsed"
+
+    /// Clamp to the supported range and round to one step's precision so
+    /// repeated +/- cycles don't accumulate floating-point drift.
+    static func normalizedFontScale(_ value: Double) -> Double {
+        let clamped = min(max(value, fontScaleRange.lowerBound), fontScaleRange.upperBound)
+        return (clamped * 10).rounded() / 10
+    }
+
+    private static func lastUsedFontScale() -> Double {
+        let stored = UserDefaults.standard.double(forKey: fontScaleDefaultsKey)
+        guard stored > 0 else { return 1.0 }
+        return normalizedFontScale(stored)
+    }
+
+    @discardableResult
+    func zoomIn() -> Bool {
+        setFontScale(fontScale + Self.fontScaleStep)
+    }
+
+    @discardableResult
+    func zoomOut() -> Bool {
+        setFontScale(fontScale - Self.fontScaleStep)
+    }
+
+    @discardableResult
+    func resetZoom() -> Bool {
+        setFontScale(1.0)
+    }
+
+    /// Restore a persisted scale without updating the last-used default.
+    func applyRestoredFontScale(_ value: Double) {
+        fontScale = Self.normalizedFontScale(value)
+    }
+
+    private func setFontScale(_ value: Double) -> Bool {
+        let normalized = Self.normalizedFontScale(value)
+        guard normalized != fontScale else { return true }
+        fontScale = normalized
+        UserDefaults.standard.set(normalized, forKey: Self.fontScaleDefaultsKey)
+        return true
+    }
+
     /// Observer for system appearance changes.
     private var appearanceObserver: NSObjectProtocol?
 
@@ -65,7 +115,14 @@ final class MarkdownPanel: Panel, ObservableObject {
     private nonisolated(unsafe) var fileWatchSource: DispatchSourceFileSystemObject?
     private var fileDescriptor: Int32 = -1
     private var isClosed: Bool = false
-    private let watchQueue = DispatchQueue(label: "com.stage11.c11.markdown-file-watch", qos: .utility)
+    private nonisolated let watchQueue = DispatchQueue(label: "com.stage11.c11.markdown-file-watch", qos: .utility)
+
+    /// Pending debounced reload. Accessed only on `watchQueue`.
+    private nonisolated(unsafe) var pendingReload: DispatchWorkItem?
+    /// Trailing debounce applied to watcher-driven reloads so agents
+    /// stream-appending to a watched file coalesce into one reparse per
+    /// burst instead of one per write event.
+    private static let reloadDebounce: TimeInterval = 0.15
 
     /// Maximum number of reattach attempts after a file delete/rename event.
     private static let maxReattachAttempts = 6
@@ -85,6 +142,7 @@ final class MarkdownPanel: Panel, ObservableObject {
         self.workspaceId = workspaceId
         self.filePath = filePath
         self.displayTitle = Self.titleForFilePath(filePath)
+        self.fontScale = Self.lastUsedFontScale()
 
         if filePath != nil {
             loadFileContent()
@@ -133,6 +191,10 @@ final class MarkdownPanel: Panel, ObservableObject {
         isClosed = true
         stopFileWatcher()
         stopAppearanceObserver()
+        watchQueue.async { [weak self] in
+            self?.pendingReload?.cancel()
+            self?.pendingReload = nil
+        }
     }
 
     func triggerFlash() {
@@ -149,41 +211,86 @@ final class MarkdownPanel: Panel, ObservableObject {
             parseSegments()
             return
         }
-        do {
-            let newContent = try String(contentsOfFile: filePath, encoding: .utf8)
-            content = newContent
-            isFileUnavailable = false
-        } catch {
-            // Fallback: try ISO Latin-1, which accepts all 256 byte values,
-            // covering legacy encodings like Windows-1252.
-            if let data = FileManager.default.contents(atPath: filePath),
-               let decoded = String(data: data, encoding: .isoLatin1) {
-                content = decoded
-                isFileUnavailable = false
-            } else {
-                isFileUnavailable = true
-            }
+        applyExternalContent(Self.readContent(path: filePath))
+    }
+
+    /// Read file content with the UTF-8 → ISO Latin-1 fallback chain.
+    /// Safe to call from any queue.
+    private nonisolated static func readContent(path: String) -> String? {
+        if let content = try? String(contentsOfFile: path, encoding: .utf8) {
+            return content
         }
+        // Fallback: try ISO Latin-1, which accepts all 256 byte values,
+        // covering legacy encodings like Windows-1252.
+        if let data = FileManager.default.contents(atPath: path),
+           let decoded = String(data: data, encoding: .isoLatin1) {
+            return decoded
+        }
+        return nil
+    }
+
+    /// Apply content produced by a read (sync or debounced). Skips the
+    /// reparse + republish entirely when the content is unchanged, which is
+    /// the common case for spurious watcher events.
+    private func applyExternalContent(_ newContent: String?) {
+        guard !isClosed else { return }
+        guard let newContent else {
+            isFileUnavailable = true
+            return
+        }
+        let wasUnavailable = isFileUnavailable
+        isFileUnavailable = false
+        guard newContent != content || wasUnavailable else { return }
+        content = newContent
         parseSegments()
+    }
+
+    /// Schedule a debounced reload on the watch queue. Coalesces bursts of
+    /// file events; the file read happens off the main thread.
+    private nonisolated func scheduleDebouncedReload(path: String) {
+        watchQueue.async { [weak self] in
+            guard let self else { return }
+            self.pendingReload?.cancel()
+            let item = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                let result = Self.readContent(path: path)
+                DispatchQueue.main.async {
+                    self.applyExternalContent(result)
+                }
+            }
+            self.pendingReload = item
+            self.watchQueue.asyncAfter(deadline: .now() + Self.reloadDebounce, execute: item)
+        }
     }
 
     // MARK: - Fenced code segment parsing
 
-    /// Stable ID from segment index and content prefix.
-    private static func segmentId(index: Int, content: String) -> String {
-        let prefix = String(content.prefix(64))
-        return "\(index):\(prefix.hashValue)"
+    /// Stable ID from segment index and full content. Hashing the whole
+    /// content (not a prefix) guarantees the ID changes whenever the segment
+    /// changes — a prefix hash let edits past the prefix keep a stale ID,
+    /// which preserved outdated rendered diagrams indefinitely.
+    static func segmentId(index: Int, content: String) -> String {
+        "\(index):\(content.count):\(content.hashValue)"
     }
+
+    /// Compiled fenced-code pattern cached per tag set. Renderers register at
+    /// app startup, so in practice this compiles once.
+    private static var cachedFencedCodePattern: (tags: Set<String>, regex: NSRegularExpression?)?
 
     /// Build a regex that matches fenced code blocks for all registered renderer tags.
     /// Pattern captures: group 1 = language tag, group 2 = code content.
     private static func buildFencedCodePattern() -> NSRegularExpression? {
         let tags = FencedCodeRendererRegistry.shared.supportedTags
         guard !tags.isEmpty else { return nil }
+        if let cached = cachedFencedCodePattern, cached.tags == tags {
+            return cached.regex
+        }
         let escaped = tags.map { NSRegularExpression.escapedPattern(for: $0) }
         let alternation = escaped.joined(separator: "|")
         let pattern = "```(\(alternation))\\s*\\n([\\s\\S]*?)```"
-        return try? NSRegularExpression(pattern: pattern, options: [])
+        let regex = try? NSRegularExpression(pattern: pattern, options: [])
+        cachedFencedCodePattern = (tags, regex)
+        return regex
     }
 
     /// Parse content into segments, splitting on fenced code blocks with registered renderers.
@@ -361,20 +468,21 @@ final class MarkdownPanel: Panel, ObservableObject {
                 // even if the new file is already readable (atomic save case).
                 DispatchQueue.main.async {
                     self.stopFileWatcher()
-                    self.loadFileContent()
-                    if self.isFileUnavailable {
-                        // File not yet replaced — retry until it reappears.
-                        self.scheduleReattach(attempt: 1)
-                    } else {
-                        // File already replaced — reattach to the new inode immediately.
+                    guard let path = self.filePath else { return }
+                    if FileManager.default.fileExists(atPath: path) {
+                        // File already replaced — reattach to the new inode
+                        // immediately; content loads via the debounced path.
                         self.startFileWatcher()
+                        self.scheduleDebouncedReload(path: path)
+                    } else {
+                        // File not yet replaced — retry until it reappears.
+                        self.isFileUnavailable = true
+                        self.scheduleReattach(attempt: 1)
                     }
                 }
             } else {
-                // Content changed — reload.
-                DispatchQueue.main.async {
-                    self.loadFileContent()
-                }
+                // Content changed — reload (debounced, read off-main).
+                self.scheduleDebouncedReload(path: filePath)
             }
         }
 

@@ -710,7 +710,10 @@ extension Workspace {
             guard let markdownPanel = panel as? MarkdownPanel else { return nil }
             terminalSnapshot = nil
             browserSnapshot = nil
-            markdownSnapshot = SessionMarkdownPanelSnapshot(filePath: markdownPanel.filePath)
+            markdownSnapshot = SessionMarkdownPanelSnapshot(
+                filePath: markdownPanel.filePath,
+                fontScale: markdownPanel.fontScale
+            )
         }
 
         let persistedMetadata: [String: PersistedJSONValue]?
@@ -955,6 +958,9 @@ extension Workspace {
                 panelId: restoredPanelId
             ) else {
                 return nil
+            }
+            if let restoredScale = snapshot.markdown?.fontScale {
+                markdownPanel.applyRestoredFontScale(restoredScale)
             }
             applySessionPanelMetadata(snapshot, toPanelId: markdownPanel.id)
             return markdownPanel.id

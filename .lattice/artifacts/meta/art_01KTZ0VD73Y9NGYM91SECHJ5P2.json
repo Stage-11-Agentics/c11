@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-12T22:57:09Z",
+  "created_by": "agent:PRLander-1",
+  "custom_fields": {},
+  "id": "art_01KTZ0VD73Y9NGYM91SECHJ5P2",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KTZ0VD73Y9NGYM91SECHJ5P2.md",
+    "size_bytes": 765
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Landed PR #212 (Grok Build) via rebased PR #242 (merged 2026-06-12). Contributor authorship preserved (commit 75c0550, Atin <atin@atin.me>); modernization in a separate follow-up commit. Added GrokStr",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

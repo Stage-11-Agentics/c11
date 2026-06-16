@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-12T21:21:09Z",
+  "created_by": "agent:c11-131-delegator",
+  "custom_fields": {},
+  "id": "art_01KTYVBM8GFQTMRNTXJ4GCMXD6",
+  "model": null,
+  "payload": {
+    "content_type": "text/plain",
+    "file": "art_01KTYVBM8GFQTMRNTXJ4GCMXD6.txt",
+    "size_bytes": 194
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "after-restore-conversations.txt",
+  "token_usage": null,
+  "type": "file"
+}

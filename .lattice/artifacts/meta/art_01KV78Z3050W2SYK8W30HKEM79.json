@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-16T03:52:54Z",
+  "created_by": "agent:claude-c11-143",
+  "custom_fields": {},
+  "id": "art_01KV78Z3050W2SYK8W30HKEM79",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KV78Z3050W2SYK8W30HKEM79.md",
+    "size_bytes": 4540
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "inline attachment",
+  "token_usage": null,
+  "type": "note"
+}

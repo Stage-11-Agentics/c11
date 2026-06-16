@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-12T21:42:07Z",
+  "created_by": "agent:Delegator-1",
+  "custom_fields": {},
+  "id": "art_01KTYWJ0H037JDS5MYWNWPD6TQ",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KTYWJ0H037JDS5MYWNWPD6TQ.md",
+    "size_bytes": 1226
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "MERGED to main: PR #240 (https://github.com/Stage-11-Agentics/c11/pull/240; replaced stacked #238 which auto-closed when #237's branch was deleted). Delivered, all in BrowserWindowPortal.swift: (1) pe",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

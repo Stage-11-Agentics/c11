@@ -1,0 +1,43 @@
+{
+  "assigned_to": "agent:PRLander-1",
+  "branch_links": [],
+  "comment_count": 4,
+  "complexity": null,
+  "created_at": "2026-06-12T22:14:51Z",
+  "created_by": "agent:Delegator-1",
+  "custom_fields": {},
+  "description": "External PR https://github.com/Stage-11-Agentics/c11/pull/215 (author MdMxMyr, 2026-05-30, single commit) adds GitHub Copilot CLI as a built-in agent type. Operator has CLEARED IT TO MERGE (2026-06-12) pending deep review + rebase. OPERATOR FLAG: extra scrutiny on this one \u2014 external author; review every line as foreign code before merging.\n\nState: CONFLICTING with main, and will conflict again after C11-136 (#212) lands since both touch the same agent-registry files. Same modernization constraint: conversation store is the resume path (0.44+); do not wire into deprecated AgentRestartRegistry. NOTE: this PR touches GhosttyTabs.xcodeproj/project.pbxproj AND ships Resources/bin/copilot (a session-resume wrapper) \u2014 review the wrapper against the CLAUDE.md 'unopinionated about the terminal' constraints (no persistent writes outside c11 runtime, PATH-scoped gating, fall-through behavior) and expect pbxproj diff bloat per the known xcodeproj-gem normalization pitfall (gate on xcodebuild -list + membership counts, not line-by-line diff).\n\nFiles: CLI/c11.swift, project.pbxproj, Resources/bin/copilot, AgentChip, AgentDetector, AgentSkillsView, DefaultAgentConfig, SkillInstaller, SurfaceMetadataStore, c11Tests/AgentDetectorTests + DefaultAgentConfigTests, skills/c11/references/api.md.\n\nAcceptance: deep line-by-line review recorded (security-minded: it ships an executable wrapper); rebased onto main AFTER C11-136 merges, preserving contributor authorship; builds green; c11-logic green; wrapper validated against the Resources/bin/claude reference implementation; skills synced if touched; localization pass; merged; PR comment crediting the contributor.\n\nRelated: C11-136 (PR #212, same files, same delegator thread \u2014 merge order #212 first).",
+  "done_at": "2026-06-13T00:03:54Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01KTZ43XH2PQV5ABYRNZSE22KF",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01KTZ4NM88A4PEX4WWWWPK2ZCJ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KTZ4NM88A4PEX4WWWWPK2ZCH",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KTYYDXYKJ7PPBV500W3JR2ZA",
+  "last_event_id": "ev_01KTZ4NM88A4PEX4WWWWPK2ZCN",
+  "last_status_changed_at": "2026-06-13T00:03:54Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-137",
+  "status": "done",
+  "tags": null,
+  "title": "Land PR #215: GitHub Copilot CLI as built-in agent type (rebase + deep review + merge)",
+  "type": "task",
+  "updated_at": "2026-06-13T00:03:54Z",
+  "urgency": null
+}

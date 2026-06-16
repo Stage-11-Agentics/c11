@@ -1,0 +1,39 @@
+app: /Users/atin/Library/Developer/Xcode/DerivedData/c11-c11-131/Build/Products/Debug/c11 DEV c11-131.app
+socket: /tmp/c11-debug-c11-131.sock
+run dir: /var/folders/vr/9ty4n9qn6t77py2kdbm6wq_w0000gn/T/c11-131-e2e-y4d1g9m8
+
+== crash, transcript present (ACCEPTANCE) ==
+  [PASS] state save ok
+  [PASS] present transcripts → suspended (resumable) with verified reason
+
+== crash, transcript missing ==
+  [PASS] state save ok
+  [PASS] present-transcript pane → suspended
+  [PASS] missing-transcript pane → unknown (transcript not found)
+
+== /exit before crash ==
+  [PASS] state save ok
+  [PASS] exited (tombstoned) session stays tombstoned, never resumable
+
+== double crash ==
+  [PASS] state save ok
+  [PASS] double crash cycle 1: app healthy after relaunch
+  [PASS] state save ok
+  [PASS] double crash cycle 2: app healthy after relaunch
+  [FAIL] double crash idempotent: each crash reclassifies to suspended — states=[None, 'suspended']
+
+== kill switch (CMUX_DISABLE_CONVERSATION_STORE=1) ==
+  [PASS] kill switch: app healthy after restore
+  [PASS] kill switch: conversation store reports disabled
+
+== non-claude panel ==
+  [PASS] non-claude panel: no claude refs captured
+  [PASS] non-claude panel: app healthy
+
+== clean restart (c11 app restart) ==
+  [PASS] app restart accepted
+  [PASS] app restart promoted sentinel to clean
+  [PASS] app restart snapshot carries suspended refs (clean-path resumable)
+
+18 passed, 1 failed
+FAILED: double crash idempotent: each crash reclassifies to suspended

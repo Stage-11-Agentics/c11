@@ -1,0 +1,53 @@
+{
+  "assigned_to": "agent:claude-c11-144",
+  "branch_links": [],
+  "c11_surface": "surface:160",
+  "c11_workspace": null,
+  "comment_count": 4,
+  "complexity": "medium",
+  "created_at": "2026-06-16T03:34:47Z",
+  "created_by": "human:atin",
+  "custom_fields": {},
+  "description": "Operator's TOP concern from the Trident review (notes/trident-review-mailbox-feature-pack-20260615-2208/synthesis-evolutionary.md \u00a78). Today the stdin handler pastes a framed <c11-msg> block into the recipient PTY and dispatches Return \u2014 unsafe when the agent is mid-command or in a raw-mode app (Vim): corrupts the input stream. Gemini predicts operators abandon stdin delivery within 3 months unless this is fixed.\n\nDeliverable (two layers, both reuse existing machinery \u2014 minimize new hooks):\n1. Gate the push on c11's ALREADY-tracked PanelShellActivityState { unknown, promptIdle, commandRunning } (Workspace.swift:5399, already used for close-confirmation). In StdinMailboxHandler: promptIdle -> inject now; commandRunning -> BUFFER and flush on transition back to promptIdle; unknown -> conservative buffer. No new lifecycle hook.\n2. Add a receiver-pull cadence to the c11 skill (agents 'c11 mailbox recv --drain' at turn boundaries) as the robust floor \u2014 the AgentMail-style pull pattern. Zero c11 code; sync installed skill.\n\nValidation: dogfood test \u2014 fire messages into agents mid-Vim and mid-build on a tagged build, confirm no PTY corruption and that buffered messages flush at the next prompt. This test also empirically settles the Claude-vs-Gemini split on whether PTY delivery is safe.\n\nScope guard: NOT the full out-of-band control-socket (that pushes a listener into the agent layer \u2014 bigger than 'minimize hooks'). Revisit only if the prompt-gate proves insufficient in the dogfood test.",
+  "done_at": "2026-06-16T05:03:19Z",
+  "evidence_refs": [
+    {
+      "id": "art_01KV7A8RDW3995J4VKWS7QC87T",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KV7B4SA3RTY5DNVEYGCHYYXC",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01KV7D016CN7YB7RWGC6XFQ93E",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KV7D016B68JJC14895BMKVRF",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KV77XXBW2Q62BKDDWV3HW11Q",
+  "last_event_id": "ev_01KV7D016CN7YB7RWGC6XFQ93H",
+  "last_status_changed_at": "2026-06-16T05:03:19Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-144",
+  "status": "done",
+  "tags": [
+    "mailbox",
+    "evolution"
+  ],
+  "title": "Mailbox: delivery safety \u2014 prompt-gated stdin injection + receiver-pull cadence",
+  "type": "task",
+  "updated_at": "2026-06-16T05:03:19Z",
+  "urgency": null
+}

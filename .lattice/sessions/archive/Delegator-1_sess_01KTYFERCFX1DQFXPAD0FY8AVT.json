@@ -1,0 +1,14 @@
+{
+  "agent_type": "delegator",
+  "base_name": "Delegator",
+  "ended_at": "2026-06-12T21:43:04Z",
+  "framework": "claude-code",
+  "last_active": "2026-06-12T17:53:09Z",
+  "model": "claude-fable-5",
+  "name": "Delegator-1",
+  "parent": "human:atin",
+  "serial": 1,
+  "session": "sess_01KTYFERCFX1DQFXPAD0FY8AVT",
+  "started_at": "2026-06-12T17:53:09Z",
+  "status": "ended"
+}

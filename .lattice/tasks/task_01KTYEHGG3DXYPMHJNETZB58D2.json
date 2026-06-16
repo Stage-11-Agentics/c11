@@ -1,0 +1,55 @@
+{
+  "assigned_to": "agent:Delegator-1",
+  "branch_links": [],
+  "comment_count": 7,
+  "complexity": "high",
+  "created_at": "2026-06-12T17:37:11Z",
+  "created_by": {
+    "agent_type": "triage",
+    "base_name": "Triage",
+    "framework": "claude-code",
+    "model": "claude-fable-5",
+    "name": "Triage-1",
+    "serial": 1,
+    "session": "sess_01KTYEGY52NE5HJZQGKBA0TZ7R"
+  },
+  "custom_fields": {},
+  "description": "Operator-reported freezes when multiple browser surfaces are open; corroborated fleet-wide by Sentry and a local macOS CPU-resource diagnostic.\n\nEVIDENCE\n- Sentry C11-1 (https://stage-11-kl.sentry.io/issues/C11-1): AppHang >=8s in DisplayList.ViewRenderer, 135 events / 8 users since 2026-05-04, still firing on 0.51.0+108. Main thread stuck in NSHostingView.layout -> ViewGraph.renderDisplayList with deep recursive _layoutSubtreeWithOldSize chains. ~20 sibling AppHang groups share the same main-thread-layout signature.\n- Local CPU diag /Library/Logs/DiagnosticReports/c11_2026-06-11-135049_Hyperion.cpu_resource.diag: 56% CPU for 160s, heaviest stacks = continuous NSHostingView.beginTransaction -> GraphHost.flushTransactions -> repeated sizeThatFits passes every runloop turn. Zero WebKit frames - churn is in c11 chrome, not the webviews.\n\nMECHANISM (verified in source)\n- BrowserPanelView.swift:589-590 - onPreferenceChange(BrowserAddressBarHeightPreferenceKey) writes addressBarHeight @State with no equality guard.\n- That state feeds paneTopChromeHeight into WebViewRepresentable (BrowserPanelView.swift:1325); updateNSView + host.onGeometryChanged call BrowserWindowPortalRegistry.updatePaneTopChromeHeight + 4 more portal updates synchronously on every geometry change (BrowserPanelView.swift:6282+, 6315+, 6357+). Portal updates can move frames -> geometry preference re-fires -> oscillation. N browsers = N interfering loops.\n- Terminal portals already have the fix browser portals lack: deferred/batched geometry sync (scheduledExternalGeometrySynchronize + dirty-ID sets, TerminalWindowPortal.swift:1017-1034) and epsilon guards (TerminalWindowPortal.swift:1695). Browser side only has a downstream epsilon check (BrowserWindowPortal.swift:2907) which stops the portal write but not the upstream SwiftUI re-render.\n\nFIX SHAPE\n1. Port the terminal portals' deferred+batched geometry sync pattern to browser portals.\n2. Equality-guard the addressBarHeight preference write (epsilon, like TerminalWindowPortal.swift:1695).\n3. Validate with C11_PORTAL_DEBUG=1: open 3-4 browser panes, confirm geom.external/sync.result spam disappears in /tmp/c11-portal.log; confirm idle CPU with 4 browser panes open.\n\nRepro/validation notes will be appended from the instrumented repro pass (tag: browser-freeze).",
+  "done_at": "2026-06-12T21:41:29Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01KTYVZ7WSZJDWFJX146EWS17N",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01KTYWGV1CCQJAKK578Y8HSN93",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KTYWGV1CCQJAKK578Y8HSN92",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KTYEHGG3DXYPMHJNETZB58D2",
+  "last_event_id": "ev_01KTYWGV1CCQJAKK578Y8HSN96",
+  "last_status_changed_at": "2026-06-12T21:41:29Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-132",
+  "status": "done",
+  "tags": [
+    "perf",
+    "browser",
+    "portal"
+  ],
+  "title": "Browser portals: fix SwiftUI layout feedback loop (multi-browser freeze)",
+  "type": "bug",
+  "updated_at": "2026-06-12T21:41:29Z",
+  "urgency": null
+}

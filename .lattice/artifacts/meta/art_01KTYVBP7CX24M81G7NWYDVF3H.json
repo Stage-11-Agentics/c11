@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-12T21:21:11Z",
+  "created_by": "agent:c11-131-delegator",
+  "custom_fields": {},
+  "id": "art_01KTYVBP7CX24M81G7NWYDVF3H",
+  "model": null,
+  "payload": {
+    "content_type": "text/plain",
+    "file": "art_01KTYVBP7CX24M81G7NWYDVF3H.txt",
+    "size_bytes": 90
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "tier1-result.txt",
+  "token_usage": null,
+  "type": "file"
+}

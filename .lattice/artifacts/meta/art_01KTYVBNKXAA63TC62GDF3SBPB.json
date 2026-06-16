@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-12T21:21:11Z",
+  "created_by": "agent:c11-131-delegator",
+  "custom_fields": {},
+  "id": "art_01KTYVBNKXAA63TC62GDF3SBPB",
+  "model": null,
+  "payload": {
+    "content_type": "text/plain",
+    "file": "art_01KTYVBNKXAA63TC62GDF3SBPB.log",
+    "size_bytes": 1500
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "tier2-full-suite.log",
+  "token_usage": null,
+  "type": "file"
+}

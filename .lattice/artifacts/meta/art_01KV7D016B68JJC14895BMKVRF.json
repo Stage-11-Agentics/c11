@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-16T05:03:19Z",
+  "created_by": "agent:claude-overwatch",
+  "custom_fields": {},
+  "id": "art_01KV7D016B68JJC14895BMKVRF",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KV7D016B68JJC14895BMKVRF.md",
+    "size_bytes": 203
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Merged as PR #254 (squash f4c2b4c69). Prompt-gated stdin delivery + buffer/flush via PanelShellActivityState; live-validated (gated vim pristine, ungated corrupted). C11-147 filed as follow-up. CI gre",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

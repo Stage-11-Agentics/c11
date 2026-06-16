@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-16T04:30:58Z",
+  "created_by": "agent:claude-c11-144",
+  "custom_fields": {},
+  "id": "art_01KV7B4SA3RTY5DNVEYGCHYYXC",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KV7B4SA3RTY5DNVEYGCHYYXC.md",
+    "size_bytes": 5577
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "c11-144-validation.md",
+  "token_usage": null,
+  "type": "file"
+}

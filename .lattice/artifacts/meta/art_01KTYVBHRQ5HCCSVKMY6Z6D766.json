@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-12T21:21:07Z",
+  "created_by": "agent:c11-131-delegator",
+  "custom_fields": {},
+  "id": "art_01KTYVBHRQ5HCCSVKMY6Z6D766",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KTYVBHRQ5HCCSVKMY6Z6D766.md",
+    "size_bytes": 1480
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "SMOKE-SUMMARY.md",
+  "token_usage": null,
+  "type": "file"
+}

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-12T21:41:29Z",
+  "created_by": "agent:Delegator-1",
+  "custom_fields": {},
+  "id": "art_01KTYWGV1CCQJAKK578Y8HSN92",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KTYWGV1CCQJAKK578Y8HSN92.md",
+    "size_bytes": 1363
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "MERGED to main: PR #237 (https://github.com/Stage-11-Agentics/c11/pull/237, merge commit on 2026-06-12, all CI green). Delivered: (1) dirty-ID-set batching for the browser portal's deferred geometry s",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

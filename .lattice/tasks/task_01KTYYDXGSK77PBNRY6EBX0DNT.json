@@ -1,0 +1,56 @@
+{
+  "assigned_to": "agent:PRLander-1",
+  "branch_links": [],
+  "comment_count": 5,
+  "complexity": null,
+  "created_at": "2026-06-12T22:14:50Z",
+  "created_by": "agent:Delegator-1",
+  "custom_fields": {},
+  "description": "External PR https://github.com/Stage-11-Agentics/c11/pull/212 (author BenevolentFutures, 2026-05-26, single commit) adds Grok Build as a built-in agent type. Operator has CLEARED IT TO MERGE (2026-06-12) pending deep review + rebase.\n\nState: CONFLICTING with main. The agent-registry surface moved since May: conversation store landed in 0.44 as the resume path; AgentRestartRegistry is deprecated (removal scheduled 0.46) and this PR patches it \u2014 the rebase must wire the new agent into the conversation-store era, not the deprecated rail. C11-131 (just merged, PR #239) also touched crash-resume in this area.\n\nFiles: CLI/c11.swift, AgentChip, AgentDetector, AgentRestartRegistry, AgentSkillsView, DefaultAgentConfig, SkillInstaller, SurfaceMetadataStore, c11Tests/DefaultAgentConfigTests, docs/adding-a-new-agent.md, skills/c11/SKILL.md + references/api.md.\n\nAcceptance: deep code review recorded; rebased onto current main preserving contributor authorship in commit metadata; builds green; c11-logic suite green; skills updated AND scripts/sync-installed-skills.sh run if skills touched; localization pass for any user-facing strings; merged; PR comment crediting the contributor. Merge BEFORE C11-137 (#215) \u2014 oldest first; the second PR re-rebases over this one.\n\nRelated: C11-137 (PR #215, same files, same delegator thread).",
+  "done_at": "2026-06-12T22:57:09Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01KTZ06AGQBNAZC2AEWDE622MY",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01KTZ06JRS2VCW0GDJFP8010YX",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01KTZ0VD73Y9NGYM91SECHJ5P3",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KTZ0VD73Y9NGYM91SECHJ5P2",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KTYYDXGSK77PBNRY6EBX0DNT",
+  "last_event_id": "ev_01KTZ0VD73Y9NGYM91SECHJ5P6",
+  "last_status_changed_at": "2026-06-12T22:57:09Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-06-12T22:14:51Z",
+      "created_by": "agent:Delegator-1",
+      "note": null,
+      "target_task_id": "task_01KTYYDXYKJ7PPBV500W3JR2ZA",
+      "type": "blocks"
+    }
+  ],
+  "reopened_count": 1,
+  "schema_version": 1,
+  "short_id": "C11-136",
+  "status": "done",
+  "tags": null,
+  "title": "Land PR #212: Grok Build as built-in agent type (rebase + deep review + merge)",
+  "type": "task",
+  "updated_at": "2026-06-12T22:57:09Z",
+  "urgency": null
+}

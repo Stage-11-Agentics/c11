@@ -1,0 +1,4 @@
+state verify: /Users/atin/Library/Application Support/c11/session-com.stage11.c11.debug.c11.131.json
+  [RESUME] kind=claude-code id=d38d8eb6-b1e9-4727-8048-c73f94b40bf4 state=alive transcript=present — claude --dangerously-skip-permissions --resume d38d8eb6-b1e9-4727-8048-c73f94b40bf4
+  [RESUME] kind=claude-code id=22878d3c-cda9-4bea-8e76-b0f78b37b23c state=alive transcript=present — claude --dangerously-skip-permissions --resume 22878d3c-cda9-4bea-8e76-b0f78b37b23c
+  2/2 ref-bearing panels would resume

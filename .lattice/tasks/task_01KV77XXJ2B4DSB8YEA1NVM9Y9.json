@@ -1,0 +1,30 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": "low",
+  "created_at": "2026-06-16T03:34:47Z",
+  "created_by": "human:atin",
+  "custom_fields": {},
+  "description": "Wildest-mutation bet both models independently raised in the Trident review (notes/trident-review-mailbox-feature-pack-20260615-2208/synthesis-evolutionary.md \u00a76) and the operator liked. The framed <c11-msg> block is LLM-native, transport-agnostic, and injection-defended \u2014 nothing about it is c11-specific.\n\nDeliverable: a doc specifying '<agent-msg>' as a documented, provider-neutral agent-to-agent wire format (fields, escaping rules, framing, dedupe-by-id contract) the way MCP is specced \u2014 so c11 becomes the reference implementation of a format rather than the owner of a feature; it could ride Slack, tmux, SSH, any text channel.\n\nScope guard: this is a DOC + a name, not an implementation. 'Largest surface, smallest code.' Low priority; don't let it block the reliability workstreams (stable addressing, delivery safety, liveness).",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KV77XXJ2B4DSB8YEA1NVM9Y9",
+  "last_event_id": "ev_01KV77XXJ47MPWNSJ4DTTGHWB8",
+  "last_status_changed_at": "2026-06-16T03:34:47Z",
+  "linked_files": [],
+  "priority": "low",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-146",
+  "status": "backlog",
+  "tags": [
+    "mailbox",
+    "evolution"
+  ],
+  "title": "Mailbox: spec the <agent-msg> framed block as a provider-neutral wire protocol",
+  "type": "spike",
+  "updated_at": "2026-06-16T03:34:47Z",
+  "urgency": null
+}

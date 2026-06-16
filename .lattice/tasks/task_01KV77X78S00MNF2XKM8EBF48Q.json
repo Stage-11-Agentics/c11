@@ -1,0 +1,63 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "c11_surface": "surface:159",
+  "c11_workspace": null,
+  "comment_count": 1,
+  "complexity": "medium",
+  "created_at": "2026-06-16T03:34:24Z",
+  "created_by": "human:atin",
+  "custom_fields": {},
+  "description": "FOUNDATION \u2014 the unanimous #1 mutation from the nine-instance Trident review of the mailbox feature (notes/trident-review-mailbox-feature-pack-20260615-2208/synthesis-evolutionary.md).\n\nProblem: a mailbox recipient is addressed by its 'title' metadata, which is user/agent-mutable and non-unique. The global CLAUDE.md MANDATES agents rename their tab as their first action \u2014 so the bus silently re-partitions the moment an agent renames itself. Every reliability mutation sits on top of this.\n\nDeliverable:\n- New 'mailbox.address' / 'mailbox.role' metadata key; resolver (MailboxSurfaceResolver + MailboxGlobalResolver) prefers it, FALLS BACK to title (back-compat, no envelope schema change \u2014 'to' is already opaque).\n- New qualifier forms 'surface:<ulid>' and 'role:<name>' alongside existing 'workspace:*' in the send path / mailbox.resolve.\n- Update the c11 skill so agents declare a stable address once at orientation; sync installed skill.\n\nScope guard: keep local-first/ambiguity routing as-is (stable addressing dissolves the collision worry that made it feel 'too clever'). Identity, not a routing rewrite.\n\nAcceptance: send to a stable address survives a recipient tab-rename; unit tests for resolver precedence (address > role > title) and the new qualifiers; same/cross-workspace behavior unchanged when only titles are set.",
+  "done_at": "2026-06-16T05:03:19Z",
+  "evidence_refs": [
+    {
+      "id": "art_01KV78Z3050W2SYK8W30HKEM79",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KV79T9Y7B4ZNPXZ4ZR2MRPXB",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KV79XMV1R8GGE8YG6XE7E2W8",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KV7A0HZ9A2B1GHE8AQPV6T8X",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01KV7D012Z90J5EPY8E3BV9ZZH",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KV7D012Z90J5EPY8E3BV9ZZG",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KV77X78S00MNF2XKM8EBF48Q",
+  "last_event_id": "ev_01KV7D012Z90J5EPY8E3BV9ZZK",
+  "last_status_changed_at": "2026-06-16T05:03:19Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-143",
+  "status": "done",
+  "tags": [
+    "mailbox",
+    "evolution"
+  ],
+  "title": "Mailbox: stable addressing (mailbox.address/role, decouple from mutable title)",
+  "type": "task",
+  "updated_at": "2026-06-16T05:03:19Z",
+  "urgency": null
+}

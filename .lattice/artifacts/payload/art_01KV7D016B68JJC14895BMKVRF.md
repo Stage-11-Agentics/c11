@@ -1,0 +1,1 @@
+Merged as PR #254 (squash f4c2b4c69). Prompt-gated stdin delivery + buffer/flush via PanelShellActivityState; live-validated (gated vim pristine, ungated corrupted). C11-147 filed as follow-up. CI green.

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-13T00:03:54Z",
+  "created_by": "agent:PRLander-1",
+  "custom_fields": {},
+  "id": "art_01KTZ4NM88A4PEX4WWWWPK2ZCH",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KTZ4NM88A4PEX4WWWWPK2ZCH.md",
+    "size_bytes": 1095
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Landed PR #215 (GitHub Copilot CLI) via rebased PR #243 (merged 2026-06-13), after #242/grok. Contributor authorship preserved (commit 81123c0, MdMxMyr <maxmeyer@live.nl>); modernization in a separate",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

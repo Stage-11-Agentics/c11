@@ -1,0 +1,1 @@
+Merged as PR #253 (squash ff4ea15c2). Stable addressing: mailbox.address/role, precedence address>role>title, surface:/role: qualifiers, title fallback preserved. CI green, unit-tested.

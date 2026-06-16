@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-06-16T04:11:11Z",
+  "created_by": "agent:claude-c11-143",
+  "custom_fields": {
+    "url": "https://github.com/Stage-11-Agentics/c11/pull/253"
+  },
+  "id": "art_01KV7A0HZ9A2B1GHE8AQPV6T8X",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": null,
+    "size_bytes": null
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "PR #253 \u2014 stable addressing",
+  "token_usage": null,
+  "type": "reference"
+}

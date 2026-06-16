@@ -177,6 +177,8 @@ Single markdown file the Orchestrator reads on boot and updates as the run evolv
 - Concurrent delegator cap (N): <number>
 - C11: <on | off> — workspace: <workspace_ref>
 - PR merge policy: <Auto-merge | Leave at pr_open>   # see orchestrator.md § Auto-merge mode
+- Git remote: <origin | forgejo | …>                 # verified via `git remote -v`; branch bases use <remote>/main, NOT assumed `origin`
+- Terminal pre-merge status: <pr_open | review | …>  # the install's PR-open-equivalent the delegator lands on + the auto-merge tick scans for; from .lattice/config.json / project CLAUDE.md
 - Lattice ticket fidelity: <Verbose | Minimal>
 - Lattice plan_review_mode: <inline | single | triple>   # pinned at Phase 2 from .lattice/config.json
 - Lattice review_mode: <inline | single | triple>        # pinned at Phase 2 from .lattice/config.json
@@ -348,6 +350,12 @@ Two delegators "idle at the same time" with the same shape is the signature of b
 | Sub-agent-full *(escalation)* | planner + impl + (fix) as new tabs on delegator's pane | same headless lattice reviews between phases | yes (delegator + each sub-agent) | "Sub-agent-full boot prompt template" below (the legacy "Per-ticket setup" template) |
 
 Record the chosen mode in `run-state.md`'s wave table so the Orchestrator's tick body sets the right expectations. Mixing modes within a wave is normal.
+
+### The delegator's terminal pre-merge status is install-specific — confirm it, don't hardcode `pr_open`
+
+The templates below write `lattice status <TICKET-ID> pr_open` as the delegator's terminal state, but **not every Lattice install has a `pr_open` status**. Some workflows collapse it into `review` (i.e. `review` *is* "PR open, awaiting merge" — the orchestrator's auto-merge then fires off `review`, not `pr_open`). A delegator that blindly runs `lattice status … pr_open` on such an install hits `Invalid transition` and either thrashes or, worse, leaves the ticket in a wrong state the orchestrator misreads.
+
+**At Phase 2 the Architect pins the status workflow** (check `.lattice/config.json` and the project `CLAUDE.md` for the workflow's status set + any display aliases) and records the **terminal pre-merge status** in `run-state.md` § Configuration. The Orchestrator threads that status into every delegator boot prompt verbatim, in place of the literal `pr_open` the templates show. When unsure, instruct the delegator to read `lattice show <TICKET-ID> --json | jq .valid_transitions` after `review` and pick the install's actual PR-open-equivalent terminal, leaving the ticket there for the orchestrator to merge + complete. The auto-merge tick (`## Auto-merge mode`) must scan for the same status the delegators land on — keep the two in sync.
 
 ### Worktree prep (applies to every mode)
 

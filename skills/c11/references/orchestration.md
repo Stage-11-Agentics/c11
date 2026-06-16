@@ -186,13 +186,15 @@ Supported status values: `Idle` (prompt waiting), `Running` (processing a turn),
 
 Additional notes on the polling signal:
 - The signal only exists when claude was launched through c11's bundled PATH. A `claude` invocation that bypasses the PATH wrapper will not emit status. For sub-agents you orchestrate from inside a c11 surface this is almost always fine — the wrapper is the default for `claude` in that context.
-- Other TUIs (codex, kimi, opencode, etc.) do **not** get an equivalent wrapper, by design. For those, agents self-report by calling `c11 set-metadata --key status --value idle` / `running` themselves, following instructions in the c11 skill file they load at session start. If an agent hasn't been taught to self-report, you won't see status for them — that's expected.
+- Other TUIs (codex, kimi, opencode, etc.) do **not** get an equivalent wrapper, by design. For those, agents self-report by calling `c11 set-metadata --key status --value idle` / `running` themselves, following instructions in the c11 skill file they load at session start. OpenCode additionally gets a bundled notification/status plugin (see below). If an agent hasn't been taught to self-report and has no plugin, you won't see status for them — that's expected.
 
 **Do not** regex for `❯`, `> `, or `Welcome to Claude Code`. Those patterns drift across Claude Code releases and produce silent stalls when they miss (v2.1.114 dropped the box prompt and changed the banner, breaking every previous recipe). Use one-shot argv delivery, or poll the status row when it's safe to do so.
 
-### Why this works only for Claude Code, and why that's okay
+### Why this works only for Claude Code, and how OpenCode plugins fit
 
-The claude PATH wrapper at `Resources/bin/claude` is a **grandfathered, Claude Code-specific concession** — c11 does not write to any TUI's persistent config, and will not install analogous wrappers for codex, kimi, or opencode. The host is deliberately unopinionated about the terminal: c11 provides the surface, the socket, and the skill file; what an agent does with them is the agent's business. For every TUI except Claude Code, the skill-driven self-reporting path above is how status gets populated — there is no installer, no config-writing, no hook injection performed by c11.
+The claude PATH wrapper at `Resources/bin/claude` is a **grandfathered, Claude Code-specific concession** — c11 does not write to any TUI's persistent config, and will not install analogous PATH wrappers for codex, kimi, or opencode. The host is deliberately unopinionated about the terminal: c11 provides the surface, the socket, and the skill file; what an agent does with them is the agent's business.
+
+For most TUIs, the skill-driven self-reporting path above is how status gets populated. **OpenCode is the exception**: it has a clean plugin API with reliable event hooks (`session.idle`, `permission.asked`, `session.status`, `session.error`), so c11 bundles a notification/status plugin that `c11 skill install --tool opencode` copies into `~/.config/opencode/plugins/`. The plugin auto-loads at OpenCode startup and calls `c11 notify` + `c11 set-metadata` on the same event triggers that the Claude Code wrapper handles. This gives OpenCode panes the same blue-ring + tab-highlight + Cmd+Shift+U workflow without any PATH wrapper or `opencode.json` modification.
 
 ## Per-agent launch quirks
 
@@ -215,10 +217,16 @@ The claude PATH wrapper at `Resources/bin/claude` is a **grandfathered, Claude C
 - **Auth gotcha.** OIDC-acquired tokens (`grok login` browser flow) currently 403 at the chat endpoint for non-Heavy SuperGrok tiers. Use an `XAI_API_KEY` from console.x.ai instead; it bypasses the Heavy-only gate.
 - **No PATH wrapper.** Status comes from skill-driven self-reporting, same as codex/opencode/kimi.
 
-### opencode, kimi, others
+### opencode
 
-- **No PATH wrapper.** Like codex, status comes from skill-driven self-reporting. If an agent hasn't been taught to self-report, the sidebar won't show status for it; that is expected, not a bug.
+- **Bundled notification plugin.** OpenCode has a clean plugin API (`session.idle`, `permission.asked`, `session.status`, `session.error`). `c11 skill install --tool opencode` copies a bundled plugin (`c11-notify.js`) into `~/.config/opencode/plugins/` that bridges these events into c11 notifications + sidebar status — same workflow as Claude Code's hooks. No PATH wrapper, no `opencode.json` modification.
+- **No PATH wrapper.** Like codex, status comes from the plugin (if installed) or skill-driven self-reporting. If neither is set up, the sidebar won't show status for opencode; that is expected, not a bug.
 - **Launch command is operator-configured** under Settings → Agents & Automation → Agent Launcher Button. The resolver materializes whatever the operator chose into `$C11_DEFAULT_AGENT_LAUNCH` at shell-spawn time. Preference changes only take effect on newly-spawned shells, not already-running ones.
+
+### kimi, others
+
+- **No PATH wrapper, no plugin.** Status comes from skill-driven self-reporting only. If an agent hasn't been taught to self-report, the sidebar won't show status for it; that is expected, not a bug.
+- **Launch command is operator-configured** under Settings → Agents & Automation → Agent Launcher Button. The resolver materializes whatever the operator chose into `$C11_DEFAULT_AGENT_LAUNCH` at shell-spawn time.
 
 ### Banner-string scraping is always wrong
 

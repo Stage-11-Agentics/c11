@@ -23,13 +23,35 @@ enum SkillInstallerTarget: String, CaseIterable {
     }
 
     /// Root config dir conventionally used by each TUI (`~/.claude`, `~/.codex`, …).
+    /// OpenCode uses `~/.config/opencode/` (XDG convention), not `~/.opencode/`.
     func configRoot(home: URL) -> URL {
-        home.appendingPathComponent(".\(rawValue)", isDirectory: true)
+        switch self {
+        case .opencode:
+            return home.appendingPathComponent(".config/opencode", isDirectory: true)
+        default:
+            return home.appendingPathComponent(".\(rawValue)", isDirectory: true)
+        }
     }
 
     /// Destination skills dir (`~/.claude/skills`, `~/.codex/skills`, …).
     func skillsDir(home: URL) -> URL {
         configRoot(home: home).appendingPathComponent("skills", isDirectory: true)
+    }
+
+    /// Destination plugins dir for TUIs that support auto-loaded plugins.
+    /// OpenCode uses `~/.config/opencode/plugins/` (XDG convention), not
+    /// `~/.opencode/plugins/`. Only OpenCode supports plugins today.
+    var supportsPlugins: Bool {
+        self == .opencode
+    }
+
+    func pluginsDir(home: URL) -> URL {
+        switch self {
+        case .opencode:
+            return home.appendingPathComponent(".config/opencode/plugins", isDirectory: true)
+        default:
+            return configRoot(home: home).appendingPathComponent("plugins", isDirectory: true)
+        }
     }
 
     /// True when the TUI's config root exists — the only signal c11 uses
@@ -687,6 +709,218 @@ enum SkillInstaller {
             removed: removed,
             skipped: skipped,
             destDir: destRoot
+        )
+    }
+
+    // MARK: - Plugin install/remove (OpenCode)
+
+    /// Result type for plugin install/remove operations.
+    struct SkillInstallerPluginResult: Equatable {
+        let target: SkillInstallerTarget
+        let installed: [String]
+        let removed: [String]
+        let skipped: [String]
+        let destDir: URL
+    }
+
+    /// Discover bundled plugin files under `<sourceDir>/opencode-plugins/`.
+    /// Each `.js` file is a plugin candidate. Returns sorted by filename.
+    static func discoverPlugins(
+        sourceDir: URL,
+        fileManager: FileManager = .default
+    ) throws -> [URL] {
+        let pluginSourceDir = sourceDir.appendingPathComponent("opencode-plugins", isDirectory: true)
+        var isDir: ObjCBool = false
+        guard fileManager.fileExists(atPath: pluginSourceDir.path, isDirectory: &isDir), isDir.boolValue else {
+            return []
+        }
+        let children = try fileManager.contentsOfDirectory(
+            at: pluginSourceDir,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        )
+        return children
+            .filter { $0.pathExtension == "js" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+
+    /// SHA-256 hash of a single file. Used for plugin content comparison.
+    static func fileContentHash(
+        of file: URL,
+        fileManager: FileManager = .default
+    ) throws -> String {
+        guard let data = fileManager.contents(atPath: file.path) else {
+            throw SkillInstallerError(
+                code: .sourceNotReadable,
+                message: "Cannot read file: \(file.path)"
+            )
+        }
+        let digest = SHA256.hash(data: data)
+        return "sha256:" + digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Install bundled plugins for a target. Currently only OpenCode has
+    /// bundled plugins (under `skills/opencode-plugins/`). Each plugin file
+    /// is copied to the target's plugins dir with a sidecar manifest
+    /// (`.c11-plugin.json`) for update detection and safe removal.
+    static func installPlugins(
+        target: SkillInstallerTarget,
+        home: URL,
+        sourceDir: URL,
+        force: Bool,
+        appIdentity: AppIdentity = .current,
+        now: () -> Date = Date.init,
+        fileManager: FileManager = .default
+    ) throws -> SkillInstallerPluginResult {
+        guard target.supportsPlugins else {
+            return SkillInstallerPluginResult(
+                target: target, installed: [], removed: [], skipped: [], destDir: target.pluginsDir(home: home)
+            )
+        }
+
+        let plugins = try discoverPlugins(sourceDir: sourceDir, fileManager: fileManager)
+        if plugins.isEmpty {
+            return SkillInstallerPluginResult(
+                target: target, installed: [], removed: [], skipped: [], destDir: target.pluginsDir(home: home)
+            )
+        }
+
+        let destDir = target.pluginsDir(home: home)
+        try fileManager.createDirectory(at: destDir, withIntermediateDirectories: true)
+
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime]
+        let timestamp = isoFormatter.string(from: now())
+
+        var installed: [String] = []
+        var skipped: [String] = []
+
+        for pluginSource in plugins {
+            let name = pluginSource.lastPathComponent
+            let destFile = destDir.appendingPathComponent(name, isDirectory: false)
+            let manifestFile = destDir.appendingPathComponent(
+                name.replacingOccurrences(of: ".js", with: ".c11-plugin.json"),
+                isDirectory: false
+            )
+
+            let sourceHash = try fileContentHash(of: pluginSource, fileManager: fileManager)
+
+            // Check if already up-to-date
+            if !force,
+               fileManager.fileExists(atPath: destFile.path),
+               fileManager.fileExists(atPath: manifestFile.path) {
+                if let manifestData = try? Data(contentsOf: manifestFile),
+                   let record = try? JSONDecoder().decode(SkillInstallerRecord.self, from: manifestData),
+                   record.schema == SkillInstallerRecord.schemaVersion,
+                   record.sourceContentHash == sourceHash,
+                   let destHash = try? fileContentHash(of: destFile, fileManager: fileManager),
+                   destHash == sourceHash {
+                    skipped.append(name)
+                    continue
+                }
+            }
+
+            // Safety: don't clobber a user-owned plugin without --force
+            if fileManager.fileExists(atPath: destFile.path),
+               !fileManager.fileExists(atPath: manifestFile.path),
+               !force {
+                throw SkillInstallerError(
+                    code: .destNotManaged,
+                    message: "\(destFile.path) already exists but is not c11-managed. Re-run with --force to replace it.",
+                    path: destFile.path
+                )
+            }
+
+            if fileManager.fileExists(atPath: destFile.path) {
+                try fileManager.removeItem(at: destFile)
+            }
+
+            try fileManager.copyItem(at: pluginSource, to: destFile)
+
+            let record = SkillInstallerRecord(
+                schema: SkillInstallerRecord.schemaVersion,
+                packageName: name,
+                skillVersion: nil,
+                installedAt: timestamp,
+                appVersion: appIdentity.version,
+                appBuild: appIdentity.build,
+                commitShort: appIdentity.commitShort,
+                sourceContentHash: sourceHash
+            )
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let manifestData = try encoder.encode(record)
+            try manifestData.write(to: manifestFile, options: .atomic)
+
+            installed.append(name)
+        }
+
+        return SkillInstallerPluginResult(
+            target: target,
+            installed: installed,
+            removed: [],
+            skipped: skipped,
+            destDir: destDir
+        )
+    }
+
+    /// Remove c11-installed plugins from a target. Only removes files with a
+    /// valid `.c11-plugin.json` sidecar manifest.
+    static func removePlugins(
+        target: SkillInstallerTarget,
+        home: URL,
+        sourceDir: URL,
+        fileManager: FileManager = .default
+    ) throws -> SkillInstallerPluginResult {
+        guard target.supportsPlugins else {
+            return SkillInstallerPluginResult(
+                target: target, installed: [], removed: [], skipped: [], destDir: target.pluginsDir(home: home)
+            )
+        }
+
+        let plugins = try discoverPlugins(sourceDir: sourceDir, fileManager: fileManager)
+        let destDir = target.pluginsDir(home: home)
+        var removed: [String] = []
+        var skipped: [String] = []
+
+        for pluginSource in plugins {
+            let name = pluginSource.lastPathComponent
+            let destFile = destDir.appendingPathComponent(name, isDirectory: false)
+            let manifestFile = destDir.appendingPathComponent(
+                name.replacingOccurrences(of: ".js", with: ".c11-plugin.json"),
+                isDirectory: false
+            )
+
+            guard fileManager.fileExists(atPath: destFile.path) else {
+                skipped.append(name)
+                continue
+            }
+            guard fileManager.fileExists(atPath: manifestFile.path) else {
+                // User-owned; don't touch.
+                skipped.append(name)
+                continue
+            }
+
+            // Verify manifest before deleting
+            guard let manifestData = try? Data(contentsOf: manifestFile),
+                  let record = try? JSONDecoder().decode(SkillInstallerRecord.self, from: manifestData),
+                  record.schema == SkillInstallerRecord.schemaVersion,
+                  record.packageName == name else {
+                skipped.append(name)
+                continue
+            }
+
+            try fileManager.removeItem(at: destFile)
+            try? fileManager.removeItem(at: manifestFile)
+            removed.append(name)
+        }
+
+        return SkillInstallerPluginResult(
+            target: target,
+            installed: [],
+            removed: removed,
+            skipped: skipped,
+            destDir: destDir
         )
     }
 }

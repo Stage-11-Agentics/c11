@@ -16334,6 +16334,12 @@ extension CMUXCLI {
           Claude Code is the default active install (grandfathered exception).
           For every other tool, c11 prints the manual command and only writes
           to disk when --tool is passed explicitly — the operator stays in charge.
+
+        Plugins:
+          For OpenCode, `install --tool opencode` also copies bundled plugins
+          (notification + status bridge) into ~/.config/opencode/plugins/.
+          OpenCode auto-loads plugins from that directory at startup — no
+          opencode.json edit required.
         """
     }
 
@@ -16546,17 +16552,49 @@ extension CMUXCLI {
                 "refreshed": result.refreshed,
                 "skipped": result.skipped,
             ]))
-            return
+        } else {
+            print("Installed skill for \(target.displayName) at \(result.destDir.path)")
+            if !result.installed.isEmpty {
+                print("  installed: \(result.installed.joined(separator: ", "))")
+            }
+            if !result.refreshed.isEmpty {
+                print("  refreshed: \(result.refreshed.joined(separator: ", "))")
+            }
+            if !result.skipped.isEmpty {
+                print("  skipped (up-to-date): \(result.skipped.joined(separator: ", "))")
+            }
         }
-        print("Installed skill for \(target.displayName) at \(result.destDir.path)")
-        if !result.installed.isEmpty {
-            print("  installed: \(result.installed.joined(separator: ", "))")
-        }
-        if !result.refreshed.isEmpty {
-            print("  refreshed: \(result.refreshed.joined(separator: ", "))")
-        }
-        if !result.skipped.isEmpty {
-            print("  skipped (up-to-date): \(result.skipped.joined(separator: ", "))")
+
+        // For TUIs that support plugins (OpenCode), install those too.
+        if target.supportsPlugins {
+            let pluginResult = try SkillInstaller.installPlugins(
+                target: target,
+                home: home,
+                sourceDir: source,
+                force: force
+            )
+            if emitJSON {
+                // Re-print as a combined object — but the skills result was
+                // already printed above. For JSON mode, callers who want the
+                // plugin result should check stdout is two JSON objects. This
+                // is acceptable because the primary install target is skills;
+                // plugins are a bonus side-effect for OpenCode.
+                if !pluginResult.installed.isEmpty || !pluginResult.skipped.isEmpty {
+                    print(skillJSONString([
+                        "tool": target.rawValue,
+                        "plugins_dest": pluginResult.destDir.path,
+                        "plugins_installed": pluginResult.installed,
+                        "plugins_skipped": pluginResult.skipped,
+                    ]))
+                }
+            } else {
+                if !pluginResult.installed.isEmpty {
+                    print("  plugins installed: \(pluginResult.installed.joined(separator: ", "))")
+                }
+                if !pluginResult.skipped.isEmpty {
+                    print("  plugins skipped (up-to-date): \(pluginResult.skipped.joined(separator: ", "))")
+                }
+            }
         }
     }
 
@@ -16579,14 +16617,39 @@ extension CMUXCLI {
                 "removed": result.removed,
                 "skipped": result.skipped,
             ]))
-            return
+        } else {
+            print("Removed skill for \(target.displayName) from \(result.destDir.path)")
+            if !result.removed.isEmpty {
+                print("  removed: \(result.removed.joined(separator: ", "))")
+            }
+            if !result.skipped.isEmpty {
+                print("  skipped: \(result.skipped.joined(separator: ", "))")
+            }
         }
-        print("Removed skill for \(target.displayName) from \(result.destDir.path)")
-        if !result.removed.isEmpty {
-            print("  removed: \(result.removed.joined(separator: ", "))")
-        }
-        if !result.skipped.isEmpty {
-            print("  skipped: \(result.skipped.joined(separator: ", "))")
+
+        // Remove plugins for TUIs that support them (OpenCode).
+        if target.supportsPlugins {
+            let pluginResult = try SkillInstaller.removePlugins(
+                target: target,
+                home: home,
+                sourceDir: source
+            )
+            if emitJSON {
+                if !pluginResult.removed.isEmpty || !pluginResult.skipped.isEmpty {
+                    print(skillJSONString([
+                        "tool": target.rawValue,
+                        "plugins_removed": pluginResult.removed,
+                        "plugins_skipped": pluginResult.skipped,
+                    ]))
+                }
+            } else {
+                if !pluginResult.removed.isEmpty {
+                    print("  plugins removed: \(pluginResult.removed.joined(separator: ", "))")
+                }
+                if !pluginResult.skipped.isEmpty {
+                    print("  plugins skipped: \(pluginResult.skipped.joined(separator: ", "))")
+                }
+            }
         }
     }
 }

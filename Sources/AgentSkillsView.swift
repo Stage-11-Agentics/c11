@@ -164,6 +164,19 @@ final class AgentSkillsModel: ObservableObject {
                 AgentSkillsOnboarding.clearDismissal(for: target, skillName: name)
             }
             lastActionMessage = formatInstallMessage(result: result)
+            // For TUIs that support plugins (OpenCode), install those too.
+            if target.supportsPlugins {
+                let pluginResult = try SkillInstaller.installPlugins(
+                    target: target,
+                    home: home,
+                    sourceDir: source,
+                    force: force,
+                    fileManager: fileManager
+                )
+                if !pluginResult.installed.isEmpty {
+                    lastActionMessage = (lastActionMessage ?? "") + "\nPlugins installed: \(pluginResult.installed.joined(separator: ", "))"
+                }
+            }
         } catch let err as SkillInstallerError {
             lastActionMessage = AgentSkillsLocalized.description(for: err, target: target)
         } catch {
@@ -182,6 +195,18 @@ final class AgentSkillsModel: ObservableObject {
                 fileManager: fileManager
             )
             lastActionMessage = formatRemoveMessage(result: result)
+            // Remove plugins for TUIs that support them (OpenCode).
+            if target.supportsPlugins {
+                let pluginResult = try SkillInstaller.removePlugins(
+                    target: target,
+                    home: home,
+                    sourceDir: source,
+                    fileManager: fileManager
+                )
+                if !pluginResult.removed.isEmpty {
+                    lastActionMessage = (lastActionMessage ?? "") + "\nPlugins removed: \(pluginResult.removed.joined(separator: ", "))"
+                }
+            }
         } catch let err as SkillInstallerError {
             lastActionMessage = AgentSkillsLocalized.description(for: err, target: target)
         } catch {

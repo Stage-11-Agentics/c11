@@ -112,3 +112,84 @@ struct MailboxSurfaceResolver {
         }
     }
 }
+
+/// Cross-workspace recipient resolution for `c11 mailbox send`.
+///
+/// Each workspace runs its own `MailboxDispatcher`, and that dispatcher only
+/// resolves names against surfaces in *its* workspace. So a `--to` naming a
+/// surface in another workspace resolves to an empty recipient set and the
+/// message is dropped. This resolver closes that gap: it answers "which
+/// workspace should this envelope be delivered into?" by scanning every live,
+/// addressable surface in the running c11 instance, so the CLI can route the
+/// envelope into the recipient's workspace outbox (where that workspace's own
+/// dispatcher then delivers it locally, unchanged).
+///
+/// Precedence is deterministic (documented in `docs/c11-mailbox-guide.md`):
+///   1. **Local-first.** If `name` matches one or more surfaces in the
+///      sender's own workspace, deliver there. This preserves the
+///      pre-cross-workspace behavior exactly — a same-workspace send never
+///      reaches into another workspace, even if a same-named surface exists
+///      elsewhere.
+///   2. Otherwise, among the other workspaces:
+///        * exactly one workspace matches  → deliver there;
+///        * more than one workspace matches → `.ambiguous` (the caller must
+///          disambiguate with a workspace qualifier);
+///        * none match → `.unresolved` (the caller surfaces a non-zero error).
+///   A `workspaceQualifier` short-circuits the precedence: only surfaces in
+///   that workspace are considered, and the result is `.unique` or
+///   `.unresolved`.
+///
+/// Multiple same-named surfaces inside the chosen workspace are returned
+/// together; the dispatcher fans out to all of them, matching how
+/// same-workspace duplicate names already behave.
+struct MailboxGlobalResolver {
+
+    /// One live, addressable surface anywhere in the instance.
+    struct Surface: Equatable {
+        let workspaceId: UUID
+        let surfaceId: UUID
+        let name: String
+    }
+
+    enum Resolution: Equatable {
+        /// Deliver into `workspaceId`; `surfaceIds` are the matching surfaces.
+        case unique(workspaceId: UUID, surfaceIds: [UUID])
+        /// `name` matches surfaces in more than one workspace and no qualifier
+        /// was supplied. Carries the candidates for a helpful error message.
+        case ambiguous(candidates: [Surface])
+        /// No live surface carries `name` (within the qualifier, if given).
+        case unresolved
+    }
+
+    /// Enumerates all addressable surfaces. Injected so the resolver is pure:
+    /// tests pass a fixed list, the socket handler binds it to the live
+    /// windows' workspaces.
+    let surfaces: () -> [Surface]
+
+    func resolve(
+        name: String,
+        senderWorkspaceId: UUID,
+        workspaceQualifier: UUID? = nil
+    ) -> Resolution {
+        let matches = surfaces().filter { $0.name == name }
+
+        if let qualifier = workspaceQualifier {
+            let scoped = matches.filter { $0.workspaceId == qualifier }
+            guard !scoped.isEmpty else { return .unresolved }
+            return .unique(workspaceId: qualifier, surfaceIds: scoped.map(\.surfaceId))
+        }
+
+        // Local-first: a match in the sender's own workspace always wins.
+        let local = matches.filter { $0.workspaceId == senderWorkspaceId }
+        if !local.isEmpty {
+            return .unique(workspaceId: senderWorkspaceId, surfaceIds: local.map(\.surfaceId))
+        }
+
+        guard !matches.isEmpty else { return .unresolved }
+        let workspaceIds = Set(matches.map(\.workspaceId))
+        if workspaceIds.count == 1, let only = workspaceIds.first {
+            return .unique(workspaceId: only, surfaceIds: matches.map(\.surfaceId))
+        }
+        return .ambiguous(candidates: matches)
+    }
+}

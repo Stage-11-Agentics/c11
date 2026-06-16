@@ -470,7 +470,7 @@ This section is the agent-facing quick-reference. The full guide (filesystem lay
 
 ### The framed block you'll see in your PTY
 
-When another surface sends you a message and your surface's `mailbox.delivery` contains `stdin`, a block like this appears between prompts:
+When another surface sends you a message and your surface's `mailbox.delivery` contains `stdin`, a block like this appears **at a shell prompt** (delivery is prompt-gated — see below):
 
 ```
 <c11-msg from="builder" id="01K3A2B7X8PQRTVWYZ0123456J" ts="2026-04-23T10:15:42Z" to="watcher">
@@ -521,13 +521,23 @@ See [`Resources/bin/c11-mailbox-send-bash-example.sh`](../../Resources/bin/c11-m
 
 ### Receiving
 
-- **If your `mailbox.delivery` includes `stdin`:** the framed block arrives in your PTY automatically. No poll, no sync.
-- **Otherwise:** drain the inbox explicitly.
+**Pull at every turn boundary — this is the robust floor.** Regardless of your delivery mode, run `c11 mailbox recv --drain` at the top of each turn (or every few turns in a long autonomous loop). The filesystem inbox is the durable queue; `stdin` push is only a best-effort doorbell layered on top. Pulling is the one delivery path that always works — it does not depend on your shell being idle, on push being enabled, or on shell-integration reporting your state.
 
 ```bash
-c11 mailbox recv --drain    # list + print + unlink (default)
+c11 mailbox recv --drain    # list + print + unlink (default) — run at turn boundaries
 c11 mailbox recv --peek     # list + print only
 ```
+
+- **If your `mailbox.delivery` includes `stdin`:** a framed block *also* appears in your PTY, but **only when you're at a shell prompt** (delivery is prompt-gated, below). While you're running a command or a live agent owns the terminal, pushes are buffered, not injected — so the pull cadence above is what actually delivers them in time.
+- **Otherwise:** the pull cadence is your only delivery path; do not skip it.
+
+#### Prompt-gated delivery (why push can lag)
+
+c11 will not paste a `<c11-msg>` block into a PTY that has a foreground command running — doing so would corrupt that command's input (a build, `vim`, a REPL, or another agent's raw-mode stdin). It gates on the recipient surface's shell activity:
+
+- **At a shell prompt (`promptIdle`)** → the block is injected immediately.
+- **A command is running (`commandRunning`) or state is `unknown`** → the block is **buffered** and flushed when the surface next returns to its prompt. A buffered message is still delivered and logged (`c11 mailbox trace <id>` shows `buffered` → `flushed`), never silently dropped.
+- A long-lived agent TUI keeps its shell in `commandRunning` for its whole life, so push into a busy agent may never flush before it goes stale. **That is exactly why you pull** — `recv --drain` reads the inbox copy that was written before any push was attempted.
 
 **Opting in to stdin delivery.** Stdin delivery is per-recipient and off by default. Set `mailbox.delivery` on the surface that should auto-receive — it is a **comma-separated string** (not a JSON array), and the only handlers registered today are `stdin` and `silent`:
 

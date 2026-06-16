@@ -464,9 +464,37 @@ the sub-agent's PR transitively requires another open PR to land first.
 
 ## Inter-agent messaging (mailbox)
 
-**c11 ships a mailbox primitive that routes across all workspaces.** Any agent in a surface can `c11 mailbox send --to <name>`; c11 resolves the recipient by surface name across every workspace in the instance, delivers into the recipient's inbox, and — for stdin-delivery recipients — writes a framed `<c11-msg>` block into the PTY. A recipient that matches no live surface is **rejected with a non-zero exit**, never silently dropped.
+**c11 ships a mailbox primitive that routes across all workspaces.** Any agent in a surface can `c11 mailbox send --to <name>`; c11 resolves the recipient across every workspace in the instance, delivers into the recipient's inbox, and — for stdin-delivery recipients — writes a framed `<c11-msg>` block into the PTY. A recipient that matches no live surface is **rejected with a non-zero exit**, never silently dropped.
 
 This section is the agent-facing quick-reference. The full guide (filesystem layout, sequence diagrams, schema reference, dispatch log shape, patterns, anti-patterns, Stage 2 limits) lives in [`docs/c11-mailbox-guide.md`](../../docs/c11-mailbox-guide.md).
+
+### Stable addressing — declare a `mailbox.address` once at orientation
+
+A `--to` value resolves with precedence **address → role → title**:
+
+1. `mailbox.address` — a stable handle the surface declares for itself.
+2. `mailbox.role` — an opt-in role handle (e.g. `delegator`, `orchestrator`).
+3. `title` — the display name; the fallback so a bare-name send keeps working.
+
+The title is **mutable** — the c11 orientation rule has you rename your tab as your first action, and operators rename tabs freely. If peers address you by title, every rename silently re-partitions the bus. So **declare a stable `mailbox.address` at orientation, before anyone needs to reach you**, and tell peers to send to that — it survives every later tab-rename:
+
+```bash
+# At orientation, once. Use a value that won't collide — your ULID, your
+# ticket id, or a role-scoped handle.
+c11 set-metadata --surface "$C11_SURFACE_ID" --key mailbox.address --value "delegator-c11-143" --type string
+# Optional: also claim a role so peers can reach you by function.
+c11 set-metadata --surface "$C11_SURFACE_ID" --key mailbox.role --value "delegator" --type string
+```
+
+Address a peer by its stable handle with the qualifier forms (which match **only** that key, never the title):
+
+```bash
+c11 mailbox send --to surface:delegator-c11-143 --body "PR open at #259"   # → mailbox.address
+c11 mailbox send --to role:orchestrator --body "blocked on a decision"     # → mailbox.role
+c11 mailbox send --to watcher --body "build green"                         # bare: address→role→title
+```
+
+Role addressing is opt-in: a surface is reachable by `role:<name>` only if it set `mailbox.role` (the canonical `role` key is not consulted, so bare-name sends to title-only surfaces are unchanged). Nothing breaks for surfaces that only set a title — they remain addressable by name exactly as before.
 
 ### The framed block you'll see in your PTY
 

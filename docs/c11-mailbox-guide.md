@@ -28,7 +28,7 @@ flowchart LR
 Two facts to internalize:
 
 1. **The filesystem is the contract.** The CLI is convenience over file I/O. Any process that can write a JSON file to a directory can send a message; any process that can list a directory can receive one. The `tests_v2/test_mailbox_parity.py` test asserts CLI sends and raw file writes produce byte-identical envelopes.
-2. **Surface name is the address.** The dispatcher resolves `to` by matching against each live surface's title (set with `c11 set-title` / `c11 rename-tab`). No title means unaddressable.
+2. **A surface is addressed by a stable handle, falling back to its name.** The resolver matches `to` with precedence **address → role → title** (see [Addressing](#addressing-stable-handles-and-the-title-fallback) below). A surface is addressable as long as it has a `title` (set with `c11 set-title` / `c11 rename-tab`); the optional `mailbox.address` / `mailbox.role` keys give it a rename-proof handle on top.
 
 ---
 
@@ -67,6 +67,40 @@ If `mailbox.delivery` is not set on the recipient, the envelope still lands in `
 
 ---
 
+## Addressing: stable handles and the title fallback
+
+A `--to` value resolves against three per-surface keys, in precedence order:
+
+| Precedence | Key | Set by | Notes |
+|-----------|-----|--------|-------|
+| 1 | `mailbox.address` | the surface, once at orientation | Stable, rename-proof handle. Survives every later `set-title` / `rename-tab`. |
+| 2 | `mailbox.role` | the surface, opt-in | Reach a surface by function (`delegator`, `orchestrator`). Only `mailbox.role` is consulted — the canonical `role` key is not. |
+| 3 | `title` | `set-title` / `rename-tab` | Display name. The fallback, so a bare-name send keeps working for surfaces that declare no stable identity. |
+
+**Why this exists.** The title is mutable, and the c11 orientation convention has every agent rename its tab as its first action. If peers address each other by title, the bus silently re-partitions the moment anyone renames. Declaring a `mailbox.address` at orientation gives a surface an identity that does not move when its display name does.
+
+```bash
+# Recipient, once at orientation:
+c11 set-metadata --surface "$C11_SURFACE_ID" --key mailbox.address --value "delegator-c11-143" --type string
+c11 set-metadata --surface "$C11_SURFACE_ID" --key mailbox.role    --value "delegator"         --type string  # optional
+```
+
+**Bare name vs qualifier forms.** A bare `--to <x>` walks the precedence chain (address, then role, then title). To target a specific key unambiguously — never falling back to the title — use a qualifier form:
+
+```bash
+c11 mailbox send --to surface:delegator-c11-143 --body "…"   # matches mailbox.address ONLY
+c11 mailbox send --to role:delegator            --body "…"   # matches mailbox.role ONLY
+c11 mailbox send --to watcher                   --body "…"   # bare: address → role → title
+```
+
+These `surface:` / `role:` forms select *which surfaces* match; the workspace `--to-workspace` qualifier (below) is an orthogonal axis selecting *which workspace*. The envelope's `to` field stays an opaque string — no schema change — so the framed block a recipient sees carries whatever handle the sender used.
+
+`surface:` and `role:` are **reserved leading tokens** in `--to`: a value beginning with either is always parsed as that qualifier, never as a title. So a surface whose title literally starts with `surface:` or `role:` is not reachable by a bare `--to` (address it by its `mailbox.address`/`mailbox.role` instead). Any other colon stays part of a bare name — `--to ci:status` is a plain name.
+
+**Back-compat.** A surface with only a `title` is addressable by that title exactly as before. `mailbox.address` / `mailbox.role` are additive; the inbox directory is still keyed on the recipient's title.
+
+---
+
 ## Send flow
 
 ```mermaid
@@ -80,7 +114,7 @@ sequenceDiagram
     Note over B: framed <c11-msg> appears in PTY<br/>(or sits in inbox until drained)
 ```
 
-Under the hood the dispatcher validates the envelope against schema v1, resolves the recipient by surface title, copies into the recipient's inbox, and runs each registered delivery handler. Every state transition appends to `_dispatch.log` (NDJSON). Malformed envelopes land in `_rejected/` with a `.err` sidecar describing what failed. See [Internals: full send sequence](#internals-full-send-sequence) at the bottom for the complete step-by-step.
+Under the hood the dispatcher validates the envelope against schema v1, resolves the recipient by the address → role → title precedence (see [Addressing](#addressing-stable-handles-and-the-title-fallback)), copies into the recipient's inbox, and runs each registered delivery handler. Every state transition appends to `_dispatch.log` (NDJSON). Malformed envelopes land in `_rejected/` with a `.err` sidecar describing what failed. See [Internals: full send sequence](#internals-full-send-sequence) at the bottom for the complete step-by-step.
 
 ### Two equivalent send paths
 
@@ -100,7 +134,7 @@ Send flags accepted by the CLI:
 
 | Flag                  | Purpose                                                            |
 |-----------------------|--------------------------------------------------------------------|
-| `--to <surface>`      | Recipient surface name, in any workspace. Required in Stage 2 (topic-only rejected). |
+| `--to <surface>`      | Recipient handle, in any workspace. Bare name resolves address → role → title; `surface:<addr>` / `role:<name>` target one key. Required in Stage 2 (topic-only rejected). |
 | `--to-workspace <ref>`| Disambiguate a name that exists in more than one workspace. A workspace UUID or `workspace:*` ref. |
 | `--topic <token>`     | Dotted topic. Stored on the envelope; not used for routing yet.    |
 | `--body <text>`       | Inline body, ≤ 4096 bytes UTF-8.                                   |

@@ -4710,11 +4710,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     guard let name = metadata[MetadataKey.title] as? String, !name.isEmpty else {
                         continue
                     }
+                    // Stable identities (optional): the same `mailbox.*` keys
+                    // the per-workspace resolver reads, so global routing and
+                    // local delivery resolve a `to` identically.
+                    let address = metadata["mailbox.address"] as? String
+                    let role = metadata["mailbox.role"] as? String
                     result.append(
                         MailboxGlobalResolver.Surface(
                             workspaceId: workspace.id,
                             surfaceId: surfaceId,
-                            name: name
+                            name: name,
+                            address: address,
+                            role: role
                         )
                     )
                 }

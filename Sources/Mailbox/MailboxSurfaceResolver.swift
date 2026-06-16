@@ -36,6 +36,11 @@ struct MailboxSurfaceResolver {
     /// Returns all live surfaces whose `title` metadata equals `name`. In
     /// practice 0 or 1; we tolerate duplicates by returning a list and leave
     /// duplicate-warning logging to the dispatcher (design doc §2).
+    ///
+    /// Test-only helper: recipient routing resolves through
+    /// `MailboxMatcher.select` (see `MailboxDispatcher.resolveRecipients`),
+    /// which honors address > role > title precedence. This title-only lookup
+    /// has no production caller; it survives as a focused unit-test fixture.
     func surfaceIds(forName name: String) -> [UUID] {
         liveSurfaces().filter { surfaceId in
             surfaceName(for: surfaceId) == name
@@ -103,6 +108,26 @@ struct MailboxSurfaceResolver {
             mailboxKeys["mailbox.retention_days"].flatMap { Int($0) }
         }
 
+        /// `mailbox.address` — the stable, rename-proof handle. Empty → nil.
+        var address: String? {
+            MailboxIdentity.nonEmpty(mailboxKeys["mailbox.address"])
+        }
+
+        /// `mailbox.role` — opt-in role handle. Empty → nil. Deliberately does
+        /// not fall back to the canonical `role` key: role addressing is
+        /// opt-in via `mailbox.role` so bare-name resolution stays identical
+        /// for the many surfaces that set `title` + canonical `role` but no
+        /// `mailbox.*` identity.
+        var role: String? {
+            MailboxIdentity.nonEmpty(mailboxKeys["mailbox.role"])
+        }
+
+        /// The address-precedence view (`title`/`address`/`role`) used by
+        /// `MailboxMatcher`.
+        var identity: MailboxIdentity {
+            MailboxIdentity(title: name, address: address, role: role)
+        }
+
         private func splitCommaSeparated(_ value: String?) -> [String] {
             guard let value, !value.isEmpty else { return [] }
             return value
@@ -144,11 +169,35 @@ struct MailboxSurfaceResolver {
 /// same-workspace duplicate names already behave.
 struct MailboxGlobalResolver {
 
-    /// One live, addressable surface anywhere in the instance.
+    /// One live, addressable surface anywhere in the instance. `name` is the
+    /// `title` (the display name and inbox key); `address`/`role` are the
+    /// optional stable identities a surface declares via `mailbox.address` /
+    /// `mailbox.role`. Defaulted to nil so existing call sites that only know
+    /// the title keep compiling.
     struct Surface: Equatable {
         let workspaceId: UUID
         let surfaceId: UUID
         let name: String
+        let address: String?
+        let role: String?
+
+        init(
+            workspaceId: UUID,
+            surfaceId: UUID,
+            name: String,
+            address: String? = nil,
+            role: String? = nil
+        ) {
+            self.workspaceId = workspaceId
+            self.surfaceId = surfaceId
+            self.name = name
+            self.address = MailboxIdentity.nonEmpty(address)
+            self.role = MailboxIdentity.nonEmpty(role)
+        }
+
+        var identity: MailboxIdentity {
+            MailboxIdentity(title: name, address: address, role: role)
+        }
     }
 
     enum Resolution: Equatable {
@@ -166,12 +215,21 @@ struct MailboxGlobalResolver {
     /// windows' workspaces.
     let surfaces: () -> [Surface]
 
+    /// `name` is the raw `to` string. It may be a bare name (precedence
+    /// address > role > title) or a qualifier form (`surface:<addr>` /
+    /// `role:<name>`) — see `MailboxAddress`. Workspace scoping is orthogonal:
+    /// the address selects *which surfaces*, the qualifier/local-first logic
+    /// selects *which workspace*.
     func resolve(
         name: String,
         senderWorkspaceId: UUID,
         workspaceQualifier: UUID? = nil
     ) -> Resolution {
-        let matches = surfaces().filter { $0.name == name }
+        let matches = MailboxMatcher.select(
+            MailboxAddress.parse(name),
+            from: surfaces(),
+            identity: { $0.identity }
+        )
 
         if let qualifier = workspaceQualifier {
             let scoped = matches.filter { $0.workspaceId == qualifier }

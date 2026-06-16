@@ -18,6 +18,9 @@ struct MailboxEnvelope: Equatable {
     static let schemaVersion = 1
     static let maxBodyBytes = 4096
     static let maxStringFieldBytes = 256
+    /// `content_type` has a tighter cap than the generic string fields
+    /// (`maxLength: 128` in `spec/mailbox-envelope.v1.schema.json`).
+    static let maxContentTypeBytes = 128
     static let ulidPattern = #"^[0-9A-HJKMNP-TV-Z]{26}$"#
     static let topicPattern = #"^[A-Za-z0-9_][A-Za-z0-9_.\-]*$"#
     static let timestampPattern = #"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$"#
@@ -86,6 +89,7 @@ struct MailboxEnvelope: Equatable {
         case wrongVersionValue(Int)
         case emptyString(String)
         case stringTooLong(field: String, bytes: Int)
+        case contentTypeTooLong(bytes: Int)
         case invalidULID(field: String, value: String)
         case invalidTimestamp(String)
         case invalidTopic(String)
@@ -112,6 +116,8 @@ struct MailboxEnvelope: Equatable {
                 return "field '\(f)' must be a non-empty string"
             case .stringTooLong(let f, let bytes):
                 return "field '\(f)' exceeds \(maxStringFieldBytes)-byte cap (was \(bytes))"
+            case .contentTypeTooLong(let bytes):
+                return "field 'content_type' exceeds \(maxContentTypeBytes)-byte cap (was \(bytes))"
             case .invalidULID(let f, let v):
                 return "field '\(f)' is not a Crockford base32 ULID: \(v)"
             case .invalidTimestamp(let v):
@@ -230,7 +236,11 @@ struct MailboxEnvelope: Equatable {
         }
 
         if let raw = dict["content_type"] {
-            _ = try requireNonEmptyString(raw, field: "content_type")
+            let contentType = try requireNonEmptyString(raw, field: "content_type")
+            let bytes = contentType.utf8.count
+            if bytes > maxContentTypeBytes {
+                throw Error.contentTypeTooLong(bytes: bytes)
+            }
         }
 
         if let raw = dict["ext"] {

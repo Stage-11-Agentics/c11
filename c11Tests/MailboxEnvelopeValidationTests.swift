@@ -90,6 +90,27 @@ final class MailboxEnvelopeValidationTests: XCTestCase {
         XCTAssertEqual(envelope.ext?["trace_id"] as? String, "abc-123")
     }
 
+    // MARK: - content_type byte cap (schema maxLength: 128)
+
+    func testContentTypeAt128BytesAccepted() throws {
+        let okType = String(repeating: "a", count: 128)
+        let envelope = try MailboxEnvelope.build(
+            from: "builder", to: "watcher", body: "hi", contentType: okType
+        )
+        XCTAssertEqual(envelope.contentType, okType)
+    }
+
+    func testContentTypeOver128BytesRejected() throws {
+        let longType = String(repeating: "a", count: 129)
+        XCTAssertThrowsError(
+            try MailboxEnvelope.build(
+                from: "builder", to: "watcher", body: "hi", contentType: longType
+            )
+        ) { error in
+            XCTAssertEqual(error as? MailboxEnvelope.Error, .contentTypeTooLong(bytes: 129))
+        }
+    }
+
     // MARK: - Invalid fixtures (one per documented rule)
 
     func testInvalidMissingVersion() throws {

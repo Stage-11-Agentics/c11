@@ -542,7 +542,7 @@ Writing the value as JSON (e.g. `--type json --value '["stdin"]'`) is the canoni
 ### Debugging
 
 ```bash
-c11 mailbox trace 01K3A2B7X8PQRTVWYZ0123456J   # pretty-print dispatch events for one id
+c11 mailbox trace 01K3A2B7X8PQRTVWYZ0123456J   # dispatch events for one id, across all workspaces (a cross-workspace send logs in the recipient's workspace)
 c11 mailbox tail                                # follow _dispatch.log as it grows
 c11 mailbox outbox-dir                          # absolute path of your outbox
 c11 mailbox inbox-dir                           # absolute path of your inbox

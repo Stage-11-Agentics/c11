@@ -16807,12 +16807,13 @@ extension CMUXCLI {
         // exist, instead of dropping the message into an outbox where no
         // dispatcher will ever resolve it. `to` is guaranteed non-nil here
         // (topic-only sends were rejected above).
-        let targetWorkspaceId = try resolveMailboxTargetWorkspace(
+        let resolution = try resolveMailboxTargetWorkspace(
             client: client,
             to: to ?? "",
             senderWorkspaceId: workspaceId,
             qualifier: toWorkspace
         )
+        let targetWorkspaceId = resolution.workspaceId
 
         let stateURL = try MailboxLayout.defaultStateURL()
         let outboxURL = MailboxLayout.outboxURL(state: stateURL, workspaceId: targetWorkspaceId)
@@ -16826,6 +16827,26 @@ extension CMUXCLI {
         )
         let data = try envelope.encode()
         try MailboxIO.atomicWrite(data: data, to: targetURL)
+
+        // The recipient could not be resolved across workspaces (c11
+        // unreachable). The envelope was written best-effort to the sender's
+        // own workspace — a same-workspace recipient still gets it, otherwise
+        // the dispatcher rejects it. Either way the operator must know the send
+        // was unverified, so fail loud and non-zero instead of printing the id
+        // as if it succeeded.
+        if !resolution.verified {
+            var message = String(
+                localized: "mailbox.cli.error.unverified-send",
+                defaultValue: "c11 unreachable: wrote envelope %@ to your own workspace but could not verify recipient \"%@\" across workspaces. If the recipient is not in your workspace the message will be rejected — run `c11 mailbox trace %@` to confirm delivery."
+            )
+            // Fill the three %@ placeholders left-to-right: id, recipient, id.
+            for value in [envelope.id, to ?? "", envelope.id] {
+                if let range = message.range(of: "%@") {
+                    message.replaceSubrange(range, with: value)
+                }
+            }
+            throw CLIError(message: message)
+        }
 
         if jsonOutput {
             print(jsonString([
@@ -16853,7 +16874,7 @@ extension CMUXCLI {
         to: String,
         senderWorkspaceId: UUID,
         qualifier: String?
-    ) throws -> UUID {
+    ) throws -> (workspaceId: UUID, verified: Bool) {
         var params: [String: Any] = [
             "to": to,
             "sender_workspace_id": senderWorkspaceId.uuidString
@@ -16866,9 +16887,12 @@ extension CMUXCLI {
         do {
             payload = try client.sendV2(method: "mailbox.resolve", params: params)
         } catch {
-            // Socket unreachable (or an older app without mailbox.resolve):
-            // preserve same-workspace delivery rather than failing the send.
-            return senderWorkspaceId
+            // Socket unreachable (or an older app without mailbox.resolve): we
+            // cannot resolve across workspaces. Fall back to the sender's own
+            // workspace so a same-workspace recipient still gets the message,
+            // but flag it `verified: false` so the caller warns loudly and
+            // exits non-zero — an unverified send must not look like success.
+            return (senderWorkspaceId, false)
         }
 
         switch payload["resolution"] as? String {
@@ -16879,7 +16903,7 @@ extension CMUXCLI {
             else {
                 throw CLIError(message: "mailbox.resolve returned an invalid target workspace")
             }
-            return id
+            return (id, true)
         case "ambiguous":
             let candidates = (payload["candidates"] as? [[String: Any]]) ?? []
             throw CLIError(message: mailboxAmbiguityMessage(to: to, candidates: candidates))
@@ -16973,21 +16997,43 @@ extension CMUXCLI {
                 )
             )
         }
-        let (workspaceId, _) = try resolveMailboxCaller(
-            client: client,
-            fromOverride: nil,
-            surfaceOverride: nil
-        )
+        // Trace globally: a cross-workspace send is dispatched in the
+        // *recipient's* workspace, so its delivery/rejection events land in
+        // that workspace's `_dispatch.log`, not the sender's. Scanning every
+        // workspace's log (the envelope id is an instance-unique ULID) makes a
+        // message followable wherever it routed. No socket call — trace works
+        // even when the socket is unreachable, which is exactly when you need
+        // to diagnose a stuck send.
         let stateURL = try MailboxLayout.defaultStateURL()
-        let logURL = MailboxLayout.dispatchLogURL(state: stateURL, workspaceId: workspaceId)
-        guard let text = try? String(contentsOf: logURL, encoding: .utf8) else {
-            return
-        }
+        let workspacesRoot = stateURL.appendingPathComponent(
+            MailboxLayout.workspacesDirectoryName,
+            isDirectory: true
+        )
         let needle = "\"\(id)\""
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-            if line.contains(needle) {
-                print(String(line))
+        var matches: [(ts: String, line: String)] = []
+        let workspaceDirs = (try? FileManager.default.contentsOfDirectory(
+            at: workspacesRoot,
+            includingPropertiesForKeys: nil
+        )) ?? []
+        for workspaceDir in workspaceDirs {
+            guard let workspaceId = UUID(uuidString: workspaceDir.lastPathComponent) else {
+                continue
             }
+            let logURL = MailboxLayout.dispatchLogURL(state: stateURL, workspaceId: workspaceId)
+            guard let text = try? String(contentsOf: logURL, encoding: .utf8) else { continue }
+            for line in text.split(separator: "\n", omittingEmptySubsequences: true)
+            where line.contains(needle) {
+                let lineStr = String(line)
+                let ts = (try? JSONSerialization.jsonObject(with: Data(lineStr.utf8)))
+                    .flatMap { ($0 as? [String: Any])?["ts"] as? String } ?? ""
+                matches.append((ts, lineStr))
+            }
+        }
+        // ISO-8601 UTC timestamps sort lexically into chronological order, so a
+        // string sort merges events from multiple workspace logs correctly.
+        matches.sort { $0.ts < $1.ts }
+        for match in matches {
+            print(match.line)
         }
     }
 

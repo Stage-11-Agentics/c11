@@ -392,7 +392,7 @@ c11 mailbox inbox-dir --surface watcher        # someone else's inbox
 c11 mailbox surface-name                       # caller's resolved title
 c11 mailbox new-id                             # fresh ULID for raw-file writers
 c11 mailbox tail                               # follow _dispatch.log
-c11 mailbox trace <id>                         # all log lines mentioning <id>
+c11 mailbox trace <id>                         # all log lines for <id>, across every workspace
 ls "$(c11 mailbox outbox-dir)/../_rejected"    # what bounced and why
 ```
 

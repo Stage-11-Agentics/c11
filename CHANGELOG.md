@@ -6,6 +6,31 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.53.0] - 2026-06-16
+
+Feature release. Headline: **the inter-agent mailbox grows up — it routes across every workspace and stops dropping messages silently.** `c11 mailbox send --to <name>` now resolves the recipient across the whole c11 instance (local-first; ambiguous names disambiguate with `--to-workspace`), an unresolved recipient is rejected with a non-zero exit instead of vanishing, surfaces gain stable `mailbox.address` / `mailbox.role` addressing decoupled from their mutable tab title, and stdin delivery is prompt-gated — buffered while a recipient is busy and flushed when it returns to its shell prompt — so a pushed message can never corrupt a running command.
+
+### Added
+
+- **Cross-workspace mailbox routing.** `c11 mailbox send --to <name>` resolves the recipient across every workspace in the instance, local-first: a match in your own workspace wins, otherwise the one other workspace holding that name receives it. If the name lives in more than one other workspace the send fails *ambiguous* — disambiguate with `--to-workspace <ref>`. ([#251](https://github.com/Stage-11-Agentics/c11/pull/251))
+- **Stable mailbox addressing (`mailbox.address` / `mailbox.role`).** Addressing is decoupled from the surface's mutable title, so renaming a tab no longer changes who a message routes to. ([#253](https://github.com/Stage-11-Agentics/c11/pull/253))
+
+### Changed
+
+- **The mailbox no longer drops messages silently.** A recipient that matches no live surface anywhere is rejected with a non-zero `unresolved` exit instead of vanishing; the cross-workspace seam emits a loud socket fallback and a global trace (`c11 mailbox trace <id>` now finds a message wherever it was dispatched), and a `content_type` cap bounds envelope bodies. ([#251](https://github.com/Stage-11-Agentics/c11/pull/251), [#252](https://github.com/Stage-11-Agentics/c11/pull/252))
+
+### Fixed
+
+- **Prompt-gated stdin delivery (C11-144).** c11 no longer pastes a framed `<c11-msg>` block into a PTY that has a foreground command running, where it would corrupt a build, REPL, or another agent's raw-mode stdin. The push is buffered while the recipient is busy and flushed when the surface returns to its shell prompt; buffered messages are still delivered and logged (`buffered` → `flushed`), never dropped. ([#254](https://github.com/Stage-11-Agentics/c11/pull/254))
+
+### Thanks to 1 contributor!
+
+- [@BenevolentFutures](https://github.com/BenevolentFutures)
+
+### Built and shipped by
+
+Stage 11 Agentics. Operator:agent, fused.
+
 ## [0.52.0] - 2026-06-14
 
 Feature release. Headline: **two new coding agents and a hang catcher** — GitHub Copilot CLI and Grok Build join as first-class c11 agents with full conversation-store resume wiring, and a real-time main-thread hang monitor now suspends the stalled thread, captures its stack off-thread, and reports to a local log plus Sentry/PostHog (on by default in Release). Alongside it: a batch of resume/reliability fixes (crash-resume, browser-freeze, inspector divider hit-test), a markdown-pane live-reload and font-zoom pass, and a consistent white-outline selection signal in the sidebar.

@@ -246,7 +246,7 @@ The Orchestrator's tick body, run on every wake-up under `/loop`:
 1. **Refresh** — re-read run-state.md, re-query Lattice for ticket statuses, re-walk `c11 tree` for surface state. Refresh agents.md.
 2. **Surface escalations** — any ticket in `needs_human` or `blocked` gets the escalation banner (see below) at the top of this tick's operator-facing response. **Re-surface every tick while in needs_human/blocked**, not just on transition.
 3. **Press-ahead audit** — for every ticket that hit `review` or `pr_open` since the last tick, audit downstream tickets for new claimability. If a downstream ticket can now be planned/implemented against the in-flight feature branch, spawn its delegator (subject to the N cap). See `## Press-ahead discipline` and `### Branch off the in-review parent, NOT main` below.
-4. **Auto-merge (when enabled in run-state config)** — for every ticket in `pr_open` since the last tick, merge its PR (squash via REST) and `lattice complete` the ticket. See `## Auto-merge mode` below. **Default OFF; opt-in via Phase 2 `PR merge policy` config or a project CLAUDE.md auto-merge declaration.** When OFF, leave PRs at `pr_open` and surface the `✅ READY FOR REVIEW` banner to the operator.
+4. **Auto-merge (when enabled in run-state config)** — for every ticket in `pr_open` since the last tick, **gate on verified state** (non-empty PR + branch actually pushed + merge returns HTTP 200/`merged:true` — see `## HARD RULE — verify actual git/PR state, never reported state`), then merge its PR (squash via REST) and `lattice complete` the ticket. See `## Auto-merge mode` below. **Default OFF; opt-in via Phase 2 `PR merge policy` config or a project CLAUDE.md auto-merge declaration.** When OFF, leave PRs at `pr_open` and surface the `✅ READY FOR REVIEW` banner to the operator.
 5. **Auto-close finished surfaces** — for every ticket that transitioned to `done` since the last tick, run `c11 close-surface --surface <delegator_surface>` plus any sub-agent surfaces (plan/impl/fix/review) the delegator spawned. Mark the agents.md row as "closed at tick K". **Default ON; the operator can opt out at Phase 2 config.** Frees PTY slots, keeps per-pane counts under the wedge threshold. Tradeoff: lose live retrospective inspection — c11 session-persistence + lattice transcripts + commit history still cover the audit need.
 6. **Spawn next available** — if delegator slots are free and unblocked tickets exist, spawn a delegator (see Spawning below). **Route to the lightest-loaded delegate pane** (soft cap 15 surfaces per pane; small overage OK for a delegator's own sub-agents).
 7. **Schedule the next wake** — call `ScheduleWakeup` with a delay matched to current state (see `## Cadence` below). **One wake at a time** — don't double-schedule.
@@ -406,7 +406,7 @@ c11 set-description --surface "\$MY_SURF" "Fast-track delegator for <TICKET-ID>.
 2. Impl:  lattice status <TICKET-ID> in_progress --actor agent:<id>-impl ; git fetch && (rebase if needed); edits + tests; commit
 3. Self-review:  lattice status <TICKET-ID> review --actor agent:<id>-reviewer ; lattice attach <TICKET-ID> --type note --role review --inline "<markdown verdict>" --actor agent:<id>-reviewer
 4. Validate: lattice status <TICKET-ID> in_validation --actor agent:<id>-impl ; exercise the change e2e (browser / simulator / curl — whatever fits the ticket) ; lattice attach <TICKET-ID> --type note --role validation --inline "<evidence, or one-line N/A justification>" --actor agent:<id>-impl   # pr_open is gated on this artifact
-5. PR: git push -u origin <branch> ; create PR via Forgejo REST or gh ; lattice attach <TICKET-ID> <pr_url> --type reference --title "PR #N" --actor agent:<id>-impl ; lattice status <TICKET-ID> pr_open --actor agent:<id>-impl
+5. PR: git push -u origin <branch> ; **VERIFY THE PUSH LANDED** — `git fetch origin && test "$(git rev-parse HEAD)" = "$(git rev-parse origin/<branch>)"`, re-push until equal (a silently-failed push, or a commit that leaked onto the root checkout's `main`, is the #1 false-completion mode — see the "verify actual git/PR state" HARD RULE) ; create PR via Forgejo REST or gh ; **confirm PR `head.sha != base.sha`** (non-empty) ; lattice attach <TICKET-ID> <pr_url> --type reference --title "PR #N" --actor agent:<id>-impl ; lattice status <TICKET-ID> pr_open --actor agent:<id>-impl
 
 Stop after pr_open. Orchestrator merges + completes per auto-merge policy.
 EOF
@@ -450,7 +450,7 @@ c11 set-description --surface "\$MY_SURF" "Inline-full delegator for <TICKET-ID>
 4. Code-Review: lattice status <TICKET-ID> review --actor agent:<id>-reviewer ; **MUST wrap with `timeout 600`** — `(cd <WORKTREE> && timeout 600 bash -c "LATTICE_SPAWN_BACKEND=headless lattice code-review <TICKET-ID> --mode single --base origin/main --actor agent:<id>-reviewer")`. **HARD RULE — see § "HARD RULE: `lattice code-review` 600-second timeout → own-reviewer fallback".** On RC=124 (timeout) OR empty artifact OR vacuous review: kill the subprocess and pivot to the own-reviewer fallback immediately, in this same Claude session — do NOT wait for orchestrator nudge. Restore tab title after.
 5. Fix (if review surfaces Critical/Major): lattice status <TICKET-ID> in_progress --actor agent:<id>-impl ; edits + tests + commit ; lattice status <TICKET-ID> review --actor agent:<id>-reviewer ; re-run code-review or own-reviewer.
 6. Validate: lattice status <TICKET-ID> in_validation --actor agent:<id>-impl ; exercise the change e2e (browser / simulator / curl) ; lattice attach <TICKET-ID> --type note --role validation --inline "<evidence, or one-line N/A justification>" --actor agent:<id>-impl   # pr_open is gated on this artifact ; validation failure routes back to in_progress
-7. PR: git push ; create PR ; lattice attach <TICKET-ID> <pr_url> --type reference ; lattice status <TICKET-ID> pr_open --actor agent:<id>-impl
+7. PR: git push ; **VERIFY THE PUSH LANDED** — `git fetch origin && test "$(git rev-parse HEAD)" = "$(git rev-parse origin/<branch>)"`, re-push until equal (see "verify actual git/PR state" HARD RULE) ; create PR ; **confirm PR `head.sha != base.sha`** (non-empty) ; lattice attach <TICKET-ID> <pr_url> --type reference ; lattice status <TICKET-ID> pr_open --actor agent:<id>-impl
 
 Stop after pr_open. Orchestrator merges + completes. Distinct actor IDs per phase keep the audit trail clean.
 
@@ -877,6 +877,18 @@ The dependent delegator's PR body **must** note the branch anchor + that the PR 
 
 This pattern was the press-ahead reward on the EC v1.2.1 run: all three Wave 2 delegators branched off `<remote>/<parent-branch>`, got the foundation utilities import-stable for free, and the Result Validator confirmed cross-row C2 (shared-utilities import-stable) trivially. See `code/ExpandedCinema/LESSONS.md` (the canonical closeout-audit example) for the full story.
 
+## HARD RULE — verify actual git/PR state, never reported state
+
+The single highest-leverage discipline in an auto-merge run. A delegator's completion comment ("committed, pushed, PR open") is a *claim*, not a fact — and the board can show a ticket "done" while the work never reached the remote. Every irreversible orchestrator action (merge, `lattice complete`, worktree delete, push to main) gates on the **observed** git/PR state, fetched fresh, not on what an agent reported. Three concrete checks, each guarding a real silent-failure mode:
+
+1. **Before merge / `lattice complete` / worktree-delete — confirm the PR is real.** `git ls-remote <remote> refs/heads/<branch>` is non-empty (branch actually pushed) AND PR `head.sha != base.sha` (non-empty PR). An empty PR (head==base) is the dominant cause of a Forgejo `405 "Please try again later"` on merge — that is the empty-PR symptom, not a transient queue, and `force_merge` won't fix it. See the auto-merge per-PR shape's step 0.
+
+2. **Capture the merge HTTP code; complete only on a confirmed `200` + `merged:true`.** Never `curl -sf` a merge (the `-f` flag swallows the error body you need); a failed merge with an empty body is exactly how a "successful" merge gets mistaken for done and the ticket wrongly completed. Re-GET the PR and assert `.merged == true` before `lattice complete`.
+
+3. **Before any push to a shared branch — assert the push set is exactly intended.** `git log <remote>/main..HEAD` must contain only the commits you mean to land; `git rev-parse --show-toplevel` must equal the expected checkout. A stray commit on a behind-by-N local `main` rides along into the push otherwise.
+
+**The cwd-leak footgun behind #3 (delegators):** never wrap `git commit` / `git push` in — or run them after — a `cd <root-repo>`. LAT-219 auto-routes `lattice` from a linked worktree, so the `(cd $REPO_ROOT && lattice …)` wrapper is unnecessary; worse, if a later `git commit` inherits that root cwd, the commit lands on the **root checkout's** branch (usually `main`) instead of the worktree's feature branch — the feature branch then looks empty (tripping #1) and the work hides on the wrong branch. Keep all git operations strictly worktree-relative; let `lattice` route itself. Bake into delegator prompts a post-commit assertion: `git rev-parse --show-toplevel` equals the worktree path, and `git log <remote>/main..HEAD` shows the commit, before claiming the push landed.
+
 ## Auto-merge mode (Phase-2 opt-in)
 
 **Default off.** When the Phase-2 `PR merge policy` config is *Auto-merge* — either by operator choice at config-time or by the project's `CLAUDE.md` declaring `## PR merge policy — auto-merge through to done` — the Orchestrator squash-merges every PR at `pr_open` and runs `lattice complete` without waiting for human review. Use this for runs where the operator trusts the pipeline end-to-end (delegator code-review + auto-code-review-on-transition + Master Validator + Result Validator) and prefers `done` over a queue of open PRs. The tradeoff is no human gate before main moves; any issue with a merged PR gets fixed in a follow-up commit or ticket. Auto-merge is **not** the c11-wedge degraded mode below — that's a different situation (Captain dispatch is blocked); this is a steady-state default.
@@ -889,18 +901,34 @@ TICKET=HOLO-NN
 PR=NN
 PAT=$(security find-internet-password -s forgejo.stage11.ai -w)  # or platform-equivalent
 
-# 1. Check mergeability (rebase if needed). If the PR has no parent press-ahead anchor, a fast-forward merge usually applies cleanly.
-curl -sf -H "Authorization: token $PAT" "https://forgejo.stage11.ai/api/v1/repos/<org>/<repo>/pulls/$PR" | jq '.mergeable, .has_merge_conflicts'
+# 0. GATE on VERIFIED state — never the delegator's reported state (see "HARD RULE — verify
+#    actual git/PR state, never reported state" above). A delegator that reports "pushed + PR open"
+#    can be wrong two ways that BOTH look done on the board: an unpushed branch, or an EMPTY PR
+#    (head==base). Confirm all three before touching the merge:
+BASE=$(git ls-remote "$REMOTE" refs/heads/main      | awk '{print $1}')
+HEAD=$(git ls-remote "$REMOTE" refs/heads/<pr-branch> | awk '{print $1}')
+test -n "$HEAD"          || { echo "ABORT $TICKET: branch not on remote — delegator never pushed"; exit 1; }
+test "$HEAD" != "$BASE"  || { echo "ABORT $TICKET: empty PR (head==base) — nothing to merge"; exit 1; }
+#    An empty PR is the #1 cause of a Forgejo 405 "Please try again later" on merge — that is the
+#    symptom of an empty PR, NOT a transient queue; do not retry/force-merge an empty PR.
+
+# 1. Check mergeability. Capture the body — do NOT use `curl -sf`; the -f flag silently swallows
+#    the error you most need to see (this is how a failed merge gets mistaken for success).
+curl -s -H "Authorization: token $PAT" "https://forgejo.stage11.ai/api/v1/repos/<org>/<repo>/pulls/$PR" | jq '.mergeable, .has_merge_conflicts'
 
 # 2. If mergeable=false or there's a parent dependency: rebase the worktree onto post-parent origin/main, push, retry. See "Press-ahead merge ordering" below.
-#    Otherwise, skip straight to step 3.
 
-# 3. Squash-merge.
-curl -sf -X POST -H "Authorization: token $PAT" -H "Content-Type: application/json" \
+# 3. Squash-merge — CAPTURE THE HTTP CODE. The `lattice complete` in step 4 is gated on a real 200.
+HTTP=$(curl -s -o /tmp/merge-$PR.out -w "%{http_code}" -X POST -H "Authorization: token $PAT" \
+  -H "Content-Type: application/json" \
   "https://forgejo.stage11.ai/api/v1/repos/<org>/<repo>/pulls/$PR/merge" \
-  -d '{"Do":"squash","delete_branch_after_merge":false}'
+  -d '{"Do":"squash","delete_branch_after_merge":true}')
+test "$HTTP" = "200" || { echo "MERGE FAILED $TICKET (HTTP $HTTP): $(cat /tmp/merge-$PR.out)"; exit 1; }
+# Confirm it actually landed before completing the ticket:
+curl -s -H "Authorization: token $PAT" "https://forgejo.stage11.ai/api/v1/repos/<org>/<repo>/pulls/$PR" | jq -e '.merged == true' >/dev/null \
+  || { echo "ABORT $TICKET: merge POST returned 200 but PR not marked merged"; exit 1; }
 
-# 4. Lattice complete.
+# 4. Lattice complete — ONLY after a confirmed 200 + merged:true. Never complete a ticket whose PR didn't land.
 lattice complete $TICKET --review "Merged via Orchestrator auto-merge (PR #$PR, squash). <one-line summary>. Per project auto-merge policy." --actor agent:orchestrator-<run>
 
 # 5. Auto-close the delegator's surface (step 5 of the tick body does this; or do it inline here).

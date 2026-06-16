@@ -54,6 +54,10 @@ artifacts/openai-cua-runs/
 .claude/scheduled_tasks.lock
 .claude/worktrees/
 
+# lattice-orchestrator delegator worktrees (full checkouts + build artifacts;
+# never commit these — they carry their own .lattice state and DerivedData)
+c11-worktrees/
+
 # Etch — AI agent session capture (local WIP buffers; records live in git refs).
 # On this PUBLIC repo capture is LOCAL-ONLY: no refspec, and settings.json
 # (hostname salt) stays untracked. The carve-out keeps the block identical to

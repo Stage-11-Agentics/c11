@@ -1,7 +1,7 @@
 {
   "assigned_to": null,
   "branch_links": [],
-  "comment_count": 1,
+  "comment_count": 2,
   "complexity": null,
   "created_at": "2026-06-16T16:51:49Z",
   "created_by": "agent:claude-cli",
@@ -10,7 +10,7 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KV8NHAGGTH8RD0Y2HPSN8MES",
-  "last_event_id": "ev_01KV8NM0RK1Z9RZ9A4KNJB47C9",
+  "last_event_id": "ev_01KV8XFC9CDPG4HQAD192R0HXK",
   "last_status_changed_at": "2026-06-16T16:51:49Z",
   "linked_files": [],
   "priority": "high",
@@ -22,6 +22,6 @@
   "tags": null,
   "title": "Lattice board: worktree/divergent-state sync causes short-ID collisions \u2014 harden + fix LATTICE_ROOT doc",
   "type": "bug",
-  "updated_at": "2026-06-16T16:53:17Z",
+  "updated_at": "2026-06-16T19:10:34Z",
   "urgency": null
 }

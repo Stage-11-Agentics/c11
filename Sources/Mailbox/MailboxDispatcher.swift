@@ -147,6 +147,31 @@ final class MailboxDispatcher {
         gcTimer = nil
     }
 
+    /// C11-144: append a `handler` event for a buffered-stdin lifecycle step
+    /// (`flushed`/`expired`/`evicted`) that happens *outside* the normal
+    /// handler-invocation path — i.e. when the recipient shell transitions back
+    /// to a prompt and `Workspace` flushes its buffer, or when an entry is
+    /// dropped. The `buffered` event itself is logged inline by the dispatcher
+    /// when the handler returns `.buffered`. Routed through the log's own queue;
+    /// safe to call from the main actor (the log append is async).
+    func logStdinLifecycle(
+        id: String,
+        recipient: String,
+        outcome: MailboxDispatchLog.HandlerOutcome,
+        bytes: Int? = nil
+    ) {
+        log.append(
+            .handler(
+                id: id,
+                recipient: recipient,
+                handler: "stdin",
+                outcome: outcome,
+                bytes: bytes,
+                elapsedMs: nil
+            )
+        )
+    }
+
     // MARK: - Stale-tmp GC
 
     /// Deletes dot-prefixed `.tmp` files in `_outbox/` older than

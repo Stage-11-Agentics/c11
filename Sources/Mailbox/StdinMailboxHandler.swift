@@ -43,10 +43,22 @@ final class StdinMailboxHandler: MailboxHandler {
     /// writer (see plan risks, Stage 2 P0 #5/#6). Until that lands,
     /// "real PTY write failure → dispatcher log" is not a Stage 2
     /// contract.
-    typealias Writer = @MainActor (_ surfaceId: UUID, _ bytes: String) -> WriteOutcome
+    /// The envelope `id` and resolved `recipientName` are threaded through so
+    /// the writer can buffer the block (C11-144) and the flush path can later
+    /// log a coherent `handler` event keyed on the same id/recipient.
+    typealias Writer = @MainActor (
+        _ surfaceId: UUID,
+        _ envelopeId: String,
+        _ recipientName: String,
+        _ bytes: String
+    ) -> WriteOutcome
 
     enum WriteOutcome: Equatable {
         case ok(bytes: Int)
+        /// C11-144: recipient shell was busy, so the block was queued to flush
+        /// at the next prompt instead of injected now. Still a delivery, logged
+        /// as `buffered` rather than dropped.
+        case buffered(bytes: Int)
         case surfaceNotFound
         case surfaceNotTerminal
     }
@@ -87,14 +99,17 @@ final class StdinMailboxHandler: MailboxHandler {
                 Int(Date().timeIntervalSince(start) * 1000)
             }
 
+            let envelopeId = envelope.id
             Task {
                 let outcome: WriteOutcome = await MainActor.run {
-                    writer(surfaceId, block)
+                    writer(surfaceId, envelopeId, surfaceName, block)
                 }
                 let result: MailboxDispatcher.HandlerInvocationResult
                 switch outcome {
                 case .ok(let bytes):
                     result = .init(outcome: .ok, bytes: bytes, elapsedMs: elapsedMs())
+                case .buffered(let bytes):
+                    result = .init(outcome: .buffered, bytes: bytes, elapsedMs: elapsedMs())
                 case .surfaceNotFound, .surfaceNotTerminal:
                     result = .init(outcome: .closed, bytes: 0, elapsedMs: elapsedMs())
                 }

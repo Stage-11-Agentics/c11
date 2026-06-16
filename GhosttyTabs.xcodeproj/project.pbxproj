@@ -282,6 +282,8 @@
 		D710EBF0A1B2C3D4E5F60718 /* MailboxDispatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = D710EBF1A1B2C3D4E5F60718 /* MailboxDispatcher.swift */; };
 		D7110BF0A1B2C3D4E5F60718 /* MailboxHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7110BF1A1B2C3D4E5F60718 /* MailboxHandler.swift */; };
 		D7111BF0A1B2C3D4E5F60718 /* StdinMailboxHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7111BF1A1B2C3D4E5F60718 /* StdinMailboxHandler.swift */; };
+		C11144A0B0C0D0E0F0010002 /* MailboxStdinBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11144A0B0C0D0E0F0010001 /* MailboxStdinBuffer.swift */; };
+		C11144A0B0C0D0E0F0010004 /* MailboxStdinBufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11144A0B0C0D0E0F0010003 /* MailboxStdinBufferTests.swift */; };
 		D7200BF0A1B2C3D4E5F60719 /* MailboxLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7100BF1A1B2C3D4E5F60718 /* MailboxLayout.swift */; };
 		D7202BF0A1B2C3D4E5F60719 /* MailboxIO.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7102BF1A1B2C3D4E5F60718 /* MailboxIO.swift */; };
 		D7203BF0A1B2C3D4E5F60719 /* MailboxULID.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7103BF1A1B2C3D4E5F60718 /* MailboxULID.swift */; };
@@ -659,6 +661,8 @@
 		D710FBF1A1B2C3D4E5F60718 /* MailboxDispatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailboxDispatcherTests.swift; sourceTree = "<group>"; };
 		D7110BF1A1B2C3D4E5F60718 /* MailboxHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/MailboxHandler.swift; sourceTree = "<group>"; };
 		D7111BF1A1B2C3D4E5F60718 /* StdinMailboxHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/StdinMailboxHandler.swift; sourceTree = "<group>"; };
+		C11144A0B0C0D0E0F0010001 /* MailboxStdinBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/MailboxStdinBuffer.swift; sourceTree = "<group>"; };
+		C11144A0B0C0D0E0F0010003 /* MailboxStdinBufferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailboxStdinBufferTests.swift; sourceTree = "<group>"; };
 		D7112BF1A1B2C3D4E5F60718 /* StdinHandlerFormattingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StdinHandlerFormattingTests.swift; sourceTree = "<group>"; };
 		D7113BF1A1B2C3D4E5F60718 /* MailboxDispatcherGCTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailboxDispatcherGCTests.swift; sourceTree = "<group>"; };
 		D7C11251A1B2C3D4E5F60718 /* SurfaceLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceLifecycle.swift; sourceTree = "<group>"; };
@@ -934,6 +938,7 @@
 				D710EBF1A1B2C3D4E5F60718 /* MailboxDispatcher.swift */,
 				D7110BF1A1B2C3D4E5F60718 /* MailboxHandler.swift */,
 				D7111BF1A1B2C3D4E5F60718 /* StdinMailboxHandler.swift */,
+				C11144A0B0C0D0E0F0010001 /* MailboxStdinBuffer.swift */,
 				A5008F12 /* SurfaceTitleBarView.swift */,
 				A5008F22 /* TitleFormatting.swift */,
 				A5001225 /* SocketControlSettings.swift */,
@@ -1145,6 +1150,7 @@
 				D710BBF1A1B2C3D4E5F60718 /* MailboxSurfaceResolverTests.swift */,
 				D710DBF1A1B2C3D4E5F60718 /* MailboxOutboxWatcherTests.swift */,
 				D710FBF1A1B2C3D4E5F60718 /* MailboxDispatcherTests.swift */,
+				C11144A0B0C0D0E0F0010003 /* MailboxStdinBufferTests.swift */,
 				D7112BF1A1B2C3D4E5F60718 /* StdinHandlerFormattingTests.swift */,
 				D7113BF1A1B2C3D4E5F60718 /* MailboxDispatcherGCTests.swift */,
 				3BF9D5EC78046EDA9B54AC68 /* DefaultAgentConfigTests.swift */,
@@ -1422,6 +1428,7 @@
 				69DA05D60B975E4924059EE8 /* LegacyPrefsMigrationGateTests.swift in Sources */,
 				9267DDD60A813FBEF3F59F99 /* MailboxDispatcherGCTests.swift in Sources */,
 				6F3E766AEE928B3A98ADC170 /* MailboxDispatcherTests.swift in Sources */,
+				C11144A0B0C0D0E0F0010004 /* MailboxStdinBufferTests.swift in Sources */,
 				DBF8F51099CEF804B8023B5D /* MailboxDispatchLogTests.swift in Sources */,
 				8C1F311B2760FEE15B8DFD2F /* MailboxEnvelopeValidationTests.swift in Sources */,
 				BAE105919F0262DEA7D0DE0C /* MailboxIOTests.swift in Sources */,
@@ -1574,6 +1581,7 @@
 				D710EBF0A1B2C3D4E5F60718 /* MailboxDispatcher.swift in Sources */,
 				D7110BF0A1B2C3D4E5F60718 /* MailboxHandler.swift in Sources */,
 				D7111BF0A1B2C3D4E5F60718 /* StdinMailboxHandler.swift in Sources */,
+				C11144A0B0C0D0E0F0010002 /* MailboxStdinBuffer.swift in Sources */,
 				A5008F11 /* SurfaceTitleBarView.swift in Sources */,
 				A5008F21 /* TitleFormatting.swift in Sources */,
 				A5001226 /* SocketControlSettings.swift in Sources */,

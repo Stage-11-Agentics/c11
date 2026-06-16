@@ -8764,7 +8764,11 @@ class TerminalController {
                         return .ok([
                             "resolution": "unresolved",
                             "candidates": self.mailboxCandidatePayload(
-                                surfaces.filter { $0.name == to }
+                                MailboxMatcher.select(
+                                    MailboxAddress.parse(to),
+                                    from: surfaces,
+                                    identity: { $0.identity }
+                                )
                             )
                         ])
                     }
@@ -8778,7 +8782,13 @@ class TerminalController {
                 workspaceQualifier: qualifierUUID
             )
 
-            let candidates = self.mailboxCandidatePayload(surfaces.filter { $0.name == to })
+            let candidates = self.mailboxCandidatePayload(
+                MailboxMatcher.select(
+                    MailboxAddress.parse(to),
+                    from: surfaces,
+                    identity: { $0.identity }
+                )
+            )
             switch resolution {
             case .unique(let workspaceId, let surfaceIds):
                 return .ok([

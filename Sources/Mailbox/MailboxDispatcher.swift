@@ -312,7 +312,14 @@ final class MailboxDispatcher {
     ) -> [MailboxSurfaceResolver.SurfaceMetadata] {
         guard let to = envelope.to else { return [] }
         let all = resolver.surfacesWithMailboxMetadata()
-        return all.filter { $0.name == to }
+        // Same matcher the cross-workspace resolver uses, so local delivery
+        // agrees with global routing on who `to` resolves to (precedence
+        // address > role > title; `surface:`/`role:` qualifiers honored).
+        return MailboxMatcher.select(
+            MailboxAddress.parse(to),
+            from: all,
+            identity: { $0.identity }
+        )
     }
 
     // MARK: - Inbox copy

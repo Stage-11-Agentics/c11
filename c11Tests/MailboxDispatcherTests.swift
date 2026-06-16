@@ -294,4 +294,46 @@ final class MailboxDispatcherTests: XCTestCase {
         // Exactly one full dispatch sequence.
         XCTAssertEqual(events, ["received", "resolved", "copied", "handler", "cleaned"])
     }
+
+    // MARK: - C11-144 stdin buffer/flush lifecycle logging
+
+    /// `logStdinLifecycle` is what makes the "never a silent drop" story
+    /// observable: blocks buffered while a recipient is busy, then flushed (or
+    /// expired/evicted) from the main-actor path, must still surface in
+    /// `c11 mailbox trace <id>` as `handler` events keyed on the same
+    /// id/recipient. This locks that contract without a live PTY.
+    func testLogStdinLifecycleEmitsTraceableHandlerEvents() throws {
+        let dispatcher = makeDispatcher(surfaces: [])
+
+        dispatcher.logStdinLifecycle(
+            id: "01K3A2B7X8PQRTVWYZ0123456J",
+            recipient: "watcher",
+            outcome: .flushed,
+            bytes: 42
+        )
+        dispatcher.logStdinLifecycle(
+            id: "01K3A2B7X8PQRTVWYZ0123456K",
+            recipient: "watcher",
+            outcome: .expired
+        )
+        dispatcher.logStdinLifecycle(
+            id: "01K3A2B7X8PQRTVWYZ0123456L",
+            recipient: "watcher",
+            outcome: .evicted
+        )
+        dispatcher.log.flush()
+
+        let handlerEvents = try readLog().filter { ($0["event"] as? String) == "handler" }
+        XCTAssertEqual(handlerEvents.count, 3)
+        for event in handlerEvents {
+            XCTAssertEqual(event["handler"] as? String, "stdin")
+            XCTAssertEqual(event["recipient"] as? String, "watcher")
+        }
+        XCTAssertEqual(handlerEvents.map { $0["outcome"] as? String }, ["flushed", "expired", "evicted"])
+        // Bytes are carried through when present, omitted otherwise.
+        let flushed = handlerEvents.first { ($0["outcome"] as? String) == "flushed" }
+        XCTAssertEqual(flushed?["bytes"] as? Int, 42)
+        let expired = handlerEvents.first { ($0["outcome"] as? String) == "expired" }
+        XCTAssertNil(expired?["bytes"])
+    }
 }

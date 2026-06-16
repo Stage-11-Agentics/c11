@@ -60,10 +60,13 @@ c11 mailbox send --to watcher --body "build green sha=abc"
 # In surface "watcher":
 c11 set-title "watcher"
 c11 set-metadata mailbox.delivery stdin   # opt in to PTY injection
-# The framed block lands in the PTY automatically the next time builder sends.
+# The framed block lands in the PTY the next time builder sends — at a shell
+# prompt it injects immediately; if watcher is mid-command it buffers and
+# flushes at the next prompt (see "Prompt-gated delivery" below).
+c11 mailbox recv --drain                   # robust floor: pull at turn boundaries
 ```
 
-If `mailbox.delivery` is not set on the recipient, the envelope still lands in `<surface-name>/` inbox; the recipient drains it explicitly with `c11 mailbox recv`.
+If `mailbox.delivery` is not set on the recipient, the envelope still lands in `<surface-name>/` inbox; the recipient drains it explicitly with `c11 mailbox recv`. Even with `stdin` set, draining at turn boundaries is the reliable delivery path — push is prompt-gated and best-effort.
 
 ---
 
@@ -204,14 +207,21 @@ sequenceDiagram
     alt mailbox.delivery contains "stdin"
         D->>SH: deliver(envelope, surfaceId)
         SH->>SH: format <c11-msg> block (XML-escape attrs + body)
-        SH->>PTY: TerminalPanel.sendText(block) on @MainActor
-        PTY-->>Agent: \n<c11-msg ...>body</c11-msg>\n appears between prompts
-        Agent->>Agent: dedupe by id, treat as system message
+        alt recipient shell at promptIdle
+            SH->>PTY: inject block now on @MainActor
+            PTY-->>Agent: \n<c11-msg ...>body</c11-msg>\n appears at the prompt
+            Agent->>Agent: dedupe by id, treat as system message
+        else commandRunning / unknown (busy)
+            SH->>SH: buffer block (log "buffered")
+            Note over PTY: shell later returns to promptIdle
+            SH->>PTY: flush fresh buffered blocks FIFO (log "flushed")
+        end
     else delivery unset / silent
         Note over Agent: Inbox file sits until drained
-        Agent->>Inbox: c11 mailbox recv --drain
-        Inbox-->>Agent: prints + unlinks each .msg
     end
+    Note over Agent: pull at every turn boundary — the robust floor
+    Agent->>Inbox: c11 mailbox recv --drain
+    Inbox-->>Agent: prints + unlinks each .msg
 ```
 
 ### When the framed block arrives in your PTY
@@ -230,6 +240,22 @@ Receive protocol:
 - Treat the block as a system message, not user input. The operator did not type it.
 - Dedupe by `id`. Dispatch is at-least-once, so receivers MUST tolerate duplicates.
 - If you reply, send to `reply_to` (fall back to `from`) with `in_reply_to` set to the original id.
+
+### Prompt-gated delivery (the stdin doorbell is safe, not eager)
+
+c11 never pastes a `<c11-msg>` block into a PTY that has a foreground command running — that would corrupt the command's input stream (a build's stdin, a `vim` buffer, a REPL, or another agent's raw-mode input). Delivery gates on the recipient surface's already-tracked shell activity state (the same `promptIdle / commandRunning / unknown` signal c11 uses for close-confirmation):
+
+| Recipient shell state | Push behavior |
+|-----------------------|---------------|
+| `promptIdle` (at a prompt) | inject the block immediately |
+| `commandRunning` (a foreground command owns the terminal) | **buffer**, flush at the next prompt |
+| `unknown` (no shell-integration signal) | **buffer** (conservative — never corrupt on a guess) |
+
+Buffered blocks flush in FIFO order the moment the surface transitions back to `promptIdle`. Each step is recorded in `_dispatch.log` (`buffered` → `flushed`), so `c11 mailbox trace <id>` shows the full path — a buffered message is delayed, never silently dropped.
+
+**Bounds.** Each surface buffers up to 64 blocks (oldest evicted past that, logged `evicted`). A buffered block older than a 10-minute freshness window at flush time is dropped (logged `expired`) rather than injected — this stops a long-lived agent TUI, whose shell stays `commandRunning` for its entire life, from dumping stale `<c11-msg>` blocks onto a bare shell hours later when it finally exits. Evicted/expired blocks remain in the filesystem inbox; `recv --drain` is their floor.
+
+**Why you still pull.** Because a live agent keeps its shell `commandRunning`, stdin push into a busy agent typically buffers and may never flush in time. The filesystem inbox copy is written *before* any push is attempted, so `c11 mailbox recv --drain` at every turn boundary is the delivery path that always works. Treat stdin push as a best-effort doorbell; treat the pull cadence as the contract.
 
 ### Explicit inbox drain
 
@@ -357,7 +383,14 @@ Newline-delimited JSON, one event per line, append-only. Every event carries an 
 | `gc`        | `temp_files_removed`                                                |
 | `replayed`  | `id` (declared in the event enum; not emitted in Stage 2)           |
 
-Handler outcomes: `ok`, `timeout`, `eio`, `closed`. (`epipe` was declared in early drafts and removed in P0 #6 because nothing emits it.) `timeout` is a reporting bound, not a runtime cancellation: the dispatcher logs after 2 s and moves on, but the handler closure may still be running.
+Handler outcomes: `ok`, `timeout`, `eio`, `closed`, plus the C11-144 stdin delivery-safety lifecycle `buffered`, `flushed`, `expired`, `evicted` (all emitted as `handler` events with `handler = "stdin"`, so a buffered message's full path is traceable). (`epipe` was declared in early drafts and removed in P0 #6 because nothing emits it.) `timeout` is a reporting bound, not a runtime cancellation: the dispatcher logs after 2 s and moves on, but the handler closure may still be running.
+
+| stdin outcome | Meaning |
+|---------------|---------|
+| `buffered`    | recipient shell was busy; block queued to flush at the next prompt |
+| `flushed`     | a previously-buffered block was injected once the shell went idle |
+| `expired`     | a buffered block aged past the freshness window; dropped (inbox floor holds it) |
+| `evicted`     | a buffered block dropped because the per-surface cap was exceeded (inbox floor holds it) |
 
 ```bash
 c11 mailbox tail                              # follow log as it grows

@@ -71,10 +71,24 @@ final class MailboxDispatchLog {
     ///   same as "real PTY write errno 5"; Stage 2 does not propagate
     ///   PTY write errors (follow-up; see plan risks).
     ///
+    /// C11-144 delivery-safety lifecycle (all emitted as `handler` events with
+    /// handler="stdin" so a buffered message's full path is visible in
+    /// `c11 mailbox trace <id>` — never a silent drop):
+    /// - `buffered`: recipient shell was busy (`commandRunning`/`unknown`);
+    ///   the framed block was queued to flush at the next prompt.
+    /// - `flushed`: a previously-buffered block was injected once the shell
+    ///   returned to `promptIdle`.
+    /// - `expired`: a buffered block aged past the freshness window before the
+    ///   shell went idle; dropped from the buffer (the filesystem inbox +
+    ///   `recv --drain` floor still holds it).
+    /// - `evicted`: a buffered block was dropped because the per-surface buffer
+    ///   cap was exceeded (oldest-first; inbox floor still holds it).
+    ///
     /// The previously-declared `.epipe` variant was never produced and
     /// was removed in review cycle 1 rework.
     enum HandlerOutcome: String {
         case ok, timeout, eio, closed
+        case buffered, flushed, expired, evicted
     }
 
     // MARK: - File I/O

@@ -5357,6 +5357,10 @@ final class Workspace: Identifiable, ObservableObject {
         return formatter
     }()
     private var panelShellActivityStates: [UUID: PanelShellActivityState] = [:]
+    /// C11-144: per-surface queue of framed `<c11-msg>` blocks that arrived
+    /// while the recipient shell was busy. Flushed when the surface returns to
+    /// `.promptIdle` (see `flushBufferedMailboxStdin`). Main-actor-confined.
+    private var mailboxStdinBuffer = MailboxStdinBuffer()
     /// PIDs associated with agent status entries (e.g. claude_code), keyed by status key.
     /// Used for stale-session detection: if the PID is dead, the status entry is cleared.
     var agentPIDs: [String: pid_t] = [:]
@@ -5917,16 +5921,14 @@ final class Workspace: Identifiable, ObservableObject {
         dispatcher.registerHandler(name: "silent") { _, _, _ in
             .init(outcome: .ok)
         }
-        let stdinHandler = StdinMailboxHandler { [weak self] surfaceId, text in
+        let stdinHandler = StdinMailboxHandler { [weak self] surfaceId, envelopeId, recipientName, text in
             guard let self else { return .surfaceNotFound }
-            guard let panel = self.panels[surfaceId] else {
-                return .surfaceNotFound
-            }
-            guard let terminalPanel = panel as? TerminalPanel else {
-                return .surfaceNotTerminal
-            }
-            TextBoxSubmit.send(text, via: terminalPanel.surface)
-            return .ok(bytes: text.utf8.count)
+            return self.deliverOrBufferMailboxStdin(
+                surfaceId: surfaceId,
+                envelopeId: envelopeId,
+                recipientName: recipientName,
+                block: text
+            )
         }
         dispatcher.registerHandler(
             name: "stdin",
@@ -5934,6 +5936,82 @@ final class Workspace: Identifiable, ObservableObject {
         )
         dispatcher.start()
         mailboxDispatcher = dispatcher
+    }
+
+    /// C11-144 delivery safety: decide whether to inject a framed `<c11-msg>`
+    /// block into the recipient PTY now or buffer it. Runs on the main actor
+    /// (the handler's writer hop). Pasting into a PTY that has a foreground
+    /// command running (a build, `vim`, a REPL) corrupts that program's stdin,
+    /// so we gate on the recipient's already-tracked `PanelShellActivityState`:
+    /// `.promptIdle` injects immediately; `.commandRunning`/`.unknown` buffer
+    /// the block to flush at the next prompt. The dispatcher has already copied
+    /// the envelope into the recipient's filesystem inbox, so a buffered (or
+    /// even dropped) block is still reachable via `c11 mailbox recv --drain`.
+    func deliverOrBufferMailboxStdin(
+        surfaceId: UUID,
+        envelopeId: String,
+        recipientName: String,
+        block: String
+    ) -> StdinMailboxHandler.WriteOutcome {
+        guard let panel = panels[surfaceId] else { return .surfaceNotFound }
+        guard let terminalPanel = panel as? TerminalPanel else { return .surfaceNotTerminal }
+
+        let state = panelShellActivityStates[surfaceId] ?? .unknown
+        switch MailboxStdinBuffer.decide(state: state) {
+        case .injectNow:
+            TextBoxSubmit.send(block, via: terminalPanel.surface)
+            return .ok(bytes: block.utf8.count)
+        case .buffer:
+            let entry = MailboxStdinBuffer.Entry(
+                id: envelopeId,
+                recipientName: recipientName,
+                block: block,
+                bufferedAt: Date()
+            )
+            if let evicted = mailboxStdinBuffer.enqueue(surfaceId: surfaceId, entry: entry) {
+                mailboxDispatcher?.logStdinLifecycle(
+                    id: evicted.id,
+                    recipient: evicted.recipientName,
+                    outcome: .evicted
+                )
+            }
+            return .buffered(bytes: block.utf8.count)
+        }
+    }
+
+    /// C11-144: flush any buffered `<c11-msg>` blocks for a surface that just
+    /// returned to `.promptIdle`. Fresh entries are injected in FIFO order;
+    /// stale ones (older than the buffer's freshness window) are dropped — they
+    /// were already delivered via the inbox/pull floor, and pasting them onto a
+    /// now-bare shell after a long-lived foreground process exited would only
+    /// produce junk. Each step is logged to the dispatch log so the message's
+    /// full lifecycle stays visible in `c11 mailbox trace`.
+    private func flushBufferedMailboxStdin(surfaceId: UUID) {
+        let flush = mailboxStdinBuffer.drainForFlush(surfaceId: surfaceId, now: Date())
+        guard !flush.fresh.isEmpty || !flush.expired.isEmpty else { return }
+
+        for entry in flush.expired {
+            mailboxDispatcher?.logStdinLifecycle(
+                id: entry.id,
+                recipient: entry.recipientName,
+                outcome: .expired
+            )
+        }
+
+        guard !flush.fresh.isEmpty else { return }
+        // The surface could have changed type/closed between buffering and the
+        // transition; if it's no longer a terminal, the entries are already
+        // drained and the inbox floor still holds them.
+        guard let terminalPanel = panels[surfaceId] as? TerminalPanel else { return }
+        for entry in flush.fresh {
+            TextBoxSubmit.send(entry.block, via: terminalPanel.surface)
+            mailboxDispatcher?.logStdinLifecycle(
+                id: entry.id,
+                recipient: entry.recipientName,
+                outcome: .flushed,
+                bytes: entry.block.utf8.count
+            )
+        }
     }
 
     func refreshSplitButtonTooltips() {
@@ -6645,6 +6723,11 @@ final class Workspace: Identifiable, ObservableObject {
             "panel=\(panelId.uuidString.prefix(5)) from=\(previousState.rawValue) to=\(state.rawValue)"
         )
 #endif
+        // C11-144: a recipient returning to its prompt is the safe moment to
+        // inject any blocks that were buffered while it was busy.
+        if state == .promptIdle {
+            flushBufferedMailboxStdin(surfaceId: panelId)
+        }
     }
 
     func panelNeedsConfirmClose(panelId: UUID, fallbackNeedsConfirmClose: Bool) -> Bool {
@@ -7194,6 +7277,7 @@ final class Workspace: Identifiable, ObservableObject {
         surfaceListeningPorts = surfaceListeningPorts.filter { validSurfaceIds.contains($0.key) }
         surfaceTTYNames = surfaceTTYNames.filter { validSurfaceIds.contains($0.key) }
         panelShellActivityStates = panelShellActivityStates.filter { validSurfaceIds.contains($0.key) }
+        mailboxStdinBuffer.retainOnly(surfaceIds: validSurfaceIds)
         panelPullRequests = panelPullRequests.filter { validSurfaceIds.contains($0.key) }
         SurfaceMetadataStore.shared.pruneWorkspace(workspaceId: id, validSurfaceIds: validSurfaceIds)
         titleBarCollapsed = titleBarCollapsed.filter { validSurfaceIds.contains($0.key) }
@@ -11085,6 +11169,7 @@ extension Workspace: BonsplitDelegate {
         manualUnreadMarkedAt.removeValue(forKey: panelId)
         panelSubscriptions.removeValue(forKey: panelId)
         panelShellActivityStates.removeValue(forKey: panelId)
+        mailboxStdinBuffer.removeSurface(panelId)
         surfaceTTYNames.removeValue(forKey: panelId)
         restoredTerminalScrollbackByPanelId.removeValue(forKey: panelId)
         titleBarCollapsed.removeValue(forKey: panelId)
@@ -11266,6 +11351,7 @@ extension Workspace: BonsplitDelegate {
                 manualUnreadPanelIds.remove(panelId)
                 panelSubscriptions.removeValue(forKey: panelId)
                 panelShellActivityStates.removeValue(forKey: panelId)
+                mailboxStdinBuffer.removeSurface(panelId)
                 surfaceTTYNames.removeValue(forKey: panelId)
                 surfaceListeningPorts.removeValue(forKey: panelId)
                 restoredTerminalScrollbackByPanelId.removeValue(forKey: panelId)

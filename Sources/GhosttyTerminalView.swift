@@ -3336,21 +3336,34 @@ final class TerminalSurface: Identifiable, ObservableObject {
             protectedStartupEnvironmentKeys.insert(key)
         }
 
+        // Identity + integration env vars are dual-written under both the legacy
+        // CMUX_* prefix (kept for back-compat with existing scripts/tests) and the
+        // current C11_* prefix. The c11 skill instructs agents to use C11_* vars
+        // (e.g. `c11 set-metadata --surface "$C11_SURFACE_ID"`); without the dual
+        // write those vars are empty in real terminals and the CLI silently falls
+        // back to the focused surface, letting one agent stomp a peer's metadata.
         setManagedEnvironmentValue("CMUX_SURFACE_ID", id.uuidString)
+        setManagedEnvironmentValue("C11_SURFACE_ID", id.uuidString)
         setManagedEnvironmentValue("CMUX_WORKSPACE_ID", tabId.uuidString)
+        setManagedEnvironmentValue("C11_WORKSPACE_ID", tabId.uuidString)
         // Backward-compatible shell integration keys used by existing scripts/tests.
         // Both CMUX_PANEL_ID and CMUX_TAB_ID are legacy aliases for the surface UUID —
         // the rename-tab CLI and tests_v2/test_rename_tab_cli_parity.py both expect
         // CMUX_TAB_ID to resolve to a surface (accepts `tab:<n>` or `surface:<n>`).
         setManagedEnvironmentValue("CMUX_PANEL_ID", id.uuidString)
+        setManagedEnvironmentValue("C11_PANEL_ID", id.uuidString)
         setManagedEnvironmentValue("CMUX_TAB_ID", id.uuidString)
+        setManagedEnvironmentValue("C11_TAB_ID", id.uuidString)
         setManagedEnvironmentValue("CMUX_SOCKET_PATH", SocketControlSettings.socketPath())
+        setManagedEnvironmentValue("C11_SOCKET_PATH", SocketControlSettings.socketPath())
         if let bundledCLIURL = Bundle.main.resourceURL?.appendingPathComponent("bin/c11"),
            FileManager.default.isExecutableFile(atPath: bundledCLIURL.path) {
             setManagedEnvironmentValue("CMUX_BUNDLED_CLI_PATH", bundledCLIURL.path)
+            setManagedEnvironmentValue("C11_BUNDLED_CLI_PATH", bundledCLIURL.path)
         }
         if let bundleId = Bundle.main.bundleIdentifier, !bundleId.isEmpty {
             setManagedEnvironmentValue("CMUX_BUNDLE_ID", bundleId)
+            setManagedEnvironmentValue("C11_BUNDLE_ID", bundleId)
         }
 
         // C11_DEFAULT_AGENT_LAUNCH carries the bare launcher command (no
@@ -3385,13 +3398,17 @@ final class TerminalSurface: Identifiable, ObservableObject {
         do {
             let startPort = Self.sessionPortBase + portOrdinal * Self.sessionPortRangeSize
             setManagedEnvironmentValue("CMUX_PORT", String(startPort))
+            setManagedEnvironmentValue("C11_PORT", String(startPort))
             setManagedEnvironmentValue("CMUX_PORT_END", String(startPort + Self.sessionPortRangeSize - 1))
+            setManagedEnvironmentValue("C11_PORT_END", String(startPort + Self.sessionPortRangeSize - 1))
             setManagedEnvironmentValue("CMUX_PORT_RANGE", String(Self.sessionPortRangeSize))
+            setManagedEnvironmentValue("C11_PORT_RANGE", String(Self.sessionPortRangeSize))
         }
 
         let claudeHooksEnabled = ClaudeCodeIntegrationSettings.hooksEnabled()
         if !claudeHooksEnabled {
             setManagedEnvironmentValue("CMUX_CLAUDE_HOOKS_DISABLED", "1")
+            setManagedEnvironmentValue("C11_CLAUDE_HOOKS_DISABLED", "1")
         }
 
         if let cliBinPath = Bundle.main.resourceURL?.appendingPathComponent("bin").path {
@@ -3410,7 +3427,9 @@ final class TerminalSurface: Identifiable, ObservableObject {
         if shellIntegrationEnabled,
            let integrationDir = Bundle.main.resourceURL?.appendingPathComponent("shell-integration").path {
             setManagedEnvironmentValue("CMUX_SHELL_INTEGRATION", "1")
+            setManagedEnvironmentValue("C11_SHELL_INTEGRATION", "1")
             setManagedEnvironmentValue("CMUX_SHELL_INTEGRATION_DIR", integrationDir)
+            setManagedEnvironmentValue("C11_SHELL_INTEGRATION_DIR", integrationDir)
 
             let shell = (env["SHELL"]?.isEmpty == false ? env["SHELL"] : nil)
                 ?? getenv("SHELL").map { String(cString: $0) }
@@ -3420,6 +3439,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
             if shellName == "zsh" {
                 if GhosttyApp.shared.shellIntegrationMode() != "none" {
                     setManagedEnvironmentValue("CMUX_LOAD_GHOSTTY_ZSH_INTEGRATION", "1")
+                    setManagedEnvironmentValue("C11_LOAD_GHOSTTY_ZSH_INTEGRATION", "1")
                 }
                 let candidateZdotdir = (env["ZDOTDIR"]?.isEmpty == false ? env["ZDOTDIR"] : nil)
                     ?? getenv("ZDOTDIR").map { String(cString: $0) }
@@ -3437,6 +3457,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
                     }
                     if !isGhosttyInjected {
                         setManagedEnvironmentValue("CMUX_ZSH_ZDOTDIR", candidateZdotdir)
+                        setManagedEnvironmentValue("C11_ZSH_ZDOTDIR", candidateZdotdir)
                     }
                 }
 
@@ -3444,6 +3465,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
             } else if shellName == "bash" {
                 if GhosttyApp.shared.shellIntegrationMode() != "none" {
                     setManagedEnvironmentValue("CMUX_LOAD_GHOSTTY_BASH_INTEGRATION", "1")
+                    setManagedEnvironmentValue("C11_LOAD_GHOSTTY_BASH_INTEGRATION", "1")
                 }
                 // macOS ships /bin/bash 3.2, where Ghostty's automatic bash
                 // integration is unsupported and HOME-based wrapper startup is

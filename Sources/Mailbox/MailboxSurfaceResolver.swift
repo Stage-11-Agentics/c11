@@ -36,6 +36,11 @@ struct MailboxSurfaceResolver {
     /// Returns all live surfaces whose `title` metadata equals `name`. In
     /// practice 0 or 1; we tolerate duplicates by returning a list and leave
     /// duplicate-warning logging to the dispatcher (design doc §2).
+    ///
+    /// Test-only helper: recipient routing resolves through
+    /// `MailboxMatcher.select` (see `MailboxDispatcher.resolveRecipients`),
+    /// which honors address > role > title precedence. This title-only lookup
+    /// has no production caller; it survives as a focused unit-test fixture.
     func surfaceIds(forName name: String) -> [UUID] {
         liveSurfaces().filter { surfaceId in
             surfaceName(for: surfaceId) == name

@@ -22,7 +22,9 @@ struct OpencodeStrategy: ConversationStrategy {
         }
         switch ref.state {
         case .alive, .suspended:
-            return .typeCommand(text: conversationShellQuote("opencode"), submitWithReturn: true)
+            // Match the launch command's auto-approve mode so a resumed
+            // opencode surface doesn't start asking for per-tool confirmation.
+            return .typeCommand(text: conversationShellQuote("opencode --dangerously-skip-permissions"), submitWithReturn: true)
         default:
             return .skip(reason: "state=\(ref.state.rawValue) not auto-resumable")
         }

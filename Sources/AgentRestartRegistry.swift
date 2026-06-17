@@ -180,8 +180,10 @@ struct AgentRestartRegistry: Sendable {
             "grok --always-approve --resume\n"
         },
         Row(terminalType: "opencode") { _, _ in
-            // no stable resume flag known; launches fresh.
-            "opencode run --dangerously-skip-permissions\n"
+            // No verified resume flag. Launch the interactive TUI (not
+            // `opencode run`, which is headless one-shot and errors with no
+            // message arg). The TUI accepts --dangerously-skip-permissions.
+            "opencode --dangerously-skip-permissions\n"
         },
         Row(terminalType: "kimi") { _, _ in
             // no stable resume flag known; launches fresh.

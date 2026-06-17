@@ -9,7 +9,7 @@ This doc is the checklist. Grok Build is the worked example; replace `grok` / `G
 Before editing code, capture three facts about the new agent:
 
 1. **Binary name.** What runs on PATH (`grok`, `aider`, `cursor-cli`, …).
-2. **Auto-approve flag.** The CLI flag that bypasses per-tool confirmation prompts — c11 launches agents in that mode by default (parallel to `claude --dangerously-skip-permissions`, `codex --yolo`, `grok --always-approve`, `opencode run --dangerously-skip-permissions`). If the agent has no such mode, leave it bare; flag it in the contributor commit so reviewers know.
+2. **Auto-approve flag.** The CLI flag that bypasses per-tool confirmation prompts — c11 launches agents in that mode by default (parallel to `claude --dangerously-skip-permissions`, `codex --yolo`, `grok --always-approve`, `opencode --dangerously-skip-permissions`). If the agent has no such mode, leave it bare; flag it in the contributor commit so reviewers know. Use the **interactive TUI** form, not a headless/one-shot runner — c11 surfaces are watched by the operator.
 3. **Resume command.** How the agent picks up its most recent session. `grok --resume`, `codex resume --last`, etc. If there's no stable resume flag, the restart registry launches fresh — best-effort, same as Kimi/OpenCode today.
 
 If the agent's config root convention is `~/.<name>/` (Claude → `~/.claude/`, Grok → `~/.grok/`), the `SkillInstaller` will wire up automatically once you add the enum case. If it isn't, you'll need a small override there too — flag it.

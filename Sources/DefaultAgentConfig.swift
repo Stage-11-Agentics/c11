@@ -44,7 +44,7 @@ enum AgentType: String, Codable, CaseIterable, Identifiable {
         case .codex:         return "codex --yolo"
         case .grok:          return "grok --always-approve"
         case .kimi:          return "kimi"
-        case .opencode:      return "opencode run --dangerously-skip-permissions"
+        case .opencode:      return "opencode --dangerously-skip-permissions"
         case .githubCopilot: return "copilot --allow-all --autopilot"
         case .custom:        return ""
         }

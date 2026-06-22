@@ -6,6 +6,10 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+### Added
+
+- **`c11 tree --report` — human-readable fleet snapshot.** A new flag on `tree` (alias `--markdown`) emits a Markdown report of what every agent is doing: per workspace, the pane layout (position percentages) and, for each surface, its canonical title, agent type + model, live status/role, description, mailbox address, and browser URL — closed by a summary table. Unlike `workspace export-blueprint` (a layout *template* that drops live metadata), this is the legible status artifact for "save the state before I close c11" / handoffs. Defaults to every window/workspace; narrow with `--window`/`--workspace`. `--out <path>` writes the Markdown to a file instead of stdout. Built entirely on the existing `system.tree` + `surface.get_metadata` socket calls, so it works against any running instance.
+
 ## [0.53.0] - 2026-06-16
 
 Feature release. Headline: **the inter-agent mailbox grows up — it routes across every workspace and stops dropping messages silently.** `c11 mailbox send --to <name>` now resolves the recipient across the whole c11 instance (local-first; ambiguous names disambiguate with `--to-workspace`), an unresolved recipient is rejected with a non-zero exit instead of vanishing, surfaces gain stable `mailbox.address` / `mailbox.role` addressing decoupled from their mutable tab title, and stdin delivery is prompt-gated — buffered while a recipient is busy and flushed when it returns to its shell prompt — so a pushed message can never corrupt a running command.

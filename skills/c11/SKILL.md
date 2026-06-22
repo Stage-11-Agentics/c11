@@ -679,6 +679,30 @@ c11 app restart --no-resume          # restore layout, but type nothing into pan
 
 **Crash resume.** After an unclean exit (kill, panic, power loss) c11 relaunches, restores layout, and verifies each Claude conversation against the transcript it keeps at `~/.claude/projects/<cwd-slug>/<id>.jsonl` (stat only — bytes are never read). A verified transcript resumes in place; a missing one is skipped with a clear diagnostic. Sessions you ended with `/exit` are never auto-resumed.
 
+### Human-readable fleet snapshot (what every agent is doing)
+
+Three artifacts answer three different questions — don't confuse them:
+
+| The operator wants… | Use | Output |
+|---|---|---|
+| To reopen later with layout + agents restored | `c11 state save` (whole app) or `c11 snapshot` (one workspace) | JSON, for the machine |
+| A reusable layout *template* to respawn on demand | `c11 workspace export-blueprint --name <n> --format md` | markdown **layout only** — drops descriptions, roles, status, mailbox |
+| A legible report of *what every agent is doing* across all workspaces | `c11 tree --report` | narrative markdown, for a human |
+
+When the operator says **"save a snapshot of what everything is doing"** / "write down the state before I close c11" / "what's the state of the whole fleet" — that's the third row:
+
+```bash
+c11 tree --report                       # fleet-wide markdown to stdout
+c11 tree --report --out ~/c11-fleet-$(date +%F).md   # …or written to a file
+c11 tree --workspace <ref> --report     # narrow to one workspace (or --window)
+```
+
+`--report` (alias `--markdown`) joins the layout from `system.tree` with each surface's manifest, emitting per workspace: the pane layout (position %) and, per surface, the canonical title, agent type + model, live status/role, the `description` ("why it's open"), mailbox address, and any browser URL — closed by a summary table. It defaults to **every** window/workspace. Note it is *not* the blueprint exporter: blueprints are layout templates that deliberately drop the live metadata that makes a status report useful.
+
+Pair it with a `c11 state save` when the goal is to close c11 — the report is the legible record, `state save` is the machine-restore checkpoint — and offer to `open` the file.
+
+> **Older binary without `--report`?** Compose the same report by hand: `c11 tree --all --json` for geometry + titles, then one `c11 get-metadata --workspace <ws> --surface <surf>` per surface for the descriptions/roles/status, rendered into one dated markdown file.
+
 ## Conversation primitives
 
 c11 0.44.0+ owns a first-class **conversation store**: each surface hosts at most one active `ConversationRef` keyed by an opaque, per-kind id, persisted across c11 restarts. Per-TUI strategies (Claude Code, Codex, Opencode, Kimi today) capture and resume conversations using whatever signals each TUI exposes — hooks where available, on-disk file scrape as fallback.

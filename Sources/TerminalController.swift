@@ -4213,6 +4213,19 @@ class TerminalController {
         return PanelType(rawValue: s.lowercased())
     }
 
+    /// Reject creating a surface of a type the operator has disabled. Returns a
+    /// `surface_type_disabled` error envelope when blocked, or `nil` to proceed.
+    /// Terminal is never gated. Restore/snapshot bypasses this by calling the
+    /// low-level `Workspace.newBrowser*`/`newMarkdown*` methods directly.
+    private func v2SurfaceTypeDenial(_ type: PanelType) -> V2CallResult? {
+        guard !SurfaceTypeAvailability.isEnabled(type) else { return nil }
+        return .err(
+            code: "surface_type_disabled",
+            message: SurfaceTypeAvailability.disabledMessage(for: type),
+            data: ["type": type.rawValue]
+        )
+    }
+
     /// Validate and resolve a markdown file path from raw input.
     /// Returns nil on success (resolved path stored in `resolved`), or a V2CallResult error.
     private func v2ValidateMarkdownPath(_ rawPath: String?, context: String, resolved: inout String?) -> V2CallResult? {
@@ -6906,6 +6919,7 @@ class TerminalController {
         }
 
         let panelType = v2PanelType(params, "type") ?? .terminal
+        if let denial = v2SurfaceTypeDenial(panelType) { return denial }
         let urlStr = v2String(params, "url")
         let url = urlStr.flatMap { URL(string: $0) }
         let filePath = v2String(params, "file")
@@ -8988,6 +9002,7 @@ class TerminalController {
         }
 
         let panelType = v2PanelType(params, "type") ?? .terminal
+        if let denial = v2SurfaceTypeDenial(panelType) { return denial }
         let urlStr = v2String(params, "url")
         let url = urlStr.flatMap { URL(string: $0) }
         let filePath = v2String(params, "file")
@@ -18038,6 +18053,10 @@ class TerminalController {
             return "ERROR: Invalid direction. Use left, right, up, or down."
         }
 
+        if !SurfaceTypeAvailability.isEnabled(panelType) {
+            return "ERROR: \(SurfaceTypeAvailability.disabledMessage(for: panelType))"
+        }
+
         let orientation = direction.orientation
         let insertFirst = direction.insertFirst
 
@@ -19565,6 +19584,10 @@ class TerminalController {
                 let urlStr = String(partStr.dropFirst(6))
                 url = URL(string: urlStr)
             }
+        }
+
+        if !SurfaceTypeAvailability.isEnabled(panelType) {
+            return "ERROR: \(SurfaceTypeAvailability.disabledMessage(for: panelType))"
         }
 
         var result = "ERROR: Failed to create tab"

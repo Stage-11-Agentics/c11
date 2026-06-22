@@ -4382,6 +4382,10 @@ struct SettingsView: View {
     @AppStorage(WorkspacePresentationModeSettings.modeKey)
     private var workspacePresentationMode = WorkspacePresentationModeSettings.defaultMode.rawValue
     @AppStorage(SocketControlSettings.appStorageKey) private var socketControlMode = SocketControlSettings.defaultMode.rawValue
+    @AppStorage(SurfaceTypeAvailability.internalBrowserEnabledKey)
+    private var internalBrowserEnabled = SurfaceTypeAvailability.defaultEnabled
+    @AppStorage(SurfaceTypeAvailability.markdownSurfacesEnabledKey)
+    private var markdownSurfacesEnabled = SurfaceTypeAvailability.defaultEnabled
     @AppStorage(ClaudeCodeIntegrationSettings.hooksEnabledKey)
     private var claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
     @AppStorage(TelemetrySettings.sendAnonymousTelemetryKey)
@@ -5081,6 +5085,33 @@ struct SettingsView: View {
                     : String(localized: "settings.app.warnBeforeQuit.subtitleOff", defaultValue: "Cmd+Q quits immediately without confirmation.")
             ) {
                 Toggle("", isOn: $warnBeforeQuitShortcut)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+        }
+
+        SettingsSectionHeader(title: String(localized: "settings.section.surfaces", defaultValue: "Surfaces"))
+        SettingsCard {
+            SettingsCardRow(
+                String(localized: "settings.app.internalBrowser", defaultValue: "Internal Browser"),
+                subtitle: internalBrowserEnabled
+                    ? String(localized: "settings.app.internalBrowser.subtitleOn", defaultValue: "Allow creating internal browser surfaces. Open browser surfaces keep running when turned off.")
+                    : String(localized: "settings.app.internalBrowser.subtitleOff", defaultValue: "Block new internal browser surfaces. The Browser spawn button is hidden and CLI/socket creation is rejected.")
+            ) {
+                Toggle("", isOn: $internalBrowserEnabled)
+                    .labelsHidden()
+                    .controlSize(.small)
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                String(localized: "settings.app.markdownSurfaces", defaultValue: "Markdown Surfaces"),
+                subtitle: markdownSurfacesEnabled
+                    ? String(localized: "settings.app.markdownSurfaces.subtitleOn", defaultValue: "Allow creating markdown surfaces. Open markdown surfaces keep running when turned off.")
+                    : String(localized: "settings.app.markdownSurfaces.subtitleOff", defaultValue: "Block new markdown surfaces. The Markdown spawn button is hidden and CLI/socket creation is rejected.")
+            ) {
+                Toggle("", isOn: $markdownSurfacesEnabled)
                     .labelsHidden()
                     .controlSize(.small)
             }
@@ -6385,6 +6416,8 @@ struct SettingsView: View {
             showLanguageRestartAlert = true
         }
         socketControlMode = SocketControlSettings.defaultMode.rawValue
+        internalBrowserEnabled = SurfaceTypeAvailability.defaultEnabled
+        markdownSurfacesEnabled = SurfaceTypeAvailability.defaultEnabled
         claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
         sendAnonymousTelemetry = TelemetrySettings.defaultSendAnonymousTelemetry
         browserSearchEngine = BrowserSearchSettings.defaultSearchEngine.rawValue

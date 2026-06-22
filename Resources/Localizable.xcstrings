@@ -31821,6 +31821,147 @@
         }
       }
     },
+    "settings.app.internalBrowser": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Internal Browser"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内蔵ブラウザ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内置浏览器"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "內建瀏覽器"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내장 브라우저"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Встроенный браузер"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вбудований браузер"
+          }
+        }
+      }
+    },
+    "settings.app.internalBrowser.subtitleOn": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow creating internal browser surfaces. Open browser surfaces keep running when turned off."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内蔵ブラウザのサーフェスを作成できます。オフにしても、開いているブラウザのサーフェスはそのまま動作します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许创建内置浏览器界面。关闭后，已打开的浏览器界面继续运行。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允許建立內建瀏覽器介面。關閉後，已開啟的瀏覽器介面仍會繼續運作。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내장 브라우저 서피스를 만들 수 있습니다. 끄더라도 열려 있는 브라우저 서피스는 계속 실행됩니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Разрешает создавать поверхности встроенного браузера. При отключении уже открытые поверхности браузера продолжают работать."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Дозволяє створювати поверхні вбудованого браузера. Після вимкнення вже відкриті поверхні браузера продовжують працювати."
+          }
+        }
+      }
+    },
+    "settings.app.internalBrowser.subtitleOff": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Block new internal browser surfaces. The Browser spawn button is hidden and CLI/socket creation is rejected."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい内蔵ブラウザのサーフェスをブロックします。ブラウザの作成ボタンは非表示になり、CLI/ソケットからの作成も拒否されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "阻止新建内置浏览器界面。浏览器创建按钮将被隐藏，并拒绝通过 CLI/套接字创建。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "封鎖新的內建瀏覽器介面。瀏覽器建立按鈕會隱藏，並拒絕透過 CLI/通訊端建立。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 내장 브라우저 서피스를 차단합니다. 브라우저 생성 버튼이 숨겨지고 CLI/소켓 생성이 거부됩니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Блокирует новые поверхности встроенного браузера. Кнопка создания браузера скрыта, а создание через CLI/сокет отклоняется."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Блокує нові поверхні вбудованого браузера. Кнопку створення браузера приховано, а створення через CLI/сокет відхиляється."
+          }
+        }
+      }
+    },
     "settings.app.language": {
       "extractionState": "manual",
       "localizations": {
@@ -32052,6 +32193,147 @@
           "stringUnit": {
             "state": "translated",
             "value": "Перезапустіть c11, щоб застосувати"
+          }
+        }
+      }
+    },
+    "settings.app.markdownSurfaces": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown Surfaces"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown サーフェス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown 界面"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown 介面"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown 서피스"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Поверхности Markdown"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Поверхні Markdown"
+          }
+        }
+      }
+    },
+    "settings.app.markdownSurfaces.subtitleOn": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow creating markdown surfaces. Open markdown surfaces keep running when turned off."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown のサーフェスを作成できます。オフにしても、開いている Markdown のサーフェスはそのまま動作します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许创建 Markdown 界面。关闭后，已打开的 Markdown 界面继续运行。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允許建立 Markdown 介面。關閉後，已開啟的 Markdown 介面仍會繼續運作。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown 서피스를 만들 수 있습니다. 끄더라도 열려 있는 Markdown 서피스는 계속 실행됩니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Разрешает создавать поверхности Markdown. При отключении уже открытые поверхности Markdown продолжают работать."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Дозволяє створювати поверхні Markdown. Після вимкнення вже відкриті поверхні Markdown продовжують працювати."
+          }
+        }
+      }
+    },
+    "settings.app.markdownSurfaces.subtitleOff": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Block new markdown surfaces. The Markdown spawn button is hidden and CLI/socket creation is rejected."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい Markdown のサーフェスをブロックします。Markdown の作成ボタンは非表示になり、CLI/ソケットからの作成も拒否されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "阻止新建 Markdown 界面。Markdown 创建按钮将被隐藏，并拒绝通过 CLI/套接字创建。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "封鎖新的 Markdown 介面。Markdown 建立按鈕會隱藏，並拒絕透過 CLI/通訊端建立。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 Markdown 서피스를 차단합니다. Markdown 생성 버튼이 숨겨지고 CLI/소켓 생성이 거부됩니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Блокирует новые поверхности Markdown. Кнопка создания Markdown скрыта, а создание через CLI/сокет отклоняется."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Блокує нові поверхні Markdown. Кнопку створення Markdown приховано, а створення через CLI/сокет відхиляється."
           }
         }
       }
@@ -45118,6 +45400,53 @@
           "stringUnit": {
             "state": "translated",
             "value": "Звук"
+          }
+        }
+      }
+    },
+    "settings.section.surfaces": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Surfaces"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーフェス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "界面"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "介面"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "서피스"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Поверхности"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Поверхні"
           }
         }
       }

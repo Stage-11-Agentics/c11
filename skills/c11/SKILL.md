@@ -199,6 +199,18 @@ c11 new-workspace --layout <path|name>         # Create a workspace from a bluep
 - **Browsers are tabbed by default.** When you need a browser surface and the workspace **already has a browser pane**, add a new browser tab to that existing pane rather than opening a fresh browser pane — match the universal browser expectation that new pages are tabs, not new windows. Find the existing browser pane in `c11 tree --json` (the pane holding a `surface_type: browser` surface) and call `c11 new-surface --type browser --url <url> --pane <browser-pane-ref>`. Only reach for `c11 new-pane --type browser` when **no** browser pane exists yet, or when the operator explicitly wants a separate pane (e.g. two pages side by side for comparison). Spawning a new browser pane when one already exists is the awkward interaction to avoid.
 - **Operator-facing tab bar buttons.** Each pane's tab bar carries surface-spawn buttons: **A** (leftmost — launches the operator's configured agent; default Claude Code, set in Settings → Agents & Automation → Agent Launcher Button), then Terminal, Browser, Markdown. On the right, after the split buttons: **+** (new tab of the focused kind) and **X** (close this entire pane — shows a confirmation dialog). The X button is disabled when only one pane exists. These are UI affordances for the operator; agents continue to use the CLI commands above.
 
+### Disabling surface types (browser / markdown)
+
+The internal browser and markdown surfaces are each governed by an operator toggle in **Settings → General → Surfaces** (both default **on**). Disabling a type **blocks creating new** surfaces of that type — it never touches surfaces already open:
+
+- The Browser / Markdown **spawn button disappears** from every pane's tab bar (live, no restart).
+- `c11 new-pane` / `c11 new-surface` of a disabled type are **rejected**: v2 returns a `surface_type_disabled` error envelope, v1 returns `ERROR: <type> surfaces are disabled (Settings → …)`. Terminal is never gated.
+- **Existing** browser/markdown surfaces keep running, and **snapshot/restore still rebuilds** saved browser/markdown surfaces (restoring saved state is not "creating new").
+
+For headless/CI, the env overrides `C11_DISABLE_BROWSER` / `C11_DISABLE_MARKDOWN` (truthy = `1|true|yes|on`) force the matching type off regardless of the persisted toggle. They only ever *disable*; they never force-enable a type the operator turned off.
+
+If `new-pane --type browser` (or `markdown`) returns `surface_type_disabled`, don't retry — the operator has disabled that surface type on purpose. Use a terminal, or ask them to re-enable it in Settings.
+
 ## Resize panes
 
 Binary splits aren't balanced automatically. Two `new-split right` calls give you `[A 50% | B 25% | C 25%]`, not equal thirds. Use `resize-pane` to rebalance.

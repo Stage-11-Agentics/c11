@@ -5151,6 +5151,12 @@ final class Workspace: Identifiable, ObservableObject {
     /// NSObject subclass, so KVO has to live on this composed helper. (C11-6)
     private var chromeScaleObserver: ChromeScaleObserver?
 
+    /// Keeps the Bonsplit Browser / Markdown spawn buttons in sync with the
+    /// persisted surface-availability toggles for any writer (Settings UI,
+    /// `defaults write`). Same composed-NSObject KVO pattern as
+    /// `chromeScaleObserver`.
+    private var surfaceAvailabilityObserver: SurfaceAvailabilityObserver?
+
     /// Operator-authored workspace metadata (e.g. "description", "icon").
     /// Workspace-scoped; not to be confused with surface-scoped
     /// `SurfaceMetadataStore`. Persisted across restart via
@@ -5594,6 +5600,22 @@ final class Workspace: Identifiable, ObservableObject {
         bonsplitController.configuration = nextConfiguration
     }
 
+    /// Live-update path for the surface-availability toggles. Pulls the current
+    /// Bonsplit configuration, recomputes the Browser / Markdown spawn-button
+    /// visibility from `SurfaceTypeAvailability`, and reassigns only on a real
+    /// change so redundant toggles don't churn the configuration. Existing
+    /// surfaces are untouched — this only governs the spawn affordances.
+    func applySurfaceAvailability() {
+        let browserOn = SurfaceTypeAvailability.isEnabled(.browser)
+        let markdownOn = SurfaceTypeAvailability.isEnabled(.markdown)
+        var next = bonsplitController.configuration
+        guard next.showsBrowserSpawnButton != browserOn
+            || next.showsMarkdownSpawnButton != markdownOn else { return }
+        next.showsBrowserSpawnButton = browserOn
+        next.showsMarkdownSpawnButton = markdownOn
+        bonsplitController.configuration = next
+    }
+
     func applyGhosttyChrome(from config: GhosttyConfig, reason: String = "unspecified") {
         applyGhosttyChrome(
             backgroundColor: config.backgroundColor,
@@ -5746,6 +5768,11 @@ final class Workspace: Identifiable, ObservableObject {
             // right-edge hit-collision bug and matches native macOS
             // Cocoa tab convention (Finder, Terminal.app, Notes).
             simplifiedTabContextMenu: true,
+            // Hide the Browser / Markdown spawn buttons when the operator has
+            // disabled those surface types. `applySurfaceAvailability()` keeps
+            // these live as the toggles change.
+            showsBrowserSpawnButton: SurfaceTypeAvailability.isEnabled(.browser),
+            showsMarkdownSpawnButton: SurfaceTypeAvailability.isEnabled(.markdown),
             appearance: appearance
         )
         self.bonsplitController = BonsplitController(configuration: config)
@@ -5759,6 +5786,13 @@ final class Workspace: Identifiable, ObservableObject {
         // can safely read/write `bonsplitController.configuration`. (C11-6)
         self.chromeScaleObserver = ChromeScaleObserver { [weak self] in
             self?.applyChromeScale(reason: "userdefaults-change")
+        }
+
+        // Mirror the chrome-scale observer: react to surface-availability
+        // toggles so the Browser / Markdown spawn buttons appear/disappear
+        // live, without an app restart.
+        self.surfaceAvailabilityObserver = SurfaceAvailabilityObserver { [weak self] in
+            self?.applySurfaceAvailability()
         }
 
         // Remove the default "Welcome" tab that bonsplit creates
@@ -11593,8 +11627,13 @@ extension Workspace: BonsplitDelegate {
         case "terminal":
             _ = newTerminalSurface(inPane: pane)
         case "browser":
+            // Defense in depth: the spawn button is already hidden when the
+            // internal browser is disabled, but no-op safely if the request
+            // reaches us anyway.
+            guard SurfaceTypeAvailability.isEnabled(.browser) else { return }
             _ = newBrowserSurface(inPane: pane)
         case "markdown":
+            guard SurfaceTypeAvailability.isEnabled(.markdown) else { return }
             _ = newMarkdownSurface(inPane: pane)
         case "agent":
             launchAgentSurface(inPane: pane)
@@ -11809,11 +11848,13 @@ extension Workspace: BonsplitDelegate {
         let selectedPanelId = effectiveSelectedPanelId(inPane: pane)
         let panel = selectedPanelId.flatMap { panels[$0] }
         switch panel?.panelType {
-        case .browser:
+        case .browser where SurfaceTypeAvailability.isEnabled(.browser):
             _ = newBrowserSurface(inPane: pane)
-        case .markdown:
+        case .markdown where SurfaceTypeAvailability.isEnabled(.markdown):
             _ = newMarkdownSurface(inPane: pane)
-        case .terminal, .none:
+        case .terminal, .browser, .markdown, .none:
+            // Terminal kinds, and any disabled non-terminal kind whose surface
+            // is still open, fall back to a terminal so "+" stays useful.
             _ = newTerminalSurface(inPane: pane)
         }
     }

@@ -107,13 +107,21 @@ remedies (add a tab with `new-surface --pane …`, close a sibling, or `--allow-
 
 The CLI prints `size_warning` when present and surfaces the refusal message on error.
 
-## UI safety net
+## UI path (follow-up, deferred)
 
-`Workspace` implements the Bonsplit `splitTabBar(_:shouldSplitPane:orientation:)` delegate
-veto (not previously implemented). For UI-initiated splits (`!isProgrammaticSplit`) in
-`balance` / `tab` mode, an undersized split is denied with a transient notice. `off` /
-`warn` never deny. CLI splits are programmatic, so the handler owns their richer policy
-and the veto passes them through.
+A global Bonsplit `splitTabBar(_:shouldSplitPane:orientation:)` veto would catch the
+tab-bar split buttons and drag-to-split, but it also fires for direct
+`bonsplitController.splitPane` callers that are *not* interactive (cross-workspace
+tab-drag in `AppDelegate`, other socket split commands), and the only in-app notice
+channel is a modal `NSAlert`. A veto can only deny, not flip the axis, so it would
+reject an explicit "split down" even when "split right" would fit. Given the blast
+radius and that the *accidental* tiny-pane pain is the CLI/orchestrator fan-out (fully
+covered by the handlers), the manual UI path is left as-is in this change and tracked as
+a follow-up — ideally routing the tab-bar split buttons through the same size-aware
+evaluation so they can flip the axis rather than just refuse.
+
+CLI splits go through `Workspace.newTerminalSplit` (which sets `isProgrammaticSplit`),
+so they would bypass any future veto; the handler owns their richer policy regardless.
 
 ## Testing
 

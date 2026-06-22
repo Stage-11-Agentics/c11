@@ -6842,6 +6842,101 @@ class TerminalController {
         return result
     }
 
+    // MARK: - Size-aware split policy helpers
+
+    private func splitDirectionString(_ d: SplitDirection) -> String {
+        switch d {
+        case .left: return "left"
+        case .right: return "right"
+        case .up: return "up"
+        case .down: return "down"
+        }
+    }
+
+    /// Flip a split axis while keeping the insert side: left↔up, right↔down.
+    private func flippedSplitDirection(_ d: SplitDirection) -> SplitDirection {
+        switch d {
+        case .left: return .up
+        case .up: return .left
+        case .right: return .down
+        case .down: return .right
+        }
+    }
+
+    /// Per-call escape hatch: `--allow-undersized` (alias `--force`).
+    private func splitForceFlag(_ params: [String: Any]) -> Bool {
+        (v2Bool(params, "allow_undersized") ?? false) || (v2Bool(params, "force") ?? false)
+    }
+
+    private enum SizeAwareSplitPlan {
+        /// Create the split on `direction` (may differ from `requested` if flipped).
+        case split(direction: SplitDirection, requested: SplitDirection, warning: String?)
+        /// Add a tab to `paneId` instead of splitting.
+        case tab(paneId: PaneID, warning: String?)
+        /// Refuse with an actionable message.
+        case refuse(message: String, data: [String: Any])
+    }
+
+    /// Apply the active pane-size policy to a split request. Main-actor only
+    /// (callers are already inside `v2MainSync`).
+    private func planSizeAwareSplit(
+        ws: Workspace,
+        sourcePanelId: UUID,
+        requested: SplitDirection,
+        newIsTerminal: Bool,
+        force: Bool
+    ) -> SizeAwareSplitPlan {
+        let requestedAxis: SplitAxis = requested.isHorizontal ? .horizontal : .vertical
+        guard let eval = ws.evaluateSplitSize(
+            sourcePanelId: sourcePanelId,
+            requested: requestedAxis,
+            newIsTerminal: newIsTerminal,
+            force: force
+        ) else {
+            // Geometry not known yet — proceed as requested rather than block.
+            return .split(direction: requested, requested: requested, warning: nil)
+        }
+        let decision = eval.decision
+        let warning = PaneSizePolicy.warningText(for: decision, kindLabel: eval.kindLabel)
+        switch decision.outcome {
+        case .proceed(let axis):
+            let applied = (axis == requestedAxis) ? requested : flippedSplitDirection(requested)
+            return .split(direction: applied, requested: requested, warning: warning)
+        case .addTab:
+            return .tab(paneId: eval.targetPaneId, warning: warning)
+        case .refuse:
+            let paneRef = v2EnsureHandleRef(kind: .pane, uuid: eval.targetPaneId.id)
+            let msg = PaneSizePolicy.refusalMessage(for: decision, kindLabel: eval.kindLabel, paneRefLabel: paneRef)
+            let data: [String: Any] = [
+                "pane_ref": paneRef,
+                "requested_direction": splitDirectionString(requested),
+                "resulting": [
+                    "width": Int(decision.resultingChild.width.rounded()),
+                    "height": Int(decision.resultingChild.height.rounded())
+                ],
+                "minimum": [
+                    "width": Int(decision.minPoints.width.rounded()),
+                    "height": Int(decision.minPoints.height.rounded())
+                ]
+            ]
+            return .refuse(message: msg, data: data)
+        }
+    }
+
+    /// Attach size-policy fields to a successful split / pane-create response.
+    private func annotateSizeOutcome(
+        _ result: inout [String: Any],
+        requested: SplitDirection,
+        applied: SplitDirection,
+        becameTab: Bool,
+        warning: String?
+    ) {
+        result["requested_direction"] = splitDirectionString(requested)
+        result["applied_direction"] = splitDirectionString(applied)
+        result["size_outcome"] = becameTab ? "tab" : (requested == applied ? "split" : "flipped")
+        result["size_warning"] = v2OrNull(warning)
+    }
+
     private func v2SurfaceSplit(params: [String: Any]) -> V2CallResult {
         guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
@@ -6851,6 +6946,7 @@ class TerminalController {
             return .err(code: "invalid_params", message: "Missing or invalid direction (left|right|up|down)", data: nil)
         }
         let titleSeed = v2String(params, "title")
+        let force = splitForceFlag(params)
 
         // Validate the optional --cwd override server-side before spawning so a
         // bad path returns a clear error instead of silently landing in $HOME.
@@ -6878,24 +6974,55 @@ class TerminalController {
             v2MaybeFocusWindow(for: tabManager)
             v2MaybeSelectWorkspace(tabManager, workspace: ws)
 
-            if let newId = tabManager.newSplit(tabId: ws.id, surfaceId: targetSurfaceId, direction: direction, workingDirectory: cwdOverride) {
-                let paneUUID = ws.paneId(forPanelId: newId)?.id
-                // Seed pane title atomic with pane id becoming valid.
-                v2SeedPaneTitle(workspaceId: ws.id, paneUUID: paneUUID, title: titleSeed)
-                let windowId = v2ResolveWindowId(tabManager: tabManager)
-                result = .ok([
-                    "window_id": v2OrNull(windowId?.uuidString),
-                    "window_ref": v2Ref(kind: .window, uuid: windowId),
+            // new-split always creates a terminal.
+            let plan = self.planSizeAwareSplit(ws: ws, sourcePanelId: targetSurfaceId, requested: direction, newIsTerminal: true, force: force)
+            switch plan {
+            case .refuse(let message, let data):
+                result = .err(code: "pane_too_small", message: message, data: data)
+
+            case .tab(let paneId, let warning):
+                guard let panel = ws.newTerminalSurface(inPane: paneId, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride) else {
+                    result = .err(code: "internal_error", message: "Failed to create surface", data: nil)
+                    return
+                }
+                self.v2SeedPaneTitle(workspaceId: ws.id, paneUUID: paneId.id, title: titleSeed)
+                let windowId = self.v2ResolveWindowId(tabManager: tabManager)
+                var ok: [String: Any] = [
+                    "window_id": self.v2OrNull(windowId?.uuidString),
+                    "window_ref": self.v2Ref(kind: .window, uuid: windowId),
                     "workspace_id": ws.id.uuidString,
-                    "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
-                    "pane_id": v2OrNull(paneUUID?.uuidString),
-                    "pane_ref": v2Ref(kind: .pane, uuid: paneUUID),
-                    "surface_id": newId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: newId),
-                    "type": v2OrNull(ws.panels[newId]?.panelType.rawValue)
-                ])
-            } else {
-                result = .err(code: "internal_error", message: "Failed to create split", data: nil)
+                    "workspace_ref": self.v2Ref(kind: .workspace, uuid: ws.id),
+                    "pane_id": paneId.id.uuidString,
+                    "pane_ref": self.v2Ref(kind: .pane, uuid: paneId.id),
+                    "surface_id": panel.id.uuidString,
+                    "surface_ref": self.v2Ref(kind: .surface, uuid: panel.id),
+                    "type": self.v2OrNull(ws.panels[panel.id]?.panelType.rawValue)
+                ]
+                self.annotateSizeOutcome(&ok, requested: direction, applied: direction, becameTab: true, warning: warning)
+                result = .ok(ok)
+
+            case .split(let actualDirection, let requested, let warning):
+                if let newId = tabManager.newSplit(tabId: ws.id, surfaceId: targetSurfaceId, direction: actualDirection, workingDirectory: cwdOverride) {
+                    let paneUUID = ws.paneId(forPanelId: newId)?.id
+                    // Seed pane title atomic with pane id becoming valid.
+                    self.v2SeedPaneTitle(workspaceId: ws.id, paneUUID: paneUUID, title: titleSeed)
+                    let windowId = self.v2ResolveWindowId(tabManager: tabManager)
+                    var ok: [String: Any] = [
+                        "window_id": self.v2OrNull(windowId?.uuidString),
+                        "window_ref": self.v2Ref(kind: .window, uuid: windowId),
+                        "workspace_id": ws.id.uuidString,
+                        "workspace_ref": self.v2Ref(kind: .workspace, uuid: ws.id),
+                        "pane_id": self.v2OrNull(paneUUID?.uuidString),
+                        "pane_ref": self.v2Ref(kind: .pane, uuid: paneUUID),
+                        "surface_id": newId.uuidString,
+                        "surface_ref": self.v2Ref(kind: .surface, uuid: newId),
+                        "type": self.v2OrNull(ws.panels[newId]?.panelType.rawValue)
+                    ]
+                    self.annotateSizeOutcome(&ok, requested: requested, applied: actualDirection, becameTab: false, warning: warning)
+                    result = .ok(ok)
+                } else {
+                    result = .err(code: "internal_error", message: "Failed to create split", data: nil)
+                }
             }
         }
         return result
@@ -9009,8 +9136,7 @@ class TerminalController {
             return err
         }
 
-        let orientation = direction.orientation
-        let insertFirst = direction.insertFirst
+        let force = splitForceFlag(params)
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to create pane", data: nil)
         guard v2MainSyncWithDeadline({
@@ -9025,55 +9151,76 @@ class TerminalController {
                 return
             }
 
-            let newPanelId: UUID?
-            switch panelType {
-            case .browser:
-                newPanelId = ws.newBrowserSplit(
-                    from: focusedPanelId,
-                    orientation: orientation,
-                    insertFirst: insertFirst,
-                    url: url,
-                    focus: self.v2FocusAllowed()
-                )?.id
-            case .markdown:
-                newPanelId = ws.newMarkdownSplit(
-                    from: focusedPanelId,
-                    orientation: orientation,
-                    insertFirst: insertFirst,
-                    filePath: resolvedMarkdownPath!,
-                    focus: self.v2FocusAllowed()
-                )?.id
-            case .terminal:
-                newPanelId = ws.newTerminalSplit(
-                    from: focusedPanelId,
-                    orientation: orientation,
-                    insertFirst: insertFirst,
-                    focus: self.v2FocusAllowed(),
-                    workingDirectory: cwdOverride
-                )?.id
+            let plan = self.planSizeAwareSplit(
+                ws: ws,
+                sourcePanelId: focusedPanelId,
+                requested: direction,
+                newIsTerminal: panelType == .terminal,
+                force: force
+            )
+
+            var becameTab = false
+            var appliedDirection = direction
+            var warningText: String?
+            var targetPaneForTab: PaneID?
+            var newPanelId: UUID?
+
+            switch plan {
+            case .refuse(let message, let data):
+                result = .err(code: "pane_too_small", message: message, data: data)
+                return
+
+            case .tab(let paneId, let warning):
+                becameTab = true
+                warningText = warning
+                targetPaneForTab = paneId
+                switch panelType {
+                case .browser:
+                    newPanelId = ws.newBrowserSurface(inPane: paneId, url: url, focus: self.v2FocusAllowed())?.id
+                case .markdown:
+                    newPanelId = ws.newMarkdownSurface(inPane: paneId, filePath: resolvedMarkdownPath!, focus: self.v2FocusAllowed())?.id
+                case .terminal:
+                    newPanelId = ws.newTerminalSurface(inPane: paneId, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride)?.id
+                }
+
+            case .split(let actualDirection, _, let warning):
+                appliedDirection = actualDirection
+                warningText = warning
+                let orientation = actualDirection.orientation
+                let insertFirst = actualDirection.insertFirst
+                switch panelType {
+                case .browser:
+                    newPanelId = ws.newBrowserSplit(from: focusedPanelId, orientation: orientation, insertFirst: insertFirst, url: url, focus: self.v2FocusAllowed())?.id
+                case .markdown:
+                    newPanelId = ws.newMarkdownSplit(from: focusedPanelId, orientation: orientation, insertFirst: insertFirst, filePath: resolvedMarkdownPath!, focus: self.v2FocusAllowed())?.id
+                case .terminal:
+                    newPanelId = ws.newTerminalSplit(from: focusedPanelId, orientation: orientation, insertFirst: insertFirst, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride)?.id
+                }
             }
 
-            guard let newPanelId else {
+            guard let createdPanelId = newPanelId else {
                 result = .err(code: "internal_error", message: "Failed to create pane", data: nil)
                 return
             }
-            let paneUUID = ws.paneId(forPanelId: newPanelId)?.id
+            let paneUUID = becameTab ? targetPaneForTab?.id : ws.paneId(forPanelId: createdPanelId)?.id
             // Seed pane title atomic with the pane id becoming valid: the
             // caller observes the pane (via the response) only after the seed
             // is in the store.
             self.v2SeedPaneTitle(workspaceId: ws.id, paneUUID: paneUUID, title: titleSeed)
             let windowId = self.v2ResolveWindowId(tabManager: tabManager)
-            result = .ok([
+            var ok: [String: Any] = [
                 "window_id": self.v2OrNull(windowId?.uuidString),
                 "window_ref": self.v2Ref(kind: .window, uuid: windowId),
                 "workspace_id": ws.id.uuidString,
                 "workspace_ref": self.v2Ref(kind: .workspace, uuid: ws.id),
                 "pane_id": self.v2OrNull(paneUUID?.uuidString),
                 "pane_ref": self.v2Ref(kind: .pane, uuid: paneUUID),
-                "surface_id": newPanelId.uuidString,
-                "surface_ref": self.v2Ref(kind: .surface, uuid: newPanelId),
+                "surface_id": createdPanelId.uuidString,
+                "surface_ref": self.v2Ref(kind: .surface, uuid: createdPanelId),
                 "type": panelType.rawValue
-            ])
+            ]
+            self.annotateSizeOutcome(&ok, requested: direction, applied: appliedDirection, becameTab: becameTab, warning: warningText)
+            result = .ok(ok)
         }) != nil else {
             return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)
         }

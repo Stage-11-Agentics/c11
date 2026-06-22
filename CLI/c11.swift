@@ -2030,7 +2030,9 @@ struct CMUXCLI {
             let (cwdArg, rem4) = parseOption(rem3, name: "--cwd")
             let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
             let surfaceRaw = sfArg ?? panelArg ?? (wsArg == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
-            guard let direction = rem4.first else {
+            // The direction is the first non-flag token (so `--allow-undersized` can
+            // appear on either side of it).
+            guard let direction = rem4.first(where: { !$0.hasPrefix("-") }) else {
                 throw CLIError(message: "new-split requires a direction")
             }
             var params: [String: Any] = ["direction": direction]
@@ -2046,7 +2048,13 @@ struct CMUXCLI {
             if let cwdArg = cwdArg?.trimmingCharacters(in: .whitespaces), !cwdArg.isEmpty {
                 params["cwd"] = cwdArg.lowercased() == "inherit" ? "inherit" : resolvePath(cwdArg)
             }
+            // --allow-undersized (alias --force) bypasses the size-aware split policy
+            // for this one call.
+            if commandArgs.contains("--allow-undersized") || commandArgs.contains("--force") {
+                params["allow_undersized"] = true
+            }
             let payload = try client.sendV2(method: "surface.split", params: params)
+            printSizeWarning(payload)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
         case "list-panes":
@@ -2138,7 +2146,13 @@ struct CMUXCLI {
             if let cwd = cwd?.trimmingCharacters(in: .whitespaces), !cwd.isEmpty {
                 params["cwd"] = cwd.lowercased() == "inherit" ? "inherit" : resolvePath(cwd)
             }
+            // --allow-undersized (alias --force) bypasses the size-aware split policy
+            // for this one call.
+            if commandArgs.contains("--allow-undersized") || commandArgs.contains("--force") {
+                params["allow_undersized"] = true
+            }
             let payload = try client.sendV2(method: "pane.create", params: params)
+            printSizeWarning(payload)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
 
         case "new-surface":
@@ -4670,6 +4684,14 @@ struct CMUXCLI {
         } else {
             print(fallbackText)
         }
+    }
+
+    /// Surface the size-aware split policy's non-blocking `size_warning` (axis flip,
+    /// near-threshold, tab fallback) to stderr so it stays out of machine-readable
+    /// stdout. The warning is also present in the JSON payload for scripted callers.
+    private func printSizeWarning(_ payload: [String: Any]) {
+        guard let warning = payload["size_warning"] as? String, !warning.isEmpty else { return }
+        FileHandle.standardError.write(Data(("note: " + warning + "\n").utf8))
     }
 
     private func debugString(_ value: Any?) -> String? {
@@ -8251,6 +8273,18 @@ struct CMUXCLI {
                                      an existing directory. `inherit` (the
                                      default when omitted) uses the parent
                                      surface's cwd.
+              --allow-undersized     Bypass the size-aware split policy for this
+                                     call (alias: --force). Without it, c11 may
+                                     flip the split axis, fall back to a tab, or
+                                     refuse a split that would leave a pane too
+                                     small to use.
+
+            Size-aware splits: c11 will not create a pane too small to be usable.
+            If the requested direction would leave a child below the minimum for
+            its surface kind (coding-agent TUIs need more room than a shell), c11
+            flips to the roomier axis, refuses with guidance, or — in `tab` mode —
+            adds a tab instead. Tune via Settings (paneSizeMode) or the
+            C11_SPLIT_SIZE_POLICY env var (off|warn|balance|tab).
 
             Example:
               c11 new-split right
@@ -8258,6 +8292,7 @@ struct CMUXCLI {
               c11 new-split right --title "Parent :: Code Review"
               c11 new-split right --cwd /Users/me/project
               c11 new-split down --cwd .
+              c11 new-split down --allow-undersized
             """
         case "list-panes":
             return """
@@ -8359,6 +8394,14 @@ struct CMUXCLI {
                                                   (absolute or relative to the CLI's cwd) is
                                                   validated and must be an existing directory.
                                                   `inherit` (the default) uses the parent surface's cwd.
+              --allow-undersized                  Bypass the size-aware split policy for this call
+                                                  (alias: --force).
+
+            Size-aware splits: c11 will not create a pane too small to be usable.
+            If the requested direction would leave a child below the minimum for its
+            surface kind, c11 flips to the roomier axis, refuses with guidance, or —
+            in `tab` mode — adds a tab instead. Tune via Settings (paneSizeMode) or
+            the C11_SPLIT_SIZE_POLICY env var (off|warn|balance|tab).
 
             Example:
               c11 new-pane
@@ -8366,6 +8409,7 @@ struct CMUXCLI {
               c11 new-pane --type markdown --file ~/docs/README.md
               c11 new-pane --title "Parent :: Code Review"
               c11 new-pane --cwd /Users/me/project
+              c11 new-pane --allow-undersized
             """
         case "new-surface":
             return """

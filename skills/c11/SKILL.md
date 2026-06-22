@@ -199,6 +199,25 @@ c11 new-workspace --layout <path|name>         # Create a workspace from a bluep
 - **Browsers are tabbed by default.** When you need a browser surface and the workspace **already has a browser pane**, add a new browser tab to that existing pane rather than opening a fresh browser pane — match the universal browser expectation that new pages are tabs, not new windows. Find the existing browser pane in `c11 tree --json` (the pane holding a `surface_type: browser` surface) and call `c11 new-surface --type browser --url <url> --pane <browser-pane-ref>`. Only reach for `c11 new-pane --type browser` when **no** browser pane exists yet, or when the operator explicitly wants a separate pane (e.g. two pages side by side for comparison). Spawning a new browser pane when one already exists is the awkward interaction to avoid.
 - **Operator-facing tab bar buttons.** Each pane's tab bar carries surface-spawn buttons: **A** (leftmost — launches the operator's configured agent; default Claude Code, set in Settings → Agents & Automation → Agent Launcher Button), then Terminal, Browser, Markdown. On the right, after the split buttons: **+** (new tab of the focused kind) and **X** (close this entire pane — shows a confirmation dialog). The X button is disabled when only one pane exists. These are UI affordances for the operator; agents continue to use the CLI commands above.
 
+## Size-aware splits
+
+`new-split` and `new-pane` will not create a pane too small to use. Before committing a 50/50 split, c11 computes the resulting child rects and checks them against a minimum for the surface kind — a coding-agent TUI (`claude-code`, `codex`, `kimi`, `opencode`, …) needs ~80×20 cells; a plain terminal ~40×10. A split that inherits the source pane's kind, so fanning a `claude-code` pane out into more agent panes holds every child to the agent minimum.
+
+The default policy (`balance`) resolves an undersized request in this order:
+
+1. **Use the requested direction** if both children stay above the minimum.
+2. **Flip the axis** if the other direction fits (the response reports `applied_direction` ≠ `requested_direction`, `size_outcome: flipped`, and a note on stderr). Splitting a wide pane `right` twice flips the second split to `down` instead of cascading to unreadable columns.
+3. **Refuse** with an actionable error (`pane_too_small`) naming the resulting size, the minimum, and the remedies.
+
+This means an orchestrator can fan out sub-agent panes without watching pixel math: c11 lays them out usably or tells you why it can't. When a split is refused, add a tab instead (`c11 new-surface --pane <ref>` — tabs don't shrink), close a sibling, or pass `--allow-undersized` (alias `--force`) to bypass the policy for that one call.
+
+```bash
+c11 new-split right                       # may flip to `down`, or refuse, to keep panes usable
+c11 new-split right --allow-undersized    # force the literal 50/50 split anyway
+```
+
+Successful responses carry `requested_direction`, `applied_direction`, `size_outcome` (`split` | `flipped` | `tab`), and `size_warning`. The policy mode is operator-tunable (`off` | `warn` | `balance` | `tab`) via Settings or the `C11_SPLIT_SIZE_POLICY` env var; `tab` mode auto-adds a tab instead of refusing. A surface can declare itself usable smaller with `min_cols` / `min_rows` metadata (e.g. a log tail or status strip). The manual tab-bar split buttons are not yet size-gated — this applies to the CLI/socket paths.
+
 ## Resize panes
 
 Binary splits aren't balanced automatically. Two `new-split right` calls give you `[A 50% | B 25% | C 25%]`, not equal thirds. Use `resize-pane` to rebalance.

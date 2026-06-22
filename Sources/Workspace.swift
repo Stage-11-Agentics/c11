@@ -7912,11 +7912,23 @@ final class Workspace: Identifiable, ObservableObject {
         return (intVal("min_cols"), intVal("min_rows"))
     }
 
-    /// The source pane's current font cell size (points), falling back to a default
-    /// when the surface has not reported metrics yet or is not a terminal.
+    /// The source pane's current font cell size **in points**, falling back to a
+    /// default when the surface has not reported metrics yet or is not a terminal.
+    ///
+    /// Ghostty reports the cell size in backing pixels, while pane frames from
+    /// `layoutSnapshot()` are in AppKit points, so divide by the backing scale
+    /// factor to keep the two in the same unit before deriving columns × rows.
     private func sourceCellSize(panelId: UUID) -> CGSize {
-        let cs = terminalPanel(for: panelId)?.hostedView.cellSize ?? .zero
-        return (cs.width > 0 && cs.height > 0) ? cs : PaneSizePolicy.fallbackCellSize
+        guard let host = terminalPanel(for: panelId)?.hostedView else {
+            return PaneSizePolicy.fallbackCellSize
+        }
+        let cs = host.cellSize
+        guard cs.width > 0, cs.height > 0 else { return PaneSizePolicy.fallbackCellSize }
+        let scale = host.window?.backingScaleFactor
+            ?? NSScreen.main?.backingScaleFactor
+            ?? 2.0
+        let s = scale > 0 ? scale : 2.0
+        return CGSize(width: cs.width / s, height: cs.height / s)
     }
 
     /// Evaluate a split request against the active size policy. Returns nil when the

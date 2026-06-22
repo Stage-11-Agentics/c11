@@ -25,10 +25,10 @@ c11.
 - `bonsplitController.layoutSnapshot()` → `containerFrame` (content area, pt) and
   `panes[]` each with a pixel `frame` (pt). This is the source of the current pane size.
 - A terminal surface's font cell size lives on `TerminalPanel.hostedView.cellSize`
-  (`GhosttySurfaceScrollView`), in **AppKit points** — the same unit as pane frames
-  (confirmed: `documentHeight() = scrollbar.total * cellHeight` is compared against an
-  NSView frame). So `cols = frame.width / cellSize.width`, `rows = frame.height /
-  cellSize.height` is unit-consistent; no retina-scale correction.
+  (`GhosttySurfaceScrollView`), reported by Ghostty in **backing pixels**, while pane
+  frames are in **AppKit points**. `Workspace.sourceCellSize` divides the cell size by
+  the surface's `backingScaleFactor` to bring both into points before deriving
+  `cols = frame.width / cellSize.width`, `rows = frame.height / cellSize.height`.
 - Surface kind comes from `terminal_type` in the surface manifest
   (`SurfaceMetadataStore`): `claude-code`, `codex`, `grok`, `kimi`, `opencode`,
   `opencode-run`, `github-copilot` are coding agents; `shell` / `unknown` / unset are

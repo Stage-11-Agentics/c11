@@ -56,6 +56,29 @@ xcodebuild -project GhosttyTabs.xcodeproj -scheme c11 -configuration Debug -dest
 
 A Release/staging build (`reloads.sh`, or a published `c11 STAGING …`) binds its **own** socket (e.g. `/tmp/c11-rel-<ver>.sock`) that a CLI running in a production-c11 shell cannot write to — the writes fail even with the path pointed at it. To run `c11` CLI or socket checks against such a build, run them from a terminal **inside that build**. For socket-level validation during development, prefer a tagged **Debug** build, whose socket is reachable from any shell via `C11_SOCKET=/tmp/c11-debug-<tag>.sock`.
 
+## QA / automation launch (suppress the startup dialogs)
+
+A normal launch can present two blocking dialogs before the GUI is usable: the **Agent Skills** install/update sheet and the **"Resume previous session?"** picker. For automated QA they're just modals in the way. The `C11_QA_LAUNCH` env var (dual-read `CMUX_QA_LAUNCH`) suppresses **both** and makes the resume decision deterministic:
+
+| `C11_QA_LAUNCH` | Skill sheet | Resume picker | Session |
+|---|---|---|---|
+| `fresh` (or any non-`resume` value) | suppressed | suppressed | clean slate, no restore |
+| `resume` | suppressed | suppressed | silently restores the prior session |
+| unset / empty | may show | may show | normal interactive launch |
+
+It's read fresh each launch and never persisted, so it can't leak into a later non-QA run. Default is **fresh** — automation usually wants a known-empty start; `resume` is the deliberate opt-in.
+
+```bash
+# Tagged automation launcher — dedicated flag:
+./scripts/launch-tagged-automation.sh <tag> --qa           # fresh (clean slate)
+./scripts/launch-tagged-automation.sh <tag> --qa resume    # restore prior session
+
+# Any other launch path — set the env var directly:
+C11_QA_LAUNCH=fresh open "/path/to/c11 DEV <tag>.app"
+```
+
+The launcher unsets any inherited `C11_QA_LAUNCH`/`CMUX_QA_LAUNCH` and only sets it when `--qa` is passed, so a stray value in your shell can't silently flip a normal run into QA mode.
+
 ## Rebuilding GhosttyKit
 
 When rebuilding `GhosttyKit.xcframework`, always use Release optimizations:

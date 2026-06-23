@@ -4048,6 +4048,80 @@ class TerminalController {
         return surfaceRef.replacingOccurrences(of: "surface:", with: "tab:")
     }
 
+    /// Cheap surface-ref-only lookup. Mints (or returns) just the `surface:N`
+    /// handle for a panel — a dictionary lookup, no pane/window/locate work.
+    /// Used by the bonsplit tab context menu's "Copy surface:N" item, which is
+    /// built per tab and must stay cheap. `@MainActor` like the ref maps.
+    func surfaceRefOnly(forSurfaceUUID surfaceId: UUID) -> String {
+        v2EnsureHandleRef(kind: .surface, uuid: surfaceId)
+    }
+
+    /// UI-facing handle lookup for the Surface Details panel.
+    ///
+    /// Mints (or returns) the friendly `surface:N` / `tab:N` / `pane:M` /
+    /// `workspace:X` / `window:Y` handles for a surface — the same numbers the
+    /// CLI (`c11 identify`, `c11 tree`) exposes — plus a few human-relevant
+    /// fields (tty, cwd, url, file). The operator opens this to answer "what
+    /// number is this surface?" without dropping to the CLI. Minting on demand
+    /// is intentional: a surface the CLI has never touched still gets a stable
+    /// handle the operator can paste into a command.
+    ///
+    /// `@MainActor`-confined like the rest of the v2 ref maps; safe to call
+    /// from UI (the panel is presented on the main actor).
+    func surfaceHandleInfo(workspaceId: UUID, surfaceId: UUID) -> SurfaceHandleInfo {
+        let surfaceRef = v2EnsureHandleRef(kind: .surface, uuid: surfaceId)
+        let tabRef = surfaceRef.replacingOccurrences(of: "surface:", with: "tab:")
+        let workspaceRef = v2EnsureHandleRef(kind: .workspace, uuid: workspaceId)
+
+        var paneRef: String?
+        var windowRef: String?
+        var tty: String?
+        var workingDirectory: String?
+        var url: String?
+        var filePath: String?
+
+        if let located = AppDelegate.shared?.locateSurface(surfaceId: surfaceId) {
+            windowRef = v2EnsureHandleRef(kind: .window, uuid: located.windowId)
+            if let ws = located.tabManager.tabs.first(where: { $0.id == located.workspaceId }) {
+                for paneId in ws.bonsplitController.allPaneIds
+                where ws.bonsplitController.tabs(inPane: paneId)
+                    .contains(where: { ws.panelIdFromSurfaceId($0.id) == surfaceId }) {
+                    paneRef = v2EnsureHandleRef(kind: .pane, uuid: paneId.id)
+                    break
+                }
+                tty = ws.surfaceTTYNames[surfaceId]
+                workingDirectory = ws.surfaceDirectories[surfaceId]
+                if let panel = ws.panels[surfaceId] {
+                    if let browser = panel as? BrowserPanel {
+                        url = browser.currentURL?.absoluteString
+                    }
+                    if let markdown = panel as? MarkdownPanel {
+                        filePath = markdown.filePath
+                    }
+                }
+            }
+        }
+
+        let (metadata, _) = SurfaceMetadataStore.shared.getMetadata(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId
+        )
+        let terminalType = metadata[MetadataKey.terminalType] as? String
+
+        return SurfaceHandleInfo(
+            surfaceRef: surfaceRef,
+            tabRef: tabRef,
+            paneRef: paneRef,
+            workspaceRef: workspaceRef,
+            windowRef: windowRef,
+            terminalType: terminalType,
+            tty: tty,
+            workingDirectory: workingDirectory,
+            url: url,
+            filePath: filePath
+        )
+    }
+
     private func v2RefreshKnownRefs() {
         guard let app = AppDelegate.shared else { return }
 

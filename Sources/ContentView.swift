@@ -5314,6 +5314,15 @@ struct ContentView: View {
         )
         contributions.append(
             CommandPaletteCommandContribution(
+                commandId: "palette.surfaceDetails",
+                title: constant(String(localized: "command.surfaceDetails.title", defaultValue: "Surface Details")),
+                subtitle: panelSubtitle,
+                keywords: ["surface", "details", "manifest", "metadata", "id", "number", "tab"],
+                when: { $0.bool(CommandPaletteContextKeys.hasFocusedPanel) }
+            )
+        )
+        contributions.append(
+            CommandPaletteCommandContribution(
                 commandId: "palette.closeTab",
                 title: constant(String(localized: "command.closeTab.title", defaultValue: "Close Tab")),
                 subtitle: constant(String(localized: "command.closeTab.subtitle", defaultValue: "Tab")),
@@ -5969,6 +5978,15 @@ struct ContentView: View {
             DispatchQueue.main.async {
                 _ = AppDelegate.shared?.openBrowserAndFocusAddressBar()
             }
+        }
+        registry.register(commandId: "palette.surfaceDetails") {
+            guard let workspace = tabManager.selectedWorkspace,
+                  let panelId = workspace.focusedPanelId,
+                  let panel = workspace.panels[panelId] else {
+                NSSound.beep()
+                return
+            }
+            workspace.showSurfaceDetails(for: panel)
         }
         registry.register(commandId: "palette.closeTab") {
             tabManager.closeCurrentPanelWithConfirmation()

@@ -157,6 +157,14 @@ enum SessionRestorePolicy {
         arguments: [String] = CommandLine.arguments,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> Bool {
+        // QA launch (`C11_QA_LAUNCH`) is the deterministic override: in QA
+        // mode the resume decision comes straight from the flag — load the
+        // snapshot iff resume was requested, regardless of args or test
+        // markers. This wins over everything below so QA runs are reproducible.
+        let qa = QALaunchPolicy.current(environment: environment)
+        if qa.isActive {
+            return qa.shouldResume
+        }
         if environment["CMUX_DISABLE_SESSION_RESTORE"] == "1" {
             return false
         }

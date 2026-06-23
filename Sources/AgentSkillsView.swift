@@ -1448,8 +1448,12 @@ enum AgentSkillsOnboarding {
         home: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true),
         sourceDir: URL? = nil,
         defaults: UserDefaults = .standard,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> Bool {
+        // QA launch (`C11_QA_LAUNCH`) suppresses the onboarding sheet so
+        // automated runs reach a usable window with no modal in the way.
+        if QALaunchPolicy.current(environment: environment).isActive { return false }
         if defaults.bool(forKey: dontAskAgainKey) { return false }
         if _dismissedThisLaunch { return false }
         let resolvedSource: URL

@@ -258,6 +258,72 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertFalse(shouldRestore)
     }
 
+    // MARK: - QA launch policy
+
+    func testQALaunchPolicyOffWhenUnset() {
+        XCTAssertEqual(QALaunchPolicy.current(environment: [:]), .off)
+        XCTAssertEqual(QALaunchPolicy.current(environment: ["C11_QA_LAUNCH": "  "]), .off)
+        XCTAssertFalse(QALaunchPolicy.current(environment: [:]).isActive)
+    }
+
+    func testQALaunchPolicyFreshForNonResumeValues() {
+        for value in ["fresh", "FRESH", "none", "0", "1", "yes", "clean"] {
+            let policy = QALaunchPolicy.current(environment: ["C11_QA_LAUNCH": value])
+            XCTAssertEqual(policy, .on(.fresh), "value=\(value)")
+            XCTAssertTrue(policy.isActive)
+            XCTAssertTrue(policy.shouldStartFresh)
+            XCTAssertFalse(policy.shouldResume)
+        }
+    }
+
+    func testQALaunchPolicyResumeValues() {
+        for value in ["resume", "RESUME", " restore ", "Resume"] {
+            let policy = QALaunchPolicy.current(environment: ["C11_QA_LAUNCH": value])
+            XCTAssertEqual(policy, .on(.resume), "value=\(value)")
+            XCTAssertTrue(policy.isActive)
+            XCTAssertTrue(policy.shouldResume)
+            XCTAssertFalse(policy.shouldStartFresh)
+        }
+    }
+
+    func testQALaunchPolicyDualReadsLegacyKeyButC11Wins() {
+        XCTAssertEqual(
+            QALaunchPolicy.current(environment: ["CMUX_QA_LAUNCH": "resume"]),
+            .on(.resume)
+        )
+        // C11_* is canonical and wins when both are present.
+        XCTAssertEqual(
+            QALaunchPolicy.current(environment: [
+                "C11_QA_LAUNCH": "fresh",
+                "CMUX_QA_LAUNCH": "resume",
+            ]),
+            .on(.fresh)
+        )
+    }
+
+    func testRestorePolicyFreshQALaunchSkipsRestore() {
+        // QA fresh: no snapshot load even though there are no explicit args.
+        let shouldRestore = SessionRestorePolicy.shouldAttemptRestore(
+            arguments: ["/Applications/cmux.app/Contents/MacOS/cmux"],
+            environment: ["C11_QA_LAUNCH": "fresh"]
+        )
+        XCTAssertFalse(shouldRestore)
+    }
+
+    func testRestorePolicyResumeQALaunchForcesRestore() {
+        // QA resume wins even over markers that would normally skip restore
+        // (test detection, disable flag), so the resume decision is the flag's.
+        let shouldRestore = SessionRestorePolicy.shouldAttemptRestore(
+            arguments: ["/Applications/cmux.app/Contents/MacOS/cmux"],
+            environment: [
+                "C11_QA_LAUNCH": "resume",
+                "CMUX_DISABLE_SESSION_RESTORE": "1",
+                "XCTestConfigurationFilePath": "/tmp/xctest.xctestconfiguration",
+            ]
+        )
+        XCTAssertTrue(shouldRestore)
+    }
+
     func testSidebarWidthSanitizationClampsToPolicyRange() {
         XCTAssertEqual(
             SessionPersistencePolicy.sanitizedSidebarWidth(-20),

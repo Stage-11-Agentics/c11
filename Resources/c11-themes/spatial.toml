@@ -1,0 +1,79 @@
+# Spatial — the floor-plan register. Gold + ice-blue on cool near-black.
+# Translated from the "Spatial" HTML prototype direction.
+# NOTE: the prototype's persistent minimap (floor-plan overlay) is a FEATURE,
+# not a theme. This file captures the color register: a cool, slightly blue-shifted
+# void with an ice-blue secondary (accentAlt) for a calm, navigable feel.
+
+[identity]
+name         = "spatial"
+display_name = "Spatial"
+author       = "Stage 11 Agentics"
+version      = "0.01.001"
+schema       = 1
+
+[palette]
+void    = "#070A0E"
+surface = "#0E1318"
+gold    = "#C4A561"   # accent — same singular gold as canonical
+ice     = "#7FD8F5"   # secondary — ice-blue, spatial/cool
+fog     = "#202A33"
+text    = "#E8ECEF"
+textDim = "#828D97"
+
+[variables]
+background          = "$palette.void"
+surface             = "$palette.surface"
+foreground          = "$palette.text"
+foregroundSecondary = "$palette.textDim"
+accent              = "$palette.gold"
+accentAlt           = "$palette.ice"
+separator           = "$palette.fog"
+workspaceColor      = "$workspaceColor"
+ghosttyBackground   = "$ghosttyBackground"
+
+[chrome.windowFrame]
+color            = "$workspaceColor"
+thicknessPt      = 1.5
+inactiveOpacity  = 0.25
+unfocusedOpacity = 0.6
+
+[chrome.sidebar]
+tintOverlay                   = "$accentAlt.opacity(0.05)"   # cool ice wash
+tintBase                      = "$background"
+tintBaseOpacity               = 0.18
+activeTabFill                 = "$workspaceColor"
+activeTabFillFallback         = "$surface"
+activeTabRail                 = "$workspaceColor"
+activeTabRailFallback         = "$accentAlt"
+activeTabRailOpacity          = 0.95
+inactiveTabCustomOpacity      = 0.70
+inactiveTabMultiSelectOpacity = 0.35
+badgeFill                     = "$accent"
+borderLeading                 = "$separator"
+
+[chrome.dividers]
+color       = "$accentAlt.mix($background, 0.82)"   # faint ice edge between tiles
+thicknessPt = 1.0
+
+[chrome.titleBar]
+background          = "$surface"
+backgroundOpacity   = 0.85
+foreground          = "$foreground"
+foregroundSecondary = "$foregroundSecondary"
+borderBottom        = "$separator"
+
+[chrome.tabBar]
+background       = "$background"
+activeFill       = "$background.lighten(0.05)"
+divider          = "$separator"
+activeIndicator  = "$workspaceColor"
+
+[chrome.browserChrome]
+background   = "$background"
+omnibarFill  = "$surface.mix($background, 0.15)"
+
+[chrome.markdownChrome]
+background = "$background"
+
+[behavior]
+animateWorkspaceCrossfade = true   # slow, spatial transitions

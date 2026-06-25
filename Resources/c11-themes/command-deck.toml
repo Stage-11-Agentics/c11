@@ -1,0 +1,80 @@
+# Command Deck — the Overwatch register. Amber + teal HUD on near-black.
+# Translated from the "Command Deck" HTML prototype direction.
+# NOTE: the prototype's fleet HUD strip (AGENTS / RUNNING / NEED YOU) is a
+# SIDEBAR FEATURE, not a theme — it can't be expressed here. This file captures
+# the color register: amber accent, teal secondary routed into the HUD-ish roles
+# (title-bar secondary text, badge, rail fallback).
+
+[identity]
+name         = "command-deck"
+display_name = "Command Deck"
+author       = "Stage 11 Agentics"
+version      = "0.01.001"
+schema       = 1
+
+[palette]
+void    = "#08090C"
+surface = "#101319"
+amber   = "#FFC857"   # accent — "needs you" / active
+teal    = "#5EE6CC"   # secondary — "running" / live telemetry
+fog     = "#28303A"
+text    = "#EEF1F4"
+textDim = "#929AA4"
+
+[variables]
+background          = "$palette.void"
+surface             = "$palette.surface"
+foreground          = "$palette.text"
+foregroundSecondary = "$palette.textDim"
+accent              = "$palette.amber"
+accentAlt           = "$palette.teal"
+separator           = "$palette.fog"
+workspaceColor      = "$workspaceColor"
+ghosttyBackground   = "$ghosttyBackground"
+
+[chrome.windowFrame]
+color            = "$workspaceColor"
+thicknessPt      = 1.5
+inactiveOpacity  = 0.25
+unfocusedOpacity = 0.6
+
+[chrome.sidebar]
+tintOverlay                   = "#00000000"
+tintBase                      = "$background"
+tintBaseOpacity               = 0.18
+activeTabFill                 = "$workspaceColor"
+activeTabFillFallback         = "$surface"
+activeTabRail                 = "$workspaceColor"
+activeTabRailFallback         = "$accentAlt"
+activeTabRailOpacity          = 0.95
+inactiveTabCustomOpacity      = 0.70
+inactiveTabMultiSelectOpacity = 0.35
+badgeFill                     = "$accent"
+borderLeading                 = "$separator"
+
+[chrome.dividers]
+color       = "$workspaceColor.mix($background, 0.65)"
+thicknessPt = 1.0
+
+[chrome.titleBar]
+background          = "$surface"
+backgroundOpacity   = 0.85
+foreground          = "$foreground"
+foregroundSecondary = "$accentAlt"   # teal secondary text — HUD feel
+borderBottom        = "$separator"
+
+[chrome.tabBar]
+background       = "$background"
+activeFill       = "$background.lighten(0.05)"
+divider          = "$separator"
+activeIndicator  = "$workspaceColor"
+
+[chrome.browserChrome]
+background   = "$background"
+omnibarFill  = "$surface.mix($background, 0.15)"
+
+[chrome.markdownChrome]
+background = "$background"
+
+[behavior]
+animateWorkspaceCrossfade = false   # snappy, mission-control

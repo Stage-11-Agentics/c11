@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>c11 — design directions</title>
+<style>
+/* ============================================================
+   c11 design-direction prototype
+   One faithful app shell, re-skinned across 6 directions.
+   Switch with the bar at the top. Everything is a mock.
+   ============================================================ */
+
+/* ---- design tokens (defaults = canonical Void+Gold) ---- */
+:root{
+  --void:#0A0C0F;          /* ground state */
+  --surface:#121519;       /* elevated: title bar, dialogs */
+  --surface-2:#171B20;     /* tab active fill */
+  --rule:#2A2F36;          /* fog / separators */
+  --dim:#8A8F96;           /* secondary text */
+  --text:#E9EAEB;          /* primary text */
+  --accent:#C4A561;        /* the one color */
+  --accent-2:#C4A561;      /* secondary accent (= accent by default) */
+  --accent-faint:rgba(196,165,97,.22);
+  --ws:#C75B86;            /* active workspace color (dynamic per ws) */
+  --ok:#5EE6CC; --warn:#FFC857; --bad:#FF6B6B;
+  --chrome-font:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  --radius:7px; --radius-lg:14px;
+  --pane-glow:none;
+  --grid:none;
+  --sidebar-w:212px;
+  --tab-underbar:3px;
+}
+
+/* ---- skin overrides ---- */
+[data-skin="obsidian"]{
+  --void:#05070A; --surface:#0C1015; --surface-2:#11161D; --rule:#1E2A33;
+  --dim:#7F8C93; --text:#EDEFF0; --accent:#D8B65C; --accent-2:#3FE0C0;
+  --accent-faint:rgba(216,182,92,.20); --ws:#8B6FE0;
+  --pane-glow:0 0 0 1px rgba(216,182,92,.10), 0 0 38px -8px rgba(63,224,192,.18) inset;
+  --grid:radial-gradient(circle at 1px 1px, rgba(120,140,160,.05) 1px, transparent 0);
+  --radius:9px; --radius-lg:18px;
+}
+[data-skin="blueprint"]{
+  --void:#0B0D10; --surface:#0F1318; --surface-2:#131820; --rule:#243038;
+  --dim:#7C8893; --text:#DDE6EC; --accent:#E0B84F; --accent-2:#5FB3FF;
+  --accent-faint:rgba(95,179,255,.16); --ws:#5FB3FF;
+  --grid:linear-gradient(rgba(95,179,255,.045) 1px,transparent 1px),
+         linear-gradient(90deg,rgba(95,179,255,.045) 1px,transparent 1px);
+  --radius:3px; --radius-lg:5px; --tab-underbar:2px;
+}
+[data-skin="command"]{
+  --void:#08090C; --surface:#101319; --surface-2:#161B22; --rule:#28303A;
+  --dim:#929AA4; --text:#EEF1F4; --accent:#FFC857; --accent-2:#5EE6CC;
+  --accent-faint:rgba(255,200,87,.18); --ws:#5EE6CC;
+  --radius:6px; --radius-lg:12px;
+}
+[data-skin="phosphor"]{
+  --void:#EFEFE7; --surface:#FFFFFF; --surface-2:#F4F5F0; --rule:#D8DAD0;
+  --dim:#697066; --text:#1B231D; --accent:#2C9C62; --accent-2:#2C9C62;
+  --accent-faint:rgba(44,156,98,.16); --ws:#2C9C62;
+  --pane-glow:0 1px 2px rgba(20,30,22,.06);
+  --grid:none;
+}
+[data-skin="spatial"]{
+  --void:#070A0E; --surface:#0E1318; --surface-2:#141B22; --rule:#202A33;
+  --dim:#828D97; --text:#E8ECEF; --accent:#C4A561; --accent-2:#7FD8F5;
+  --accent-faint:rgba(127,216,245,.16); --ws:#7FD8F5;
+  --radius:10px; --radius-lg:16px;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:#000; color:var(--text);
+  font-family:var(--chrome-font); font-size:13px;
+  -webkit-font-smoothing:antialiased; overflow:hidden;
+  display:flex; flex-direction:column;
+}
+
+/* ============ direction switcher ============ */
+.switcher{
+  flex:0 0 auto; display:flex; align-items:center; gap:2px;
+  padding:9px 14px; background:#000;
+  border-bottom:1px solid #1a1a1a;
+}
+.switcher .brand{
+  font-family:var(--mono); font-weight:600; font-size:12px;
+  letter-spacing:.18em; color:#C4A561; margin-right:18px;
+  text-transform:uppercase;
+}
+.switcher button{
+  appearance:none; border:1px solid transparent; background:transparent;
+  color:#9aa0a6; font-family:var(--mono); font-size:11px; letter-spacing:.04em;
+  padding:6px 11px; border-radius:6px; cursor:pointer; transition:.14s;
+}
+.switcher button:hover{color:#e8e8e8; background:#121212}
+.switcher button.active{color:#0a0a0a; background:#C4A561; border-color:#C4A561; font-weight:600}
+.switcher .meta{margin-left:auto; font-family:var(--mono); font-size:10.5px; color:#55585c}
+
+/* ============ app window ============ */
+.stage{flex:1 1 auto; min-height:0; padding:18px; background:#000; display:flex}
+.window{
+  flex:1 1 auto; min-height:0; display:flex; flex-direction:column;
+  background:var(--void); border-radius:var(--radius-lg); overflow:hidden;
+  border:1.5px solid color-mix(in srgb, var(--ws) 70%, var(--void));
+  box-shadow:0 24px 80px -20px rgba(0,0,0,.8);
+}
+.titlebar-os{
+  flex:0 0 auto; height:30px; display:flex; align-items:center; gap:8px;
+  padding:0 14px; background:var(--void);
+  border-bottom:1px solid var(--rule);
+}
+.dot{width:11px;height:11px;border-radius:50%}
+.dot.r{background:#ff5f57}.dot.y{background:#febc2e}.dot.g{background:#28c840}
+.titlebar-os .t{font-family:var(--mono); font-size:11px; color:var(--dim); margin:0 auto; letter-spacing:.05em}
+
+.body{flex:1 1 auto; min-height:0; display:flex}
+
+/* ============ sidebar ============ */
+.sidebar{
+  flex:0 0 var(--sidebar-w); min-width:0; display:flex; flex-direction:column;
+  background:color-mix(in srgb, var(--void) 92%, #000);
+  border-right:1px solid var(--rule);
+}
+.sb-head{
+  display:flex; align-items:center; gap:6px; padding:9px 11px;
+  border-bottom:1px solid var(--rule);
+}
+.sb-head .label{font-family:var(--mono); font-size:10px; letter-spacing:.16em; color:var(--dim); text-transform:uppercase}
+.sb-head .add{
+  margin-left:auto; width:20px;height:20px; border-radius:5px; display:grid;place-items:center;
+  color:var(--dim); border:1px solid var(--rule); font-size:13px; cursor:pointer;
+}
+.sb-head .add:hover{color:var(--text); border-color:var(--accent)}
+.sb-scroll{flex:1 1 auto; overflow:auto; padding:4px 0}
+.sb-scroll::-webkit-scrollbar{width:7px}
+.sb-scroll::-webkit-scrollbar-thumb{background:var(--rule); border-radius:4px}
+
+.ws{
+  position:relative; padding:8px 11px 9px 13px; cursor:pointer;
+  border-bottom:1px solid color-mix(in srgb,var(--rule) 45%, transparent);
+}
+.ws .rail{position:absolute; left:0; top:0; bottom:0; width:0; background:var(--ws); transition:.15s}
+.ws:hover{background:color-mix(in srgb,var(--text) 4%, transparent)}
+.ws.active{background:color-mix(in srgb,var(--ws) 16%, transparent)}
+.ws.active .rail{width:3px}
+.ws.active .ws-title{color:color-mix(in srgb,var(--ws) 60%, var(--text))}
+.ws-title{font-size:12.5px; font-weight:600; color:color-mix(in srgb,var(--text) 78%, transparent); line-height:1.25; margin-bottom:3px}
+.ws-row{display:flex; align-items:center; gap:5px; margin-top:2px}
+.agent-chip{display:inline-flex; align-items:center; gap:4px}
+.agent-ico{
+  width:14px;height:14px;border-radius:4px; display:grid;place-items:center;
+  font-family:var(--mono); font-size:8px; font-weight:700; color:var(--void);
+  background:var(--accent);
+}
+.agent-ico.cdx{background:#10a37f;color:#fff}
+.agent-ico.shell{background:var(--rule);color:var(--text)}
+.model{font-size:10px; color:var(--dim); font-weight:500}
+.branch{font-family:var(--mono); font-size:10px; color:var(--dim); opacity:.85; display:flex;align-items:center;gap:4px}
+.branch .gdot{width:6px;height:6px;border-radius:50%;background:#5FB3FF}
+.status{font-size:10px; margin-top:4px; display:flex; align-items:center; gap:5px; color:var(--dim)}
+.sdot{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
+.sdot.warn{background:var(--warn)} .sdot.ok{background:var(--ok)} .sdot.run{background:var(--accent-2)} .sdot.bad{background:var(--bad)}
+.status.attn{color:var(--warn)}
+.pbar{height:3px; border-radius:2px; background:var(--rule); margin-top:6px; overflow:hidden}
+.pbar > i{display:block; height:100%; background:var(--accent); border-radius:2px}
+
+.sb-foot{flex:0 0 auto; padding:9px 11px; border-top:1px solid var(--rule)}
+.notif{
+  display:flex;align-items:center;gap:8px; padding:7px 10px; border-radius:var(--radius);
+  background:var(--accent); color:var(--void); font-size:11px; font-weight:600; cursor:pointer;
+}
+.notif .arr{margin-left:auto}
+
+/* fleet strip — command deck only */
+.fleet{display:none}
+[data-skin="command"] .fleet{
+  display:flex; gap:0; flex:0 0 auto; border-bottom:1px solid var(--rule);
+  background:color-mix(in srgb,var(--void) 80%,#000);
+}
+.fleet .cell{flex:1; padding:8px 12px; border-right:1px solid var(--rule)}
+.fleet .cell:last-child{border-right:0}
+.fleet .k{font-family:var(--mono); font-size:9px; letter-spacing:.12em; color:var(--dim); text-transform:uppercase}
+.fleet .v{font-size:19px; font-weight:700; margin-top:3px; font-family:var(--mono)}
+.fleet .v.ok{color:var(--ok)} .fleet .v.warn{color:var(--warn)} .fleet .v.run{color:var(--accent-2)}
+
+/* ============ main content ============ */
+.main{flex:1 1 auto; min-width:0; display:flex; flex-direction:column}
+.split{flex:1 1 auto; min-height:0; display:flex}
+.col{display:flex; flex-direction:column; min-width:0; min-height:0}
+.col.left{flex:1.45 1 0}
+.col.right{flex:1 1 0; border-left:1px solid var(--rule)}
+.pane{flex:1 1 0; min-height:0; display:flex; flex-direction:column; position:relative}
+.pane + .pane{border-top:1px solid var(--rule)}
+
+/* tab strip */
+.tabstrip{
+  flex:0 0 auto; height:32px; display:flex; align-items:stretch;
+  background:var(--void); border-bottom:1px solid var(--rule);
+}
+.tab{
+  display:flex; align-items:center; gap:7px; padding:0 12px; min-width:96px; max-width:210px;
+  font-size:11px; font-weight:600; color:var(--dim); cursor:pointer; position:relative;
+  border-right:1px solid color-mix(in srgb,var(--rule) 60%,transparent);
+}
+.tab .ti{width:13px;height:13px;border-radius:3px;display:grid;place-items:center;font-size:8px;font-family:var(--mono);font-weight:700}
+.tab.active{color:var(--text); background:var(--surface-2)}
+.tab.active::after{content:"";position:absolute;left:0;right:0;bottom:0;height:var(--tab-underbar);background:var(--ws)}
+.tab.active::before{content:"";position:absolute;left:0;right:0;top:0;height:1px;background:var(--accent)}
+.tabtools{margin-left:auto; display:flex; align-items:center; gap:2px; padding:0 8px}
+.ttbtn{width:24px;height:24px;border-radius:5px;display:grid;place-items:center;color:var(--dim);cursor:pointer;font-size:12px;font-family:var(--mono)}
+.ttbtn:hover{color:var(--text);background:color-mix(in srgb,var(--text) 6%,transparent)}
+.ttbtn.a{color:var(--accent);font-weight:700}
+.tt-sep{width:1px;height:16px;background:var(--rule);margin:0 4px}
+
+/* surface title bar */
+.surfbar{
+  flex:0 0 auto; padding:7px 12px; background:color-mix(in srgb,var(--surface) 85%, transparent);
+  border-bottom:1px solid var(--rule);
+}
+.surfbar .row1{display:flex; align-items:center; gap:8px}
+.surfbar .title{font-size:12px; font-weight:600; color:var(--text)}
+.surfbar .pill{
+  font-family:var(--mono); font-size:9px; letter-spacing:.04em; padding:2px 7px; border-radius:20px;
+  display:inline-flex; align-items:center; gap:5px; border:1px solid var(--rule); color:var(--dim);
+}
+.surfbar .pill .sdot{width:5px;height:5px}
+.surfbar .pill.run{color:var(--accent-2); border-color:color-mix(in srgb,var(--accent-2) 40%,transparent)}
+.surfbar .pill.task{color:var(--accent); border-color:var(--accent-faint)}
+.surfbar .chevron{margin-left:auto; color:var(--dim); font-size:11px; cursor:pointer}
+.surfbar .desc{font-size:10.5px; color:var(--dim); margin-top:4px; line-height:1.45}
+.surfbar .desc b{color:color-mix(in srgb,var(--text) 80%,transparent); font-weight:600}
+.miniprog{height:3px;border-radius:2px;background:var(--rule);margin-top:7px;overflow:hidden}
+.miniprog > i{display:block;height:100%;background:var(--accent)}
+
+/* terminal body */
+.term{
+  flex:1 1 auto; min-height:0; overflow:auto; padding:12px 14px;
+  font-family:var(--mono); font-size:11.5px; line-height:1.6; color:var(--text);
+  background:var(--void); box-shadow:var(--pane-glow);
+  background-image:var(--grid); background-size:22px 22px;
+}
+.term::-webkit-scrollbar{width:8px}.term::-webkit-scrollbar-thumb{background:var(--rule);border-radius:4px}
+.term .dimt{color:var(--dim)}
+.term .gold{color:var(--accent)}
+.term .ok{color:var(--ok)} .term .warn{color:var(--warn)} .term .acc2{color:var(--accent-2)}
+.term .prompt{color:var(--accent)}
+.term .b{font-weight:700}
+.term .blk{margin:7px 0}
+.cursor{display:inline-block;width:7px;height:14px;background:var(--accent);vertical-align:-2px;animation:blink 1.1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* browser surface */
+.omni{
+  flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:7px 10px;
+  background:color-mix(in srgb,var(--surface) 60%,transparent); border-bottom:1px solid var(--rule);
+}
+.omni .navbtn{color:var(--dim);font-size:12px}
+.omni .url{
+  flex:1; font-family:var(--mono); font-size:10.5px; color:var(--dim);
+  background:var(--void); border:1px solid var(--rule); border-radius:20px; padding:5px 12px;
+}
+.omni .url b{color:var(--text)}
+.webview{flex:1 1 auto; min-height:0; overflow:hidden; background:var(--void); position:relative; padding:18px 20px}
+.webview .hero{
+  height:100%; border-radius:var(--radius-lg); border:1px solid var(--rule);
+  background:
+    radial-gradient(60% 80% at 70% 20%, color-mix(in srgb,var(--accent) 16%,transparent), transparent 60%),
+    radial-gradient(50% 60% at 20% 90%, color-mix(in srgb,var(--accent-2) 14%,transparent), transparent 60%),
+    var(--surface);
+  display:flex; flex-direction:column; justify-content:center; padding:34px; gap:10px;
+}
+.webview .hero .eyebrow{font-family:var(--mono);font-size:9px;letter-spacing:.3em;color:var(--accent);text-transform:uppercase}
+.webview .hero h1{font-size:26px; font-weight:700; letter-spacing:-.01em; max-width:80%; line-height:1.1}
+.webview .hero p{font-size:12px;color:var(--dim);max-width:60%;line-height:1.6}
+
+/* markdown surface */
+.mdview{flex:1 1 auto; min-height:0; overflow:auto; padding:18px 22px; background:var(--void)}
+.mdview::-webkit-scrollbar{width:8px}.mdview::-webkit-scrollbar-thumb{background:var(--rule);border-radius:4px}
+.mdview h2{font-size:15px;margin:2px 0 10px;display:flex;align-items:center;gap:8px}
+.mdview h2::before{content:"";width:10px;height:10px;border-radius:2px;background:var(--accent)}
+.mdview h3{font-size:12px;color:var(--accent);text-transform:uppercase;letter-spacing:.1em;margin:16px 0 7px;font-family:var(--mono)}
+.mdview p{font-size:12px;color:color-mix(in srgb,var(--text) 86%,transparent);line-height:1.65;margin:7px 0}
+.mdview li{font-size:12px;color:var(--dim);line-height:1.7;margin-left:18px}
+.mdview code{font-family:var(--mono);font-size:11px;color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent);padding:1px 5px;border-radius:4px}
+.mdview .rule{height:1px;background:var(--rule);margin:16px 0}
+
+/* blueprint coordinate labels */
+.coords{display:none}
+[data-skin="blueprint"] .coords{
+  display:block; position:absolute; top:36px; right:10px; z-index:5;
+  font-family:var(--mono); font-size:9px; color:var(--accent-2); letter-spacing:.05em;
+  background:color-mix(in srgb,var(--void) 70%,transparent); padding:2px 6px; border:1px solid var(--rule); border-radius:3px;
+}
+[data-skin="blueprint"] .surfbar .title::before{content:"▢ "; color:var(--accent-2)}
+
+/* spatial minimap */
+.minimap{display:none}
+[data-skin="spatial"] .minimap{
+  display:block; position:absolute; bottom:14px; right:14px; z-index:6;
+  width:150px; height:96px; background:color-mix(in srgb,var(--void) 80%,transparent);
+  border:1px solid var(--rule); border-radius:var(--radius); padding:7px;
+  backdrop-filter:blur(6px);
+}
+.minimap .mlabel{font-family:var(--mono);font-size:8px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;margin-bottom:5px}
+.minimap .mgrid{display:grid; grid-template-columns:1.4fr 1fr; grid-template-rows:1fr 1fr; gap:3px; height:64px}
+.minimap .mt{border-radius:3px; background:color-mix(in srgb,var(--text) 8%,transparent); border:1px solid var(--rule)}
+.minimap .mt.on{background:color-mix(in srgb,var(--accent-2) 28%,transparent); border-color:var(--accent-2)}
+.minimap .mt.lg{grid-row:span 2}
+
+/* obsidian glyph divider accents */
+[data-skin="obsidian"] .col.right{border-left:1px solid color-mix(in srgb,var(--accent-2) 22%,var(--rule))}
+[data-skin="obsidian"] .pane + .pane{border-top:1px solid color-mix(in srgb,var(--accent) 18%,var(--rule))}
+[data-skin="obsidian"] .ws-title{letter-spacing:.01em}
+
+/* caption under window */
+.caption{flex:0 0 auto;padding:7px 18px 12px;background:#000;font-family:var(--mono);font-size:11px;color:#6b6f74}
+.caption b{color:#C4A561;font-weight:600}
+</style>
+</head>
+<body data-skin="canonical">
+
+<div class="switcher">
+  <span class="brand">c11</span>
+  <button data-skin="canonical" class="active">Void + Gold</button>
+  <button data-skin="obsidian">Obsidian</button>
+  <button data-skin="blueprint">Blueprint</button>
+  <button data-skin="command">Command Deck</button>
+  <button data-skin="phosphor">Phosphor Day</button>
+  <button data-skin="spatial">Spatial</button>
+  <span class="meta">same workspace · 6 directions · all mock</span>
+</div>
+
+<div class="stage">
+  <div class="window">
+    <div class="titlebar-os">
+      <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+      <span class="t">Overwatch — c11</span>
+    </div>
+
+    <div class="body">
+      <!-- ============ SIDEBAR ============ -->
+      <aside class="sidebar">
+        <div class="sb-head">
+          <span class="label">Workspaces</span>
+          <span class="add">+</span>
+        </div>
+
+        <!-- command-deck fleet strip -->
+        <div class="fleet">
+          <div class="cell"><div class="k">Agents</div><div class="v">11</div></div>
+          <div class="cell"><div class="k">Running</div><div class="v run">6</div></div>
+          <div class="cell"><div class="k">Need you</div><div class="v warn">3</div></div>
+        </div>
+
+        <div class="sb-scroll">
+          <div class="ws active">
+            <span class="rail"></span>
+            <div class="ws-title">Overwatch</div>
+            <div class="ws-row"><span class="agent-chip"><span class="agent-ico">CC</span><span class="model">Opus 4.8</span></span></div>
+            <div class="ws-row"><span class="branch"><span class="gdot"></span>main</span></div>
+            <div class="status"><span class="sdot run"></span>Routing the fleet</div>
+          </div>
+
+          <div class="ws">
+            <div class="ws-title">Gregorovich</div>
+            <div class="ws-row"><span class="agent-chip"><span class="agent-ico">CC</span><span class="model">Sonnet 4.6</span></span></div>
+            <div class="ws-row"><span class="branch"><span class="gdot"></span>nostr</span></div>
+            <div class="status attn"><span class="sdot warn"></span>Needs your input</div>
+          </div>
+
+          <div class="ws">
+            <div class="ws-title">Substrate</div>
+            <div class="ws-row"><span class="agent-chip"><span class="agent-ico cdx">CX</span><span class="model">GPT-5 Codex</span></span></div>
+            <div class="ws-row"><span class="branch"><span class="gdot"></span>auth-refactor</span></div>
+            <div class="status"><span class="sdot run"></span>Running smoke suite</div>
+            <div class="pbar"><i style="width:62%"></i></div>
+          </div>
+
+          <div class="ws">
+            <div class="ws-title">Etch</div>
+            <div class="ws-row"><span class="agent-chip"><span class="agent-ico">CC</span><span class="model">Opus 4.8</span></span></div>
+            <div class="ws-row"><span class="branch"><span class="gdot"></span>ingest</span></div>
+            <div class="status"><span class="sdot ok"></span>merged PR #13</div>
+          </div>
+
+          <div class="ws">
+            <div class="ws-title">LexiPorting</div>
+            <div class="ws-row"><span class="agent-chip"><span class="agent-ico cdx">CX</span><span class="model">GPT-5</span></span></div>
+            <div class="ws-row"><span class="branch"><span class="gdot"></span>playlist-crud</span></div>
+            <div class="status attn"><span class="sdot warn"></span>Needs your input</div>
+          </div>
+
+          <div class="ws">
+            <div class="ws-title">govee_control</div>
+            <div class="ws-row"><span class="agent-chip"><span class="agent-ico shell">$</span><span class="model">shell</span></span></div>
+            <div class="ws-row"><span class="branch"><span class="gdot"></span>main</span></div>
+            <div class="status"><span class="sdot ok"></span>idle</div>
+          </div>
+
+          <div class="ws">
+            <div class="ws-title">App Scanner</div>
+            <div class="ws-row"><span class="agent-chip"><span class="agent-ico">CC</span><span class="model">Opus 4.8</span></span></div>
+            <div class="ws-row"><span class="branch"><span class="gdot"></span>design</span></div>
+            <div class="status attn"><span class="sdot warn"></span>Needs your input</div>
+          </div>
+        </div>
+
+        <div class="sb-foot">
+          <div class="notif"><span>Next notification</span><span class="arr">→</span></div>
+        </div>
+      </aside>
+
+      <!-- ============ MAIN ============ -->
+      <main class="main">
+        <div class="split">
+
+          <!-- LEFT: terminal pane running Claude Code -->
+          <section class="col left">
+            <div class="pane">
+              <div class="coords">H 0–58% · V 0–100% · pane:23</div>
+              <div class="tabstrip">
+                <div class="tab active"><span class="ti" style="background:var(--accent);color:var(--void)">C</span>c11 Design Proto</div>
+                <div class="tab"><span class="ti" style="background:var(--rule)">$</span>logs</div>
+                <div class="tabtools">
+                  <span class="ttbtn a">A</span><span class="ttbtn">⌶</span><span class="ttbtn">◷</span><span class="ttbtn">▣</span>
+                  <span class="tt-sep"></span>
+                  <span class="ttbtn">⊟</span><span class="ttbtn">＋</span><span class="ttbtn">✕</span>
+                </div>
+              </div>
+              <div class="surfbar">
+                <div class="row1">
+                  <span class="title">c11 Design Proto</span>
+                  <span class="pill task">lat-design · 0.6</span>
+                  <span class="pill run"><span class="sdot run"></span>running</span>
+                  <span class="chevron">⌄</span>
+                </div>
+                <div class="desc"><b>Lineage:</b> Overwatch → Design Proto. Building HTML prototypes exploring c11's visual language across six directions.</div>
+                <div class="miniprog"><i style="width:60%"></i></div>
+              </div>
+              <div class="term">
+                <div class="blk"><span class="b">Claude Code</span> <span class="dimt">v2.1.179</span><br>
+                <span class="dimt">Opus 4.8 (1M context) · high effort · Claude Max</span><br>
+                <span class="dimt">~/Projects/Stage11/code/c11</span></div>
+                <div class="blk"><span class="prompt">›</span> understand how c11 looks, then prototype directions</div>
+                <div class="blk"><span class="acc2">⏺</span> Captured the live window + theme tokens.<br>
+                &nbsp;&nbsp;<span class="dimt">void</span> <span class="gold">#0A0C0F</span> · <span class="dimt">surface</span> <span class="gold">#121519</span> · <span class="dimt">accent</span> <span class="gold">#C4A561</span></div>
+                <div class="blk"><span class="ok">⏺</span> Wrote <span class="gold">docs/design-prototypes/c11-skins.html</span><br>
+                &nbsp;&nbsp;<span class="dimt">6 directions, one shared layout</span></div>
+                <div class="blk"><span class="prompt">›</span> <span class="cursor"></span></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- RIGHT: browser (top) + markdown (bottom) -->
+          <section class="col right">
+            <div class="pane">
+              <div class="coords">H 58–100% · V 0–50% · pane:24</div>
+              <div class="tabstrip">
+                <div class="tab active"><span class="ti" style="background:var(--accent-2);color:var(--void)">◷</span>localhost:8799</div>
+                <div class="tabtools">
+                  <span class="ttbtn a">A</span><span class="ttbtn">⌶</span><span class="ttbtn">◷</span><span class="ttbtn">▣</span>
+                  <span class="tt-sep"></span><span class="ttbtn">＋</span>
+                </div>
+              </div>
+              <div class="omni">
+                <span class="navbtn">‹</span><span class="navbtn">›</span><span class="navbtn">⟳</span>
+                <span class="url">localhost:8799 / <b>lattice dashboard</b></span>
+              </div>
+              <div class="webview">
+                <div class="hero">
+                  <span class="eyebrow">embedded browser · live</span>
+                  <h1>Every surface has a handle.</h1>
+                  <p>Validate in place. The browser is a first-class surface alongside terminals and markdown — addressable, scriptable, held in one field of view.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="pane">
+              <div class="coords">H 58–100% · V 50–100% · pane:25</div>
+              <div class="tabstrip">
+                <div class="tab active"><span class="ti" style="background:var(--rule)">▣</span>directions.md</div>
+                <div class="tabtools">
+                  <span class="ttbtn a">A</span><span class="ttbtn">⌶</span><span class="ttbtn">◷</span><span class="ttbtn">▣</span>
+                  <span class="tt-sep"></span><span class="ttbtn">＋</span>
+                </div>
+              </div>
+              <div class="mdview">
+                <h2>Design directions</h2>
+                <p>Six skins over one faithful c11 layout. The void stays dominant; the accent stays singular. What changes is <em>register</em>.</p>
+                <h3>The constants</h3>
+                <ul>
+                  <li>Void-dominant ground state, elevated surfaces barely above it</li>
+                  <li>One accent color, entering like signal into silence</li>
+                  <li>Monospace for the engine room, system font for the chrome</li>
+                </ul>
+                <h3>The variables</h3>
+                <ul>
+                  <li><code>Obsidian</code> — ancient-future, bioluminescent edges</li>
+                  <li><code>Blueprint</code> — schematic, every pane a coordinate</li>
+                  <li><code>Command Deck</code> — fleet HUD, telemetry forward</li>
+                </ul>
+                <div class="rule"></div>
+                <p>Flip the switcher above to compare. The content never moves — only the language around it.</p>
+              </div>
+            </div>
+          </section>
+
+        </div>
+
+        <!-- spatial minimap overlay -->
+        <div class="minimap">
+          <div class="mlabel">Floor plan</div>
+          <div class="mgrid">
+            <div class="mt lg on"></div>
+            <div class="mt"></div>
+            <div class="mt"></div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+
+<div class="caption" id="cap"><b>Void + Gold</b> — the canonical Stage 11 register: pure void, a single gold signal, monospace engine room. A polished take on c11 today.</div>
+
+<script>
+const caps = {
+  canonical:"<b>Void + Gold</b> — the canonical Stage 11 register: pure void, a single gold signal, monospace engine room. A polished take on c11 today.",
+  obsidian:"<b>Obsidian</b> — ancient-future. Deeper blacks, bioluminescent gold + turquoise edge-glow on the dividers, monolithic panels. Artifacts recovered from a civilization that hasn't happened yet.",
+  blueprint:"<b>Blueprint</b> — schematic. Hairline rules, a faint coordinate grid, every pane stamped with its H/V range and handle. Leans into c11's 'every surface is addressable' identity.",
+  command:"<b>Command Deck</b> — the Overwatch register. A fleet HUD strip up top, status-forward sidebar with live progress, more semantic color. For the operator running thirty agents at once.",
+  phosphor:"<b>Phosphor Day</b> — the light theme. Warm paper, phosphor-green accent, soft elevation. Calm daytime focus mode; same anatomy, inverted field.",
+  spatial:"<b>Spatial</b> — the floor-plan made literal. A persistent minimap of the workspace, tiles you can navigate. Treats the layout itself as the atom of work."
+};
+document.querySelectorAll('.switcher button').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('.switcher button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    const s=b.dataset.skin;
+    document.body.dataset.skin=s;
+    document.getElementById('cap').innerHTML=caps[s];
+  });
+});
+</script>
+</body>
+</html>

@@ -65,3 +65,49 @@ controls; Medium shows title + controls + `N ⌄`; Narrow shows title + `N ⌄`
 only; the Narrow dropdown renders the controls row then the equal-height tab
 rows with the selected row marked; single short-title panes stay Full until the
 controls genuinely no longer fit.
+
+## Status & how to resume (handoff)
+
+**Branch / worktree / PR.** Work lives on `feat/collapsing-tab-dropdown` in the
+worktree `code/c11-worktrees/collapsing-tab-dropdown`, off `origin/main`. Open
+as **PR #266** (`Stage-11-Agentics/c11`). The `vendor/bonsplit` submodule
+changes are on bonsplit's own `feat/collapsing-tab-dropdown` branch (pushed);
+the parent pointer references the latest bonsplit commit on that branch — NOT
+bonsplit `main`. Everything is committed and pushed; nothing uncommitted.
+
+**Done and review-ready:**
+- 3-tier responsive tab bar (Full → Medium → Narrow) with directional hysteresis.
+- Whole collapsed header is one bordered, hover-brightening chip (title + count +
+  chevron); the entire header is the tap target; the dropdown anchors under it.
+- Dropdown: controls row (Narrow) / tab-list-only (Medium); equal-height rows;
+  each row is a drag source; collapsed header is a drop target.
+- Full-width gold focus accent line in collapsed mode.
+- Tighter collapse so the controls stay inline in a narrower pane (decision floor
+  68pt; short titles only — long titles collapse on real width).
+- Tool-button tooltips fixed: `SplitToolbarButton` uses native `.help`, and
+  bonsplit's `safeHelp` now delegates to `.help` (was an occluded-view no-op).
+
+**Open / needs a human with a real mouse (automation could not confirm these):**
+1. **Click + tooltip verification.** Synthetic cursor moves drive SwiftUI's
+   hover highlight but NOT macOS's tooltip timer, and the tagged window kept
+   relocating across displays, so coordinate-based click tests were unreliable.
+   The tap is the structure proven earlier (fix3d capture opened the dropdown
+   from a title click); the tooltips use the same `.help` path the rest of c11
+   uses. Confirm by hand on the tagged build: click a collapsed header's title
+   opens the dropdown; hover a tool button shows its tooltip (normal bar AND
+   dropdown).
+2. **Submodule branch → main.** On merge, fold bonsplit's
+   `feat/collapsing-tab-dropdown` into bonsplit `main` and (if the SHA changes)
+   re-point `vendor/bonsplit` before/with the c11 merge.
+
+**Tagged build for testing:** `./scripts/reload.sh --tag tabdrop` then launch.
+The debug bundle's launch "Resume previous session?" prompt is disabled via
+`defaults write com.stage11.c11.debug c11.launch.resumePolicy never`. Cleanup:
+`pkill -f "c11 DEV tabdrop.app/Contents/MacOS/c11"`.
+
+**To resume work:** `cd code/c11-worktrees/collapsing-tab-dropdown`; edits go in
+`vendor/bonsplit/Sources/Bonsplit/Internal/Views/TabBarView.swift` (the whole
+feature is there — no c11 `Sources/` changes). Fast loop: `cd vendor/bonsplit &&
+swift build` to compile-check bonsplit, then `./scripts/reload.sh --tag tabdrop`
+for the app. Submodule discipline: commit + push bonsplit's branch BEFORE
+committing the parent pointer.

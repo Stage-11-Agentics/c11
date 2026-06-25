@@ -1,0 +1,81 @@
+# Blueprint — schematic. Gold + technical-drawing blue on near-black.
+# Translated from the "Blueprint" HTML prototype direction.
+# NOTE: the prototype's per-pane coordinate labels (H 0-58% · pane:23) and the
+# faint grid texture are NOT theme-expressible — they're a pane-overlay FEATURE.
+# This file captures the color register: blue secondary (accentAlt) pushed into
+# dividers + tab indicator + title-secondary for the schematic feel. The blueprint
+# blue is also a hairline divider, evoking drafting lines.
+
+[identity]
+name         = "blueprint"
+display_name = "Blueprint"
+author       = "Stage 11 Agentics"
+version      = "0.01.001"
+schema       = 1
+
+[palette]
+void    = "#0B0D10"
+surface = "#0F1318"
+gold    = "#E0B84F"   # accent — the "active handle"
+blue    = "#5FB3FF"   # secondary — drafting/schematic line
+fog     = "#243038"
+text    = "#DDE6EC"
+textDim = "#7C8893"
+
+[variables]
+background          = "$palette.void"
+surface             = "$palette.surface"
+foreground          = "$palette.text"
+foregroundSecondary = "$palette.textDim"
+accent              = "$palette.gold"
+accentAlt           = "$palette.blue"
+separator           = "$palette.fog"
+workspaceColor      = "$workspaceColor"
+ghosttyBackground   = "$ghosttyBackground"
+
+[chrome.windowFrame]
+color            = "$workspaceColor"
+thicknessPt      = 1.0   # thinner — drafting-line precision
+inactiveOpacity  = 0.25
+unfocusedOpacity = 0.6
+
+[chrome.sidebar]
+tintOverlay                   = "$accentAlt.opacity(0.04)"   # faint blueprint wash
+tintBase                      = "$background"
+tintBaseOpacity               = 0.18
+activeTabFill                 = "$workspaceColor"
+activeTabFillFallback         = "$surface"
+activeTabRail                 = "$workspaceColor"
+activeTabRailFallback         = "$accentAlt"
+activeTabRailOpacity          = 0.95
+inactiveTabCustomOpacity      = 0.70
+inactiveTabMultiSelectOpacity = 0.35
+badgeFill                     = "$accent"
+borderLeading                 = "$accentAlt.mix($background, 0.55)"   # blue leading rule
+
+[chrome.dividers]
+color       = "$accentAlt.mix($background, 0.72)"   # blueprint hairline
+thicknessPt = 1.0
+
+[chrome.titleBar]
+background          = "$surface"
+backgroundOpacity   = 0.85
+foreground          = "$foreground"
+foregroundSecondary = "$accentAlt"   # blue secondary text
+borderBottom        = "$accentAlt.mix($background, 0.55)"
+
+[chrome.tabBar]
+background       = "$background"
+activeFill       = "$background.lighten(0.05)"
+divider          = "$separator"
+activeIndicator  = "$accentAlt"   # blue underbar — schematic, not workspace-color
+
+[chrome.browserChrome]
+background   = "$background"
+omnibarFill  = "$surface.mix($background, 0.15)"
+
+[chrome.markdownChrome]
+background = "$background"
+
+[behavior]
+animateWorkspaceCrossfade = false

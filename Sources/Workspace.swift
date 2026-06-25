@@ -5836,6 +5836,10 @@ final class Workspace: Identifiable, ObservableObject {
         bonsplitController.onTabCloseRequest = { [weak self] tabId, _ in
             self?.markExplicitClose(surfaceId: tabId)
         }
+        bonsplitController.surfaceRefProvider = { [weak self] tabId in
+            guard let self, let panelId = self.panelIdFromSurfaceId(tabId) else { return nil }
+            return TerminalController.shared.surfaceRefOnly(forSurfaceUUID: panelId)
+        }
 
         // Set ourselves as delegate
         bonsplitController.delegate = self
@@ -11915,9 +11919,52 @@ extension Workspace: BonsplitDelegate {
         case .chooseCustomColor:
             guard let panelId = panelIdFromSurfaceId(tab.id) else { return }
             promptCustomTabColor(panelId: panelId)
+        case .surfaceDetails:
+            showSurfaceDetails(forSurfaceId: tab.id)
+        case .copySurfaceRef:
+            copySurfaceRef(forSurfaceId: tab.id)
         @unknown default:
             break
         }
+    }
+
+    /// Copy the tab's `surface:N` handle to the clipboard and show a brief
+    /// confirmation HUD. Routed from the tab right-click menu's copy item.
+    func copySurfaceRef(forSurfaceId surfaceId: TabID) {
+        guard let panel = panel(for: surfaceId) else { return }
+        let ref = TerminalController.shared.surfaceRefOnly(forSurfaceUUID: panel.id)
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(ref, forType: .string)
+        let copied = String(localized: "copyHUD.copiedPrefix", defaultValue: "Copied")
+        CopyConfirmationHUD.show(message: "\(copied) \(ref)")
+    }
+
+    /// Open the Surface Details panel for the surface backing a tab. Routed
+    /// from the tab right-click menu; the panel shows the `surface:N` /
+    /// `tab:N` handles plus the surface metadata manifest.
+    func showSurfaceDetails(forSurfaceId surfaceId: TabID) {
+        guard let panel = panel(for: surfaceId) else { return }
+        showSurfaceDetails(for: panel)
+    }
+
+    /// Open the Surface Details panel for a specific panel. Routed from the
+    /// command palette (which targets the focused panel directly).
+    func showSurfaceDetails(for panel: any Panel) {
+        let kind: SurfaceManifestKind
+        switch panel.panelType {
+        case .terminal:
+            kind = .terminal
+        case .browser:
+            kind = .browser
+        case .markdown:
+            kind = .markdown
+        }
+        SurfaceManifestViewerWindowController.show(
+            workspaceId: id,
+            surfaceId: panel.id,
+            kind: kind
+        )
     }
 
     func splitTabBar(_ controller: BonsplitController, didSelectTabColorPaletteEntry hex: String, for tab: Bonsplit.Tab, inPane pane: PaneID) {

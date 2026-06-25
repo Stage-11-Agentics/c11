@@ -146,6 +146,7 @@
 		A5001544 /* AgentDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001545 /* AgentDetector.swift */; };
 		A5001601 /* SentryHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001600 /* SentryHelper.swift */; };
 		A5001610 /* SessionPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001611 /* SessionPersistence.swift */; };
+		A500DA01 /* QALaunchPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A500DA02 /* QALaunchPolicy.swift */; };
 		A5001621 /* AppleScriptSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001620 /* AppleScriptSupport.swift */; };
 		A5001623 /* c11.sdef in Resources */ = {isa = PBXBuildFile; fileRef = A5001622 /* c11.sdef */; };
 		A5001700 /* TextBoxInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001701 /* TextBoxInput.swift */; };
@@ -503,6 +504,7 @@
 		A5001545 /* AgentDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDetector.swift; sourceTree = "<group>"; };
 		A5001600 /* SentryHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentryHelper.swift; sourceTree = "<group>"; };
 		A5001611 /* SessionPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPersistence.swift; sourceTree = "<group>"; };
+		A500DA02 /* QALaunchPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QALaunchPolicy.swift; sourceTree = "<group>"; };
 		A5001620 /* AppleScriptSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleScriptSupport.swift; sourceTree = "<group>"; };
 		A5001622 /* c11.sdef */ = {isa = PBXFileReference; lastKnownFileType = text.sdef; path = c11.sdef; sourceTree = "<group>"; };
 		A5001701 /* TextBoxInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextBoxInput.swift; sourceTree = "<group>"; };
@@ -998,6 +1000,7 @@
 				A5001241 /* WindowDecorationsController.swift */,
 				A5001222 /* WindowAccessor.swift */,
 				A5001611 /* SessionPersistence.swift */,
+				A500DA02 /* QALaunchPolicy.swift */,
 				A5005B01 /* BrandColors.swift */,
 				A5FA5701 /* FlashAppearance.swift */,
 				CC401001A1B2C3D4E5F60719 /* SkillInstaller.swift */,
@@ -1645,6 +1648,7 @@
 				A5001240 /* WindowDecorationsController.swift in Sources */,
 				A500120C /* WindowAccessor.swift in Sources */,
 				A5001610 /* SessionPersistence.swift in Sources */,
+				A500DA01 /* QALaunchPolicy.swift in Sources */,
 				A5005B02 /* BrandColors.swift in Sources */,
 				A5FA5702 /* FlashAppearance.swift in Sources */,
 				CC401002A1B2C3D4E5F60719 /* SkillInstaller.swift in Sources */,

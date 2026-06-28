@@ -10,6 +10,8 @@ enum AgentType: String, Codable, CaseIterable, Identifiable {
     case kimi
     case opencode
     case githubCopilot = "github-copilot"
+    case pi
+    case omp
     case custom
 
     var id: String { rawValue }
@@ -30,6 +32,10 @@ enum AgentType: String, Codable, CaseIterable, Identifiable {
             return String(localized: "agentType.opencode", defaultValue: "OpenCode")
         case .githubCopilot:
             return String(localized: "agentType.githubCopilot", defaultValue: "GitHub Copilot")
+        case .pi:
+            return String(localized: "agentType.pi", defaultValue: "Pi")
+        case .omp:
+            return String(localized: "agentType.omp", defaultValue: "oh-my-pi")
         case .custom:
             return String(localized: "agentType.custom", defaultValue: "Custom")
         }
@@ -39,25 +45,14 @@ enum AgentType: String, Codable, CaseIterable, Identifiable {
     /// in Settings; persisted per-agent so flipping the picker doesn't wipe
     /// values for the other agents.
     var factoryCommand: String {
-        switch self {
-        case .claudeCode:    return "claude --dangerously-skip-permissions"
-        case .codex:         return "codex --yolo"
-        case .grok:          return "grok --always-approve"
-        case .kimi:          return "kimi"
-        case .opencode:      return "opencode run --dangerously-skip-permissions"
-        case .githubCopilot: return "copilot --allow-all --autopilot"
-        case .custom:        return ""
-        }
+        AgentRegistry.shared.manifest(for: self)?.factoryCommand ?? ""
     }
 
     /// Factory default for the optional initial prompt that gets typed into
     /// the agent after launch. Empty for `custom` (operator authors their
     /// own); identical for the four built-ins.
     var factoryInitialPrompt: String {
-        switch self {
-        case .custom: return ""
-        default:      return "you are operating inside a c11 workspace. load the skill."
-        }
+        AgentRegistry.shared.manifest(for: self)?.factoryInitialPrompt ?? ""
     }
 }
 

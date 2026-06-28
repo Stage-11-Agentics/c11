@@ -217,6 +217,42 @@ struct AgentRegistry: Sendable {
             hasConversationStrategy: true
         ),
         AgentManifest(
+            kind: "pi",
+            agentType: .pi,
+            displayName: "Pi",
+            // No documented auto-approve flag — launches bare (documented
+            // degradation, same as opencode/kimi historically).
+            factoryCommand: "pi",
+            factoryInitialPrompt: c11OrientPrompt,
+            detectComms: ["pi"],
+            detectNodeArgsSubstrings: ["@earendil-works/pi"],
+            iconAsset: nil,
+            sfSymbolFallback: "p.circle",
+            // `pi -c` continues the most recent session in cwd (best-effort,
+            // same shape as codex --last). Exact-session resume via a JSONL
+            // scraper (~/.pi/agent/sessions/) is a tracked follow-up.
+            resume: .fixed("pi -c\n"),
+            isCanonicalTerminalType: true,
+            hasConversationStrategy: false
+        ),
+        AgentManifest(
+            kind: "omp",
+            agentType: .omp,
+            displayName: "oh-my-pi",
+            factoryCommand: "omp",
+            factoryInitialPrompt: c11OrientPrompt,
+            detectComms: ["omp"],
+            detectNodeArgsSubstrings: ["@oh-my-pi/"],
+            iconAsset: nil,
+            sfSymbolFallback: "o.circle",
+            // No confirmed resume flag (TUI `/resume` only); launches fresh.
+            // Exact-session resume via a JSONL scraper (~/.omp/agent/sessions/)
+            // is a tracked follow-up.
+            resume: .none,
+            isCanonicalTerminalType: true,
+            hasConversationStrategy: false
+        ),
+        AgentManifest(
             kind: "custom",
             agentType: .custom,
             displayName: "Custom",

@@ -3353,7 +3353,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // under `c11.launch.resumePolicy` (default `.ask`); `.always`
         // keeps the legacy "restore everything" behavior, `.never`
         // skips restore entirely.
-        let policy = LaunchResumePolicy.current()
+        //
+        // QA launch (`C11_QA_LAUNCH`) overrides that persisted policy for
+        // this launch only (never written back): `resume` → `.always`
+        // (silent restore), `fresh` → `.never` (skip). Both bypass the
+        // `.ask` picker so an automated run never blocks on the modal.
+        let policy: LaunchResumePolicy
+        switch QALaunchPolicy.current() {
+        case .on(.resume):
+            policy = .always
+        case .on(.fresh):
+            policy = .never
+        case .off:
+            policy = LaunchResumePolicy.current()
+        }
         if policy == .ask,
            let snapshot = startupSessionSnapshot,
            snapshot.windows.contains(where: { !$0.tabManager.workspaces.isEmpty }) {

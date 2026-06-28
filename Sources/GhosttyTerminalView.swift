@@ -6255,7 +6255,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             let manifestItem = menu.addItem(
                 withTitle: String(
                     localized: "surfaceManifest.menuItem",
-                    defaultValue: "Show surface manifest…"
+                    defaultValue: "Surface Details"
                 ),
                 action: #selector(showSurfaceManifest(_:)),
                 keyEquivalent: ""

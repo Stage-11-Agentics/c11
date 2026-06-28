@@ -5151,6 +5151,12 @@ final class Workspace: Identifiable, ObservableObject {
     /// NSObject subclass, so KVO has to live on this composed helper. (C11-6)
     private var chromeScaleObserver: ChromeScaleObserver?
 
+    /// Keeps the Bonsplit Browser / Markdown spawn buttons in sync with the
+    /// persisted surface-availability toggles for any writer (Settings UI,
+    /// `defaults write`). Same composed-NSObject KVO pattern as
+    /// `chromeScaleObserver`.
+    private var surfaceAvailabilityObserver: SurfaceAvailabilityObserver?
+
     /// Operator-authored workspace metadata (e.g. "description", "icon").
     /// Workspace-scoped; not to be confused with surface-scoped
     /// `SurfaceMetadataStore`. Persisted across restart via
@@ -5594,6 +5600,22 @@ final class Workspace: Identifiable, ObservableObject {
         bonsplitController.configuration = nextConfiguration
     }
 
+    /// Live-update path for the surface-availability toggles. Pulls the current
+    /// Bonsplit configuration, recomputes the Browser / Markdown spawn-button
+    /// visibility from `SurfaceTypeAvailability`, and reassigns only on a real
+    /// change so redundant toggles don't churn the configuration. Existing
+    /// surfaces are untouched — this only governs the spawn affordances.
+    func applySurfaceAvailability() {
+        let browserOn = SurfaceTypeAvailability.isEnabled(.browser)
+        let markdownOn = SurfaceTypeAvailability.isEnabled(.markdown)
+        var next = bonsplitController.configuration
+        guard next.showsBrowserSpawnButton != browserOn
+            || next.showsMarkdownSpawnButton != markdownOn else { return }
+        next.showsBrowserSpawnButton = browserOn
+        next.showsMarkdownSpawnButton = markdownOn
+        bonsplitController.configuration = next
+    }
+
     func applyGhosttyChrome(from config: GhosttyConfig, reason: String = "unspecified") {
         applyGhosttyChrome(
             backgroundColor: config.backgroundColor,
@@ -5746,6 +5768,11 @@ final class Workspace: Identifiable, ObservableObject {
             // right-edge hit-collision bug and matches native macOS
             // Cocoa tab convention (Finder, Terminal.app, Notes).
             simplifiedTabContextMenu: true,
+            // Hide the Browser / Markdown spawn buttons when the operator has
+            // disabled those surface types. `applySurfaceAvailability()` keeps
+            // these live as the toggles change.
+            showsBrowserSpawnButton: SurfaceTypeAvailability.isEnabled(.browser),
+            showsMarkdownSpawnButton: SurfaceTypeAvailability.isEnabled(.markdown),
             appearance: appearance
         )
         self.bonsplitController = BonsplitController(configuration: config)
@@ -5759,6 +5786,13 @@ final class Workspace: Identifiable, ObservableObject {
         // can safely read/write `bonsplitController.configuration`. (C11-6)
         self.chromeScaleObserver = ChromeScaleObserver { [weak self] in
             self?.applyChromeScale(reason: "userdefaults-change")
+        }
+
+        // Mirror the chrome-scale observer: react to surface-availability
+        // toggles so the Browser / Markdown spawn buttons appear/disappear
+        // live, without an app restart.
+        self.surfaceAvailabilityObserver = SurfaceAvailabilityObserver { [weak self] in
+            self?.applySurfaceAvailability()
         }
 
         // Remove the default "Welcome" tab that bonsplit creates
@@ -5801,6 +5835,10 @@ final class Workspace: Identifiable, ObservableObject {
         }
         bonsplitController.onTabCloseRequest = { [weak self] tabId, _ in
             self?.markExplicitClose(surfaceId: tabId)
+        }
+        bonsplitController.surfaceRefProvider = { [weak self] tabId in
+            guard let self, let panelId = self.panelIdFromSurfaceId(tabId) else { return nil }
+            return TerminalController.shared.surfaceRefOnly(forSurfaceUUID: panelId)
         }
 
         // Set ourselves as delegate
@@ -11700,8 +11738,13 @@ extension Workspace: BonsplitDelegate {
         case "terminal":
             _ = newTerminalSurface(inPane: pane)
         case "browser":
+            // Defense in depth: the spawn button is already hidden when the
+            // internal browser is disabled, but no-op safely if the request
+            // reaches us anyway.
+            guard SurfaceTypeAvailability.isEnabled(.browser) else { return }
             _ = newBrowserSurface(inPane: pane)
         case "markdown":
+            guard SurfaceTypeAvailability.isEnabled(.markdown) else { return }
             _ = newMarkdownSurface(inPane: pane)
         case "agent":
             launchAgentSurface(inPane: pane)
@@ -11916,11 +11959,13 @@ extension Workspace: BonsplitDelegate {
         let selectedPanelId = effectiveSelectedPanelId(inPane: pane)
         let panel = selectedPanelId.flatMap { panels[$0] }
         switch panel?.panelType {
-        case .browser:
+        case .browser where SurfaceTypeAvailability.isEnabled(.browser):
             _ = newBrowserSurface(inPane: pane)
-        case .markdown:
+        case .markdown where SurfaceTypeAvailability.isEnabled(.markdown):
             _ = newMarkdownSurface(inPane: pane)
-        case .terminal, .none:
+        case .terminal, .browser, .markdown, .none:
+            // Terminal kinds, and any disabled non-terminal kind whose surface
+            // is still open, fall back to a terminal so "+" stays useful.
             _ = newTerminalSurface(inPane: pane)
         }
     }
@@ -11981,9 +12026,52 @@ extension Workspace: BonsplitDelegate {
         case .chooseCustomColor:
             guard let panelId = panelIdFromSurfaceId(tab.id) else { return }
             promptCustomTabColor(panelId: panelId)
+        case .surfaceDetails:
+            showSurfaceDetails(forSurfaceId: tab.id)
+        case .copySurfaceRef:
+            copySurfaceRef(forSurfaceId: tab.id)
         @unknown default:
             break
         }
+    }
+
+    /// Copy the tab's `surface:N` handle to the clipboard and show a brief
+    /// confirmation HUD. Routed from the tab right-click menu's copy item.
+    func copySurfaceRef(forSurfaceId surfaceId: TabID) {
+        guard let panel = panel(for: surfaceId) else { return }
+        let ref = TerminalController.shared.surfaceRefOnly(forSurfaceUUID: panel.id)
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(ref, forType: .string)
+        let copied = String(localized: "copyHUD.copiedPrefix", defaultValue: "Copied")
+        CopyConfirmationHUD.show(message: "\(copied) \(ref)")
+    }
+
+    /// Open the Surface Details panel for the surface backing a tab. Routed
+    /// from the tab right-click menu; the panel shows the `surface:N` /
+    /// `tab:N` handles plus the surface metadata manifest.
+    func showSurfaceDetails(forSurfaceId surfaceId: TabID) {
+        guard let panel = panel(for: surfaceId) else { return }
+        showSurfaceDetails(for: panel)
+    }
+
+    /// Open the Surface Details panel for a specific panel. Routed from the
+    /// command palette (which targets the focused panel directly).
+    func showSurfaceDetails(for panel: any Panel) {
+        let kind: SurfaceManifestKind
+        switch panel.panelType {
+        case .terminal:
+            kind = .terminal
+        case .browser:
+            kind = .browser
+        case .markdown:
+            kind = .markdown
+        }
+        SurfaceManifestViewerWindowController.show(
+            workspaceId: id,
+            surfaceId: panel.id,
+            kind: kind
+        )
     }
 
     func splitTabBar(_ controller: BonsplitController, didSelectTabColorPaletteEntry hex: String, for tab: Bonsplit.Tab, inPane pane: PaneID) {

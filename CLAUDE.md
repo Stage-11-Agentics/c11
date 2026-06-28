@@ -109,6 +109,8 @@ See `skills/c11-hotload/SKILL.md` for the full workflow — `reload.sh --tag` bu
 
 The one-liner: after any code change, `./scripts/reload.sh --tag <your-branch-slug>`. Never `open` an untagged `c11 DEV.app`.
 
+**QA / automation launch — ALWAYS suppress the startup dialogs when an agent launches a dev build.** A normal launch blocks on two modals before the GUI is usable: the Agent Skills install/update sheet and the "Resume previous session?" picker. Any agent launching a tagged/dev build to validate or automate **must** turn these off — launching bare leaves both dialogs in the way and stalls coordinate-driven UI checks (a real time sink to avoid). Set `C11_QA_LAUNCH` (dual-read `CMUX_QA_LAUNCH`): `fresh` (or any non-`resume` value) starts clean, `resume` silently restores the prior session, unset is normal interactive behavior. Read per-launch, never persisted. Prefer `./scripts/launch-tagged-automation.sh <tag> --qa [fresh|resume]`, which sets it for you. Note `reload.sh --tag` builds **and** launches but does NOT set the flag, so for a validation pass either launch through `launch-tagged-automation.sh --qa` or export `C11_QA_LAUNCH` before the app starts. Lives in `Sources/QALaunchPolicy.swift`; full table in `skills/c11-hotload/SKILL.md`.
+
 ## Diagnostics
 
 - **Portal lifecycle (C11-18):** launch c11 with `C11_PORTAL_DEBUG=1` (or `CMUX_PORTAL_DEBUG=1`) to write structured `bind`/`detach`/`sync.skip.orphan`/`sync.result`/`orphan.hide`/`geom.external` events to `/tmp/c11-portal.log` (override path with `C11_PORTAL_LOG`). The log truncates on first call after process start; one repro run per file. Drive churn with `scripts/repro-c11-18.sh [iterations]` and attach the log range covering the artifact to the C11-18 ticket.

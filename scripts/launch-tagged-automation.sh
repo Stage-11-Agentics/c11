@@ -7,6 +7,9 @@ Usage: ./scripts/launch-tagged-automation.sh <tag> [options]
 
 Options:
   --mode <mode>       Socket mode override. Default: automation
+  --qa [fresh|resume] QA launch: suppress the skill-install and resume-session
+                      dialogs (sets C11_QA_LAUNCH). Bare or "fresh" starts clean;
+                      "resume" silently restores the prior session. Default: fresh.
   --shell-log <path>  Set GHOSTTY_ZSH_INTEGRATION_LOG for shells in the tagged app.
   --wait-socket <s>   Wait for the tagged socket to appear. Default: 10
   --env KEY=VALUE     Extra environment variable to inject at launch. Repeatable.
@@ -43,6 +46,7 @@ TAG=""
 MODE="automation"
 SHELL_LOG=""
 WAIT_SOCKET="10"
+QA_LAUNCH=""
 EXTRA_ENV=()
 EXTRA_ENV_COUNT=0
 
@@ -55,6 +59,20 @@ while [[ $# -gt 0 ]]; do
         exit 1
       fi
       shift 2
+      ;;
+    --qa)
+      # Optional value: `--qa` / `--qa fresh` / `--qa resume`. A bare `--qa`
+      # (or anything that isn't an explicit resume direction) defaults fresh.
+      case "${2:-}" in
+        fresh|resume)
+          QA_LAUNCH="$2"
+          shift 2
+          ;;
+        *)
+          QA_LAUNCH="fresh"
+          shift 1
+          ;;
+      esac
       ;;
     --env)
       if [[ -z "${2:-}" ]]; then
@@ -138,6 +156,8 @@ OPEN_ENV=(
   -u CMUX_PORT_RANGE
   -u CMUX_DEBUG_LOG
   -u CMUX_BUNDLE_ID
+  -u C11_QA_LAUNCH
+  -u CMUX_QA_LAUNCH
   -u CMUX_SHELL_INTEGRATION
   -u CMUX_SHELL_INTEGRATION_DIR
   -u CMUX_LOAD_GHOSTTY_ZSH_INTEGRATION
@@ -154,6 +174,9 @@ OPEN_ENV=(
   "CMUX_DEBUG_LOG=${LOG}"
 )
 
+if [[ -n "$QA_LAUNCH" ]]; then
+  OPEN_ENV+=("C11_QA_LAUNCH=${QA_LAUNCH}")
+fi
 if [[ "$EXTRA_ENV_COUNT" -gt 0 ]]; then
   for kv in "${EXTRA_ENV[@]}"; do
     OPEN_ENV+=("${kv}")
@@ -181,6 +204,9 @@ echo "socket: $SOCK"
 echo "c11d_socket: $DSOCK"
 echo "log: $LOG"
 echo "mode: $MODE"
+if [[ -n "$QA_LAUNCH" ]]; then
+  echo "qa_launch: $QA_LAUNCH"
+fi
 echo "socket_ready: $(if [[ -S "$SOCK" ]]; then echo yes; else echo no; fi)"
 if [[ -n "$SHELL_LOG" ]]; then
   echo "shell_log: $SHELL_LOG"

@@ -1,0 +1,83 @@
+# Obsidian — ancient-future. Deeper void, gold + bioluminescent turquoise edges.
+# Translated from the "Obsidian" HTML prototype direction.
+# NOTE: the prototype's edge-glow (box-shadow), grid texture, and rounder corner
+# radii are NOT theme-expressible — they would need engine work. This file
+# captures the full COLOR register; the turquoise "edge" is approximated by
+# routing accentAlt into the dividers + frame instead of a literal bloom.
+
+[identity]
+name         = "obsidian"
+display_name = "Obsidian"
+author       = "Stage 11 Agentics"
+version      = "0.01.001"
+schema       = 1
+
+[palette]
+void      = "#05070A"   # deeper than stage11's void
+surface   = "#0C1015"
+gold      = "#D8B65C"   # warmer, slightly brighter gold
+turquoise = "#3FE0C0"   # bioluminescent secondary
+fog       = "#1E2A33"
+text      = "#EDEFF0"
+textDim   = "#7F8C93"
+
+[variables]
+background          = "$palette.void"
+surface             = "$palette.surface"
+foreground          = "$palette.text"
+foregroundSecondary = "$palette.textDim"
+accent              = "$palette.gold"
+accentAlt           = "$palette.turquoise"
+separator           = "$palette.fog"
+workspaceColor      = "$workspaceColor"
+ghosttyBackground   = "$ghosttyBackground"
+
+[chrome.windowFrame]
+color            = "$workspaceColor"
+thicknessPt      = 1.5
+inactiveOpacity  = 0.25
+unfocusedOpacity = 0.6
+
+[chrome.sidebar]
+tintOverlay                   = "$accentAlt.opacity(0.05)"   # faint turquoise wash
+tintBase                      = "$background"
+tintBaseOpacity               = 0.18
+activeTabFill                 = "$workspaceColor"
+activeTabFillFallback         = "$surface"
+activeTabRail                 = "$workspaceColor"
+activeTabRailFallback         = "$accent"
+activeTabRailOpacity          = 0.95
+inactiveTabCustomOpacity      = 0.70
+inactiveTabMultiSelectOpacity = 0.35
+badgeFill                     = "$accent"
+borderLeading                 = "$separator"
+
+[chrome.dividers]
+# turquoise hint, mostly void — the "bioluminescent edge" without a literal glow
+color       = "$accentAlt.mix($background, 0.80)"
+thicknessPt = 1.0
+
+[chrome.titleBar]
+background          = "$surface"
+backgroundOpacity   = 0.85
+foreground          = "$foreground"
+foregroundSecondary = "$foregroundSecondary"
+borderBottom        = "$accent.mix($background, 0.62)"   # faint gold underline
+
+[chrome.tabBar]
+# decoupled from $ghosttyBackground so the chrome stays self-consistent
+# (pair with a near-#05070A Ghostty terminal theme for full cohesion)
+background       = "$background"
+activeFill       = "$background.lighten(0.05)"
+divider          = "$separator"
+activeIndicator  = "$workspaceColor"
+
+[chrome.browserChrome]
+background   = "$background"
+omnibarFill  = "$surface.mix($background, 0.15)"
+
+[chrome.markdownChrome]
+background = "$background"
+
+[behavior]
+animateWorkspaceCrossfade = true   # atmospheric, slow

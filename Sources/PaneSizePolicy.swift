@@ -81,10 +81,16 @@ enum PaneSizePolicy {
     /// A split that lands within this fraction above the minimum is flagged "near".
     static let nearThresholdFraction: CGFloat = 0.15
 
-    /// Surface `terminal_type` values treated as coding agents.
-    static let agentKinds: Set<String> = [
-        "claude-code", "codex", "grok", "kimi", "opencode", "opencode-run", "github-copilot"
-    ]
+    /// Surface `terminal_type` values treated as coding agents. Derived from
+    /// the agent registry plus `opencode-run` (the headless opencode variant,
+    /// which is a detected terminal_type but not a launchable AgentType).
+    static let agentKinds: Set<String> = {
+        var kinds: Set<String> = ["opencode-run"]
+        for manifest in AgentRegistry.shared.all where manifest.isCanonicalTerminalType {
+            kinds.insert(manifest.kind)
+        }
+        return kinds
+    }()
 
     static func isAgentKind(_ kind: String?) -> Bool {
         guard let k = kind?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !k.isEmpty

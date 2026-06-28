@@ -117,41 +117,23 @@ enum AgentChipResolver {
     /// M3 ships SF Symbol fallbacks via the "sf:<symbol>" sentinel.
     /// The view layer decides whether the bundled asset exists and falls back.
     static func iconAssetName(forTerminalType terminalType: String) -> String {
-        switch terminalType {
-        case "claude-code":
-            return "AgentIcons/claude-code"
-        case "codex":
-            return "AgentIcons/codex"
-        case "grok":
-            return "AgentIcons/grok"
-        case "kimi":
-            return "AgentIcons/kimi"
-        case "opencode":
-            return "AgentIcons/opencode"
-        case "github-copilot":
-            return "AgentIcons/github-copilot"
-        case "shell":
-            return "AgentIcons/shell"
-        case "unknown":
-            return "AgentIcons/unknown"
-        default:
-            return "AgentIcons/\(terminalType)"
+        // Branded agents declare their asset in the manifest. Non-agent
+        // terminal types (shell/unknown) and any unrecognized type fall back
+        // to the conventional "AgentIcons/<type>" name the view layer probes.
+        if let asset = AgentRegistry.shared.manifest(forKind: terminalType)?.iconAsset {
+            return asset
         }
+        return "AgentIcons/\(terminalType)"
     }
 
     /// SF Symbol fallback per spec's icon table. Returned when the bundled asset
     /// is missing at runtime.
     static func sfSymbolFallback(forTerminalType terminalType: String) -> String {
-        switch terminalType {
-        case "claude-code":    return "sparkles"
-        case "codex":          return "chevron.left.forwardslash.chevron.right"
-        case "grok":           return "bolt.fill"
-        case "kimi":           return "moon.stars"
-        case "opencode":       return "curlybraces"
-        case "github-copilot": return "paperplane.fill"
-        case "shell":          return "terminal.fill"
-        case "unknown":        return "questionmark.square.dashed"
-        default:               return "questionmark.square.dashed"
+        if let symbol = AgentRegistry.shared.manifest(forKind: terminalType)?.sfSymbolFallback {
+            return symbol
         }
+        // shell is the only non-agent type with a distinct glyph; everything
+        // else (unknown, custom, unrecognized) gets the question-mark.
+        return terminalType == "shell" ? "terminal.fill" : "questionmark.square.dashed"
     }
 }

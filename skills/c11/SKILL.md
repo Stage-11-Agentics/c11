@@ -34,7 +34,7 @@ c11 set-description --surface <surface> "<why it's open right now>" # descriptio
 
 **Bootstrap-only first message?** If the operator's opening message is just "load the c11 skill" (or similar hydrate-context-only text), the real task is one turn behind. Run identity orientation now, set a *placeholder* title (`c11 rename-tab --surface <surface> "Awaiting first task"`), and title properly from the next real user message — as your very first action that turn.
 
-**Declare a stable mailbox address at orientation** if peers will reach you: `c11 set-metadata --surface <surface> --key mailbox.address --value "<stable-handle>" --type string`. Titles are mutable and renames silently re-partition the bus; a declared address survives them. (Mailbox depth → [references/orchestration.md](references/orchestration.md).)
+**Declare a stable mailbox address at orientation** if peers will reach you: `c11 set-metadata --surface <surface> --key mailbox.address --value "<stable-handle>" --type string`. Titles are mutable and renames silently re-partition the bus; a declared address survives them. (Mailbox depth — send/receive, stdin delivery, debugging → [docs/c11-mailbox-guide.md](../../docs/c11-mailbox-guide.md).)
 
 > **Footgun — capture your refs, then use literal refs everywhere.** In agent-harness subprocesses `$C11_SURFACE_ID` is often empty, and the CLI silently defaults a missing `--surface` to whatever surface the *operator* is focused on — so you stomp a peer's tab or metadata. Two binary quirks compound it: `$C11_TAB_ID` is exported equal to the *workspace* UUID (so tab-scoped commands still need `--surface`), and older binaries ignore the env default entirely. **Defense:** read your refs once from `c11 identify --json` and pass the literal `surface:<n>` on every surface- or tab-scoped write thereafter (`set-metadata`, `set-agent`, `set-title`, `set-description`, `rename-tab`, `clear-metadata`, `trigger-flash`). Verify the first write with `c11 get-titlebar-state --surface <surface>` and confirm the title lands on the surface marked `◀ here` in `c11 tree --no-layout`.
 
@@ -50,7 +50,8 @@ c11 set-description --surface <surface> "<why it's open right now>" # descriptio
 | You want to… | Load |
 |---|---|
 | split / create / resize panes & surfaces, `tree`, `send`, `read-screen`, targeting, `--cwd` | [references/api.md](references/api.md) |
-| launch sub-agents, the tab-naming convention, the mailbox, agent-to-agent comms, write c11-aware prompts | [references/orchestration.md](references/orchestration.md) |
+| launch sub-agents, the tab-naming convention, layout patterns, write c11-aware prompts | [references/orchestration.md](references/orchestration.md) |
+| send/receive inter-agent messages (the mailbox) | [docs/c11-mailbox-guide.md](../../docs/c11-mailbox-guide.md) |
 | surface-manifest depth, sidebar reporting (`set-status` / `set-progress` / `log`), flash, precedence & sources | [references/metadata.md](references/metadata.md) |
 | workspace persistence, snapshots, the conversation store & resume | [references/conversation.md](references/conversation.md) |
 | the Claude session-resume hook | [references/claude-resume.md](references/claude-resume.md) |

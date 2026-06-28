@@ -225,6 +225,29 @@ c11 clear-log
 
 **Constraint:** these must be called from a direct c11 child process. Subprocesses spawned by `claude -p` get reparented to `launchd`, breaking the auth chain. Interactive `claude --dangerously-skip-permissions` keeps it intact.
 
+## Resize panes
+
+Binary splits aren't balanced automatically. Two `new-split right` calls give you `[A 50% | B 25% | C 25%]`, not equal thirds. Use `resize-pane` to rebalance.
+
+```bash
+c11 resize-pane --pane <ref> --workspace <ref> (-L|-R|-U|-D) --amount <px>
+```
+
+- `-R <px>` grows the pane by pushing its **right** border rightward (shrinks the right neighbor).
+- `-L <px>` grows the pane by pushing its **left** border leftward (shrinks the left neighbor).
+- `-U` / `-D` are the vertical equivalents.
+- A direction toward the workspace edge fails with `Pane has no adjacent border in direction <dir>`: the leftmost pane cannot `-L`, the topmost cannot `-U`, etc. Resize from the neighbor instead.
+
+**Compound-split cascade.** When you resize a pane whose nearest matching border belongs to an *outer* split (not the split that directly separates it from its closest sibling), the resize moves the outer boundary; both children of the inner split grow **proportionally**, preserving their existing ratio. Example: given `[A 50%] | [B 25% | C 25%]` (outer horizontal split, right half split again), `resize-pane --pane B -L 500` pulls 500px across the outer boundary — B and C each gain 250px because their inner ratio is 1:1. Resize again across the inner boundary (`-R` on B) to equalize B and C without touching A.
+
+**Recipe: equal thirds from two right-splits.** After `new-split right` twice on a workspace of width `W`, you have `[A W/2 | B W/4 | C W/4]`. One resize lands thirds, because the cascade does the inner redistribution for free:
+
+```bash
+# W = workspace content width (read from `c11 tree --json` or the ASCII floor plan header)
+c11 resize-pane --workspace $WS --pane $B -L $((W / 6))
+# → A shrinks by W/6 to W/3; B and C each grow by W/12 (inner ratio preserved) to W/3 each.
+```
+
 ## Spatial layout (`c11 tree`)
 
 ```bash

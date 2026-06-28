@@ -100,6 +100,13 @@ c11 clear-metadata --key task
 c11 clear-metadata                   # clear everything (requires explicit source)
 ```
 
+> **Always pass `--surface "$C11_SURFACE_ID"` explicitly on surface-write commands** — `set-metadata`, `set-agent`, `set-title`, `set-description`, `rename-tab`, `clear-metadata`, etc. The env-var default is only safe on c11 binaries built after the `fix/set-metadata-env-default` fix; older binaries silently write to whatever surface the *operator* is focused on, which in a multi-surface workspace means you'll stomp a peer agent's metadata instead of your own. Defensive form costs one flag and works on every c11 version.
+>
+> ```bash
+> c11 set-metadata --surface "$C11_SURFACE_ID" --key status --value "running"
+> c11 set-title    --surface "$C11_SURFACE_ID" "TICKET-42 :: Impl"
+> ```
+
 ### Agent-declaration sugar
 
 `c11 set-agent` is a wrapper over `set-metadata` with `source: declare`:
@@ -130,6 +137,22 @@ Writes canonical `title` or `description` with `source: explicit`. `c11 rename-t
 The description renders with MarkdownUI at 11pt with a compact heading hierarchy (13/12/11). Links render styled but are **not navigable** in v1 (`OpenURLAction { .discarded }`). Images, fenced code blocks, and table rows are stripped at render time; the raw string still round-trips through the store unchanged. Content over ~5 lines scrolls internally inside a 90pt-capped region.
 
 When `description` is empty the title bar renders as collapsed regardless of the flag (`effective_collapsed = collapsed || description.isEmpty`) — this is what the socket payload's `effective_collapsed` field reports.
+
+## Surface flash — asynchronous attention
+
+Flash is c11's per-surface attention primitive: a brief or persistent visual pulse on the pane content and the sidebar workspace row. Reach for it when an agent produces something the operator should look at but doesn't want to steal focus to show.
+
+```bash
+c11 trigger-flash --surface <ref>                              # one-shot pulse on a non-focused surface
+c11 trigger-flash --surface <ref> --persistent                 # repeats until dismissed
+c11 trigger-flash --surface <ref> --persistent --color "#FF5C5C"  # per-call sRGB hex override
+c11 cancel-flash  --surface <ref>                              # clear an in-flight persistent pulse
+```
+
+- **`--persistent`** repeats until *either* the operator dismisses it (clicking the pane content or the sidebar workspace row) *or* an agent calls `c11 cancel-flash`. Use it for "look at this eventually," not "look right now" — the recurring pulse is what makes the surface findable when the operator is deep in another workspace. A `--persistent` call on an already-focused surface degrades to a one-shot pulse.
+- **`--color`** distinguishes signals from different agents on the same workspace. Default `#F5C518` (Stage 11 warm yellow). Validation accepts `#RRGGBB` or `#RRGGBBAA` (case-insensitive, optional `#`); anything else errors. Tints the pane ring and the sidebar row pulse; the Bonsplit tab-strip pulse keeps its internal accent.
+- **`flash_state` metadata key.** A persistent flash writes `flash_state=persistent` into the surface manifest; cancellation clears it. Poll it instead of subscribing to per-frame visual state: `c11 get-metadata --surface <ref> --key flash_state`. Treat it as a forward-compatible enum — match the value you care about, don't assume it's binary. Cancel when stale: an agent that flashed to wait on a long task should `cancel-flash` if the task completes by another path.
+- **Duration is operator-tuned.** Settings → Notifications → Flash Duration (500–4000ms, default 1500ms) scales every channel together. Agents fire the signal; c11 paces it.
 
 ## Socket methods
 

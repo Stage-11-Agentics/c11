@@ -6721,6 +6721,10 @@ final class GhosttySurfaceScrollView: NSView {
     }
     /// [TextBox] Read-only accessor used by `TerminalSurface.scrollbarOffset`.
     var currentScrollbarOffset: UInt64? { surfaceView.scrollbar?.offset }
+    /// Font cell size (points) as last reported by Ghostty. `.zero` until the
+    /// surface has been measured. Used by size-aware split decisions to convert a
+    /// pane's pixel rect to columns × rows.
+    var cellSize: CGSize { surfaceView.cellSize }
     /// Threshold in points from bottom to consider "at bottom" (allows for minor float drift)
     private static let scrollToBottomThreshold: CGFloat = 5.0
     private var isActive = true

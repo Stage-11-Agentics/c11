@@ -7920,6 +7920,113 @@ final class Workspace: Identifiable, ObservableObject {
         return nil
     }
 
+    // MARK: - Size-aware split policy
+
+    /// The result of evaluating a split request against the active size policy.
+    struct SplitSizeEvaluation {
+        let decision: PaneSizePolicy.Decision
+        /// The pane that would be split — the fallback target when the decision is `addTab`.
+        let targetPaneId: PaneID
+        let sourceKind: String?
+        let kindLabel: String
+    }
+
+    /// Read a surface's declared `terminal_type` (canonical metadata key), if any.
+    func surfaceTerminalKind(panelId: UUID) -> String? {
+        let md = SurfaceMetadataStore.shared.getMetadata(workspaceId: id, surfaceId: panelId).metadata
+        return md[MetadataKey.terminalType] as? String
+    }
+
+    /// Optional per-surface minimum override (`min_cols` / `min_rows` metadata) —
+    /// lets a status strip or log tail declare itself usable smaller than its kind default.
+    private func surfaceMinCellsOverride(panelId: UUID) -> (cols: Int?, rows: Int?) {
+        let md = SurfaceMetadataStore.shared.getMetadata(workspaceId: id, surfaceId: panelId).metadata
+        func intVal(_ key: String) -> Int? {
+            if let i = md[key] as? Int { return i }
+            if let n = md[key] as? NSNumber { return n.intValue }
+            if let s = md[key] as? String { return Int(s) }
+            return nil
+        }
+        return (intVal("min_cols"), intVal("min_rows"))
+    }
+
+    /// The source pane's current font cell size **in points**, falling back to a
+    /// default when the surface has not reported metrics yet or is not a terminal.
+    ///
+    /// Ghostty reports the cell size in backing pixels, while pane frames from
+    /// `layoutSnapshot()` are in AppKit points, so divide by the backing scale
+    /// factor to keep the two in the same unit before deriving columns × rows.
+    private func sourceCellSize(panelId: UUID) -> CGSize {
+        guard let host = terminalPanel(for: panelId)?.hostedView else {
+            return PaneSizePolicy.fallbackCellSize
+        }
+        let cs = host.cellSize
+        guard cs.width > 0, cs.height > 0 else { return PaneSizePolicy.fallbackCellSize }
+        let scale = host.window?.backingScaleFactor
+            ?? NSScreen.main?.backingScaleFactor
+            ?? 2.0
+        let s = scale > 0 ? scale : 2.0
+        return CGSize(width: cs.width / s, height: cs.height / s)
+    }
+
+    /// Evaluate a split request against the active size policy. Returns nil when the
+    /// pane's geometry is not yet known (no layout) — callers should then proceed
+    /// without size enforcement rather than block.
+    func evaluateSplitSize(
+        sourcePanelId: UUID,
+        requested: SplitAxis,
+        newIsTerminal: Bool,
+        force: Bool
+    ) -> SplitSizeEvaluation? {
+        guard let paneId = paneIdForPanel(sourcePanelId) else { return nil }
+        let snapshot = bonsplitController.layoutSnapshot()
+        guard let geom = snapshot.panes.first(where: { $0.paneId == paneId.id.uuidString }) else {
+            return nil
+        }
+        let frame = CGSize(width: geom.frame.width, height: geom.frame.height)
+        guard frame.width > 0, frame.height > 0 else { return nil }
+
+        let kind = surfaceTerminalKind(panelId: sourcePanelId)
+        let cell = sourceCellSize(panelId: sourcePanelId)
+
+        // Existing child keeps the source kind (with optional metadata override).
+        let baseMin = PaneSizePolicy.minCells(forKind: kind)
+        let (ovCols, ovRows) = surfaceMinCellsOverride(panelId: sourcePanelId)
+        let minCells = PaneCellSize(cols: ovCols ?? baseMin.cols, rows: ovRows ?? baseMin.rows)
+        let minExistingPts = PaneSizePolicy.points(minCells, cellSize: cell)
+
+        // New child: a terminal split inherits the source kind (the orchestrator
+        // fan-out case — every spawned agent pane must stay usable); a browser /
+        // markdown pane uses the point floor.
+        let minNewPts: CGSize
+        if newIsTerminal {
+            minNewPts = minExistingPts
+        } else {
+            minNewPts = CGSize(
+                width: max(minExistingPts.width, PaneSizePolicy.nonTerminalMinPoints.width),
+                height: max(minExistingPts.height, PaneSizePolicy.nonTerminalMinPoints.height)
+            )
+        }
+        let minPts = CGSize(
+            width: max(minExistingPts.width, minNewPts.width),
+            height: max(minExistingPts.height, minNewPts.height)
+        )
+
+        let decision = PaneSizePolicy.decide(
+            paneFrame: frame,
+            requested: requested,
+            minPoints: minPts,
+            mode: PaneSizeSettings.effectiveMode(),
+            force: force
+        )
+        return SplitSizeEvaluation(
+            decision: decision,
+            targetPaneId: paneId,
+            sourceKind: kind,
+            kindLabel: PaneSizePolicy.kindLabel(forKind: kind)
+        )
+    }
+
     /// Create a new split with a terminal panel.
     ///
     /// If `workingDirectory` is provided and non-empty, it overrides the

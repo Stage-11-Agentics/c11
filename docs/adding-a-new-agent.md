@@ -4,6 +4,24 @@ c11 treats coding agents (Claude Code, Codex, Grok Build, Kimi, OpenCode) as fir
 
 This doc is the checklist. Grok Build is the worked example; replace `grok` / `Grok Build` / `--always-approve` with the new agent's name/flag wherever they appear.
 
+## The registry is the source of truth (migration in progress)
+
+c11 is collapsing the per-agent switches into a single manifest. `Sources/AgentManifest.swift` holds one `AgentManifest` per agent in `AgentRegistry.shared`, and subsystems read the registry instead of their own switch. Current state:
+
+**Already registry-driven — a manifest entry is all these need:** process detection (`AgentDetector`), sidebar chip icon + SF symbol (`AgentChip`), restart/resume command (`AgentRestartRegistry.phase1`), canonical terminal-type set (`MetadataKey`), coding-agent pane sizing (`PaneSizePolicy`), and the factory command + initial prompt (`AgentType.factoryCommand` / `factoryInitialPrompt`).
+
+**The minimal add today is two files:**
+1. **`Sources/AgentManifest.swift`** — add an `AgentManifest` to `AgentRegistry.shared` (kind, displayName, factory command, detect comms / node-args, icon + SF symbol, `ResumeSpec`, canonical + strategy flags). `AgentManifestTests` fails unless the registry covers exactly `AgentType.allCases`.
+2. **`Sources/DefaultAgentConfig.swift`** — add the `AgentType` case and a localized `displayName` arm (keep the literal `String(localized:)` key so xcstrings extraction works).
+
+**Still hand-wired until migrated — do these only if they apply:**
+- `Sources/SkillInstaller.swift` + `Sources/AgentSkillsView.swift` — config root + onboarding opt-in, only if the agent reads c11 skills from a known dir.
+- A `ConversationStrategy` + scraper (`Sources/Conversation/{Strategies,Scrapers}/`) — only for *exact-session* resume. The manifest's `ResumeSpec` already covers best-effort restart without them.
+- Translations for the new `displayName` (the English default is the fallback).
+- `Resources/bin/<name>` wrapper — only if the TUI needs PATH-scoped session capture (most don't).
+
+The checklist below is the pre-registry worked example; the surfaces called out as "already registry-driven" above no longer need per-agent edits.
+
 ## Pre-flight
 
 Before editing code, capture three facts about the new agent:

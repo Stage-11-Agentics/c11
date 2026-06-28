@@ -100,6 +100,13 @@ c11 clear-metadata --key task
 c11 clear-metadata                   # clear everything (requires explicit source)
 ```
 
+> **Always pass `--surface "$C11_SURFACE_ID"` explicitly on surface-write commands** — `set-metadata`, `set-agent`, `set-title`, `set-description`, `rename-tab`, `clear-metadata`, etc. The env-var default is only safe on c11 binaries built after the `fix/set-metadata-env-default` fix; older binaries silently write to whatever surface the *operator* is focused on, which in a multi-surface workspace means you'll stomp a peer agent's metadata instead of your own. Defensive form costs one flag and works on every c11 version.
+>
+> ```bash
+> c11 set-metadata --surface "$C11_SURFACE_ID" --key status --value "running"
+> c11 set-title    --surface "$C11_SURFACE_ID" "TICKET-42 :: Impl"
+> ```
+
 ### Agent-declaration sugar
 
 `c11 set-agent` is a wrapper over `set-metadata` with `source: declare`:

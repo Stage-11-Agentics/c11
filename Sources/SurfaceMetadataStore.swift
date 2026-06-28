@@ -32,9 +32,15 @@ public enum MetadataKey {
         worktree, branch
     ]
 
-    public static let canonicalTerminalTypes: Set<String> = [
-        "claude-code", "codex", "grok", "kimi", "opencode", "github-copilot", "shell", "unknown"
-    ]
+    // Derived from the agent registry plus the two non-agent terminal types.
+    // Adding an agent manifest extends this set automatically.
+    public static let canonicalTerminalTypes: Set<String> = {
+        var types: Set<String> = ["shell", "unknown"]
+        for manifest in AgentRegistry.shared.all where manifest.isCanonicalTerminalType {
+            types.insert(manifest.kind)
+        }
+        return types
+    }()
 }
 
 public enum MetadataSource: String, CaseIterable, Codable, Sendable {

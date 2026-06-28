@@ -147,45 +147,20 @@ struct AgentRestartRegistry: Sendable {
     /// globally. Opencode and kimi have no verified resume flag and launch
     /// fresh — best-effort is preferable to a broken flag. Grok supports
     /// `--resume` without an id to attach to the most recent session.
-    static let phase1: AgentRestartRegistry = .init(name: "phase1", rows: [
-        Row(terminalType: "claude-code") { sessionId, metadata in
-            guard let raw = sessionId?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !raw.isEmpty,
-                  isValidClaudeSessionId(raw) else { return nil }
-            let resume = "claude --dangerously-skip-permissions --resume \(raw)"
-            // `claude --resume <id>` resolves the session JSONL relative to
-            // the current shell's cwd encoding (`~/.claude/projects/<encoded-cwd>/<id>.jsonl`).
-            // A session captured in a worktree subdir cannot be resumed
-            // from its parent. When the hook recorded a project_dir, `cd`
-            // there first — re-validating defensively in case a future
-            // bypass slipped a malformed value past the store. The
-            // single-quote escape is belt-and-braces: the validator
-            // already rejects single quotes.
-            if let raw = metadata[SurfaceMetadataKeyName.claudeSessionProjectDir]?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-               !raw.isEmpty,
-               isValidClaudeSessionProjectDir(raw) {
-                return "cd \(shellSingleQuote(raw)) && \(resume)\n"
+    static let phase1: AgentRestartRegistry = {
+        // Rows are generated from the agent registry: every manifest that
+        // declares a resume spec contributes a row whose resolver is the
+        // manifest's `resumeCommand`. Manifests with `ResumeSpec.none`
+        // (github-copilot, custom) contribute no row and fall through to a
+        // fresh launch — identical to the prior hand-written table. The
+        // belt-and-braces id/path re-validation (UUID grammar, single-quote
+        // escape) lives in `AgentManifest.resumeCommand`.
+        let rows = AgentRegistry.shared.all.compactMap { manifest -> Row? in
+            if case .none = manifest.resume { return nil }
+            return Row(terminalType: manifest.kind) { sessionId, metadata in
+                manifest.resumeCommand(sessionId: sessionId, metadata: metadata)
             }
-            return "\(resume)\n"
-        },
-        Row(terminalType: "codex") { _, _ in
-            // codex resume --last resumes the most recent codex session globally.
-            // Best-effort: may not match the exact session in the snapshot.
-            "codex resume --last\n"
-        },
-        Row(terminalType: "grok") { _, _ in
-            // grok --resume (no id) attaches to the most recent session.
-            // Best-effort: may not match the exact session in the snapshot.
-            "grok --always-approve --resume\n"
-        },
-        Row(terminalType: "opencode") { _, _ in
-            // no stable resume flag known; launches fresh.
-            "opencode run --dangerously-skip-permissions\n"
-        },
-        Row(terminalType: "kimi") { _, _ in
-            // no stable resume flag known; launches fresh.
-            "kimi\n"
         }
-    ])
+        return .init(name: "phase1", rows: rows)
+    }()
 }

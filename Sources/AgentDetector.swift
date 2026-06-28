@@ -217,40 +217,16 @@ final class AgentDetector: @unchecked Sendable {
         let c = comm.lowercased()
         let a = args.lowercased()
 
-        // Exact comm match on first-class TUIs.
-        switch c {
-        case "claude", "claude-code":
-            return "claude-code"
-        case "codex", "codex-cli":
-            return "codex"
-        case "grok", "grok-cli", "grok-pager":
-            return "grok"
-        case "kimi", "kimi-cli":
-            return "kimi"
-        case "opencode", "opencode-cli":
-            return "opencode"
-        case "copilot":
-            return "github-copilot"
-        default:
-            break
+        // Exact comm match against any agent manifest's declared binaries.
+        for manifest in AgentRegistry.shared.all where manifest.detectComms.contains(c) {
+            return manifest.kind
         }
 
         // Node-wrapped CLIs: comm truncated to `node`, match via args substring.
         if c == "node" {
-            if a.contains("claude-code") || a.contains("anthropic-ai/claude-code") || a.contains("/claude") {
-                return "claude-code"
-            }
-            if a.contains("codex-cli") || a.contains("openai/codex") || a.contains("/codex") {
-                return "codex"
-            }
-            if a.contains("kimi-cli") || a.contains("moonshot/kimi") || a.contains("/kimi") {
-                return "kimi"
-            }
-            if a.contains("opencode-cli") || a.contains("sst/opencode") || a.contains("/opencode") {
-                return "opencode"
-            }
-            if a.contains("@github/copilot") || a.contains("/copilot") {
-                return "github-copilot"
+            for manifest in AgentRegistry.shared.all
+            where manifest.detectNodeArgsSubstrings.contains(where: { a.contains($0) }) {
+                return manifest.kind
             }
         }
 

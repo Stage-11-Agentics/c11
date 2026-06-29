@@ -376,6 +376,21 @@ struct SocketControlSettings {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    /// Whether the running app is a **local development build**: a Debug build,
+    /// or a tagged `reload.sh --tag` / automation build (`CMUX_TAG` set). Never
+    /// true in a shipped untagged Release. Single source of truth for
+    /// suppressing launch-time auto-dialogs (the Agent Skills onboarding sheet
+    /// and the resume picker) so the person rebuilding c11 isn't blocked by a
+    /// modal on every relaunch. `isDebugBuild` is injectable so the env branch
+    /// stays testable under the DEBUG-compiled logic-test target.
+    static func isLocalDevBuild(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        isDebugBuild: Bool = SocketControlSettings.isDebugBuild
+    ) -> Bool {
+        if isDebugBuild { return true }
+        return launchTag(environment: environment) != nil
+    }
+
     static func shouldBlockUntaggedDebugLaunch(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         bundleIdentifier: String? = Bundle.main.bundleIdentifier,

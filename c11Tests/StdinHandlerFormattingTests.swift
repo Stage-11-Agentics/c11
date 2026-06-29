@@ -184,17 +184,28 @@ final class StdinHandlerFormattingTests: XCTestCase {
             id: "01K3A2B7X8PQRTVWYZ0123456J",
             ts: "2026-04-23T10:15:42Z"
         )
-        actor Captured {
-            var id: String?
-            var recipient: String?
+        // Lock-protected box so the *synchronous* writer closure can capture
+        // its arguments inline. The prior version made this an actor, which
+        // forced the writer to spawn a detached `Task { await … }` and the
+        // test to `Task.sleep(50ms)` and hope it ran — a race that lost on a
+        // busy CI runner. `deliver` invokes the writer synchronously and
+        // returns its result, so the capture is complete the moment `deliver`
+        // returns: no Task, no sleep, deterministic.
+        final class Captured: @unchecked Sendable {
+            private let lock = NSLock()
+            private var idValue: String?
+            private var recipientValue: String?
             func set(id: String, recipient: String) {
-                self.id = id
-                self.recipient = recipient
+                lock.lock(); defer { lock.unlock() }
+                idValue = id
+                recipientValue = recipient
             }
+            var id: String? { lock.lock(); defer { lock.unlock() }; return idValue }
+            var recipient: String? { lock.lock(); defer { lock.unlock() }; return recipientValue }
         }
         let captured = Captured()
         let handler = StdinMailboxHandler(writer: { _, envelopeId, recipientName, bytes in
-            Task { await captured.set(id: envelopeId, recipient: recipientName) }
+            captured.set(id: envelopeId, recipient: recipientName)
             return .ok(bytes: bytes.utf8.count)
         })
         _ = await handler.deliver(
@@ -202,12 +213,8 @@ final class StdinHandlerFormattingTests: XCTestCase {
             to: UUID(),
             surfaceName: "watcher"
         )
-        // Allow the capture Task to run.
-        try await Task.sleep(nanoseconds: 50_000_000)
-        let id = await captured.id
-        let recipient = await captured.recipient
-        XCTAssertEqual(id, "01K3A2B7X8PQRTVWYZ0123456J")
-        XCTAssertEqual(recipient, "watcher")
+        XCTAssertEqual(captured.id, "01K3A2B7X8PQRTVWYZ0123456J")
+        XCTAssertEqual(captured.recipient, "watcher")
     }
 
     func testDeliverReportsClosedWhenSurfaceNotFound() async throws {

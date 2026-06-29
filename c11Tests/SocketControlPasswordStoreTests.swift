@@ -947,7 +947,8 @@ final class AgentSkillsShouldPresentTests: XCTestCase {
         // otherwise present. But dontAskAgain is set.
         h.defaults.set(true, forKey: AgentSkillsOnboarding.dontAskAgainKey)
         XCTAssertFalse(AgentSkillsOnboarding.shouldPresent(
-            home: h.home, sourceDir: h.source, defaults: h.defaults, fileManager: .default))
+            home: h.home, sourceDir: h.source, defaults: h.defaults, fileManager: .default,
+            isLocalDevBuild: false))
     }
 
     func testDismissedEntryMatchingBundledHashSuppressesPresent() throws {
@@ -956,7 +957,8 @@ final class AgentSkillsShouldPresentTests: XCTestCase {
         let hash = try h.bundledHash(skillName: "foo")
         h.defaults.set(["claude.foo": hash], forKey: AgentSkillsOnboarding.dismissalsKey)
         XCTAssertFalse(AgentSkillsOnboarding.shouldPresent(
-            home: h.home, sourceDir: h.source, defaults: h.defaults, fileManager: .default))
+            home: h.home, sourceDir: h.source, defaults: h.defaults, fileManager: .default,
+            isLocalDevBuild: false))
     }
 
     func testDismissedEntryAgainstOldHashAllowsPresent() throws {
@@ -966,14 +968,16 @@ final class AgentSkillsShouldPresentTests: XCTestCase {
         defer { h.cleanup() }
         h.defaults.set(["claude.foo": "sha256:OBSOLETE"], forKey: AgentSkillsOnboarding.dismissalsKey)
         XCTAssertTrue(AgentSkillsOnboarding.shouldPresent(
-            home: h.home, sourceDir: h.source, defaults: h.defaults, fileManager: .default))
+            home: h.home, sourceDir: h.source, defaults: h.defaults, fileManager: .default,
+            isLocalDevBuild: false))
     }
 
     func testNoDetectedTargetsReturnsFalse() throws {
         let h = try makeHarness(skills: ["foo": "v1-content"], detect: false)
         defer { h.cleanup() }
         XCTAssertFalse(AgentSkillsOnboarding.shouldPresent(
-            home: h.home, sourceDir: h.source, defaults: h.defaults, fileManager: .default))
+            home: h.home, sourceDir: h.source, defaults: h.defaults, fileManager: .default,
+            isLocalDevBuild: false))
     }
 
     func testMissingPackageOnDetectedTargetReturnsTrue() throws {
@@ -981,7 +985,8 @@ final class AgentSkillsShouldPresentTests: XCTestCase {
         defer { h.cleanup() }
         // No dismissal entry → row offers → should present.
         XCTAssertTrue(AgentSkillsOnboarding.shouldPresent(
-            home: h.home, sourceDir: h.source, defaults: h.defaults, fileManager: .default))
+            home: h.home, sourceDir: h.source, defaults: h.defaults, fileManager: .default,
+            isLocalDevBuild: false))
     }
 }
 

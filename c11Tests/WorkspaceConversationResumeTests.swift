@@ -75,7 +75,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
             state: .unknown,
             diagnosticReason: "ambiguous: 2 candidates; chose newest"
         )
-        await ConversationStore.shared.recordScrape(surfaceId: surfaceId, ref: ref)
+        await ConversationStore.shared.applyScrape(surfaceId: surfaceId, ref: ref)
         let snapshot = makeSnapshot(panels: [
             makePanelSnapshot(id: panelId, type: .terminal, metadata: nil)
         ])

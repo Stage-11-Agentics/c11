@@ -144,13 +144,35 @@ extension ConversationStore {
         return reconcile(surfaceId: surfaceId, candidate: ref) ?? ref
     }
 
-    /// Apply a scrape result. Same reconciliation rule as `push`.
+    /// Apply a scrape result. Same reconciliation rule as `push`. This is
+    /// the canonical write entry for the live scrape-capture pipeline and the
+    /// name downstream kinds (pi, omp) build against.
     @discardableResult
-    func recordScrape(
+    func applyScrape(
         surfaceId: String,
         ref: ConversationRef
     ) -> ConversationRef {
         return reconcile(surfaceId: surfaceId, candidate: ref) ?? ref
+    }
+
+    /// Live scrape-capture driver. Runs the pure `ScrapeCapturePipeline`
+    /// against the current store contents (so claim-time / push filters see
+    /// the seeded refs), then applies each scrape-derived ref under actor
+    /// isolation. Returns what was applied, for diagnostics.
+    ///
+    /// This is the runtime call the architecture finding identified as
+    /// missing: it is the single place that connects scrapers → strategies →
+    /// store at restore, lighting up codex (and future pi/omp) resume.
+    @discardableResult
+    func runScrapeCapture(
+        contexts: [ScrapeCaptureContext],
+        pipeline: ScrapeCapturePipeline
+    ) -> [(surfaceId: String, ref: ConversationRef)] {
+        let captured = pipeline.captureRefs(contexts: contexts, existing: bySurface)
+        for (surfaceId, ref) in captured {
+            applyScrape(surfaceId: surfaceId, ref: ref)
+        }
+        return captured
     }
 
     /// Mark the surface's active ref as tombstoned. Operator-initiated

@@ -179,7 +179,9 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         "worktree",
         "branch",
         "claude.session_id",
-        "claude.session_project_dir"
+        "claude.session_project_dir",
+        "opencode.session_id",
+        "opencode.session_project_dir"
     ]
 
     static func validateReservedKey(_ key: String, _ value: Any) -> WriteError? {
@@ -282,6 +284,37 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                 return .reservedKeyInvalidType(key, "expected string")
             }
             if !isValidClaudeSessionProjectDir(s) {
+                return .reservedKeyInvalidType(
+                    key,
+                    "must be an absolute POSIX path (≤4096 chars, no NUL/newline/single-quote)"
+                )
+            }
+            return nil
+        case "opencode.session_id":
+            // opencode's `session.created` id is `ses_` + 26-char base62,
+            // not a UUID. The value is interpolated into the resume
+            // command (`opencode … -s <id>`) at restore time, so a
+            // non-conforming value would be a command-injection vector.
+            // See `isValidOpencodeSessionId` for the grammar.
+            guard let s = value as? String else {
+                return .reservedKeyInvalidType(key, "expected string")
+            }
+            if !isValidOpencodeSessionId(s) {
+                return .reservedKeyInvalidType(
+                    key,
+                    "must match ses_ + 26-char base62 body"
+                )
+            }
+            return nil
+        case "opencode.session_project_dir":
+            // Project directory the opencode session was created in; same
+            // grammar as `claude.session_project_dir`. Interpolated into
+            // `cd '<path>' && …` at restore time, so reject anything that
+            // could break the single-quote escape.
+            guard let s = value as? String else {
+                return .reservedKeyInvalidType(key, "expected string")
+            }
+            if !isValidOpencodeSessionProjectDir(s) {
                 return .reservedKeyInvalidType(
                     key,
                     "must be an absolute POSIX path (≤4096 chars, no NUL/newline/single-quote)"

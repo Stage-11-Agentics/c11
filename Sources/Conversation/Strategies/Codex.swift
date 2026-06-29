@@ -95,4 +95,21 @@ struct CodexStrategy: ConversationStrategy {
     func isValidId(_ id: String) -> Bool {
         isValidConversationUUID(id)
     }
+
+    /// Crash-recovery verification (stat-only): does a `rollout-<ts>-<uuid>.jsonl`
+    /// for `ref.id` still exist on disk? Without this, `reclassifyAfterCrash`
+    /// forces the ref to `.unknown` (the protocol default returns nil) and codex
+    /// resume skips after a crash. Codex filenames are date-nested with an
+    /// unknown timestamp, so an exact-path stat isn't constructable; reuse the
+    /// `CodexScraper` (which extracts the trailing UUID) and check membership.
+    /// Never opens transcript bytes.
+    func transcriptExists(
+        for ref: ConversationRef,
+        filesystem: ConversationFilesystem
+    ) -> Bool? {
+        guard isValidConversationUUID(ref.id) else { return false }
+        return CodexScraper(filesystem: filesystem)
+            .candidates(cwd: ref.cwd)
+            .contains { $0.id == ref.id }
+    }
 }

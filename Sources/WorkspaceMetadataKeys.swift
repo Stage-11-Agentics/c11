@@ -38,23 +38,24 @@ public enum SurfaceMetadataKeyName {
     /// into the recorded directory before issuing `claude --resume`.
     public static let claudeSessionProjectDir = "claude.session_project_dir"
 
-    /// Surface-scoped session id written by the opencode `session.created`
-    /// plugin hook. Opencode session IDs are `ses_` + a 26-character
+    /// **Reserved namespace — not currently written by any production path.**
+    /// Opencode capture rides the plugin push rail (`session.created` →
+    /// `c11 conversation push`) and the SQLite scrape rail; both produce a
+    /// `ConversationRef` directly, and neither writes this metadata key. The
+    /// key + its `isValidOpencodeSessionId` grammar are kept reserved (and
+    /// validated at the store boundary) so a future opencode hook that records
+    /// the id has a safe, ready home — mirroring the live `claude.session_id`
+    /// wrapper rail. Opencode session IDs are `ses_` + a 26-character
     /// **base62** body (`[0-9A-Za-z]`), NOT UUIDs — see
-    /// `isValidOpencodeSessionId`. The `opencode.*` prefix mirrors the
-    /// `claude.*` reservation and does not collide with the C11-13
-    /// `mailbox.*` namespace.
+    /// `isValidOpencodeSessionId`. The `opencode.*` prefix does not collide
+    /// with the C11-13 `mailbox.*` namespace.
     public static let opencodeSessionId = "opencode.session_id"
 
-    /// Surface-scoped project directory the opencode session was created
-    /// in (its cwd at session start). Written alongside
-    /// `opencode.session_id` by the same hook. The pair is atomic for the
-    /// same reason `claude.session_project_dir` is: opencode resolves
-    /// session state relative to the launching cwd, so a session captured
-    /// in a worktree subdir cannot be resumed from its parent. Same
-    /// grammar as the claude project-dir key — validated via
-    /// `isValidOpencodeSessionProjectDir`, which delegates to the shared
-    /// `isValidClaudeSessionProjectDir`.
+    /// **Reserved namespace — not currently written by any production path**
+    /// (companion to `opencodeSessionId`; same rationale — capture rides the
+    /// plugin/scrape rails, not metadata keys). Same project-dir grammar as
+    /// the claude key, validated via `isValidOpencodeSessionProjectDir`, which
+    /// delegates to the shared `isValidClaudeSessionProjectDir`.
     public static let opencodeSessionProjectDir = "opencode.session_project_dir"
 
     /// Canonical `terminal_type` key (same literal as

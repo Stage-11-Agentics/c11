@@ -40,7 +40,8 @@ struct ConversationStrategyRegistry: Sendable {
             OpencodeStrategy(),
             KimiStrategy(),
             GitHubCopilotStrategy(),
-            PiStrategy()
+            PiStrategy(),
+            OmpStrategy()
         ])
     }()
 }

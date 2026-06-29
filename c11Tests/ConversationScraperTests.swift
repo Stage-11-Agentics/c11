@@ -149,6 +149,30 @@ final class ConversationScraperTests: XCTestCase {
         XCTAssertEqual(candidates[0].cwd, "/work/proj")
     }
 
+    /// Real codex session files are named
+    /// `rollout-<ISO8601-with-dashes>-<uuid>.jsonl`, not bare `<uuid>.jsonl`.
+    /// The scraper must extract the trailing UUID; the whole stem is not a
+    /// valid UUID and would otherwise be dropped, leaving codex unresumable.
+    func testCodexScraperParsesRolloutPrefixedFilenames() {
+        let mock = MockFS()
+        mock.home = URL(fileURLWithPath: "/Users/test")
+        let root = URL(fileURLWithPath: "/Users/test/.codex/sessions")
+        let sessionId = "019c1709-153e-7e63-a879-5144ceccdad7"
+        let fileName = "rollout-2026-01-31T21-29-57-\(sessionId).jsonl"
+        mock.recursiveEntries[root] = [
+            ConversationFilesystemEntry(
+                url: root.appendingPathComponent("2026/01/31/\(fileName)"),
+                fileName: fileName,
+                mtime: Date(),
+                size: 1024
+            )
+        ]
+        let scraper = CodexScraper(filesystem: mock)
+        let candidates = scraper.candidates(cwd: "/work/proj")
+        XCTAssertEqual(candidates.count, 1, "rollout-prefixed codex session must be collected")
+        XCTAssertEqual(candidates[0].id, sessionId, "id must be the trailing UUID, not the rollout stem")
+    }
+
     // MARK: - Privacy contract
 
     func testScrapersDoNotEverOpenTranscriptContent() {

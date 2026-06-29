@@ -103,7 +103,14 @@ struct CodexScraper: ConversationScraper {
             max: maxCandidates
         )
         return entries.compactMap { entry in
-            let id = String(entry.fileName.dropLast(".jsonl".count))
+            // Codex names sessions `rollout-<ISO8601-with-dashes>-<uuid>.jsonl`
+            // (e.g. `rollout-2026-01-31T21-29-57-019c1709-...-5144ceccdad7`),
+            // so the session id is the trailing 36-char UUID, not the whole
+            // stem. `suffix(36)` also handles a bare `<uuid>.jsonl` (stem is
+            // already 36 chars); anything shorter or malformed fails the UUID
+            // guard below and is dropped.
+            let stem = String(entry.fileName.dropLast(".jsonl".count))
+            let id = String(stem.suffix(36))
             guard isValidConversationUUID(id) else { return nil }
             return ScrapeCandidate(
                 id: id,

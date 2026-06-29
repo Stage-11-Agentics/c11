@@ -32,6 +32,7 @@ Feature release. Headline: **exact-session conversation resume arrives for Pi, o
 
 ### Fixed
 
+- **Codex sessions resume on restore again.** The codex scraper parsed the whole `rollout-<timestamp>-<uuid>.jsonl` filename as the session id, so it never matched a real codex session and a restored codex surface came back as a bare shell. It now extracts the trailing UUID, so a restored codex pane resumes its session like the other agents.
 - **Conversation detection hardening:** Pi/omp auto-detect (including bun-launched sessions), omp session cwd-scoping, and crash-path resume. ([#281](https://github.com/Stage-11-Agentics/c11/pull/281))
 - **Tab bar polish:** tool-button tooltips now show, the collapsed header gets a clear hover affordance, and collapse is tighter with a full-width accent line and whole-header hit area. ([#266](https://github.com/Stage-11-Agentics/c11/pull/266))
 - **Correct split sizing on Retina:** `cellSize` is now converted from backing pixels to points so size-aware split math is right. ([#262](https://github.com/Stage-11-Agentics/c11/pull/262))

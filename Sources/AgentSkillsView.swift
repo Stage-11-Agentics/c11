@@ -590,6 +590,8 @@ struct AgentSkillsOnboardingSheet: View {
     @State private var kimiOptIn: Bool = false
     @State private var opencodeOptIn: Bool = false
     @State private var copilotOptIn: Bool = false
+    @State private var piOptIn: Bool = false
+    @State private var ompOptIn: Bool = false
     @State private var initializedDefaultOptIns: Bool = false
     @State private var selectedAction: AgentSkillsOnboardingAction = .install
 
@@ -634,7 +636,7 @@ struct AgentSkillsOnboardingSheet: View {
     }
 
     private var anySelected: Bool {
-        initializedDefaultOptIns && (claudeOptIn || codexOptIn || grokOptIn || kimiOptIn || opencodeOptIn || copilotOptIn)
+        initializedDefaultOptIns && (claudeOptIn || codexOptIn || grokOptIn || kimiOptIn || opencodeOptIn || copilotOptIn || piOptIn || ompOptIn)
     }
 
     private var hasActionNeeded: Bool {
@@ -940,6 +942,8 @@ struct AgentSkillsOnboardingSheet: View {
         case .kimi: return $kimiOptIn
         case .opencode: return $opencodeOptIn
         case .copilot: return $copilotOptIn
+        case .pi: return $piOptIn
+        case .omp: return $ompOptIn
         }
     }
 
@@ -951,6 +955,8 @@ struct AgentSkillsOnboardingSheet: View {
             (.kimi, kimiOptIn),
             (.opencode, opencodeOptIn),
             (.copilot, copilotOptIn),
+            (.pi, piOptIn),
+            (.omp, ompOptIn),
         ]
         var selectedKeys: Set<String> = []
         for (target, _) in selections.filter({ $0.1 }) {
@@ -1031,6 +1037,8 @@ struct AgentSkillsOnboardingSheet: View {
         kimiOptIn = defaults[.kimi] ?? false
         opencodeOptIn = defaults[.opencode] ?? false
         copilotOptIn = defaults[.copilot] ?? false
+        piOptIn = defaults[.pi] ?? false
+        ompOptIn = defaults[.omp] ?? false
     }
 }
 

@@ -21,6 +21,7 @@ Feature release. Headline: **exact-session conversation resume arrives for Pi, o
 - **Terminal-only mode.** New Settings toggles can disable the browser and markdown surface types — hiding their spawn buttons and rejecting those types over the CLI/socket. ([#264](https://github.com/Stage-11-Agentics/c11/pull/264))
 - **`C11_*` surface environment variables.** Surfaces now export `C11_SURFACE_ID`, `C11_TAB_ID`, `C11_SHELL_INTEGRATION`, `C11_WORKSPACE_ID`, and friends alongside the legacy `CMUX_*` names, so agents can read the `C11_*` namespace the skill documents. ([#284](https://github.com/Stage-11-Agentics/c11/pull/284))
 - **`C11_QA_LAUNCH` automation flag.** Launching with `C11_QA_LAUNCH=fresh|resume` suppresses the startup Agent Skills and resume-picker dialogs so automated and QA launches don't block on modals. ([#268](https://github.com/Stage-11-Agentics/c11/pull/268))
+- **Skill install for Pi and oh-my-pi.** The Agent Skills installer now targets Pi (`~/.pi/agent/skills/`) and oh-my-pi (`~/.omp/agent/skills/`) alongside Claude Code, Codex, Grok, Kimi, OpenCode, and Copilot — so the agents c11 already recognizes can also receive the c11 skill.
 - **Bundled opencode status + notification plugin,** auto-installed so opencode surfaces report status and notifications out of the box.
 
 ### Changed

@@ -10,6 +10,8 @@ enum SkillInstallerTarget: String, CaseIterable {
     case kimi
     case opencode
     case copilot
+    case pi
+    case omp
 
     var displayName: String {
         switch self {
@@ -19,15 +21,23 @@ enum SkillInstallerTarget: String, CaseIterable {
         case .kimi: return "Kimi"
         case .opencode: return "OpenCode"
         case .copilot: return "GitHub Copilot"
+        case .pi: return "Pi"
+        case .omp: return "oh-my-pi"
         }
     }
 
     /// Root config dir conventionally used by each TUI (`~/.claude`, `~/.codex`, …).
     /// OpenCode uses `~/.config/opencode/` (XDG convention), not `~/.opencode/`.
+    /// Pi and oh-my-pi keep their config (and skills) under an `agent/` subdir
+    /// of `~/.pi` / `~/.omp`, so they read skills from `~/.<name>/agent/skills/`.
     func configRoot(home: URL) -> URL {
         switch self {
         case .opencode:
             return home.appendingPathComponent(".config/opencode", isDirectory: true)
+        case .pi:
+            return home.appendingPathComponent(".pi/agent", isDirectory: true)
+        case .omp:
+            return home.appendingPathComponent(".omp/agent", isDirectory: true)
         default:
             return home.appendingPathComponent(".\(rawValue)", isDirectory: true)
         }

@@ -283,3 +283,132 @@ final class DefaultAgentConfigTests: XCTestCase {
         return URL(fileURLWithPath: url.resolvingSymlinksInPath().path, isDirectory: true)
     }
 }
+
+/// Gating logic for the Agent Skills onboarding/update sheet — the dialog that
+/// was over-firing for skill authors. Two fixes are covered:
+///   B. `isLocalDevBuild` suppresses the auto-popup on Debug / tagged builds.
+///   A. "Later" persists a hash-pinned dismissal for every offered row, so it
+///      survives restarts and only re-surfaces when skill content changes.
+final class AgentSkillsOnboardingGatingTests: XCTestCase {
+
+    // MARK: - Fix B: dev/tagged-build suppression
+
+    func testTaggedReleaseBuildCountsAsDev() {
+        // `reload.sh --tag` / automation exports CMUX_TAG; a Release build with
+        // a tag is still a developer build → suppress the auto-popup.
+        XCTAssertTrue(
+            AgentSkillsOnboarding.isLocalDevBuild(
+                environment: ["CMUX_TAG": "feat-foo"],
+                isCompiledDebug: false
+            )
+        )
+    }
+
+    func testUntaggedReleaseBuildIsNotDev() {
+        // The shipped end-user case: Release, no tag → the sheet must still
+        // be offered (function returns false = not a dev build).
+        XCTAssertFalse(
+            AgentSkillsOnboarding.isLocalDevBuild(environment: [:], isCompiledDebug: false)
+        )
+    }
+
+    func testWhitespaceTagDoesNotCountAsDev() {
+        // launchTag() trims to nil for blank values, so a stray empty CMUX_TAG
+        // must not flip a release build into dev-suppressed mode.
+        XCTAssertFalse(
+            AgentSkillsOnboarding.isLocalDevBuild(
+                environment: ["CMUX_TAG": "   "],
+                isCompiledDebug: false
+            )
+        )
+    }
+
+    func testDebugBuildAlwaysCountsAsDevRegardlessOfTag() {
+        XCTAssertTrue(
+            AgentSkillsOnboarding.isLocalDevBuild(environment: [:], isCompiledDebug: true)
+        )
+    }
+
+    @MainActor
+    func testShouldPresentSuppressedOnLocalDevBuild() throws {
+        let tmp = try makeTempDir()
+        let suite = "AgentSkillsGating-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        // Injected dev=true short-circuits before any source/dismissal work.
+        XCTAssertFalse(
+            AgentSkillsOnboarding.shouldPresent(
+                home: tmp,
+                sourceDir: tmp,
+                defaults: defaults,
+                environment: [:],
+                isLocalDevBuild: true
+            )
+        )
+    }
+
+    private func makeTempDir() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AgentSkillsOnboardingGatingTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return URL(fileURLWithPath: url.resolvingSymlinksInPath().path, isDirectory: true)
+    }
+
+    // MARK: - Fix A: "Later" persists a hash-pinned dismissal
+
+    func testLaterRecordsHashPinnedDismissalForEveryOfferedRow() throws {
+        let suite = "AgentSkillsGating-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let offered = [
+            makeStatus(skill: "c11", state: .installedOutdated, hash: "h-c11"),
+            makeStatus(skill: "c11-browser", state: .notInstalled, hash: "h-browser"),
+            makeStatus(skill: "c11-markdown", state: .installedCurrent, hash: "h-current"),
+        ]
+
+        // Mirrors installLater(): empty selection → record every *offerable* row
+        // at its current bundled hash.
+        AgentSkillsOnboarding.recordDismissalsForUncheckedRows(
+            offered: offered,
+            selectedKeys: [],
+            defaults: defaults
+        )
+
+        let dismissals = AgentSkillsOnboarding.loadDismissals(defaults: defaults)
+        XCTAssertEqual(
+            dismissals[AgentSkillsOnboarding.dismissalKey(for: .claude, skillName: "c11")],
+            "h-c11"
+        )
+        XCTAssertEqual(
+            dismissals[AgentSkillsOnboarding.dismissalKey(for: .claude, skillName: "c11-browser")],
+            "h-browser"
+        )
+        // .installedCurrent is not offerable, so it must not be pinned.
+        XCTAssertNil(
+            dismissals[AgentSkillsOnboarding.dismissalKey(for: .claude, skillName: "c11-markdown")]
+        )
+    }
+
+    private func makeStatus(
+        skill: String,
+        target: SkillInstallerTarget = .claude,
+        state: SkillInstallerState,
+        hash: String
+    ) -> SkillInstallerPackageStatus {
+        SkillInstallerPackageStatus(
+            package: SkillInstallerPackage(
+                name: skill,
+                version: "1",
+                description: nil,
+                sourceDir: URL(fileURLWithPath: "/tmp/src/\(skill)", isDirectory: true)
+            ),
+            target: target,
+            destinationDir: URL(fileURLWithPath: "/tmp/dst/\(skill)", isDirectory: true),
+            state: state,
+            record: nil,
+            sourceContentHash: hash
+        )
+    }
+}

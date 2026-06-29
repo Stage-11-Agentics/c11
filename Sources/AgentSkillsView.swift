@@ -998,6 +998,16 @@ struct AgentSkillsOnboardingSheet: View {
     }
 
     private func installLater() {
+        // Persist a hash-pinned dismissal for every currently-offered row so
+        // "Later" survives app restarts and only re-surfaces when skill
+        // content actually changes — instead of re-prompting on the very next
+        // launch (the in-memory flag alone covers only this run). An empty
+        // selection records all offered rows.
+        let offered = model.rows.filter(\.detected).flatMap(\.packages)
+        AgentSkillsOnboarding.recordDismissalsForUncheckedRows(
+            offered: offered,
+            selectedKeys: []
+        )
         AgentSkillsOnboarding.markDismissedThisLaunch()
         onDismiss()
     }
@@ -1432,13 +1442,43 @@ enum AgentSkillsOnboarding {
         defaults.set(dict, forKey: dismissalsKey)
     }
 
+    /// Compile-time DEBUG flag surfaced as a value so the environment-driven
+    /// portion of `isLocalDevBuild` stays unit-testable — the logic test
+    /// target compiles DEBUG, so a bare `#if DEBUG` inside `isLocalDevBuild`
+    /// would force the gate `true` under test and hide the env branch.
+    static var isCompiledDebugBuild: Bool {
+        #if DEBUG
+        true
+        #else
+        false
+        #endif
+    }
+
+    /// True when the running app is a **local development build**: either a
+    /// Debug build, or a tagged `reload.sh --tag` / automation build (which
+    /// exports `CMUX_TAG`). Neither is ever true in a shipped Release without
+    /// a tag. Every local build rebundles edited skills, so the content-hash
+    /// re-offer would pop the onboarding sheet on essentially every launch for
+    /// the person *building* the skills; suppressing the auto-popup here ends
+    /// that treadmill while leaving end-user release behavior untouched. Only
+    /// the automatic `applicationDidBecomeActive` trigger is gated — the
+    /// operator can still open the sheet from Help / Settings.
+    static func isLocalDevBuild(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        isCompiledDebug: Bool = AgentSkillsOnboarding.isCompiledDebugBuild
+    ) -> Bool {
+        if isCompiledDebug { return true }
+        return SocketControlSettings.launchTag(environment: environment) != nil
+    }
+
     /// Should the onboarding sheet be offered on this launch?
     ///
     /// Order of suppression checks (cheapest first):
-    /// 1. Explicit `dontAskAgain` opt-out wins over everything.
-    /// 2. In-memory `_dismissedThisLaunch` covers the "Later" / window-close
+    /// 1. QA launch + local dev/tagged builds never auto-pop.
+    /// 2. Explicit `dontAskAgain` opt-out wins over everything.
+    /// 3. In-memory `_dismissedThisLaunch` covers the "Later" / window-close
     ///    paths for the current run.
-    /// 3. For each detected target × bundled skill that would otherwise
+    /// 4. For each detected target × bundled skill that would otherwise
     ///    offer, the persistent dismissal entry (if any) must match the
     ///    current bundled hash. A matching entry suppresses that row; a
     ///    mismatched entry (content drifted since dismissal) re-surfaces
@@ -1449,11 +1489,16 @@ enum AgentSkillsOnboarding {
         sourceDir: URL? = nil,
         defaults: UserDefaults = .standard,
         fileManager: FileManager = .default,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        isLocalDevBuild: Bool? = nil
     ) -> Bool {
         // QA launch (`C11_QA_LAUNCH`) suppresses the onboarding sheet so
         // automated runs reach a usable window with no modal in the way.
         if QALaunchPolicy.current(environment: environment).isActive { return false }
+        // Local dev / tagged builds rebundle edited skills on every compile,
+        // drifting the content hash and re-offering the sheet; suppress the
+        // auto-popup for the skill author. Release builds fall through.
+        if isLocalDevBuild ?? Self.isLocalDevBuild(environment: environment) { return false }
         if defaults.bool(forKey: dontAskAgainKey) { return false }
         if _dismissedThisLaunch { return false }
         let resolvedSource: URL

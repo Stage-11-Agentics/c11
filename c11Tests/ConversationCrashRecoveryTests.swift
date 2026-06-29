@@ -22,11 +22,16 @@ final class ConversationCrashRecoveryTests: XCTestCase {
     private final class MockFS: ConversationFilesystem, @unchecked Sendable {
         let home: URL?
         var existingPaths: Set<String> = []
+        var recursiveEntries: [URL: [ConversationFilesystemEntry]] = [:]
         init(home: String = "/Users/test") { self.home = URL(fileURLWithPath: home) }
         var homeDirectory: URL? { home }
         func fileExists(atPath path: String) -> Bool { existingPaths.contains(path) }
         func listDirectoryByMtime(_ d: URL, max: Int) -> [ConversationFilesystemEntry] { [] }
-        func listSessionsRecursivelyByMtime(_ r: URL, extensionFilter: String, max: Int) -> [ConversationFilesystemEntry] { [] }
+        func listSessionsRecursivelyByMtime(_ r: URL, extensionFilter: String, max: Int) -> [ConversationFilesystemEntry] {
+            Array((recursiveEntries[r] ?? [])
+                .filter { $0.fileName.hasSuffix("." + extensionFilter) }
+                .prefix(max))
+        }
     }
 
     private func mockFS(present ids: [String], cwd: String) -> MockFS {
@@ -87,6 +92,30 @@ final class ConversationCrashRecoveryTests: XCTestCase {
         let ref = ConversationRef(kind: "kimi", id: "real-id", cwd: cwd,
                                   capturedVia: .hook, state: .suspended)
         XCTAssertNil(KimiStrategy().transcriptExists(for: ref, filesystem: fs))
+    }
+
+    /// Codex resumes after a crash too: `transcriptExists` finds the
+    /// `rollout-<ts>-<uuid>.jsonl` on disk via the CodexScraper (which extracts
+    /// the trailing UUID), so the ref is promoted to `.suspended` rather than
+    /// forced `.unknown`. Exact-path stat isn't constructable (date-nested,
+    /// unknown timestamp), hence the scraper-membership check.
+    func testCodexTranscriptExistsViaScraper() {
+        let fs = MockFS()
+        let codexRoot = fs.home!
+            .appendingPathComponent(".codex", isDirectory: true)
+            .appendingPathComponent("sessions", isDirectory: true)
+        let name = "rollout-2025-11-18T16-49-19-\(uuidA).jsonl"
+        fs.recursiveEntries[codexRoot] = [
+            ConversationFilesystemEntry(
+                url: codexRoot.appendingPathComponent("2025/11/18").appendingPathComponent(name),
+                fileName: name, mtime: Date(), size: 1024)
+        ]
+        let present = ConversationRef(kind: "codex", id: uuidA, cwd: cwd,
+                                      capturedVia: .scrape, state: .suspended)
+        XCTAssertEqual(CodexStrategy().transcriptExists(for: present, filesystem: fs), true)
+        let absent = ConversationRef(kind: "codex", id: uuidB, cwd: cwd,
+                                     capturedVia: .scrape, state: .suspended)
+        XCTAssertEqual(CodexStrategy().transcriptExists(for: absent, filesystem: fs), false)
     }
 
     // MARK: - resume: suspended is resumable, unknown/tombstoned skip

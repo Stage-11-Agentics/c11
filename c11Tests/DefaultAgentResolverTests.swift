@@ -18,7 +18,7 @@ final class DefaultAgentResolverTests: XCTestCase {
             projectConfig: nil
         )
         XCTAssertEqual(agent, .claudeCode)
-        XCTAssertEqual(launch.command, "claude --dangerously-skip-permissions 'you are operating inside a c11 workspace. load the skill.'")
+        XCTAssertEqual(launch.command, "claude --dangerously-skip-permissions 'You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.'")
     }
 
     func testProjectConfigDefaultAgentBeatsUserDefault() {
@@ -118,12 +118,12 @@ final class DefaultAgentResolverTests: XCTestCase {
     func testBuildCommandClaudeAppendsInitialPromptAsPositional() {
         let cfg = AgentConfig(
             command: "claude --dangerously-skip-permissions",
-            initialPrompt: "you are operating inside a c11 workspace. load the skill.",
+            initialPrompt: "You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.",
             envOverridesText: ""
         )
         XCTAssertEqual(
             DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
-            "claude --dangerously-skip-permissions 'you are operating inside a c11 workspace. load the skill.'"
+            "claude --dangerously-skip-permissions 'You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.'"
         )
     }
 
@@ -143,7 +143,7 @@ final class DefaultAgentResolverTests: XCTestCase {
         // Non-claude agents preserve the prompt in config but don't auto-append.
         let cfg = AgentConfig(
             command: "codex --yolo",
-            initialPrompt: "you are operating inside a c11 workspace. load the skill.",
+            initialPrompt: "You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.",
             envOverridesText: ""
         )
         XCTAssertEqual(
@@ -222,11 +222,11 @@ final class DefaultAgentResolverTests: XCTestCase {
             projectConfig: nil
         )
         XCTAssertEqual(launch.bareCommand, "claude --dangerously-skip-permissions")
-        XCTAssertEqual(launch.initialPrompt, "you are operating inside a c11 workspace. load the skill.")
+        XCTAssertEqual(launch.initialPrompt, "You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.")
         // The baked form still ships on `command` for the A-button path.
         XCTAssertEqual(
             launch.command,
-            "claude --dangerously-skip-permissions 'you are operating inside a c11 workspace. load the skill.'"
+            "claude --dangerously-skip-permissions 'You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.'"
         )
     }
 
@@ -260,7 +260,7 @@ final class DefaultAgentResolverTests: XCTestCase {
         XCTAssertEqual(launch.command, "codex --yolo")
         // The prompt is still surfaced for non-claude agents — the launch
         // delivery path is what differs (post-ready sendText vs positional).
-        XCTAssertEqual(launch.initialPrompt, "you are operating inside a c11 workspace. load the skill.")
+        XCTAssertEqual(launch.initialPrompt, "You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.")
     }
 
     func testBareCommandTrimsWhitespace() {

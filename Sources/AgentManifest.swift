@@ -276,4 +276,4 @@ struct AgentRegistry: Sendable {
 
 /// The orientation prompt typed into a freshly launched agent. Mirrors
 /// `AgentType.factoryInitialPrompt` for non-custom agents.
-let c11OrientPrompt = "you are operating inside a c11 workspace. load the skill."
+let c11OrientPrompt = "You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it."

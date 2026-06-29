@@ -64,3 +64,6 @@ c11-worktrees/
 # the private-repo standard.
 .etch/*
 !.etch/settings.json
+
+# Lattice daemon runtime logs
+.lattice/.daemon/

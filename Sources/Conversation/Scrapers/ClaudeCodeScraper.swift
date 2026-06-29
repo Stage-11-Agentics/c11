@@ -15,7 +15,7 @@ import Foundation
 ///   used by crash-recovery verification lives on the strategy
 ///   (`ClaudeCodeStrategy.transcriptExists`); this scraper is the bounded
 ///   top-N pull-fallback seam.
-struct ClaudeCodeScraper: Sendable {
+struct ClaudeCodeScraper: ConversationScraper {
     let kind: String = "claude-code"
     static let defaultMaxCandidates: Int = 16
 
@@ -70,7 +70,7 @@ struct ClaudeCodeScraper: Sendable {
 ///
 /// Codex filenames are `<uuid>.jsonl`; the scraper recovers the session id
 /// from the filename without parsing content.
-struct CodexScraper: Sendable {
+struct CodexScraper: ConversationScraper {
     let kind: String = "codex"
     static let defaultMaxCandidates: Int = 16
 

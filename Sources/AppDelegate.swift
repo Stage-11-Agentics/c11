@@ -3236,6 +3236,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // (TODO 0.46.0 / v1.1 in WorkspaceSnapshotConversationBridge).
         if let snapshot, !ConversationStorePolicy.isDisabled {
             WorkspaceSnapshotConversationBridge.seedFromSnapshot(snapshot)
+            // C11-152: live scrape-capture seam. Now that the store is seeded,
+            // run the per-kind scrapers for each restored terminal surface and
+            // resolve real session ids via each strategy's `capture`, applying
+            // scrape-derived refs to the store. This is the missing runtime
+            // call site for the scrape rail — it lights up codex resume (and
+            // future pi/omp). Runs BEFORE the `--no-resume` / dirty-reclassify
+            // branches below so those still win when they apply. `Task.detached`
+            // breaks `@MainActor` isolation so the actor work runs while this
+            // method blocks on the bounded wait (mirrors the seed/reclassify
+            // neighbours).
+            let scrapeContexts = ScrapeCaptureContext.contexts(from: snapshot)
+            if !scrapeContexts.isEmpty {
+                let pipeline = ScrapeCapturePipeline(scrapers: .v1(), strategies: .v1)
+                let sema = DispatchSemaphore(value: 0)
+                Task.detached(priority: .userInitiated) {
+                    await ConversationStore.shared.runScrapeCapture(
+                        contexts: scrapeContexts,
+                        pipeline: pipeline
+                    )
+                    sema.signal()
+                }
+                _ = sema.wait(timeout: .now() + 1.0)
+            }
         }
         // C11-131: `c11 app restart --no-resume` left a one-shot sentinel.
         // Honor it by forcing every seeded ref to .unknown so the restore

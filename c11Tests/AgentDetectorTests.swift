@@ -53,4 +53,37 @@ final class AgentDetectorTests: XCTestCase {
         XCTAssertEqual(AgentDetector.classify(comm: "zsh", args: ""), "shell")
         XCTAssertEqual(AgentDetector.classify(comm: "-zsh", args: ""), "shell")
     }
+
+    // MARK: - Runtime shim invocations (C11-155: bun / node-symlink installs)
+
+    /// omp ships as a `#!/usr/bin/env bun` shim → runs as `comm=bun` with the
+    /// named binary in argv. The bun runtime branch + script-basename match it.
+    func testClassifyBunShimOmpReturnsOmp() {
+        XCTAssertEqual(
+            AgentDetector.classify(comm: "bun", args: "bun /Users/atin/.bun/bin/omp"),
+            "omp")
+    }
+
+    /// pi ships as a `#!/usr/bin/env node` shim; a node-shebang symlink reports
+    /// the symlink path in argv (not the module path), so the org-path substring
+    /// misses and the basename match is what classifies it.
+    func testClassifyNodeShimPiReturnsPi() {
+        XCTAssertEqual(
+            AgentDetector.classify(comm: "node", args: "node /Users/atin/.bun/bin/pi"),
+            "pi")
+    }
+
+    /// Module-path invocation still matches via the substring rail (here bun).
+    func testClassifyBunModulePathOmpReturnsOmp() {
+        let args = "bun /Users/atin/.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js"
+        XCTAssertEqual(AgentDetector.classify(comm: "bun", args: args), "omp")
+    }
+
+    /// Basename match keys on the LAST path component only, so a comm-named
+    /// mid-path directory ("pi" here) is not a false positive.
+    func testClassifyRuntimeBasenameIgnoresMidPathDirNames() {
+        XCTAssertEqual(
+            AgentDetector.classify(comm: "node", args: "node /Users/me/pi/app/server.js"),
+            "unknown")
+    }
 }

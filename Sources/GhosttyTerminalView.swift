@@ -3808,7 +3808,12 @@ final class TerminalSurface: Identifiable, ObservableObject {
         }
     }
 
-    private func scheduleSubmitReturnAfterPasteDelay() {
+    /// Dispatch a synthetic Return as a distinct key event after the
+    /// paste-settle delay. Used by the interactive text box submit and by the
+    /// socket `send` submit path, both of which type text first and must let a
+    /// paste-detecting TUI finish ingesting before the Return lands (a Return
+    /// inside the input burst is silently swallowed).
+    func scheduleSubmitReturnAfterPasteDelay() {
         let delayMs = TextBoxBehavior.returnKeyDelayMs
         if delayMs <= 0 {
             sendKey(.returnKey)

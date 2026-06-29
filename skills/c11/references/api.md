@@ -163,11 +163,19 @@ c11 read-screen --workspace workspace:2 --surface surface:3 --lines 50
 # Send text to a terminal
 c11 send "echo hello"                # Types text AND submits (default behavior)
 c11 send --no-submit "cd /tmp/"      # Types text only, no Return — for partial-line construction
-c11 send-key enter                   # Send a keypress directly (no text)
+c11 send-key down                    # Send a keypress directly (no text) — drives TUI menus
 c11 send --workspace workspace:2 --surface surface:3 "ls"
 ```
 
-**`c11 send` types the text and submits.** A synthetic Return is dispatched on the same turn as the text, so the receiving TUI sees one user turn. Pass `--no-submit` to type into the prompt without executing — typically to build a partial line across multiple sends, or to stage text before the operator hits Enter manually.
+**`c11 send` types the text and submits.** The synthetic Return is dispatched as a distinct key event after the typed text settles, so paste-detecting TUIs (codex, Claude Code) reliably register it as a submit rather than swallowing it into the paste. The receiving TUI sees one user turn. Pass `--no-submit` to type into the prompt without executing — typically to build a partial line across multiple sends, or to stage text before the operator hits Enter manually.
+
+**`c11 send-key <key>` dispatches a single keypress** to the surface's PTY, encoded for the terminal's current mode (so arrow keys drive arrow-select menus like codex's hooks-trust prompt). Vocabulary:
+
+- Submission / editing: `enter`/`return`, `tab`, `escape`, `space`, `backspace`, `delete`
+- Arrows: `up`, `down`, `left`, `right`
+- Navigation: `home`, `end`, `pageup`, `pagedown`
+- Function keys: `f1`–`f12`
+- Control: `ctrl-c`, `ctrl-d`, `ctrl-z`, and generic `ctrl-<letter>`
 
 ## Per-surface metadata
 

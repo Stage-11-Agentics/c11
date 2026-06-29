@@ -8087,7 +8087,13 @@ class TerminalController {
                 if let liveSurface = resolved.terminalPanel.surface.surface {
                     sendSocketText(text, surface: liveSurface)
                     if submit {
-                        _ = sendNamedKey(liveSurface, keyName: "enter")
+                        // Dispatch the submit Return as a distinct key event AFTER the
+                        // typed text has settled. The text lands as a burst of synthetic
+                        // key events; paste-detecting TUIs (codex, Claude Code) swallow a
+                        // Return that arrives inside that burst window, leaving the message
+                        // sitting unsent in the composer. Reuse the same paste-settle delay
+                        // the interactive text box uses so submit is deterministic.
+                        resolved.terminalPanel.surface.scheduleSubmitReturnAfterPasteDelay()
                     }
                     // Ensure we present a new frame after injecting input so snapshot-based tests
                     // (and socket-driven agents) can observe the updated terminal without requiring
@@ -8096,19 +8102,30 @@ class TerminalController {
                     attachedAtPhaseB = true
                 } else {
                     // Surface was torn down between Phase A and Phase B. Fall through to
-                    // the pending queue as a last resort. Append \r when submit is on
-                    // so the queue flush submits the line on attach.
-                    resolved.terminalPanel.sendText(submit ? text + "\r" : text)
+                    // the pending queue as a last resort. Use the canonical submit helper
+                    // so the Return is dispatched as a real key event once the queued text
+                    // flushes on attach, rather than appending a bare \r that the queue's
+                    // bracketed-paste envelope would swallow.
+                    if submit {
+                        resolved.terminalPanel.surface.sendSubmitFormText(text)
+                    } else {
+                        resolved.terminalPanel.sendText(text)
+                    }
                 }
             }
             phaseBSema.wait()
             queued = !attachedAtPhaseB
         } else {
             // Surface not available within 2s (e.g., terminal not yet attached to any window).
-            // Fall back to the pending queue as a last resort. Same submit-aware append
-            // as the teardown fallback above.
+            // Fall back to the pending queue as a last resort. Use the canonical submit
+            // helper so the Return flushes as a real key event on attach instead of a
+            // bare \r swallowed inside the bracketed-paste envelope.
             Task { @MainActor in
-                resolved.terminalPanel.sendText(submit ? text + "\r" : text)
+                if submit {
+                    resolved.terminalPanel.surface.sendSubmitFormText(text)
+                } else {
+                    resolved.terminalPanel.sendText(text)
+                }
                 phaseBSema.signal()
             }
             phaseBSema.wait()
@@ -15340,7 +15357,10 @@ class TerminalController {
 
         Input commands:
           send <text>                     - Send text to current terminal
-          send_key <key>                  - Send special key (ctrl-c, ctrl-d, enter, tab, escape)
+          send_key <key>                  - Send special key. Vocabulary:
+                                            enter/return, tab, escape, space, backspace, delete,
+                                            up, down, left, right, home, end, pageup, pagedown,
+                                            f1-f12, ctrl-c, ctrl-d, ctrl-z, ctrl-<letter>
           send_surface <id|idx> <text>    - Send text to a specific terminal
           send_key_surface <id|idx> <key> - Send special key to a specific terminal
           read_screen [id|idx] [--scrollback] [--lines N] - Read terminal text (plain text)
@@ -17538,7 +17558,7 @@ class TerminalController {
         }
     }
 
-    private func keycodeForLetter(_ letter: Character) -> UInt32? {
+    private static func keycodeForLetter(_ letter: Character) -> UInt32? {
         switch String(letter).lowercased() {
         case "a": return UInt32(kVK_ANSI_A)
         case "b": return UInt32(kVK_ANSI_B)
@@ -17570,42 +17590,79 @@ class TerminalController {
         }
     }
 
-    private func sendNamedKey(_ surface: ghostty_surface_t, keyName: String) -> Bool {
-        switch keyName.lowercased() {
-        case "ctrl-c", "ctrl+c", "sigint":
-            sendKeyEvent(surface: surface, keycode: UInt32(kVK_ANSI_C), mods: GHOSTTY_MODS_CTRL)
-            return true
-        case "ctrl-d", "ctrl+d", "eof":
-            sendKeyEvent(surface: surface, keycode: UInt32(kVK_ANSI_D), mods: GHOSTTY_MODS_CTRL)
-            return true
-        case "ctrl-z", "ctrl+z", "sigtstp":
-            sendKeyEvent(surface: surface, keycode: UInt32(kVK_ANSI_Z), mods: GHOSTTY_MODS_CTRL)
-            return true
-        case "ctrl-\\", "ctrl+\\", "sigquit":
-            sendKeyEvent(surface: surface, keycode: UInt32(kVK_ANSI_Backslash), mods: GHOSTTY_MODS_CTRL)
-            return true
-        case "enter", "return":
-            sendKeyEvent(surface: surface, keycode: UInt32(kVK_Return))
-            return true
-        case "tab":
-            sendKeyEvent(surface: surface, keycode: UInt32(kVK_Tab))
-            return true
-        case "escape", "esc":
-            sendKeyEvent(surface: surface, keycode: UInt32(kVK_Escape))
-            return true
-        case "backspace":
-            sendKeyEvent(surface: surface, keycode: UInt32(kVK_Delete))
-            return true
+    /// A resolved keystroke: the macOS virtual keycode plus modifier flags to
+    /// hand to `ghostty_surface_key`. Ghostty owns the keycode → PTY-bytes
+    /// translation, so arrows and friends are emitted as the correct CSI
+    /// (normal) or SS3 (application-cursor-keys) sequence for the surface's
+    /// current DECCKM mode — which is what drives arrow-select menus in TUIs.
+    struct NamedKeyEvent: Equatable {
+        let keycode: UInt32
+        let mods: ghostty_input_mods_e
+
+        static func == (lhs: NamedKeyEvent, rhs: NamedKeyEvent) -> Bool {
+            lhs.keycode == rhs.keycode && lhs.mods.rawValue == rhs.mods.rawValue
+        }
+    }
+
+    /// Pure name → keystroke mapping for `send-key`. Kept separate from the
+    /// surface-injecting `sendNamedKey` so the vocabulary is unit-testable
+    /// without a live surface. Returns nil for an unrecognised name.
+    static func namedKeyEvent(for keyName: String) -> NamedKeyEvent? {
+        func ev(_ keycode: Int, _ mods: ghostty_input_mods_e = GHOSTTY_MODS_NONE) -> NamedKeyEvent {
+            NamedKeyEvent(keycode: UInt32(keycode), mods: mods)
+        }
+        let name = keyName.lowercased()
+        switch name {
+        // Control combinations / signals
+        case "ctrl-c", "ctrl+c", "sigint": return ev(kVK_ANSI_C, GHOSTTY_MODS_CTRL)
+        case "ctrl-d", "ctrl+d", "eof": return ev(kVK_ANSI_D, GHOSTTY_MODS_CTRL)
+        case "ctrl-z", "ctrl+z", "sigtstp": return ev(kVK_ANSI_Z, GHOSTTY_MODS_CTRL)
+        case "ctrl-\\", "ctrl+\\", "sigquit": return ev(kVK_ANSI_Backslash, GHOSTTY_MODS_CTRL)
+        // Editing / submission keys
+        case "enter", "return": return ev(kVK_Return)
+        case "tab": return ev(kVK_Tab)
+        case "escape", "esc": return ev(kVK_Escape)
+        case "backspace", "bs": return ev(kVK_Delete)
+        case "delete", "del", "forward-delete": return ev(kVK_ForwardDelete)
+        case "space": return ev(kVK_Space)
+        // Arrow keys
+        case "up", "arrow-up", "arrowup": return ev(kVK_UpArrow)
+        case "down", "arrow-down", "arrowdown": return ev(kVK_DownArrow)
+        case "left", "arrow-left", "arrowleft": return ev(kVK_LeftArrow)
+        case "right", "arrow-right", "arrowright": return ev(kVK_RightArrow)
+        // Navigation keys
+        case "home": return ev(kVK_Home)
+        case "end": return ev(kVK_End)
+        case "pageup", "page-up", "pgup": return ev(kVK_PageUp)
+        case "pagedown", "page-down", "pgdn": return ev(kVK_PageDown)
+        // Function keys
+        case "f1": return ev(kVK_F1)
+        case "f2": return ev(kVK_F2)
+        case "f3": return ev(kVK_F3)
+        case "f4": return ev(kVK_F4)
+        case "f5": return ev(kVK_F5)
+        case "f6": return ev(kVK_F6)
+        case "f7": return ev(kVK_F7)
+        case "f8": return ev(kVK_F8)
+        case "f9": return ev(kVK_F9)
+        case "f10": return ev(kVK_F10)
+        case "f11": return ev(kVK_F11)
+        case "f12": return ev(kVK_F12)
         default:
-            if keyName.lowercased().hasPrefix("ctrl-") || keyName.lowercased().hasPrefix("ctrl+") {
-                let letter = keyName.dropFirst(5)
+            if name.hasPrefix("ctrl-") || name.hasPrefix("ctrl+") {
+                let letter = name.dropFirst(5)
                 if letter.count == 1, let char = letter.first, let keycode = keycodeForLetter(char) {
-                    sendKeyEvent(surface: surface, keycode: keycode, mods: GHOSTTY_MODS_CTRL)
-                    return true
+                    return NamedKeyEvent(keycode: keycode, mods: GHOSTTY_MODS_CTRL)
                 }
             }
-            return false
+            return nil
         }
+    }
+
+    private func sendNamedKey(_ surface: ghostty_surface_t, keyName: String) -> Bool {
+        guard let event = Self.namedKeyEvent(for: keyName) else { return false }
+        sendKeyEvent(surface: surface, keycode: event.keycode, mods: event.mods)
+        return true
     }
 
     private func sendInput(_ text: String) -> String {

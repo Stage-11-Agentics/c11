@@ -3334,6 +3334,15 @@ final class TerminalSurface: Identifiable, ObservableObject {
         func setManagedEnvironmentValue(_ key: String, _ value: String) {
             env[key] = value
             protectedStartupEnvironmentKeys.insert(key)
+            // Export the canonical C11_* twin alongside every managed CMUX_*
+            // var so agents inside the surface can rely on the project-convention
+            // names ($C11_SURFACE_ID, $C11_TAB_ID, $C11_SHELL_INTEGRATION, …),
+            // not just the legacy $CMUX_* aliases. Non-CMUX keys (PATH, ZDOTDIR)
+            // are left untouched.
+            if let twin = c11TwinKey(forCmuxKey: key) {
+                env[twin] = value
+                protectedStartupEnvironmentKeys.insert(twin)
+            }
         }
 
         setManagedEnvironmentValue("CMUX_SURFACE_ID", id.uuidString)

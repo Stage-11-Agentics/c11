@@ -122,3 +122,28 @@ final class CwdParamResolutionTests: XCTestCase {
         XCTAssertEqual(code, "invalid_params")
     }
 }
+
+/// `c11TwinKey` decides which managed surface env vars get a canonical `C11_*`
+/// twin exported alongside the legacy `CMUX_*` name, so agents can rely on
+/// `$C11_SURFACE_ID` / `$C11_TAB_ID` / `$C11_SHELL_INTEGRATION` etc.
+final class C11TwinKeyTests: XCTestCase {
+    func testMapsManagedCmuxKeysToC11() {
+        XCTAssertEqual(c11TwinKey(forCmuxKey: "CMUX_SURFACE_ID"), "C11_SURFACE_ID")
+        XCTAssertEqual(c11TwinKey(forCmuxKey: "CMUX_TAB_ID"), "C11_TAB_ID")
+        XCTAssertEqual(c11TwinKey(forCmuxKey: "CMUX_WORKSPACE_ID"), "C11_WORKSPACE_ID")
+        XCTAssertEqual(c11TwinKey(forCmuxKey: "CMUX_SHELL_INTEGRATION"), "C11_SHELL_INTEGRATION")
+    }
+
+    func testReturnsNilForNonCmuxKeys() {
+        // Already-canonical and unrelated keys must not be re-twinned.
+        XCTAssertNil(c11TwinKey(forCmuxKey: "C11_SURFACE_ID"))
+        XCTAssertNil(c11TwinKey(forCmuxKey: "PATH"))
+        XCTAssertNil(c11TwinKey(forCmuxKey: "ZDOTDIR"))
+        XCTAssertNil(c11TwinKey(forCmuxKey: ""))
+    }
+
+    func testBarePrefixMapsToBareC11Prefix() {
+        // Degenerate but well-defined: the suffix after CMUX_ is empty.
+        XCTAssertEqual(c11TwinKey(forCmuxKey: "CMUX_"), "C11_")
+    }
+}

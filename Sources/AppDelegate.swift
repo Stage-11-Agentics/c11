@@ -24,6 +24,17 @@ func mirrorC11CmuxEnv() {
     }
 }
 
+/// The canonical `C11_*` twin for a managed `CMUX_*` env key, or `nil` when
+/// `key` isn't a `CMUX_`-prefixed name. Used when building a surface's
+/// environment so every managed `CMUX_*` var is exported under its `C11_*`
+/// name too — agents can then rely on the project-convention names
+/// (`$C11_SURFACE_ID`, `$C11_TAB_ID`, `$C11_SHELL_INTEGRATION`, …) rather than
+/// the legacy `$CMUX_*` aliases. Non-`CMUX_` keys (PATH, ZDOTDIR) return nil.
+func c11TwinKey(forCmuxKey key: String) -> String? {
+    guard key.hasPrefix("CMUX_") else { return nil }
+    return "C11_" + key.dropFirst(5)
+}
+
 final class MainWindowHostingView<Content: View>: NSHostingView<Content> {
     private let zeroSafeAreaLayoutGuide = NSLayoutGuide()
 

@@ -1467,8 +1467,9 @@ enum AgentSkillsOnboarding {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         isCompiledDebug: Bool = AgentSkillsOnboarding.isCompiledDebugBuild
     ) -> Bool {
-        if isCompiledDebug { return true }
-        return SocketControlSettings.launchTag(environment: environment) != nil
+        // Single source of truth lives in SocketControlSettings (alongside
+        // launchTag / isDebugBuild); keeps the existing call sites + #272 tests.
+        SocketControlSettings.isLocalDevBuild(environment: environment, isDebugBuild: isCompiledDebug)
     }
 
     /// Should the onboarding sheet be offered on this launch?

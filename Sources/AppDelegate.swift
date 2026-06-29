@@ -3380,16 +3380,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // QA launch (`C11_QA_LAUNCH`) overrides that persisted policy for
         // this launch only (never written back): `resume` → `.always`
         // (silent restore), `fresh` → `.never` (skip). Both bypass the
-        // `.ask` picker so an automated run never blocks on the modal.
-        let policy: LaunchResumePolicy
-        switch QALaunchPolicy.current() {
-        case .on(.resume):
-            policy = .always
-        case .on(.fresh):
-            policy = .never
-        case .off:
-            policy = LaunchResumePolicy.current()
-        }
+        // `.ask` picker so an automated run never blocks on the modal. A local
+        // dev / tagged build likewise bypasses the `.ask` picker (silent
+        // restore) so frequent rebuilds don't block on it — see
+        // `LaunchResumePicker.resolveEffectivePolicy`.
+        let policy = LaunchResumePicker.resolveEffectivePolicy(
+            qa: QALaunchPolicy.current(),
+            persisted: LaunchResumePolicy.current(),
+            isLocalDevBuild: SocketControlSettings.isLocalDevBuild()
+        )
         if policy == .ask,
            let snapshot = startupSessionSnapshot,
            snapshot.windows.contains(where: { !$0.tabManager.workspaces.isEmpty }) {

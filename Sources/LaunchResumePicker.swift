@@ -80,6 +80,32 @@ enum LaunchResumePickerDecision {
 
 @MainActor
 enum LaunchResumePicker {
+    /// Resolve the effective resume policy for this launch.
+    ///
+    /// - QA launch (`C11_QA_LAUNCH`) overrides everything: `.on(.resume)` →
+    ///   `.always` (silent restore), `.on(.fresh)` → `.never` (skip).
+    /// - Otherwise the persisted policy applies — except that on a **local dev
+    ///   build** the default `.ask` becomes `.always` (silent restore), so a
+    ///   developer rebuilding c11 isn't blocked by the picker modal on every
+    ///   relaunch. An explicit `.always` / `.never` the operator set is always
+    ///   honored (a dev build never forces a restore the operator opted out of).
+    ///
+    /// `nonisolated` — pure value-logic with no main-actor needs, so it's
+    /// callable from the main-actor launch path and from off-main tests alike.
+    nonisolated static func resolveEffectivePolicy(
+        qa: QALaunchPolicy,
+        persisted: LaunchResumePolicy,
+        isLocalDevBuild: Bool
+    ) -> LaunchResumePolicy {
+        switch qa {
+        case .on(.resume): return .always
+        case .on(.fresh): return .never
+        case .off:
+            if persisted == .ask && isLocalDevBuild { return .always }
+            return persisted
+        }
+    }
+
     /// Present the picker as a sheet on `parentWindow` and call
     /// `completion` once the operator picks. When the snapshot has no
     /// workspaces (nothing to choose from), the picker is skipped and

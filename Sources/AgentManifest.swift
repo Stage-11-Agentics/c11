@@ -228,12 +228,14 @@ struct AgentRegistry: Sendable {
             detectNodeArgsSubstrings: ["@earendil-works/pi"],
             iconAsset: nil,
             sfSymbolFallback: "p.circle",
-            // `pi -c` continues the most recent session in cwd (best-effort,
-            // same shape as codex --last). Exact-session resume via a JSONL
-            // scraper (~/.pi/agent/sessions/) is a tracked follow-up.
+            // `pi -c` continues the most recent session in cwd (best-effort
+            // phase-1 fallback, same shape as codex --last). Exact-session
+            // resume is handled by the scrape rail: `PiScraper` +
+            // `PiStrategy` resolve a specific `~/.pi/agent/sessions/` id and
+            // type `pi --session '<id>'`.
             resume: .fixed("pi -c\n"),
             isCanonicalTerminalType: true,
-            hasConversationStrategy: false
+            hasConversationStrategy: true
         ),
         AgentManifest(
             kind: "omp",

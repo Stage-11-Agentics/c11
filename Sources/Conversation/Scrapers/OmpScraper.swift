@@ -46,19 +46,48 @@ struct OmpScraper: ConversationScraper {
             .appendingPathComponent("sessions", isDirectory: true)
     }
 
-    /// Top-N candidates by mtime. Empty list when the directory doesn't exist
-    /// (omp never ran on this machine). Walks the cwd-slug subdirectories
-    /// recursively because transcripts are nested one level under
-    /// `<cwd-slug>/`. The `jsonl` extension filter drops the sibling
-    /// `*.log` subdir files.
+    /// omp's per-cwd session-directory name. Verified against the real store:
+    /// the slug is the cwd with the home-directory prefix stripped and every
+    /// `/` mapped to `-`, e.g. `/Users/atin/Projects/Stage11/code/c11` →
+    /// `-Projects-Stage11-code-c11`. No lowercasing; existing dashes are
+    /// preserved. This differs from pi's full-path `--<…>--` convention, so it
+    /// is deliberately NOT a copy of `PiScraper.sessionSlug`.
+    static func sessionSlug(forCwd cwd: String, homeDirectory: URL?) -> String {
+        var path = cwd
+        if let home = homeDirectory?.path, path.hasPrefix(home) {
+            path = String(path.dropFirst(home.count))
+        }
+        return path.replacingOccurrences(of: "/", with: "-")
+    }
+
+    /// Top-N candidates by mtime. When `cwd` is known, scopes the walk to that
+    /// cwd's slug directory (omp stores `<slug>/<ts>_<uuid>.jsonl` one level
+    /// deep) so exact resume resolves *this* project's session rather than the
+    /// machine-wide newest. Without scoping every candidate is stamped with the
+    /// surface cwd, so `OmpStrategy`'s cwd filter cannot disambiguate and a
+    /// multi-project store either bleeds a foreign session or safe-skips. With
+    /// no `cwd`, falls back to the whole-tree top-N. The `.jsonl` suffix check
+    /// drops the sibling per-session `*.log` subdir files.
     func candidates(cwd: String? = nil) -> [ScrapeCandidate] {
         guard let root = sessionsRoot() else { return [] }
-        let entries = filesystem.listSessionsRecursivelyByMtime(
-            root,
-            extensionFilter: "jsonl",
-            max: maxCandidates
-        )
+        let entries: [ConversationFilesystemEntry]
+        if let cwd, !cwd.isEmpty {
+            let slugDir = root.appendingPathComponent(
+                Self.sessionSlug(forCwd: cwd, homeDirectory: filesystem.homeDirectory),
+                isDirectory: true
+            )
+            entries = filesystem.listDirectoryByMtime(slugDir, max: maxCandidates)
+        } else {
+            entries = filesystem.listSessionsRecursivelyByMtime(
+                root,
+                extensionFilter: "jsonl",
+                max: maxCandidates
+            )
+        }
         return entries.compactMap { entry in
+            // `listDirectoryByMtime` returns every entry in the slug dir
+            // (including the `<ts>_<uuid>/` log subdirs), so filter by suffix.
+            guard entry.fileName.hasSuffix(".jsonl") else { return nil }
             // `<ts>_<uuid>.jsonl` → drop extension, take the substring after
             // the LAST underscore. Reject filenames without a `_`.
             let stem = String(entry.fileName.dropLast(".jsonl".count))

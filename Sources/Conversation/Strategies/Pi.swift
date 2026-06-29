@@ -99,4 +99,19 @@ struct PiStrategy: ConversationStrategy {
     func isValidId(_ id: String) -> Bool {
         isValidConversationUUID(id)
     }
+
+    /// Crash-recovery verification (stat-only): does a session file for
+    /// `ref.id` still exist on disk? Without this, `reclassifyAfterCrash`
+    /// forces the ref to `.unknown` (the protocol default returns nil) and
+    /// resume skips after a crash — the path that matters most for resume.
+    /// Reuses the cwd-scoped `PiScraper`; never opens transcript bytes.
+    func transcriptExists(
+        for ref: ConversationRef,
+        filesystem: ConversationFilesystem
+    ) -> Bool? {
+        guard isValidConversationUUID(ref.id) else { return false }
+        return PiScraper(filesystem: filesystem)
+            .candidates(cwd: ref.cwd)
+            .contains { $0.id == ref.id }
+    }
 }

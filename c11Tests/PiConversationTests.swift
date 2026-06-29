@@ -293,6 +293,26 @@ final class PiConversationTests: XCTestCase {
         XCTAssertFalse(s.isValidId(""))
     }
 
+    /// Crash-recovery: `transcriptExists` confirms the session file is still on
+    /// disk (cwd-scoped) so `reclassifyAfterCrash` promotes the ref to
+    /// `.suspended` instead of forcing `.unknown` (which would skip resume).
+    func testPiTranscriptExistsVerifiesSessionFileOnDisk() {
+        let mock = MockFS()
+        mock.home = URL(fileURLWithPath: "/Users/test")
+        let root = sessionsRoot("/Users/test")
+        let cwd = "/work/proj"
+        let slugDir = root.appendingPathComponent(PiScraper.sessionSlug(forCwd: cwd), isDirectory: true)
+        let name = piFileName(ts: "2026-06-27T21-35-42-003Z", uuid: piUUID)
+        mock.directoryEntries[slugDir] = [entry(slugDir, name, mtime: Date())]
+        let strategy = PiStrategy()
+        let present = ConversationRef(kind: "pi", id: piUUID, placeholder: false, cwd: cwd, capturedVia: .scrape, state: .suspended)
+        XCTAssertEqual(strategy.transcriptExists(for: present, filesystem: mock), true)
+        let absent = ConversationRef(kind: "pi", id: piUUID2, placeholder: false, cwd: cwd, capturedVia: .scrape, state: .suspended)
+        XCTAssertEqual(strategy.transcriptExists(for: absent, filesystem: mock), false)
+        let bad = ConversationRef(kind: "pi", id: "nope", placeholder: false, cwd: cwd, capturedVia: .scrape, state: .suspended)
+        XCTAssertEqual(strategy.transcriptExists(for: bad, filesystem: mock), false)
+    }
+
     // MARK: - Local stub scraper
 
     /// Returns preset candidates regardless of cwd, stamping the passed cwd

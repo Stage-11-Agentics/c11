@@ -1,24 +1,62 @@
 {
-  "assigned_to": null,
+  "assigned_to": "agent:delegator-c11-152-planner",
   "branch_links": [],
-  "comment_count": 0,
+  "c11_surface": "surface:114",
+  "c11_workspace": null,
+  "comment_count": 4,
   "complexity": "high",
   "created_at": "2026-06-29T00:06:09Z",
   "created_by": "agent:exr-architect",
   "custom_fields": {},
   "description": "Phase B foundation. The scrape rail has 0 live call sites \u2014 nothing invokes scrapers at restore. Build the seam: at surface restore, per-kind scraper -> [ScrapeCandidate] -> strategy.capture -> store.applyScrape, so captured refs drive strategy.resume next restore. Injectable filesystem for tests. Benefits codex too. Acceptance: test proves a scraped candidate becomes a resumable ref; claude/codex unaffected; c11-logic green. BLOCKS the pi and omp tickets.",
-  "done_at": null,
-  "evidence_refs": [],
+  "done_at": "2026-06-29T00:59:21Z",
+  "evidence_refs": [
+    {
+      "id": "art_01KW8C98ZD7X28KPR4VXBKJ1ER",
+      "role": "plan-review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KW8D9VYDRSH1QMTK8XP4T22S",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KW8E0KD1QDSK40DJC1XHZK9G",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KW8E1GR470T63F7KM0HNCYFK",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01KW8E2MAH1A19S36VBDTDA31A",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01KW8E6NFDJKMQPPNDEZG6TM36",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KW8E6NFDJKMQPPNDEZG6TM35",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
   "id": "task_01KW8B57VWRAJSB8PAVD2VEV1Z",
-  "last_event_id": "ev_01KW8B57VYNK84KQ6THVD8GFFN",
-  "last_status_changed_at": "2026-06-29T00:06:09Z",
+  "last_event_id": "ev_01KW8E6NFDJKMQPPNDEZG6TM39",
+  "last_status_changed_at": "2026-06-29T00:59:21Z",
   "linked_files": [],
   "priority": "high",
   "relationships_out": [],
-  "reopened_count": 0,
+  "reopened_count": 1,
   "schema_version": 1,
   "short_id": "C11-152",
-  "status": "backlog",
+  "status": "done",
   "tags": [
     "agent-registry",
     "exact-resume",
@@ -27,6 +65,6 @@
   ],
   "title": "Live scrape-capture pipeline (wire scrapers into restore)",
   "type": "task",
-  "updated_at": "2026-06-29T00:06:09Z",
+  "updated_at": "2026-06-29T00:59:21Z",
   "urgency": null
 }

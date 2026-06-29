@@ -1,0 +1,1 @@
+Fixed in PR #281 (merged main @ 79786983a): node/bun/deno detection + script-basename match; bun-shim omp and node-symlink pi now classify correctly. Regression tests added; c11-logic green (1115).

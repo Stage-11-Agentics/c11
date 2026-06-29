@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-29T02:07:22Z",
+  "created_by": "agent:orchestrator-exr",
+  "custom_fields": {},
+  "id": "art_01KW8J36TP55M6AK0V28Q9BXF7",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KW8J36TP55M6AK0V28Q9BXF7.md",
+    "size_bytes": 445
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Merged via Orchestrator auto-merge (PR #275, squash) at 678098587ce48faed0463596026b573eff273039. pi exact-session resume. LOAD-BEARING row 6 SATISFIED: observed live pi exact-resume on tagged build (",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

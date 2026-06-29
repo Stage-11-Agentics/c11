@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-29T17:48:15Z",
+  "created_by": "agent:exr-review",
+  "custom_fields": {},
+  "id": "art_01KWA7Y0GA5A74VSD59FV315NG",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KWA7Y0GA5A74VSD59FV315NG.md",
+    "size_bytes": 150
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Fixed in PR #281 (merged main @ 79786983a): OmpScraper cwd-slug scoping (strip-$HOME, /->-), pi parity; cross-cwd no-leak test added. c11-logic green.",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

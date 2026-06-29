@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-29T17:48:15Z",
+  "created_by": "agent:exr-review",
+  "custom_fields": {},
+  "id": "art_01KWA7Y0BBS6M2P1Z5NEHDVYMR",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KWA7Y0BBS6M2P1Z5NEHDVYMR.md",
+    "size_bytes": 197
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Fixed in PR #281 (merged main @ 79786983a): node/bun/deno detection + script-basename match; bun-shim omp and node-symlink pi now classify correctly. Regression tests added; c11-logic green (1115).",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

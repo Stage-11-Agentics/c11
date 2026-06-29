@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-29T00:56:03Z",
+  "created_by": "agent:delegator-c11-152-impl",
+  "custom_fields": {},
+  "id": "art_01KW8E0KD1QDSK40DJC1XHZK9G",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KW8E0KD1QDSK40DJC1XHZK9G.md",
+    "size_bytes": 3825
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Validation: 7 acceptance/round-trip tests + 14 regression green; app build SUCCEEDED; live-agent resume deferred to pi/omp",
+  "token_usage": null,
+  "type": "note"
+}

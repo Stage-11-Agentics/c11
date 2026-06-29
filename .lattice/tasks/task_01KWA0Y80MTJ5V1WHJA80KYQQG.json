@@ -1,0 +1,38 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 1,
+  "complexity": null,
+  "created_at": "2026-06-29T15:46:03Z",
+  "created_by": "agent:orchestrator-exr",
+  "custom_fields": {},
+  "description": "Phase-4 Result Validator finding (GAP 1) on the exact-resume run. OmpScraper.candidates(cwd:) at merged main (cf177868b) calls filesystem.listSessionsRecursivelyByMtime(root, ...) UNCONDITIONALLY \u2014 the cwd param only stamps ScrapeCandidate.cwd, it never scopes the walk. So OmpScraper walks the entire ~/.omp/agent/sessions/ tree. With >1 omp session on disk across projects, restore hits the scrape-primary safe ambiguity-skip => omp does NOT resume. omp live validation passed only because it used a clean dedicated cwd (single resolvable candidate). This is the SAME whole-tree ambiguity bug PiScraper already fixed: PiScraper has a cwd-slug branch (sessionSlug(forCwd:) scopes the walk to ~/.pi/agent/sessions/<slug>/). The MV flagged this pre-validation (C11-154 ev_01KW8HW040RXS8RSYDK0NZDSYM) but the fix was NOT landed in the merged code despite the delegator/orchestrator recording it as fixed. FIX: port PiScraper cwd-slug scoping to OmpScraper \u2014 verify omp oh-my-pi cwd->slug encoding against omp own session-dir naming on disk (do NOT blindly copy pi encoding), add a test that with >1 cwd-slug dir on disk the current-cwd newest session resolves UNAMBIGUOUSLY. Scraper-only, reversible. Acceptance: omp resumes the exact session on a machine with multiple omp project dirs (multi-session live test), not just single-session. Strategy (OmpStrategy omp --resume=<id>) is already correct; this is scraper-only. Ref: validation-report.md GAP 1.",
+  "done_at": "2026-06-29T17:48:15Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01KWA7Y0GA5A74VSD59FV315NH",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KWA7Y0GA5A74VSD59FV315NG",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KWA0Y80MTJ5V1WHJA80KYQQG",
+  "last_event_id": "ev_01KWA7Y0GB4DEKQVCVKN39RC13",
+  "last_status_changed_at": "2026-06-29T17:48:15Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-156",
+  "status": "done",
+  "tags": null,
+  "title": "OmpScraper cwd-slug-scoped walk (pi parity) \u2014 fix whole-tree ambiguity",
+  "type": "bug",
+  "updated_at": "2026-06-29T17:48:15Z",
+  "urgency": null
+}

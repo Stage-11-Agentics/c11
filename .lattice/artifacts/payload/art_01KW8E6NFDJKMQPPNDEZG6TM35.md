@@ -1,0 +1,1 @@
+Merged via Orchestrator auto-merge (PR #273, squash) at e6edf9513da07f5afd04fe9a19e22cf0625376df. Live scrape-capture pipeline — the missing restore seam. Validation rows 4+5 satisfied (7 pipeline round-trip tests + 14 regression green on c11-logic, app build SUCCEEDED, MV-confirmed). Live-agent resume correctly deferred to C11-153/154. Per auto-merge policy.

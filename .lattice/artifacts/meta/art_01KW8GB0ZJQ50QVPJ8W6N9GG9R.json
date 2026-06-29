@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-29T01:36:41Z",
+  "created_by": "agent:orchestrator-exr",
+  "custom_fields": {},
+  "id": "art_01KW8GB0ZJQ50QVPJ8W6N9GG9R",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KW8GB0ZJQ50QVPJ8W6N9GG9R.md",
+    "size_bytes": 515
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Merged via Orchestrator auto-merge (PR #274, squash) at 60646a3ac51d88a29c9381e4de1417f32b2936a5. opencode exact-session resume via plugin rail. LOAD-BEARING validation row 1 SATISFIED: observed live ",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

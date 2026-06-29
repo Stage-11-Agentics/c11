@@ -1,0 +1,1 @@
+Fixed in PR #281 (merged main @ 79786983a): OmpScraper cwd-slug scoping (strip-$HOME, /->-), pi parity; cross-cwd no-leak test added. c11-logic green.

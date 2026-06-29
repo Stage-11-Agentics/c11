@@ -1,0 +1,36 @@
+# Plan Review: C11-154 — omp exact-session resume (OmpScraper + OmpStrategy)
+
+## 1. Verdict
+
+**PASS** — The plan is complete, feasible, and aligned with the task description. Implementation can proceed. The handful of findings below are minor and can be folded in during implementation; none warrant a return to `in_planning`.
+
+## 2. Summary
+
+I reviewed the plan against the live codebase in the `c11-154-omp-resume` worktree (HEAD `e6edf9513`, which already carries C11-152's pipeline seam via PR #273). This is an unusually well-grounded plan: every non-trivial claim it makes — the C11-152 dependency seam, the CodexScraper/CodexStrategy mirror targets, the on-disk `~/.omp/` layout, the UUIDv7 regex acceptance, and the host-free location of the parity test — I independently verified and found **accurate**. The single substantive thing worth the operator's attention is a real-world cross-project ambiguity property inherited from the codex mirror (safe-by-default, surfaced below as minor); it does not block the work.
+
+## 3. Issues
+
+**[MINOR] §3 / §4 — `contains(...)` argument label drift in illustrative test code**
+The plan's test snippets write `ConversationStrategyRegistry.v1.contains("omp")` and `ConversationScraperRegistry.v1().contains("omp")`. The actual API is `func contains(kind: String)` (verified in both `StrategyRegistry.swift` and `ConversationScraperRegistry.swift`), so these need the `kind:` label or they won't compile. The existing `testConversationStrategyPresenceParity` already uses the correct form (`.contains(kind: m.kind)`). This is illustrative shorthand in the plan, not a design flaw — an implementer will get it right — but worth pinning so nobody copies the unlabeled form verbatim.
+**Recommendation:** None required; note that registry membership checks use `contains(kind:)`.
+
+**[MINOR] §1 / §2 — "Mirror CodexScraper" orientation: CodexScraper is not its own file**
+`CodexScraper` (and the `ConversationFilesystem` protocol it depends on) live **inside `Sources/Conversation/Scrapers/ClaudeCodeScraper.swift`** (struct begins line 73), not a `CodexScraper.swift`. `CodexStrategy` is in `Strategies/Codex.swift` as the plan implies. The plan creating a *new* `OmpScraper.swift` is correct and fine; this is purely so the implementer looks in the right place for the mirror source.
+**Recommendation:** Add a one-line pointer that the CodexScraper reference implementation lives in `ClaudeCodeScraper.swift`.
+
+**[MINOR] §1 / §2 — Cross-project ambiguity: omp encodes cwd in the slug directory, but the plan (per task spec) discards it**
+omp organizes sessions as `~/.omp/agent/sessions/<cwd-slug>/<ts>_<uuid>.jsonl` — the cwd is *in the path*. The plan, faithfully mirroring `CodexScraper`, recursively walks the whole tree (newest 16 `.jsonl` across **all** slugs) and stamps the *passed* surface cwd onto every candidate. The strategy's cwd filter (`cwd == candCwd`) is therefore a no-op for omp — every candidate carries the same stamped cwd — leaving **mtime as the only disambiguator across projects**. With many recent omp sessions in different projects, the newest-16 set can mix cwds the strategy can't tell apart.
+
+This is *safe by default*: the inherited ambiguity policy returns `state = .unknown` ⇒ `resume` `.skip("ambiguous")` when >1 candidate survives the mtime floor, so the failure mode is a **missed** resume surfaced to the operator, never a **wrong** session. It is also explicitly what the task asked for ("walk `~/.omp/agent/sessions/` recursively", "mirror CodexStrategy"), so the plan is aligned, not divergent. Codex genuinely cannot do better (its sessions are date-bucketed); omp could, because forward-slugging the known surface cwd and matching it against the slug directory is lossless even though reversing a slug isn't.
+**Recommendation:** No change required to satisfy the ticket. Two small asks: (a) for the load-bearing live-resume validation, run it in a **clean/dedicated cwd** so a single unambiguous candidate exists, otherwise the >1⇒skip policy can make a correct implementation *look* broken; (b) optionally note in the PR body that scoping the walk to the surface's cwd-slug subdirectory is a viable future precision enhancement unique to omp's layout, deliberately deferred to stay within the "mirror codex" scope.
+
+## 4. Positive Observations
+
+- **The dependency check is real, not asserted.** The plan claims C11-152's seam is present; it is — `ScrapeCandidate`, `applyScrape`, `ConversationScraper`/`ConversationScraperRegistry`/`ConversationFilesystem`, and `ScrapeCapturePipeline` are all in the worktree (merged via #273). Many plans hand-wave dependencies; this one earned the "DONE."
+- **On-disk reality verified to the byte.** I confirmed the live `~/.omp/agent/sessions/` layout exactly matches the plan: `<ts>_<uuid>.jsonl` transcripts at the slug level, `*.bash*.log` files only inside per-session subdirs with no `.jsonl` extension. The "`extensionFilter: "jsonl"` skips `.log` for free" claim is correct — the recursive enumerator filters on `hasSuffix(".jsonl")` + `isRegularFile`, so the log subdir is inert.
+- **The UUIDv7 analysis is correct and load-bearing.** `conversationUUIDPattern` is `^[0-9a-fA-F]{8}-…-[0-9a-fA-F]{12}$` with **no version-nibble constraint**, so the v7 sample (`019f0b94-be86-7000-…`) passes `isValidConversationUUID` unchanged. The plan correctly concludes no grammar change is needed — a wrong call here would have silently rejected every omp id.
+- **Robust id-parsing rationale.** "Substring after the *last* `_`" is genuinely robust: the ISO timestamp uses dashes/`T`/`Z` (no underscore) and the UUID contains no underscore, so it survives even a hypothetical future timestamp-format change. No-`_` and non-UUID rejection paths are both specified.
+- **Test-target placement is correct, not just plausible.** I confirmed via pbxproj membership that `AgentManifestTests` and `ScrapeCapturePipelineTests` are in **c11LogicTests** (host-free), while `ConversationScraperTests`/`ConversationStrategyTests` are **c11Tests** (host-bound). The plan's decision to put new omp tests in a fresh c11LogicTests file — honoring "validate via c11-logic, never the host scheme" — is exactly right and the parity test it relies on is reachable from that local loop.
+- **Ambiguity policy preserved.** Cloning `CodexStrategy`'s placeholder/tombstone/invalid-id guards and the >1⇒`.unknown`⇒`.skip` policy keeps omp safe-by-default (no wrong-session resume).
+- **Operational caveats surfaced.** The review-tooling caveat (headless `lattice code-review` resolves against `LATTICE_ROOT` → vacuous empty-diff PASS) and the pbxproj serial-conflict/rebase note are both accurate and exactly the traps these parallel exact-resume tickets hit. Calling out "use the `xcodeproj` gem, gate on `-list`/membership counts not line diff" matches repo convention.
+- **Scope discipline.** Out-of-scope list correctly fences off pi (C11-153), the shared pipeline (C11-152), the UUID grammar, and any persistent writes to `~/.omp/`. No scope creep, no premature abstraction — a single Swift file per role plus two registry edits and a manifest flag, which is precisely the "not a plugin system" contract the registries document.

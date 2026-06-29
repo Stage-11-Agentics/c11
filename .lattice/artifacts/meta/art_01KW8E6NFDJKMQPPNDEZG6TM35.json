@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-29T00:59:21Z",
+  "created_by": "agent:orchestrator-exr",
+  "custom_fields": {},
+  "id": "art_01KW8E6NFDJKMQPPNDEZG6TM35",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KW8E6NFDJKMQPPNDEZG6TM35.md",
+    "size_bytes": 363
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Merged via Orchestrator auto-merge (PR #273, squash) at e6edf9513da07f5afd04fe9a19e22cf0625376df. Live scrape-capture pipeline \u2014 the missing restore seam. Validation rows 4+5 satisfied (7 pipeline rou",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

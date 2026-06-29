@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-06-29T02:12:53Z",
+  "created_by": "agent:delegator-c11-154-impl",
+  "custom_fields": {
+    "url": "https://github.com/Stage-11-Agentics/c11/pull/276"
+  },
+  "id": "art_01KW8JD9G1YKJXCRC7YAJF4W7W",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": null,
+    "size_bytes": null
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "PR #276",
+  "token_usage": null,
+  "type": "reference"
+}

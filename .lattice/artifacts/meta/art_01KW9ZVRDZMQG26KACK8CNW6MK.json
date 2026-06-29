@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-29T15:27:13Z",
+  "created_by": "agent:orchestrator-exr",
+  "custom_fields": {},
+  "id": "art_01KW9ZVRDZMQG26KACK8CNW6MK",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KW9ZVRDZMQG26KACK8CNW6MK.md",
+    "size_bytes": 542
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Merged via PR #276 (squash) at cf177868bbdf4368048252b2321036159e4e3f74. omp exact-session resume. LOAD-BEARING row 7 SATISFIED: observed live omp exact-resume ('Welcome back!' resume of UUID 019f111a",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

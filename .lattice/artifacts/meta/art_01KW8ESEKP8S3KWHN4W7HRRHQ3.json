@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-06-29T01:09:37Z",
+  "created_by": "agent:delegator-c11-153-plan-reviewer",
+  "custom_fields": {},
+  "id": "art_01KW8ESEKP8S3KWHN4W7HRRHQ3",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KW8ESEKP8S3KWHN4W7HRRHQ3.md",
+    "size_bytes": 7054
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "plan-review (plan-review)",
+  "token_usage": null,
+  "type": "file"
+}

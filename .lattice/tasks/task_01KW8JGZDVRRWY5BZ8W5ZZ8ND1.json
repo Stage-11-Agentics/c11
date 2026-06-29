@@ -1,0 +1,38 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 1,
+  "complexity": null,
+  "created_at": "2026-06-29T02:14:54Z",
+  "created_by": "agent:orchestrator-exr",
+  "custom_fields": {},
+  "description": "Surfaced during C11-154 (omp exact-resume). bun-installed omp and pi run as \"bun /path/<tui>\", so AgentDetector.classify (ps comm=bun) matches neither detectComms (omp/pi) nor the node-gated detectNodeArgsSubstrings (@oh-my-pi/, @earendil-works/pi) -> terminal_type tagged unknown. AgentDetector is the SOLE writer of terminal_type (no spawn-time tag), so factory-launched bun-omp/pi never get the right type and the correct, shipped C11-153/154 resume rails never fire unless terminal_type is set manually. FIX: teach AgentDetector to handle the bun runtime (mirror the existing node branch) and/or match the TUI shim basename - covers omp + pi together. The resume strategies (PiStrategy/OmpStrategy) are correct and merged; this is detection-only. Acceptance: a bun-installed omp/pi process classifies to terminal_type=omp/pi; live auto-resume fires end-to-end without a manual override. Ref: C11-154 delegator comment ev_01KW8JBP043SCDVWQQKWNV6R2W.",
+  "done_at": "2026-06-29T17:48:15Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01KWA7Y0BBS6M2P1Z5NEHDVYMS",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KWA7Y0BBS6M2P1Z5NEHDVYMR",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KW8JGZDVRRWY5BZ8W5ZZ8ND1",
+  "last_event_id": "ev_01KWA7Y0BBS6M2P1Z5NEHDVYMW",
+  "last_status_changed_at": "2026-06-29T17:48:15Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-155",
+  "status": "done",
+  "tags": null,
+  "title": "AgentDetector bun-runtime support for omp/pi auto-resume detection",
+  "type": "bug",
+  "updated_at": "2026-06-29T17:48:15Z",
+  "urgency": null
+}

@@ -21,25 +21,25 @@ final class DefaultAgentConfigTests: XCTestCase {
     func testFactoryClaudeCommandIncludesDangerouslySkipPermissions() {
         let entry = AgentConfig.factory(for: .claudeCode)
         XCTAssertEqual(entry.command, "claude --dangerously-skip-permissions")
-        XCTAssertEqual(entry.initialPrompt, "you are operating inside a c11 workspace. load the skill.")
+        XCTAssertEqual(entry.initialPrompt, "You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.")
     }
 
     func testFactoryCodexCommandIncludesYolo() {
         let entry = AgentConfig.factory(for: .codex)
         XCTAssertEqual(entry.command, "codex --yolo")
-        XCTAssertEqual(entry.initialPrompt, "you are operating inside a c11 workspace. load the skill.")
+        XCTAssertEqual(entry.initialPrompt, "You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.")
     }
 
     func testFactoryGrokCommandIncludesAlwaysApprove() {
         let entry = AgentConfig.factory(for: .grok)
         XCTAssertEqual(entry.command, "grok --always-approve")
-        XCTAssertEqual(entry.initialPrompt, "you are operating inside a c11 workspace. load the skill.")
+        XCTAssertEqual(entry.initialPrompt, "You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.")
     }
 
     func testFactoryGitHubCopilotCommandIncludesAllowAllAndAutopilot() {
         let entry = AgentConfig.factory(for: .githubCopilot)
         XCTAssertEqual(entry.command, "copilot --allow-all --autopilot")
-        XCTAssertEqual(entry.initialPrompt, "you are operating inside a c11 workspace. load the skill.")
+        XCTAssertEqual(entry.initialPrompt, "You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.")
     }
 
     func testAgentTypeGitHubCopilotRawValueIsKebabCase() {
@@ -180,7 +180,7 @@ final class DefaultAgentConfigTests: XCTestCase {
         let (store, _) = makeStore()
         XCTAssertEqual(store.current.defaultAgent, .claudeCode)
         XCTAssertEqual(store.current.config(for: .claudeCode).command, "claude --dangerously-skip-permissions")
-        XCTAssertEqual(store.current.config(for: .claudeCode).initialPrompt, "you are operating inside a c11 workspace. load the skill.")
+        XCTAssertEqual(store.current.config(for: .claudeCode).initialPrompt, "You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.")
     }
 
     func testStoreReturnsFactoryOnGarbageData() {

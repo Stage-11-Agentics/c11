@@ -12097,9 +12097,35 @@ struct CMUXCLI {
                 action: "skip: state=\(state) not auto-resumable"
             )
         }
-        // Only claude-code keeps an on-disk transcript today; that is the kind
-        // the crash-recovery fix verifies. Other kinds demote to unknown on a
-        // crash (no transcript), so they would not auto-resume after a crash.
+        // opencode (C11-151): exact-session resume re-attaches the
+        // interactive TUI with `cd '<cwd>' && opencode -s '<id>'`. Mirrors
+        // `OpencodeStrategy.resume`, which resumes any alive/suspended ref
+        // with a valid base62 id regardless of transcript (the SQLite
+        // transcript check is crash-recovery-only, applied by the app's
+        // `transcriptExists` before this state is reached). The session id
+        // is base62-validated, so single-quoting is injection-safe.
+        if kind == "opencode" {
+            guard isValidOpencodeSessionId(id) else {
+                return StateVerifyPanel(
+                    kind: kind, id: id, state: state, cwd: cwd,
+                    transcriptPresent: nil, wouldResume: false,
+                    action: "skip: invalid id grammar"
+                )
+            }
+            var command = "opencode -s '\(id)'"
+            if let cwd, !cwd.isEmpty, isValidOpencodeSessionProjectDir(cwd) {
+                command = "cd '\(cwd)' && \(command)"
+            }
+            return StateVerifyPanel(
+                kind: kind, id: id, state: state, cwd: cwd,
+                transcriptPresent: nil, wouldResume: true,
+                action: command
+            )
+        }
+        // Only claude-code keeps an on-disk file transcript; that is the kind
+        // the crash-recovery fix verifies via the filesystem. Other kinds
+        // demote to unknown on a crash (no transcript), so they would not
+        // auto-resume after a crash.
         guard kind == "claude-code" else {
             return StateVerifyPanel(
                 kind: kind, id: id, state: state, cwd: cwd,

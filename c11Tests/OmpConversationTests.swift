@@ -1,0 +1,241 @@
+import XCTest
+
+#if canImport(c11_DEV)
+@testable import c11_DEV
+#elseif canImport(c11)
+@testable import c11
+#endif
+
+/// Pure tests for `OmpScraper` and `OmpStrategy` (oh-my-pi exact-session
+/// resume) against a mock filesystem. Lives in the host-free `c11LogicTests`
+/// target so it runs under the `c11-logic` scheme without launching a c11
+/// DEV.app. Mirrors the `MockFS` shape used by `ConversationScraperTests`.
+final class OmpConversationTests: XCTestCase {
+
+    // MARK: - Mock filesystem
+
+    final class MockFS: ConversationFilesystem, @unchecked Sendable {
+        var home: URL?
+        var directoryEntries: [URL: [ConversationFilesystemEntry]] = [:]
+        var recursiveEntries: [URL: [ConversationFilesystemEntry]] = [:]
+        var existingPaths: Set<String> = []
+
+        var homeDirectory: URL? { home }
+
+        func fileExists(atPath path: String) -> Bool {
+            existingPaths.contains(path)
+        }
+
+        func listDirectoryByMtime(_ directory: URL, max: Int) -> [ConversationFilesystemEntry] {
+            Array((directoryEntries[directory] ?? []).prefix(max))
+        }
+
+        func listSessionsRecursivelyByMtime(
+            _ root: URL,
+            extensionFilter: String,
+            max: Int
+        ) -> [ConversationFilesystemEntry] {
+            Array((recursiveEntries[root] ?? [])
+                .filter { $0.fileName.hasSuffix("." + extensionFilter) }
+                .prefix(max))
+        }
+    }
+
+    // omp's real id grammar: a UUIDv7 (version nibble 7) in 8-4-4-4-12 hex.
+    private let v7Id = "019f0b94-be86-7000-bf88-d9b6dcae2616"
+    private let v7Id2 = "019f0ab6-19f2-7000-88f8-5c62ba55bc76"
+
+    /// Build the sessions-root key exactly as `OmpScraper.sessionsRoot()` does
+    /// (chained `appendingPathComponent(isDirectory: true)`), so the MockFS
+    /// dictionary lookup keyed on this URL matches the scraper's lookup. A flat
+    /// `URL(fileURLWithPath:)` would differ by a trailing slash and miss.
+    private func sessionsRoot(_ home: URL) -> URL {
+        home.appendingPathComponent(".omp", isDirectory: true)
+            .appendingPathComponent("agent", isDirectory: true)
+            .appendingPathComponent("sessions", isDirectory: true)
+    }
+
+    private func ompEntry(
+        slug: String, fileName: String, mtime: Date, size: Int64, root: URL
+    ) -> ConversationFilesystemEntry {
+        ConversationFilesystemEntry(
+            url: root.appendingPathComponent(slug).appendingPathComponent(fileName),
+            fileName: fileName,
+            mtime: mtime,
+            size: size
+        )
+    }
+
+    // MARK: - Scraper
+
+    func testOmpScraperParsesUUIDv7AfterLastUnderscore() {
+        let mock = MockFS()
+        mock.home = URL(fileURLWithPath: "/Users/test")
+        let root = sessionsRoot(mock.home!)
+        let now = Date()
+        mock.recursiveEntries[root] = [
+            ompEntry(slug: "-work-proj",
+                     fileName: "2026-06-28T00-15-25-318Z_\(v7Id).jsonl",
+                     mtime: now, size: 1024, root: root),
+            ompEntry(slug: "-other-proj",
+                     fileName: "2026-06-27T20-12-14-194Z_\(v7Id2).jsonl",
+                     mtime: now.addingTimeInterval(-60), size: 2048, root: root)
+        ]
+        let scraper = OmpScraper(filesystem: mock)
+        let candidates = scraper.candidates(cwd: "/work/proj")
+        XCTAssertEqual(candidates.count, 2)
+        XCTAssertEqual(candidates[0].id, v7Id, "id is the UUID after the last underscore")
+        XCTAssertEqual(candidates[1].id, v7Id2)
+        XCTAssertEqual(candidates[0].cwd, "/work/proj", "passed cwd is stamped onto candidates")
+    }
+
+    func testOmpScraperRejectsNonUUIDAndNoUnderscoreFilenames() {
+        let mock = MockFS()
+        mock.home = URL(fileURLWithPath: "/Users/test")
+        let root = sessionsRoot(mock.home!)
+        mock.recursiveEntries[root] = [
+            // valid
+            ompEntry(slug: "-work", fileName: "2026-06-28T00-00-00-000Z_\(v7Id).jsonl",
+                     mtime: Date(), size: 10, root: root),
+            // trailing segment after last `_` is not a UUID
+            ompEntry(slug: "-work", fileName: "2026-06-28T00-00-00-000Z_garbage.jsonl",
+                     mtime: Date(), size: 10, root: root),
+            // no underscore at all → rejected
+            ompEntry(slug: "-work", fileName: "noUnderscore.jsonl",
+                     mtime: Date(), size: 10, root: root)
+        ]
+        let scraper = OmpScraper(filesystem: mock)
+        let candidates = scraper.candidates()
+        XCTAssertEqual(candidates.count, 1)
+        XCTAssertEqual(candidates[0].id, v7Id)
+    }
+
+    func testOmpScraperExcludesLogSiblingsViaExtensionFilter() {
+        // The recursive walker only surfaces `.jsonl`; the per-session
+        // `*.log` files in the sibling subdir never reach the scraper. We
+        // model that by including a `.log` entry and asserting it's filtered.
+        let mock = MockFS()
+        mock.home = URL(fileURLWithPath: "/Users/test")
+        let root = sessionsRoot(mock.home!)
+        mock.recursiveEntries[root] = [
+            ompEntry(slug: "-work", fileName: "2026-06-28T00-00-00-000Z_\(v7Id).jsonl",
+                     mtime: Date(), size: 10, root: root),
+            ompEntry(slug: "-work/2026-06-28T00-00-00-000Z_\(v7Id)",
+                     fileName: "1.bash-original.log",
+                     mtime: Date(), size: 10, root: root)
+        ]
+        let scraper = OmpScraper(filesystem: mock)
+        let candidates = scraper.candidates()
+        XCTAssertEqual(candidates.count, 1)
+        XCTAssertEqual(candidates[0].id, v7Id)
+    }
+
+    func testOmpScraperEmptyWhenDirectoryMissing() {
+        let mock = MockFS()
+        mock.home = URL(fileURLWithPath: "/Users/test")
+        // No recursiveEntries keyed for the sessions root.
+        let scraper = OmpScraper(filesystem: mock)
+        XCTAssertTrue(scraper.candidates().isEmpty)
+    }
+
+    // MARK: - Strategy
+
+    private func candidate(id: String, mtime: Date, cwd: String?) -> ScrapeCandidate {
+        ScrapeCandidate(id: id, filePath: "/p/\(id).jsonl", mtime: mtime, size: 1, cwd: cwd)
+    }
+
+    func testOmpCaptureSingleCandidateMarksAlive() {
+        let strategy = OmpStrategy()
+        let claimTime = Date().addingTimeInterval(-100)
+        let inputs = ConversationStrategyInputs(
+            surfaceId: "surface:1",
+            cwd: "/work/proj",
+            lastActivityTimestamp: claimTime,
+            wrapperClaim: ConversationRef(
+                kind: "omp", id: "placeholder", placeholder: true,
+                cwd: "/work/proj", capturedAt: claimTime,
+                capturedVia: .wrapperClaim, state: .alive),
+            scrapeCandidates: [
+                candidate(id: v7Id, mtime: Date(), cwd: "/work/proj")
+            ])
+        let ref = strategy.capture(inputs: inputs)
+        XCTAssertEqual(ref?.id, v7Id)
+        XCTAssertEqual(ref?.state, .alive)
+        XCTAssertFalse(ref?.placeholder ?? true)
+    }
+
+    func testOmpResumeEmitsResumeFlagWithSpecificId() {
+        let strategy = OmpStrategy()
+        let ref = ConversationRef(
+            kind: "omp", id: v7Id, placeholder: false,
+            cwd: "/work/proj", capturedAt: Date(),
+            capturedVia: .scrape, state: .alive)
+        guard case .typeCommand(let text, let submit) = strategy.resume(ref: ref) else {
+            XCTFail("expected typeCommand"); return
+        }
+        XCTAssertEqual(text, "omp --resume='\(v7Id)'")
+        XCTAssertTrue(text.contains(v7Id), "must resume the specific id, not a --last-style flag")
+        XCTAssertTrue(submit)
+    }
+
+    func testOmpAmbiguousCandidatesSkipResume() {
+        let strategy = OmpStrategy()
+        let claimTime = Date().addingTimeInterval(-100)
+        let now = Date()
+        let inputs = ConversationStrategyInputs(
+            surfaceId: "surface:1",
+            cwd: "/work/proj",
+            lastActivityTimestamp: claimTime,
+            wrapperClaim: ConversationRef(
+                kind: "omp", id: "placeholder", placeholder: true,
+                cwd: "/work/proj", capturedAt: claimTime,
+                capturedVia: .wrapperClaim, state: .alive),
+            scrapeCandidates: [
+                candidate(id: v7Id, mtime: now, cwd: "/work/proj"),
+                candidate(id: v7Id2, mtime: now.addingTimeInterval(-5), cwd: "/work/proj")
+            ])
+        let ref = strategy.capture(inputs: inputs)
+        XCTAssertEqual(ref?.state, .unknown, "ambiguity ⇒ unknown")
+        XCTAssertEqual(ref?.id, v7Id, "chose newest")
+        XCTAssertTrue(ref?.diagnosticReason?.contains("ambiguous") ?? false)
+        guard case .skip(let reason) = strategy.resume(ref: ref!) else {
+            XCTFail("ambiguous ref must not auto-resume"); return
+        }
+        XCTAssertEqual(reason, "ambiguous")
+    }
+
+    func testOmpResumeSkipsPlaceholder() {
+        let strategy = OmpStrategy()
+        let ref = ConversationRef(
+            kind: "omp", id: v7Id, placeholder: true,
+            cwd: nil, capturedAt: Date(),
+            capturedVia: .wrapperClaim, state: .alive)
+        guard case .skip = strategy.resume(ref: ref) else {
+            XCTFail("placeholder must skip"); return
+        }
+    }
+
+    func testOmpResumeSkipsInvalidId() {
+        let strategy = OmpStrategy()
+        let ref = ConversationRef(
+            kind: "omp", id: "not-a-uuid", placeholder: false,
+            cwd: nil, capturedAt: Date(),
+            capturedVia: .scrape, state: .alive)
+        guard case .skip = strategy.resume(ref: ref) else {
+            XCTFail("invalid id must skip"); return
+        }
+    }
+
+    func testOmpIsValidIdAcceptsUUIDv7() {
+        let strategy = OmpStrategy()
+        XCTAssertTrue(strategy.isValidId(v7Id))
+        XCTAssertFalse(strategy.isValidId("nope"))
+    }
+
+    // MARK: - Registry wiring
+
+    func testOmpRegisteredInBothV1Registries() {
+        XCTAssertTrue(ConversationStrategyRegistry.v1.contains(kind: "omp"))
+        XCTAssertTrue(ConversationScraperRegistry.v1().contains(kind: "omp"))
+    }
+}

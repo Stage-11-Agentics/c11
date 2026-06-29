@@ -42,7 +42,8 @@ struct ConversationScraperRegistry: Sendable {
         ConversationScraperRegistry(scrapers: [
             ClaudeCodeScraper(filesystem: filesystem),
             CodexScraper(filesystem: filesystem),
-            PiScraper(filesystem: filesystem)
+            PiScraper(filesystem: filesystem),
+            OmpScraper(filesystem: filesystem)
         ])
     }
 }

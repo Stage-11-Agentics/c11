@@ -247,12 +247,15 @@ struct AgentRegistry: Sendable {
             detectNodeArgsSubstrings: ["@oh-my-pi/"],
             iconAsset: nil,
             sfSymbolFallback: "o.circle",
-            // No confirmed resume flag (TUI `/resume` only); launches fresh.
-            // Exact-session resume via a JSONL scraper (~/.omp/agent/sessions/)
-            // is a tracked follow-up.
+            // Exact-session resume via the conversation rail: `OmpScraper`
+            // (JSONL metadata over ~/.omp/agent/sessions/) feeds `OmpStrategy`,
+            // which emits `omp --resume='<id>'`. No fixed-command fallback
+            // exists for the legacy `resume` path (the TUI offers `/resume`
+            // only), so `resume` stays `.none` while the strategy owns exact
+            // resume — same split as the codex row.
             resume: .none,
             isCanonicalTerminalType: true,
-            hasConversationStrategy: false
+            hasConversationStrategy: true
         ),
         AgentManifest(
             kind: "custom",

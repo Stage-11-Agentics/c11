@@ -6,6 +6,39 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.54.0] - 2026-06-29
+
+Feature release. Headline: **exact-session conversation resume arrives for Pi, oh-my-pi, and opencode — when c11 restores a workspace, these agents reconnect to the exact session they were in before the restart, not a fresh shell.** Alongside it: Pi and oh-my-pi become first-class agents via a new data-driven registry, splits get size-aware, the tab bar collapses responsively when space runs short, four new chrome themes ship, and surfaces now export the `C11_*` environment namespace the skill documents.
+
+### Added
+
+- **Exact-session resume for Pi, oh-my-pi (omp), and opencode.** On workspace restore, each agent reconnects to its precise prior session rather than starting cold. Per-kind scrapers resolve the real session id at restore time and the conversation store reattaches it. ([#274](https://github.com/Stage-11-Agentics/c11/pull/274), [#275](https://github.com/Stage-11-Agentics/c11/pull/275), [#276](https://github.com/Stage-11-Agentics/c11/pull/276))
+- **Pi and oh-my-pi as first-class agents.** A new data-driven agent registry recognizes Pi and oh-my-pi as agent types, driving detection, the sidebar chip, restart, and canonical typing from one source. ([#271](https://github.com/Stage-11-Agentics/c11/pull/271))
+- **Size-aware splits.** Splitting a pane now adapts to the space available, so new panes land at sensible sizes instead of bisecting blindly. ([#262](https://github.com/Stage-11-Agentics/c11/pull/262))
+- **Responsive collapsing tab bar.** When horizontal space runs short, the tab bar collapses into a single bordered dropdown chip (three-tier responsive behavior) instead of overflowing. ([#266](https://github.com/Stage-11-Agentics/c11/pull/266))
+- **Surface Details.** Right-click a tab for a Surface Details view, including one-click copy of its surface / pane / tab / workspace handles. ([#265](https://github.com/Stage-11-Agentics/c11/pull/265))
+- **Four new chrome themes:** Obsidian, Command Deck, Blueprint, and Spatial. ([#270](https://github.com/Stage-11-Agentics/c11/pull/270))
+- **Terminal-only mode.** New Settings toggles can disable the browser and markdown surface types — hiding their spawn buttons and rejecting those types over the CLI/socket. ([#264](https://github.com/Stage-11-Agentics/c11/pull/264))
+- **`C11_*` surface environment variables.** Surfaces now export `C11_SURFACE_ID`, `C11_TAB_ID`, `C11_SHELL_INTEGRATION`, `C11_WORKSPACE_ID`, and friends alongside the legacy `CMUX_*` names, so agents can read the `C11_*` namespace the skill documents. ([#284](https://github.com/Stage-11-Agentics/c11/pull/284))
+- **`C11_QA_LAUNCH` automation flag.** Launching with `C11_QA_LAUNCH=fresh|resume` suppresses the startup Agent Skills and resume-picker dialogs so automated and QA launches don't block on modals. ([#268](https://github.com/Stage-11-Agentics/c11/pull/268))
+- **Bundled opencode status + notification plugin,** auto-installed so opencode surfaces report status and notifications out of the box.
+
+### Changed
+
+- **The Agent Skills onboarding sheet stops over-firing.** "Later" now persists a hash-pinned dismissal so the sheet doesn't reappear on every launch, and dev/tagged builds suppress the auto-popup entirely. ([#272](https://github.com/Stage-11-Agentics/c11/pull/272))
+- **The resume picker no longer blocks on local dev/tagged builds** — it only prompts where it should. ([#283](https://github.com/Stage-11-Agentics/c11/pull/283))
+- **Agent orientation seed prompt reworded** to read as discovery, not command. ([#282](https://github.com/Stage-11-Agentics/c11/pull/282))
+
+### Fixed
+
+- **Conversation detection hardening:** Pi/omp auto-detect (including bun-launched sessions), omp session cwd-scoping, and crash-path resume. ([#281](https://github.com/Stage-11-Agentics/c11/pull/281))
+- **Tab bar polish:** tool-button tooltips now show, the collapsed header gets a clear hover affordance, and collapse is tighter with a full-width accent line and whole-header hit area. ([#266](https://github.com/Stage-11-Agentics/c11/pull/266))
+- **Correct split sizing on Retina:** `cellSize` is now converted from backing pixels to points so size-aware split math is right. ([#262](https://github.com/Stage-11-Agentics/c11/pull/262))
+
+### Thanks to 1 contributor!
+
+- [@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [0.53.0] - 2026-06-16
 
 Feature release. Headline: **the inter-agent mailbox grows up — it routes across every workspace and stops dropping messages silently.** `c11 mailbox send --to <name>` now resolves the recipient across the whole c11 instance (local-first; ambiguous names disambiguate with `--to-workspace`), an unresolved recipient is rejected with a non-zero exit instead of vanishing, surfaces gain stable `mailbox.address` / `mailbox.role` addressing decoupled from their mutable tab title, and stdin delivery is prompt-gated — buffered while a recipient is busy and flushed when it returns to its shell prompt — so a pushed message can never corrupt a running command.

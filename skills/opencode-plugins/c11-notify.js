@@ -32,6 +32,30 @@ export const C11NotifyPlugin = async ({ $ }) => {
   return {
     event: async ({ event }) => {
       switch (event.type) {
+        case "session.created": {
+          // Exact-session resume rail (C11-151). Push the new opencode
+          // session id to c11's conversation store so a quit+relaunch
+          // re-attaches the surface to THIS session via `opencode -s <id>`.
+          // Root sessions only — a sub-agent session (parentID set) must
+          // not clobber the surface's primary conversation id. opencode
+          // session ids are `ses_` + 26-char base62; the c11 CLI
+          // revalidates the grammar before storing.
+          const info = event.properties?.info;
+          if (info?.id && !info.parentID) {
+            const args = [
+              "conversation", "push",
+              "--kind", "opencode",
+              "--id", info.id,
+              "--source", "hook",
+              "--state", "alive",
+            ];
+            if (info.directory) {
+              args.push("--cwd", info.directory);
+            }
+            await c11(args);
+          }
+          break;
+        }
         case "session.idle":
           await notify("OpenCode", "Waiting for input");
           await c11(["set-metadata", "--key", "status", "--value", "idle"]);

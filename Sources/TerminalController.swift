@@ -1919,6 +1919,27 @@ class TerminalController {
         "agent_kick",
     ]
 
+    // C11-156: fire-and-forget sidebar/notification telemetry the Claude Code
+    // hook integration issues at tool-call frequency. Each `c11 claude-hook`
+    // process (one per tool call, per agent) ends up calling these; their
+    // handlers return a bare "OK" the caller discards (`_ = try? sendV1Command`)
+    // and mutate only sidebar/notification model state. The default policy
+    // runs them under `DispatchQueue.main.sync`, so every hook blocks a
+    // socket-worker thread on the main queue. Under a multi-agent fleet — or a
+    // crash-restore mass-resume — that serialized main-sync backlog starves
+    // the run loop and beachballs the app (the 44s stall captured in
+    // ~/Library/Logs/c11/hang.log). Unlike `socketWorkerV1Commands` these
+    // don't need an off-main parse + explicit selector: we ack "OK" off-main
+    // immediately and re-enter the EXISTING handler via `main.async`, so there
+    // is zero logic duplication and the CLI never piles up blocked processes
+    // while the run loop drains status writes cooperatively.
+    private nonisolated static let asyncAckV1Commands: Set<String> = [
+        "set_status",
+        "clear_notifications",
+        "set_agent_pid",
+        "notify_target",
+    ]
+
     private nonisolated static func executionPolicy(forV2Method method: String) -> SocketCommandExecutionPolicy {
         if socketWorkerV2Methods.contains(method) {
             return .socketWorker
@@ -1986,12 +2007,36 @@ class TerminalController {
             return response
         }
 
+        if let response = asyncAckResponseIfNeeded(for: command) {
+            return response
+        }
+
         if Thread.isMainThread {
             return MainActor.assumeIsolated { self.processCommand(command) }
         }
         return DispatchQueue.main.sync {
             MainActor.assumeIsolated { self.processCommand(command) }
         }
+    }
+
+    /// C11-156: ack a fire-and-forget telemetry command off-main and apply its
+    /// mutation via `main.async`, instead of blocking a socket-worker thread on
+    /// `DispatchQueue.main.sync`. Returns nil for anything not in
+    /// `asyncAckV1Commands` (and for v2/JSON requests) so the dispatcher falls
+    /// through to its normal path. The existing `@MainActor` handler is reused
+    /// verbatim — only the scheduling changes — so behaviour is identical
+    /// except that the caller is acked before the mutation lands, which is safe
+    /// precisely because these handlers return a bare "OK" the hook discards.
+    private nonisolated func asyncAckResponseIfNeeded(for command: String) -> String? {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.hasPrefix("{") else { return nil }
+        let head = trimmed.split(separator: " ", maxSplits: 1).first.map(String.init)?.lowercased() ?? ""
+        guard Self.asyncAckV1Commands.contains(head) else { return nil }
+
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { _ = self.processCommand(command) }
+        }
+        return "OK"
     }
 
     /// v1 telemetry worker entry. Parses head and args off-main, checks the

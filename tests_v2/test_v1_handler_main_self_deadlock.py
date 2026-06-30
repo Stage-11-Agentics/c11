@@ -193,6 +193,11 @@ def test_v1_main_sync_handlers_return_ok(socket_path: str) -> None:
         ("report_pwd /tmp --tab=" + ws_id, lambda r: r.startswith("OK")),
         ("report_git_branch main --tab=" + ws_id, lambda r: r.startswith("OK")),
         ("clear_git_branch --tab=" + ws_id, lambda r: r.startswith("OK")),
+        # C11-156: the Claude-hook fire-and-forget commands now route through
+        # the async-ack tier (ack OK off-main, apply via main.async). They must
+        # still return OK and leave the listener up under the same dispatcher.
+        ("clear_notifications --tab=" + ws_id, lambda r: r.startswith("OK")),
+        ("set_agent_pid claude_code 99999 --tab=" + ws_id, lambda r: r.startswith("OK")),
     ]
 
     try:

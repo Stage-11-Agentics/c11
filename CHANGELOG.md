@@ -8,7 +8,7 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [0.55.0] - 2026-06-30
 
-Tooling + hardening release. Headline: **`c11 tree --report` — a one-command, human-readable Markdown snapshot of your whole fleet** (every workspace's layout plus each surface's title, agent, live status, and description), built for "save the state before I close c11" handoffs. Alongside it: a workspace-navigation latch fix and socket-collision hardening so parallel c11 instances don't stomp each other's IPC socket.
+Tooling + hardening release. Headline: **`c11 tree --report` — a one-command, human-readable Markdown snapshot of your whole fleet** (every workspace's layout plus each surface's title, agent, live status, and description), built for "save the state before I close c11" handoffs. Alongside it: a fix for a main-thread hang that could beachball c11 under a heavy multi-agent fleet, a workspace-navigation latch fix, and socket-collision hardening so parallel c11 instances don't stomp each other's IPC socket.
 
 ### Added
 
@@ -16,6 +16,7 @@ Tooling + hardening release. Headline: **`c11 tree --report` — a one-command, 
 
 ### Fixed
 
+- **c11 no longer beachballs under a heavy multi-agent fleet.** Every Claude Code hook (one `c11 claude-hook` per tool call, per agent) ran its sidebar/notification socket commands on the GUI main thread, so a fleet of agents — or a crash-restore that resumed them all at once — could saturate the main thread and freeze the UI for tens of seconds. Those status/notification commands now ack off the main thread and apply asynchronously, the redundant per-hook workspace probe is gone, and agent resumes are staggered on restore. ([#296](https://github.com/Stage-11-Agentics/c11/pull/296)) (C11-156) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
 - **Workspace Previous/Next navigation no longer latches on the first workspace.** A selection latch could trap navigation on the first workspace; the Prev/Next controls release correctly now. ([#269](https://github.com/Stage-11-Agentics/c11/pull/269)) — thanks [@ajroberts0417](https://github.com/ajroberts0417)!
 - **Parallel c11 instances no longer stomp each other's IPC socket.** The control socket is namespaced per bundle, so a second instance binding its socket can't unlink a live peer's out from under it. (C11-155) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
 

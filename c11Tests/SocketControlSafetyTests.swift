@@ -1,4 +1,5 @@
 import XCTest
+import Darwin
 
 #if canImport(c11_DEV)
 @testable import c11_DEV
@@ -109,5 +110,172 @@ final class LaunchResumeGateTests: XCTestCase {
         XCTAssertEqual(
             LaunchResumePicker.resolveEffectivePolicy(qa: .off, persisted: .always, isLocalDevBuild: false),
             .always)
+    }
+}
+
+// MARK: - C11-155: bind-time socket stomp
+
+/// The incident: a staging/debug build launched from a prod c11 pane inherits
+/// prod's `CMUX_SOCKET_PATH` and would bind (unlinking) prod's *live* socket.
+/// These tests cover the resolution-layer guard (don't adopt a foreign channel's
+/// shared default) and the per-bundle namespacing defense-in-depth.
+final class SocketCollisionResolutionTests: XCTestCase {
+
+    func testStagingDoesNotAdoptInheritedProdSocketPath() {
+        // The exact incident: staging bundle, ambient CMUX_SOCKET_PATH == prod's
+        // shared socket. Must fall through to staging's own default, never prod's.
+        let path = SocketControlSettings.socketPath(
+            environment: ["CMUX_SOCKET_PATH": SocketControlSettings.stableDefaultSocketPath],
+            bundleIdentifier: "com.stage11.c11.staging.rel.v0.54.0",
+            isDebugBuild: false,
+            probeStableDefaultPathEntry: { _ in .missing }
+        )
+        XCTAssertEqual(path, "/tmp/c11-staging.sock")
+        XCTAssertNotEqual(path, SocketControlSettings.stableDefaultSocketPath)
+    }
+
+    func testDebugDoesNotAdoptInheritedStagingSharedSocketPath() {
+        // Cross-channel inheritance the other direction (debug from a staging pane).
+        let path = SocketControlSettings.socketPath(
+            environment: ["CMUX_SOCKET_PATH": "/tmp/c11-staging.sock"],
+            bundleIdentifier: "com.stage11.c11.debug",
+            isDebugBuild: false,
+            probeStableDefaultPathEntry: { _ in .missing }
+        )
+        XCTAssertEqual(path, "/tmp/c11-debug.sock")
+    }
+
+    func testExplicitOptInStillAdoptsForeignPath() {
+        // CMUX_ALLOW_SOCKET_OVERRIDE is the intentional escape hatch (used by
+        // scripts/test-unit-local.sh) and must still win.
+        let path = SocketControlSettings.socketPath(
+            environment: [
+                "CMUX_SOCKET_PATH": SocketControlSettings.stableDefaultSocketPath,
+                "CMUX_ALLOW_SOCKET_OVERRIDE": "1",
+            ],
+            bundleIdentifier: "com.stage11.c11.staging",
+            isDebugBuild: false,
+            probeStableDefaultPathEntry: { _ in .missing }
+        )
+        XCTAssertEqual(path, SocketControlSettings.stableDefaultSocketPath)
+    }
+
+    func testTaggedStagingOverrideStillHonored() {
+        // A tag-specific override path is launch-script intent, not inheritance,
+        // and is not a shared default — the tagged-build workflow is unaffected.
+        let path = SocketControlSettings.socketPath(
+            environment: ["CMUX_SOCKET_PATH": "/tmp/c11-staging-my-tag.sock"],
+            bundleIdentifier: "com.stage11.c11.staging.my-tag",
+            isDebugBuild: false
+        )
+        XCTAssertEqual(path, "/tmp/c11-staging-my-tag.sock")
+    }
+
+    func testForeignSharedDefaultDetection() {
+        XCTAssertTrue(SocketControlSettings.isForeignSharedDefaultSocketPath(
+            SocketControlSettings.stableDefaultSocketPath))
+        XCTAssertTrue(SocketControlSettings.isForeignSharedDefaultSocketPath("/tmp/c11-staging.sock"))
+        XCTAssertTrue(SocketControlSettings.isForeignSharedDefaultSocketPath("/tmp/c11-debug.sock"))
+        XCTAssertTrue(SocketControlSettings.isForeignSharedDefaultSocketPath("/tmp/c11-nightly.sock"))
+        // Tag-specific paths are NOT shared defaults.
+        XCTAssertFalse(SocketControlSettings.isForeignSharedDefaultSocketPath("/tmp/c11-staging-my-tag.sock"))
+        XCTAssertFalse(SocketControlSettings.isForeignSharedDefaultSocketPath("/tmp/c11-debug-feat-x.sock"))
+    }
+
+    func testNonProdStableBundleGetsBundleScopedSocket() {
+        // A non-prod bundle that still falls through to the stable default (e.g.
+        // release-probe) must never resolve to prod's shared path.
+        let path = SocketControlSettings.defaultSocketPath(
+            bundleIdentifier: "com.stage11.c11.release-probe",
+            isDebugBuild: false,
+            probeStableDefaultPathEntry: { _ in .missing }
+        )
+        XCTAssertNotEqual(path, SocketControlSettings.stableDefaultSocketPath)
+        XCTAssertEqual(
+            path,
+            SocketControlSettings.bundleScopedStableSocketPath(
+                bundleIdentifier: "com.stage11.c11.release-probe"))
+        XCTAssertTrue(path.hasSuffix(".sock"))
+    }
+
+    func testProdBundleKeepsCanonicalStableSocket() {
+        let path = SocketControlSettings.defaultSocketPath(
+            bundleIdentifier: SocketControlSettings.prodBundleIdentifier,
+            isDebugBuild: false,
+            probeStableDefaultPathEntry: { _ in .missing }
+        )
+        XCTAssertEqual(path, SocketControlSettings.stableDefaultSocketPath)
+    }
+}
+
+/// The bind-layer guarantee (C11-155): never unlink a socket a live peer serves.
+final class SocketLivenessProbeTests: XCTestCase {
+
+    /// Bind+listen a real unix socket at `path`; caller closes the returned fd.
+    private func makeLiveListener(at path: String) -> Int32 {
+        Darwin.unlink(path)
+        let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+        XCTAssertGreaterThanOrEqual(fd, 0)
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        let sunPathCapacity = MemoryLayout.size(ofValue: addr.sun_path)
+        path.withCString { src in
+            withUnsafeMutablePointer(to: &addr.sun_path) { dst in
+                let dstRaw = UnsafeMutableRawPointer(dst).assumingMemoryBound(to: CChar.self)
+                strncpy(dstRaw, src, sunPathCapacity - 1)
+            }
+        }
+        let bound = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                Darwin.bind(fd, sa, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        XCTAssertEqual(bound, 0, "bind failed errno=\(errno)")
+        XCTAssertEqual(Darwin.listen(fd, 4), 0)
+        return fd
+    }
+
+    func testLiveListenerIsDetected() {
+        let path = "/tmp/c11-test-live-\(getpid()).sock"
+        let fd = makeLiveListener(at: path)
+        defer { Darwin.close(fd); Darwin.unlink(path) }
+        XCTAssertTrue(TerminalController.socketHasLiveListener(path: path))
+    }
+
+    func testMissingPathIsNotLive() {
+        XCTAssertFalse(TerminalController.socketHasLiveListener(
+            path: "/tmp/c11-test-absent-\(getpid()).sock"))
+    }
+
+    func testRegularFileIsNotLive() {
+        let path = "/tmp/c11-test-regular-\(getpid())"
+        FileManager.default.createFile(atPath: path, contents: Data("x".utf8))
+        defer { Darwin.unlink(path) }
+        XCTAssertFalse(TerminalController.socketHasLiveListener(path: path))
+    }
+
+    func testStaleSocketFileIsNotLive() {
+        // A socket file with no live acceptor (closed listener) is replaceable.
+        let path = "/tmp/c11-test-stale-\(getpid()).sock"
+        let fd = makeLiveListener(at: path)
+        Darwin.close(fd) // file remains on disk, but nobody is accepting
+        defer { Darwin.unlink(path) }
+        XCTAssertFalse(TerminalController.socketHasLiveListener(path: path))
+    }
+
+    func testSafeAlternateForProdPathIsUserScoped() {
+        XCTAssertEqual(
+            TerminalController.safeAlternateSocketPath(
+                afterPeerAliveAt: SocketControlSettings.stableDefaultSocketPath,
+                currentUserID: 501),
+            SocketControlSettings.userScopedStableSocketPath(currentUserID: 501))
+    }
+
+    func testSafeAlternateForOtherPathIsPidStampedSibling() {
+        let alt = TerminalController.safeAlternateSocketPath(
+            afterPeerAliveAt: "/tmp/c11-staging.sock",
+            currentUserID: 501,
+            processIdentifier: 4242)
+        XCTAssertEqual(alt, "/tmp/c11-staging-4242.sock")
     }
 }

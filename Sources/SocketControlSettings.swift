@@ -486,7 +486,9 @@ struct SocketControlSettings {
         if shouldHonorSocketPathOverride(
             environment: environment,
             bundleIdentifier: bundleIdentifier,
-            isDebugBuild: isDebugBuild
+            isDebugBuild: isDebugBuild,
+            overridePath: override,
+            ownDefaultPath: fallback
         ) {
             return override
         }
@@ -512,10 +514,42 @@ struct SocketControlSettings {
         if isStagingBundleIdentifier(bundleIdentifier) {
             return "/tmp/c11-staging.sock"
         }
+        // C11-155 defense-in-depth: only the canonical prod build owns the shared
+        // `~/Library/Application Support/c11/c11.sock`. Any other bundle that still
+        // falls through to the stable default (e.g. com.stage11.c11.release-probe)
+        // gets a bundle-scoped socket so it can never collide with prod's path.
+        if let bundleIdentifier,
+           !bundleIdentifier.isEmpty,
+           bundleIdentifier != prodBundleIdentifier {
+            return bundleScopedStableSocketPath(
+                bundleIdentifier: bundleIdentifier,
+                currentUserID: currentUserID
+            )
+        }
         return resolvedStableDefaultSocketPath(
             currentUserID: currentUserID,
             probeStableDefaultPathEntry: probeStableDefaultPathEntry
         )
+    }
+
+    static let prodBundleIdentifier = "com.stage11.c11"
+
+    /// A stable socket path scoped to a specific bundle id, living alongside the
+    /// prod socket in the shared `c11/` state dir but with a bundle-derived
+    /// filename so distinct non-prod channels never share a path.
+    static func bundleScopedStableSocketPath(
+        bundleIdentifier: String,
+        currentUserID: uid_t = getuid()
+    ) -> String {
+        let slug = bundleIdentifier
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: "-")
+        let fileName = slug.isEmpty ? "c11-\(currentUserID).sock" : "\(slug).sock"
+        return stableSocketDirectoryURL()?
+            .appendingPathComponent(fileName, isDirectory: false)
+            .path ?? "/tmp/\(fileName)"
     }
 
     static func userScopedStableSocketPath(currentUserID: uid_t = getuid()) -> String {
@@ -549,15 +583,47 @@ struct SocketControlSettings {
     static func shouldHonorSocketPathOverride(
         environment: [String: String],
         bundleIdentifier: String?,
-        isDebugBuild: Bool
+        isDebugBuild: Bool,
+        overridePath: String? = nil,
+        ownDefaultPath: String? = nil
     ) -> Bool {
         if isTruthy(environment[allowSocketPathOverrideKey]) {
             return true
         }
-        if isDebugLikeBundleIdentifier(bundleIdentifier) || isStagingBundleIdentifier(bundleIdentifier) {
-            return true
+        let honorsByChannel = isDebugLikeBundleIdentifier(bundleIdentifier)
+            || isStagingBundleIdentifier(bundleIdentifier)
+            || isDebugBuild
+        guard honorsByChannel else { return false }
+        // C11-155: c11 injects `CMUX_SOCKET_PATH=<its own socket>` into every
+        // terminal it spawns, so a debug/staging build launched from a *peer's*
+        // pane inherits the peer's socket path. Binding it would unlink the peer's
+        // live socket (the bind-time stomp). Refuse to adopt another channel's
+        // shared default that we merely inherited; a tag-specific override path
+        // (e.g. /tmp/c11-staging-my-tag.sock) is not a shared default, so the
+        // tagged-build workflow is unaffected. Same-channel collisions (an
+        // override equal to our own default) are still honored here and caught at
+        // bind time by the liveness probe.
+        if let overridePath,
+           overridePath != ownDefaultPath,
+           isForeignSharedDefaultSocketPath(overridePath) {
+            return false
         }
-        return isDebugBuild
+        return true
+    }
+
+    /// Well-known *shared* default socket paths each owned by a long-lived
+    /// channel. These are the paths most likely to be inherited via
+    /// `CMUX_SOCKET_PATH` from a peer c11; a different build must never bind one
+    /// (it would unlink the peer's live socket). Tag-specific paths are
+    /// deliberately absent — those are launch-script intent, not inheritance.
+    static func isForeignSharedDefaultSocketPath(_ path: String) -> Bool {
+        let shared: Set<String> = [
+            stableDefaultSocketPath,          // prod: ~/Library/Application Support/c11/c11.sock
+            "/tmp/c11-staging.sock",
+            "/tmp/c11-debug.sock",
+            "/tmp/c11-nightly.sock",
+        ]
+        return shared.contains(path)
     }
 
     static func isDebugLikeBundleIdentifier(_ bundleIdentifier: String?) -> Bool {

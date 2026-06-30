@@ -268,9 +268,56 @@ final class PiConversationTests: XCTestCase {
         }
     }
 
-    /// pi has no wrapper-claim rail in production, so this state is only
-    /// reachable via future wiring — construct the placeholder directly and
-    /// assert resume skips it.
+    /// The wrapper-claim time floor is what fixes the "pi fails, omp passes"
+    /// resume bug: the same two same-cwd candidates that go `.unknown` without
+    /// a claim (see `testPiAmbiguousCandidatesYieldUnknownAndSkip`) resolve to
+    /// the active session once the pi wrapper's claim floors out the stale,
+    /// pre-launch one — so resume fires `pi --session '<id>'` instead of
+    /// skipping. This is the runtime contract `Resources/bin/pi` relies on.
+    func testPiWrapperClaimFloorsStaleSessionToResolveActive() {
+        let surfaceId = UUID().uuidString
+        let now = Date()
+        // The pi wrapper claimed at launch; pi then created/continued the
+        // active session (mtime after the claim). An older session in the
+        // same cwd predates the claim.
+        let claimTime = now.addingTimeInterval(-60)
+        let scrapers = ConversationScraperRegistry(scrapers: [
+            MockScraper(kind: "pi", preset: [
+                candidate(piUUID, mtime: now),                            // active (post-claim)
+                candidate(piUUID2, mtime: now.addingTimeInterval(-3600))  // stale (pre-claim)
+            ])
+        ])
+        let pipeline = ScrapeCapturePipeline(scrapers: scrapers, strategies: .v1)
+        let contexts = [ScrapeCaptureContext(surfaceId: surfaceId, kind: "pi", cwd: "/work/proj")]
+        let claim = ConversationRef(
+            kind: "pi",
+            id: "wrapper-claim:\(surfaceId)",
+            placeholder: true,
+            cwd: "/work/proj",
+            capturedAt: claimTime,
+            capturedVia: .wrapperClaim,
+            state: .alive
+        )
+        let existing = [surfaceId: SurfaceConversations(active: claim)]
+
+        let captured = pipeline.captureRefs(contexts: contexts, existing: existing)
+        XCTAssertEqual(captured.count, 1)
+        let ref = captured[0].ref
+        XCTAssertEqual(ref.state, .alive,
+                       "claim time floors out the stale session, leaving one → resolves instead of .unknown")
+        XCTAssertEqual(ref.id, piUUID)
+        XCTAssertEqual(ref.capturedVia, .scrape)
+
+        guard case let .typeCommand(text, submit) = PiStrategy().resume(ref: ref) else {
+            return XCTFail("expected .typeCommand, got skip")
+        }
+        XCTAssertEqual(text, "pi --session '\(piUUID)'")
+        XCTAssertTrue(submit)
+    }
+
+    /// While only the wrapper-claim placeholder has been seen (the scrape has
+    /// not yet resolved the real id), resume must skip — never type a
+    /// placeholder id at the prompt.
     func testPiPlaceholderRefSkips() {
         let ref = ConversationRef(
             kind: "pi",

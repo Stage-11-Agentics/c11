@@ -263,6 +263,37 @@ final class OmpConversationTests: XCTestCase {
         XCTAssertEqual(reason, "ambiguous")
     }
 
+    /// The wrapper-claim time floor disambiguates the common "stale sessions
+    /// accumulated in a cwd" case (the latent bug pi hit). At cold restore
+    /// (`lastActivityTimestamp: nil`) the claim is the only floor: a session
+    /// older than the launch claim is dropped, so the single post-claim active
+    /// session resolves to `.alive` and resume fires — instead of `.unknown`.
+    func testOmpWrapperClaimFloorsStaleSessionToResolveActive() {
+        let strategy = OmpStrategy()
+        let now = Date()
+        let claimTime = now.addingTimeInterval(-60)
+        let inputs = ConversationStrategyInputs(
+            surfaceId: "surface:1",
+            cwd: "/work/proj",
+            lastActivityTimestamp: nil,
+            wrapperClaim: ConversationRef(
+                kind: "omp", id: "placeholder", placeholder: true,
+                cwd: "/work/proj", capturedAt: claimTime,
+                capturedVia: .wrapperClaim, state: .alive),
+            scrapeCandidates: [
+                candidate(id: v7Id, mtime: now, cwd: "/work/proj"),                            // active (post-claim)
+                candidate(id: v7Id2, mtime: now.addingTimeInterval(-3600), cwd: "/work/proj")  // stale (pre-claim)
+            ])
+        let ref = strategy.capture(inputs: inputs)
+        XCTAssertEqual(ref?.state, .alive, "claim floors the stale session → resolves instead of .unknown")
+        XCTAssertEqual(ref?.id, v7Id)
+        XCTAssertFalse(ref?.placeholder ?? true)
+        guard case .typeCommand(let text, _) = strategy.resume(ref: ref!) else {
+            XCTFail("expected typeCommand"); return
+        }
+        XCTAssertEqual(text, "omp --resume='\(v7Id)'")
+    }
+
     func testOmpResumeSkipsPlaceholder() {
         let strategy = OmpStrategy()
         let ref = ConversationRef(

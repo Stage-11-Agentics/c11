@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# c11 omp wrapper - session-resume capture for oh-my-pi (omp).
+#
+# When running inside a c11 terminal (CMUX_SURFACE_ID set + socket live),
+# this wrapper:
+#   1. declares the surface as terminal_type=omp (sidebar chip / role hint),
+#      and
+#   2. wrapper-claims a placeholder ConversationRef so c11's conversation
+#      store records a post-launch claim time before omp creates its
+#      session file. The OmpStrategy's pull-scrape on next workspace open
+#      then keeps only candidates whose mtime is >= that claim time, which
+#      floors out the older sessions that accumulate in a cwd's slug dir
+#      (`~/.omp/agent/sessions/<slug>/`) so exact resume resolves *this*
+#      pane's session instead of going ambiguous.
+#
+# Outside c11 (or when the socket is unreachable), it passes through to the
+# real omp binary unchanged.
+#
+# === Why this exists (the "pi fails, omp passes" resume bug) =================
+# omp resumes scrape-primary, exactly like pi: c11 resolves the real session
+# id at restore time from the cwd's slug dir, and omp exposes no SessionStart
+# hook to learn the id while it runs. Without a wrapper-claim the restore
+# scrape has no time floor, so a cwd with more than one omp session resolves
+# to state=unknown and resume SKIPS. omp happened to pass the staging smoke
+# because its slug dirs usually hold one session, but it carries the same
+# latent bug pi hit; this wrapper gives omp the codex-style time floor too.
+#
+# See `Resources/bin/claude` for the reference implementation of the
+# session-resume wrapper pattern and the four constraints all wrappers
+# must honour.
+
+set -uo pipefail
+
+# Find the real omp binary, skipping our own directory.
+find_real_omp() {
+    local self_dir
+    self_dir="$(cd "$(dirname "$0")" && pwd)"
+    local IFS=:
+    for d in $PATH; do
+        [[ "$d" == "$self_dir" ]] && continue
+        [[ -x "$d/omp" ]] && printf '%s' "$d/omp" && return 0
+    done
+    return 1
+}
+
+# Return 0 only when CMUX_SOCKET_PATH points to a live c11 socket.
+c11_socket_available() {
+    local socket="${CMUX_SOCKET_PATH:-}"
+    [[ -n "$socket" && -S "$socket" ]] || return 1
+
+    local self_dir c11_bin
+    self_dir="$(cd "$(dirname "$0")" && pwd)"
+    c11_bin="$self_dir/c11"
+    [[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
+    [[ -n "$c11_bin" ]] || return 1
+
+    # Bounded check so omp startup isn't blocked behind the CLI default
+    # timeout when the socket is stale or hung.
+    CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+        "$c11_bin" --socket "$socket" ping >/dev/null 2>&1
+}
+
+# Pass through if not in a c11 terminal, hooks are disabled, or the socket
+# is unavailable.
+IN_C11=0
+if [[ -n "${CMUX_SURFACE_ID:-}" ]]; then
+    IN_C11=1
+fi
+
+if [[ "$IN_C11" == "0" || "${CMUX_OMP_HOOKS_DISABLED:-}" == "1" ]] || ! c11_socket_available; then
+    REAL_OMP="$(find_real_omp)" || { echo "Error: omp not found in PATH" >&2; exit 127; }
+    exec "$REAL_OMP" "$@"
+fi
+
+REAL_OMP="$(find_real_omp)" || { echo "Error: omp not found in PATH" >&2; exit 127; }
+
+# Pass through invocations that are not interactive sessions so they don't
+# flip the surface's terminal_type to "omp" or mint a bogus claim. omp's
+# management/auxiliary subcommands and its non-interactive flags
+# (-p/--print, --export, --list-models, --help, --version) all exit
+# without an interactive session.
+case "${1:-}" in
+    install|remove|uninstall|update|list|config|join|dry-balance|tiny-models|help|--help|-h|--version|-v)
+        exec "$REAL_OMP" "$@"
+        ;;
+esac
+for arg in "$@"; do
+    case "$arg" in
+        -p|--print|--export|--list-models)
+            exec "$REAL_OMP" "$@"
+            ;;
+    esac
+done
+
+# Resolve the c11 binary (bundle-relative first, fall back to PATH so a
+# misconfigured bundle still works in dev builds).
+self_dir="$(cd "$(dirname "$0")" && pwd)"
+c11_bin="$self_dir/c11"
+[[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
+
+# (1) Mark the surface as terminal_type=omp (sidebar chip / role hint).
+# (2) Wrapper-claim a placeholder ConversationRef so the conversation store
+#     records a post-launch claim time. Idempotent: a second invocation in
+#     the same surface cannot regress a real id back to a placeholder
+#     (ConversationStore.claim never displaces a non-wrapperClaim source).
+#
+# Both run in the background so omp startup latency is unaffected; `disown`
+# so a stale write can't keep the wrapper process alive after `exec` (moot
+# since exec replaces this process anyway, but defensive).
+if [[ -n "$c11_bin" ]]; then
+    (
+        CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+            "$c11_bin" --socket "${CMUX_SOCKET_PATH}" set-agent --type omp \
+            >/dev/null 2>&1
+    ) &
+    disown 2>/dev/null || true
+
+    (
+        CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+            "$c11_bin" --socket "${CMUX_SOCKET_PATH}" \
+            conversation claim --kind omp --cwd "$PWD" \
+            >/dev/null 2>&1
+    ) &
+    disown 2>/dev/null || true
+fi
+
+exec "$REAL_OMP" "$@"

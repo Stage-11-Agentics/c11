@@ -1,12 +1,17 @@
 import Foundation
 
 /// Scrape-primary strategy for pi. pi exposes no SessionStart hook and no
-/// session-id injection flag, so the wrapper never mints a placeholder; the
-/// `PiScraper` resolves the real id from `~/.pi/agent/sessions/**/<ts>_<uuid>.jsonl`
+/// session-id injection flag, so the c11 pi wrapper (`Resources/bin/pi`)
+/// mints a placeholder wrapper-claim at launch instead; the `PiScraper`
+/// resolves the real id from `~/.pi/agent/sessions/**/<ts>_<uuid>.jsonl`
 /// filtered by cwd, mtime ≥ wrapper-claim time, and mtime ≥ surface
-/// `lastActivityTimestamp`. (In production pi has no claim rail, so the
-/// empty-candidates branch returns the absent `wrapperClaim` — i.e. `nil` —
-/// and capture is driven entirely by the scrape rail.)
+/// `lastActivityTimestamp`. The wrapper-claim time floor is what
+/// disambiguates the several sessions a heavily-used cwd accumulates — a
+/// cwd with more than one pi session would otherwise go `.unknown` and skip
+/// resume entirely (the "pi fails, omp passes" bug). Without the wrapper
+/// (socket down, or pi launched outside c11) there is no claim, so the
+/// empty-candidates branch returns the absent `wrapperClaim` — `nil` — and
+/// capture falls back to cwd + mtime scrape alone.
 ///
 /// Ambiguity policy (mirrors `CodexStrategy`): when more than one candidate
 /// matches the surface filter, return ref with `state = .unknown`,

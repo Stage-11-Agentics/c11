@@ -6,6 +6,10 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+### Fixed
+
+- **Pi and oh-my-pi resume no longer skip when a working directory holds more than one session.** Pi/omp resolve their session id by scraping the cwd's session store at restore time, but with no launch-time claim the scrape had no way to tell a heavily-used cwd's accumulated sessions apart — so it returned "ambiguous" and the pane came up fresh instead of resuming (the v0.55 staging "Pi did not resume" report). New PATH-scoped `pi` and `omp` wrappers mint a wrapper-claim at launch (mirroring the codex wrapper), giving the restore scrape a time floor that narrows past the stale sessions to this pane's own.
+
 ## [0.54.0] - 2026-06-29
 
 Feature release. Headline: **exact-session conversation resume arrives for Pi, oh-my-pi, and opencode — when c11 restores a workspace, these agents reconnect to the exact session they were in before the restart, not a fresh shell.** Alongside it: Pi and oh-my-pi become first-class agents via a new data-driven registry, splits get size-aware, the tab bar collapses responsively when space runs short, four new chrome themes ship, and surfaces now export the `C11_*` environment namespace the skill documents.

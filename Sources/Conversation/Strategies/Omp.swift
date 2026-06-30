@@ -1,10 +1,14 @@
 import Foundation
 
 /// Pull-primary strategy for oh-my-pi (`omp`). Like codex, omp exposes no
-/// session-id injection flag and no SessionStart hook; the scraper resolves
-/// the real id from `~/.omp/agent/sessions/<cwd-slug>/<ts>_<uuid>.jsonl`
-/// (id = the trailing UUIDv7), filtered by cwd, mtime ≥ wrapper-claim time,
-/// and mtime ≥ surface `lastActivityTimestamp`.
+/// session-id injection flag and no SessionStart hook, so the c11 omp wrapper
+/// (`Resources/bin/omp`) mints a placeholder wrapper-claim at launch; the
+/// scraper resolves the real id from
+/// `~/.omp/agent/sessions/<cwd-slug>/<ts>_<uuid>.jsonl` (id = the trailing
+/// UUIDv7), filtered by cwd, mtime ≥ wrapper-claim time, and mtime ≥ surface
+/// `lastActivityTimestamp`. The claim time floors out the older sessions a
+/// cwd accumulates so resume resolves this pane's session instead of going
+/// `.unknown` (the same latent bug pi hit; see `Resources/bin/omp`).
 ///
 /// Ambiguity policy (mirrors `CodexStrategy`): when more than one candidate
 /// matches the surface filter, return a ref with `state = .unknown`,

@@ -10805,6 +10805,18 @@ private struct WorkspaceArrowButton: View {
                         stopRepeat()
                     }
             )
+            .onChange(of: isDisabled) {
+                // The press action mutates the selected workspace, which can rebuild
+                // this view mid-gesture and cause DragGesture.onEnded to be dropped —
+                // leaving `isPressed` stuck true and the auto-repeat Timer orphaned, so
+                // the sidebar keeps walking selection back to the first/last workspace.
+                // Reaching the first/last workspace disables the button; use that as a
+                // reliable signal to release the latch and cancel the repeat.
+                if isDisabled {
+                    isPressed = false
+                    stopRepeat()
+                }
+            }
             .accessibilityLabel(accessibilityText)
             .accessibilityAddTraits(isDisabled ? .isStaticText : .isButton)
             .safeHelp(isDisabled ? "" : tooltipText)

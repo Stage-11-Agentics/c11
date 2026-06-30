@@ -8343,9 +8343,14 @@ struct CMUXCLI {
               --no-layout                   Suppress the floor plan unconditionally
               --canvas-cols <N>             Override the floor-plan canvas width (default: auto, min 40)
               --json                        Structured JSON output (layout in `layout`/`content_area` keys)
+              --report                      Human-readable Markdown snapshot: layout + each surface's
+                                            manifest (title, agent, status, description). Alias: --markdown.
+                                            Defaults to every window/workspace; narrow with --window/--workspace.
+              --out <path>                  With --report, write the Markdown to a file instead of stdout
 
             Default scope: the caller's current workspace. Use --window for the
             pre-M8 behavior (current window, all workspaces); --all for every window.
+            (`--report` defaults to --all unless you pass an explicit scope.)
 
             Note: `layout.split_path` is recomputed on every call from the live
             split tree — it is NOT a stable identifier. A pane's split_path will
@@ -8368,6 +8373,8 @@ struct CMUXCLI {
               c11 tree --all
               c11 tree --workspace workspace:2
               c11 --json tree --all
+              c11 tree --report
+              c11 tree --report --out ~/c11-fleet-$(date +%F).md
             """
         case "focus-pane":
             return """
@@ -12316,6 +12323,11 @@ struct CMUXCLI {
         /// Floor plan: nil = default per scope, true = force on, false = force off.
         let layoutOverride: Bool?
         let canvasColsOverride: Int?
+        /// `--report`/`--markdown`: emit a human-readable Markdown fleet snapshot
+        /// (layout + per-surface manifest) instead of the ASCII tree.
+        let report: Bool
+        /// `--out <path>`: write the report to a file instead of stdout.
+        let outPath: String?
     }
 
     private struct TreePath {
@@ -12333,11 +12345,199 @@ struct CMUXCLI {
     ) throws {
         let options = try parseTreeCommandOptions(commandArgs)
         let payload = try buildTreePayload(options: options, client: client)
+        if options.report {
+            try emitFleetReport(payload: payload, options: options, client: client)
+            return
+        }
         if jsonOutput || options.jsonOutput {
             print(jsonString(formatIDs(payload, mode: idFormat)))
         } else {
             print(renderTreeText(payload: payload, options: options, idFormat: idFormat))
         }
+    }
+
+    // MARK: - Fleet report (`c11 tree --report`)
+
+    /// Build a human-readable Markdown snapshot of the tree payload, enriched
+    /// with each surface's manifest, and either print it or write it to a file.
+    private func emitFleetReport(
+        payload: [String: Any],
+        options: TreeCommandOptions,
+        client: SocketClient
+    ) throws {
+        let metadata = fetchFleetMetadata(payload: payload, client: client)
+        let markdown = renderFleetReport(
+            payload: payload,
+            metadata: metadata,
+            generatedAt: ISO8601DateFormatter().string(from: Date())
+        )
+        guard let outRaw = options.outPath else {
+            print(markdown)
+            return
+        }
+        let resolved = resolvePath(outRaw)
+        do {
+            try FileManager.default.createDirectory(
+                at: URL(fileURLWithPath: resolved).deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try Data(markdown.utf8).write(to: URL(fileURLWithPath: resolved))
+        } catch {
+            throw CLIError(message: "tree --report: failed to write \(resolved): \(error)")
+        }
+        print("OK fleet-report path=\(resolved) bytes=\(markdown.utf8.count)")
+    }
+
+    /// One `surface.get_metadata` call per surface in the payload, keyed by the
+    /// surface's short ref. Failures degrade to an empty manifest for that
+    /// surface rather than aborting the whole report.
+    private func fetchFleetMetadata(
+        payload: [String: Any],
+        client: SocketClient
+    ) -> [String: [String: Any]] {
+        var out: [String: [String: Any]] = [:]
+        for win in (payload["windows"] as? [[String: Any]] ?? []) {
+            for ws in (win["workspaces"] as? [[String: Any]] ?? []) {
+                let wsRef = ws["ref"] as? String
+                for pane in (ws["panes"] as? [[String: Any]] ?? []) {
+                    for surf in (pane["surfaces"] as? [[String: Any]] ?? []) {
+                        guard let sRef = surf["ref"] as? String else { continue }
+                        var params: [String: Any] = ["surface_id": sRef]
+                        if let wsRef { params["workspace_id"] = wsRef }
+                        if let resp = try? client.sendV2(method: "surface.get_metadata", params: params),
+                           let md = resp["metadata"] as? [String: Any] {
+                            out[sRef] = md
+                        }
+                    }
+                }
+            }
+        }
+        return out
+    }
+
+    private func renderFleetReport(
+        payload: [String: Any],
+        metadata: [String: [String: Any]],
+        generatedAt: String
+    ) -> String {
+        let windows = payload["windows"] as? [[String: Any]] ?? []
+        var wsCount = 0
+        var surfCount = 0
+        for win in windows {
+            let wss = win["workspaces"] as? [[String: Any]] ?? []
+            wsCount += wss.count
+            for ws in wss {
+                for pane in (ws["panes"] as? [[String: Any]] ?? []) {
+                    surfCount += (pane["surfaces"] as? [[String: Any]])?.count ?? 0
+                }
+            }
+        }
+
+        var out = "# c11 Fleet Snapshot\n\n"
+        out += "_Generated \(generatedAt) · "
+        out += "\(windows.count) \(plural(windows.count, "window")) · "
+        out += "\(wsCount) \(plural(wsCount, "workspace")) · "
+        out += "\(surfCount) \(plural(surfCount, "surface"))_\n"
+
+        var summaryRows: [String] = []
+        for (wi, win) in windows.enumerated() {
+            let wss = win["workspaces"] as? [[String: Any]] ?? []
+            out += "\n## Window \(wi + 1)\n"
+            for ws in wss {
+                let wsTitle = (ws["title"] as? String) ?? "(untitled)"
+                let wsRef = (ws["ref"] as? String) ?? "?"
+                let panes = ws["panes"] as? [[String: Any]] ?? []
+                let sCount = panes.reduce(0) { $0 + (($1["surfaces"] as? [[String: Any]])?.count ?? 0) }
+                out += "\n### \(wsTitle) (\(wsRef)) — "
+                out += "\(panes.count) \(plural(panes.count, "pane")), "
+                out += "\(sCount) \(plural(sCount, "surface"))\n"
+                summaryRows.append("| \(wi + 1) | \(mdCell(wsTitle)) | \(panes.count) | \(sCount) |")
+                for pane in panes {
+                    let pRef = (pane["ref"] as? String) ?? "?"
+                    let pos = panePositionLabel(pane)
+                    out += "\n**Pane** \(pRef)\(pos.isEmpty ? "" : " — \(pos)")\n"
+                    for surf in (pane["surfaces"] as? [[String: Any]] ?? []) {
+                        out += renderSurfaceLine(surf, metadata: metadata)
+                    }
+                }
+            }
+        }
+
+        out += "\n## Summary\n\n"
+        out += "| Window | Workspace | Panes | Surfaces |\n"
+        out += "|---|---|---|---|\n"
+        out += summaryRows.joined(separator: "\n")
+        out += "\n"
+        return out
+    }
+
+    private func renderSurfaceLine(
+        _ surf: [String: Any],
+        metadata: [String: [String: Any]]
+    ) -> String {
+        let sRef = (surf["ref"] as? String) ?? "?"
+        let md = metadata[sRef] ?? [:]
+        // Prefer the canonical manifest title; the tree's title can be a stale
+        // auto-title.
+        let title = (md["title"] as? String) ?? (surf["title"] as? String) ?? "(untitled)"
+        let kind = (surf["type"] as? String) ?? "terminal"
+
+        var chips: [String] = []
+        if let t = md["terminal_type"] as? String, !t.isEmpty { chips.append(t) }
+        if let m = md["model"] as? String, !m.isEmpty { chips.append(m) }
+        if let st = (md["status"] as? String) ?? (md["lifecycle_state"] as? String), !st.isEmpty {
+            chips.append(st)
+        }
+        if let role = md["role"] as? String, !role.isEmpty { chips.append("role=\(role)") }
+
+        var marker = ""
+        if (surf["here"] as? Bool) == true { marker = " ← here" }
+        else if (surf["focused"] as? Bool) == true { marker = " ← focused" }
+
+        var line = "- **\(mdInline(title))** (\(sRef))"
+        if kind != "terminal" { line += " · _\(kind)_" }
+        if !chips.isEmpty { line += " — `\(chips.joined(separator: " · "))`" }
+        line += marker + "\n"
+
+        if kind == "browser", let url = surf["url"] as? String, !url.isEmpty {
+            line += "  - \(url)\n"
+        }
+        if let desc = md["description"] as? String, !desc.isEmpty {
+            line += "  - \(desc.replacingOccurrences(of: "\n", with: " "))\n"
+        }
+        if let addr = md["mailbox.address"] as? String, !addr.isEmpty {
+            line += "  - mailbox: `\(addr)`\n"
+        }
+        return line
+    }
+
+    /// `H a–b% · V c–d%` derived from the pane's percent rect; empty when the
+    /// layout block is absent.
+    private func panePositionLabel(_ pane: [String: Any]) -> String {
+        guard let layout = pane["layout"] as? [String: Any],
+              let pct = layout["percent"] as? [String: Any],
+              let h = pct["H"] as? [Any], h.count == 2,
+              let v = pct["V"] as? [Any], v.count == 2 else { return "" }
+        func pctInt(_ x: Any) -> Int {
+            let d = (x as? Double) ?? Double("\(x)") ?? 0
+            return Int((d * 100).rounded())
+        }
+        return "H \(pctInt(h[0]))–\(pctInt(h[1]))% · V \(pctInt(v[0]))–\(pctInt(v[1]))%"
+    }
+
+    private func plural(_ n: Int, _ word: String) -> String {
+        n == 1 ? word : "\(word)s"
+    }
+
+    /// Escape a value for a Markdown table cell (pipes + newlines).
+    private func mdCell(_ s: String) -> String {
+        s.replacingOccurrences(of: "|", with: "\\|")
+            .replacingOccurrences(of: "\n", with: " ")
+    }
+
+    /// Escape a value used inside inline emphasis (`**…**`).
+    private func mdInline(_ s: String) -> String {
+        s.replacingOccurrences(of: "\n", with: " ")
     }
 
     private func parseTreeCommandOptions(_ args: [String]) throws -> TreeCommandOptions {
@@ -12351,13 +12551,19 @@ struct CMUXCLI {
             throw CLIError(message: "tree requires --canvas-cols <N>")
         }
 
+        let (outOpt, rem2) = parseOption(rem1, name: "--out")
+        if rem2.contains("--out") {
+            throw CLIError(message: "tree requires --out <path>")
+        }
+
         var includeAll = false
         var includeWindow = false
         var jsonOutput = false
         var layoutForceOn = false
         var layoutForceOff = false
+        var report = false
         var remaining: [String] = []
-        for arg in rem1 {
+        for arg in rem2 {
             switch arg {
             case "--all":
                 includeAll = true
@@ -12369,13 +12575,15 @@ struct CMUXCLI {
                 layoutForceOff = true
             case "--json":
                 jsonOutput = true
+            case "--report", "--markdown":
+                report = true
             default:
                 remaining.append(arg)
             }
         }
 
         if let unknown = remaining.first(where: { $0.hasPrefix("--") }) {
-            throw CLIError(message: "tree: unknown flag '\(unknown)'. Known flags: --all --window --workspace <id|ref|index> --layout --no-layout --canvas-cols <N> --json")
+            throw CLIError(message: "tree: unknown flag '\(unknown)'. Known flags: --all --window --workspace <id|ref|index> --layout --no-layout --canvas-cols <N> --json --report [--out <path>]")
         }
         if let extra = remaining.first {
             throw CLIError(message: "tree: unexpected argument '\(extra)'")
@@ -12404,6 +12612,10 @@ struct CMUXCLI {
             scope = .all
         } else if includeWindow {
             scope = .window
+        } else if report && workspaceOpt == nil {
+            // A fleet report is cross-workspace by default; narrow it with an
+            // explicit --window or --workspace.
+            scope = .all
         } else {
             // Default and --workspace both produce a single workspace in the response.
             scope = .workspace
@@ -12440,7 +12652,9 @@ struct CMUXCLI {
             workspaceHandle: workspaceOpt,
             jsonOutput: jsonOutput,
             layoutOverride: layoutOverride,
-            canvasColsOverride: canvasOverride
+            canvasColsOverride: canvasOverride,
+            report: report,
+            outPath: outOpt
         )
     }
 

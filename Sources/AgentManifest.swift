@@ -230,9 +230,11 @@ struct AgentRegistry: Sendable {
             sfSymbolFallback: "p.circle",
             // `pi -c` continues the most recent session in cwd (best-effort
             // phase-1 fallback, same shape as codex --last). Exact-session
-            // resume is handled by the scrape rail: `PiScraper` +
-            // `PiStrategy` resolve a specific `~/.pi/agent/sessions/` id and
-            // type `pi --session '<id>'`.
+            // resume is handled by the scrape rail: the pi wrapper
+            // (`Resources/bin/pi`) mints a wrapper-claim whose time floor lets
+            // `PiScraper` + `PiStrategy` resolve a specific
+            // `~/.pi/agent/sessions/` id and type `pi --session '<id>'` even
+            // when the cwd holds several sessions.
             resume: .fixed("pi -c\n"),
             isCanonicalTerminalType: true,
             hasConversationStrategy: true
@@ -247,12 +249,13 @@ struct AgentRegistry: Sendable {
             detectNodeArgsSubstrings: ["@oh-my-pi/"],
             iconAsset: nil,
             sfSymbolFallback: "o.circle",
-            // Exact-session resume via the conversation rail: `OmpScraper`
-            // (JSONL metadata over ~/.omp/agent/sessions/) feeds `OmpStrategy`,
-            // which emits `omp --resume='<id>'`. No fixed-command fallback
-            // exists for the legacy `resume` path (the TUI offers `/resume`
-            // only), so `resume` stays `.none` while the strategy owns exact
-            // resume — same split as the codex row.
+            // Exact-session resume via the conversation rail: the omp wrapper
+            // (`Resources/bin/omp`) mints a wrapper-claim whose time floor lets
+            // `OmpScraper` (JSONL metadata over ~/.omp/agent/sessions/) feed
+            // `OmpStrategy`, which emits `omp --resume='<id>'`. No fixed-command
+            // fallback exists for the legacy `resume` path (the TUI offers
+            // `/resume` only), so `resume` stays `.none` while the strategy owns
+            // exact resume — same split as the codex row.
             resume: .none,
             isCanonicalTerminalType: true,
             hasConversationStrategy: true

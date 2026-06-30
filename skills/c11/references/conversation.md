@@ -68,6 +68,8 @@ Reconciliation rule: latest `capturedAt` wins; on close timestamps, source prior
 | `codex` | Snapshot-only in v1 | Wrapper-claim placeholder → snapshot persists the captured ref → restore consumes it. **Pull-scrape disambiguation lands in v1.1** (see "v1 scope" below). | `codex resume <id>` (specific id; never `--last`) |
 | `opencode` | Fresh-launch only | Wrapper-claim placeholder | `opencode` (process launch) — `.skip` for placeholders |
 | `kimi` | Fresh-launch only | Wrapper-claim placeholder | `kimi` (process launch) — `.skip` for placeholders |
+| `pi` | Exact (scrape) | Wrapper-claim placeholder → `PiScraper` resolves the real id from the cwd slug dir, claim-time floor narrowing past stale sessions. | `pi --session '<id>'` (specific id) |
+| `omp` | Exact (scrape) | Wrapper-claim placeholder → `OmpScraper` resolves the real id from the cwd slug dir, claim-time floor narrowing past stale sessions. | `omp --resume='<id>'` (specific id) |
 
 ### v1 scope and v1.1 follow-ups
 
@@ -92,7 +94,7 @@ The advisory is surfaced via `c11 conversation get`'s `diagnostic_reason` field 
 ## Wrapper-claim flow (TUI integrators)
 
 ```bash
-# Pseudo-shape; real wrappers stay bash. See Resources/bin/{claude,codex}.
+# Pseudo-shape; real wrappers stay bash. See Resources/bin/{claude,codex,pi,omp}.
 1. Detect c11 environment (CMUX_SURFACE_ID + live socket). Pass through if absent.
 2. c11 conversation claim --kind <my-kind> --cwd "$PWD" >/dev/null 2>&1 &
 3. (For TUIs with hooks: inject the necessary flags so hooks fire `c11 conversation push`.)

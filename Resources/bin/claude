@@ -194,7 +194,7 @@ c11_conversation_claim_bg() {
     ) &
     disown 2>/dev/null || true
 }
-[[ -n "$cmux_set_agent_bin" ]] && c11_conversation_claim_bg "$cmux_set_agent_bin"
+[[ -n "$C11_SET_AGENT_BIN" ]] && c11_conversation_claim_bg "$C11_SET_AGENT_BIN"
 
 # Build hooks settings JSON.
 # Claude Code merges --settings additively with the user's own settings.json.

@@ -15604,6 +15604,18 @@ struct CMUXCLI {
     }
 
     private func resolveWorkspaceIdForClaudeHook(_ raw: String?, client: SocketClient) throws -> String {
+        // C11-156: when the hook carries an explicit workspace UUID (the common
+        // case — c11 exports CMUX_WORKSPACE_ID into every hook process), trust
+        // it directly. `resolveWorkspaceId` short-circuits a UUID with zero
+        // socket calls, but the existence-probe below added a main-thread
+        // `surface.list` round-trip to EVERY hook invocation — a dominant
+        // contributor to the hook-flood main-thread hang. A stale UUID is
+        // harmless: downstream status/notify commands no-op on a missing
+        // workspace, and falling back to the *current* focused workspace would
+        // wrongly retarget another workspace's sidebar.
+        if let raw, !raw.isEmpty, isUUID(raw) {
+            return raw
+        }
         if let raw, !raw.isEmpty, let candidate = try? resolveWorkspaceId(raw, client: client) {
             let probe = try? client.sendV2(method: "surface.list", params: ["workspace_id": candidate])
             if probe != nil {

@@ -384,13 +384,17 @@ extension Workspace {
             commands.append((panelId: panelSnapshot.id, command: command))
         }
         guard !commands.isEmpty else { return }
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + SessionPersistencePolicy.agentRestartDelay
-        ) { [weak self] in
-            guard let self else { return }
-            for (panelId, command) in commands {
-                guard let terminalPanel = self.panels[panelId] as? TerminalPanel else {
-                    continue
+        // C11-156: stagger resumes (see scheduleAgentRestart) so the legacy
+        // path doesn't herd either.
+        let base = SessionPersistencePolicy.agentRestartDelay
+        let stagger = SessionPersistencePolicy.agentRestartStagger
+        for (index, (panelId, command)) in commands.enumerated() {
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + base + Double(index) * stagger
+            ) { [weak self] in
+                guard let self,
+                      let terminalPanel = self.panels[panelId] as? TerminalPanel else {
+                    return
                 }
                 TextBoxSubmit.send(command, via: terminalPanel.surface)
             }
@@ -509,12 +513,17 @@ extension Workspace {
     ) {
         let plans = pendingRestartPlans(from: snapshot, registry: registry)
         guard !plans.isEmpty else { return }
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + SessionPersistencePolicy.agentRestartDelay
-        ) { [weak self] in
-            guard let self else { return }
-            for (panelId, action) in plans {
-                self.executeResumeAction(action, on: panelId)
+        // C11-156: stagger the resumes so N agents don't all boot in the same
+        // main-queue turn and fire their SessionStart hooks at once (the
+        // mass-resume thundering herd that beachballs the app). Each agent
+        // resumes one `agentRestartStagger` after the previous.
+        let base = SessionPersistencePolicy.agentRestartDelay
+        let stagger = SessionPersistencePolicy.agentRestartStagger
+        for (index, (panelId, action)) in plans.enumerated() {
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + base + Double(index) * stagger
+            ) { [weak self] in
+                self?.executeResumeAction(action, on: panelId)
             }
         }
     }

@@ -6,6 +6,24 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.55.0] - 2026-06-30
+
+Tooling + hardening release. Headline: **`c11 tree --report` — a one-command, human-readable Markdown snapshot of your whole fleet** (every workspace's layout plus each surface's title, agent, live status, and description), built for "save the state before I close c11" handoffs. Alongside it: a workspace-navigation latch fix and socket-collision hardening so parallel c11 instances don't stomp each other's IPC socket.
+
+### Added
+
+- **`c11 tree --report` — human-readable fleet snapshot.** A new flag on `tree` (alias `--markdown`) emits a Markdown report of what every agent is doing: per workspace, the pane layout and, for each surface, its title, agent type + model, live status/role, description, mailbox address, and browser URL — closed by a summary table. Unlike `workspace export-blueprint` (a layout template that drops live metadata), this is the legible status artifact for handoffs. `--out <path>` writes to a file; scope with `--window`/`--workspace`. ([#263](https://github.com/Stage-11-Agentics/c11/pull/263)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+### Fixed
+
+- **Workspace Previous/Next navigation no longer latches on the first workspace.** A selection latch could trap navigation on the first workspace; the Prev/Next controls release correctly now. ([#269](https://github.com/Stage-11-Agentics/c11/pull/269)) — thanks [@ajroberts0417](https://github.com/ajroberts0417)!
+- **Parallel c11 instances no longer stomp each other's IPC socket.** The control socket is namespaced per bundle, so a second instance binding its socket can't unlink a live peer's out from under it. (C11-155) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+### Thanks to 2 contributors!
+
+- [@ajroberts0417](https://github.com/ajroberts0417)
+- [@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [0.54.0] - 2026-06-29
 
 Feature release. Headline: **exact-session conversation resume arrives for Pi, oh-my-pi, and opencode — when c11 restores a workspace, these agents reconnect to the exact session they were in before the restart, not a fresh shell.** Alongside it: Pi and oh-my-pi become first-class agents via a new data-driven registry, splits get size-aware, the tab bar collapses responsively when space runs short, four new chrome themes ship, and surfaces now export the `C11_*` environment namespace the skill documents.

@@ -232,6 +232,9 @@ class TerminalController {
         case success(path: String)
         case pathTooLong(path: String)
         case failure(path: String, stage: String, errnoCode: Int32)
+        /// A live peer is already accepting connections on this path; refusing to
+        /// unlink it (C11-155). The caller must rebind elsewhere, never stomp.
+        case peerAlive(path: String)
     }
 
     private static let focusIntentV1Commands: Set<String> = [
@@ -957,9 +960,60 @@ class TerminalController {
         }
     }
 
+    /// True when `path` is a unix socket with a process *currently accepting*
+    /// connections on it. A successful connect proves a live acceptor;
+    /// ECONNREFUSED / ENOENT prove a stale or absent socket we may safely replace.
+    /// This is the C11-155 guard that prevents a build from unlinking a live
+    /// peer's socket at bind time.
+    nonisolated static func socketHasLiveListener(path: String) -> Bool {
+        var st = stat()
+        guard lstat(path, &st) == 0,
+              (st.st_mode & mode_t(S_IFMT)) == mode_t(S_IFSOCK) else {
+            return false
+        }
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        configureSocketTimeouts(fd, timeout: 0.25)
+        guard var addr = unixSocketAddress(path: path) else { return false }
+        let result = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
+                Darwin.connect(fd, sockaddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        return result == 0
+    }
+
+    /// A unique, build-local socket path to bind when the requested path is held
+    /// by a live peer (C11-155). The shared prod default falls back to the
+    /// user-scoped stable path; any other path gets a pid-stamped sibling so it
+    /// is guaranteed not to collide.
+    nonisolated static func safeAlternateSocketPath(
+        afterPeerAliveAt requestedPath: String,
+        currentUserID: uid_t = getuid(),
+        processIdentifier: pid_t = getpid()
+    ) -> String {
+        if requestedPath == SocketControlSettings.stableDefaultSocketPath {
+            return SocketControlSettings.userScopedStableSocketPath(currentUserID: currentUserID)
+        }
+        let url = URL(fileURLWithPath: requestedPath)
+        let ext = url.pathExtension
+        let base = url.deletingPathExtension().lastPathComponent
+        let directory = url.deletingLastPathComponent()
+        let fileName = ext.isEmpty
+            ? "\(base)-\(processIdentifier)"
+            : "\(base)-\(processIdentifier).\(ext)"
+        return directory.appendingPathComponent(fileName, isDirectory: false).path
+    }
+
     private nonisolated static func bindListenerSocket(_ socket: Int32, path: String) -> SocketBindAttemptResult {
         if let errnoCode = ensureSocketParentDirectoryExists(path: path) {
             return .failure(path: path, stage: "create_directory", errnoCode: errnoCode)
+        }
+        // C11-155: never unlink a socket a live peer is still serving — that is
+        // the bind-time stomp that wedges the peer. Probe liveness before unlink.
+        if socketHasLiveListener(path: path) {
+            return .peerAlive(path: path)
         }
         if unlink(path) != 0, errno != ENOENT {
             return .failure(path: path, stage: "unlink", errnoCode: errno)
@@ -1057,6 +1111,26 @@ class TerminalController {
         }
 
         var bindAttempt = Self.bindListenerSocket(newServerSocket, path: activeSocketPath)
+        // C11-155: the requested path is held by a live peer. Rebind on a safe,
+        // build-local alternate rather than wedge the incumbent.
+        if case .peerAlive(let occupiedPath) = bindAttempt {
+            let fallbackPath = Self.safeAlternateSocketPath(afterPeerAliveAt: occupiedPath)
+            sentryBreadcrumb(
+                "socket.listener.peerAlive.fallback",
+                category: "socket",
+                data: [
+                    "occupiedPath": occupiedPath,
+                    "fallbackPath": fallbackPath
+                ]
+            )
+            if fallbackPath != occupiedPath {
+                activeSocketPath = fallbackPath
+                withListenerState {
+                    self.socketPath = activeSocketPath
+                }
+                bindAttempt = Self.bindListenerSocket(newServerSocket, path: activeSocketPath)
+            }
+        }
         if case .failure(let failedPath, let failedStage, let failedErrnoCode) = bindAttempt,
            let fallbackPath = Self.fallbackSocketPathAfterBindFailure(
                requestedPath: failedPath,
@@ -1108,6 +1182,18 @@ class TerminalController {
                 stage: failedStage,
                 errnoCode: failedErrnoCode,
                 extra: ["path": failedPath]
+            )
+            return
+        case .peerAlive(let occupiedPath):
+            // Even the safe alternate is held by a live peer (extremely unlikely).
+            // Refuse to stomp; report and bail rather than wedge anyone.
+            print("TerminalController: Refusing to bind — live peer owns socket")
+            close(newServerSocket)
+            reportSocketListenerFailure(
+                message: "socket.listener.start.failed",
+                stage: "peer_alive",
+                errnoCode: EADDRINUSE,
+                extra: ["path": occupiedPath]
             )
             return
         }

@@ -3353,7 +3353,14 @@ final class TerminalSurface: Identifiable, ObservableObject {
         // CMUX_TAB_ID to resolve to a surface (accepts `tab:<n>` or `surface:<n>`).
         setManagedEnvironmentValue("CMUX_PANEL_ID", id.uuidString)
         setManagedEnvironmentValue("CMUX_TAB_ID", id.uuidString)
-        setManagedEnvironmentValue("CMUX_SOCKET_PATH", SocketControlSettings.socketPath())
+        // Inject the *actually-bound* socket path (not the recomputed resolution
+        // path) so a build that fell back to a safe alternate path (C11-155) still
+        // hands its children the correct socket. Set the canonical C11_ key too.
+        let boundSocketPath = TerminalController.shared.activeSocketPath(
+            preferredPath: SocketControlSettings.socketPath()
+        )
+        setManagedEnvironmentValue("CMUX_SOCKET_PATH", boundSocketPath)
+        setManagedEnvironmentValue("C11_SOCKET_PATH", boundSocketPath)
         if let bundledCLIURL = Bundle.main.resourceURL?.appendingPathComponent("bin/c11"),
            FileManager.default.isExecutableFile(atPath: bundledCLIURL.path) {
             setManagedEnvironmentValue("CMUX_BUNDLED_CLI_PATH", bundledCLIURL.path)

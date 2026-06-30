@@ -286,7 +286,7 @@ private final class CLISocketSentryTelemetry {
         }
         var sockets: [String] = []
         for name in entries.sorted() {
-            guard name.hasPrefix("cmux"), name.hasSuffix(".sock") else { continue }
+            guard name.hasPrefix("cmux") || name.hasPrefix("c11"), name.hasSuffix(".sock") else { continue }
             let fullPath = URL(fileURLWithPath: directory)
                 .appendingPathComponent(name, isDirectory: false)
                 .path
@@ -692,9 +692,16 @@ private enum CLISocketPathSource {
 }
 
 private enum CLISocketPathResolver {
-    private static let appSupportDirectoryName = "cmux"
-    private static let stableSocketFileName = "cmux.sock"
+    // Must match the app's SocketControlSettings (socketDirectoryName "c11",
+    // stableSocketFileName "c11.sock") so the CLI's implicit default and the
+    // last-socket-path breadcrumb read the same location the app writes.
+    private static let appSupportDirectoryName = "c11"
+    private static let stableSocketFileName = "c11.sock"
     private static let lastSocketPathFileName = "last-socket-path"
+    // The running app writes its breadcrumb to /tmp/c11-last-socket-path (see
+    // SocketControlSettings.legacyLastSocketPathFile). The CLI must read the same
+    // path; the older /tmp/cmux-last-socket-path is kept only for back-compat.
+    private static let c11LastSocketPathFile = "/tmp/c11-last-socket-path"
     static let legacyDefaultSocketPath = "/tmp/cmux.sock"
     private static let fallbackSocketPath = "/tmp/cmux-debug.sock"
     private static let stagingSocketPath = "/tmp/cmux-staging.sock"
@@ -764,7 +771,7 @@ private enum CLISocketPathResolver {
         let primaryCandidate: String? = stableSocketDirectoryURL()?
             .appendingPathComponent(lastSocketPathFileName, isDirectory: false)
             .path
-        let candidates = [primaryCandidate, legacyLastSocketPathFile].compactMap { $0 }
+        let candidates = [primaryCandidate, c11LastSocketPathFile, legacyLastSocketPathFile].compactMap { $0 }
 
         for candidate in candidates {
             guard let data = try? String(contentsOfFile: candidate, encoding: .utf8) else {
@@ -806,7 +813,7 @@ private enum CLISocketPathResolver {
                 continue
             }
             discovered.reserveCapacity(min(limit, discovered.count + entries.count))
-            for name in entries where name.hasPrefix("cmux") && name.hasSuffix(".sock") {
+            for name in entries where (name.hasPrefix("cmux") || name.hasPrefix("c11")) && name.hasSuffix(".sock") {
                 let path = URL(fileURLWithPath: directory)
                     .appendingPathComponent(name, isDirectory: false)
                     .path

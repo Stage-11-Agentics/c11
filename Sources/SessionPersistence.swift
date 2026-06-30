@@ -48,6 +48,18 @@ enum SessionPersistencePolicy {
     /// queue semantics.
     static let agentRestartDelay: TimeInterval = 2.5
 
+    /// C11-156: per-agent spacing applied on top of `agentRestartDelay` when a
+    /// restore resumes more than one agent. Without it, every restored agent's
+    /// resume command is typed in the same main-queue turn, so N agents boot
+    /// and fire their SessionStart hooks (each a `conversation.push` +
+    /// `set_agent_pid` socket round-trip onto the main thread) simultaneously —
+    /// a thundering herd that, on a multi-agent workspace, beachballs the app
+    /// right after a crash-restore (observed: a fresh process stalled 44s on
+    /// resume; see ~/Library/Logs/c11/hang.log). Spreading the resumes by this
+    /// interval flattens that burst. The Nth agent resumes at
+    /// `agentRestartDelay + N * agentRestartStagger`.
+    static let agentRestartStagger: TimeInterval = 0.35
+
     private static func envFlagEnabled(_ name: String) -> Bool {
         guard let raw = ProcessInfo.processInfo.environment[name] else { return false }
         switch raw.trimmingCharacters(in: .whitespaces).lowercased() {

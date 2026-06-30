@@ -265,6 +265,8 @@
 		C116000100A1B2C3D4E5F010 /* ChromeScale.swift in Sources */ = {isa = PBXBuildFile; fileRef = C116000200A1B2C3D4E5F010 /* ChromeScale.swift */; };
 		C1ADE00002A1B2C3D4E5F719 /* claude in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1ADE00001A1B2C3D4E5F719 /* claude */; };
 		C1CDE00002A1B2C3D4E5F719 /* codex in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1CDE00001A1B2C3D4E5F719 /* codex */; };
+		C1F1E00002A1B2C3D4E5F719 /* pi in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F1E00001A1B2C3D4E5F719 /* pi */; };
+		C1F2E00002A1B2C3D4E5F719 /* omp in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F2E00001A1B2C3D4E5F719 /* omp */; };
 		C22557799917F42164A6C855 /* TitlebarSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F01B /* TitlebarSnapshotTests.swift */; };
 		C49B42317DA68794CC9C29E4 /* MailboxULIDTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7105BF1A1B2C3D4E5F60718 /* MailboxULIDTests.swift */; };
 		C622796239CFCFB69D68C5D9 /* CLIHealthRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH015BF1A1B2C3D4E5F60718 /* CLIHealthRuntimeTests.swift */; };
@@ -422,6 +424,8 @@
 				B900000BA1B2C3D4E5F60719 /* c11 in Copy CLI */,
 				C1ADE00002A1B2C3D4E5F719 /* claude in Copy CLI */,
 				C1CDE00002A1B2C3D4E5F719 /* codex in Copy CLI */,
+				C1F1E00002A1B2C3D4E5F719 /* pi in Copy CLI */,
+				C1F2E00002A1B2C3D4E5F719 /* omp in Copy CLI */,
 				D1BEF00002A1B2C3D4E5F719 /* open in Copy CLI */,
 				4EE5E828CC9D3BA957B86380 /* copilot in Copy CLI */,
 			);
@@ -648,6 +652,8 @@
 		C116000A00A1B2C3D4E5F014 /* WorkspaceApplyChromeScaleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceApplyChromeScaleTests.swift; sourceTree = "<group>"; };
 		C1ADE00001A1B2C3D4E5F719 /* claude */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/claude; sourceTree = SOURCE_ROOT; };
 		C1CDE00001A1B2C3D4E5F719 /* codex */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/codex; sourceTree = SOURCE_ROOT; };
+		C1F1E00001A1B2C3D4E5F719 /* pi */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/pi; sourceTree = SOURCE_ROOT; };
+		C1F2E00001A1B2C3D4E5F719 /* omp */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/omp; sourceTree = SOURCE_ROOT; };
 		C28AE9F41DE55AB88CAE431D /* AgentManifest.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentManifest.swift; sourceTree = "<group>"; };
 		C2BBF3CDB766B1FCF30BB765 /* LaunchResumePicker.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LaunchResumePicker.swift; sourceTree = "<group>"; };
 		C585662B5CFF4AFB27E65C1E /* OpencodeResumeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OpencodeResumeTests.swift; path = OpencodeResumeTests.swift; sourceTree = "<group>"; };
@@ -838,6 +844,8 @@
 				A5002001 /* THIRD_PARTY_LICENSES.md */,
 				C1ADE00001A1B2C3D4E5F719 /* claude */,
 				C1CDE00001A1B2C3D4E5F719 /* codex */,
+				C1F1E00001A1B2C3D4E5F719 /* pi */,
+				C1F2E00001A1B2C3D4E5F719 /* omp */,
 				D8017BF1A1B2C3D4E5F60718 /* Blueprints */,
 				DA7A10CA710E000000000001 /* Localizable.xcstrings */,
 				DA7A10CA710E000000000002 /* InfoPlist.xcstrings */,

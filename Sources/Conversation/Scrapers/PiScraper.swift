@@ -19,14 +19,15 @@ import Foundation
 ///
 /// 2. **cwd-scoped lookup.** pi stores sessions under a **per-cwd slug
 ///    directory** (`~/.pi/agent/sessions/<slug>/`) and resolves sessions by
-///    cwd itself. Unlike codex, pi has no wrapper-claim time floor and no
-///    SessionStart hook, so a whole-tree top-N scrape would return candidates
-///    from every project and `PiStrategy.capture` would see them all as
-///    ambiguous (its cwd filter can't help once every candidate is stamped
-///    with the surface cwd). To make the cwd actually narrow — so exact
-///    resume can fire — when a `cwd` is known the scraper scopes its walk to
-///    that cwd's slug directory (pi's own model). With no `cwd` it falls back
-///    to the whole-tree top-N (best-effort, e.g. a surface with no recorded
+///    cwd itself. The pi wrapper (`Resources/bin/pi`) supplies a
+///    wrapper-claim *time* floor (like codex), but that alone can't narrow by
+///    project: a whole-tree top-N scrape would return candidates from every
+///    project, and several of them could post-date the claim time. So the
+///    cwd slug directory is the project-level narrowing the claim can't do —
+///    when a `cwd` is known the scraper scopes its walk to that cwd's slug
+///    directory (pi's own model); the claim time then narrows *within* that
+///    cwd to this pane's session. With no `cwd` it falls back to the
+///    whole-tree top-N (best-effort, e.g. a surface with no recorded
 ///    directory).
 struct PiScraper: ConversationScraper {
     let kind: String = "pi"

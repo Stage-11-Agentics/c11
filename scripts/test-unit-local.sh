@@ -11,8 +11,8 @@
 # (intrinsic to the launch chain) but the operator's primary c11 is unaffected.
 #
 # Three layers of defense:
-#   1. CMUX_TAG  → triggers taggedDebugSocketPath → /tmp/c11-debug-<tag>.sock
-#   2. CMUX_SOCKET_PATH + CMUX_ALLOW_SOCKET_OVERRIDE → explicit override
+#   1. C11_TAG  → triggers taggedDebugSocketPath → /tmp/c11-debug-<tag>.sock
+#   2. C11_SOCKET_PATH + C11_ALLOW_SOCKET_OVERRIDE → explicit override
 #   3. SocketControlSettings runtime guard (per-PID fallback when
 #      XCTestConfigurationFilePath is in env) — defense-in-depth in case the
 #      scheme env block is bypassed or wiped by a future cleanup pass.
@@ -26,9 +26,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 SOCKET_TAG="xctest-${USER:-anon}-$$"
-export CMUX_TAG="$SOCKET_TAG"
-export CMUX_SOCKET_PATH="/tmp/c11-test-${USER:-anon}-$$.sock"
-export CMUX_ALLOW_SOCKET_OVERRIDE=1
+export C11_TAG="$SOCKET_TAG"
+export C11_SOCKET_PATH="/tmp/c11-test-${USER:-anon}-$$.sock"
+export C11_ALLOW_SOCKET_OVERRIDE=1
 
 PROJECT="GhosttyTabs.xcodeproj"
 SCHEME="c11-unit"
@@ -41,8 +41,8 @@ if [ "$#" -eq 0 ]; then
   set -- test
 fi
 
-echo "[test-unit-local] CMUX_TAG=$CMUX_TAG"
-echo "[test-unit-local] CMUX_SOCKET_PATH=$CMUX_SOCKET_PATH"
+echo "[test-unit-local] C11_TAG=$C11_TAG"
+echo "[test-unit-local] C11_SOCKET_PATH=$C11_SOCKET_PATH"
 echo "[test-unit-local] derivedDataPath=$DERIVED_DATA"
 
 exec xcodebuild \

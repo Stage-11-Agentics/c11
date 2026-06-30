@@ -73,7 +73,7 @@ launch_and_wait() {
   export CMUX_SOCKET="$SOCK"
 
   # Ensure LaunchServices has a visible/main window attached for rendering checks.
-  CMUX_TAG="$RUN_TAG" open "$APP" >/dev/null 2>&1 || true
+  C11_TAG="$RUN_TAG" CMUX_TAG="$RUN_TAG" open "$APP" >/dev/null 2>&1 || true
   sleep 0.5
 
   echo "== wait ready =="

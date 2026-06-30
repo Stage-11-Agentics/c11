@@ -35587,43 +35587,43 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Overrides: CMUX_SOCKET_ENABLE, CMUX_SOCKET_MODE, and CMUX_SOCKET_PATH (set CMUX_ALLOW_SOCKET_OVERRIDE=1 for stable/nightly builds)."
+            "value": "Overrides: C11_SOCKET_ENABLE, C11_SOCKET_MODE, and C11_SOCKET_PATH (set C11_ALLOW_SOCKET_OVERRIDE=1 for stable/nightly builds)."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "オーバーライド: CMUX_SOCKET_ENABLE、CMUX_SOCKET_MODE、CMUX_SOCKET_PATH（stable/nightlyビルドではCMUX_ALLOW_SOCKET_OVERRIDE=1を設定）。"
+            "value": "オーバーライド: C11_SOCKET_ENABLE、C11_SOCKET_MODE、C11_SOCKET_PATH（stable/nightlyビルドではC11_ALLOW_SOCKET_OVERRIDE=1を設定）。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "覆盖项：CMUX_SOCKET_ENABLE、CMUX_SOCKET_MODE 和 CMUX_SOCKET_PATH（对稳定版/每日构建版需设置 CMUX_ALLOW_SOCKET_OVERRIDE=1）。"
+            "value": "覆盖项：C11_SOCKET_ENABLE、C11_SOCKET_MODE 和 C11_SOCKET_PATH（对稳定版/每日构建版需设置 C11_ALLOW_SOCKET_OVERRIDE=1）。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "覆寫設定：CMUX_SOCKET_ENABLE、CMUX_SOCKET_MODE 和 CMUX_SOCKET_PATH（穩定版/每夜版需設定 CMUX_ALLOW_SOCKET_OVERRIDE=1）。"
+            "value": "覆寫設定：C11_SOCKET_ENABLE、C11_SOCKET_MODE 和 C11_SOCKET_PATH（穩定版/每夜版需設定 C11_ALLOW_SOCKET_OVERRIDE=1）。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "재정의: CMUX_SOCKET_ENABLE, CMUX_SOCKET_MODE, CMUX_SOCKET_PATH (안정/나이틀리 빌드의 경우 CMUX_ALLOW_SOCKET_OVERRIDE=1 설정)."
+            "value": "재정의: C11_SOCKET_ENABLE, C11_SOCKET_MODE, C11_SOCKET_PATH (안정/나이틀리 빌드의 경우 C11_ALLOW_SOCKET_OVERRIDE=1 설정)."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Переопределения: CMUX_SOCKET_ENABLE, CMUX_SOCKET_MODE и CMUX_SOCKET_PATH (установите CMUX_ALLOW_SOCKET_OVERRIDE=1 для стабильных/ночных сборок)."
+            "value": "Переопределения: C11_SOCKET_ENABLE, C11_SOCKET_MODE и C11_SOCKET_PATH (установите C11_ALLOW_SOCKET_OVERRIDE=1 для стабильных/ночных сборок)."
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "Перевизначення: CMUX_SOCKET_ENABLE, CMUX_SOCKET_MODE та CMUX_SOCKET_PATH (встановіть CMUX_ALLOW_SOCKET_OVERRIDE=1 для stable/nightly-збірок)."
+            "value": "Перевизначення: C11_SOCKET_ENABLE, C11_SOCKET_MODE та C11_SOCKET_PATH (встановіть C11_ALLOW_SOCKET_OVERRIDE=1 для stable/nightly-збірок)."
           }
         }
       }

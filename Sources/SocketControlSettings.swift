@@ -83,7 +83,7 @@ enum SocketControlPasswordStore {
         allowLazyKeychainFallback: Bool = false,
         loadKeychainPassword: () -> String? = { loadLegacyPasswordFromKeychain() }
     ) -> String? {
-        if let envPassword = normalized(environment[SocketControlSettings.socketPasswordEnvKey]) {
+        if let envPassword = normalized(c11Env(SocketControlSettings.socketPasswordEnvKey, in: environment)) {
             return envPassword
         }
         let filePassword: String?
@@ -293,9 +293,9 @@ enum SocketControlPasswordStore {
 struct SocketControlSettings {
     static let appStorageKey = "socketControlMode"
     static let legacyEnabledKey = "socketControlEnabled"
-    static let allowSocketPathOverrideKey = "CMUX_ALLOW_SOCKET_OVERRIDE"
-    static let socketPasswordEnvKey = "CMUX_SOCKET_PASSWORD"
-    static let launchTagEnvKey = "CMUX_TAG"
+    static let allowSocketPathOverrideKey = "C11_ALLOW_SOCKET_OVERRIDE"
+    static let socketPasswordEnvKey = "C11_SOCKET_PASSWORD"
+    static let launchTagEnvKey = "C11_TAG"
     static let baseDebugBundleIdentifier = "com.stage11.c11.debug"
     private static let socketDirectoryName = "c11"
     private static let stableSocketFileName = "c11.sock"
@@ -371,13 +371,13 @@ struct SocketControlSettings {
     static func launchTag(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> String? {
-        guard let raw = environment[launchTagEnvKey] else { return nil }
+        guard let raw = c11Env(launchTagEnvKey, in: environment) else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
 
     /// Whether the running app is a **local development build**: a Debug build,
-    /// or a tagged `reload.sh --tag` / automation build (`CMUX_TAG` set). Never
+    /// or a tagged `reload.sh --tag` / automation build (`C11_TAG` set). Never
     /// true in a shipped untagged Release. Single source of truth for
     /// suppressing launch-time auto-dialogs (the Agent Skills onboarding sheet
     /// and the resume picker) so the person rebuilding c11 isn't blocked by a
@@ -471,15 +471,15 @@ struct SocketControlSettings {
             bundleIdentifier: bundleIdentifier,
             environment: environment
         ) {
-            if isTruthy(environment[allowSocketPathOverrideKey]),
-               let override = environment["CMUX_SOCKET_PATH"],
+            if isTruthy(c11Env(allowSocketPathOverrideKey, in: environment)),
+               let override = c11Env("C11_SOCKET_PATH", in: environment),
                !override.isEmpty {
                 return override
             }
             return taggedDebugPath
         }
 
-        guard let override = environment["CMUX_SOCKET_PATH"], !override.isEmpty else {
+        guard let override = c11Env("C11_SOCKET_PATH", in: environment), !override.isEmpty else {
             return fallback
         }
 
@@ -551,7 +551,7 @@ struct SocketControlSettings {
         bundleIdentifier: String?,
         isDebugBuild: Bool
     ) -> Bool {
-        if isTruthy(environment[allowSocketPathOverrideKey]) {
+        if isTruthy(c11Env(allowSocketPathOverrideKey, in: environment)) {
             return true
         }
         if isDebugLikeBundleIdentifier(bundleIdentifier) || isStagingBundleIdentifier(bundleIdentifier) {
@@ -662,7 +662,7 @@ struct SocketControlSettings {
     static func envOverrideEnabled(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> Bool? {
-        guard let raw = environment["CMUX_SOCKET_ENABLE"], !raw.isEmpty else {
+        guard let raw = c11Env("C11_SOCKET_ENABLE", in: environment), !raw.isEmpty else {
             return nil
         }
 
@@ -679,7 +679,7 @@ struct SocketControlSettings {
     static func envOverrideMode(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> SocketControlMode? {
-        guard let raw = environment["CMUX_SOCKET_MODE"], !raw.isEmpty else {
+        guard let raw = c11Env("C11_SOCKET_MODE", in: environment), !raw.isEmpty else {
             return nil
         }
         return parseMode(raw)

@@ -312,7 +312,7 @@ final class MainThreadHangMonitor: @unchecked Sendable {
             return URL(fileURLWithPath: explicit)
         }
 
-        if let debugLog = env["CMUX_DEBUG_LOG"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+        if let debugLog = c11Env("C11_DEBUG_LOG", in: env)?.trimmingCharacters(in: .whitespacesAndNewlines),
            !debugLog.isEmpty {
             let base = URL(fileURLWithPath: debugLog)
             let name = base.lastPathComponent
@@ -320,7 +320,7 @@ final class MainThreadHangMonitor: @unchecked Sendable {
             return base.deletingLastPathComponent().appendingPathComponent("\(stem)-hang.log")
         }
 
-        if let tag = env["CMUX_TAG"]?.trimmingCharacters(in: .whitespacesAndNewlines), !tag.isEmpty {
+        if let tag = c11Env("C11_TAG", in: env)?.trimmingCharacters(in: .whitespacesAndNewlines), !tag.isEmpty {
             let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
             let slug = String(tag.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" })
             return URL(fileURLWithPath: "/tmp/c11-hang-\(slug).log")

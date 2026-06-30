@@ -8,7 +8,7 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [0.55.0] - 2026-06-30
 
-Tooling + hardening release. Headline: **`c11 tree --report` — a one-command, human-readable Markdown snapshot of your whole fleet** (every workspace's layout plus each surface's title, agent, live status, and description), built for "save the state before I close c11" handoffs. Alongside it: a fix for a main-thread hang that could beachball c11 under a heavy multi-agent fleet, a workspace-navigation latch fix, socket-collision hardening so parallel c11 instances don't stomp each other's IPC socket, and a session-resume fix so Pi/oh-my-pi reconnect to the right session when a working directory holds several.
+Tooling + hardening release. Headline: **`c11 tree --report` — a one-command, human-readable Markdown snapshot of your whole fleet** (every workspace's layout plus each surface's title, agent, live status, and description), built for "save the state before I close c11" handoffs. Alongside it: a fix for a main-thread hang that could beachball c11 under a heavy multi-agent fleet, the Agent Skills onboarding sheet stops re-popping on every launch, a workspace-navigation latch fix, socket-collision hardening so parallel c11 instances don't stomp each other's IPC socket, and a session-resume fix so Pi/oh-my-pi reconnect to the right session when a working directory holds several.
 
 ### Added
 
@@ -21,6 +21,8 @@ Tooling + hardening release. Headline: **`c11 tree --report` — a one-command, 
 - **Claude Code wrapper-claim fallback now actually fires.** A `cmux` → `c11` rename left `Resources/bin/claude` testing an undefined variable (`cmux_set_agent_bin` instead of the assigned `C11_SET_AGENT_BIN`), so `conversation claim --kind claude-code` was silently skipped — the fallback meant to leave a resumable claim when the SessionStart hook is dropped never ran. One-line fix restores it. ([#300](https://github.com/Stage-11-Agentics/c11/pull/300))
 - **Workspace Previous/Next navigation no longer latches on the first workspace.** A selection latch could trap navigation on the first workspace; the Prev/Next controls release correctly now. ([#269](https://github.com/Stage-11-Agentics/c11/pull/269)) — thanks [@ajroberts0417](https://github.com/ajroberts0417)!
 - **Parallel c11 instances no longer stomp each other's IPC socket.** The control socket is namespaced per bundle, so a second instance binding its socket can't unlink a live peer's out from under it. (C11-155) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **The Agent Skills onboarding sheet stops re-popping on every launch.** A row could auto-open the sheet yet render the "Done" branch (whose handler persists nothing), so the sheet re-fired each launch with no way to dismiss it for good. The actionable-row check now matches the auto-show gate exactly, so a satisfied row no longer re-triggers. ([#299](https://github.com/Stage-11-Agentics/c11/pull/299))
+- **Socket-control password is read from the current `c11/` dir, not the old `c11mux/`.** A `cmux` → `c11` rename casualty left the CLI reading the local socket password from a `c11mux/` directory the app no longer creates, so it returned nil and CLI auth could silently fail. It now reads the renamed location (falling back to the legacy dir only if present). ([#302](https://github.com/Stage-11-Agentics/c11/pull/302))
 
 ### Thanks to 2 contributors!
 

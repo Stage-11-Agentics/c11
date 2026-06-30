@@ -4699,11 +4699,13 @@ final class WorkspaceRemoteSessionController {
             .deletingLastPathComponent() // repo root
         candidates.append(compileTimeRoot)
         let environment = ProcessInfo.processInfo.environment
-        if let envRoot = environment["CMUX_REMOTE_DAEMON_SOURCE_ROOT"],
+        if let envRoot = c11Env("C11_REMOTE_DAEMON_SOURCE_ROOT", in: environment),
            !envRoot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             candidates.append(URL(fileURLWithPath: envRoot, isDirectory: true))
         }
-        if let envRoot = environment["CMUXTERM_REPO_ROOT"],
+        // `CMUXTERM_REPO_ROOT` predates the `CMUX_`/`C11_` twin scheme (note the
+        // `CMUXTERM_` prefix), so its canonical twin is read explicitly here.
+        if let envRoot = environment["C11_REPO_ROOT"] ?? environment["CMUXTERM_REPO_ROOT"],
            !envRoot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             candidates.append(URL(fileURLWithPath: envRoot, isDirectory: true))
         }

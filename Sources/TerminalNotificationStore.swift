@@ -572,11 +572,11 @@ enum NotificationFlashDurationSettings {
 }
 
 enum TaggedRunBadgeSettings {
-    static let environmentKey = "CMUX_TAG"
+    static let environmentKey = "C11_TAG"
     private static let maxTagLength = 10
 
     static func normalizedTag(from env: [String: String] = ProcessInfo.processInfo.environment) -> String? {
-        normalizedTag(env[environmentKey])
+        normalizedTag(c11Env(environmentKey, in: env))
     }
 
     static func normalizedTag(_ rawTag: String?) -> String? {

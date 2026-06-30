@@ -864,12 +864,12 @@ class GhosttyApp {
     private static func resolveBackgroundLogURL(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> URL {
-        if let explicitPath = environment["CMUX_DEBUG_BG_LOG"],
+        if let explicitPath = c11Env("C11_DEBUG_BG_LOG", in: environment),
            !explicitPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return URL(fileURLWithPath: explicitPath)
         }
 
-        if let debugLogPath = environment["CMUX_DEBUG_LOG"],
+        if let debugLogPath = c11Env("C11_DEBUG_LOG", in: environment),
            !debugLogPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let baseURL = URL(fileURLWithPath: debugLogPath)
             let extensionSeparatorIndex = baseURL.lastPathComponent.lastIndex(of: ".")
@@ -882,10 +882,10 @@ class GhosttyApp {
     }
 
     let backgroundLogEnabled = {
-        if ProcessInfo.processInfo.environment["CMUX_DEBUG_BG"] == "1" {
+        if c11Env("C11_DEBUG_BG", in: ProcessInfo.processInfo.environment) == "1" {
             return true
         }
-        if ProcessInfo.processInfo.environment["CMUX_DEBUG_LOG"] != nil {
+        if c11Env("C11_DEBUG_LOG", in: ProcessInfo.processInfo.environment) != nil {
             return true
         }
         if ProcessInfo.processInfo.environment["GHOSTTYTABS_DEBUG_BG"] == "1" {

@@ -303,8 +303,8 @@ if [[ -f "$INFO_PLIST" ]]; then
   /usr/libexec/PlistBuddy -c "Add :LSEnvironment dict" "$INFO_PLIST" 2>/dev/null || true
   /usr/libexec/PlistBuddy -c "Set :LSEnvironment:CMUXD_UNIX_PATH \"${CMUXD_SOCKET}\"" "$INFO_PLIST" 2>/dev/null \
     || /usr/libexec/PlistBuddy -c "Add :LSEnvironment:CMUXD_UNIX_PATH string \"${CMUXD_SOCKET}\"" "$INFO_PLIST"
-  /usr/libexec/PlistBuddy -c "Set :LSEnvironment:CMUX_SOCKET_PATH \"${CMUX_SOCKET}\"" "$INFO_PLIST" 2>/dev/null \
-    || /usr/libexec/PlistBuddy -c "Add :LSEnvironment:CMUX_SOCKET_PATH string \"${CMUX_SOCKET}\"" "$INFO_PLIST"
+  /usr/libexec/PlistBuddy -c "Set :LSEnvironment:C11_SOCKET_PATH \"${CMUX_SOCKET}\"" "$INFO_PLIST" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Add :LSEnvironment:C11_SOCKET_PATH string \"${CMUX_SOCKET}\"" "$INFO_PLIST"
   if [[ -S "$CMUXD_SOCKET" ]]; then
     for PID in $(lsof -t "$CMUXD_SOCKET" 2>/dev/null); do
       kill "$PID" 2>/dev/null || true
@@ -335,11 +335,17 @@ if [[ -x "$C11D_SRC" ]]; then
   chmod +x "$BIN_DIR/c11d"
   ln -sfh c11d "$BIN_DIR/cmuxd"
 fi
-# Avoid inheriting cmux/ghostty environment variables from the terminal that
-# runs this script (often inside another cmux instance), which can cause
+# Avoid inheriting c11/ghostty environment variables from the terminal that
+# runs this script (often inside another c11 instance), which can cause
 # socket and resource-path conflicts.
 OPEN_CLEAN_ENV=(
   env
+  -u C11_SOCKET_PATH
+  -u C11_TAB_ID
+  -u C11_PANEL_ID
+  -u C11_TAG
+  -u C11_BUNDLE_ID
+  -u C11_SHELL_INTEGRATION
   -u CMUX_SOCKET_PATH
   -u CMUX_TAB_ID
   -u CMUX_PANEL_ID
@@ -351,7 +357,7 @@ OPEN_CLEAN_ENV=(
   -u GHOSTTY_RESOURCES_DIR
   -u GHOSTTY_SHELL_FEATURES
   # Dev shells (including CI/Codex) often force-disable paging by exporting these.
-  # Don't leak that into cmux, otherwise `git diff` won't page even with PAGER=less.
+  # Don't leak that into c11, otherwise `git diff` won't page even with PAGER=less.
   -u GIT_PAGER
   -u GH_PAGER
   -u TERMINFO
@@ -360,7 +366,7 @@ OPEN_CLEAN_ENV=(
 
 # Always inject staging socket paths via env to ensure they take effect
 # (LSEnvironment requires app restart to pick up plist changes).
-"${OPEN_CLEAN_ENV[@]}" CMUX_SOCKET_PATH="$CMUX_SOCKET" CMUXD_UNIX_PATH="$CMUXD_SOCKET" open -g "$APP_PATH"
+"${OPEN_CLEAN_ENV[@]}" C11_SOCKET_PATH="$CMUX_SOCKET" CMUXD_UNIX_PATH="$CMUXD_SOCKET" open -g "$APP_PATH"
 
 # Safety: ensure only one instance is running.
 sleep 0.2

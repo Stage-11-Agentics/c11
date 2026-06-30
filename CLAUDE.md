@@ -77,7 +77,7 @@ c11 is **host and primitive, not configurator.** It provides surfaces, panes, a 
 
 **One narrow exception: session-resume wrappers under `Resources/bin/`.** When a TUI's lifecycle is otherwise opaque to c11, c11 may ship a PATH-scoped wrapper that captures the minimum lifecycle signal needed for *session resume* across c11 reboots. The wrapper must:
 
-- Live in c11's own bundle, prepended to PATH **only inside c11 terminals** (gated on `CMUX_SURFACE_ID` + a live socket).
+- Live in c11's own bundle, prepended to PATH **only inside c11 terminals** (gated on `C11_SURFACE_ID` + a live socket).
 - Make **no persistent writes** to tenant config, dotfiles, or any path outside c11's own runtime (`/tmp` is fine; `~/.claude/`, `~/.codex/`, etc. are not).
 - Capture only the minimum needed for session resume — usually a session id and `terminal_type`, plus lifecycle status where the TUI exposes it (Claude Code does via hooks; codex does not).
 - Fall through to the real binary unchanged when outside a c11 terminal or when the c11 socket is unreachable.
@@ -109,11 +109,11 @@ See `skills/c11-hotload/SKILL.md` for the full workflow — `reload.sh --tag` bu
 
 The one-liner: after any code change, `./scripts/reload.sh --tag <your-branch-slug>`. Never `open` an untagged `c11 DEV.app`.
 
-**QA / automation launch — ALWAYS suppress the startup dialogs when an agent launches a dev build.** A normal launch blocks on two modals before the GUI is usable: the Agent Skills install/update sheet and the "Resume previous session?" picker. Any agent launching a tagged/dev build to validate or automate **must** turn these off — launching bare leaves both dialogs in the way and stalls coordinate-driven UI checks (a real time sink to avoid). Set `C11_QA_LAUNCH` (dual-read `CMUX_QA_LAUNCH`): `fresh` (or any non-`resume` value) starts clean, `resume` silently restores the prior session, unset is normal interactive behavior. Read per-launch, never persisted. Prefer `./scripts/launch-tagged-automation.sh <tag> --qa [fresh|resume]`, which sets it for you. Note `reload.sh --tag` builds **and** launches but does NOT set the flag, so for a validation pass either launch through `launch-tagged-automation.sh --qa` or export `C11_QA_LAUNCH` before the app starts. Lives in `Sources/QALaunchPolicy.swift`; full table in `skills/c11-hotload/SKILL.md`.
+**QA / automation launch — ALWAYS suppress the startup dialogs when an agent launches a dev build.** A normal launch blocks on two modals before the GUI is usable: the Agent Skills install/update sheet and the "Resume previous session?" picker. Any agent launching a tagged/dev build to validate or automate **must** turn these off — launching bare leaves both dialogs in the way and stalls coordinate-driven UI checks (a real time sink to avoid). Set `C11_QA_LAUNCH`: `fresh` (or any non-`resume` value) starts clean, `resume` silently restores the prior session, unset is normal interactive behavior. Read per-launch, never persisted. Prefer `./scripts/launch-tagged-automation.sh <tag> --qa [fresh|resume]`, which sets it for you. Note `reload.sh --tag` builds **and** launches but does NOT set the flag, so for a validation pass either launch through `launch-tagged-automation.sh --qa` or export `C11_QA_LAUNCH` before the app starts. Lives in `Sources/QALaunchPolicy.swift`; full table in `skills/c11-hotload/SKILL.md`.
 
 ## Diagnostics
 
-- **Portal lifecycle (C11-18):** launch c11 with `C11_PORTAL_DEBUG=1` (or `CMUX_PORTAL_DEBUG=1`) to write structured `bind`/`detach`/`sync.skip.orphan`/`sync.result`/`orphan.hide`/`geom.external` events to `/tmp/c11-portal.log` (override path with `C11_PORTAL_LOG`). The log truncates on first call after process start; one repro run per file. Drive churn with `scripts/repro-c11-18.sh [iterations]` and attach the log range covering the artifact to the C11-18 ticket.
+- **Portal lifecycle (C11-18):** launch c11 with `C11_PORTAL_DEBUG=1` to write structured `bind`/`detach`/`sync.skip.orphan`/`sync.result`/`orphan.hide`/`geom.external` events to `/tmp/c11-portal.log` (override path with `C11_PORTAL_LOG`). The log truncates on first call after process start; one repro run per file. Drive churn with `scripts/repro-c11-18.sh [iterations]` and attach the log range covering the artifact to the C11-18 ticket.
 
 ## Pitfalls
 
@@ -161,7 +161,7 @@ c11 has two unit-test targets. The split is the whole point of C11-27.
 
   Expected wall time on a warm cache: around 30 seconds, dominated by `xcodebuild`'s ~10–15 s of inherent overhead rather than test execution (the test phase itself is ~5–10 s for 74 tests). Compare to the host scheme's ~35 s, where most of the gap is the DEV.app launch. **First invocation after a clean checkout pays the c11 app build cost** (multi-minute) because `c11-logic` depends on the `c11` target — Strategy B needs `c11.debug.dylib` available for the test bundle's `BUNDLE_LOADER` + rpath. Subsequent warm-build runs are ~30 s. Use this for any iteration on Mailbox, Theme, Workspace snapshot, Health parser, CLI runtime, persistence, and parser code.
 
-- **`c11Tests` (scheme: `c11-unit`)** — host-required. Spawns a `c11 DEV.app` XCTest host whose main thread is monopolized for ~22 s and whose window beachballs until the run completes. The host previously stomped the operator's running c11 by binding (and on teardown, unlinking) `/tmp/c11-debug.sock`; C11-99 Area B added a per-PID socket guard in `SocketControlSettings.socketPath()` keyed on `XCTestConfigurationFilePath`, plus a `CMUX_TAG=local-xctest` env var on the scheme's TestAction, plus a `scripts/test-unit-local.sh` wrapper that exports a per-PID `CMUX_SOCKET_PATH`. **Use `scripts/test-unit-local.sh` for local c11-unit iteration** — it's safe to run with `/Applications/c11.app` and a `c11 DEV.app` already running. CI still drives the full host-bound suite via `ci.yml`. The `c11-unit` scheme builds both targets but its TestAction runs both `c11Tests` and `c11LogicTests` sequentially in one invocation.
+- **`c11Tests` (scheme: `c11-unit`)** — host-required. Spawns a `c11 DEV.app` XCTest host whose main thread is monopolized for ~22 s and whose window beachballs until the run completes. The host previously stomped the operator's running c11 by binding (and on teardown, unlinking) `/tmp/c11-debug.sock`; C11-99 Area B added a per-PID socket guard in `SocketControlSettings.socketPath()` keyed on `XCTestConfigurationFilePath`, plus a `C11_TAG=local-xctest` env var on the scheme's TestAction, plus a `scripts/test-unit-local.sh` wrapper that exports a per-PID `C11_SOCKET_PATH`. **Use `scripts/test-unit-local.sh` for local c11-unit iteration** — it's safe to run with `/Applications/c11.app` and a `c11 DEV.app` already running. CI still drives the full host-bound suite via `ci.yml`. The `c11-unit` scheme builds both targets but its TestAction runs both `c11Tests` and `c11LogicTests` sequentially in one invocation.
 
   ```
   scripts/test-unit-local.sh                                             # full c11-unit
@@ -170,7 +170,7 @@ c11 has two unit-test targets. The split is the whole point of C11-27.
 
   Schemes that build c11-unit (or `c11-ci`) without the `test` action are safe — they only compile.
 
-- **Python socket tests (`tests_v2/`)** — connect to a running c11 instance's socket. Never launch an untagged `c11 DEV.app` to run them. If you must test locally, use a tagged build's socket (`/tmp/c11-debug-<tag>.sock`) with `C11_SOCKET=/tmp/c11-debug-<tag>.sock` (or `CMUX_SOCKET=…` as compat).
+- **Python socket tests (`tests_v2/`)** — connect to a running c11 instance's socket. Never launch an untagged `c11 DEV.app` to run them. If you must test locally, use a tagged build's socket (`/tmp/c11-debug-<tag>.sock`) with `C11_SOCKET=/tmp/c11-debug-<tag>.sock`.
 
 - **E2E / UI tests** — trigger via `gh workflow run test-e2e.yml`. Never run locally.
 

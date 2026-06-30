@@ -377,18 +377,18 @@ if [[ -n "$TAG" && "$APP_NAME" != "$SEARCH_APP_NAME" ]]; then
       /usr/libexec/PlistBuddy -c "Add :LSEnvironment dict" "$INFO_PLIST" 2>/dev/null || true
       /usr/libexec/PlistBuddy -c "Set :LSEnvironment:CMUXD_UNIX_PATH \"${CMUXD_SOCKET}\"" "$INFO_PLIST" 2>/dev/null \
         || /usr/libexec/PlistBuddy -c "Add :LSEnvironment:CMUXD_UNIX_PATH string \"${CMUXD_SOCKET}\"" "$INFO_PLIST"
-      /usr/libexec/PlistBuddy -c "Set :LSEnvironment:CMUX_SOCKET_PATH \"${CMUX_SOCKET}\"" "$INFO_PLIST" 2>/dev/null \
-        || /usr/libexec/PlistBuddy -c "Add :LSEnvironment:CMUX_SOCKET_PATH string \"${CMUX_SOCKET}\"" "$INFO_PLIST"
-      /usr/libexec/PlistBuddy -c "Set :LSEnvironment:CMUX_DEBUG_LOG \"${CMUX_DEBUG_LOG}\"" "$INFO_PLIST" 2>/dev/null \
-        || /usr/libexec/PlistBuddy -c "Add :LSEnvironment:CMUX_DEBUG_LOG string \"${CMUX_DEBUG_LOG}\"" "$INFO_PLIST"
-      /usr/libexec/PlistBuddy -c "Set :LSEnvironment:CMUX_SOCKET_ENABLE 1" "$INFO_PLIST" 2>/dev/null \
-        || /usr/libexec/PlistBuddy -c "Add :LSEnvironment:CMUX_SOCKET_ENABLE string 1" "$INFO_PLIST"
-      /usr/libexec/PlistBuddy -c "Set :LSEnvironment:CMUX_SOCKET_MODE automation" "$INFO_PLIST" 2>/dev/null \
-        || /usr/libexec/PlistBuddy -c "Add :LSEnvironment:CMUX_SOCKET_MODE string automation" "$INFO_PLIST"
-      /usr/libexec/PlistBuddy -c "Set :LSEnvironment:CMUX_REMOTE_DAEMON_ALLOW_LOCAL_BUILD 1" "$INFO_PLIST" 2>/dev/null \
-        || /usr/libexec/PlistBuddy -c "Add :LSEnvironment:CMUX_REMOTE_DAEMON_ALLOW_LOCAL_BUILD string 1" "$INFO_PLIST"
-      /usr/libexec/PlistBuddy -c "Set :LSEnvironment:CMUXTERM_REPO_ROOT \"${PWD}\"" "$INFO_PLIST" 2>/dev/null \
-        || /usr/libexec/PlistBuddy -c "Add :LSEnvironment:CMUXTERM_REPO_ROOT string \"${PWD}\"" "$INFO_PLIST"
+      /usr/libexec/PlistBuddy -c "Set :LSEnvironment:C11_SOCKET_PATH \"${CMUX_SOCKET}\"" "$INFO_PLIST" 2>/dev/null \
+        || /usr/libexec/PlistBuddy -c "Add :LSEnvironment:C11_SOCKET_PATH string \"${CMUX_SOCKET}\"" "$INFO_PLIST"
+      /usr/libexec/PlistBuddy -c "Set :LSEnvironment:C11_DEBUG_LOG \"${CMUX_DEBUG_LOG}\"" "$INFO_PLIST" 2>/dev/null \
+        || /usr/libexec/PlistBuddy -c "Add :LSEnvironment:C11_DEBUG_LOG string \"${CMUX_DEBUG_LOG}\"" "$INFO_PLIST"
+      /usr/libexec/PlistBuddy -c "Set :LSEnvironment:C11_SOCKET_ENABLE 1" "$INFO_PLIST" 2>/dev/null \
+        || /usr/libexec/PlistBuddy -c "Add :LSEnvironment:C11_SOCKET_ENABLE string 1" "$INFO_PLIST"
+      /usr/libexec/PlistBuddy -c "Set :LSEnvironment:C11_SOCKET_MODE automation" "$INFO_PLIST" 2>/dev/null \
+        || /usr/libexec/PlistBuddy -c "Add :LSEnvironment:C11_SOCKET_MODE string automation" "$INFO_PLIST"
+      /usr/libexec/PlistBuddy -c "Set :LSEnvironment:C11_REMOTE_DAEMON_ALLOW_LOCAL_BUILD 1" "$INFO_PLIST" 2>/dev/null \
+        || /usr/libexec/PlistBuddy -c "Add :LSEnvironment:C11_REMOTE_DAEMON_ALLOW_LOCAL_BUILD string 1" "$INFO_PLIST"
+      /usr/libexec/PlistBuddy -c "Set :LSEnvironment:C11_REPO_ROOT \"${PWD}\"" "$INFO_PLIST" 2>/dev/null \
+        || /usr/libexec/PlistBuddy -c "Add :LSEnvironment:C11_REPO_ROOT string \"${PWD}\"" "$INFO_PLIST"
       if [[ -S "$CMUXD_SOCKET" ]]; then
         for PID in $(lsof -t "$CMUXD_SOCKET" 2>/dev/null); do
           kill "$PID" 2>/dev/null || true
@@ -465,6 +465,15 @@ fi
 # socket and resource-path conflicts.
 OPEN_CLEAN_ENV=(
   env
+  -u C11_SOCKET_PATH
+  -u C11_WORKSPACE_ID
+  -u C11_SURFACE_ID
+  -u C11_TAB_ID
+  -u C11_PANEL_ID
+  -u C11_TAG
+  -u C11_DEBUG_LOG
+  -u C11_BUNDLE_ID
+  -u C11_SHELL_INTEGRATION
   -u CMUX_SOCKET_PATH
   -u CMUX_WORKSPACE_ID
   -u CMUX_SURFACE_ID
@@ -487,10 +496,10 @@ OPEN_CLEAN_ENV=(
 )
 
 if [[ -n "${TAG_SLUG:-}" && -n "${CMUX_SOCKET:-}" ]]; then
-  # Ensure tag-specific socket paths win even if the caller has CMUX_* overrides.
-  "${OPEN_CLEAN_ENV[@]}" CMUX_TAG="$TAG_SLUG" CMUX_SOCKET_ENABLE=1 CMUX_SOCKET_MODE=automation CMUX_SOCKET_PATH="$CMUX_SOCKET" CMUXD_UNIX_PATH="$CMUXD_SOCKET" CMUX_DEBUG_LOG="$CMUX_DEBUG_LOG" CMUX_REMOTE_DAEMON_ALLOW_LOCAL_BUILD=1 CMUXTERM_REPO_ROOT="$PWD" open -g "$APP_PATH"
+  # Ensure tag-specific socket paths win even if the caller has C11_*/CMUX_* overrides.
+  "${OPEN_CLEAN_ENV[@]}" C11_TAG="$TAG_SLUG" C11_SOCKET_ENABLE=1 C11_SOCKET_MODE=automation C11_SOCKET_PATH="$CMUX_SOCKET" CMUXD_UNIX_PATH="$CMUXD_SOCKET" C11_DEBUG_LOG="$CMUX_DEBUG_LOG" C11_REMOTE_DAEMON_ALLOW_LOCAL_BUILD=1 C11_REPO_ROOT="$PWD" open -g "$APP_PATH"
 elif [[ -n "${TAG_SLUG:-}" ]]; then
-  "${OPEN_CLEAN_ENV[@]}" CMUX_TAG="$TAG_SLUG" CMUX_SOCKET_ENABLE=1 CMUX_SOCKET_MODE=automation CMUX_DEBUG_LOG="$CMUX_DEBUG_LOG" CMUX_REMOTE_DAEMON_ALLOW_LOCAL_BUILD=1 CMUXTERM_REPO_ROOT="$PWD" open -g "$APP_PATH"
+  "${OPEN_CLEAN_ENV[@]}" C11_TAG="$TAG_SLUG" C11_SOCKET_ENABLE=1 C11_SOCKET_MODE=automation C11_DEBUG_LOG="$CMUX_DEBUG_LOG" C11_REMOTE_DAEMON_ALLOW_LOCAL_BUILD=1 C11_REPO_ROOT="$PWD" open -g "$APP_PATH"
 else
   echo "/tmp/c11-debug.sock" > /tmp/c11-last-socket-path || true
   echo "/tmp/c11-debug.log" > /tmp/c11-last-debug-log-path || true

@@ -35,6 +35,23 @@ func c11TwinKey(forCmuxKey key: String) -> String? {
     return "C11_" + key.dropFirst(5)
 }
 
+/// Reads a c11 environment value, preferring the canonical `C11_*` name and
+/// falling back to the legacy `CMUX_*` twin. Pass the canonical `C11_*` key.
+///
+/// This is the read-side mirror of `c11TwinKey(forCmuxKey:)` (which dual-writes
+/// a `C11_*` twin for every managed `CMUX_*` var exported to child surfaces).
+/// Keeping the `CMUX_*` fallback preserves compatibility for any launch
+/// environment — scripts, schemes, or external callers — still setting the
+/// legacy name. Project convention is to author `C11_*` everywhere; the binary
+/// keeps reading `CMUX_*` so nothing in flight breaks.
+func c11Env(_ canonicalKey: String, in environment: [String: String]) -> String? {
+    if let value = environment[canonicalKey] { return value }
+    if canonicalKey.hasPrefix("C11_") {
+        return environment["CMUX_" + canonicalKey.dropFirst(4)]
+    }
+    return nil
+}
+
 final class MainWindowHostingView<Content: View>: NSHostingView<Content> {
     private let zeroSafeAreaLayoutGuide = NSLayoutGuide()
 
@@ -2729,7 +2746,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard env["CMUX_UI_TEST_SOCKET_SANITY"] == "1" else { return }
 
         guard let config = socketListenerConfigurationIfEnabled() else {
-            payload["socketExpectedPath"] = env["CMUX_SOCKET_PATH"] ?? ""
+            payload["socketExpectedPath"] = c11Env("C11_SOCKET_PATH", in: env) ?? ""
             payload["socketMode"] = "off"
             payload["socketReady"] = "0"
             payload["socketPingResponse"] = ""
@@ -9773,7 +9790,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         guard let config = socketListenerConfigurationIfEnabled() else {
             writeMultiWindowNotificationTestData([
-                "socketExpectedPath": env["CMUX_SOCKET_PATH"] ?? "",
+                "socketExpectedPath": c11Env("C11_SOCKET_PATH", in: env) ?? "",
                 "socketMode": "off",
                 "socketReady": "0",
                 "socketPingResponse": "",

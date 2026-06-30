@@ -1464,7 +1464,7 @@ enum AgentSkillsOnboarding {
 
     /// True when the running app is a **local development build**: either a
     /// Debug build, or a tagged `reload.sh --tag` / automation build (which
-    /// exports `CMUX_TAG`). Neither is ever true in a shipped Release without
+    /// exports `C11_TAG`). Neither is ever true in a shipped Release without
     /// a tag. Every local build rebundles edited skills, so the content-hash
     /// re-offer would pop the onboarding sheet on essentially every launch for
     /// the person *building* the skills; suppressing the auto-popup here ends

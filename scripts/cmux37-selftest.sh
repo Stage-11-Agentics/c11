@@ -93,8 +93,9 @@ if [[ ! -x "$CLI" ]]; then
   fail "tagged CLI not found at $CLI"
 fi
 
-export CMUX_SOCKET_PATH="$SOCKET"
-unset CMUX_WORKSPACE_ID CMUX_SURFACE_ID CMUX_TAB_ID CMUX_PANEL_ID
+export C11_SOCKET_PATH="$SOCKET"
+unset C11_WORKSPACE_ID C11_SURFACE_ID C11_TAB_ID C11_PANEL_ID \
+      CMUX_WORKSPACE_ID CMUX_SURFACE_ID CMUX_TAB_ID CMUX_PANEL_ID
 
 # --- 2. Wait for socket -----------------------------------------------------
 wait_for_socket() {

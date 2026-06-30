@@ -235,7 +235,7 @@ struct cmuxApp: App {
     }
 
     private static func terminateForMissingLaunchTag() -> Never {
-        let message = "error: refusing to launch untagged cmux DEV; start with ./scripts/reload.sh --tag <name> (or set CMUX_TAG for test harnesses)"
+        let message = "error: refusing to launch untagged c11 DEV; start with ./scripts/reload.sh --tag <name> (or set C11_TAG for test harnesses)"
         fputs("\(message)\n", stderr)
         fflush(stderr)
         NSLog("%@", message)
@@ -6345,7 +6345,7 @@ struct SettingsView: View {
 
         SettingsSectionHeader(title: String(localized: "settings.section.socketOverrides", defaultValue: "Socket Overrides"))
         SettingsCard {
-            SettingsCardNote(String(localized: "settings.automation.socketOverrides.note", defaultValue: "Overrides: CMUX_SOCKET_ENABLE, CMUX_SOCKET_MODE, and CMUX_SOCKET_PATH (set CMUX_ALLOW_SOCKET_OVERRIDE=1 for stable/nightly builds)."))
+            SettingsCardNote(String(localized: "settings.automation.socketOverrides.note", defaultValue: "Overrides: C11_SOCKET_ENABLE, C11_SOCKET_MODE, and C11_SOCKET_PATH (set C11_ALLOW_SOCKET_OVERRIDE=1 for stable/nightly builds)."))
         }
     }
 

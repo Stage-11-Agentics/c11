@@ -58,7 +58,7 @@ A Release/staging build (`reloads.sh`, or a published `c11 STAGING …`) binds i
 
 ## QA / automation launch (suppress the startup dialogs)
 
-A normal launch can present two blocking dialogs before the GUI is usable: the **Agent Skills** install/update sheet and the **"Resume previous session?"** picker. For automated QA they're just modals in the way. The `C11_QA_LAUNCH` env var (dual-read `CMUX_QA_LAUNCH`) suppresses **both** and makes the resume decision deterministic:
+A normal launch can present two blocking dialogs before the GUI is usable: the **Agent Skills** install/update sheet and the **"Resume previous session?"** picker. For automated QA they're just modals in the way. The `C11_QA_LAUNCH` env var suppresses **both** and makes the resume decision deterministic:
 
 | `C11_QA_LAUNCH` | Skill sheet | Resume picker | Session |
 |---|---|---|---|

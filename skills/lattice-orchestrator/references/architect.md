@@ -268,6 +268,13 @@ Before writing the Phase 2 artifacts, **finalize CLAUDE.md** (the Step 2 second 
 3. **`.lattice/orchestration/agents.md`** — empty scaffold; Orchestrator populates as delegators spawn.
 4. **`.lattice/orchestration/validation-plan.md`** — see below.
 
+### Pre-handoff sanity checks (cheap; prevent downstream delegator confusion)
+
+Two facts get baked into the run-state ticket table and the delegator prompts, and both are silently wrong often enough to verify before handoff rather than letting each delegator rediscover them mid-run:
+
+- **Verify the actual git remote name — don't assume `origin`.** Run `git remote -v` and use the real name literally in the `Branch base` column (`<remote>/main`). Many Stage 11 repos use **`forgejo`**, not `origin`; a ticket table that says `origin/main` makes every delegator's `git fetch` / `code-review --base` / push silently target a remote that doesn't exist. Record the remote name once in `run-state.md` § Configuration.
+- **Flag cross-repo tickets.** If a ticket's code lives in a *different* repository than the orchestration root (e.g. a deploy tool, an infra script, or a sibling service that the ticket happens to be filed against), say so explicitly in the ticket entry: which repo the change lands in, and that the delegator pushes + opens its PR **there**, not in the orchestration repo. A delegator can discover this itself (and a good one will), but flagging it at plan time saves a confused mid-run pivot and keeps the auto-merge gate pointed at the right repo. Scan the ticket bundle for any whose acceptance criterion names a file outside the orchestration repo's tree.
+
 ## Validation Plan template (load-bearing)
 
 The Result Validator in Phase 4 walks this file row by row. **Schema matters here** — different Architects must produce the same shape so different Result Validators produce comparable Validation Reports.

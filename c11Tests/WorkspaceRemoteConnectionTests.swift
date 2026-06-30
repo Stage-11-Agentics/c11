@@ -83,7 +83,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
                 "-c",
                 WorkspaceRemoteSessionController.remoteRelayMetadataCleanupScript(relayPort: 64008),
             ],
-            timeout: 5
+            timeout: 30  // generous hang-guard: the script is ms-fast; 5s flaked under CI WebProcess load
         )
 
         XCTAssertFalse(result.timedOut, result.stderr)
@@ -115,7 +115,7 @@ final class WorkspaceRemoteConnectionTests: XCTestCase {
                 "-c",
                 WorkspaceRemoteSessionController.remoteRelayMetadataCleanupScript(relayPort: 64009),
             ],
-            timeout: 5
+            timeout: 30  // generous hang-guard: the script is ms-fast; 5s flaked under CI WebProcess load
         )
 
         XCTAssertFalse(result.timedOut, result.stderr)

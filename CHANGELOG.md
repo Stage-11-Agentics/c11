@@ -6,6 +6,10 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.56.0] - 2026-06-30
+
+Re-signing release — **no functional changes from 0.55.0.** 0.54.0 and 0.55.0 were signed under a different Apple Developer ID team, so existing installs couldn't auto-update across the team boundary (Sparkle declines a cross-team swap). This build is re-signed under the original Developer ID team, restoring seamless auto-update. Updating from 0.53.x lands all of the 0.54.0 and 0.55.0 changes (exact-session resume for Pi/oh-my-pi/opencode, the agent registry, size-aware splits, the collapsing tab bar, chrome themes, `c11 tree --report`, the Agent Skills sheet fix, and the resume/socket hardening) in one step — see those sections below.
+
 ## [0.55.0] - 2026-06-30
 
 Tooling + hardening release. Headline: **`c11 tree --report` — a one-command, human-readable Markdown snapshot of your whole fleet** (every workspace's layout plus each surface's title, agent, live status, and description), built for "save the state before I close c11" handoffs. Alongside it: a fix for a main-thread hang that could beachball c11 under a heavy multi-agent fleet, the Agent Skills onboarding sheet stops re-popping on every launch, a workspace-navigation latch fix, socket-collision hardening so parallel c11 instances don't stomp each other's IPC socket, and a session-resume fix so Pi/oh-my-pi reconnect to the right session when a working directory holds several.

@@ -614,6 +614,55 @@ final class AgentSkillsOnboardingDefaultOptInTests: XCTestCase {
         XCTAssertFalse(AgentSkillsOnboarding.shouldOffer(for: rows))
     }
 
+    // C11 Bug B: a detected row whose only non-current package is
+    // `.installedNoManifest` or `.schemaMismatch` is offered by the auto-show
+    // gate (`shouldRowOffer`) but used to be excluded from the sheet's
+    // `needsInstallOrUpdate`, so it rendered the celebratory "Done" branch whose
+    // handler persists nothing → the onboarding sheet re-fired on every launch.
+    // These two states must be actionable so the sheet shows a real "Update"
+    // path instead of a dead-end "Done".
+    func testNoManifestRowIsActionable() {
+        let row = makeRow(target: .claude, detected: true, states: [.installedNoManifest])
+        XCTAssertTrue(row.needsInstallOrUpdate)
+        XCTAssertTrue(AgentSkillsOnboarding.shouldOffer(for: [row]))
+    }
+
+    func testSchemaMismatchRowIsActionable() {
+        let row = makeRow(target: .claude, detected: true, states: [.schemaMismatch])
+        XCTAssertTrue(row.needsInstallOrUpdate)
+        XCTAssertTrue(AgentSkillsOnboarding.shouldOffer(for: [row]))
+    }
+
+    // Structural invariant pinning the sheet's actionable predicate to the gate:
+    // for EVERY state the auto-show gate would offer (`shouldRowOffer == true`), a
+    // detected, non-shared, single-package row in that state must report
+    // `needsInstallOrUpdate == true`. If the two ever diverge again, an offered
+    // row could land in the celebratory branch and re-fire forever.
+    func testActionablePredicateCoversEveryOfferedState() {
+        for state in SkillInstallerState.allCases {
+            let row = makeRow(target: .claude, detected: true, states: [state])
+            let offeredByGate = AgentSkillsOnboarding.shouldRowOffer(makeStatus(target: .claude, state: state))
+            if offeredByGate {
+                XCTAssertTrue(
+                    row.needsInstallOrUpdate,
+                    "state \(state) is offered by the auto-show gate but the sheet treats it as non-actionable — celebratory 'Done' would persist nothing and the sheet would re-fire"
+                )
+            } else {
+                XCTAssertFalse(
+                    row.needsInstallOrUpdate,
+                    "state \(state) is not offered by the gate but the sheet treats it as actionable"
+                )
+            }
+        }
+    }
+
+    // A shared-destination row stays non-actionable even in an offered state, so
+    // the sheet doesn't double-count it; its non-shared owner carries the action.
+    func testSharedNoManifestRowIsNotActionable() {
+        let row = makeRow(target: .codex, detected: true, states: [.installedNoManifest], sharedWith: .claude)
+        XCTAssertFalse(row.needsInstallOrUpdate)
+    }
+
     private func makeRow(
         target: SkillInstallerTarget,
         detected: Bool,

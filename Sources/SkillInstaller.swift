@@ -105,7 +105,7 @@ struct SkillInstallerRecord: Codable, Equatable {
     }
 }
 
-enum SkillInstallerState: String, Equatable {
+enum SkillInstallerState: String, Equatable, CaseIterable {
     case notInstalled
     case installedCurrent
     case installedOutdated

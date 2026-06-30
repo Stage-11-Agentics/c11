@@ -20,7 +20,17 @@ final class AgentSkillsModel: ObservableObject {
             packages.contains { $0.state == .installedOutdated || $0.state == .installedNoManifest || $0.state == .schemaMismatch }
         }
         var needsInstallOrUpdate: Bool {
-            !isSharedDestination && !packages.isEmpty && packages.contains { $0.state == .notInstalled || $0.state == .installedOutdated }
+            // Single source of truth with the auto-show gate: a row is
+            // actionable iff `AgentSkillsOnboarding.shouldRowOffer` (the same
+            // classifier `shouldPresent` uses) would offer one of its packages.
+            // This must stay aligned with the gate — if it counts fewer states
+            // than the gate offers (it previously omitted `.installedNoManifest`
+            // and `.schemaMismatch`), such a row auto-pops the sheet yet renders
+            // the celebratory "Done" branch whose handler persists nothing, so
+            // the sheet re-fires on every launch with no way for the operator to
+            // resolve it. Shared destinations stay non-actionable; their owner
+            // row carries the same on-disk state and remains offerable.
+            !isSharedDestination && packages.contains { AgentSkillsOnboarding.shouldRowOffer($0) }
         }
         var anyInstalled: Bool {
             packages.contains { $0.state != .notInstalled }

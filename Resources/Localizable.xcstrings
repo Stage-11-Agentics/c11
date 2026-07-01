@@ -56214,6 +56214,53 @@
         }
       }
     },
+    "update.error.appLocation.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move c11 into Applications and relaunch to enable updates."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートを有効にするには、c11 をアプリケーションフォルダに移動して再起動してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将 c11 移到「应用程序」并重新启动即可启用更新。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "將 c11 移到「應用程式」並重新啟動即可啟用更新。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "업데이트를 사용하려면 c11을 응용 프로그램으로 옮긴 후 다시 실행하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Чтобы включить обновления, переместите c11 в папку «Программы» и перезапустите."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Щоб увімкнути оновлення, перемістіть c11 до теки «Програми» та перезапустіть."
+          }
+        }
+      }
+    },
     "update.error.appLocation.title": {
       "extractionState": "manual",
       "localizations": {
@@ -56398,6 +56445,53 @@
           "stringUnit": {
             "state": "translated",
             "value": "Не вдалося завантажити оновлення"
+          }
+        }
+      }
+    },
+    "update.error.downloadLatest": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download Latest"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最新版をダウンロード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载最新版本"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下載最新版本"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최신 버전 다운로드"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скачать последнюю версию"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Завантажити найновішу"
           }
         }
       }
@@ -56680,6 +56774,100 @@
           "stringUnit": {
             "state": "translated",
             "value": "Незахищене джерело оновлень"
+          }
+        }
+      }
+    },
+    "update.error.installerLaunch.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 downloaded the update but couldn’t launch the installer. Download the latest version and replace c11 in your Applications folder."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 はアップデートをダウンロードしましたが、インストーラを起動できませんでした。最新版をダウンロードして、アプリケーションフォルダの c11 を置き換えてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 已下载更新，但无法启动安装程序。请下载最新版本，并替换「应用程序」里的 c11。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 已下載更新，但無法啟動安裝程式。請下載最新版本，並取代「應用程式」裡的 c11。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11이 업데이트를 다운로드했지만 설치 프로그램을 실행할 수 없어요. 최신 버전을 다운로드해서 응용 프로그램 폴더의 c11을 교체하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 загрузил обновление, но не смог запустить установщик. Скачайте последнюю версию и замените c11 в папке «Программы»."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 завантажив оновлення, але не зміг запустити інсталятор. Завантажте найновішу версію та замініть c11 у теці «Програми»."
+          }
+        }
+      }
+    },
+    "update.error.installerLaunch.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update Couldn’t Be Installed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートをインストールできませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新无法安装"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新無法安裝"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "업데이트를 설치할 수 없어요"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось установить обновление"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося встановити оновлення"
           }
         }
       }

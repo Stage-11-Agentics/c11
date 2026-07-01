@@ -6,6 +6,14 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.56.1] - 2026-07-01
+
+Patch release. Headline: **auto-update failures are no longer a dead end.** When Sparkle can't launch its installer (error 4005 — most often a damaged `Sparkle.framework` on the installed copy, not a real location problem), the update popover used to show a misleading "c11 needs to live in Applications" message with only a Retry that re-hit the same wall. It now explains the failure plainly and offers a **Download Latest** button that opens the releases page so you can reinstall in one click. If auto-update ever errors with 4005, download the latest DMG and drag it over c11 in Applications once — auto-update resumes afterward.
+
+### Fixed
+
+- **Sparkle update error 4005 no longer dead-ends.** A 4005 ("couldn't launch the installer") now reads "Update Couldn't Be Installed" and offers a prominent **Download Latest** button to the releases page instead of a futile Retry and a misleading "move to Applications" message. Genuine "app isn't in Applications" cases (Sparkle 1003 disk-image / 1005 translocated) keep their move-and-relaunch guidance. ([#304](https://github.com/Stage-11-Agentics/c11/pull/304))
+
 ## [0.56.0] - 2026-06-30
 
 Re-signing release — **no functional changes from 0.55.0.** 0.54.0 and 0.55.0 were signed under a different Apple Developer ID team, so existing installs couldn't auto-update across the team boundary (Sparkle declines a cross-team swap). This build is re-signed under the original Developer ID team, restoring seamless auto-update. Updating from 0.53.x lands all of the 0.54.0 and 0.55.0 changes (exact-session resume for Pi/oh-my-pi/opencode, the agent registry, size-aware splits, the collapsing tab bar, chrome themes, `c11 tree --report`, the Agent Skills sheet fix, and the resume/socket hardening) in one step — see those sections below.

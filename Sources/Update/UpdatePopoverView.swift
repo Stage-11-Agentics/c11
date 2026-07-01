@@ -389,12 +389,25 @@ fileprivate struct UpdateErrorView: View {
 
                 Spacer()
 
-                Button(String(localized: "common.retry", defaultValue: "Retry")) {
-                    error.retry()
-                    dismiss()
+                if UpdateViewModel.isInstallerLaunchFailure(error.error) {
+                    // Retrying re-hits the same installer/location wall; send the
+                    // user to the releases page to download + reinstall by hand.
+                    Button(String(localized: "update.error.downloadLatest", defaultValue: "Download Latest")) {
+                        UpdateViewModel.openReleasesPage()
+                        error.dismiss()
+                        dismiss()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                } else {
+                    Button(String(localized: "common.retry", defaultValue: "Retry")) {
+                        error.retry()
+                        dismiss()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .controlSize(.small)
                 }
-                .keyboardShortcut(.defaultAction)
-                .controlSize(.small)
             }
         }
         .padding(16)

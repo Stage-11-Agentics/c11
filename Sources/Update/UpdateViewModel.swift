@@ -247,7 +247,7 @@ class UpdateViewModel: ObservableObject {
         if nsError.domain == SUSparkleErrorDomain {
             switch nsError.code {
             case 4005:
-                return String(localized: "update.error.permissionError.title", defaultValue: "c11 needs to live in Applications")
+                return String(localized: "update.error.installerLaunch.title", defaultValue: "Update Couldn’t Be Installed")
             case 2001:
                 return String(localized: "update.error.downloadFailed.title", defaultValue: "Couldn't Download Update")
             case 1000, 1002:
@@ -303,8 +303,10 @@ class UpdateViewModel: ObservableObject {
                 return String(localized: "update.error.insecureFeed.message", defaultValue: "The update list isn't using a secure connection. Contact support.")
             case 1, 2, 3001, 3002:
                 return String(localized: "update.error.signatureError.message", defaultValue: "The update's signature didn't verify. Try again later.")
-            case 1003, 1005, 4005:
-                return String(localized: "update.error.permissionError.message", defaultValue: "Move c11 into Applications and relaunch to enable updates.")
+            case 4005:
+                return String(localized: "update.error.installerLaunch.message", defaultValue: "c11 downloaded the update but couldn’t launch the installer. Download the latest version and replace c11 in your Applications folder.")
+            case 1003, 1005:
+                return String(localized: "update.error.appLocation.message", defaultValue: "Move c11 into Applications and relaunch to enable updates.")
             default:
                 break
             }
@@ -384,6 +386,31 @@ class UpdateViewModel: ObservableObject {
     static func normalizedDetectedUpdateVersion(from version: String) -> String? {
         let trimmed = version.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Where to send users when auto-update can't finish on its own.
+    static let releasesPageURLString = "https://github.com/Stage-11-Agentics/c11/releases/latest"
+
+    /// Sparkle failures where the download succeeded but installation can't
+    /// proceed automatically: the installer couldn't launch (4005), or the app
+    /// is running from a disk image (1003) / a translocated, quarantined
+    /// location (1005). Retrying just re-hits the same wall; the real fix is a
+    /// manual download + reinstall, so the error UI offers that instead.
+    static func isInstallerLaunchFailure(_ error: Swift.Error) -> Bool {
+        let nsError = error as NSError
+        guard nsError.domain == SUSparkleErrorDomain else { return false }
+        switch nsError.code {
+        case 4005, 1003, 1005:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Open the GitHub releases page so the user can grab the latest DMG by hand.
+    static func openReleasesPage() {
+        guard let url = URL(string: releasesPageURLString) else { return }
+        NSWorkspace.shared.open(url)
     }
 
     private var detectedUpdateText: String? {

@@ -1,16 +1,12 @@
-# Result Validator — Phase 4 Reference
+# Result Validator — Phase 2 Reference
 
-Phase 4 fires when the Orchestrator declares the run complete (every ticket in `review` or `done`). A **fresh** agent spawns in its own pane — fresh because Orchestrator bias toward "my work is good" is the failure mode this phase exists to prevent.
+Phase 2 fires when the Orchestrator declares the run complete (every ticket at the terminal pre-merge status or `done`). A **fresh** agent spawns in its own tab — fresh because Orchestrator bias toward "my work is good" is the failure mode this phase exists to prevent.
 
 The Result Validator's whole job: walk `validation-plan.md` row by row, record pass/fail/partial against the actual run output, write the Validation Report.
 
 ## Identity declaration
 
-```bash
-c11 set-agent --type claude-code --model claude-opus-4-7
-c11 rename-tab --surface "$C11_SURFACE_ID" "Result Validator"
-c11 set-description --surface "$C11_SURFACE_ID" "Phase 4 terminal audit — walking .lattice/orchestration/validation-plan.md against the run's PRs. Producing .lattice/orchestration/validation-report.md. One-shot; will exit after surfacing the report."
-```
+The Identity Block from `references/orchestrator.md` (resolve own surface ref; never trust `$C11_SURFACE_ID` in a fresh surface), then title `Result Validator` with a description noting "terminal audit; one-shot — exits after surfacing the report."
 
 ## Boot prompt (spawned by Orchestrator at run-complete)
 
@@ -20,10 +16,8 @@ You are the Result Validator for this Lattice run.
 
 You are fresh — no prior context from the Orchestrator or any delegator. That's intentional. Your job is to audit the run against the spec with an independent eye.
 
-Identity:
-  - c11 set-agent --type claude-code --model claude-opus-4-7
-  - c11 rename-tab --surface "$C11_SURFACE_ID" "Result Validator"
-  - Set a description that includes "Phase 4 audit; one-shot."
+Identity: run the Identity Block (references/orchestrator.md), then title "Result Validator"
+with a description that includes "terminal audit; one-shot."
 
 Load context cold, in this order:
   1. SPEC.md
@@ -88,7 +82,7 @@ The Validator stays the singleton report-writer. The sub-agents are temporary fa
 
 **`runnable_at: post-merge-smoke` rows are NOT walked here.** Collect them verbatim into the report's § "Operator smoke-pass checklist" (template below). They're the operator's post-merge pass — your job is to stage them, not run them. If you find yourself wanting to attempt one anyway because it "should be easy," resist: cross-applying multiple open PRs to a single tree pre-merge is exactly the `PARTIAL-INSPECTION` shape the two-track plan exists to prevent.
 
-**Don't invent rows.** If the run produced behavior the validation plan didn't anticipate, note it in the "Drift" section of the report — don't silently add a row. The Architect's plan is the audit contract.
+**Don't invent rows.** If the run produced behavior the validation plan didn't anticipate, note it in the "Drift" section of the report — don't silently add a row. The validation plan is the audit contract.
 
 **Don't silently skip pre-merge-static rows.** If a row is genuinely un-verifiable (e.g., the artifact column references a PR that was never opened), record it as **Blocked** with the reason.
 
@@ -143,7 +137,7 @@ What to do with the run.
 - **Accept-as-is:** items that fell short of spec but are intentional or acceptable (operator can override the validator's strict reading).
 
 ## What I couldn't verify
-Anything blocked, or anything where the verification method in the plan didn't have enough specificity to give a clean result. Architect feedback for next time.
+Anything blocked, or anything where the verification method in the plan didn't have enough specificity to give a clean result. Feedback for the contract's author next time.
 
 ## Operator smoke-pass checklist (post-merge)
 
@@ -176,9 +170,9 @@ Full report: .lattice/orchestration/validation-report.md
 
 Then stop. The Result Validator is one-shot. The Orchestrator (still alive in its pane) is the operator's channel for routing fix-backs or opening follow-up tickets.
 
-## When to skip Phase 4
+## When to skip the terminal audit
 
-The Architect can disable the Result Validator in Phase 2 config. Skip when:
+The Result Validator can be disabled in the Phase 0 config. Skip when:
 
 - The run is trivial (1–2 tickets, single-component changes) and the spec-vs-result audit isn't worth the agent-spawn overhead.
 - The operator is doing the audit themselves (small project, hands-on review).

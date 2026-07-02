@@ -40,7 +40,7 @@ c11's value to an agent is **the skill** — `skills/c11/SKILL.md` plus the peer
 
 c11 installs its skills (Settings → Agent Skills) as **one-time copies** into `~/.claude/skills/<name>/`, each stamped with a `.c11-skill.json` marker. **The app does not track the repo source after install.** So editing — or committing — a skill under `skills/` does *nothing* to the copy an agent actually loads on any machine where that skill is already installed. The committed source and the live skill are two different files; fixing one leaves the other stale. This has bitten us before: a fix lands in `skills/c11/SKILL.md`, the commit is green, and agents keep reading the old wording for weeks because nobody refreshed the install.
 
-**Whenever you edit any installable skill** (`c11`, `c11-browser`, `c11-markdown`, `c11-debug-windows`, `lattice-orchestrator` — see `skills/MANIFEST.json`), the change is not done until you run:
+**Whenever you edit any installable skill** (the list lives in `skills/MANIFEST.json` — c11 and its peers, `lattice-orchestrator`, the `overture-*` stages, `venture-partner`), the change is not done until you run:
 
 ```bash
 scripts/sync-installed-skills.sh            # refresh every installed installable skill from source

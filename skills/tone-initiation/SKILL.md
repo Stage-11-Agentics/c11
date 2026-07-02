@@ -1,16 +1,16 @@
 ---
-name: overture-initiation
+name: tone-initiation
 version: 1
-description: Stage 1 of the Overture workflow (overture-initiation → overture-prototype → overture-architect → lattice-orchestrator) — the client-facing initiation of a project: commission, landscape research, idea refinement, economics, philosophy, and user stories. You are initiating a project with a client — part interviewer, part researcher, part product thinker; the largest, most dialogue-heavy stage of the pipeline. Invoke when the operator says "overture," "start a new project," "project initiation," "new project from scratch," or brings a raw idea at its very beginning. Each Overture stage is independently invocable when its inputs already exist.
+description: Stage 1 of the Tone workflow (tone-initiation → tone-prototype → tone-architect → lattice-orchestrator) — the client-facing initiation of a project: commission, landscape research, idea refinement, economics, philosophy, and user stories. You are initiating a project with a client — part interviewer, part researcher, part product thinker; the largest, most dialogue-heavy stage of the pipeline. Invoke when the operator says "tone," "start a new project," "project initiation," "new project from scratch," or brings a raw idea at its very beginning. Each Tone stage is independently invocable when its inputs already exist.
 ---
 
-# Overture — Initiation
+# Tone — Initiation
 
-**Overture** is Stage 11's idea-to-build workflow. An overture is the self-contained opening work that introduces every theme the full performance will develop — and that is the promise: by the time the orchestra plays, every theme has been stated, heard, and loved. Four stages:
+**Tone** is Stage 11's idea-to-build workflow. A tone is a single voice, sounded and carried true from first breath to full performance — and that is the promise: what's stated at the opening is what's still heard, unwavering, when the performance ends. Four stages:
 
-1. **overture-initiation** (this skill) — problem, people, landscape, economics, philosophy, stories.
-2. **overture-prototype** — the design discovered and iterated until the client *loves* it.
-3. **overture-architect** — the technical dialogue that codifies the validated design into the build contract.
+1. **tone-initiation** (this skill) — problem, people, landscape, economics, philosophy, stories.
+2. **tone-prototype** — the design discovered and iterated until the client *loves* it.
+3. **tone-architect** — the technical dialogue that codifies the validated design into the build contract.
 4. **lattice-orchestrator** — tickets, dispatch, terminal audit. Named for its substrate deliberately: build on something other than Lattice and only this stage changes.
 
 You are initiating a project with a client. **A commission breathes life into a project** — this stage is where that breath happens: a dialogue that solicits everything needed to understand the problem, the people who have it, and the shape of an excellent answer. It is the largest stage in discussion points and the most self-reflective: expect to loop back, revise, and re-ask. Generic by design — the same arc carries a web app, a CLI, a hardware device, a novel, a business process, or a new business.
@@ -19,11 +19,11 @@ Assumes c11 and exploits it (load the c11 skill for mechanics; never hard-code i
 
 ## Contract
 
-**On invoke, skim the sibling stage skills** (`~/.claude/skills/overture-*/SKILL.md`) so you hold the whole arc: what you produce here is what they consume, and a contract you don't know you owe is a contract you'll break.
+**On invoke, skim the sibling stage skills** (`~/.claude/skills/tone-*/SKILL.md`) so you hold the whole arc: what you produce here is what they consume, and a contract you don't know you owe is a contract you'll break.
 
 - **Inputs:** a raw idea and a client. Optionally an existing repo and prior artifacts — `sequence/run-state.md` decides where to resume.
 - **Outputs:** the project repo with `CLAUDE.md` root references; `PHILOSOPHY.md`; `sequence/USER_STORIES.md` with stable AC IDs; `ECONOMICS.md` where economics are load-bearing; the `sequence/research/` dossier; `sequence/run-state.md`.
-- **Consumed by:** `overture-prototype` (philosophy + stories drive design discovery) and `overture-architect` (the whole corpus feeds evaluation and spec).
+- **Consumed by:** `tone-prototype` (philosophy + stories drive design discovery) and `tone-architect` (the whole corpus feeds evaluation and spec).
 
 ## Pipeline norms (all four stages)
 
@@ -50,11 +50,11 @@ Assumes c11 and exploits it (load the c11 skill for mechanics; never hard-code i
 │   ├── run-state.md        # the arc's resume anchor (all stages write here)
 │   ├── research/           # initiation — the dossier
 │   └── USER_STORIES.md     # initiation — stories with AC IDs
-├── prototypes/             # overture-prototype — each badged PROTOTYPE
+├── prototypes/             # tone-prototype — each badged PROTOTYPE
 ├── PHILOSOPHY.md           # initiation — the one thing
 ├── ECONOMICS.md            # initiation — where economics are load-bearing
-├── DESIGN.md               # overture-prototype — the converged design language
-├── SPEC.md  EVALUATION.md  BUILDPLAN.md   # overture-architect — the build contract
+├── DESIGN.md               # tone-prototype — the converged design language
+├── SPEC.md  EVALUATION.md  BUILDPLAN.md   # tone-architect — the build contract
 └── CLAUDE.md               # references every root artifact (pointers, never copies)
 ```
 
@@ -78,7 +78,7 @@ Stop at saturation — when new searches stop changing the picture — not when 
 
 **Phase 4 — Stories review (touchpoint).** Signal the client for review. Iterate on their feedback, and proactively propose the stories they didn't think of.
 
-**Handoff.** Invoke `overture-prototype`. It reads `run-state.md`, `PHILOSOPHY.md`, and `USER_STORIES.md` cold, and it is fully licensed to reopen them — prototype iteration is where stories and philosophies get stress-tested (see Living artifacts).
+**Handoff.** Invoke `tone-prototype`. It reads `run-state.md`, `PHILOSOPHY.md`, and `USER_STORIES.md` cold, and it is fully licensed to reopen them — prototype iteration is where stories and philosophies get stress-tested (see Living artifacts).
 
 ## Touchpoints
 

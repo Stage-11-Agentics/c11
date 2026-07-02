@@ -1,14 +1,14 @@
 ---
 name: lattice-orchestrator
 version: 2
-description: Stage 4 of the Overture workflow and Stage 11's build engine — takes a complete build contract (SPEC.md, EVALUATION.md, BUILDPLAN.md, and where one exists a binding prototype + DESIGN.md), turns it into Lattice tickets, dispatches a delegator fleet that produces open PRs, and terminally audits the result against a spec its builders did not write. No planning interview — if contract artifacts are missing, run the Overture stage that produces them (overture-architect for spec/plan, overture-initiation for a raw idea). Invoke when the operator says "orchestrate this," "kick off the orchestration," "run the orchestrator," "set up an overnight run," or hands over a finished build contract.
+description: Stage 4 of the Tone workflow and Stage 11's build engine — takes a complete build contract (SPEC.md, EVALUATION.md, BUILDPLAN.md, and where one exists a binding prototype + DESIGN.md), turns it into Lattice tickets, dispatches a delegator fleet that produces open PRs, and terminally audits the result against a spec its builders did not write. No planning interview — if contract artifacts are missing, run the Tone stage that produces them (tone-architect for spec/plan, tone-initiation for a raw idea). Invoke when the operator says "orchestrate this," "kick off the orchestration," "run the orchestrator," "set up an overnight run," or hands over a finished build contract.
 ---
 
 # Lattice Orchestrator
 
-The build stage of **Overture** (overture-initiation → overture-prototype → overture-architect → **lattice-orchestrator**), and equally invocable standalone on any complete build contract. Named for its substrate deliberately: this skill orchestrates builds *on Lattice*; a different build substrate would be a different skill.
+The build stage of **Tone** (tone-initiation → tone-prototype → tone-architect → **lattice-orchestrator**), and equally invocable standalone on any complete build contract. Named for its substrate deliberately: this skill orchestrates builds *on Lattice*; a different build substrate would be a different skill.
 
-It does not plan. The contract arrives written — by `overture-architect` or by hand — and this skill's job is execution with integrity: **tickets → dispatch → terminal audit**, where the audit judges the build against a spec its builders did not write. Separation of duties is the design, not an accident.
+It does not plan. The contract arrives written — by `tone-architect` or by hand — and this skill's job is execution with integrity: **tickets → dispatch → terminal audit**, where the audit judges the build against a spec its builders did not write. Separation of duties is the design, not an accident.
 
 Three seats, context-isolated: the **Orchestrator** (Phases 0–1 — intake, ticketing, dispatch; it delegates, it does not implement), the **Result Validator** (Phase 2 — fresh session, terminal audit), and the supporting cast: **delegators** (one per ticket, driving plan → impl → review → validate → PR), **captains** (one-shot cross-cutting recovery), and the **Master Validator** singleton (optional in-flight global audit).
 

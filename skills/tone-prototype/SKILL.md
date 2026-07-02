@@ -1,12 +1,12 @@
 ---
-name: overture-prototype
+name: tone-prototype
 version: 1
-description: Stage 2 of the Overture workflow (overture-initiation → overture-prototype → overture-architect → lattice-orchestrator) — prototype discovery: exploration directions pinned down with the client (by default three, each resting on a different core assumption), a clickable HTML prototype per direction on realistic mock data, iterated with the client until they love it. The full design, UX and UI, is discovered here; the build later reproduces it one-to-one. Invoke when the operator says "overture prototype," "prototype this," "prototype discovery," or standalone whenever a scoped idea needs its design discovered — even outside a full Overture run.
+description: Stage 2 of the Tone workflow (tone-initiation → tone-prototype → tone-architect → lattice-orchestrator) — prototype discovery: exploration directions pinned down with the client (by default three, each resting on a different core assumption), a clickable HTML prototype per direction on realistic mock data, iterated with the client until they love it. The full design, UX and UI, is discovered here; the build later reproduces it one-to-one. Invoke when the operator says "tone prototype," "prototype this," "prototype discovery," or standalone whenever a scoped idea needs its design discovered — even outside a full Tone run.
 ---
 
-# Overture — Prototype
+# Tone — Prototype
 
-Stage 2 of **Overture**, Stage 11's idea-to-build workflow: **overture-initiation** → **overture-prototype** (this skill) → **overture-architect** → **lattice-orchestrator**. Each stage is independently invocable when its inputs exist; this one needs only a scoped idea — ideally `PHILOSOPHY.md` and `USER_STORIES.md` from initiation, but any clear statement of problem and audience will do.
+Stage 2 of **Tone**, Stage 11's idea-to-build workflow: **tone-initiation** → **tone-prototype** (this skill) → **tone-architect** → **lattice-orchestrator**. Each stage is independently invocable when its inputs exist; this one needs only a scoped idea — ideally `PHILOSOPHY.md` and `USER_STORIES.md` from initiation, but any clear statement of problem and audience will do.
 
 This is the centerpiece of the arc. The full design — UX *and* UI — is **discovered here**, at the cheapest level where it can still change, and validated by the client actually using it. Everything downstream reproduces what this stage converges on; nothing downstream re-designs. Iteration ends when the client **loves** the prototype, not when they accept it: approval is a gate passed, love is a design found. The working test — *would the client keep this if a better option appeared tomorrow?*
 
@@ -14,11 +14,11 @@ Assumes c11 (load the c11 skill for mechanics). Outside c11, takes degrade to fi
 
 ## Contract
 
-**On invoke, skim the sibling stage skills** (`~/.claude/skills/overture-*/SKILL.md`) so you hold the whole arc — the pipeline norms (living artifacts, AC lineage, one run-state, closed loop) live in `overture-initiation` and bind every stage.
+**On invoke, skim the sibling stage skills** (`~/.claude/skills/tone-*/SKILL.md`) so you hold the whole arc — the pipeline norms (living artifacts, AC lineage, one run-state, closed loop) live in `tone-initiation` and bind every stage.
 
 - **Inputs:** `PHILOSOPHY.md` and `sequence/USER_STORIES.md` with AC IDs (from initiation) — or, invoked standalone, any clear statement of problem and audience. `ECONOMICS.md` and the dossier where they exist. `sequence/run-state.md` decides where to resume.
 - **Outputs:** `prototypes/` with the converged take as the binding visual contract; `DESIGN.md`; amendments flowed back into `USER_STORIES.md` (new AC IDs) and `PHILOSOPHY.md` (upheld violations); `sequence/run-state.md` updated.
-- **Consumed by:** `overture-architect` (the prototype is the design reference for the spec and the `felt` checkpoints) and, through it, the build fleet (which reproduces the binding contract one-to-one).
+- **Consumed by:** `tone-architect` (the prototype is the design reference for the spec and the `felt` checkpoints) and, through it, the build fleet (which reproduces the binding contract one-to-one).
 
 ## The work
 
@@ -49,7 +49,7 @@ The stage is done when the client has **used** the converged prototype — click
 - Every prototype carries an unmistakable, persistent on-screen `PROTOTYPE` badge ("not wired to real data" where it helps) — part of the artifact itself, never a caption supplied verbally. A high-fidelity mockup must never be mistakable for the shipped product.
 - `sequence/run-state.md` updated: takes produced, direction chosen, rounds iterated, stats.
 
-**Handoff.** Invoke `overture-architect` — the technical dialogue that codifies the loved design into `EVALUATION.md`, `SPEC.md`, and `BUILDPLAN.md`.
+**Handoff.** Invoke `tone-architect` — the technical dialogue that codifies the loved design into `EVALUATION.md`, `SPEC.md`, and `BUILDPLAN.md`.
 
 ## When the experience isn't a screen
 

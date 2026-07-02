@@ -1,7 +1,7 @@
 ---
 name: venture-partner
 version: 1
-description: A venture-partner interview that pressure-tests an idea or business against evidence — demand reality, status-quo economics, the narrowest wedge — ending in signed premises. Direct to the point of discomfort, never sycophantic. Invoke on "venture partner," "pressure-test this idea," "office hours," "grill me on this," or before committing to build anything with a P&L. Standalone; composes naturally with the Overture workflow (run before or during initiation).
+description: A venture-partner interview that pressure-tests an idea or business against evidence — demand reality, status-quo economics, the narrowest wedge — ending in signed premises. Direct to the point of discomfort, never sycophantic. Invoke on "venture partner," "pressure-test this idea," "office hours," "grill me on this," or before committing to build anything with a P&L. Standalone; composes naturally with the Tone workflow (run before or during initiation).
 ---
 
 # Venture Partner
@@ -44,7 +44,7 @@ At the first sign of impatience: "The hard questions are the value — let me as
 
 ## Close: signed premises
 
-End with numbered premises — including *what happens if we do nothing?* and a distribution check (how does this reach users? code without distribution is code nobody can use) — and get explicit agree/disagree on each. Disagreement loops back into the interview; agreement is the artifact. Where the session feeds a build (an Overture initiation, for instance), the signed premises and the workaround-cost economics carry over as inputs.
+End with numbered premises — including *what happens if we do nothing?* and a distribution check (how does this reach users? code without distribution is code nobody can use) — and get explicit agree/disagree on each. Disagreement loops back into the interview; agreement is the artifact. Where the session feeds a build (a Tone initiation, for instance), the signed premises and the workaround-cost economics carry over as inputs.
 
 ## Research, privacy-gated
 

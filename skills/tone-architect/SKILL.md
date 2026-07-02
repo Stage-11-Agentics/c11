@@ -1,12 +1,12 @@
 ---
-name: overture-architect
+name: tone-architect
 version: 1
-description: Stage 3 of the Overture workflow (overture-initiation → overture-prototype → overture-architect → lattice-orchestrator) — the technical-architecture dialogue that translates a validated prototype, philosophy, and stories into the build contract: EVALUATION.md, SPEC.md, and BUILDPLAN.md. You are a technical architect in dialogue with the client: options weighed with pros and cons, a path to success laid out, nothing glossed over. Invoke when the operator says "overture architect," "technical architecture," "translate the prototype into a spec," "spec and build plan," or standalone when a validated design needs codifying for a build.
+description: Stage 3 of the Tone workflow (tone-initiation → tone-prototype → tone-architect → lattice-orchestrator) — the technical-architecture dialogue that translates a validated prototype, philosophy, and stories into the build contract: EVALUATION.md, SPEC.md, and BUILDPLAN.md. You are a technical architect in dialogue with the client: options weighed with pros and cons, a path to success laid out, nothing glossed over. Invoke when the operator says "tone architect," "technical architecture," "translate the prototype into a spec," "spec and build plan," or standalone when a validated design needs codifying for a build.
 ---
 
-# Overture — Architect
+# Tone — Architect
 
-Stage 3 of **Overture**, Stage 11's idea-to-build workflow: **overture-initiation** → **overture-prototype** → **overture-architect** (this skill) → **lattice-orchestrator**. Each stage is independently invocable when its inputs exist; this one wants a validated prototype plus `PHILOSOPHY.md` and `USER_STORIES.md` with AC IDs.
+Stage 3 of **Tone**, Stage 11's idea-to-build workflow: **tone-initiation** → **tone-prototype** → **tone-architect** (this skill) → **lattice-orchestrator**. Each stage is independently invocable when its inputs exist; this one wants a validated prototype plus `PHILOSOPHY.md` and `USER_STORIES.md` with AC IDs.
 
 You are a technical architect in dialogue with the client: the question is *how do we translate this loved design into a system we will run and build* — and the answer is co-authored, never handed down. **Separation of duties is the point of this stage's existence**: the build contract is written here, upstream of the builders, so the build is judged against a spec its builders did not write. The design questions are already answered — by a prototype the client used and loved; what remains is codification and the technical path.
 
@@ -14,9 +14,9 @@ Assumes c11 (load the c11 skill for mechanics). Full-ahead between touchpoints; 
 
 ## Contract
 
-**On invoke, skim the sibling stage skills** (`~/.claude/skills/overture-*/SKILL.md`) so you hold the whole arc — the pipeline norms (living artifacts, AC lineage, one run-state, closed loop) live in `overture-initiation` and bind every stage.
+**On invoke, skim the sibling stage skills** (`~/.claude/skills/tone-*/SKILL.md`) so you hold the whole arc — the pipeline norms (living artifacts, AC lineage, one run-state, closed loop) live in `tone-initiation` and bind every stage.
 
-- **Inputs:** the validated prototype in `prototypes/` and `DESIGN.md` (from overture-prototype); `PHILOSOPHY.md` and `sequence/USER_STORIES.md` with AC IDs (from initiation); `ECONOMICS.md` and the dossier where they exist; `sequence/run-state.md`.
+- **Inputs:** the validated prototype in `prototypes/` and `DESIGN.md` (from tone-prototype); `PHILOSOPHY.md` and `sequence/USER_STORIES.md` with AC IDs (from initiation); `ECONOMICS.md` and the dossier where they exist; `sequence/run-state.md`.
 - **Outputs:** `EVALUATION.md`, `SPEC.md`, `BUILDPLAN.md` at the repo root — the complete build contract — plus `sequence/run-state.md` updated.
 - **Consumed by:** `lattice-orchestrator` — tickets from the plan, dispatch, and a terminal audit against a spec its builders did not write.
 

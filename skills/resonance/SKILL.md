@@ -37,7 +37,7 @@ Assumes c11 (load the c11 skill for mechanics); degrades cleanly to plain files 
 when? Installs, signups, stars, active users, replies, revenue. "We should do
 marketing" is not intent — push until it's a number on a date.
 
-**R1 — Map.** Read the playbook first. Then the ground: who the audience actually is,
+**R1 — Map.** Read whatever playbook exists for this project or its neighbors first. Then the ground: who the audience actually is,
 where they already gather (name real venues, not categories), what the funnel looks
 like today (do we even know weekly installs?), and what the audience currently uses
 instead. Model intelligence and quick research both count — label which is which.
@@ -96,11 +96,12 @@ playbook by being run.
 
 ## The playbook
 
-`resonance/` at the Stage11 root (sibling of `sounding/`), created on first run:
-`experiments/` (one brief per run, immutable once verdicted) and `playbook/` (distilled
-plays — play, audience, channel, creative approach, actual numbers including cost per
-result, conditions where it holds — each citing the experiments that earned it, with
-replication count and as-of date), plus `INDEX.md` (regenerate, don't hand-tend). One
+There is no canonical home — where the record lives depends on the project, and the
+session decides it (the project's repo, a deployment directory, wherever the work
+already lives). What's fixed is the shape, not the address: experiment briefs
+(immutable once verdicted) and distilled plays — play, audience, channel, creative
+approach, actual numbers including cost per result, conditions where it holds — each
+citing the experiments that earned it, with replication count and as-of date. One
 experiment makes a play a candidate; replication promotes it. Early reps run on
 Stage 11's own tools, where a bad landing costs nearly nothing.
 

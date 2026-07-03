@@ -14,7 +14,7 @@ A sounding is a depth measurement — taken before the ship commits to the chann
 4. **Produces reads.** Concrete candidate takes on the direction, each packaged as a card: demand evidence, incumbents, distribution hypothesis, build size, kill condition.
 5. **Ends in try / not-try per read.** Made with the operator, side by side, no finer ranking. "Try" reads go to a venture-partner grilling and enter Tone or Chord as commissions.
 
-Pre-build validation (landing pages, listing tests, paid probes) is downstream — Resonance instruments, available to any "try" read whose risk is demand-shaped. Sounding's output is ideas, not experiments.
+Pre-build validation (landing pages, listing tests, paid probes) is downstream — Resonance's probe instruments, available to any "try" read whose risk is demand-shaped. Sounding's output is ideas, not experiments.
 
 Assumes c11 (load the c11 skill for mechanics) and Scanner where app-level evidence pays; on territory Scanner can't reach, the sequence runs on plain research — the discipline is the skill, not the tooling.
 
@@ -56,4 +56,4 @@ One card per read, one file per card:
 
 ## Corpus
 
-Cards and sweeps accumulate in `sounding/` at the Stage11 root (sibling of `scanner/`), created on first run: `cards/`, `sweeps/<territory>/<date>/`, `INDEX.md` (a plain list by status — regenerate, don't hand-tend). Re-sounding a territory diffs against its prior sweep; evidence carries an as-of date, and a stale card re-earns its call or moves to watch. Runs log to `runs-ledger.md` beside this skill; run-retro folds lessons back (family norm: war stories in the ledger, only principles enter the skill).
+The shape is fixed, the address is the operator's: a sounding corpus, created on first run at the workspace root unless the operator points elsewhere, holding `cards/`, `sweeps/<territory>/<date>/`, and `INDEX.md` (a plain list by status — regenerate, don't hand-tend). Re-sounding a territory diffs against its prior sweep; evidence carries an as-of date, and a stale card re-earns its call or moves to watch. Runs log to `runs-ledger.md` beside this skill; run-retro folds lessons back (family norm: war stories in the ledger, only principles enter the skill).

@@ -18,7 +18,9 @@ final class DefaultAgentResolverTests: XCTestCase {
             projectConfig: nil
         )
         XCTAssertEqual(agent, .claudeCode)
-        XCTAssertEqual(launch.command, "claude --dangerously-skip-permissions 'You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.'")
+        // The factory pins Opus for claude-code, so the launcher carries
+        // `--model opus` ahead of the positional prompt.
+        XCTAssertEqual(launch.command, "claude --dangerously-skip-permissions --model opus 'You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.'")
     }
 
     func testProjectConfigDefaultAgentBeatsUserDefault() {
@@ -177,6 +179,92 @@ final class DefaultAgentResolverTests: XCTestCase {
         )
     }
 
+    // MARK: - model pinning
+
+    func testBuildCommandInjectsPinnedModelBeforePrompt() {
+        let cfg = AgentConfig(
+            command: "claude --dangerously-skip-permissions",
+            initialPrompt: "go",
+            envOverridesText: "",
+            model: "opus"
+        )
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions --model opus 'go'"
+        )
+    }
+
+    func testBuildCommandInjectsPinnedModelWithoutPrompt() {
+        let cfg = AgentConfig(
+            command: "claude --dangerously-skip-permissions",
+            initialPrompt: "",
+            envOverridesText: "",
+            model: "fable"
+        )
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions --model fable"
+        )
+    }
+
+    func testBuildCommandEmptyModelInjectsNothing() {
+        let cfg = AgentConfig(
+            command: "claude --dangerously-skip-permissions",
+            initialPrompt: "",
+            envOverridesText: "",
+            model: ""
+        )
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions"
+        )
+    }
+
+    func testBuildCommandDoesNotDoubleModelWhenCommandAlreadyHasOne() {
+        // Operator hardcoded a model in the command — their choice wins and we
+        // must not pass --model twice.
+        let cfg = AgentConfig(
+            command: "claude --dangerously-skip-permissions --model sonnet",
+            initialPrompt: "",
+            envOverridesText: "",
+            model: "opus"
+        )
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions --model sonnet"
+        )
+    }
+
+    func testBuildCommandDoesNotInjectModelForNonClaudeAgent() {
+        // codex accepts --model too, but c11 only pins it for claude-code today;
+        // a stray model value on another agent must be ignored, not injected.
+        let cfg = AgentConfig(
+            command: "codex --yolo",
+            initialPrompt: "",
+            envOverridesText: "",
+            model: "opus"
+        )
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .codex, config: cfg),
+            "codex --yolo"
+        )
+    }
+
+    func testLauncherCommandCarriesModelForBareExport() {
+        let cfg = AgentConfig(
+            command: "claude --dangerously-skip-permissions",
+            initialPrompt: "some prompt",
+            envOverridesText: "",
+            model: "opus"
+        )
+        // bareCommand / C11_DEFAULT_AGENT_LAUNCH carries the model but never the
+        // positional prompt, so orchestrators can append their own.
+        XCTAssertEqual(
+            DefaultAgentResolver.launcherCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions --model opus"
+        )
+    }
+
     func testShellQuoteEmpty() {
         XCTAssertEqual(DefaultAgentResolver.shellQuote(""), "''")
     }
@@ -221,12 +309,14 @@ final class DefaultAgentResolverTests: XCTestCase {
             userDefault: user,
             projectConfig: nil
         )
-        XCTAssertEqual(launch.bareCommand, "claude --dangerously-skip-permissions")
+        // The pinned model rides on the launcher (both bareCommand and the
+        // baked command); only the positional prompt distinguishes them.
+        XCTAssertEqual(launch.bareCommand, "claude --dangerously-skip-permissions --model opus")
         XCTAssertEqual(launch.initialPrompt, "You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.")
         // The baked form still ships on `command` for the A-button path.
         XCTAssertEqual(
             launch.command,
-            "claude --dangerously-skip-permissions 'You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.'"
+            "claude --dangerously-skip-permissions --model opus 'You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.'"
         )
     }
 

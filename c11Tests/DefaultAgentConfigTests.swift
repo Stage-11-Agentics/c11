@@ -21,25 +21,46 @@ final class DefaultAgentConfigTests: XCTestCase {
     func testFactoryClaudeCommandIncludesDangerouslySkipPermissions() {
         let entry = AgentConfig.factory(for: .claudeCode)
         XCTAssertEqual(entry.command, "claude --dangerously-skip-permissions")
-        XCTAssertEqual(entry.initialPrompt, "You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.")
+        XCTAssertEqual(entry.initialPrompt, "")
+    }
+
+    func testFactoryClaudePinsOpusModel() {
+        // Claude Code ships pinned to the Opus family so agents launched from
+        // c11 stay on Opus regardless of the operator's ambient Claude default.
+        XCTAssertEqual(AgentConfig.factory(for: .claudeCode).model, "opus")
+        XCTAssertEqual(AgentType.claudeCode.factoryModel, ClaudeModelFamily.opus.rawValue)
+    }
+
+    func testFactoryNonClaudeAgentsHaveNoPinnedModel() {
+        // Only claude-code carries a factory model; everyone else inherits.
+        for type in AgentType.allCases where type != .claudeCode {
+            XCTAssertEqual(AgentConfig.factory(for: type).model, "", "\(type) should not pin a model")
+        }
+    }
+
+    func testClaudeModelFamilyRawValuesAreCliAliases() {
+        // These raw values are passed verbatim to `claude --model`; they must
+        // stay the family aliases the CLI resolves to the latest version.
+        XCTAssertEqual(ClaudeModelFamily.allCases.map(\.rawValue),
+                       ["opus", "sonnet", "haiku", "fable"])
     }
 
     func testFactoryCodexCommandIncludesYolo() {
         let entry = AgentConfig.factory(for: .codex)
         XCTAssertEqual(entry.command, "codex --yolo")
-        XCTAssertEqual(entry.initialPrompt, "You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.")
+        XCTAssertEqual(entry.initialPrompt, "")
     }
 
     func testFactoryGrokCommandIncludesAlwaysApprove() {
         let entry = AgentConfig.factory(for: .grok)
         XCTAssertEqual(entry.command, "grok --always-approve")
-        XCTAssertEqual(entry.initialPrompt, "You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.")
+        XCTAssertEqual(entry.initialPrompt, "")
     }
 
     func testFactoryGitHubCopilotCommandIncludesAllowAllAndAutopilot() {
         let entry = AgentConfig.factory(for: .githubCopilot)
         XCTAssertEqual(entry.command, "copilot --allow-all --autopilot")
-        XCTAssertEqual(entry.initialPrompt, "You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.")
+        XCTAssertEqual(entry.initialPrompt, "")
     }
 
     func testAgentTypeGitHubCopilotRawValueIsKebabCase() {
@@ -73,6 +94,23 @@ final class DefaultAgentConfigTests: XCTestCase {
         XCTAssertEqual(decoded.agents[.claudeCode]?.initialPrompt, "load skill")
         XCTAssertEqual(decoded.agents[.claudeCode]?.envOverridesText, "K=V")
         XCTAssertEqual(decoded.agents[.codex]?.command, "codex --yolo")
+    }
+
+    func testCodableRoundTripPreservesModel() throws {
+        var agents: [AgentType: AgentConfig] = [:]
+        agents[.claudeCode] = AgentConfig(command: "claude", initialPrompt: "", envOverridesText: "", model: "fable")
+        let cfg = DefaultAgentConfig(defaultAgent: .claudeCode, agents: agents)
+        let data = try JSONEncoder().encode(cfg)
+        let decoded = try JSONDecoder().decode(DefaultAgentConfig.self, from: data)
+        XCTAssertEqual(decoded.agents[.claudeCode]?.model, "fable")
+    }
+
+    func testDecodeAgentConfigWithoutModelDefaultsToInherit() throws {
+        // A per-agent blob written before the model field existed must decode
+        // to "" (inherit), preserving its prior launch behavior on upgrade.
+        let json = #"{"command":"claude","initialPrompt":"","envOverridesText":""}"#
+        let decoded = try JSONDecoder().decode(AgentConfig.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.model, "")
     }
 
     func testLenientDecodeFillsMissingFields() throws {
@@ -180,7 +218,7 @@ final class DefaultAgentConfigTests: XCTestCase {
         let (store, _) = makeStore()
         XCTAssertEqual(store.current.defaultAgent, .claudeCode)
         XCTAssertEqual(store.current.config(for: .claudeCode).command, "claude --dangerously-skip-permissions")
-        XCTAssertEqual(store.current.config(for: .claudeCode).initialPrompt, "You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.")
+        XCTAssertEqual(store.current.config(for: .claudeCode).initialPrompt, "")
     }
 
     func testStoreReturnsFactoryOnGarbageData() {

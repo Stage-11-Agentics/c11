@@ -6463,6 +6463,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 // SurfaceSpec.command is delivered verbatim by the layout
                 // executor, so the newline has to live in the value itself.
                 injected.surfaces[idx].command = command + "\n"
+                // No orientation prompt is baked by default (see
+                // `c11OrientPrompt`), so mirror launchAgentSurface: stamp the
+                // identity the sidebar would otherwise wait on the agent to
+                // report — a placeholder title and the pinned model (the type
+                // comes from AgentDetector). Only fill fields the spec left
+                // unset so an explicit blueprint always wins.
+                if injected.surfaces[idx].title == nil {
+                    injected.surfaces[idx].title = String(
+                        localized: "agent.launch.placeholderTitle",
+                        defaultValue: "Awaiting first task"
+                    )
+                }
+                let cfg = projectConfig?.agents[resolved.agent]
+                    ?? userDefault.config(for: resolved.agent)
+                let model = cfg.model.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !model.isEmpty {
+                    var meta = injected.surfaces[idx].metadata ?? [:]
+                    if meta[MetadataKey.model] == nil {
+                        meta[MetadataKey.model] = .string(model)
+                        injected.surfaces[idx].metadata = meta
+                    }
+                }
             }
         }
 

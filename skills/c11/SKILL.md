@@ -20,23 +20,18 @@ Refs accept UUIDs, short refs, or indexes: `workspace:1`, `pane:2`, `surface:3`,
 
 ## Boot fast, orient lazily
 
-On launch you have no task yet — the operator's opening message is usually just "load the skill" or similar context-only text. Don't spend their time deliberating over a mechanical identity ritual; that dead-time before you can even take a task is the single biggest way an agent wastes the operator's first half-minute. **Get reachable in one cheap step, report ready, and let the rest fill in as you work.**
+c11 stamps your launch identity itself: the sidebar chip (agent type from process detection, plus the pinned model) and a placeholder **"Awaiting first task"** title are set the moment you launch, with no action from you. There is nothing you must run just to be identified — don't spend the operator's time on a mechanical identity ritual.
 
-At launch, run exactly this — as one batched shell call, at minimal effort, no per-command deliberation:
+**You'll usually load this skill because a task arrived** that touches the workspace (a split, a status report, a browser check). When that happens, orient in place and keep moving — at minimal effort, no per-command deliberation:
 
-```bash
-c11 set-agent  --surface "$C11_SURFACE_ID" --type "$C11_AGENT_TYPE" --model "$C11_AGENT_MODEL"
-c11 rename-tab --surface "$C11_SURFACE_ID" "Awaiting first task"
-```
-
-Then reply in one line that you're ready for the task. That is the whole launch. `set-agent` puts the right chip in the sidebar; the placeholder title marks the tab as a live-but-unassigned agent. If `$C11_AGENT_TYPE` / `$C11_AGENT_MODEL` are empty you were launched outside the wrapper — substitute your own known type and model, don't guess.
-
-**Orient the rest lazily** — when you get a real task or first touch the workspace (any split / status / pane op), and not before:
-
-- `c11 rename-tab` to your real 2–4 word role, and `c11 set-description` to why the surface is open right now (definitions below). The sidebar is the operator's only view into a room of parallel agents, so retitle off the placeholder as your first action once a task lands — a working agent must not sit under "Awaiting first task".
-- `c11 tree` when you actually need the spatial layout; `c11 identify --json` for your refs if you didn't capture them (footgun below).
-- Read the reference for whatever capability you reach for (map below) — not preemptively.
+- Refine the placeholder into your real role: `c11 rename-tab --surface "$C11_SURFACE_ID" "<2–4 word role>"`. The sidebar is the operator's only view into a room of parallel agents, so a working agent must not sit under "Awaiting first task".
+- Say why it's open right now: `c11 set-description --surface "$C11_SURFACE_ID" "<current context>"`.
+- If your model chip is blank (an unpinned launch c11 couldn't label), set it: `c11 set-agent --surface "$C11_SURFACE_ID" --type "$C11_AGENT_TYPE" --model "$C11_AGENT_MODEL"` — substitute your own known type/model if those vars are empty.
+- Reach for `c11 tree` / `c11 identify --json` only when you actually need layout or your refs (footgun below).
+- Read a reference (map below) only for the capability you're using — not preemptively.
 - **Declare a stable mailbox address** if peers will reach you: `c11 set-metadata --surface "$C11_SURFACE_ID" --key mailbox.address --value "<stable-handle>" --type string`. Titles are mutable and renames silently re-partition the bus; a declared address survives them. (Depth → [docs/c11-mailbox-guide.md](../../docs/c11-mailbox-guide.md).)
+
+**Launched with only a hydrate message and no task yet?** An operator can configure a "load the skill" launch prompt, so your first turn may carry no real task. Don't invent a title — leave the placeholder, reply in one line that you're ready, and set your real title/description from the next real message, as your first action that turn.
 
 > **Footgun — pass `--surface` explicitly on surface- or tab-scoped writes.** The CLI defaults a missing `--surface` to whatever surface the *operator* is currently focused on — usually a peer agent's tab in a multi-surface workspace — so an omitted flag silently writes to the wrong surface. Every surface exports `$C11_SURFACE_ID` (inherited by subprocesses), so `--surface "$C11_SURFACE_ID"` targets you correctly; if it ever reads empty, capture your refs once from `c11 identify --json` and pass the literal `surface:<n>` instead (robust on any build). Apply this to every surface/tab write (`set-metadata`, `set-agent`, `set-title`, `set-description`, `rename-tab`, `clear-metadata`, `trigger-flash`). Verify the first write with `c11 get-titlebar-state --surface <surface>` against the surface marked `◀ here` in `c11 tree --no-layout`.
 

@@ -18,9 +18,9 @@ final class DefaultAgentResolverTests: XCTestCase {
             projectConfig: nil
         )
         XCTAssertEqual(agent, .claudeCode)
-        // The factory pins Opus for claude-code, so the launcher carries
-        // `--model opus` ahead of the positional prompt.
-        XCTAssertEqual(launch.command, "claude --dangerously-skip-permissions --model opus 'You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.'")
+        // The factory pins Opus for claude-code and no longer seeds a launch
+        // prompt, so the resolved command is just the launcher with `--model opus`.
+        XCTAssertEqual(launch.command, "claude --dangerously-skip-permissions --model opus")
     }
 
     func testProjectConfigDefaultAgentBeatsUserDefault() {
@@ -303,7 +303,16 @@ final class DefaultAgentResolverTests: XCTestCase {
     // caller-appended positional argument (claude takes only the first).
 
     func testBareCommandOmitsClaudeInitialPrompt() {
-        let user = DefaultAgentConfig.factory
+        // The factory no longer seeds a launch prompt, so configure one
+        // explicitly to prove bareCommand strips it while command bakes it.
+        var userAgents = DefaultAgentConfig.factory.agents
+        userAgents[.claudeCode] = AgentConfig(
+            command: "claude --dangerously-skip-permissions",
+            initialPrompt: "orient the agent",
+            envOverridesText: "",
+            model: "opus"
+        )
+        let user = DefaultAgentConfig(defaultAgent: .claudeCode, agents: userAgents)
         let (_, launch) = DefaultAgentResolver.resolve(
             explicitAgent: nil,
             userDefault: user,
@@ -312,11 +321,11 @@ final class DefaultAgentResolverTests: XCTestCase {
         // The pinned model rides on the launcher (both bareCommand and the
         // baked command); only the positional prompt distinguishes them.
         XCTAssertEqual(launch.bareCommand, "claude --dangerously-skip-permissions --model opus")
-        XCTAssertEqual(launch.initialPrompt, "You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.")
+        XCTAssertEqual(launch.initialPrompt, "orient the agent")
         // The baked form still ships on `command` for the A-button path.
         XCTAssertEqual(
             launch.command,
-            "claude --dangerously-skip-permissions --model opus 'You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.'"
+            "claude --dangerously-skip-permissions --model opus 'orient the agent'"
         )
     }
 
@@ -339,8 +348,16 @@ final class DefaultAgentResolverTests: XCTestCase {
 
     func testBareCommandForNonClaudeAgent() {
         // Non-claude agents never bake the prompt into `command`, so `command`
-        // and `bareCommand` should match (modulo trimming).
-        let user = DefaultAgentConfig.factory
+        // and `bareCommand` should match (modulo trimming). The factory no
+        // longer seeds a prompt, so configure one to prove it is still surfaced
+        // on `initialPrompt` for the post-ready delivery path.
+        var userAgents = DefaultAgentConfig.factory.agents
+        userAgents[.codex] = AgentConfig(
+            command: "codex --yolo",
+            initialPrompt: "orient the agent",
+            envOverridesText: ""
+        )
+        let user = DefaultAgentConfig(defaultAgent: .claudeCode, agents: userAgents)
         let (_, launch) = DefaultAgentResolver.resolve(
             explicitAgent: .codex,
             userDefault: user,
@@ -350,7 +367,7 @@ final class DefaultAgentResolverTests: XCTestCase {
         XCTAssertEqual(launch.command, "codex --yolo")
         // The prompt is still surfaced for non-claude agents — the launch
         // delivery path is what differs (post-ready sendText vs positional).
-        XCTAssertEqual(launch.initialPrompt, "You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it.")
+        XCTAssertEqual(launch.initialPrompt, "orient the agent")
     }
 
     func testBareCommandTrimsWhitespace() {

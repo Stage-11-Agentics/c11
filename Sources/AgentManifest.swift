@@ -277,6 +277,14 @@ struct AgentRegistry: Sendable {
     ])
 }
 
-/// The orientation prompt typed into a freshly launched agent. Mirrors
-/// `AgentType.factoryInitialPrompt` for non-custom agents.
-let c11OrientPrompt = "You are inside c11 (a terminal multiplexer). A c11 skill covering panes, splits, and status is available if you need it."
+/// The factory initial prompt for c11-launched agents — empty by design.
+/// A freshly launched agent boots straight to ready with no orientation
+/// turn, so there is no dead-time before the operator can give it a task.
+/// c11 supplies the identity the sidebar needs itself: the agent type comes
+/// from `AgentDetector` (process inspection) and the pinned model plus a
+/// placeholder title are stamped at launch in `Workspace.launchAgentSurface`.
+/// The c11 skill loads on demand — when a task actually drives the workspace.
+/// Mirrors `AgentType.factoryInitialPrompt` for non-custom agents; an
+/// operator who wants a launch prompt can still set one per-agent in
+/// Default Agent settings.
+let c11OrientPrompt = ""

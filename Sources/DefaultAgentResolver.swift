@@ -46,7 +46,7 @@ enum DefaultAgentResolver {
             ?? userDefault.config(for: agent)
 
         let command = buildCommand(agent: agent, config: chosenConfig)
-        let bare = chosenConfig.command.trimmingCharacters(in: .whitespacesAndNewlines)
+        let bare = launcherCommand(agent: agent, config: chosenConfig)
         return (agent, ResolvedAgentLaunch(
             command: command,
             bareCommand: bare,
@@ -61,15 +61,51 @@ enum DefaultAgentResolver {
     /// separate post-launch sendText so each TUI's input contract is honored.
     /// Visible for testing.
     static func buildCommand(agent: AgentType, config: AgentConfig) -> String {
-        let base = config.command.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !base.isEmpty else { return "" }
+        let launcher = launcherCommand(agent: agent, config: config)
+        guard !launcher.isEmpty else { return "" }
         if agent == .claudeCode {
             let prompt = config.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
             if !prompt.isEmpty {
-                return "\(base) \(shellQuote(prompt))"
+                return "\(launcher) \(shellQuote(prompt))"
             }
         }
+        return launcher
+    }
+
+    /// The launcher: the operator's `command` with the pinned model flag
+    /// applied, but no positional prompt baked in. This is what feeds
+    /// `bareCommand` / the `C11_DEFAULT_AGENT_LAUNCH` export, so an orchestrator
+    /// that composes its own prompt still inherits the pinned model. The
+    /// model flag must precede claude-code's positional prompt (which stays
+    /// last), so it's applied here rather than after prompt-baking.
+    /// Visible for testing.
+    static func launcherCommand(agent: AgentType, config: AgentConfig) -> String {
+        let base = config.command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !base.isEmpty else { return "" }
+        if let flag = modelFlag(agent: agent, config: config, command: base) {
+            return "\(base) \(flag)"
+        }
         return base
+    }
+
+    /// Whether c11 injects a `--model` flag for this agent kind. Only agents
+    /// whose CLI accepts `--model <family-alias>` qualify; today that's Claude
+    /// Code. Kept as a seam so codex (also `--model`) can opt in later.
+    static func supportsModelFlag(_ agent: AgentType) -> Bool {
+        agent == .claudeCode
+    }
+
+    /// The `--model <family>` flag to append for a launch, or `nil` when none
+    /// should be injected: the agent doesn't support it, no family is pinned,
+    /// or the operator already put a model in the command themselves (their
+    /// explicit choice wins, and we must not pass `--model` twice).
+    /// Visible for testing.
+    static func modelFlag(agent: AgentType, config: AgentConfig, command: String) -> String? {
+        guard supportsModelFlag(agent) else { return nil }
+        let model = config.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !model.isEmpty else { return nil }
+        guard !command.lowercased().contains("--model") else { return nil }
+        return "--model \(model)"
     }
 
     /// Single-quote a value for /bin/sh, escaping embedded single quotes via

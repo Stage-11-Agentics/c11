@@ -11786,12 +11786,55 @@ extension Workspace: BonsplitDelegate {
             inPane: pane,
             startupEnvironment: resolved.launch.envOverrides
         ) else { return }
-        // The launch command goes to bash; for claude-code the initial prompt
-        // is already baked in as a positional arg by the resolver. Other
-        // agents preserve the prompt in their config but don't auto-deliver
-        // (different TUI input contracts; per-agent post-ready delivery is
-        // a follow-up).
+        // By default no orientation prompt is baked (see `c11OrientPrompt`),
+        // so the agent boots straight to ready with no dead-time. c11 stamps
+        // the identity the sidebar needs itself — no agent round-trip: the
+        // type comes from `AgentDetector`, and we stamp the pinned model plus
+        // a placeholder title here. An operator who configured a launch prompt
+        // still gets it delivered below (baked positional for claude-code,
+        // post-ready sendText for other TUIs is a follow-up).
+        stampLaunchIdentity(
+            surfaceId: panel.id,
+            agent: resolved.agent,
+            userDefault: userDefault,
+            projectConfig: projectConfig
+        )
         panel.sendText(resolved.launch.command + "\n")
+    }
+
+    /// Populate a freshly launched agent surface with the identity the sidebar
+    /// would otherwise wait on the agent to report: the pinned model (which
+    /// process detection can't infer) and a placeholder title. Written with
+    /// source `.declare` so a later explicit `set-agent` / `set-title` from the
+    /// agent or operator cleanly wins. The agent *type* is intentionally not
+    /// stamped here — `AgentDetector` owns it authoritatively.
+    private func stampLaunchIdentity(
+        surfaceId: UUID,
+        agent: AgentType,
+        userDefault: DefaultAgentConfig,
+        projectConfig: DefaultAgentConfig?
+    ) {
+        var partial: [String: Any] = [
+            MetadataKey.title: String(
+                localized: "agent.launch.placeholderTitle",
+                defaultValue: "Awaiting first task"
+            )
+        ]
+        // Mirror the resolver's per-agent config pick so the chip shows the
+        // model c11 launched with. Reads config only; no mutation.
+        let cfg = projectConfig?.agents[agent] ?? userDefault.config(for: agent)
+        let model = cfg.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !model.isEmpty {
+            partial[MetadataKey.model] = model
+        }
+        _ = try? SurfaceMetadataStore.shared.setMetadata(
+            workspaceId: id,
+            surfaceId: surfaceId,
+            partial: partial,
+            mode: .merge,
+            source: .declare
+        )
+        syncPanelTitleFromMetadata(panelId: surfaceId)
     }
 
     func splitTabBar(_ controller: BonsplitController, menuItemsForNewTabKind kind: String, inPane pane: PaneID) -> [BonsplitNewTabMenuItem] {

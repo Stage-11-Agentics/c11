@@ -12,7 +12,6 @@ on the configured CMUX_SOCKET.
 
 from __future__ import annotations
 
-import glob
 import json
 import os
 import re
@@ -24,21 +23,10 @@ SOCKET_PATH = os.environ.get("CMUX_SOCKET", "/tmp/cmux-debug.sock")
 
 
 def find_cli_binary() -> str:
-    """Return the path to a cmux CLI binary, preferring a fresh M8 build."""
-    env_cli = os.environ.get("CMUXTERM_CLI")
-    if env_cli and os.path.isfile(env_cli) and os.access(env_cli, os.X_OK):
-        return env_cli
+    """Return the path to the c11 CLI binary (delegates to the shared helper)."""
+    from cmux import find_cli_binary as _shared_find_cli_binary
 
-    candidates: List[str] = []
-    candidates += glob.glob("/tmp/cmux-*/Build/Products/Debug/cmux")
-    candidates += glob.glob(os.path.expanduser(
-        "~/Library/Developer/Xcode/DerivedData/**/Build/Products/Debug/cmux"
-    ), recursive=True)
-    candidates = [p for p in candidates if os.path.isfile(p) and os.access(p, os.X_OK)]
-    if not candidates:
-        raise RuntimeError("Could not locate cmux CLI binary; set CMUXTERM_CLI")
-    candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-    return candidates[0]
+    return _shared_find_cli_binary()
 
 
 def run_cli(

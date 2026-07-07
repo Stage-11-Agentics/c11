@@ -61,7 +61,7 @@
     },
     "payload": {
       "type": "object",
-      "description": "Optional, type-specific detail. Free-form object; any keys allowed inside. Shape is keyed by type — e.g. surface.created carries { kind }; metadata.changed carries { key, value, prior, source, scope }; workspace.selected carries { previous }; log.rotated carries { path, reason }. Omitted (not encoded as null) when empty."
+      "description": "Optional, type-specific detail. Free-form object; any keys allowed inside. Shape is keyed by type — e.g. surface.created carries { kind, title }; metadata.changed carries { key, value, prior, source, scope }; workspace.selected carries { previous }; mailbox.accepted carries { id, from, to, topic }; mailbox.delivered carries { id, recipient }; log.opened carries { pid }; log.rotated carries { rolled_to }; log.dropped carries { count }. Omitted (not encoded as null) when empty."
     }
   },
   "additionalProperties": false

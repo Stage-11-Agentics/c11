@@ -5,7 +5,6 @@
   "instance": "com.stage11.c11-12345",
   "v": 1,
   "payload": {
-    "path": "/Users/atin/Library/Application Support/c11/events/events-com.stage11.c11-12345.ndjson.1",
-    "reason": "size"
+    "rolled_to": "events-com.stage11.c11-12345.ndjson.1"
   }
 }

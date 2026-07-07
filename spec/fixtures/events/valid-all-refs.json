@@ -8,8 +8,6 @@
   "surface": "c56a4180-65aa-42ec-a945-5fd21dec0538",
   "pane": "3d8f2a10-7b4c-4e1d-9a6f-0c2e5b8a1d47",
   "payload": {
-    "state": "working",
-    "prior": "waiting",
-    "confidence": 0.92
+    "state": "working"
   }
 }

@@ -19,7 +19,7 @@ c11 emits a **file-first pub/sub log** of everything structural that happens ins
 - **Per-instance NDJSON log** at `~/Library/Application Support/c11/events/events-<instance>.ndjson`, one JSON object per line. The `<instance>` id is `<launch-tag-or-bundleid>-<pid>` (e.g. `com.stage11.c11-12345`) — **every running c11 process writes its own file**, so a machine with three c11 windows open across two launches has multiple logs.
 - **Newest-by-mtime is "current."** The CLI defaults to the most recently written instance log; target another with `--instance`.
 - **`log.opened` begins each instance's log.** Its payload carries the `pid`. **`seq` resets to 0 per instance** — it is monotonic *within* one file, never across instances.
-- **Rotation at a size cap (~8 MiB).** The live file is rolled to `events-<instance>.ndjson.1` (a single rolled generation is retained; the previous `.1` is discarded). A `log.rotated` marker is the last line of the rolled file, and the fresh file opens with a new `log.opened` marker, so a consumer following across the boundary detects it rather than silently losing its place.
+- **Rotation at a size cap (~8 MiB).** The live file is rolled to `events-<instance>.ndjson.1` (a single rolled generation is retained; the previous `.1` is discarded). The fresh file opens with a `log.rotated` marker as its **first line**; `seq` **continues** across the roll (it is monotonic for the whole instance — only a new `log.opened`/instance resets it). `c11 events tail --follow` is rotation-aware: on the roll it drains the tail of the `.1` file, then continues on the fresh file, so a follower doesn't lose its place.
 
 Schema: **`spec/event-envelope.v1.schema.json`** is the source of truth — every line must validate against it. One `EventEnvelope` serializes to exactly one line.
 
@@ -62,7 +62,7 @@ Three additional `type` values are **not taxonomy members** — they are structu
 | `type` | Payload | Meaning |
 |--------|---------|---------|
 | `log.opened` | `{pid}` | First line of an instance's log. `seq` starts here. |
-| `log.rotated` | `{rolled_to}` | Last line before rotation; `rolled_to` names the `.1` file the prior contents moved to. A fresh `log.opened` follows in the new file. |
+| `log.rotated` | `{rolled_to}` | First line of the fresh post-rotation file; `rolled_to` names the `.1` file the prior contents moved to. `seq` continues (not reset). |
 | `log.dropped` | `{count}` | Backpressure shed `count` events under a stalled disk. A gap in the record — see non-guarantees. |
 
 ## CLI
@@ -80,7 +80,7 @@ c11 events tail --instance com.stage11.c11-12345   # a specific instance, not ne
 
 | Flag | Argument | Behavior |
 |------|----------|----------|
-| `--follow` / `-f` | — | Stay attached and stream new lines as they land. Follows rotation across the `log.rotated` → new `log.opened` boundary. Omit for one-shot drain-and-exit. |
+| `--follow` / `-f` | — | Stay attached and stream new lines as they land. Rotation-aware: on a roll it drains the `.1` tail then continues on the fresh file (first line is `log.rotated`). Omit for one-shot drain-and-exit. |
 | `--filter` | `type=<t>` | Emit only lines whose `type` equals `<t>`. |
 | `--since` | `<seq>` \| `<duration>` | A bare integer is a `seq` floor (emit `seq ≥ N`); a duration (`10m`, `2h`) is resolved against `ts`. |
 | `--instance` | `<id>` | Read a specific instance log instead of the newest-by-mtime one. |
@@ -121,7 +121,7 @@ Watch for a `log.opened` with a `seq` at or below your floor — that's a new in
 - **Off-main and non-blocking.** Emission never blocks the UI or the writer's caller; serialization and the file write happen off the main actor.
 - **Low latency.** A line is readable **within ~1s** of the event under normal disk conditions.
 - **`seq` is the oracle.** Ordering within an instance is total and gap-free *except* where a `log.dropped` marker explicitly records a gap. Order by `seq`; `ts` is advisory.
-- **Rotation is observable.** The `log.rotated` / `log.opened` marker pair means a follower never silently loses its position across a roll.
+- **Rotation is observable.** The `log.rotated` marker (first line of the fresh file) plus the CLI's rotation-aware follow (it drains the rolled `.1` tail, then continues) means a follower doesn't silently lose events across a roll. A direct file reader that wants the same guarantee should watch for a size shrink / inode change and drain `.ndjson.1`.
 
 **Non-guarantees**
 

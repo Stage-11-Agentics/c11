@@ -17563,16 +17563,29 @@ extension CMUXCLI {
             guard FileManager.default.fileExists(atPath: logURL.path) else { continue }
             let currentInode = eventsInode(of: logURL)
             let currentSize = eventsFileSize(of: logURL)
-            // Rotation detection: the file shrank or its inode changed → the log
-            // rolled. Re-read from the top (the fresh file opens with a
-            // log.rotated marker) so we never seek past EOF and stall.
-            if currentSize < lastSize || currentInode != lastInode {
+            // Rotation detection: the file shrank, or its inode changed → the log
+            // rolled. A `0` inode means a transient stat failure (e.g. mid-rename);
+            // treat it as "unknown" and do not reset on it alone.
+            let inodeChanged = currentInode != 0 && lastInode != 0 && currentInode != lastInode
+            if inodeChanged || currentSize < lastSize {
+                // Before switching to the fresh file, drain the tail that landed
+                // in the now-rolled `.1` after our last read — the cap-crossing
+                // lines the writer appended just before it renamed. Without this
+                // the sub-second unread tail would live only in `.1` and the
+                // follower would skip it.
+                let rolled = EventLogLayout.rolledURL(for: logURL)
+                if let rh = try? FileHandle(forReadingFrom: rolled) {
+                    try? rh.seek(toOffset: lastSize)
+                    let tail = ((try? rh.readToEnd()) ?? nil) ?? Data()
+                    if let text = String(data: tail, encoding: .utf8), !text.isEmpty { drainLines(text) }
+                    try? rh.close()
+                }
                 lastSize = 0
-                lastInode = currentInode
+                if currentInode != 0 { lastInode = currentInode }
             }
             guard let handle = try? FileHandle(forReadingFrom: logURL) else { continue }
             try? handle.seek(toOffset: lastSize)
-            let data = (try? handle.readToEnd()) ?? nil ?? Data()
+            let data = ((try? handle.readToEnd()) ?? nil) ?? Data()
             if let text = String(data: data, encoding: .utf8), !text.isEmpty { drainLines(text) }
             lastSize = (try? handle.offset()) ?? lastSize
             try? handle.close()

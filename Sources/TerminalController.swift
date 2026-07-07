@@ -237,7 +237,7 @@ class TerminalController {
         case peerAlive(path: String)
     }
 
-    private static let focusIntentV1Commands: Set<String> = [
+    static let focusIntentV1Commands: Set<String> = [
         "focus_window",
         "select_workspace",
         "focus_surface",
@@ -583,7 +583,7 @@ class TerminalController {
         let panelId: UUID
     }
 
-    private final class SocketFastPathState: @unchecked Sendable {
+    final class SocketFastPathState: @unchecked Sendable {
         let queue = DispatchQueue(label: "com.stage11.c11.socket-fast-path")
         private var lastReportedDirectories: [SocketSurfaceKey: String] = [:]
         private var lastReportedShellStates: [SocketSurfaceKey: Workspace.PanelShellActivityState] = [:]
@@ -623,7 +623,7 @@ class TerminalController {
         }
     }
 
-    private static let socketFastPathState = SocketFastPathState()
+    static let socketFastPathState = SocketFastPathState()
     nonisolated static func explicitSocketScope(
         options: [String: String]
     ) -> (workspaceId: UUID, panelId: UUID)? {
@@ -1898,7 +1898,7 @@ class TerminalController {
         let params: [String: Any]
     }
 
-    private nonisolated static let socketWorkerV2Methods: Set<String> = [
+    nonisolated static let socketWorkerV2Methods: Set<String> = [
         "surface.send_text",
         "surface.send_key",
         "surface.read_text",
@@ -1914,7 +1914,7 @@ class TerminalController {
     // through to its existing main-sync path. The shell integrations (zsh +
     // bash) always include explicit IDs so the prompt-frequency telemetry
     // hits the fast path; only ad-hoc CLI invocations land on the slow path.
-    private nonisolated static let socketWorkerV1Commands: Set<String> = [
+    nonisolated static let socketWorkerV1Commands: Set<String> = [
         "report_pwd",
         "report_shell_state",
         "report_git_branch",
@@ -1937,7 +1937,7 @@ class TerminalController {
     // immediately and re-enter the EXISTING handler via `main.async`, so there
     // is zero logic duplication and the CLI never piles up blocked processes
     // while the run loop drains status writes cooperatively.
-    private nonisolated static let asyncAckV1Commands: Set<String> = [
+    nonisolated static let asyncAckV1Commands: Set<String> = [
         "set_status",
         "clear_notifications",
         "set_agent_pid",
@@ -1951,141 +1951,12 @@ class TerminalController {
         return .mainActor
     }
 
-    private nonisolated func parseV2SocketRequest(_ command: String) -> V2SocketRequest? {
-        guard command.hasPrefix("{"),
-              let data = command.data(using: .utf8),
-              let dict = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
-            return nil
-        }
 
-        let method = (dict["method"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !method.isEmpty else {
-            return nil
-        }
 
-        return V2SocketRequest(
-            id: dict["id"],
-            method: method,
-            params: dict["params"] as? [String: Any] ?? [:]
-        )
-    }
 
-    private nonisolated func socketWorkerV2ResponseIfNeeded(for command: String) -> String? {
-        guard let request = parseV2SocketRequest(command),
-              Self.executionPolicy(forV2Method: request.method) == .socketWorker else {
-            return nil
-        }
 
-        return withSocketCommandPolicy(commandKey: request.method, isV2: true) {
-            socketWorkerV2Response(request)
-        }
-    }
 
-    private nonisolated func socketWorkerV2Response(_ request: V2SocketRequest) -> String {
-        // C11-26 review M1: emit the off-main diagnostic at the dispatcher seam
-        // so future migrated methods get it for free instead of "we forgot."
-        #if DEBUG
-        dlog("v2.\(request.method) isMain=\(Thread.isMainThread) tid=\(pthread_mach_thread_np(pthread_self()))")
-        #endif
 
-        switch request.method {
-        case "surface.send_text":
-            return v2Result(id: request.id, v2SurfaceSendText(params: request.params))
-        case "surface.send_key":
-            return v2Result(id: request.id, v2SurfaceSendKey(params: request.params))
-        case "surface.read_text":
-            return v2Result(id: request.id, v2SurfaceReadText(params: request.params))
-        case "surface.clear_history":
-            return v2Result(id: request.id, v2SurfaceClearHistory(params: request.params))
-        default:
-            return v2Error(id: request.id, code: "method_not_found", message: "Unknown method")
-        }
-    }
-
-    private nonisolated func processCommandUsingSocketExecutionPolicy(_ command: String) -> String {
-        if let response = socketWorkerV2ResponseIfNeeded(for: command) {
-            return response
-        }
-
-        if let response = socketWorkerV1ResponseIfNeeded(for: command) {
-            return response
-        }
-
-        if let response = asyncAckResponseIfNeeded(for: command) {
-            return response
-        }
-
-        if Thread.isMainThread {
-            return MainActor.assumeIsolated { self.processCommand(command) }
-        }
-        return DispatchQueue.main.sync {
-            MainActor.assumeIsolated { self.processCommand(command) }
-        }
-    }
-
-    /// C11-156: ack a fire-and-forget telemetry command off-main and apply its
-    /// mutation via `main.async`, instead of blocking a socket-worker thread on
-    /// `DispatchQueue.main.sync`. Returns nil for anything not in
-    /// `asyncAckV1Commands` (and for v2/JSON requests) so the dispatcher falls
-    /// through to its normal path. The existing `@MainActor` handler is reused
-    /// verbatim — only the scheduling changes — so behaviour is identical
-    /// except that the caller is acked before the mutation lands, which is safe
-    /// precisely because these handlers return a bare "OK" the hook discards.
-    private nonisolated func asyncAckResponseIfNeeded(for command: String) -> String? {
-        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.hasPrefix("{") else { return nil }
-        let head = trimmed.split(separator: " ", maxSplits: 1).first.map(String.init)?.lowercased() ?? ""
-        guard Self.asyncAckV1Commands.contains(head) else { return nil }
-
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated { _ = self.processCommand(command) }
-        }
-        return "OK"
-    }
-
-    /// v1 telemetry worker entry. Parses head and args off-main, checks the
-    /// allowlist, and routes to a per-command worker variant when the args
-    /// carry an explicit `--tab=`/`--panel=` selector. Returns nil to make
-    /// the dispatcher fall through to the existing main-sync path when:
-    ///   - The command is not a v1 telemetry command we know how to migrate.
-    ///   - The args do not contain an explicit selector (handler would need
-    ///     a focused-tab read, which requires a main hop anyway — the
-    ///     current main-sync path already handles that correctly).
-    private nonisolated func socketWorkerV1ResponseIfNeeded(for command: String) -> String? {
-        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.hasPrefix("{") else { return nil }
-        let parts = trimmed.split(separator: " ", maxSplits: 1).map(String.init)
-        guard !parts.isEmpty else { return nil }
-        let head = parts[0].lowercased()
-        guard Self.socketWorkerV1Commands.contains(head) else { return nil }
-        let args = parts.count > 1 ? parts[1] : ""
-
-        return withSocketCommandPolicy(commandKey: head, isV2: false) {
-            socketWorkerV1Response(head: head, args: args)
-        }
-    }
-
-    /// Dispatch a v1 telemetry command to its nonisolated worker variant.
-    /// Each variant returns nil if the command must fall through to the
-    /// main-actor path (slow-path callers without an explicit selector).
-    private nonisolated func socketWorkerV1Response(head: String, args: String) -> String? {
-        switch head {
-        case "report_pwd":
-            return reportPwdWorker(args)
-        case "report_shell_state":
-            return reportShellStateWorker(args)
-        case "report_git_branch":
-            return reportGitBranchWorker(args)
-        case "clear_git_branch":
-            return clearGitBranchWorker(args)
-        case "ports_kick":
-            return portsKickWorker(args)
-        case "agent_kick":
-            return agentKickWorker(args)
-        default:
-            return nil
-        }
-    }
 
     // MARK: - Pure parser helpers (off-main safe)
     //
@@ -2095,118 +1966,7 @@ class TerminalController {
     // worker run them off the main thread without touching the existing
     // call sites (which still want the shorter instance-method names).
 
-    nonisolated static func tokenizeArgsStatic(_ args: String) -> [String] {
-        let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [] }
 
-        var tokens: [String] = []
-        var current = ""
-        var inQuote = false
-        var quoteChar: Character = "\""
-        var cursor = trimmed.startIndex
-
-        while cursor < trimmed.endIndex {
-            let char = trimmed[cursor]
-            if inQuote {
-                if char == quoteChar {
-                    inQuote = false
-                    cursor = trimmed.index(after: cursor)
-                    continue
-                }
-                if char == "\\" {
-                    let nextIndex = trimmed.index(after: cursor)
-                    if nextIndex < trimmed.endIndex {
-                        let next = trimmed[nextIndex]
-                        switch next {
-                        case "n":
-                            current.append("\n")
-                            cursor = trimmed.index(after: nextIndex)
-                            continue
-                        case "r":
-                            current.append("\r")
-                            cursor = trimmed.index(after: nextIndex)
-                            continue
-                        case "t":
-                            current.append("\t")
-                            cursor = trimmed.index(after: nextIndex)
-                            continue
-                        case "\"", "'", "\\":
-                            current.append(next)
-                            cursor = trimmed.index(after: nextIndex)
-                            continue
-                        default:
-                            break
-                        }
-                    }
-                }
-                current.append(char)
-                cursor = trimmed.index(after: cursor)
-                continue
-            }
-
-            if char == "'" || char == "\"" {
-                inQuote = true
-                quoteChar = char
-                cursor = trimmed.index(after: cursor)
-                continue
-            }
-
-            if char.isWhitespace {
-                if !current.isEmpty {
-                    tokens.append(current)
-                    current = ""
-                }
-                cursor = trimmed.index(after: cursor)
-                continue
-            }
-
-            current.append(char)
-            cursor = trimmed.index(after: cursor)
-        }
-
-        if !current.isEmpty {
-            tokens.append(current)
-        }
-        return tokens
-    }
-
-    nonisolated static func parseOptionsStatic(
-        _ args: String
-    ) -> (positional: [String], options: [String: String]) {
-        let tokens = tokenizeArgsStatic(args)
-        guard !tokens.isEmpty else { return ([], [:]) }
-
-        var positional: [String] = []
-        var options: [String: String] = [:]
-        var stopParsingOptions = false
-        var i = 0
-        while i < tokens.count {
-            let token = tokens[i]
-            if stopParsingOptions {
-                positional.append(token)
-            } else if token == "--" {
-                stopParsingOptions = true
-            } else if token.hasPrefix("--") {
-                if let eqIndex = token.firstIndex(of: "=") {
-                    let key = String(token[token.index(token.startIndex, offsetBy: 2)..<eqIndex])
-                    let value = String(token[token.index(after: eqIndex)...])
-                    options[key] = value
-                } else {
-                    let key = String(token.dropFirst(2))
-                    if i + 1 < tokens.count && !tokens[i + 1].hasPrefix("--") {
-                        options[key] = tokens[i + 1]
-                        i += 1
-                    } else {
-                        options[key] = ""
-                    }
-                }
-            } else {
-                positional.append(token)
-            }
-            i += 1
-        }
-        return (positional, options)
-    }
 
     // MARK: - V1 telemetry worker variants (nonisolated, fast-path only)
     //
@@ -2220,678 +1980,16 @@ class TerminalController {
     // "ERROR: ..." synchronously, and the actual UI mutation is enqueued via
     // `DispatchQueue.main.async` exactly as the @MainActor variant does.
 
-    private nonisolated func reportPwdWorker(_ args: String) -> String? {
-        let parsed = Self.parseOptionsStatic(args)
-        guard !parsed.positional.isEmpty else {
-            return "ERROR: Missing path — usage: report_pwd <path> [--tab=X] [--panel=Y]"
-        }
 
-        guard let scope = Self.explicitSocketScope(options: parsed.options) else {
-            return nil
-        }
 
-        // Note: the @MainActor `reportPwd` early-returns "ERROR: TabManager
-        // not available" when `self.tabManager` is nil. The worker variant
-        // skips that guard intentionally — when `--tab=<uuid>` is provided,
-        // we resolve the manager via `AppDelegate.shared?.tabManagerFor(...)`
-        // below, which finds the correct manager regardless of the
-        // controller's bound `tabManager`. The visible behavioral diff is
-        // "ERROR: TabManager not available" → silent async no-op when
-        // neither path can resolve a manager. In practice this fires only
-        // before the app finishes wiring its TabManager, well before any
-        // socket accepts commands.
-        let directory = parsed.positional.joined(separator: " ")
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
-                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
-                    return
-                }
-                let validSurfaceIds = Set(tab.panels.keys)
-                tab.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
-                guard validSurfaceIds.contains(scope.panelId) else { return }
-                tabManager.updateSurfaceDirectory(
-                    tabId: scope.workspaceId,
-                    surfaceId: scope.panelId,
-                    directory: directory
-                )
-            }
-        }
-        return "OK"
-    }
 
-    private nonisolated func reportShellStateWorker(_ args: String) -> String? {
-        let parsed = Self.parseOptionsStatic(args)
-        guard let rawState = parsed.positional.first, !rawState.isEmpty else {
-            return "ERROR: Missing shell state — usage: report_shell_state <prompt|running> [--tab=X] [--panel=Y]"
-        }
-        guard let state = Self.parseReportedShellActivityState(rawState) else {
-            return "ERROR: Invalid shell state '\(rawState)' — expected prompt or running"
-        }
 
-        guard let scope = Self.explicitSocketScope(options: parsed.options) else {
-            return nil
-        }
 
-        guard Self.socketFastPathState.shouldPublishShellActivity(
-            workspaceId: scope.workspaceId,
-            panelId: scope.panelId,
-            state: state
-        ) else {
-            return "OK"
-        }
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId) else { return }
-                tabManager.updateSurfaceShellActivity(
-                    tabId: scope.workspaceId,
-                    surfaceId: scope.panelId,
-                    state: state
-                )
-            }
-        }
-        return "OK"
-    }
 
-    private nonisolated func reportGitBranchWorker(_ args: String) -> String? {
-        let parsed = Self.parseOptionsStatic(args)
-        guard let branch = parsed.positional.first else {
-            return "ERROR: Missing branch name — usage: report_git_branch <branch> [--status=dirty] [--tab=X]"
-        }
-        let isDirty = parsed.options["status"]?.lowercased() == "dirty"
-
-        guard let scope = Self.explicitSocketScope(options: parsed.options) else {
-            return nil
-        }
-
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
-                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
-                    return
-                }
-                let validSurfaceIds = Set(tab.panels.keys)
-                tab.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
-                guard validSurfaceIds.contains(scope.panelId) else { return }
-                tabManager.updateSurfaceGitBranch(
-                    tabId: scope.workspaceId,
-                    surfaceId: scope.panelId,
-                    branch: branch,
-                    isDirty: isDirty
-                )
-            }
-        }
-        return "OK"
-    }
-
-    private nonisolated func clearGitBranchWorker(_ args: String) -> String? {
-        let parsed = Self.parseOptionsStatic(args)
-        guard let scope = Self.explicitSocketScope(options: parsed.options) else {
-            return nil
-        }
-
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
-                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
-                    return
-                }
-                let validSurfaceIds = Set(tab.panels.keys)
-                tab.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
-                guard validSurfaceIds.contains(scope.panelId) else { return }
-                tabManager.clearSurfaceGitBranch(
-                    tabId: scope.workspaceId,
-                    surfaceId: scope.panelId
-                )
-            }
-        }
-        return "OK"
-    }
-
-    private nonisolated func portsKickWorker(_ args: String) -> String? {
-        let parsed = Self.parseOptionsStatic(args)
-        guard let scope = Self.explicitSocketScope(options: parsed.options) else {
-            return nil
-        }
-
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
-                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
-                    return
-                }
-                let validSurfaceIds = Set(tab.panels.keys)
-                tab.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
-                guard validSurfaceIds.contains(scope.panelId) else { return }
-                PortScanner.shared.kick(workspaceId: scope.workspaceId, panelId: scope.panelId)
-            }
-        }
-        return "OK"
-    }
-
-    private nonisolated func agentKickWorker(_ args: String) -> String? {
-        let parsed = Self.parseOptionsStatic(args)
-        guard let scope = Self.explicitSocketScope(options: parsed.options) else {
-            return nil
-        }
-
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
-                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
-                    return
-                }
-                let validSurfaceIds = Set(tab.panels.keys)
-                guard validSurfaceIds.contains(scope.panelId) else { return }
-                AgentDetector.shared.kick(workspaceId: scope.workspaceId, panelId: scope.panelId)
-            }
-        }
-        return "OK"
-    }
-
-    private func processCommand(_ command: String) -> String {
-        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "ERROR: Empty command" }
-
-        // v2 protocol: newline-delimited JSON.
-        if trimmed.hasPrefix("{") {
-            return processV2Command(trimmed)
-        }
-
-        let parts = trimmed.split(separator: " ", maxSplits: 1).map(String.init)
-        guard !parts.isEmpty else { return "ERROR: Empty command" }
-
-        let cmd = parts[0].lowercased()
-        let args = parts.count > 1 ? parts[1] : ""
-
-        return withSocketCommandPolicy(commandKey: cmd, isV2: false) {
-            switch cmd {
-        case "ping":
-            return "PONG"
-
-        case "auth":
-            return "OK: Authentication not required"
-
-        case "list_windows":
-            return listWindows()
-
-        case "current_window":
-            return currentWindow()
-
-        case "focus_window":
-            return focusWindow(args)
-
-        case "new_window":
-            return newWindow()
-
-        case "close_window":
-            return closeWindow(args)
-
-        case "move_workspace_to_window":
-            return moveWorkspaceToWindow(args)
-
-        case "list_workspaces":
-            return listWorkspaces()
-
-	        case "new_workspace":
-	            return newWorkspace()
-
-	        case "new_split":
-	            return newSplit(args)
-
-        case "list_surfaces":
-            return listSurfaces(args)
-
-        case "focus_surface":
-            return focusSurface(args)
-
-        case "close_workspace":
-            return closeWorkspace(args)
-
-        case "select_workspace":
-            return selectWorkspace(args)
-
-        case "current_workspace":
-            return currentWorkspace()
-
-        case "send":
-            return sendInput(args)
-
-        case "send_key":
-            return sendKey(args)
-
-        case "send_surface":
-            return sendInputToSurface(args)
-
-        case "send_key_surface":
-            return sendKeyToSurface(args)
-
-        case "notify":
-            return notifyCurrent(args)
-
-        case "notify_surface":
-            return notifySurface(args)
-
-        case "notify_target":
-            return notifyTarget(args)
-
-        case "list_notifications":
-            return listNotifications()
-
-        case "clear_notifications":
-            return clearNotifications(args)
-
-        case "set_app_focus":
-            return setAppFocusOverride(args)
-
-        case "simulate_app_active":
-            return simulateAppDidBecomeActive()
-
-        case "set_status":
-            return setStatus(args)
-
-        case "report_meta":
-            return reportMeta(args)
-
-        case "report_meta_block":
-            return reportMetaBlock(args)
-
-        case "clear_status":
-            return clearStatus(args)
-
-        case "set_agent_pid":
-            return setAgentPID(args)
-
-        case "clear_agent_pid":
-            return clearAgentPID(args)
-
-        case "clear_meta":
-            return clearMeta(args)
-
-        case "clear_meta_block":
-            return clearMetaBlock(args)
-
-        case "list_status":
-            return listStatus(args)
-
-        case "list_meta":
-            return listMeta(args)
-
-        case "list_meta_blocks":
-            return listMetaBlocks(args)
-
-        case "log":
-            return appendLog(args)
-
-        case "clear_log":
-            return clearLog(args)
-
-        case "list_log":
-            return listLog(args)
-
-        case "set_progress":
-            return setProgress(args)
-
-        case "clear_progress":
-            return clearProgress(args)
-
-        case "report_git_branch":
-            return reportGitBranch(args)
-
-        case "clear_git_branch":
-            return clearGitBranch(args)
-
-        case "report_pr":
-            return reportPullRequest(args)
-
-        case "report_review":
-            return reportPullRequest(args)
-
-        case "clear_pr":
-            return clearPullRequest(args)
-
-        case "report_ports":
-            return reportPorts(args)
-
-        case "clear_ports":
-            return clearPorts(args)
-
-        case "report_tty":
-            return reportTTY(args)
-
-        case "ports_kick":
-            return portsKick(args)
-
-        case "agent_kick":
-            return agentKick(args)
-
-        case "report_shell_state":
-            return reportShellState(args)
-
-        case "report_pwd":
-            return reportPwd(args)
-
-        case "sidebar_state":
-            return sidebarState(args)
-
-        case "reset_sidebar":
-            return resetSidebar(args)
-
-        case "read_screen":
-            return readScreenText(args)
-
-
-#if DEBUG
-        case "send_workspace":
-            return sendInputToWorkspace(args)
-
-        case "set_shortcut":
-            return setShortcut(args)
-
-        case "simulate_shortcut":
-            return simulateShortcut(args)
-
-        case "simulate_type":
-            return simulateType(args)
-
-        case "simulate_file_drop":
-            return simulateFileDrop(args)
-
-        case "seed_drag_pasteboard_fileurl":
-            return seedDragPasteboardFileURL()
-
-        case "seed_drag_pasteboard_tabtransfer":
-            return seedDragPasteboardTabTransfer()
-
-        case "seed_drag_pasteboard_sidebar_reorder":
-            return seedDragPasteboardSidebarReorder()
-
-        case "seed_drag_pasteboard_types":
-            return seedDragPasteboardTypes(args)
-
-        case "clear_drag_pasteboard":
-            return clearDragPasteboard()
-
-        case "drop_hit_test":
-            return dropHitTest(args)
-
-        case "drag_hit_chain":
-            return dragHitChain(args)
-
-        case "overlay_hit_gate":
-            return overlayHitGate(args)
-
-        case "overlay_drop_gate":
-            return overlayDropGate(args)
-
-        case "portal_hit_gate":
-            return portalHitGate(args)
-
-        case "sidebar_overlay_gate":
-            return sidebarOverlayGate(args)
-
-        case "terminal_drop_overlay_probe":
-            return terminalDropOverlayProbe(args)
-
-        case "activate_app":
-            return activateApp()
-
-        case "is_terminal_focused":
-            return isTerminalFocused(args)
-
-        case "read_terminal_text":
-            return readTerminalText(args)
-
-        case "render_stats":
-            return renderStats(args)
-
-        case "layout_debug":
-            return layoutDebug()
-
-        case "bonsplit_underflow_count":
-            return bonsplitUnderflowCount()
-
-        case "reset_bonsplit_underflow_count":
-            return resetBonsplitUnderflowCount()
-
-        case "empty_panel_count":
-            return emptyPanelCount()
-
-        case "reset_empty_panel_count":
-            return resetEmptyPanelCount()
-
-        case "focus_notification":
-            return focusFromNotification(args)
-
-        case "flash_count":
-            return flashCount(args)
-
-        case "reset_flash_counts":
-            return resetFlashCounts()
-
-        case "panel_snapshot":
-            return panelSnapshot(args)
-
-        case "panel_snapshot_reset":
-            return panelSnapshotReset(args)
-
-        case "screenshot":
-            return captureScreenshot(args)
-#endif
-
-        case "help":
-            return helpText()
-
-        // Browser panel commands
-        case "open_browser":
-            return openBrowser(args)
-
-        case "navigate":
-            return navigateBrowser(args)
-
-        case "browser_back":
-            return browserBack(args)
-
-        case "browser_forward":
-            return browserForward(args)
-
-        case "browser_reload":
-            return browserReload(args)
-
-        case "get_url":
-            return getUrl(args)
-
-        case "focus_webview":
-            return focusWebView(args)
-
-        case "is_webview_focused":
-            return isWebViewFocused(args)
-
-        case "list_panes":
-            return listPanes()
-
-        case "list_pane_surfaces":
-            return listPaneSurfaces(args)
-
-	        case "focus_pane":
-	            return focusPane(args)
-
-	        case "focus_surface_by_panel":
-	            return focusSurfaceByPanel(args)
-
-	        case "drag_surface_to_split":
-	            return dragSurfaceToSplit(args)
-
-	        case "new_pane":
-	            return newPane(args)
-
-        case "new_surface":
-            return newSurface(args)
-
-        // C11-14: read/write the default agent + per-agent configuration. Same
-        // store the Settings UI binds to; live updates fan out via UserDefaults.
-        case "default_agent":
-            return defaultAgentCommand(args)
-
-        case "agent_config":
-            return agentConfigCommand(args)
-
-        case "close_surface":
-            return closeSurface(args)
-
-        case "reload_config":
-            return reloadConfig(args)
-
-        case "refresh_surfaces":
-            return refreshSurfaces()
-
-            case "surface_health":
-                return surfaceHealth(args)
-
-            default:
-                return "ERROR: Unknown command '\(cmd)'. Use 'help' for available commands."
-            }
-        }
-    }
 
     // MARK: - V2 JSON Socket Protocol
 
-    func processV2Command(_ jsonLine: String) -> String {
-        // v1 access-mode gating applies to v2 as well. We can't know which v2 method maps
-        // to which v1 command without parsing, so parse first and then apply allow-list.
 
-        guard let data = jsonLine.data(using: .utf8) else {
-            return v2Encode(["ok": false, "error": ["code": "invalid_utf8", "message": "Invalid UTF-8"]])
-        }
-
-        let object: Any
-        do {
-            object = try JSONSerialization.jsonObject(with: data, options: [])
-        } catch {
-            return v2Encode(["ok": false, "error": ["code": "parse_error", "message": "Invalid JSON"]])
-        }
-
-        guard let dict = object as? [String: Any] else {
-            return v2Encode(["ok": false, "error": ["code": "invalid_request", "message": "Expected JSON object"]])
-        }
-
-        let id: Any? = dict["id"]
-        let method = (dict["method"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let params = dict["params"] as? [String: Any] ?? [:]
-
-        guard !method.isEmpty else {
-            return v2Error(id: id, code: "invalid_request", message: "Missing method")
-        }
-
-        // C11-26: Methods on the socket-worker policy must be dispatched via
-        // socketWorkerV2Response (off main); reaching processV2Command for one of
-        // them means the routing layer mis-targeted the request, and falling
-        // through to the main-actor handler would re-introduce the deadlock the
-        // worker policy exists to avoid.
-        guard Self.executionPolicy(forV2Method: method) == .mainActor else {
-            // C11-26 review M2: in DEBUG, this routing bug should fail loudly so
-            // CI catches it before it ships. Release-mode behavior (return an
-            // invalid_dispatch error) is unchanged.
-            #if DEBUG
-            dlog("v2.invalid_dispatch method=\(method) — worker-policy method reached processV2Command")
-            assertionFailure("\(method) is on the socket-worker policy and must not reach processV2Command")
-            #endif
-            return v2Error(
-                id: id,
-                code: "invalid_dispatch",
-                message: "\(method) must run on the socket worker"
-            )
-        }
-
-        v2MainSync { self.v2RefreshKnownRefs() }
-
-
-        return withSocketCommandPolicy(commandKey: method, isV2: true) {
-            switch method {
-
-
-        // Windows — see Sources/SocketHandlers/WindowHandlers.swift (C11-159)
-
-        // Workspaces
-
-        // Blueprints (CMUX-37 Phase 2)
-
-        // Snapshots (CMUX-37 Phase 1)
-
-        // Themes (CMUX-35)
-
-        // Settings
-
-        // Feedback
-
-
-        // Surfaces / input
-        // C11-131: explicit operator-grade state verbs.
-        // surface.send_text is on the socketWorker execution policy and is dispatched
-        // by socketWorkerV2Response. Reaching this switch for it would mean the
-        // routing layer mis-targeted the request; the invalid_dispatch guard above
-        // catches that and returns an error.
-        // surface.send_key, surface.clear_history, and surface.read_text are on
-        // the socketWorker execution policy and are dispatched by
-        // socketWorkerV2Response. The invalid_dispatch guard above catches any
-        // mis-routed request before it reaches this switch.
-        // C11-24 conversation store
-
-        // Mailbox
-
-        // Panes
-
-        // Notifications
-
-        // App focus
-
-        // Browser
-
-        // Markdown
-
-        // M3 — structured sidebar state (extends v1 `sidebar_state` with agent_chip)
-
-        // surface.read_text is on the socketWorker execution policy and is
-        // dispatched by socketWorkerV2Response.
-
-        // M7 — title bar projection (read-only sugar)
-
-
-
-            default:
-                // C11-159: methods whose per-domain handlers have been relocated to
-                // Sources/SocketHandlers/ are routed here. Any method still not handled
-                // returns the identical method_not_found error as before.
-                if let extracted = v2DispatchExtracted(method, id: id, params: params) {
-                    return extracted
-                }
-                return v2Error(id: id, code: "method_not_found", message: "Unknown method")
-            }
-        }
-    }
-
-    /// C11-159 dispatcher seam (v2). Routes a method whose per-domain handler
-    /// unit lives under `Sources/SocketHandlers/` by its domain prefix. Returns
-    /// nil only when no relocated domain owns the prefix, so the caller falls
-    /// back to the identical `method_not_found` response. This is the handler
-    /// seam DX-1 asks for; the router (parse/auth-gate/policy/main-sync) is
-    /// unchanged. Runs on the main actor exactly like the switch it replaces.
-    func v2DispatchExtracted(_ method: String, id: Any?, params: [String: Any]) -> String? {
-        if method.hasPrefix("window.") { return v2DispatchWindow(method, id: id, params: params) }
-        if method.hasPrefix("workspace.") { return v2DispatchWorkspace(method, id: id, params: params) }
-        if method.hasPrefix("pane.") { return v2DispatchPane(method, id: id, params: params) }
-        if method.hasPrefix("surface.") { return v2DispatchSurface(method, id: id, params: params) }
-        if method.hasPrefix("debug.") { return v2DispatchDebug(method, id: id, params: params) }
-        if method.hasPrefix("browser.") { return v2DispatchBrowser(method, id: id, params: params) }
-        if method.hasPrefix("theme.") { return v2DispatchTheme(method, id: id, params: params) }
-        if method.hasPrefix("system.") || method.hasPrefix("auth.") || method.hasPrefix("app.") { return v2DispatchSystem(method, id: id, params: params) }
-        if method.hasPrefix("snapshot.") { return v2DispatchSnapshot(method, id: id, params: params) }
-        if method.hasPrefix("conversation.") { return v2DispatchConversation(method, id: id, params: params) }
-        if method.hasPrefix("notification.") { return v2DispatchNotification(method, id: id, params: params) }
-        if method.hasPrefix("markdown.") || method.hasPrefix("feedback.") { return v2DispatchMarkdownFeedback(method, id: id, params: params) }
-        if method.hasPrefix("settings.") || method.hasPrefix("sidebar.") || method.hasPrefix("session.") || method.hasPrefix("tab.") || method.hasPrefix("mailbox.") { return v2DispatchMisc(method, id: id, params: params) }
-        return nil
-    }
 
 
 
@@ -4756,7 +3854,7 @@ class TerminalController {
         return result
     }
 
-    private func readScreenText(_ args: String) -> String {
+    func readScreenText(_ args: String) -> String {
         let options: ReadScreenOptions
         switch parseReadScreenArgs(args) {
         case .success(let parsed):
@@ -4783,7 +3881,7 @@ class TerminalController {
         return String(decoding: data, as: UTF8.self)
     }
 
-    private func helpText() -> String {
+    func helpText() -> String {
         var text = """
         Hierarchy: Workspace (sidebar tab) > Pane (split region) > Surface (nested tab) > Panel (terminal/browser)
 
@@ -5070,7 +4168,7 @@ class TerminalController {
         return "OK"
     }
 
-    private func simulateType(_ args: String) -> String {
+    func simulateType(_ args: String) -> String {
         let raw = args.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else {
             return "ERROR: Usage: simulate_type <text>"
@@ -5106,7 +4204,7 @@ class TerminalController {
         return result
     }
 
-    private func simulateFileDrop(_ args: String) -> String {
+    func simulateFileDrop(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         let parts = args.split(separator: " ", maxSplits: 1).map(String.init)
@@ -5134,19 +4232,19 @@ class TerminalController {
         return result
     }
 
-    private func seedDragPasteboardFileURL() -> String {
+    func seedDragPasteboardFileURL() -> String {
         return seedDragPasteboardTypes("fileurl")
     }
 
-    private func seedDragPasteboardTabTransfer() -> String {
+    func seedDragPasteboardTabTransfer() -> String {
         return seedDragPasteboardTypes("tabtransfer")
     }
 
-    private func seedDragPasteboardSidebarReorder() -> String {
+    func seedDragPasteboardSidebarReorder() -> String {
         return seedDragPasteboardTypes("sidebarreorder")
     }
 
-    private func seedDragPasteboardTypes(_ args: String) -> String {
+    func seedDragPasteboardTypes(_ args: String) -> String {
         let raw = args.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else {
             return "ERROR: Usage: seed_drag_pasteboard_types <type[,type...]>"
@@ -5176,14 +4274,14 @@ class TerminalController {
         return "OK"
     }
 
-    private func clearDragPasteboard() -> String {
+    func clearDragPasteboard() -> String {
         v2MainSync {
             _ = NSPasteboard(name: .drag).clearContents()
         }
         return "OK"
     }
 
-    private func overlayHitGate(_ args: String) -> String {
+    func overlayHitGate(_ args: String) -> String {
         let token = args.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !token.isEmpty else {
             return "ERROR: Usage: overlay_hit_gate <leftMouseDragged|rightMouseDragged|otherMouseDragged|mouseMoved|mouseEntered|mouseExited|flagsChanged|cursorUpdate|appKitDefined|systemDefined|applicationDefined|periodic|leftMouseDown|leftMouseUp|rightMouseDown|rightMouseUp|otherMouseDown|otherMouseUp|scrollWheel|none>"
@@ -5207,7 +4305,7 @@ class TerminalController {
         return shouldCapture ? "true" : "false"
     }
 
-    private func overlayDropGate(_ args: String) -> String {
+    func overlayDropGate(_ args: String) -> String {
         let token = args.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let hasLocalDraggingSource: Bool
         switch token {
@@ -5230,7 +4328,7 @@ class TerminalController {
         return shouldCapture ? "true" : "false"
     }
 
-    private func portalHitGate(_ args: String) -> String {
+    func portalHitGate(_ args: String) -> String {
         let token = args.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !token.isEmpty else {
             return "ERROR: Usage: portal_hit_gate <leftMouseDragged|rightMouseDragged|otherMouseDragged|mouseMoved|mouseEntered|mouseExited|flagsChanged|cursorUpdate|appKitDefined|systemDefined|applicationDefined|periodic|leftMouseDown|leftMouseUp|rightMouseDown|rightMouseUp|otherMouseDown|otherMouseUp|scrollWheel|none>"
@@ -5252,7 +4350,7 @@ class TerminalController {
         return shouldPassThrough ? "true" : "false"
     }
 
-    private func sidebarOverlayGate(_ args: String) -> String {
+    func sidebarOverlayGate(_ args: String) -> String {
         let token = args.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let hasSidebarDragState: Bool
         switch token {
@@ -5275,7 +4373,7 @@ class TerminalController {
         return shouldCapture ? "true" : "false"
     }
 
-    private func terminalDropOverlayProbe(_ args: String) -> String {
+    func terminalDropOverlayProbe(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         let token = args.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -5389,7 +4487,7 @@ class TerminalController {
     /// Takes normalised (0-1) x,y within the content area where (0,0) is the
     /// top-left corner and (1,1) is the bottom-right corner.  Returns the
     /// surface UUID of the terminal under that point, or "none".
-    private func dropHitTest(_ args: String) -> String {
+    func dropHitTest(_ args: String) -> String {
         let parts = args.split(separator: " ").map(String.init)
         guard parts.count == 2,
               let nx = Double(parts[0]), let ny = Double(parts[1]),
@@ -5430,7 +4528,7 @@ class TerminalController {
     /// Return the hit-test chain at normalized (0-1) coordinates in the main window's
     /// content area. Used by regression tests to detect root-level drag destinations
     /// shadowing pane-local Bonsplit drop targets.
-    private func dragHitChain(_ args: String) -> String {
+    func dragHitChain(_ args: String) -> String {
         let parts = args.split(separator: " ").map(String.init)
         guard parts.count == 2,
               let nx = Double(parts[0]), let ny = Double(parts[1]),
@@ -5815,7 +4913,7 @@ class TerminalController {
     }
     #endif
 
-    private func listWindows() -> String {
+    func listWindows() -> String {
         let summaries = v2MainSync { AppDelegate.shared?.listMainWindowSummaries() } ?? []
         guard !summaries.isEmpty else { return "No windows" }
 
@@ -5827,13 +4925,13 @@ class TerminalController {
         return lines.joined(separator: "\n")
     }
 
-    private func currentWindow() -> String {
+    func currentWindow() -> String {
         guard let tabManager else { return "ERROR: TabManager not available" }
         guard let windowId = v2ResolveWindowId(tabManager: tabManager) else { return "ERROR: No active window" }
         return windowId.uuidString
     }
 
-    private func focusWindow(_ arg: String) -> String {
+    func focusWindow(_ arg: String) -> String {
         let trimmed = arg.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let windowId = UUID(uuidString: trimmed) else { return "ERROR: Invalid window id" }
 
@@ -5846,7 +4944,7 @@ class TerminalController {
         return "OK"
     }
 
-    private func newWindow() -> String {
+    func newWindow() -> String {
         guard let windowId = v2MainSync({ AppDelegate.shared?.createMainWindow() }) else {
             return "ERROR: Failed to create window"
         }
@@ -5856,14 +4954,14 @@ class TerminalController {
         return "OK \(windowId.uuidString)"
     }
 
-    private func closeWindow(_ arg: String) -> String {
+    func closeWindow(_ arg: String) -> String {
         let trimmed = arg.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let windowId = UUID(uuidString: trimmed) else { return "ERROR: Invalid window id" }
         let ok = v2MainSync { AppDelegate.shared?.closeMainWindow(windowId: windowId) ?? false }
         return ok ? "OK" : "ERROR: Window not found"
     }
 
-    private func moveWorkspaceToWindow(_ args: String) -> String {
+    func moveWorkspaceToWindow(_ args: String) -> String {
         let parts = args.split(separator: " ").map(String.init)
         guard parts.count >= 2 else { return "ERROR: Usage move_workspace_to_window <workspace_id> <window_id>" }
         guard let wsId = UUID(uuidString: parts[0]) else { return "ERROR: Invalid workspace id" }
@@ -5889,7 +4987,7 @@ class TerminalController {
         return ok ? "OK" : "ERROR: Move failed"
     }
 
-    private func listWorkspaces() -> String {
+    func listWorkspaces() -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         var result: String = ""
@@ -5903,7 +5001,7 @@ class TerminalController {
         return result.isEmpty ? "No workspaces" : result
     }
 
-    private func newWorkspace() -> String {
+    func newWorkspace() -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         var newTabId: UUID?
@@ -5967,7 +5065,7 @@ class TerminalController {
         return result
     }
 
-    private func listSurfaces(_ tabArg: String) -> String {
+    func listSurfaces(_ tabArg: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
         var result = ""
         v2MainSync {
@@ -5986,7 +5084,7 @@ class TerminalController {
         return result
     }
 
-    private func focusSurface(_ arg: String) -> String {
+    func focusSurface(_ arg: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
         let trimmed = arg.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "ERROR: Missing panel id or index" }
@@ -6018,7 +5116,7 @@ class TerminalController {
         return success ? "OK" : "ERROR: Panel not found"
     }
 
-    private func notifyCurrent(_ args: String) -> String {
+    func notifyCurrent(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         var result = "OK"
@@ -6040,7 +5138,7 @@ class TerminalController {
         return result
     }
 
-    private func notifySurface(_ args: String) -> String {
+    func notifySurface(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
         let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "ERROR: Missing surface id or index" }
@@ -6072,7 +5170,7 @@ class TerminalController {
         return result
     }
 
-    private func notifyTarget(_ args: String) -> String {
+    func notifyTarget(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
         let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "ERROR: Usage: notify_target <workspace_id> <surface_id> <title>|<subtitle>|<body>" }
@@ -6113,7 +5211,7 @@ class TerminalController {
         return result
     }
 
-    private func listNotifications() -> String {
+    func listNotifications() -> String {
         var result = ""
         v2MainSync {
             let lines = TerminalNotificationStore.shared.notifications.enumerated().map { index, notification in
@@ -6126,7 +5224,7 @@ class TerminalController {
         return result.isEmpty ? "No notifications" : result
     }
 
-    private func clearNotifications(_ args: String) -> String {
+    func clearNotifications(_ args: String) -> String {
         let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             v2MainSync {
@@ -6154,7 +5252,7 @@ class TerminalController {
         return "OK"
     }
 
-    private func setAppFocusOverride(_ arg: String) -> String {
+    func setAppFocusOverride(_ arg: String) -> String {
         let trimmed = arg.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         switch trimmed {
         case "active", "1", "true":
@@ -6171,7 +5269,7 @@ class TerminalController {
         }
     }
 
-    private func simulateAppDidBecomeActive() -> String {
+    func simulateAppDidBecomeActive() -> String {
         v2MainSync {
             AppDelegate.shared?.applicationDidBecomeActive(
                 Notification(name: NSApplication.didBecomeActiveNotification)
@@ -6915,7 +6013,7 @@ class TerminalController {
         return success ? "OK" : "ERROR: Tab not found"
     }
 
-    private func currentWorkspace() -> String {
+    func currentWorkspace() -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         var result: String = ""
@@ -7121,7 +6219,7 @@ class TerminalController {
         return true
     }
 
-    private func sendInput(_ text: String) -> String {
+    func sendInput(_ text: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         var success = false
@@ -7187,7 +6285,7 @@ class TerminalController {
 #endif
     }
 
-    private func sendInputToWorkspace(_ args: String) -> String {
+    func sendInputToWorkspace(_ args: String) -> String {
         guard let tabManager else { return "ERROR: TabManager not available" }
         let parts = args.split(separator: " ", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { return "ERROR: Usage: send_workspace <workspace_id> <text>" }
@@ -7278,7 +6376,7 @@ class TerminalController {
         return nil
     }
 
-    private func sendInputToSurface(_ args: String) -> String {
+    func sendInputToSurface(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
         let parts = args.split(separator: " ", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { return "ERROR: Usage: send_surface <id|idx> <text>" }
@@ -7309,7 +6407,7 @@ class TerminalController {
         return success ? "OK" : "ERROR: Failed to send input"
     }
 
-    private func sendKey(_ keyName: String) -> String {
+    func sendKey(_ keyName: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         var success = false
@@ -7337,7 +6435,7 @@ class TerminalController {
         return success ? "OK" : "ERROR: Unknown key '\(keyName)'"
     }
 
-    private func sendKeyToSurface(_ args: String) -> String {
+    func sendKeyToSurface(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
         let parts = args.split(separator: " ", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { return "ERROR: Usage: send_key_surface <id|idx> <key>" }
@@ -7365,7 +6463,7 @@ class TerminalController {
 
     // MARK: - Browser Panel Commands
 
-    private func openBrowser(_ args: String) -> String {
+    func openBrowser(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -7392,7 +6490,7 @@ class TerminalController {
         return result
     }
 
-    private func navigateBrowser(_ args: String) -> String {
+    func navigateBrowser(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         let parts = args.split(separator: " ", maxSplits: 1).map(String.init)
@@ -7416,7 +6514,7 @@ class TerminalController {
         return result
     }
 
-    private func browserBack(_ args: String) -> String {
+    func browserBack(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         let panelArg = args.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -7437,7 +6535,7 @@ class TerminalController {
         return result
     }
 
-    private func browserForward(_ args: String) -> String {
+    func browserForward(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         let panelArg = args.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -7458,7 +6556,7 @@ class TerminalController {
         return result
     }
 
-    private func browserReload(_ args: String) -> String {
+    func browserReload(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         let panelArg = args.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -7479,7 +6577,7 @@ class TerminalController {
         return result
     }
 
-    private func getUrl(_ args: String) -> String {
+    func getUrl(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         let panelArg = args.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -7499,7 +6597,7 @@ class TerminalController {
         return result
     }
 
-    private func focusWebView(_ args: String) -> String {
+    func focusWebView(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         let panelArg = args.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -7552,7 +6650,7 @@ class TerminalController {
         return result
     }
 
-    private func isWebViewFocused(_ args: String) -> String {
+    func isWebViewFocused(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         let panelArg = args.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -7579,7 +6677,7 @@ class TerminalController {
 
     // MARK: - Bonsplit Pane Commands
 
-    private func listPanes() -> String {
+    func listPanes() -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         var result = ""
@@ -7603,7 +6701,7 @@ class TerminalController {
         return result
     }
 
-    private func listPaneSurfaces(_ args: String) -> String {
+    func listPaneSurfaces(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         var result = ""
@@ -7684,7 +6782,7 @@ class TerminalController {
         return result
     }
 
-	    private func focusSurfaceByPanel(_ args: String) -> String {
+	    func focusSurfaceByPanel(_ args: String) -> String {
 	        guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         let tabArg = args.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -7709,7 +6807,7 @@ class TerminalController {
 	        return result
 	    }
 	
-	    private func dragSurfaceToSplit(_ args: String) -> String {
+	    func dragSurfaceToSplit(_ args: String) -> String {
 	        guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 	
 	        let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -7755,7 +6853,7 @@ class TerminalController {
 	        return result
 	    }
 	
-    private func newPane(_ args: String) -> String {
+    func newPane(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         // Parse arguments: --type=terminal|browser --direction=left|right|up|down --url=...
@@ -8200,7 +7298,7 @@ class TerminalController {
 
     /// Register an agent PID for stale-session detection without setting a visible status entry.
     /// Usage: set_agent_pid <key> <pid> [--tab=<id>]
-    private func setAgentPID(_ args: String) -> String {
+    func setAgentPID(_ args: String) -> String {
         let parsed = parseOptions(args)
         guard parsed.positional.count >= 2,
               let pid = Int32(parsed.positional[1]), pid > 0 else {
@@ -8219,7 +7317,7 @@ class TerminalController {
     }
 
     /// Unregister an agent PID. Usage: clear_agent_pid <key> [--tab=<id>]
-    private func clearAgentPID(_ args: String) -> String {
+    func clearAgentPID(_ args: String) -> String {
         let parsed = parseOptions(args)
         guard let key = parsed.positional.first else {
             return "ERROR: Usage: clear_agent_pid <key> [--tab=<id>]"
@@ -8264,33 +7362,33 @@ class TerminalController {
         return result
     }
 
-    private func setStatus(_ args: String) -> String {
+    func setStatus(_ args: String) -> String {
         upsertSidebarMetadata(
             args,
             missingError: "ERROR: Missing status key or value — usage: set_status <key> <value> [--icon=X] [--color=#hex] [--url=X] [--priority=N] [--format=plain|markdown] [--tab=X]"
         )
     }
 
-    private func reportMeta(_ args: String) -> String {
+    func reportMeta(_ args: String) -> String {
         upsertSidebarMetadata(
             args,
             missingError: "ERROR: Missing metadata key or value — usage: report_meta <key> <value> [--icon=X] [--color=#hex] [--url=X] [--priority=N] [--format=plain|markdown] [--tab=X]"
         )
     }
 
-    private func clearStatus(_ args: String) -> String {
+    func clearStatus(_ args: String) -> String {
         clearSidebarMetadata(args, usage: "clear_status <key> [--tab=X]")
     }
 
-    private func clearMeta(_ args: String) -> String {
+    func clearMeta(_ args: String) -> String {
         clearSidebarMetadata(args, usage: "clear_meta <key> [--tab=X]")
     }
 
-    private func listStatus(_ args: String) -> String {
+    func listStatus(_ args: String) -> String {
         listSidebarMetadata(args, emptyMessage: "No status entries")
     }
 
-    private func listMeta(_ args: String) -> String {
+    func listMeta(_ args: String) -> String {
         listSidebarMetadata(args, emptyMessage: "No metadata entries")
     }
 
@@ -8309,7 +7407,7 @@ class TerminalController {
         return line
     }
 
-    private func reportMetaBlock(_ args: String) -> String {
+    func reportMetaBlock(_ args: String) -> String {
         guard tabManager != nil else { return "ERROR: TabManager not available" }
 
         let parts = splitMetadataBlockArgs(args)
@@ -8372,7 +7470,7 @@ class TerminalController {
         return "OK"
     }
 
-    private func clearMetaBlock(_ args: String) -> String {
+    func clearMetaBlock(_ args: String) -> String {
         let parsed = parseOptions(args)
         guard let key = parsed.positional.first, parsed.positional.count == 1 else {
             return "ERROR: Missing metadata block key — usage: clear_meta_block <key> [--tab=X]"
@@ -8391,7 +7489,7 @@ class TerminalController {
         return result
     }
 
-    private func listMetaBlocks(_ args: String) -> String {
+    func listMetaBlocks(_ args: String) -> String {
         var result = ""
         v2MainSync {
             guard let tab = resolveTabForReport(args) else {
@@ -8408,7 +7506,7 @@ class TerminalController {
         return result
     }
 
-    private func appendLog(_ args: String) -> String {
+    func appendLog(_ args: String) -> String {
         let parsed = parseOptions(args)
         guard !parsed.positional.isEmpty else {
             return "ERROR: Missing message — usage: log [--level=X] [--source=X] [--tab=X] -- <message>"
@@ -8436,7 +7534,7 @@ class TerminalController {
         return result
     }
 
-    private func clearLog(_ args: String) -> String {
+    func clearLog(_ args: String) -> String {
         var result = "OK"
         v2MainSync {
             guard let tab = resolveTabForReport(args) else {
@@ -8448,7 +7546,7 @@ class TerminalController {
         return result
     }
 
-    private func listLog(_ args: String) -> String {
+    func listLog(_ args: String) -> String {
         let parsed = parseOptions(args)
         var limit: Int?
         if let limitStr = parsed.options["limit"] {
@@ -8488,7 +7586,7 @@ class TerminalController {
         return result
     }
 
-    private func setProgress(_ args: String) -> String {
+    func setProgress(_ args: String) -> String {
         let parsed = parseOptions(args)
         guard let first = parsed.positional.first else {
             return "ERROR: Missing progress value — usage: set_progress <0.0-1.0> [--label=X] [--tab=X]"
@@ -8510,7 +7608,7 @@ class TerminalController {
         return result
     }
 
-    private func clearProgress(_ args: String) -> String {
+    func clearProgress(_ args: String) -> String {
         var result = "OK"
         v2MainSync {
             guard let tab = resolveTabForReport(args) else {
@@ -8522,7 +7620,7 @@ class TerminalController {
         return result
     }
 
-    private func reportGitBranch(_ args: String) -> String {
+    func reportGitBranch(_ args: String) -> String {
         let parsed = parseOptions(args)
         guard let branch = parsed.positional.first else {
             return "ERROR: Missing branch name — usage: report_git_branch <branch> [--status=dirty] [--tab=X]"
@@ -8562,7 +7660,7 @@ class TerminalController {
         return result
     }
 
-    private func clearGitBranch(_ args: String) -> String {
+    func clearGitBranch(_ args: String) -> String {
         let parsed = parseOptions(args)
 
         // Shell integration always includes explicit workspace/panel IDs.
@@ -8592,7 +7690,7 @@ class TerminalController {
         return result
     }
 
-    private func reportPullRequest(_ args: String) -> String {
+    func reportPullRequest(_ args: String) -> String {
         let parsed = parseOptions(args)
         guard parsed.positional.count >= 2 else {
             return "ERROR: Missing pull request number or URL — usage: report_pr <number> <url> [--label=PR] [--state=open|merged|closed] [--branch=<name>] [--checks=pass|fail|pending] [--tab=X] [--panel=Y]"
@@ -8664,7 +7762,7 @@ class TerminalController {
         }
     }
 
-    private func clearPullRequest(_ args: String) -> String {
+    func clearPullRequest(_ args: String) -> String {
         let parsed = parseOptions(args)
         return schedulePanelMetadataMutation(
             args: args,
@@ -8675,7 +7773,7 @@ class TerminalController {
         }
     }
 
-    private func reportPorts(_ args: String) -> String {
+    func reportPorts(_ args: String) -> String {
         let parsed = parseOptions(args)
         guard !parsed.positional.isEmpty else {
             return "ERROR: Missing ports — usage: report_ports <port1> [port2...] [--tab=X] [--panel=Y]"
@@ -8729,7 +7827,7 @@ class TerminalController {
         return result
     }
 
-    private func reportPwd(_ args: String) -> String {
+    func reportPwd(_ args: String) -> String {
         guard let tabManager else { return "ERROR: TabManager not available" }
         let parsed = parseOptions(args)
         guard !parsed.positional.isEmpty else {
@@ -8790,7 +7888,7 @@ class TerminalController {
         return result
     }
 
-    private func reportShellState(_ args: String) -> String {
+    func reportShellState(_ args: String) -> String {
         let parsed = parseOptions(args)
         guard let rawState = parsed.positional.first, !rawState.isEmpty else {
             return "ERROR: Missing shell state — usage: report_shell_state <prompt|running> [--tab=X] [--panel=Y]"
@@ -8856,7 +7954,7 @@ class TerminalController {
         return result
     }
 
-    private func clearPorts(_ args: String) -> String {
+    func clearPorts(_ args: String) -> String {
         let parsed = parseOptions(args)
         var result = "OK"
         v2MainSync {
@@ -8891,7 +7989,7 @@ class TerminalController {
         return result
     }
 
-    private func reportTTY(_ args: String) -> String {
+    func reportTTY(_ args: String) -> String {
         let parsed = parseOptions(args)
         guard let ttyName = parsed.positional.first, !ttyName.isEmpty else {
             return "ERROR: Missing tty name — usage: report_tty <tty_name> [--tab=X] [--panel=Y]"
@@ -8968,7 +8066,7 @@ class TerminalController {
         return result
     }
 
-    private func agentKick(_ args: String) -> String {
+    func agentKick(_ args: String) -> String {
         let parsed = parseOptions(args)
         if let scope = Self.explicitSocketScope(options: parsed.options) {
             DispatchQueue.main.async {
@@ -9015,7 +8113,7 @@ class TerminalController {
         return result
     }
 
-    private func portsKick(_ args: String) -> String {
+    func portsKick(_ args: String) -> String {
         let parsed = parseOptions(args)
         if let scope = Self.explicitSocketScope(options: parsed.options) {
             DispatchQueue.main.async {
@@ -9063,7 +8161,7 @@ class TerminalController {
         return result
     }
 
-    private func sidebarState(_ args: String) -> String {
+    func sidebarState(_ args: String) -> String {
         var result = ""
         v2MainSync {
             guard let tab = resolveTabForReport(args) else {
@@ -9160,7 +8258,7 @@ class TerminalController {
         return result
     }
 
-    private func resetSidebar(_ args: String) -> String {
+    func resetSidebar(_ args: String) -> String {
         var result = "OK"
         v2MainSync {
             guard let tab = resolveTabForReport(args) else {
@@ -9172,7 +8270,7 @@ class TerminalController {
         return result
     }
 
-    private func reloadConfig(_ args: String) -> String {
+    func reloadConfig(_ args: String) -> String {
         let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let soft: Bool
         switch trimmed {
@@ -9190,7 +8288,7 @@ class TerminalController {
         return soft ? "OK Reloaded config (soft)" : "OK Reloaded config"
     }
 
-    private func refreshSurfaces() -> String {
+    func refreshSurfaces() -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         var refreshedCount = 0
@@ -9231,7 +8329,7 @@ class TerminalController {
         return false
     }
 
-    private func surfaceHealth(_ tabArg: String) -> String {
+    func surfaceHealth(_ tabArg: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
         var result = ""
         v2MainSync {
@@ -9260,7 +8358,7 @@ class TerminalController {
         return result
     }
 
-    private func closeSurface(_ args: String) -> String {
+    func closeSurface(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -9298,7 +8396,7 @@ class TerminalController {
         return result
     }
 
-    private func newSurface(_ args: String) -> String {
+    func newSurface(_ args: String) -> String {
         guard let tabManager = tabManager else { return "ERROR: TabManager not available" }
 
         // Parse arguments: --type=terminal|browser --pane=<pane_id> --url=...
@@ -9376,7 +8474,7 @@ class TerminalController {
     ///     [--prompt "text" | --prompt-file <path>]` → launch into an existing
     ///     surface's PTY; c11 composes the launch line and (for non-claude agents)
     ///     delivers the prompt after a fixed post-launch delay.
-    private func defaultAgentCommand(_ args: String) -> String {
+    func defaultAgentCommand(_ args: String) -> String {
         let allTokens = tokenizeArgs(args)
         guard let sub = allTokens.first else {
             return "ERROR: usage: default_agent {get|set <type>|launch [flags]}"
@@ -9594,7 +8692,7 @@ class TerminalController {
 
     /// `agent_config get <type>`                        → prints JSON: { command, initial_prompt, env_overrides }
     /// `agent_config set <type> [--command "..."] [--initial-prompt "..."] [--env-overrides "KEY=val\nKEY=val"] [--reset]`
-    private func agentConfigCommand(_ args: String) -> String {
+    func agentConfigCommand(_ args: String) -> String {
         // Tokenize quoted-args style so multi-word values work.
         let tokens = tokenizeArgs(args)
         guard let sub = tokens.first else {

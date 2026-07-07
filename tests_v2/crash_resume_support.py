@@ -561,6 +561,21 @@ class MultiKindHarness:
                 return line[3:].strip()
         return ""
 
+    def reset_shim_logs(self):
+        """Truncate the per-kind invocation logs. The shims APPEND (`>>`) to one
+        log per kind in the shared run_dir, so counts accumulate across
+        scenarios; without a reset, a later scenario's `wait_ready(N)` returns
+        immediately on a prior scenario's stale READY lines (an ineffective
+        barrier). Call at the start of each scenario's `build_panes` — the prior
+        scenario's app (and its shims) is already killed, so nothing is racing
+        the truncate. Because each shim writes READY only AFTER its claim + push
+        complete, a fresh READY count is also a reliable "pushes landed" barrier."""
+        for kind in FIRST_CLASS_KINDS:
+            try:
+                open(os.path.join(self.run_dir, f"{kind}-invocations.log"), "w").close()
+            except OSError:
+                pass
+
     def log_text(self, kind: str) -> str:
         path = os.path.join(self.run_dir, f"{kind}-invocations.log")
         try:

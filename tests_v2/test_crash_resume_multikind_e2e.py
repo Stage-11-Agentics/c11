@@ -135,6 +135,11 @@ class Topology:
         """Create every workspace and run its (shim) agent. Returns after all
         panes have written their READY sentinel (set-agent + claim + optional
         push complete) so a subsequent `state save` captures the full store."""
+        # Fresh READY baseline per scenario — the shim logs accumulate across
+        # scenarios in the shared run_dir, so without this a later scenario's
+        # wait_ready would return on stale counts (and before this scenario's
+        # claude pushes land, since READY is written after push).
+        self.h.reset_shim_logs()
         for label, kind, cwd_key in PANES:
             cwd = self.cwd_for(cwd_key)
             sid = S.new_uuid()

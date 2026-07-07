@@ -115,6 +115,14 @@ struct CodexScraper: ConversationScraper {
     /// one level deeper than Claude. The filesystem contract handles
     /// recursion via `listSessionsRecursivelyByMtime`.
     func candidates(cwd: String? = nil) -> [ScrapeCandidate] {
+        candidates(cwd: cwd, recoverCwd: true)
+    }
+
+    /// `recoverCwd: false` skips the per-candidate bounded head read. Used by
+    /// `CodexStrategy.transcriptExists`, which only needs id membership on the
+    /// crash-recovery reclassify path — so it avoids up to `maxCandidates`
+    /// file opens per codex surface that would only recover a cwd it discards.
+    func candidates(cwd: String?, recoverCwd: Bool) -> [ScrapeCandidate] {
         guard let root = sessionsRoot() else { return [] }
         let entries = filesystem.listSessionsRecursivelyByMtime(
             root,
@@ -132,16 +140,16 @@ struct CodexScraper: ConversationScraper {
             let id = String(stem.suffix(36))
             guard isValidConversationUUID(id) else { return nil }
             // Recover the session's REAL cwd from its rollout header (bounded,
-            // allowlisted). On any read/parse miss the candidate keeps `cwd ==
-            // nil`, which the strategy treats as "can't discriminate" — the
-            // prior behaviour, never worse. We deliberately do NOT fall back to
-            // the querying surface's `cwd`: stamping it back would re-introduce
-            // the same-cwd no-op this recovery exists to remove.
-            let head = filesystem.readSessionHead(
-                atPath: entry.url.path,
-                maxBytes: Self.codexHeadMaxBytes
-            )
-            let realCwd = head.flatMap { Self.parseCodexCwd(fromHead: $0) }
+            // allowlisted) when requested. On any read/parse miss the candidate
+            // keeps `cwd == nil`, which the strategy treats as "can't
+            // discriminate" — the prior behaviour, never worse. We deliberately
+            // do NOT fall back to the querying surface's `cwd`: stamping it back
+            // would re-introduce the same-cwd no-op this recovery exists to
+            // remove.
+            let realCwd: String? = recoverCwd
+                ? filesystem.readSessionHead(atPath: entry.url.path, maxBytes: Self.codexHeadMaxBytes)
+                    .flatMap { Self.parseCodexCwd(fromHead: $0) }
+                : nil
             return ScrapeCandidate(
                 id: id,
                 filePath: entry.url.path,

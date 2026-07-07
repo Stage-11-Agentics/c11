@@ -108,8 +108,10 @@ struct CodexStrategy: ConversationStrategy {
         filesystem: ConversationFilesystem
     ) -> Bool? {
         guard isValidConversationUUID(ref.id) else { return false }
+        // Id-membership only — skip the per-candidate cwd head reads (G3), which
+        // this check discards anyway.
         return CodexScraper(filesystem: filesystem)
-            .candidates(cwd: ref.cwd)
+            .candidates(cwd: nil, recoverCwd: false)
             .contains { $0.id == ref.id }
     }
 }

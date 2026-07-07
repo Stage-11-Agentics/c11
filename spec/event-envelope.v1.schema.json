@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stage11.ai/schemas/event-envelope.v1.json",
+  "title": "c11 Event Envelope v1",
+  "description": "Source of truth for the c11 events-stream envelope (v1). Every NDJSON line written to ~/Library/Application Support/c11/events/events-<instance>.ndjson must validate against this schema. One EventEnvelope serializes to exactly one line. See Sources/Events/EventEnvelope.swift and spec/README.md.",
+  "type": "object",
+  "required": ["seq", "ts", "type", "instance", "v"],
+  "properties": {
+    "seq": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Monotonic per-instance sequence number, assigned on the writer's serial queue so file order and seq order always agree. THE ordering oracle — consumers order by seq, not ts."
+    },
+    "ts": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$",
+      "description": "RFC3339 / ISO-8601 UTC timestamp with fractional seconds and Z suffix, e.g. 2026-07-07T08:20:00.123Z. Captured on the emitting thread; only approximately monotonic and may invert slightly relative to seq across racing threads. Approximate ordering only; seq is authoritative."
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "surface.created",
+        "surface.closed",
+        "workspace.selected",
+        "metadata.changed",
+        "liveness.derived",
+        "waiting.entered",
+        "waiting.left",
+        "mailbox.accepted",
+        "mailbox.delivered",
+        "log.opened",
+        "log.rotated",
+        "log.dropped"
+      ],
+      "description": "Dotted event type. The v1 taxonomy (EVT-2): surface.created, surface.closed, workspace.selected, metadata.changed, liveness.derived, waiting.entered, waiting.left, mailbox.accepted, mailbox.delivered. The trailing three (log.opened, log.rotated, log.dropped) are stream-control markers — not taxonomy members — that let consumers detect instance boundaries, rotation, and backpressure drops. The taxonomy is extensible in future schema versions; v1 pins the closed enum above (all wire values match ^[a-z][a-z0-9_.]*$)."
+    },
+    "instance": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Per-process instance id, e.g. com.stage11.c11-12345. Namespaces the sequence: seq is monotonic within one instance's log, not across instances."
+    },
+    "v": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version. Integer, not a string. Bumps are breaking."
+    },
+    "workspace": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Optional. UUID string of the subject workspace/tab this event concerns."
+    },
+    "surface": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Optional. UUID string of the subject surface this event concerns."
+    },
+    "pane": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Optional. UUID string of the subject pane this event concerns."
+    },
+    "payload": {
+      "type": "object",
+      "description": "Optional, type-specific detail. Free-form object; any keys allowed inside. Shape is keyed by type — e.g. surface.created carries { kind, title }; metadata.changed carries { key, value, prior, source, scope }; workspace.selected carries { previous }; mailbox.accepted carries { id, from, to, topic }; mailbox.delivered carries { id, recipient }; log.opened carries { pid }; log.rotated carries { rolled_to }; log.dropped carries { count }. Omitted (not encoded as null) when empty."
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,9 @@
+{
+  "seq": 0,
+  "type": "surface.created",
+  "instance": "com.stage11.c11-12345",
+  "v": 1,
+  "payload": {
+    "kind": "terminal"
+  }
+}

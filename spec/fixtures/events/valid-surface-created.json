@@ -1,0 +1,12 @@
+{
+  "seq": 0,
+  "ts": "2026-07-07T08:20:00.123Z",
+  "type": "surface.created",
+  "instance": "com.stage11.c11-12345",
+  "v": 1,
+  "workspace": "6f9619ff-8b86-d011-b42d-00cf4fc964ff",
+  "surface": "c56a4180-65aa-42ec-a945-5fd21dec0538",
+  "payload": {
+    "kind": "terminal"
+  }
+}

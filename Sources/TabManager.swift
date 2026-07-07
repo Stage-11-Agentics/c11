@@ -891,6 +891,12 @@ class TabManager: ObservableObject {
         }
         didSet {
             guard selectedTabId != oldValue else { return }
+            // C11-163: workspace selected → events stream. Fires on every
+            // selection route (socket, keyboard, click, close-fallback) since
+            // they all land here.
+            if let selected = selectedTabId {
+                EventEmitter.shared.emitWorkspaceSelected(previous: oldValue, selected: selected)
+            }
             sentryBreadcrumb("workspace.switch", data: surfaceShapeSummary(tabCount: tabs.count))
 
             // Phase 0 instrumentation: open a signpost interval spanning the

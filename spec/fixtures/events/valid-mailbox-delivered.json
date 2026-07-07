@@ -1,0 +1,14 @@
+{
+  "seq": 42,
+  "ts": "2026-07-07T08:20:11.008Z",
+  "type": "mailbox.delivered",
+  "instance": "com.stage11.c11-12345",
+  "v": 1,
+  "workspace": "6f9619ff-8b86-d011-b42d-00cf4fc964ff",
+  "surface": "c56a4180-65aa-42ec-a945-5fd21dec0538",
+  "payload": {
+    "id": "01K3A2B7X8PQRTVWYZ0123456J",
+    "from": "watcher",
+    "to": "builder"
+  }
+}

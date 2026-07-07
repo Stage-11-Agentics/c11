@@ -2448,6 +2448,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationDidFinishLaunching(_ notification: Notification) {
         mirrorC11CmuxEnv()
 
+        // C11-163: open the events stream early — before session restore
+        // recreates workspaces/surfaces — so surface.created and the
+        // log.opened marker land from the first instant (amendment K).
+        EventEmitter.shared.start()
+
         // C11-24/C11-131: capture the prior-shutdown decision and arm this
         // run's dirty sentinel as early as possible — before any potential
         // crash path. The write must precede crashes; the read must precede
@@ -2953,6 +2958,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func applicationWillTerminate(_ notification: Notification) {
         isTerminatingApp = true
+        // C11-163: drain any queued events before exit so a tailing consumer
+        // sees the final transitions of this instance.
+        EventEmitter.shared.flush()
         // C11-24: suspendAllAlive transitions every alive ConversationRef
         // to .suspended so resume on next launch is gated. Synchronous
         // bridge into the actor (bounded — store has no I/O).

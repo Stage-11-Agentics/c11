@@ -80,12 +80,15 @@ enum DefaultAgentResolver {
     /// last), so it's applied here rather than after prompt-baking.
     /// Visible for testing.
     static func launcherCommand(agent: AgentType, config: AgentConfig) -> String {
-        let base = config.command.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !base.isEmpty else { return "" }
-        if let flag = modelFlag(agent: agent, config: config, command: base) {
-            return "\(base) \(flag)"
+        var result = config.command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !result.isEmpty else { return "" }
+        if let flag = modelFlag(agent: agent, config: config, command: result) {
+            result += " \(flag)"
         }
-        return base
+        if let flag = effortFlag(agent: agent, config: config, command: result) {
+            result += " \(flag)"
+        }
+        return result
     }
 
     /// Whether c11 injects a `--model` flag for this agent kind. Only agents
@@ -106,6 +109,25 @@ enum DefaultAgentResolver {
         guard !model.isEmpty else { return nil }
         guard !command.lowercased().contains("--model") else { return nil }
         return "--model \(model)"
+    }
+
+    /// Whether c11 injects an `--effort` flag for this agent kind. Same set as
+    /// the model flag today (Claude Code); kept separate so an agent that
+    /// accepts one flag but not the other can diverge later.
+    static func supportsEffortFlag(_ agent: AgentType) -> Bool {
+        agent == .claudeCode
+    }
+
+    /// The `--effort <level>` flag to append for a launch, or `nil` when none
+    /// should be injected: the agent doesn't support it, no level is pinned, or
+    /// the operator already put an effort in the command themselves (their
+    /// explicit choice wins). Visible for testing.
+    static func effortFlag(agent: AgentType, config: AgentConfig, command: String) -> String? {
+        guard supportsEffortFlag(agent) else { return nil }
+        let effort = config.effort.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !effort.isEmpty else { return nil }
+        guard !command.lowercased().contains("--effort") else { return nil }
+        return "--effort \(effort)"
     }
 
     /// Single-quote a value for /bin/sh, escaping embedded single quotes via

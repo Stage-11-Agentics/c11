@@ -8,6 +8,7 @@ final class DefaultAgentSettingsViewModel: ObservableObject {
     @Published var editingAgent: AgentType
     @Published var command: String
     @Published var model: String
+    @Published var effort: String
     @Published var initialPrompt: String
     @Published var envOverridesText: String
 
@@ -24,6 +25,7 @@ final class DefaultAgentSettingsViewModel: ObservableObject {
         self.editingAgent = active
         self.command = entry.command
         self.model = entry.model
+        self.effort = entry.effort
         self.initialPrompt = entry.initialPrompt
         self.envOverridesText = entry.envOverridesText
 
@@ -39,6 +41,7 @@ final class DefaultAgentSettingsViewModel: ObservableObject {
 
         $command.dropFirst().sink { [weak self] _ in self?.persistFields() }.store(in: &cancellables)
         $model.dropFirst().sink { [weak self] _ in self?.persistFields() }.store(in: &cancellables)
+        $effort.dropFirst().sink { [weak self] _ in self?.persistFields() }.store(in: &cancellables)
         $initialPrompt.dropFirst().sink { [weak self] _ in self?.persistFields() }.store(in: &cancellables)
         $envOverridesText.dropFirst().sink { [weak self] _ in self?.persistFields() }.store(in: &cancellables)
     }
@@ -49,12 +52,19 @@ final class DefaultAgentSettingsViewModel: ObservableObject {
         DefaultAgentResolver.supportsModelFlag(editingAgent)
     }
 
+    /// Whether c11 pins an `--effort` flag for the agent currently being edited,
+    /// gating whether the effort picker is shown.
+    var editingAgentSupportsEffort: Bool {
+        DefaultAgentResolver.supportsEffortFlag(editingAgent)
+    }
+
     private func loadFields(for agent: AgentType) {
         suppressSave = true
         defer { suppressSave = false }
         let entry = store.current.config(for: agent)
         command = entry.command
         model = entry.model
+        effort = entry.effort
         initialPrompt = entry.initialPrompt
         envOverridesText = entry.envOverridesText
     }
@@ -66,7 +76,8 @@ final class DefaultAgentSettingsViewModel: ObservableObject {
             command: command,
             initialPrompt: initialPrompt,
             envOverridesText: envOverridesText,
-            model: model
+            model: model,
+            effort: effort
         )
         store.update(captured) { $0 = snapshot }
     }
@@ -77,6 +88,7 @@ final class DefaultAgentSettingsViewModel: ObservableObject {
         let factory = AgentConfig.factory(for: editingAgent)
         command = factory.command
         model = factory.model
+        effort = factory.effort
         initialPrompt = factory.initialPrompt
         envOverridesText = factory.envOverridesText
         suppressSave = false
@@ -127,6 +139,10 @@ struct DefaultAgentSettingsSection: View {
 
             if vm.editingAgentSupportsModel {
                 modelPicker
+            }
+
+            if vm.editingAgentSupportsEffort {
+                effortPicker
             }
 
             VStack(alignment: .leading, spacing: 3) {
@@ -186,6 +202,35 @@ struct DefaultAgentSettingsSection: View {
             }
             Text(String(localized: "settings.defaultAgent.model.help",
                         defaultValue: "pins --model on launch, so agents launched here stay on this family even when your ambient Claude default changes. picks the family, not a version — new releases need no change. a model set in the command above wins."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// Effort-level picker, shown only for agents c11 pins an `--effort` flag
+    /// for. The empty tag means "inherit" (no flag injected); each case maps to
+    /// `claude --effort <level>`.
+    private var effortPicker: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 8) {
+                Text(String(localized: "settings.defaultAgent.effort.label", defaultValue: "effort"))
+                    .font(.callout)
+                Picker("", selection: $vm.effort) {
+                    Text(String(localized: "settings.defaultAgent.effort.inherit",
+                                defaultValue: "Inherit (agent default)"))
+                        .tag("")
+                    ForEach(ClaudeEffort.allCases) { level in
+                        Text(level.displayName).tag(level.rawValue)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+                .accessibilityIdentifier("DefaultAgentEffortPicker")
+                Spacer()
+            }
+            Text(String(localized: "settings.defaultAgent.effort.help",
+                        defaultValue: "optional. pins --effort on launch so agents launched here run at this reasoning effort. leave on Inherit to keep the agent's ambient effort. higher levels may be limited by your plan."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

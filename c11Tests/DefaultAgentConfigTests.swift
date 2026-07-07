@@ -45,6 +45,37 @@ final class DefaultAgentConfigTests: XCTestCase {
                        ["opus", "sonnet", "haiku", "fable"])
     }
 
+    func testFactoryAgentsHaveNoPinnedEffort() {
+        // Effort is opt-in: nothing ships with a pinned effort, so every agent
+        // inherits its ambient effort until the operator chooses one.
+        for type in AgentType.allCases {
+            XCTAssertEqual(AgentConfig.factory(for: type).effort, "", "\(type) should not pin an effort")
+        }
+    }
+
+    func testClaudeEffortRawValuesAreCliLevels() {
+        // Passed verbatim to `claude --effort`; must stay the CLI's levels.
+        XCTAssertEqual(ClaudeEffort.allCases.map(\.rawValue),
+                       ["low", "medium", "high", "xhigh", "max"])
+    }
+
+    func testCodableRoundTripPreservesEffort() throws {
+        var agents: [AgentType: AgentConfig] = [:]
+        agents[.claudeCode] = AgentConfig(command: "claude", initialPrompt: "", envOverridesText: "", effort: "high")
+        let cfg = DefaultAgentConfig(defaultAgent: .claudeCode, agents: agents)
+        let data = try JSONEncoder().encode(cfg)
+        let decoded = try JSONDecoder().decode(DefaultAgentConfig.self, from: data)
+        XCTAssertEqual(decoded.agents[.claudeCode]?.effort, "high")
+    }
+
+    func testDecodeAgentConfigWithoutEffortDefaultsToInherit() throws {
+        // A per-agent blob written before the effort field existed must decode
+        // to "" (inherit), preserving its prior launch behavior on upgrade.
+        let json = #"{"command":"claude","initialPrompt":"","envOverridesText":"","model":"opus"}"#
+        let decoded = try JSONDecoder().decode(AgentConfig.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.effort, "")
+    }
+
     func testFactoryCodexCommandIncludesYolo() {
         let entry = AgentConfig.factory(for: .codex)
         XCTAssertEqual(entry.command, "codex --yolo")

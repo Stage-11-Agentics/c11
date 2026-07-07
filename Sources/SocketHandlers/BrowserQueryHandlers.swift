@@ -1,5 +1,9 @@
 import AppKit
+import Carbon.HIToolbox
+import CryptoKit
 import Foundation
+import Bonsplit
+import WebKit
 
 // C11-159: per-domain socket handler unit extracted verbatim from
 // TerminalController.swift. Mechanical relocation, zero behavior change.

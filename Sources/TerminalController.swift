@@ -157,7 +157,7 @@ class TerminalController {
     // make `stop()` unlink that shared path even in a never-started controller
     // — the C11-105 production unlink mechanism. See `stop()` for the matching
     // empty-path guard.
-    private nonisolated(unsafe) var socketPath = ""
+    nonisolated(unsafe) var socketPath = ""
     private nonisolated(unsafe) var serverSocket: Int32 = -1
     private nonisolated(unsafe) var isRunning = false
     private nonisolated(unsafe) var acceptLoopAlive = false
@@ -294,19 +294,19 @@ class TerminalController {
         .surface: [:],
     ]
 
-    private struct V2BrowserElementRefEntry {
+    struct V2BrowserElementRefEntry {
         let surfaceId: UUID
         let selector: String
     }
 
-    private struct V2BrowserPendingDialog {
+    struct V2BrowserPendingDialog {
         let type: String
         let message: String
         let defaultText: String?
         let responder: (_ accept: Bool, _ text: String?) -> Void
     }
 
-    private final class V2BrowserUndefinedSentinel {}
+    final class V2BrowserUndefinedSentinel {}
 
     static let v2BrowserEvalEnvelopeTypeKey = "__cmux_t"
     static let v2BrowserEvalEnvelopeValueKey = "__cmux_v"
@@ -1886,7 +1886,7 @@ class TerminalController {
     // Handlers reached through this path must use `v2MainSync` (which short-circuits
     // when already on main) instead of bare `DispatchQueue.main.sync`.
 
-    private enum SocketCommandExecutionPolicy: Equatable {
+    enum SocketCommandExecutionPolicy: Equatable {
         case mainActor
         case socketWorker
     }
@@ -3683,7 +3683,7 @@ class TerminalController {
         (v2Bool(params, "allow_undersized") ?? false) || (v2Bool(params, "force") ?? false)
     }
 
-    private enum SizeAwareSplitPlan {
+    enum SizeAwareSplitPlan {
         /// Create the split on `direction` (may differ from `requested` if flipped).
         case split(direction: SplitDirection, requested: SplitDirection, warning: String?)
         /// Add a tab to `paneId` instead of splitting.
@@ -3768,7 +3768,7 @@ class TerminalController {
     // hops, and so result envelope strings produced by v2Ref are computed while
     // we are still safely on the main actor.
 
-    private struct SurfaceSendPhaseAResolved {
+    struct SurfaceSendPhaseAResolved {
         let terminalPanel: TerminalPanel
         let initialSurface: ghostty_surface_t?
         let workspaceIdString: String
@@ -3776,7 +3776,7 @@ class TerminalController {
         let responseEnvelope: [String: Any]
     }
 
-    private enum SurfaceSendPhaseAOutcome {
+    enum SurfaceSendPhaseAOutcome {
         case ok(SurfaceSendPhaseAResolved)
         case err(V2CallResult)
     }
@@ -4193,7 +4193,7 @@ class TerminalController {
 
 
 
-    private enum V2PaneResizeDirection: String {
+    enum V2PaneResizeDirection: String {
         case left
         case right
         case up
@@ -4225,7 +4225,7 @@ class TerminalController {
         }
     }
 
-    private struct V2PaneResizeCandidate {
+    struct V2PaneResizeCandidate {
         let splitId: UUID
         let orientation: String
         let paneInFirstChild: Bool
@@ -4233,7 +4233,7 @@ class TerminalController {
         let axisPixels: CGFloat
     }
 
-    private struct V2PaneResizeTrace {
+    struct V2PaneResizeTrace {
         let containsTarget: Bool
         let bounds: CGRect
     }
@@ -4415,7 +4415,7 @@ class TerminalController {
 
 
 
-    private enum V2JavaScriptResult {
+    enum V2JavaScriptResult {
         case success(Any?)
         case failure(String)
     }

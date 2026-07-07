@@ -35,8 +35,9 @@ These keys have a defined shape and render in the sidebar or title bar. Any writ
 | `description` | string | Markdown subset (bold/italic, inline `code`, lists, headings, blockquotes, links, rules — no images, fenced code, or tables), ≤ 2048 chars | title bar expanded region |
 | `worktree` | string | ≤ 128 chars (basename) | sidebar chip with colored-dot prefix. Only rendered when the surface's cwd is inside a *linked* git worktree (`git worktree add ...`). Color is a stable hash of the absolute worktree path. **Derived** — written by c11 runtime, not by agents. |
 | `branch` | string | ≤ 64 chars (branch name, `(detached @ <short-sha>)`, or `(no branch)`) | sidebar chip. Renders for main checkouts and linked worktrees. Dimmed for branch ∈ {`main`, `master`, `trunk`}. **Derived** — written by c11 runtime, not by agents. |
+| `activity` | string | `working` \| `idle`, ≤ 16 chars | Per-surface **derived liveness** (C11-162). Sidebar shows it as a visually-distinct *derived* pill when an explicit `status` has aged past expiry (or was never set). **Derived** — written by the c11 runtime from shell-integration prompt state, not by agents; recomputed on state change and not persisted across relaunch. See [Liveness, age & decay](#liveness-age--decay). |
 
-**Sidebar rendering order** when present: `model` → `terminal_type` → `role` → `status` → `task` → `progress` → `worktree` + `branch` chips row. `title` and `description` render in the title bar, not the sidebar — the sidebar tab label is a truncated projection of `title`.
+**Sidebar rendering order** when present: `model` → `terminal_type` → `role` → `status` → `task` → `progress` → `worktree` + `branch` chips row. `title` and `description` render in the title bar, not the sidebar — the sidebar tab label is a truncated projection of `title`. The `status` and `progress` pills [decay by age](#liveness-age--decay); when `status` is past expiry the derived `activity` pill takes its place.
 
 **Worktree + branch chips.** Both keys are projections of `cwd` + gitfs state — agents should not write them directly. They are computed off-main by `GitContextDeriver` on cwd updates (the `report_pwd` socket path) and rendered automatically. Inside a submodule, both the superproject context and the submodule context render as two stacked rows. Settings → Sidebar → "Show worktree + branch chips in sidebar" gates the entire row (default on, live-toggleable). The branch chip carries a `*` suffix when the working tree is dirty.
 
@@ -250,6 +251,34 @@ explicit > declare > osc > derived > heuristic
 A write that fails the precedence check returns `ok: true` with `result.applied[key]: false` and `result.reasons[key]: "lower_precedence"`. The current value is left untouched.
 
 **Clear semantics.** `clear_metadata` with `source: explicit` always succeeds. A clear from a lower-precedence writer only succeeds if the current source is at or below the caller's.
+
+## Liveness, age & decay
+
+*C11-162 — the sidebar stops lying about how fresh a status is, and fills in an honest activity read when an agent goes silent. Two deterministic mechanisms, no model inference.*
+
+### Last-updated timestamps
+
+Every canonical key's `metadata_sources[key]` record carries a `ts` (seconds since 1970) marking when that value was last **changed**. It is set on every applied write, **persists across relaunch** (it round-trips through the workspace snapshot alongside the value), and is returned by `get_metadata` when `include_sources: true`. A same-value + same-source rewrite is an idempotent no-op that *preserves* the original `ts` — `ts` is "last changed," not "last touched." Consumers read it to reason about staleness; the sidebar uses it to drive decay.
+
+### Status/progress decay
+
+Sidebar `status`/`progress` pills decay visually as they age against two operator-tunable thresholds:
+
+| Stage | When | Rendering |
+|-------|------|-----------|
+| **fresh** | age < *stale* | normal |
+| **stale** | *stale* ≤ age < *expiry* | dimmed + a relative-age hint (e.g. `5m`) |
+| **expired** | age ≥ *expiry* | grayed out; derived `activity` (if any) takes over the pill |
+
+Defaults: **stale 5m / expiry 15m**. Tune under **Settings → Sidebar** ("Stale After" / "Expire After"). For scripted demos/tests, the env vars `C11_SIDEBAR_STALE_SECONDS` and `C11_SIDEBAR_EXPIRE_SECONDS` (read at launch, not persisted) override the thresholds so decay is observable in seconds.
+
+### Derived liveness (`activity`)
+
+c11 derives a per-surface activity state — `working` or `idle` — from signals it already observes (shell-integration prompt state: a command running ⇒ `working`, back at the prompt ⇒ `idle`), reconciled on a coarse timer. It is written to the canonical `activity` key at the **`derived`** precedence tier, so it **never overwrites a fresh `explicit` status** and is not persisted (it recomputes on relaunch). No agent cooperation is required — a surface that never self-reports but produces output still shows a derived `working`.
+
+**Takeover.** While an explicit `status` is fresh, it renders as the agent claimed. Once it ages past *expiry*, the sidebar shows the derived `activity` instead, styled **visually distinct** (a "derived/sensed" pill, not agent-claimed). When the agent reports again, the fresh `explicit` status resumes. This is a render-layer decision keyed on `ts`; the store still holds the last `explicit` value at its own tier.
+
+Agents do not (and cannot) write `activity` over the external socket — it is runtime-derived, like `worktree`/`branch`.
 
 ## Errors
 

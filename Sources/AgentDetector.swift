@@ -94,6 +94,16 @@ final class AgentDetector: @unchecked Sendable {
                 return
             }
             self.runScan(panelsToWrite: Set(self.ttyNames.keys))
+            // C11-162 (TEL-5) — coarse liveness recompute rides the existing
+            // 10 s sweep on this utility queue: zero new timer, zero hot-path
+            // work. Decays stale `working` surfaces to `idle` as a backstop
+            // for missed prompt reports.
+            for key in self.ttyNames.keys {
+                SurfaceLivenessDeriver.reconcile(
+                    surfaceId: key.panelId,
+                    workspaceId: key.workspaceId
+                )
+            }
         }
         sweepTimer = timer
         timer.resume()

@@ -342,10 +342,28 @@ struct SurfaceManifestView: View {
                         Text(row.source)
                             .font(.system(size: 11, design: .monospaced))
                             .frame(width: 90, alignment: .leading)
-                        Text(row.timestamp)
-                            .font(.system(size: 11, design: .monospaced))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(row.timestamp)
+                                .font(.system(size: 11, design: .monospaced))
+                                .textSelection(.enabled)
+                            // TEL-1: relative last-updated age derived from the
+                            // metadata_sources `ts`, e.g. "2m ago".
+                            if !row.age.isEmpty {
+                                Text(row.age)
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .help(row.age.isEmpty
+                              ? row.timestamp
+                              : String(
+                                  format: String(
+                                      localized: "surfaceManifest.sources.ageTooltip",
+                                      defaultValue: "Last updated %@ (%@)"
+                                  ),
+                                  row.age, row.timestamp
+                              ))
                     }
                 }
             }
@@ -356,19 +374,27 @@ struct SurfaceManifestView: View {
         let key: String
         let source: String
         let timestamp: String
+        /// TEL-1: human relative age of the last write (e.g. "2m ago"), or ""
+        /// when no `ts` is present. Localised by `RelativeDateTimeFormatter`.
+        let age: String
     }
 
     private var sourceRows: [SourceRow] {
-        snapshot.sources.keys.sorted().map { key in
+        let now = Date()
+        return snapshot.sources.keys.sorted().map { key in
             let entry = snapshot.sources[key] ?? [:]
             let source = (entry["source"] as? String) ?? "—"
             let ts: String
+            let age: String
             if let epoch = entry["ts"] as? Double {
-                ts = Self.timestampFormatter.string(from: Date(timeIntervalSince1970: epoch))
+                let date = Date(timeIntervalSince1970: epoch)
+                ts = Self.timestampFormatter.string(from: date)
+                age = Self.relativeAgeFormatter.localizedString(for: date, relativeTo: now)
             } else {
                 ts = "—"
+                age = ""
             }
-            return SourceRow(key: key, source: source, timestamp: ts)
+            return SourceRow(key: key, source: source, timestamp: ts, age: age)
         }
     }
 
@@ -400,6 +426,14 @@ struct SurfaceManifestView: View {
     private static let timestampFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return f
+    }()
+
+    // TEL-1: relative last-updated age ("2m ago"), locale-aware. Abbreviated
+    // style keeps it compact under the absolute timestamp.
+    private static let relativeAgeFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
         return f
     }()
 }

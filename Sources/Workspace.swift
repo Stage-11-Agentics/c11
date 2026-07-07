@@ -4833,6 +4833,11 @@ struct SidebarLogEntry {
 struct SidebarProgressState {
     let value: Double
     let label: String?
+    /// TEL-2: wall-clock stamp of when this progress value was written. Defaulted
+    /// to `Date()` so the synthesized memberwise initializer keeps every existing
+    /// `SidebarProgressState(value:label:)` call site compiling while stamping each
+    /// fresh write "now".
+    var timestamp: Date = Date()
 }
 
 struct SidebarGitBranchState {
@@ -5337,6 +5342,12 @@ final class Workspace: Identifiable, ObservableObject {
     @Published var metadataBlocks: [String: SidebarMetadataBlock] = [:]
     @Published var logEntries: [SidebarLogEntry] = []
     @Published var progress: SidebarProgressState?
+    /// TEL-4: per-surface derived-liveness state, the @Published bridge the
+    /// sidebar observes. Written by `setDerivedActivity` (which
+    /// `SurfaceLivenessDeriver` calls from the derived-liveness backend) and
+    /// pruned alongside the other per-surface metadata. Absence of a key means
+    /// "no derived signal yet."
+    @Published var derivedActivityBySurface: [UUID: SidebarActivityState] = [:]
     @Published var gitBranch: SidebarGitBranchState?
     @Published var panelGitBranches: [UUID: SidebarGitBranchState] = [:]
     /// C11-104 — per-panel resolved worktree+branch context for the
@@ -6777,6 +6788,47 @@ final class Workspace: Identifiable, ObservableObject {
         if state == .promptIdle {
             flushBufferedMailboxStdin(surfaceId: panelId)
         }
+        // TEL-3: feed the shell-activity transition into the derived-liveness
+        // backend, which resolves it (with its own debounce/heuristics) back
+        // into `derivedActivityBySurface` via `setDerivedActivity`.
+        SurfaceLivenessDeriver.onShellActivityChanged(
+            surfaceId: panelId,
+            workspaceId: id,
+            state: state,
+            workspace: self
+        )
+    }
+
+    // MARK: - TEL-4 Derived Activity
+
+    /// TEL-4: main-actor setter for a surface's derived-liveness state. Passing
+    /// `nil` removes the key (surface has no derived signal); any other value
+    /// overwrites it. The enclosing type is `@MainActor`, so this publishes on
+    /// the main actor. Cheap and I/O-free.
+    func setDerivedActivity(_ state: SidebarActivityState?, forSurface surfaceId: UUID) {
+        if let state {
+            if derivedActivityBySurface[surfaceId] != state {
+                derivedActivityBySurface[surfaceId] = state
+            }
+        } else if derivedActivityBySurface[surfaceId] != nil {
+            derivedActivityBySurface.removeValue(forKey: surfaceId)
+        }
+    }
+
+    /// TEL-4: workspace-level rollup of per-surface derived activity. `.working`
+    /// if ANY surface is working, else `.idle` if any surface is idle, else
+    /// `nil` when there are no derived signals at all.
+    var aggregatedDerivedActivity: SidebarActivityState? {
+        var sawIdle = false
+        for state in derivedActivityBySurface.values {
+            switch state {
+            case .working:
+                return .working
+            case .idle:
+                sawIdle = true
+            }
+        }
+        return sawIdle ? .idle : nil
     }
 
     func panelNeedsConfirmClose(panelId: UUID, fallbackNeedsConfirmClose: Bool) -> Bool {
@@ -7326,6 +7378,9 @@ final class Workspace: Identifiable, ObservableObject {
         surfaceListeningPorts = surfaceListeningPorts.filter { validSurfaceIds.contains($0.key) }
         surfaceTTYNames = surfaceTTYNames.filter { validSurfaceIds.contains($0.key) }
         panelShellActivityStates = panelShellActivityStates.filter { validSurfaceIds.contains($0.key) }
+        // TEL-4: drop derived-activity for surfaces that no longer exist so the
+        // @Published map doesn't leak stale liveness for pruned surfaces.
+        derivedActivityBySurface = derivedActivityBySurface.filter { validSurfaceIds.contains($0.key) }
         mailboxStdinBuffer.retainOnly(surfaceIds: validSurfaceIds)
         panelPullRequests = panelPullRequests.filter { validSurfaceIds.contains($0.key) }
         SurfaceMetadataStore.shared.pruneWorkspace(workspaceId: id, validSurfaceIds: validSurfaceIds)

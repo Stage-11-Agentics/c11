@@ -10653,7 +10653,7 @@ private struct WaitingAgentRow: View {
     private var isLit: Bool { display.isEnabled }
 
     private var label: String {
-        String(localized: "statusBar.nextNotification.title", defaultValue: "Next Notification")
+        String(localized: "statusBar.waitingAgent.title", defaultValue: "Waiting Agent")
     }
 
     private var shortcutText: String {
@@ -10698,14 +10698,21 @@ private struct WaitingAgentRow: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
+            // TEL-6: sustained "agent is waiting" lit state is an off-white
+            // paper-fill inversion (content flips to void) with a thin gold
+            // hairline at the fill edge — deliberately no motion; the
+            // inversion does the attention work. Rest state stays
+            // paper-white-on-void with a rule outline.
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(isLit ? cmuxAccentColor() : BrandColors.surfaceSwiftUI)
+                    .fill(isLit ? BrandColors.paperFillSwiftUI : BrandColors.surfaceSwiftUI)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(BrandColors.ruleSwiftUI, lineWidth: 1)
-                    .opacity(isLit ? 0 : 1)
+                    .stroke(
+                        isLit ? BrandColors.goldSwiftUI : BrandColors.ruleSwiftUI,
+                        lineWidth: isLit ? 0.75 : 1
+                    )
             )
             .foregroundColor(isLit ? BrandColors.blackSwiftUI : BrandColors.whiteSwiftUI.opacity(0.4))
             .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -11754,6 +11761,15 @@ private struct TabItemView: View, Equatable {
                     )
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
+                // TEL-4: derived-activity takeover. Renders only when the
+                // explicit status is absent/expired; the child subview owns
+                // the decay-clock observation and the projector decision.
+                SidebarDerivedActivityPill(
+                    tab: tab,
+                    isActive: usesInvertedActiveForeground,
+                    onFocus: { updateSelection() }
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             // Latest log entry
@@ -11771,27 +11787,18 @@ private struct TabItemView: View, Equatable {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
-            // Progress bar
+            // Progress bar. TEL-2: rendered by a dedicated child subview so
+            // the age-decay clock is observed there — never in TabItemView's
+            // Equatable body — letting the bar dim/gray as it goes stale
+            // without invalidating the whole row on every clock tick.
             if detailVisibility.showsProgress, let progress = tab.progress {
-                VStack(alignment: .leading, spacing: 2) {
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule()
-                                .fill(activeProgressTrackColor)
-                            Capsule()
-                                .fill(activeProgressFillColor)
-                                .frame(width: max(0, geo.size.width * CGFloat(progress.value)))
-                        }
-                    }
-                    .frame(height: 3)
-
-                    if let label = progress.label {
-                        Text(label)
-                            .font(.system(size: chromeTokens.sidebarWorkspaceProgressLabel))
-                            .foregroundColor(activeSecondaryColor(0.6))
-                            .lineLimit(1)
-                    }
-                }
+                SidebarProgressIndicator(
+                    progress: progress,
+                    trackColor: activeProgressTrackColor,
+                    fillColor: activeProgressFillColor,
+                    labelColor: activeSecondaryColor(0.6),
+                    labelFontSize: chromeTokens.sidebarWorkspaceProgressLabel
+                )
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
@@ -12964,6 +12971,52 @@ private struct SidebarMetadataEntryRow: View {
     let onFocus: () -> Void
 
     @Environment(\.chromeScaleTokens) private var chromeTokens
+    // TEL-2: observe the coarse decay clock here in the CHILD subview (never
+    // in TabItemView's Equatable body) so the pill can age visually even when
+    // the parent row does not re-evaluate. The two @AppStorage thresholds are
+    // declared for reactive redraw when the operator retunes them in Settings;
+    // resolution goes through the static (which also honors env overrides).
+    @ObservedObject private var decayClock = SidebarDecayClock.shared
+    @AppStorage(SidebarStalenessSettings.staleThresholdKey)
+    private var staleThresholdRaw = SidebarStalenessSettings.defaultStaleSeconds
+    @AppStorage(SidebarStalenessSettings.expiryThresholdKey)
+    private var expiryThresholdRaw = SidebarStalenessSettings.defaultExpirySeconds
+
+    private var ageSeconds: Double {
+        decayClock.now.timeIntervalSince(entry.timestamp)
+    }
+
+    private var decayStage: SidebarDecayStage {
+        SidebarStalenessSettings.stage(
+            ageSeconds: ageSeconds,
+            staleSeconds: SidebarStalenessSettings.staleSeconds(),
+            expirySeconds: SidebarStalenessSettings.expirySeconds()
+        )
+    }
+
+    /// Small trailing relative-age hint shown once a pill goes stale.
+    private var ageIndicatorText: String? {
+        guard decayStage != .fresh else { return nil }
+        let secs = Int(ageSeconds)
+        if secs >= 3600 {
+            let hours = secs / 3600
+            return String(localized: "sidebar.decay.ageHours", defaultValue: "\(hours)h")
+        }
+        let minutes = max(1, secs / 60)
+        return String(localized: "sidebar.decay.ageMinutes", defaultValue: "\(minutes)m")
+    }
+
+    private var decayOpacity: Double {
+        switch decayStage {
+        case .fresh: return entry.staleFromRestart ? 0.55 : 1.0
+        case .stale: return 0.6
+        case .expired: return 0.5
+        }
+    }
+
+    private var decayIsItalic: Bool {
+        entry.staleFromRestart || decayStage != .fresh
+    }
 
     var body: some View {
         Group {
@@ -12994,16 +13047,28 @@ private struct SidebarMetadataEntryRow: View {
             metadataText(underlined: underlined)
                 .lineLimit(1)
                 .truncationMode(.tail)
+            if let ageIndicatorText {
+                Text(ageIndicatorText)
+                    .font(.system(size: chromeTokens.sidebarWorkspaceProgressLabel, weight: .medium))
+                    .foregroundColor(foregroundColor.opacity(0.7))
+                    .monospacedDigit()
+                    .layoutPriority(1)
+            }
             Spacer(minLength: 0)
         }
-        .font(entry.staleFromRestart
+        .font(decayIsItalic
             ? .system(size: chromeTokens.sidebarWorkspaceMetadata, weight: .regular).italic()
             : .system(size: chromeTokens.sidebarWorkspaceMetadata, weight: .regular))
-        .opacity(entry.staleFromRestart ? 0.55 : 1.0)
+        .opacity(decayOpacity)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var foregroundColor: Color {
+        // TEL-2: an expired pill grays out entirely regardless of its
+        // author-supplied color, signalling the writer has gone silent.
+        if decayStage == .expired {
+            return BrandColors.dimSwiftUI
+        }
         if isActive,
            let raw = entry.color,
            Color(hex: raw) != nil {
@@ -13056,6 +13121,144 @@ private struct SidebarMetadataEntryRow: View {
             Text(display)
                 .underline(underlined)
                 .foregroundColor(foregroundColor)
+        }
+    }
+}
+
+/// TEL-2: the workspace progress bar, extracted into its own child subview so
+/// it can observe the coarse `SidebarDecayClock` (never done in TabItemView's
+/// Equatable body). As the progress write ages it dims; once expired the fill
+/// grays to `BrandColors.dim`, signalling the reporter has gone silent.
+private struct SidebarProgressIndicator: View {
+    let progress: SidebarProgressState
+    let trackColor: Color
+    let fillColor: Color
+    let labelColor: Color
+    let labelFontSize: CGFloat
+
+    @ObservedObject private var decayClock = SidebarDecayClock.shared
+    @AppStorage(SidebarStalenessSettings.staleThresholdKey)
+    private var staleThresholdRaw = SidebarStalenessSettings.defaultStaleSeconds
+    @AppStorage(SidebarStalenessSettings.expiryThresholdKey)
+    private var expiryThresholdRaw = SidebarStalenessSettings.defaultExpirySeconds
+
+    private var ageSeconds: Double {
+        decayClock.now.timeIntervalSince(progress.timestamp)
+    }
+
+    private var decayStage: SidebarDecayStage {
+        SidebarStalenessSettings.stage(
+            ageSeconds: ageSeconds,
+            staleSeconds: SidebarStalenessSettings.staleSeconds(),
+            expirySeconds: SidebarStalenessSettings.expirySeconds()
+        )
+    }
+
+    private var decayOpacity: Double {
+        switch decayStage {
+        case .fresh: return 1.0
+        case .stale: return 0.6
+        case .expired: return 0.4
+        }
+    }
+
+    private var effectiveFillColor: Color {
+        decayStage == .expired ? BrandColors.dimSwiftUI : fillColor
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(trackColor)
+                    Capsule()
+                        .fill(effectiveFillColor)
+                        .frame(width: max(0, geo.size.width * CGFloat(progress.value)))
+                }
+            }
+            .frame(height: 3)
+
+            if let label = progress.label {
+                Text(label)
+                    .font(.system(size: labelFontSize))
+                    .foregroundColor(labelColor)
+                    .lineLimit(1)
+            }
+        }
+        .opacity(decayOpacity)
+    }
+}
+
+/// TEL-4: derived-activity takeover pill. When a workspace's explicit
+/// agent-claimed status is absent or has aged past expiry, the sidebar falls
+/// back to a *derived* pill computed from low-level activity so the row still
+/// tells the truth. Rendered visually distinct from an agent-claimed pill
+/// (outlined capsule + italic + a "sensed" glyph). Observes the decay clock
+/// in this child subview so the takeover flips without invalidating the row.
+private struct SidebarDerivedActivityPill: View {
+    @ObservedObject var tab: Tab
+    let isActive: Bool
+    let onFocus: () -> Void
+
+    @Environment(\.chromeScaleTokens) private var chromeTokens
+    @ObservedObject private var decayClock = SidebarDecayClock.shared
+    @AppStorage(SidebarStalenessSettings.staleThresholdKey)
+    private var staleThresholdRaw = SidebarStalenessSettings.defaultStaleSeconds
+    @AppStorage(SidebarStalenessSettings.expiryThresholdKey)
+    private var expiryThresholdRaw = SidebarStalenessSettings.defaultExpirySeconds
+
+    /// Most-recently-written explicit status entry, used as the representative
+    /// against which the derived takeover is decided.
+    private var representativeEntry: SidebarStatusEntry? {
+        tab.sidebarStatusEntriesInDisplayOrder().max { $0.timestamp < $1.timestamp }
+    }
+
+    private var pill: SidebarVisiblePill? {
+        let entry = representativeEntry
+        let explicitText: String? = entry.map { e in
+            let trimmed = e.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? e.key : trimmed
+        }
+        let age = entry.map { decayClock.now.timeIntervalSince($0.timestamp) }
+        return SidebarActivityProjector.project(
+            explicitText: explicitText,
+            explicitAgeSeconds: age,
+            derived: tab.aggregatedDerivedActivity,
+            staleSeconds: SidebarStalenessSettings.staleSeconds(),
+            expirySeconds: SidebarStalenessSettings.expirySeconds()
+        )
+    }
+
+    private var derivedColor: Color {
+        isActive ? Color.white.opacity(0.7) : .secondary
+    }
+
+    var body: some View {
+        // Only surface this row when the projection is a derived takeover;
+        // a fresh/stale explicit status is already rendered by the metadata
+        // rows above (with their own TEL-2 decay treatment).
+        if let pill, pill.isDerived {
+            HStack(spacing: 4) {
+                Image(systemName: "wave.3.right")
+                    .font(.system(size: chromeTokens.sidebarWorkspaceLogIcon, weight: .medium))
+                Text(pill.text)
+                    .font(.system(size: chromeTokens.sidebarWorkspaceMetadata, weight: .regular).italic())
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 0)
+            }
+            .foregroundColor(derivedColor)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .overlay(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .stroke(derivedColor.opacity(0.5), lineWidth: 0.75)
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture { onFocus() }
+            .safeHelp(String(localized: "sidebar.derivedActivity.tooltip", defaultValue: "Derived activity — no recent agent status"))
         }
     }
 }

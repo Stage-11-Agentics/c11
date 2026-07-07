@@ -24,12 +24,18 @@ public enum MetadataKey {
     public static let worktree = "worktree"
     public static let branch = "branch"
 
+    /// C11-162 (Telemetry truth) — derived liveness truth. Written by the
+    /// c11 runtime via `SurfaceLivenessDeriver` at the `.derived` tier from a
+    /// surface's shell-activity ground state; agents never write it directly.
+    /// Values: `"working"` | `"idle"`.
+    public static let activity = "activity"
+
     /// Non-canonical display hint used by M3's sidebar chip.
     public static let modelLabel = "model_label"
 
     public static let canonical: Set<String> = [
         role, status, task, model, progress, terminalType, title, description, lifecycleState,
-        worktree, branch
+        worktree, branch, activity
     ]
 
     // Derived from the agent registry plus the two non-agent terminal types.
@@ -178,6 +184,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         "lifecycle_state",
         "worktree",
         "branch",
+        "activity",
         "claude.session_id",
         "claude.session_project_dir",
         "opencode.session_id",
@@ -257,6 +264,13 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             // C11-104 — derived branch name (or "(detached @ <sha>)"
             // or "(no branch)"). Up to 64 chars per spec.
             return validateString(key: key, value: value, maxLen: 64)
+        case "activity":
+            // C11-162 — derived liveness truth ("working" | "idle"). Plain
+            // string with a tight cap, mirroring the worktree/branch derived
+            // validators. The deriver only ever writes the two rawValues of
+            // `SidebarActivityState`, so a size cap is sufficient; no grammar
+            // check is needed.
+            return validateString(key: key, value: value, maxLen: 16)
         case "claude.session_id":
             // Claude SessionStart's `session_id` is a UUIDv4; reject
             // anything else. The value is interpolated verbatim into

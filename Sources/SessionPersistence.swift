@@ -280,6 +280,10 @@ struct SessionLogEntrySnapshot: Codable, Sendable {
 struct SessionProgressSnapshot: Codable, Sendable {
     var value: Double
     var label: String?
+    /// C11-162 (TEL-2): wall-clock stamp (seconds since 1970) of when this
+    /// progress value was written, so decay freshness survives relaunch instead
+    /// of resetting to "now". Optional so pre-existing snapshots still decode.
+    var timestamp: TimeInterval?
 }
 
 struct SessionGitBranchSnapshot: Codable, Sendable {

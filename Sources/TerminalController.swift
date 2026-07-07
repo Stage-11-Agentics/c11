@@ -7320,6 +7320,27 @@ class TerminalController {
                 priority: priority,
                 format: format
             ) else {
+                // C11-162 (MAJOR-1): an identical re-report means the agent is
+                // still alive and re-asserting this status. Refresh the freshness
+                // clock (last-*reported* time) without otherwise rebuilding the
+                // entry, so sidebar decay measures *silence* — not time-since-
+                // value-change — and a live agent that heartbeats an unchanged
+                // status never false-decays into the derived pill. The canonical
+                // metadata_sources `ts` deliberately stays "last changed"; only
+                // this visible sidebar entry tracks "last reported".
+                if let existing = tab.statusEntries[key] {
+                    tab.statusEntries[key] = SidebarStatusEntry(
+                        key: existing.key,
+                        value: existing.value,
+                        icon: existing.icon,
+                        color: existing.color,
+                        url: existing.url,
+                        priority: existing.priority,
+                        format: existing.format,
+                        timestamp: Date(),
+                        staleFromRestart: false
+                    )
+                }
                 // Still update PID tracking even if the status display hasn't changed.
                 if let pidValue {
                     tab.agentPIDs[key] = pidValue

@@ -137,6 +137,12 @@ class Topology:
                     "workspace": wsref}
             self.specs.append(spec)
             self.by_label[label] = spec
+            # Small stagger: creating 12 workspaces back-to-back spawns 12 PTYs
+            # that each race a shell + shim; under concurrent machine load the
+            # burst can drop a command before its shell is ready. A brief settle
+            # per workspace keeps the setup deterministic without materially
+            # slowing the run.
+            time.sleep(0.4)
         # Wait for all shims to finish their setup handshake, then confirm the
         # store actually holds all refs.
         ready = self.h.wait_ready(len(PANES))

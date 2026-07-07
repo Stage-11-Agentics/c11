@@ -480,6 +480,16 @@ class MultiKindHarness:
         env["SHIM_SOCKET"] = SOCKET_PATH
         env["SHIM_LOG_DIR"] = self.run_dir
         env["ZDOTDIR"] = self.zdotdir
+        # CRITICAL (CLAUDE.md): a normal tagged launch blocks on two modal
+        # sheets before the GUI is usable — the Agent Skills install/update
+        # sheet and the "Resume previous session?" picker. Either one wedges the
+        # main thread, so `new-workspace` allocates an id over the socket but the
+        # workspace never materialises and its `--command` never runs (the
+        # `ready=0` failure mode). Suppress both by setting C11_QA_LAUNCH:
+        # `resume` when a snapshot exists (post-crash relaunch — restore the
+        # session silently, no picker) so the store still seeds/scrapes/
+        # reclassifies; `fresh` otherwise (pre-crash build — nothing to restore).
+        env["C11_QA_LAUNCH"] = "resume" if os.path.exists(SNAPSHOT_PATH) else "fresh"
         # Let the harness's external CLI talk to the socket; default c11Only
         # mode rejects non-descendant callers by process ancestry.
         env["CMUX_SOCKET_MODE"] = "allowAll"
@@ -530,10 +540,13 @@ class MultiKindHarness:
         except FileNotFoundError:
             return ""
 
-    def wait_ready(self, expected_count: int, timeout: float = 40.0) -> int:
+    def wait_ready(self, expected_count: int, timeout: float = 150.0) -> int:
         """Poll all per-kind logs until >= `expected_count` READY sentinels
         have been written (set-agent + claim + optional push all completed).
-        Returns the count seen."""
+        Returns the count seen. The timeout is generous: building N workspaces
+        each spawns a shell + runs a shim that makes 2-3 socket round-trips, and
+        under concurrent machine load (e.g. sibling xcodebuilds) the aggregate
+        can take well over a minute for a full 12-pane topology."""
         deadline = time.time() + timeout
         seen = 0
         while time.time() < deadline:
@@ -546,7 +559,7 @@ class MultiKindHarness:
             time.sleep(0.5)
         return seen
 
-    def wait_conversation_count(self, expected: int, timeout: float = 30.0) -> int:
+    def wait_conversation_count(self, expected: int, timeout: float = 90.0) -> int:
         """Poll `conversation list --json` until >= `expected` refs exist."""
         deadline = time.time() + timeout
         n = 0

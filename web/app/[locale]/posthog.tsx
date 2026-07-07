@@ -5,9 +5,12 @@ import { PostHogProvider as PHProvider } from "posthog-js/react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, Suspense } from "react";
 
-if (typeof window !== "undefined") {
-  posthog.init("phc_opOVu7oFzR9wD3I6ZahFGOV2h3mqGpl5EHyQvmHciDP", {
-    api_host: "https://r.cmux.com",
+const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY;
+const posthogHost = process.env.NEXT_PUBLIC_POSTHOG_HOST;
+
+if (typeof window !== "undefined" && posthogKey) {
+  posthog.init(posthogKey, {
+    api_host: posthogHost ?? "https://us.i.posthog.com",
     ui_host: "https://us.posthog.com",
     person_profiles: "identified_only",
     capture_pageview: false,

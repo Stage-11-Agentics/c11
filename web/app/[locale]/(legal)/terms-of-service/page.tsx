@@ -14,9 +14,9 @@ export default function TermsOfServicePage() {
 
       <p>
         The website located at{" "}
-        <a href="https://cmux.com">cmux.com</a> (the
+        <a href="https://c11.stage11.systems">c11.stage11.systems</a> (the
         &ldquo;Site&rdquo;) and the cmux desktop application (the
-        &ldquo;Application&rdquo;) are copyrighted works belonging to Manaflow
+        &ldquo;Application&rdquo;) are copyrighted works belonging to Stage 11 Agentics
         (&ldquo;Company&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;, and
         &ldquo;we&rdquo;). These Terms of Use (these &ldquo;Terms&rdquo;) set
         forth the legally binding terms and conditions that govern your use of
@@ -161,7 +161,7 @@ export default function TermsOfServicePage() {
       <p>
         You have the right to opt out of this arbitration agreement by sending
         written notice to{" "}
-        <a href="mailto:founders@manaflow.com">founders@manaflow.com</a> within 30
+        <a href="mailto:founders@stage11.ai">founders@stage11.ai</a> within 30
         days of first becoming subject to it.
       </p>
 
@@ -177,11 +177,11 @@ export default function TermsOfServicePage() {
       <h2>10. Contact</h2>
       <p>
         Questions about these Terms should be sent to{" "}
-        <a href="mailto:founders@manaflow.com">founders@manaflow.com</a>.
+        <a href="mailto:founders@stage11.ai">founders@stage11.ai</a>.
       </p>
 
       <p>
-        Copyright &copy; {new Date().getFullYear()} Manaflow. All rights reserved.
+        Copyright &copy; {new Date().getFullYear()} Stage 11 Agentics. All rights reserved.
       </p>
     </>
   );

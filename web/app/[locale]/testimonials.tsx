@@ -113,16 +113,6 @@ export const testimonials = [
     platform: "x" as const,
   },
   {
-    key: "kataring",
-    name: "かたりん",
-    handle: "@kataring",
-    avatar: "/avatars/kataring.jpg",
-    text: "cmux.dev に乗り換えた",
-    lang: "ja",
-    url: "https://x.com/kataring/status/2026189035056832718",
-    platform: "x" as const,
-  },
-  {
     key: "scottw",
     name: "Scott Watermasysk",
     handle: "@scottw",

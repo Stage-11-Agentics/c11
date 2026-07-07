@@ -7,7 +7,7 @@ export function GitHubButton({ location = "hero" }: { location?: string }) {
   const t = useTranslations("common");
   return (
     <a
-      href="https://github.com/manaflow-ai/cmux"
+      href="https://github.com/Stage-11-Agentics/c11"
       target="_blank"
       rel="noopener noreferrer"
       onClick={() => posthog.capture("cmuxterm_github_clicked", { location })}

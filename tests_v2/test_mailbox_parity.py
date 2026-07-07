@@ -51,34 +51,9 @@ def _must(cond: bool, msg: str) -> None:
 
 
 def _find_cli_binary() -> str:
-    env_cli = (
-        os.environ.get("C11_CLI")
-        or os.environ.get("CMUXTERM_CLI")
-        or os.environ.get("CMUX_CLI")
-    )
-    if env_cli and os.path.isfile(env_cli) and os.access(env_cli, os.X_OK):
-        return env_cli
+    from cmux import find_cli_binary
 
-    candidates = glob.glob(
-        os.path.expanduser(
-            "~/Library/Developer/Xcode/DerivedData/**/Build/Products/Debug/c11"
-        ),
-        recursive=True,
-    )
-    candidates += glob.glob(
-        os.path.expanduser(
-            "~/Library/Developer/Xcode/DerivedData/**/Build/Products/Debug/cmux"
-        ),
-        recursive=True,
-    )
-    candidates += glob.glob("/tmp/cmux-*/Build/Products/Debug/c11")
-    candidates = [p for p in candidates if os.path.isfile(p) and os.access(p, os.X_OK)]
-    if not candidates:
-        raise cmuxError(
-            "Could not locate c11 CLI binary; set C11_CLI/CMUXTERM_CLI/CMUX_CLI"
-        )
-    candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-    return candidates[0]
+    return find_cli_binary()
 
 
 def _run_cli(

@@ -1,8 +1,9 @@
 import type { MetadataRoute } from "next";
 import { locales } from "../i18n/routing";
+import { SITE_URL } from "./site";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const base = "https://cmux.com";
+  const base = SITE_URL;
 
   const paths = [
     { path: "", lastModified: "2026-03-18", changeFrequency: "weekly" as const, priority: 1 },

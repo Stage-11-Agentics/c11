@@ -8,7 +8,7 @@ import { env } from "@/app/env";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const feedbackRecipient = "feedback@manaflow.com";
+
 const maxAttachmentCount = 10;
 const maxAttachmentBytes = 4 * 1024 * 1024;
 // Keep multipart requests below Vercel Functions' 4.5 MB request-body limit.
@@ -115,8 +115,8 @@ export async function POST(request: Request) {
   const resend = new Resend(feedbackConfig.resendApiKey);
 
   const { error } = await resend.emails.send({
-    from: `Manaflow <${feedbackConfig.fromEmail}>`,
-    to: [feedbackRecipient],
+    from: `c11 <${feedbackConfig.fromEmail}>`,
+    to: [feedbackConfig.toEmail],
     replyTo: email,
     subject,
     text: buildTextBody({
@@ -175,16 +175,18 @@ export async function POST(request: Request) {
 
 function resolveFeedbackConfig() {
   const resendApiKey = env.RESEND_API_KEY;
-  const fromEmail = env.CMUX_FEEDBACK_FROM_EMAIL;
-  const rateLimitId = env.CMUX_FEEDBACK_RATE_LIMIT_ID;
+  const fromEmail = env.C11_FEEDBACK_FROM_EMAIL;
+  const toEmail = env.C11_FEEDBACK_TO_EMAIL;
+  const rateLimitId = env.C11_FEEDBACK_RATE_LIMIT_ID;
 
-  if (!resendApiKey || !fromEmail || !rateLimitId) {
+  if (!resendApiKey || !fromEmail || !toEmail || !rateLimitId) {
     return null;
   }
 
   return {
     resendApiKey,
     fromEmail,
+    toEmail,
     rateLimitId,
   };
 }
@@ -251,7 +253,7 @@ function buildSubject(email: string, message: string, appVersion: string) {
       : firstNonEmptyLine;
   const versionSuffix = appVersion ? ` (v${appVersion})` : "";
 
-  return `cmux feedback from ${email}${versionSuffix}: ${summary}`;
+  return `c11 feedback from ${email}${versionSuffix}: ${summary}`;
 }
 
 function buildTextBody(input: {
@@ -331,7 +333,7 @@ function buildHtmlBody(input: {
 
   return `
     <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111827;line-height:1.5">
-      <h1 style="font-size:18px;margin:0 0 16px">cmux feedback</h1>
+      <h1 style="font-size:18px;margin:0 0 16px">c11 feedback</h1>
       <p><strong>From:</strong> ${escapeHtml(input.email)}</p>
       <p><strong>App version:</strong> ${escapeHtml(input.appVersion || "unknown")}</p>
       <p><strong>App build:</strong> ${escapeHtml(input.appBuild || "unknown")}</p>

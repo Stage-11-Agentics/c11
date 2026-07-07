@@ -83,6 +83,57 @@ def _default_socket_path() -> str:
     return candidates[0]
 
 
+def find_cli_binary() -> str:
+    """Locate the c11 CLI binary for tests_v2.
+
+    Honors an explicit override via C11_CLI (or the legacy CMUXTERM_CLI), then
+    searches the usual Xcode DerivedData and /tmp build outputs. Prefers a
+    binary named ``c11``; falls back to the pre-rename ``cmux`` name so mixed
+    or older build trees still resolve. Newest by mtime wins. Raises
+    ``cmuxError`` when nothing usable is found.
+
+    This is the single discovery helper for the whole suite: individual test
+    modules delegate to it rather than each carrying their own copy.
+    """
+    for env_key in ("C11_CLI", "CMUXTERM_CLI"):
+        env_cli = os.environ.get(env_key)
+        if env_cli and os.path.isfile(env_cli) and os.access(env_cli, os.X_OK):
+            return env_cli
+
+    # Fast path: the CLI path written by `scripts/reload.sh --tag` (avoids the
+    # slow recursive DerivedData glob below when a tagged build exists).
+    for marker in ("/tmp/c11-last-cli-path", "/tmp/cmux-last-cli-path"):
+        if os.path.isfile(marker) and not os.path.islink(marker):
+            try:
+                candidate = open(marker, encoding="utf-8").read().strip()
+            except OSError:
+                candidate = ""
+            if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                return candidate
+
+    derived = os.path.expanduser("~/Library/Developer/Xcode/DerivedData")
+    for fixed in (
+        os.path.join(derived, "c11-tests-v2/Build/Products/Debug/c11"),
+        os.path.join(derived, "cmux-tests-v2/Build/Products/Debug/cmux"),
+    ):
+        if os.path.isfile(fixed) and os.access(fixed, os.X_OK):
+            return fixed
+
+    candidates: List[str] = []
+    for pattern in (
+        os.path.join(derived, "**/Build/Products/Debug/c11"),
+        os.path.join(derived, "**/Build/Products/Debug/cmux"),
+    ):
+        candidates += glob.glob(pattern, recursive=True)
+    candidates += glob.glob("/tmp/c11-*/Build/Products/Debug/c11")
+    candidates += glob.glob("/tmp/cmux-*/Build/Products/Debug/cmux")
+    candidates = [p for p in candidates if os.path.isfile(p) and os.access(p, os.X_OK)]
+    if not candidates:
+        raise cmuxError("Could not locate the c11 CLI binary; set C11_CLI")
+    candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    return candidates[0]
+
+
 def _looks_like_uuid(s: str) -> bool:
     try:
         uuid.UUID(s)

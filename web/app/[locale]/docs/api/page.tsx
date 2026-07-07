@@ -55,19 +55,19 @@ export default function ApiPage() {
           <tr>
             <td>{t("release")}</td>
             <td>
-              <code>/tmp/cmux.sock</code>
+              <code>/tmp/c11.sock</code>
             </td>
           </tr>
           <tr>
             <td>{t("debug")}</td>
             <td>
-              <code>/tmp/cmux-debug.sock</code>
+              <code>/tmp/c11-debug.sock</code>
             </td>
           </tr>
           <tr>
             <td>{t("taggedDebug")}</td>
             <td>
-              <code>/tmp/cmux-debug-&lt;tag&gt;.sock</code>
+              <code>/tmp/c11-debug-&lt;tag&gt;.sock</code>
             </td>
           </tr>
         </tbody>
@@ -103,8 +103,8 @@ export default function ApiPage() {
             <td>
               <strong>c11 processes only</strong>
             </td>
-            <td>{t("cmuxOnlyMode")}</td>
-            <td>{t("cmuxOnlyEnable")}</td>
+            <td>{t("c11OnlyMode")}</td>
+            <td>{t("c11OnlyEnable")}</td>
           </tr>
           <tr>
             <td>
@@ -375,31 +375,31 @@ c11 identify --json`}
         <tbody>
           <tr>
             <td>
-              <code>CMUX_SOCKET_PATH</code>
+              <code>C11_SOCKET_PATH</code>
             </td>
             <td>{t("socketPathDesc")}</td>
           </tr>
           <tr>
             <td>
-              <code>CMUX_SOCKET_ENABLE</code>
+              <code>C11_SOCKET_ENABLE</code>
             </td>
             <td>{t("socketEnableDesc")}</td>
           </tr>
           <tr>
             <td>
-              <code>CMUX_SOCKET_MODE</code>
+              <code>C11_SOCKET_MODE</code>
             </td>
             <td>{t("socketModeDesc")}</td>
           </tr>
           <tr>
             <td>
-              <code>CMUX_WORKSPACE_ID</code>
+              <code>C11_WORKSPACE_ID</code>
             </td>
             <td>{t("workspaceIdDesc")}</td>
           </tr>
           <tr>
             <td>
-              <code>CMUX_SURFACE_ID</code>
+              <code>C11_SURFACE_ID</code>
             </td>
             <td>{t("surfaceIdDesc")}</td>
           </tr>
@@ -423,17 +423,17 @@ c11 identify --json`}
 
       <h2>{t("detectingCmux")}</h2>
       <CodeBlock title="bash" lang="bash">{`# Prefer explicit socket path if set
-SOCK="\${CMUX_SOCKET_PATH:-/tmp/cmux.sock}"
+SOCK="\${C11_SOCKET_PATH:-/tmp/c11.sock}"
 [ -S "$SOCK" ] && echo "Socket available"
 
 # Check for the CLI
 command -v c11 &>/dev/null && echo "c11 available"
 
-# In cmux-managed terminals these are auto-set
-[ -n "\${CMUX_WORKSPACE_ID:-}" ] && [ -n "\${CMUX_SURFACE_ID:-}" ] && echo "Inside cmux surface"
+# In c11-managed terminals these are auto-set
+[ -n "\${C11_WORKSPACE_ID:-}" ] && [ -n "\${C11_SURFACE_ID:-}" ] && echo "Inside c11 surface"
 
 # Distinguish from regular Ghostty
-[ "$TERM_PROGRAM" = "ghostty" ] && [ -n "\${CMUX_WORKSPACE_ID:-}" ] && echo "In cmux"`}</CodeBlock>
+[ "$TERM_PROGRAM" = "ghostty" ] && [ -n "\${C11_WORKSPACE_ID:-}" ] && echo "In c11"`}</CodeBlock>
 
       <h2>{t("examples")}</h2>
 
@@ -442,7 +442,7 @@ command -v c11 &>/dev/null && echo "c11 available"
 import os
 import socket
 
-SOCKET_PATH = os.environ.get("CMUX_SOCKET_PATH", "/tmp/cmux.sock")
+SOCKET_PATH = os.environ.get("C11_SOCKET_PATH", "/tmp/c11.sock")
 
 def rpc(method, params=None, req_id=1):
     payload = {"id": req_id, "method": method, "params": params or {}}
@@ -463,14 +463,14 @@ print(rpc(
 
       <h3>{t("shellScript")}</h3>
       <CodeBlock title="bash" lang="bash">{`#!/bin/bash
-SOCK="\${CMUX_SOCKET_PATH:-/tmp/cmux.sock}"
+SOCK="\${C11_SOCKET_PATH:-/tmp/c11.sock}"
 
-cmux_cmd() {
+c11_cmd() {
     printf "%s\\n" "$1" | nc -U "$SOCK"
 }
 
-cmux_cmd '{"id":"ws","method":"workspace.list","params":{}}'
-cmux_cmd '{"id":"notify","method":"notification.create","params":{"title":"Done","body":"Task complete"}}'`}</CodeBlock>
+c11_cmd '{"id":"ws","method":"workspace.list","params":{}}'
+c11_cmd '{"id":"notify","method":"notification.create","params":{"title":"Done","body":"Task complete"}}'`}</CodeBlock>
 
       <h3>{t("buildScriptNotification")}</h3>
       <CodeBlock title="bash" lang="bash">{`#!/bin/bash

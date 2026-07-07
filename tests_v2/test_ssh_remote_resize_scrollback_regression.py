@@ -43,21 +43,9 @@ def _run(cmd: list[str], *, env: dict[str, str] | None = None, check: bool = Tru
 
 
 def _find_cli_binary() -> str:
-    env_cli = os.environ.get("CMUXTERM_CLI")
-    if env_cli and os.path.isfile(env_cli) and os.access(env_cli, os.X_OK):
-        return env_cli
+    from cmux import find_cli_binary
 
-    fixed = os.path.expanduser("~/Library/Developer/Xcode/DerivedData/cmux-tests-v2/Build/Products/Debug/cmux")
-    if os.path.isfile(fixed) and os.access(fixed, os.X_OK):
-        return fixed
-
-    candidates = glob.glob(os.path.expanduser("~/Library/Developer/Xcode/DerivedData/**/Build/Products/Debug/cmux"), recursive=True)
-    candidates += glob.glob("/tmp/cmux-*/Build/Products/Debug/cmux")
-    candidates = [p for p in candidates if os.path.isfile(p) and os.access(p, os.X_OK)]
-    if not candidates:
-        raise cmuxError("Could not locate cmux CLI binary; set CMUXTERM_CLI")
-    candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-    return candidates[0]
+    return find_cli_binary()
 
 
 def _run_cli_json(cli: str, args: list[str]) -> dict:

@@ -12,6 +12,7 @@ import { Providers } from "./providers";
 import { DevPanel } from "./components/spacing-control";
 import { SiteFooter } from "./components/site-footer";
 import "../globals.css";
+import { SITE_URL } from "../site";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -31,7 +32,7 @@ export async function generateMetadata({
   const { locale } = await params;
   const t = await getTranslations({ locale, namespace: "meta" });
   const url =
-    locale === "en" ? "https://cmux.com" : `https://cmux.com/${locale}`;
+    locale === "en" ? SITE_URL : `${SITE_URL}/${locale}`;
   return {
     title: t("title"),
     description: t("description"),
@@ -61,7 +62,7 @@ export async function generateMetadata({
       title: t("title"),
       description: t("ogDescription"),
     },
-    metadataBase: new URL("https://cmux.com"),
+    metadataBase: new URL(SITE_URL),
   };
 }
 
@@ -94,7 +95,7 @@ export default async function LocaleLayout({
     name: "cmux",
     operatingSystem: "macOS",
     applicationCategory: "DeveloperApplication",
-    url: "https://cmux.com",
+    url: SITE_URL,
     downloadUrl:
       "https://github.com/Stage-11-Agentics/c11/releases/latest/download/c11-macos.dmg",
     description:

@@ -1,0 +1,40 @@
+app:    /Users/atin/Library/Developer/Xcode/DerivedData/c11-res-post/Build/Products/Debug/c11 DEV res-post.app
+socket: /tmp/c11-debug-res-post.sock
+run:    /var/folders/vr/9ty4n9qn6t77py2kdbm6wq_w0000gn/T/c11-res-post-e2e-4cqdmxtm
+
+== all-present (ACCEPTANCE) ==
+  [PASS] all shims reached READY
+  [PASS] store holds all refs pre-crash
+  [PASS] state save ok
+  [PASS] snapshot carries >=12 surface_conversations
+  [PASS] pre-crash: claude-code refs are real (placeholder=False)
+  [PASS] pre-crash: codex/pi/omp refs are wrapperClaim placeholders (True)
+  [PASS] after kill -9: dirty sentinel remains
+  [PASS] after kill -9: no clean sentinel
+
+  --- all-present (12 surfaces) ---
+    [RESOLVED         ] claude-code  cwd=…res-post-e2e-4cqdmxtm/ws/cc2 state=suspended  crash recovery: transcript verified on disk
+    [RESOLVED         ] omp          cwd=…es-post-e2e-4cqdmxtm/ws/omp0 state=suspended  crash recovery: transcript verified on disk
+    [RESOLVED         ] pi           cwd=…res-post-e2e-4cqdmxtm/ws/pi0 state=suspended  crash recovery: transcript verified on disk
+    [RESOLVED         ] omp          cwd=…es-post-e2e-4cqdmxtm/ws/omp1 state=suspended  crash recovery: transcript verified on disk
+    [RESOLVED         ] claude-code  cwd=…res-post-e2e-4cqdmxtm/ws/cc1 state=suspended  crash recovery: transcript verified on disk
+    [RESOLVED         ] claude-code  cwd=…res-post-e2e-4cqdmxtm/ws/cc3 state=suspended  crash recovery: transcript verified on disk
+    [RESOLVED         ] claude-code  cwd=…res-post-e2e-4cqdmxtm/ws/cc0 state=suspended  crash recovery: transcript verified on disk
+    [RESOLVED         ] pi           cwd=…res-post-e2e-4cqdmxtm/ws/pi1 state=suspended  crash recovery: transcript verified on disk
+    [RESOLVED         ] codex        cwd=…res-post-e2e-4cqdmxtm/ws/cx0 state=suspended  crash recovery: transcript verified on disk
+    [HONEST_DIAGNOSTIC] codex        cwd=…st-e2e-4cqdmxtm/ws/codex-adv state=unknown    state=unknown: ambiguous: 2 candidates; chose newest
+    [HONEST_DIAGNOSTIC] codex        cwd=…st-e2e-4cqdmxtm/ws/codex-adv state=unknown    state=unknown: ambiguous: 2 candidates; chose newest
+    [RESOLVED         ] codex        cwd=…res-post-e2e-4cqdmxtm/ws/cx1 state=suspended  crash recovery: transcript verified on disk
+    totals: RESOLVED=10 HONEST_DIAGNOSTIC=2 UNRESOLVED=0 FAIL=0
+  [PASS] acceptance: >=12 surfaces observed
+  [PASS] acceptance: zero FAIL (no silent fresh-launch)
+  [PASS] acceptance: zero UNRESOLVED (every session present ⇒ resolved)
+  [PASS] acceptance: >=1 claude-code surface RESOLVED
+  [PASS] acceptance: >=1 codex surface RESOLVED
+  [PASS] acceptance: >=1 pi surface RESOLVED
+  [PASS] acceptance: >=1 omp surface RESOLVED
+  [PASS] adversarial: same-cwd codex pair present (2 surfaces, 1 cwd)
+  [PASS] adversarial: same-cwd codex pair is HONEST_DIAGNOSTIC (ambiguous)
+  [PASS] floor: pi1 (stale+fresh) resolves to its fresh id (stale dropped)
+
+18 passed, 0 failed

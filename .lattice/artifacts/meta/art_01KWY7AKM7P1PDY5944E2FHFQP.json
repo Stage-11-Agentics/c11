@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-07T12:02:28Z",
+  "created_by": "agent:ts-res-delegator",
+  "custom_fields": {},
+  "id": "art_01KWY7AKM7P1PDY5944E2FHFQP",
+  "model": null,
+  "payload": {
+    "content_type": "text/plain",
+    "file": "art_01KWY7AKM7P1PDY5944E2FHFQP.log",
+    "size_bytes": 1465
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "claim->push->capture->alive on the refactored build",
+  "tags": [],
+  "title": "Final-build single-pane E2E (pipeline proof)",
+  "token_usage": null,
+  "type": "log"
+}

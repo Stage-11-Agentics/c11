@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-07T09:06:28Z",
+  "created_by": "agent:ts-orchestrator",
+  "custom_fields": {},
+  "id": "art_01KWXX8AJTMTVJSVT4SZS5N18P",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KWXX8AJTMTVJSVT4SZS5N18P.md",
+    "size_bytes": 522
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Merged by orchestrator (PR #317, squash). Gates verified: DX-1..5 all PASS with static evidence (TerminalController 20351\u21928774 LOC; 20 v2 domain handler units; nonisolated 208==208; main.sync 13==13; ",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

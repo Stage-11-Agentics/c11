@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-07T10:07:37Z",
+  "created_by": "agent:ts-evt-delegator",
+  "custom_fields": {},
+  "id": "art_01KWY0R9TZJ8ZMM7JX9C6EVVDW",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KWY0R9TZJ8ZMM7JX9C6EVVDW.md",
+    "size_bytes": 4623
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Per-row evidence: live tagged-build proof, 267ms latency, EVT-7 recorded reactions, 10/10 logic tests, schema parity.",
+  "tags": [],
+  "title": "EVT validation report (all rows PASS)",
+  "token_usage": null,
+  "type": "note"
+}

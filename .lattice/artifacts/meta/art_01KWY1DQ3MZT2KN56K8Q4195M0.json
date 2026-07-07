@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-07T10:19:19Z",
+  "created_by": "agent:ts-tel-delegator",
+  "custom_fields": {},
+  "id": "art_01KWY1DQ3MZT2KN56K8Q4195M0",
+  "model": null,
+  "payload": {
+    "content_type": "text/plain",
+    "file": "art_01KWY1DQ3MZT2KN56K8Q4195M0.txt",
+    "size_bytes": 901
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "c11-logic suite green (1223 tests, 0 failures)",
+  "token_usage": null,
+  "type": "log"
+}

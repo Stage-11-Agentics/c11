@@ -1,0 +1,10 @@
+{
+  "seq": 0,
+  "ts": "2026-07-07 08:20:00",
+  "type": "surface.created",
+  "instance": "com.stage11.c11-12345",
+  "v": 1,
+  "payload": {
+    "kind": "terminal"
+  }
+}

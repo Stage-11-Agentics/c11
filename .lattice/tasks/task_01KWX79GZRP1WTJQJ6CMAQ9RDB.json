@@ -1,30 +1,73 @@
 {
-  "assigned_to": null,
+  "assigned_to": "agent:ts-web-delegator",
   "branch_links": [],
-  "comment_count": 0,
+  "c11_surface": "ECECA068-C3E2-49D6-81D8-2055263748E4",
+  "c11_workspace": "DB29BC45-D037-4643-8EF4-EAC84E8CBB0C",
+  "comment_count": 5,
   "complexity": "medium",
   "created_at": "2026-07-07T02:42:38Z",
   "created_by": "agent:fable-consultant",
   "custom_fields": {},
   "description": "Wave 1. SPEC IDs: WEB-1..WEB-5. web/ grep-clean of manaflow pointers (lineage credits exempt); CONTRIBUTING points at Stage-11-Agentics/c11; docs/socket-api-reference.md rewritten with a complete v2 method index; minimal ROADMAP.md stub so PHILOSOPHY.md's reference resolves; tests_v2 binary discovery works with a binary named c11. Contract: docs/cycles/2026-07-truth-and-stability/ (SPEC.md, EVALUATION.md, BUILDPLAN.md). Validation bar: tagged build + recorded scenario proof.",
-  "done_at": null,
-  "evidence_refs": [],
+  "done_at": "2026-07-07T07:58:22Z",
+  "evidence_refs": [
+    {
+      "id": "art_01KWXP285S47D3A8RNVNV946QX",
+      "role": "plan-review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KWXR8AYEYZMEMP8NPK6SDDY5",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KWXRKMGEKFGQFPHFXDMBJXRB",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KWXRKMKDNAS3TEG1GXY5C1W0",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KWXRKMPB3QXSS84B096X2J33",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KWXRPWYS0TVK73HVEE2C95DW",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01KWXSBMKX38XXMZQRXEMJQVXJ",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KWXSBMKX38XXMZQRXEMJQVXH",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
   "id": "task_01KWX79GZRP1WTJQJ6CMAQ9RDB",
-  "last_event_id": "ev_01KWX79GZSQ11CHS9Z7CEA3CTM",
-  "last_status_changed_at": "2026-07-07T02:42:38Z",
+  "last_event_id": "ev_01KWXSBMKX38XXMZQRXEMJQVXN",
+  "last_status_changed_at": "2026-07-07T07:58:22Z",
   "linked_files": [],
   "priority": "medium",
   "relationships_out": [],
-  "reopened_count": 0,
+  "reopened_count": 2,
   "schema_version": 1,
   "short_id": "C11-161",
-  "status": "backlog",
+  "status": "done",
   "tags": [
     "cycle-2026-07",
     "wave-1"
   ],
   "title": "Public-surface truth: web rebrand, CONTRIBUTING fix, socket API reference rewrite, ROADMAP stub",
   "type": "task",
-  "updated_at": "2026-07-07T02:42:38Z",
+  "updated_at": "2026-07-07T07:58:22Z",
   "urgency": null
 }

@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-07-07T10:12:40Z",
+  "created_by": "agent:ts-cor-delegator",
+  "custom_fields": {
+    "url": "https://github.com/Stage-11-Agentics/c11/pull/319"
+  },
+  "id": "art_01KWY11HQDCKJS8YMG2039T0A6",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": null,
+    "size_bytes": null
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-165 COR-1..COR-4 \u2192 main (operator merges)",
+  "tags": [],
+  "title": "PR #319",
+  "token_usage": null,
+  "type": "reference"
+}

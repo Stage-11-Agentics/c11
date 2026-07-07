@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-07T10:07:26Z",
+  "created_by": "agent:ts-evt-delegator",
+  "custom_fields": {},
+  "id": "art_01KWY0QZAEN75A5VB77RFGG4NF",
+  "model": null,
+  "payload": {
+    "content_type": "text/plain",
+    "file": "art_01KWY0QZAEN75A5VB77RFGG4NF.log",
+    "size_bytes": 4185
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "c11 events tail --follow consumer reacting per-event to status change, mailbox delivery, surface close.",
+  "tags": [],
+  "title": "EVT-7 consumer-reacts recording",
+  "token_usage": null,
+  "type": "log"
+}

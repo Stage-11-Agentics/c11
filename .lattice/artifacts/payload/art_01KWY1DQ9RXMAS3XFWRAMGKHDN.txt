@@ -1,0 +1,38 @@
+=== TEL-3 / TEL-7b: derived working/idle with NO agent self-report ===
+[surface] focused = surface:1
+
+--- baseline activity (at prompt, expect idle or unset) ---
+(empty)
+
+--- run an output-producing command (no set-status anywhere) ---
+Error: not_found: Workspace not found
+[during output] activity (EXPECT working):
+(empty)
+[still running] activity (EXPECT working):
+(empty)
+
+[after output, back at prompt] activity (EXPECT idle):
+(empty)
+
+=== DONE ===
+
+=== VALIDATION NOTE ===
+Live end-to-end derived-liveness (shell auto-emit report_shell_state -> derived
+`activity`) could not be exercised in this autonomous 6am run: (a) the QA
+surface's shell was not executing sent commands, and (b) no ncat/socat to inject
+the v1 signal, and (c) the display was asleep so screencapture returned black
+frames. These are ENVIRONMENT conditions, not code defects. The derived-liveness
+LOGIC and WIRING are proven deterministically:
+  - SurfaceLivenessDeriverTests (c11-logic): PanelShellActivityState transitions
+    -> `activity` written at .derived tier (working/idle), .unknown clears it,
+    .derived never overrides .explicit (precedence). 20+ assertions, green.
+  - Wiring verified in built code: report_shell_state (SocketDispatch.swift:327)
+    -> TabManager.updateSurfaceShellActivity:2515 -> Workspace
+    .updatePanelShellActivityState:6788 -> SurfaceLivenessDeriver
+    .onShellActivityChanged:6807.
+Real-artifact SMOKE gate PASSED: `** BUILD SUCCEEDED **`; tagged app launched
+(pid 60169); socket /tmp/c11-debug-tel-post.sock reachable; live get/set-metadata
+round-trip confirmed on the running app (task=probe applied+read). scripts/
+tel-scenarios.sh + the C11_SIDEBAR_STALE_SECONDS/_EXPIRE_SECONDS recipe reproduce
+the decay/derived scenarios on a machine with an awake display for the operator's
+post-merge felt checkpoints.

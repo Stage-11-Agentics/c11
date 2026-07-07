@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-07-07T07:11:03Z",
+  "created_by": "agent:ts-hyg-delegator",
+  "custom_fields": {
+    "url": "https://github.com/Stage-11-Agentics/c11/pull/315"
+  },
+  "id": "art_01KWXPN0CM8BESTT9R90MEXZ0F",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": null,
+    "size_bytes": null
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "HYG-1 untrack + HYG-3 inventory; base main; STOP at pr_open, orchestrator merges",
+  "tags": [],
+  "title": "PR #315 (branch ts/hyg-repo-hygiene)",
+  "token_usage": null,
+  "type": "reference"
+}

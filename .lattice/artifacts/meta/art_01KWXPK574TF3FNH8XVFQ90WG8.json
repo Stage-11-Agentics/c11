@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-07T07:10:02Z",
+  "created_by": "agent:ts-hyg-delegator",
+  "custom_fields": {},
+  "id": "art_01KWXPK574TF3FNH8XVFQ90WG8",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KWXPK574TF3FNH8XVFQ90WG8.md",
+    "size_bytes": 23338
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "87 local + 164 remote branches with dates, ahead/behind, merged-status; no deletions",
+  "tags": [],
+  "title": "Stale-branch inventory (HYG-3)",
+  "token_usage": null,
+  "type": "file"
+}

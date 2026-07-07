@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-07T07:39:05Z",
+  "created_by": "agent:ts-web-code-reviewer",
+  "custom_fields": {},
+  "id": "art_01KWXR8AYEYZMEMP8NPK6SDDY5",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KWXR8AYEYZMEMP8NPK6SDDY5.md",
+    "size_bytes": 8345
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "code-review (review)",
+  "token_usage": null,
+  "type": "file"
+}

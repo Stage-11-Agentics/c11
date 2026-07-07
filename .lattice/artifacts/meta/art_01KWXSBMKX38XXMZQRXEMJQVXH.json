@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-07T07:58:22Z",
+  "created_by": "agent:ts-orchestrator",
+  "custom_fields": {},
+  "id": "art_01KWXSBMKX38XXMZQRXEMJQVXH",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KWXSBMKX38XXMZQRXEMJQVXH.md",
+    "size_bytes": 552
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Merged by orchestrator (PR #316, squash). Gates verified: plan-review + code-review artifacts (1 MAJOR found and fixed: dangling i18n keys), 3 validation artifacts (WEB-1..5 evidence, WEB-5 discovery ",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

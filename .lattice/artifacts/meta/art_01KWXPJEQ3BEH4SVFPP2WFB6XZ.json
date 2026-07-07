@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-07T07:09:39Z",
+  "created_by": "agent:ts-hyg-delegator",
+  "custom_fields": {},
+  "id": "art_01KWXPJEQ3BEH4SVFPP2WFB6XZ",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KWXPJEQ3BEH4SVFPP2WFB6XZ.md",
+    "size_bytes": 2068
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Inline: validation",
+  "token_usage": null,
+  "type": "note"
+}

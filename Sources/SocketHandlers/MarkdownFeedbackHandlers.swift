@@ -53,7 +53,16 @@ extension TerminalController {
         return .ok(["opened": true])
     }
 
-    private func v2FeedbackSubmit(params: [String: Any]) -> V2CallResult {
+    // C11-165 COR-3: `feedback.submit` blocks the caller on a 35s semaphore
+    // whose signaling `Task` (previously inheriting `@MainActor` from the
+    // enclosing main-actor method) could never start while the caller ran on
+    // main — the June audit's "always freezes main ~35s then fails". Marking
+    // this `nonisolated` and dispatching it on the socket worker (see
+    // TerminalController.socketWorkerV2Methods) means the `Task` runs on the
+    // global executor and the `semaphore.wait` blocks the worker thread, not
+    // main. FeedbackComposerBridge.submit is `static async` (not main-actor),
+    // so nothing here needs a main hop.
+    nonisolated func v2FeedbackSubmit(params: [String: Any]) -> V2CallResult {
         guard let email = params["email"] as? String else {
             return .err(code: "invalid_params", message: "Missing email", data: ["field": "email"])
         }
@@ -63,7 +72,7 @@ extension TerminalController {
         let imagePaths = params["image_paths"] as? [String] ?? []
 
         let semaphore = DispatchSemaphore(value: 0)
-        var result: V2CallResult = .err(code: "internal_error", message: "Feedback submission failed", data: nil)
+        nonisolated(unsafe) var result: V2CallResult = .err(code: "internal_error", message: "Feedback submission failed", data: nil)
 
         Task {
             let resolved: V2CallResult

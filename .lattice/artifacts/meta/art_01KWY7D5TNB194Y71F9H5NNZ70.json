@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-07-07T12:03:52Z",
+  "created_by": "agent:ts-res-delegator",
+  "custom_fields": {
+    "url": "https://github.com/Stage-11-Agentics/c11/pull/321"
+  },
+  "id": "art_01KWY7D5TNB194Y71F9H5NNZ70",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": null,
+    "size_bytes": null
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-164 crash-resume completion \u2014 operator merges (Wave 2)",
+  "tags": [],
+  "title": "PR #321",
+  "token_usage": null,
+  "type": "reference"
+}

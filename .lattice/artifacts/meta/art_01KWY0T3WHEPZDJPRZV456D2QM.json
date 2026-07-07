@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-07-07T10:08:36Z",
+  "created_by": "agent:ts-evt-delegator",
+  "custom_fields": {
+    "url": "https://github.com/Stage-11-Agentics/c11/pull/318"
+  },
+  "id": "art_01KWY0T3WHEPZDJPRZV456D2QM",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": null,
+    "size_bytes": null
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Wave 2 PR, base main, stops at pr_open for operator merge.",
+  "tags": [],
+  "title": "PR #318 \u2014 C11-163 Events stream",
+  "token_usage": null,
+  "type": "reference"
+}

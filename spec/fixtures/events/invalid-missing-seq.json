@@ -1,0 +1,9 @@
+{
+  "ts": "2026-07-07T08:20:00.123Z",
+  "type": "surface.created",
+  "instance": "com.stage11.c11-12345",
+  "v": 1,
+  "payload": {
+    "kind": "terminal"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-07-07T10:20:47Z",
+  "created_by": "agent:ts-tel-delegator",
+  "custom_fields": {
+    "url": "https://github.com/Stage-11-Agentics/c11/pull/320"
+  },
+  "id": "art_01KWY1GDT7X2MKDVV08SYR81BG",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": null,
+    "size_bytes": null
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "TEL implementation PR",
+  "tags": [],
+  "title": "PR #320 (base main)",
+  "token_usage": null,
+  "type": "reference"
+}

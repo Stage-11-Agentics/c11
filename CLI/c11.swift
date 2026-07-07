@@ -1705,6 +1705,14 @@ struct CMUXCLI {
             return
         }
 
+        // C11-163: `c11 events tail` reads the NDJSON event log directly — the
+        // file is the contract, so it must work with no running app. Handle it
+        // before the socket connect, like `state verify`.
+        if command == "events" {
+            try runEventsCommand(commandArgs: commandArgs, jsonOutput: jsonOutput)
+            return
+        }
+
         let client = SocketClient(path: resolvedSocketPath)
         if resolvedSocketPath != socketPath {
             cliTelemetry.breadcrumb(
@@ -5094,7 +5102,10 @@ struct CMUXCLI {
         let workspaceId = try normalizeWorkspaceHandle(workspaceArg, client: client, allowCurrent: true)
         // If a workspace is explicitly targeted and no tab/surface is provided, let server-side
         // tab.action resolve that workspace's focused tab instead of using global focus.
-        let allowFocusedFallback = (workspaceId == nil)
+        // C11-165 COR-1: rename is a surface/tab-scoped write — never resolve the
+        // operator-focused tab client-side; a ref-less rename must be rejected
+        // server-side (missing_ref). Other tab actions keep their focused fallback.
+        let allowFocusedFallback = (workspaceId == nil) && action != "rename"
         let surfaceId = try normalizeTabHandle(
             tabArg,
             client: client,
@@ -5269,17 +5280,22 @@ struct CMUXCLI {
         let surfaceRaw = surfaceOpt ?? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
         let workspaceRaw = workspaceOpt ?? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
         let workspaceId = try resolveWorkspaceId(workspaceRaw, client: client)
-        let surfaceId = try resolveSurfaceId(surfaceRaw, workspaceId: workspaceId, client: client)
 
         let source = sourceOpt?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "explicit"
 
         var params: [String: Any] = [
-            "surface_id": surfaceId,
             "workspace_id": workspaceId,
             "mode": "merge",
             "source": source,
             "metadata": [key: value]
         ]
+        // C11-165 COR-1: only send surface_id when the caller supplied one (flag
+        // or CMUX_SURFACE_ID). A ref-less external call must NOT resolve the
+        // operator-focused surface client-side — omit it so the server rejects
+        // (missing_ref) instead of stomping a peer's surface.
+        if let surfaceRaw {
+            params["surface_id"] = try resolveSurfaceId(surfaceRaw, workspaceId: workspaceId, client: client)
+        }
         if key == "description" && !autoExpand {
             params["auto_expand"] = false
         }
@@ -7774,6 +7790,8 @@ struct CMUXCLI {
 
             Print server capabilities as JSON.
             """
+        case "events":
+            return eventsUsage()
         case "help":
             return """
             Usage: c11 help
@@ -11018,7 +11036,8 @@ struct CMUXCLI {
     private func resolveMetadataTarget(
         commandArgs: [String],
         client: SocketClient,
-        windowOverride: String?
+        windowOverride: String?,
+        allowFocused: Bool = true
     ) throws -> (workspaceId: String?, surfaceId: String?) {
         let workspaceRaw = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowOverride)
         let workspaceId = try normalizeWorkspaceHandle(workspaceRaw, client: client)
@@ -11033,11 +11052,15 @@ struct CMUXCLI {
             ?? (explicitWorkspaceFlag == nil && windowOverride == nil
                 ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
                 : nil)
+        // C11-165 COR-1: writes pass allowFocused:false, so a ref-less external
+        // caller (no --surface, no CMUX_SURFACE_ID) sends no surface_id and the
+        // server rejects (missing_ref) rather than the CLI resolving the
+        // operator-focused surface client-side. Reads keep the focused fallback.
         let surfaceId = try normalizeSurfaceHandle(
             surfaceRaw,
             client: client,
             workspaceHandle: workspaceId,
-            allowFocused: surfaceRaw == nil
+            allowFocused: allowFocused && surfaceRaw == nil
         )
         return (workspaceId, surfaceId)
     }
@@ -11054,7 +11077,8 @@ struct CMUXCLI {
     private func resolveMetadataCommandTarget(
         commandArgs: [String],
         client: SocketClient,
-        windowOverride: String?
+        windowOverride: String?,
+        allowFocused: Bool = true
     ) throws -> MetadataCommandTarget {
         let surfaceRaw = optionValue(commandArgs, name: "--surface")
             ?? optionValue(commandArgs, name: "--panel")
@@ -11080,7 +11104,8 @@ struct CMUXCLI {
         let (workspaceId, surfaceId) = try resolveMetadataTarget(
             commandArgs: commandArgs,
             client: client,
-            windowOverride: windowOverride
+            windowOverride: windowOverride,
+            allowFocused: allowFocused
         )
         return .surface(workspaceId: workspaceId, surfaceId: surfaceId)
     }
@@ -11258,7 +11283,8 @@ struct CMUXCLI {
         let (workspaceId, surfaceId) = try resolveMetadataTarget(
             commandArgs: commandArgs,
             client: client,
-            windowOverride: windowOverride
+            windowOverride: windowOverride,
+            allowFocused: false  // C11-165 COR-1: set-agent is a write — no client-side focused fallback
         )
         var params: [String: Any] = [
             "metadata": metadata,
@@ -11333,7 +11359,8 @@ struct CMUXCLI {
         let target = try resolveMetadataCommandTarget(
             commandArgs: commandArgs,
             client: client,
-            windowOverride: windowOverride
+            windowOverride: windowOverride,
+            allowFocused: false  // C11-165 COR-1: set-metadata is a write — no client-side focused fallback
         )
         var params: [String: Any] = [
             "metadata": metadata,
@@ -11427,7 +11454,8 @@ struct CMUXCLI {
         let target = try resolveMetadataCommandTarget(
             commandArgs: commandArgs,
             client: client,
-            windowOverride: windowOverride
+            windowOverride: windowOverride,
+            allowFocused: false  // C11-165 COR-1: clear-metadata is a write — no client-side focused fallback
         )
         var params: [String: Any] = ["source": source]
         if !keys.isEmpty { params["keys"] = keys }
@@ -16431,6 +16459,7 @@ struct CMUXCLI {
           browser addscript <script>
           browser addstyle <css>
           browser identify [--surface <id|ref|index>]
+          events tail [--follow|-f] [--filter type=<type>] [--since <seq|duration>] [--instance <id>]
           help
 
         Environment:
@@ -17453,6 +17482,179 @@ extension CMUXCLI {
             flushHandle(handle)
             try? handle.close()
         }
+    }
+
+    // MARK: - Events stream (C11-163)
+
+    /// `c11 events <subcommand>`. File-first: reads the per-instance NDJSON
+    /// event log directly, no socket. Currently only `tail`.
+    private func runEventsCommand(commandArgs: [String], jsonOutput: Bool) throws {
+        let sub = commandArgs.first?.lowercased() ?? "help"
+        switch sub {
+        case "tail":
+            try runEventsTail(subArgs: Array(commandArgs.dropFirst()))
+        case "help", "--help", "-h":
+            print(eventsUsage())
+        default:
+            print(eventsUsage())
+            throw CLIError(message: "events: unknown subcommand '\(sub)'. Known: tail")
+        }
+    }
+
+    private func eventsUsage() -> String {
+        """
+        Usage: c11 events tail [--follow|-f] [--filter type=<type>] [--since <seq|duration>] [--instance <id>]
+
+        Stream the c11 events log (NDJSON). The file is the contract — this is
+        sugar over `~/Library/Application Support/c11/events/events-<instance>.ndjson`.
+        Works with no running app.
+
+          --follow, -f          Keep streaming new events (rotation-aware).
+          --filter type=<type>  Only lines whose `type` equals <type>.
+          --since <seq|dur>     Start at a seq number (e.g. 1200) or a duration
+                                ago (e.g. 10m, 90s, 2h), resolved against `ts`.
+          --instance <id>       Target a specific instance log (default: newest).
+
+        Examples:
+          c11 events tail
+          c11 events tail -f --filter type=surface.closed
+          c11 events tail --since 5m
+        """
+    }
+
+    /// Reads the current instance log, applies filters, prints matching lines.
+    /// One-shot by default; `--follow` streams with rotation detection so the
+    /// tail survives a size-capped roll (amendment A) — the mailbox loop cannot,
+    /// because the mailbox log never rotates.
+    private func runEventsTail(subArgs: [String]) throws {
+        let follow = hasFlag(subArgs, name: "--follow") || hasFlag(subArgs, name: "-f")
+        let typeFilter = eventsTypeFilter(subArgs)
+        let sinceSeq = eventsSinceSeq(subArgs)
+        let sinceDate = eventsSinceDate(subArgs)
+        let instance = optionValue(subArgs, name: "--instance")
+
+        let state = try EventLogLayout.defaultStateURL()
+        let logURL: URL
+        if let instance {
+            logURL = EventLogLayout.logURL(state: state, instance: instance)
+        } else {
+            do {
+                logURL = try EventLogLayout.newestLogURL(state: state)
+            } catch {
+                // No log yet. In --follow, wait for one to appear; else exit 0.
+                if !follow { return }
+                logURL = try eventsWaitForLog(state: state)
+            }
+        }
+
+        // Emit a line iff it passes every active filter.
+        func emit(_ line: String) {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            if let typeFilter, EventEnvelope.type(fromLine: trimmed) != typeFilter { return }
+            if let sinceSeq, let s = EventEnvelope.seq(fromLine: trimmed), s < sinceSeq { return }
+            if let sinceDate, let ts = EventEnvelope.timestamp(fromLine: trimmed), ts < sinceDate { return }
+            print(trimmed)
+        }
+
+        func drainLines(_ text: String) {
+            for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+                emit(String(line))
+            }
+            fflush(stdout)
+        }
+
+        // Initial read of the whole current file.
+        var lastSize: UInt64 = 0
+        var lastInode = eventsInode(of: logURL)
+        if let handle = try? FileHandle(forReadingFrom: logURL) {
+            let data = (try? handle.readToEnd()) ?? nil ?? Data()
+            if let text = String(data: data, encoding: .utf8) { drainLines(text) }
+            lastSize = (try? handle.offset()) ?? 0
+            try? handle.close()
+        }
+
+        guard follow else { return }
+
+        while true {
+            Thread.sleep(forTimeInterval: 0.25)
+            guard FileManager.default.fileExists(atPath: logURL.path) else { continue }
+            let currentInode = eventsInode(of: logURL)
+            let currentSize = eventsFileSize(of: logURL)
+            // Rotation detection: the file shrank, or its inode changed → the log
+            // rolled. A `0` inode means a transient stat failure (e.g. mid-rename);
+            // treat it as "unknown" and do not reset on it alone.
+            let inodeChanged = currentInode != 0 && lastInode != 0 && currentInode != lastInode
+            if inodeChanged || currentSize < lastSize {
+                // Before switching to the fresh file, drain the tail that landed
+                // in the now-rolled `.1` after our last read — the cap-crossing
+                // lines the writer appended just before it renamed. Without this
+                // the sub-second unread tail would live only in `.1` and the
+                // follower would skip it.
+                let rolled = EventLogLayout.rolledURL(for: logURL)
+                if let rh = try? FileHandle(forReadingFrom: rolled) {
+                    try? rh.seek(toOffset: lastSize)
+                    let tail = ((try? rh.readToEnd()) ?? nil) ?? Data()
+                    if let text = String(data: tail, encoding: .utf8), !text.isEmpty { drainLines(text) }
+                    try? rh.close()
+                }
+                lastSize = 0
+                if currentInode != 0 { lastInode = currentInode }
+            }
+            guard let handle = try? FileHandle(forReadingFrom: logURL) else { continue }
+            try? handle.seek(toOffset: lastSize)
+            let data = ((try? handle.readToEnd()) ?? nil) ?? Data()
+            if let text = String(data: data, encoding: .utf8), !text.isEmpty { drainLines(text) }
+            lastSize = (try? handle.offset()) ?? lastSize
+            try? handle.close()
+        }
+    }
+
+    /// Blocks (polling) until an instance log exists, for `--follow` started
+    /// before the app opened its log.
+    private func eventsWaitForLog(state: URL) throws -> URL {
+        while true {
+            if let url = try? EventLogLayout.newestLogURL(state: state) { return url }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+    }
+
+    private func eventsTypeFilter(_ args: [String]) -> String? {
+        guard let raw = optionValue(args, name: "--filter") else { return nil }
+        // Accept `--filter type=surface.closed` (or a bare `type=` value).
+        if raw.hasPrefix("type=") { return String(raw.dropFirst("type=".count)) }
+        return raw
+    }
+
+    private func eventsSinceSeq(_ args: [String]) -> UInt64? {
+        guard let raw = optionValue(args, name: "--since") else { return nil }
+        return UInt64(raw)
+    }
+
+    /// Parses `--since <duration>` (e.g. 10m, 90s, 2h, 1d) into an absolute
+    /// cutoff date. Returns nil when `--since` is absent or a plain seq number.
+    private func eventsSinceDate(_ args: [String]) -> Date? {
+        guard let raw = optionValue(args, name: "--since"), UInt64(raw) == nil else { return nil }
+        guard let unit = raw.last, let value = Double(raw.dropLast()) else { return nil }
+        let seconds: Double
+        switch unit {
+        case "s": seconds = value
+        case "m": seconds = value * 60
+        case "h": seconds = value * 3600
+        case "d": seconds = value * 86400
+        default: return nil
+        }
+        return Date().addingTimeInterval(-seconds)
+    }
+
+    private func eventsInode(of url: URL) -> UInt64 {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        return (attrs?[.systemFileNumber] as? UInt64) ?? 0
+    }
+
+    private func eventsFileSize(of url: URL) -> UInt64 {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        return (attrs?[.size] as? UInt64) ?? 0
     }
 
     // MARK: - Helpers for raw-bash senders/receivers

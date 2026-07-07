@@ -1,0 +1,36 @@
+# C11-159 live dispatch smoke — dx-post tagged build @ 9b2f4c9ae
+Each command below routes through the EXTRACTED per-domain dispatch (SocketDispatch.swift + Sources/SocketHandlers/*).
+
+$ c11 ping   # system.ping via SocketDispatch
+PONG
+
+$ c11 list-windows   # WindowHandlers.v2DispatchWindow
+  0: EEF555A5-3840-4F4C-AB0A-E649545AFD6E selected_workspace=EB68985B-71BB-4F97-9DFA-4407629D2CA1 workspaces=1
+
+$ c11 list-workspaces   # WorkspaceHandlers.v2DispatchWorkspace
+* workspace:1  Workspace 1  [selected]
+
+$ c11 tree --no-layout   # SystemHandlers.v2SystemTree
+window window:1 [current] ◀ active
+└── workspace workspace:1 "Workspace 1" [selected] ◀ active
+    ├── pane pane:1 size=50%×50% px=460×404 split=H:left,V:top [focused] ◀ active
+    │   └── surface surface:1 [terminal] "~" [selected] ◀ active
+    ├── pane pane:2 size=50%×50% px=460×404 split=H:left,V:bottom
+    │   └── surface surface:2 [terminal] "~" [selected]
+    ├── pane pane:3 size=50%×50% px=460×404 split=H:right,V:top
+    │   └── surface surface:3 [terminal] "~" [selected]
+    └── pane pane:4 size=50%×50% px=460×404 split=H:right,V:bottom
+        └── surface surface:4 [terminal] "~" [selected]
+
+$ c11 identify --json   # system.identify
+{
+  "socket_path" : "/tmp/c11-debug-dx-post.sock",
+  "focused" : {
+    "workspace_ref" : "workspace:1",
+    "is_browser_surface" : false,
+    "window_ref" : "window:1",
+    "surface_ref" : "surface:1",
+    "tab_ref" : "tab:1",
+
+$ c11 totally_bogus_cmd   # v1 unknown-command error contract (parity)
+Error: Unknown command: totally_bogus_cmd

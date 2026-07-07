@@ -1,0 +1,41 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 3,
+  "complexity": "high",
+  "created_at": "2026-06-30T19:54:11Z",
+  "created_by": "agent:claude",
+  "custom_fields": {},
+  "description": "Prod c11 0.53.0 beachballed ~60s -> force-quit (2026-06-30). Main-thread HANG, not a crash. Hang watchdog (~/Library/Logs/c11/hang.log) shows relaunched pid 72252 then hung 44.5s on mass-resume (crash-loop recurrence); 15+ hangs in prior 16h. Root cause: c11's Claude Code hooks (PreToolUse etc.) each spawn 'c11 claude-hook' issuing multiple socket round-trips (resolve + conversation.push/set_status/set_agent_pid/clear_notifications/notify_target) that ALL run on the GUI main thread via processCommandUsingSocketExecutionPolicy -> DispatchQueue.main.sync (TerminalController.swift:1980/1992). No hook command is in the off-main worker allowlists. Load scales with agent count; crash-restore resumes all agents at once = thundering herd -> wedge. NOT fixed in 0.55 (release/v0.55.0 allowlists byte-identical to HEAD). Sharper instance of C11-139 B. Fix: (1) move hook commands off-main via the C11-26 worker pattern (return OK off-main, mutate via main.async); (2) drop the surface.list probe in runClaudeHook, trust UUID env IDs; (3) stagger agent resume on restore.",
+  "done_at": "2026-07-07T02:46:02Z",
+  "evidence_refs": [],
+  "id": "task_01KWD1HA6C0R5W2DV8CJKD0TNG",
+  "last_event_id": "ev_01KWX7FQRNXN4ZY7CM3BYFH5SJ",
+  "last_status_changed_at": "2026-07-07T02:46:02Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-06-30T19:54:21Z",
+      "created_by": "agent:claude",
+      "note": null,
+      "target_task_id": "task_01KTZ0JQ2YDTFFZET4HKMGNJ7J",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-156",
+  "status": "done",
+  "tags": [
+    "stability",
+    "main-thread",
+    "socket",
+    "hooks",
+    "v0.55"
+  ],
+  "title": "Claude-hook socket flood wedges main thread under multi-agent load",
+  "type": "bug",
+  "updated_at": "2026-07-07T02:46:02Z",
+  "urgency": null
+}

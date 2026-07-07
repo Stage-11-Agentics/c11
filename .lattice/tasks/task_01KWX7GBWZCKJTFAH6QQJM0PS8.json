@@ -1,0 +1,38 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": "high",
+  "created_at": "2026-07-07T02:46:22Z",
+  "created_by": "agent:fable-consultant",
+  "custom_fields": {},
+  "description": "Wave 2, depends on the dispatcher extraction. SPEC IDs: RES-1..RES-5. Metric-driven: 10+ live conversations, 3+ workspaces, 3+ kinds (claude-code + codex + one of pi/omp/opencode), kill -9, relaunch; every conversation resumes per its declared tier or shows an honest diagnostic_reason; zero silent fresh-launches. Wire the pull-scrape rail and whatever else the scenario requires; nothing it does not. Scenario encoded as a repeatable harness runnable by delegator, validator, and CI. Clean-shutdown resume must not regress. references/conversation.md updated in same PR. Contract: docs/cycles/2026-07-truth-and-stability/ (SPEC.md, EVALUATION.md, BUILDPLAN.md). Validation bar: tagged build + recorded scenario proof.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KWX7GBWZCKJTFAH6QQJM0PS8",
+  "last_event_id": "ev_01KWX7GMSA2YQEX67X5MNDTKPB",
+  "last_status_changed_at": "2026-07-07T02:46:22Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-07-07T02:46:31Z",
+      "created_by": "agent:fable-consultant",
+      "note": "Wave 2 builds on the extracted dispatcher base",
+      "target_task_id": "task_01KWX79GSQY25DMPXVNF1SX8KJ",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-164",
+  "status": "backlog",
+  "tags": [
+    "cycle-2026-07",
+    "wave-2"
+  ],
+  "title": "Crash-resume completion: force-kill scenario as the acceptance gate",
+  "type": "task",
+  "updated_at": "2026-07-07T02:46:31Z",
+  "urgency": null
+}

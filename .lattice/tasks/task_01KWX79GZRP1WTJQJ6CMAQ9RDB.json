@@ -1,0 +1,30 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": "medium",
+  "created_at": "2026-07-07T02:42:38Z",
+  "created_by": "agent:fable-consultant",
+  "custom_fields": {},
+  "description": "Wave 1. SPEC IDs: WEB-1..WEB-5. web/ grep-clean of manaflow pointers (lineage credits exempt); CONTRIBUTING points at Stage-11-Agentics/c11; docs/socket-api-reference.md rewritten with a complete v2 method index; minimal ROADMAP.md stub so PHILOSOPHY.md's reference resolves; tests_v2 binary discovery works with a binary named c11. Contract: docs/cycles/2026-07-truth-and-stability/ (SPEC.md, EVALUATION.md, BUILDPLAN.md). Validation bar: tagged build + recorded scenario proof.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KWX79GZRP1WTJQJ6CMAQ9RDB",
+  "last_event_id": "ev_01KWX79GZSQ11CHS9Z7CEA3CTM",
+  "last_status_changed_at": "2026-07-07T02:42:38Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-161",
+  "status": "backlog",
+  "tags": [
+    "cycle-2026-07",
+    "wave-1"
+  ],
+  "title": "Public-surface truth: web rebrand, CONTRIBUTING fix, socket API reference rewrite, ROADMAP stub",
+  "type": "task",
+  "updated_at": "2026-07-07T02:42:38Z",
+  "urgency": null
+}

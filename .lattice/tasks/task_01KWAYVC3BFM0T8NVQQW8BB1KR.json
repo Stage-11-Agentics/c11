@@ -1,0 +1,35 @@
+{
+  "assigned_to": "agent:claude-cli",
+  "branch_links": [],
+  "comment_count": 1,
+  "complexity": null,
+  "created_at": "2026-06-30T00:28:46Z",
+  "created_by": "agent:claude-cli",
+  "custom_fields": {},
+  "description": "## Symptom\nAll `c11 <cmd>` return 'Connection refused (errno 61)' while the prod GUI stays alive. Socket file present at ~/Library/Application Support/c11/c11.sock but no acceptor; prod (PID 2340) still holds the fd. Permanent until restart.\n\n## Root cause (two compounding defects)\n**A. Inherited cross-bundle CMUX_SOCKET_PATH is honored.** Prod injects CMUX_SOCKET_PATH=<prod socket> into every spawned terminal. A staging/debug build launched from a prod pane (reload.sh / launch-tagged-automation.sh / open \u2026Staging.app) inherits it. SocketControlSettings.shouldHonorSocketPathOverride returns true for any debug/staging bundle with no opt-in, so the build resolves ITS socket path to PROD's socket.\n**B. bindListenerSocket unconditionally unlink()s before bind(), no liveness check.** The interloper unlinks prod's LIVE socket dentry and binds its own; on exit it unlinks again \u2192 no acceptor \u2192 wedge. (Distinct from C11-105, which fixed the shutdown/stop() unlink path.)\n\nForensics: socket + last-socket-path mtime 18:36 == staging rel.v0.54.0 launch.\n\n## Fix (see docs/socket-collision-fix-design.md)\n- **B (load-bearing):** liveness-probe before unlink; never stomp a live peer; fall back to a safe path.\n- **C:** don't honor an ambient CMUX_SOCKET_PATH that points at another bundle's stable default (unless CMUX_ALLOW_SOCKET_OVERRIDE).\n- **A:** namespace prod stable socket per CFBundleIdentifier (app+CLI); /tmp tagged schemes untouched.\n- Latent: inject the bound path (activeSocketPath) + C11_SOCKET_PATH into child PTY env.\n\n## Acceptance\nprod+staging+debug coexist, each CLI works, launching/quitting one never wedges another; no stomping a live different-bundle socket; build X's shell reaches build X; existing socket tests green + regression added; clean operator restart. Fix lands in the binary BEFORE prod restarts.",
+  "done_at": "2026-07-07T02:46:02Z",
+  "evidence_refs": [],
+  "id": "task_01KWAYVC3BFM0T8NVQQW8BB1KR",
+  "last_event_id": "ev_01KWX7FQVJ708ERJCH0RVB5CGT",
+  "last_status_changed_at": "2026-07-07T02:46:02Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-06-30T00:28:53Z",
+      "created_by": "agent:claude-cli",
+      "note": null,
+      "target_task_id": "task_01KRYXGVPQVVD8WM75037YPWJP",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-155",
+  "status": "done",
+  "tags": null,
+  "title": "Bind-time socket stomp: a build inheriting prod's CMUX_SOCKET_PATH unlinks prod's live socket, wedging the CLI",
+  "type": "bug",
+  "updated_at": "2026-07-07T02:46:02Z",
+  "urgency": null
+}

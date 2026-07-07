@@ -1,0 +1,3 @@
+# C11-165: P0 correctness: empty-ref rejection everywhere, main-thread socket paths eliminated
+
+Wave 2, depends on the dispatcher extraction. SPEC IDs: COR-1..COR-4. Empty/absent surface refs on all surface-scoped writes rejected with clear errors, never defaulted to the focused surface (June audit P0); skill footgun guidance updated. Main-thread-reachable socket paths eliminated: pane.confirm, feedback.submit, nested CFRunLoopRun genre swept fresh; hang monitor clean under a scripted C11-156-shaped hook/telemetry flood. Regression tests for both genres. Contract: docs/cycles/2026-07-truth-and-stability/ (SPEC.md, EVALUATION.md, BUILDPLAN.md). Validation bar: tagged build + recorded scenario proof.

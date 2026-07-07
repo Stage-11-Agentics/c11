@@ -1,0 +1,3 @@
+# C11-163: Events stream: NDJSON event log, v1 taxonomy, rotation, c11 events tail
+
+Wave 2, depends on the dispatcher extraction. SPEC IDs: EVT-1..EVT-8. File-first pub/sub: append-only NDJSON per-instance event log (seq, ts, type, refs, payload); v1 taxonomy = surface lifecycle, workspace select, canonical-metadata changes with source tier, derived-liveness transitions, waiting transitions, mailbox accepted/delivered; off-main non-blocking writes; size-capped rotation; c11 events tail --follow/--filter/--since as sugar over the file; envelope JSON schema in spec/; skill documents it all. <1s consumer latency. Contract: docs/cycles/2026-07-truth-and-stability/ (SPEC.md, EVALUATION.md, BUILDPLAN.md). Validation bar: tagged build + recorded scenario proof.

@@ -1,0 +1,30 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": "low",
+  "created_at": "2026-07-07T02:42:38Z",
+  "created_by": "agent:fable-consultant",
+  "custom_fields": {},
+  "description": "Wave 1. SPEC IDs: HYG-1..HYG-3. node_modules untracked+gitignored with CI green; dependabot PRs merged or closed with reasons; stale-branch inventory produced as artifact (deletion is operator-assisted). Contract: docs/cycles/2026-07-truth-and-stability/ (SPEC.md, EVALUATION.md, BUILDPLAN.md). Validation bar: tagged build + recorded scenario proof.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KWX79GWQE82MC1SNMQCRDZY3",
+  "last_event_id": "ev_01KWX79GWRS9F7TKACXRN550R0",
+  "last_status_changed_at": "2026-07-07T02:42:38Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-160",
+  "status": "backlog",
+  "tags": [
+    "cycle-2026-07",
+    "wave-1"
+  ],
+  "title": "Repo hygiene: untrack node_modules, resolve dependabot queue, stale-branch inventory",
+  "type": "chore",
+  "updated_at": "2026-07-07T02:42:38Z",
+  "urgency": null
+}

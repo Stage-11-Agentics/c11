@@ -1,0 +1,3 @@
+# C11-162: Telemetry truth: metadata age and decay, PTY-derived liveness, waiting-agent cluster restyle
+
+Wave 2, depends on the dispatcher extraction. SPEC IDs: TEL-1..TEL-8. Canonical metadata keys carry last-updated; sidebar pills decay by age (tunable thresholds, suggested 5m/15m); derived working/idle state from PTY output flow at the derived precedence tier; stale explicit status hands the pill to derived state, visually distinct; waiting-agent cluster restyled per docs/c11-waiting-agent-cluster-plan.md (commit that plan doc with this ticket). No hot-path work. Skill metadata reference updated in same PR. Contract: docs/cycles/2026-07-truth-and-stability/ (SPEC.md, EVALUATION.md, BUILDPLAN.md). Validation bar: tagged build + recorded scenario proof.

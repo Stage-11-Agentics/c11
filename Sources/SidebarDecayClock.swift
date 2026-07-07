@@ -27,12 +27,25 @@ final class SidebarDecayClock: ObservableObject {
     private var timer: Timer?
 
     private init() {
-        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
-            self?.now = Date()
+        // C11-162 (m4): the timer must be installed on the main runloop, and
+        // `RunLoop.main.add` / the `@Published` bump are only main-safe there.
+        // `.shared` is normally first touched from a SwiftUI view init (main),
+        // but guard against an off-main first access so the tick can never
+        // silently fail to schedule.
+        let install: () -> Void = { [weak self] in
+            guard let self else { return }
+            let timer = Timer(timeInterval: self.interval, repeats: true) { [weak self] _ in
+                self?.now = Date()
+            }
+            // Common mode so the tick keeps firing during scroll / tracking.
+            RunLoop.main.add(timer, forMode: .common)
+            self.timer = timer
         }
-        // Common mode so the tick keeps firing during scroll / tracking.
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
+        if Thread.isMainThread {
+            install()
+        } else {
+            DispatchQueue.main.async(execute: install)
+        }
     }
 
     deinit {

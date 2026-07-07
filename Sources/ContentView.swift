@@ -11743,16 +11743,16 @@ private struct TabItemView: View, Equatable {
             remoteWorkspaceSection
 
             if detailVisibility.showsMetadata {
-                let metadataEntries = tab.sidebarStatusEntriesInDisplayOrder()
                 let metadataBlocks = tab.sidebarMetadataBlocksInDisplayOrder()
-                if !metadataEntries.isEmpty {
-                    SidebarMetadataRows(
-                        entries: metadataEntries,
-                        isActive: usesInvertedActiveForeground,
-                        onFocus: { updateSelection() }
-                    )
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-                }
+                // TEL-2/TEL-4: the status section owns the decay-clock observation
+                // and renders either the explicit status rows (with age decay) or,
+                // once they expire, the single derived-activity takeover pill.
+                SidebarStatusSection(
+                    tab: tab,
+                    isActive: usesInvertedActiveForeground,
+                    onFocus: { updateSelection() }
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
                 if !metadataBlocks.isEmpty {
                     SidebarMetadataMarkdownBlocks(
                         blocks: metadataBlocks,
@@ -11761,15 +11761,6 @@ private struct TabItemView: View, Equatable {
                     )
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
-                // TEL-4: derived-activity takeover. Renders only when the
-                // explicit status is absent/expired; the child subview owns
-                // the decay-clock observation and the projector decision.
-                SidebarDerivedActivityPill(
-                    tab: tab,
-                    isActive: usesInvertedActiveForeground,
-                    onFocus: { updateSelection() }
-                )
-                .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             // Latest log entry
@@ -12987,7 +12978,13 @@ private struct SidebarMetadataEntryRow: View {
     }
 
     private var decayStage: SidebarDecayStage {
-        SidebarStalenessSettings.stage(
+        // C11-162 (m5): touch the two @AppStorage thresholds so this view
+        // re-renders when the operator retunes them live. The values are
+        // resolved through the SidebarStalenessSettings statics (env-aware +
+        // ordering-clamped), so these bindings exist only for invalidation —
+        // do not remove them as "unused".
+        _ = (staleThresholdRaw, expiryThresholdRaw)
+        return SidebarStalenessSettings.stage(
             ageSeconds: ageSeconds,
             staleSeconds: SidebarStalenessSettings.staleSeconds(),
             expirySeconds: SidebarStalenessSettings.expirySeconds()
@@ -13147,7 +13144,13 @@ private struct SidebarProgressIndicator: View {
     }
 
     private var decayStage: SidebarDecayStage {
-        SidebarStalenessSettings.stage(
+        // C11-162 (m5): touch the two @AppStorage thresholds so this view
+        // re-renders when the operator retunes them live. The values are
+        // resolved through the SidebarStalenessSettings statics (env-aware +
+        // ordering-clamped), so these bindings exist only for invalidation —
+        // do not remove them as "unused".
+        _ = (staleThresholdRaw, expiryThresholdRaw)
+        return SidebarStalenessSettings.stage(
             ageSeconds: ageSeconds,
             staleSeconds: SidebarStalenessSettings.staleSeconds(),
             expirySeconds: SidebarStalenessSettings.expirySeconds()
@@ -13196,6 +13199,60 @@ private struct SidebarProgressIndicator: View {
 /// tells the truth. Rendered visually distinct from an agent-claimed pill
 /// (outlined capsule + italic + a "sensed" glyph). Observes the decay clock
 /// in this child subview so the takeover flips without invalidating the row.
+/// C11-162 (TEL-4, m1): owns the single-pill takeover decision for a workspace
+/// row's status region. Observes the decay clock here (a child, never in
+/// `TabItemView`'s Equatable body) and renders EITHER the explicit status rows
+/// OR — once the representative explicit status has expired and a derived
+/// activity exists — the derived pill in their place, so the operator sees one
+/// pill, not a grayed tombstone plus a derived pill.
+private struct SidebarStatusSection: View {
+    @ObservedObject var tab: Tab
+    let isActive: Bool
+    let onFocus: () -> Void
+
+    @ObservedObject private var decayClock = SidebarDecayClock.shared
+    // These invalidation-only bindings force a re-render when the operator
+    // retunes the thresholds live; resolution itself goes through the
+    // `SidebarStalenessSettings` statics (which also honor the env overrides).
+    // Do not remove as "unused" — see also SidebarMetadataEntryRow.
+    @AppStorage(SidebarStalenessSettings.staleThresholdKey)
+    private var staleThresholdRaw = SidebarStalenessSettings.defaultStaleSeconds
+    @AppStorage(SidebarStalenessSettings.expiryThresholdKey)
+    private var expiryThresholdRaw = SidebarStalenessSettings.defaultExpirySeconds
+
+    private var entries: [SidebarStatusEntry] { tab.sidebarStatusEntriesInDisplayOrder() }
+
+    /// The representative explicit status (most recently written) — the one the
+    /// derived takeover is decided against. If it has expired, every other
+    /// status entry is at least as old, so the whole block yields to derived.
+    private var takeoverActive: Bool {
+        _ = (staleThresholdRaw, expiryThresholdRaw)
+        guard let entry = entries.max(by: { $0.timestamp < $1.timestamp }) else {
+            // No explicit status at all: a bare derived reading (if any) shows.
+            return tab.aggregatedDerivedActivity != nil
+        }
+        let text = entry.value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pill = SidebarActivityProjector.project(
+            explicitText: text,
+            explicitAgeSeconds: decayClock.now.timeIntervalSince(entry.timestamp),
+            derived: tab.aggregatedDerivedActivity,
+            staleSeconds: SidebarStalenessSettings.staleSeconds(),
+            expirySeconds: SidebarStalenessSettings.expirySeconds()
+        )
+        return pill?.isDerived == true
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if takeoverActive {
+                SidebarDerivedActivityPill(tab: tab, isActive: isActive, onFocus: onFocus)
+            } else if !entries.isEmpty {
+                SidebarMetadataRows(entries: entries, isActive: isActive, onFocus: onFocus)
+            }
+        }
+    }
+}
+
 private struct SidebarDerivedActivityPill: View {
     @ObservedObject var tab: Tab
     let isActive: Bool
@@ -13216,9 +13273,11 @@ private struct SidebarDerivedActivityPill: View {
 
     private var pill: SidebarVisiblePill? {
         let entry = representativeEntry
+        // C11-162 (m4): pass the trimmed value through even when empty, so the
+        // projector's empty-string handling (empty explicit → derived takeover)
+        // works instead of being defeated by substituting the key name.
         let explicitText: String? = entry.map { e in
-            let trimmed = e.value.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? e.key : trimmed
+            e.value.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         let age = entry.map { decayClock.now.timeIntervalSince($0.timestamp) }
         return SidebarActivityProjector.project(

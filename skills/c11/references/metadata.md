@@ -258,7 +258,9 @@ A write that fails the precedence check returns `ok: true` with `result.applied[
 
 ### Last-updated timestamps
 
-Every canonical key's `metadata_sources[key]` record carries a `ts` (seconds since 1970) marking when that value was last **changed**. It is set on every applied write, **persists across relaunch** (it round-trips through the workspace snapshot alongside the value), and is returned by `get_metadata` when `include_sources: true`. A same-value + same-source rewrite is an idempotent no-op that *preserves* the original `ts` — `ts` is "last changed," not "last touched." Consumers read it to reason about staleness; the sidebar uses it to drive decay.
+Every canonical key's `metadata_sources[key]` record carries a `ts` (seconds since 1970) marking when that value was last **changed**. It is set on every applied write, **persists across relaunch** (it round-trips through the workspace snapshot alongside the value), and is returned by `get_metadata` when `include_sources: true`. A same-value + same-source rewrite is an idempotent no-op that *preserves* the original `ts` — the canonical `ts` is "last changed," not "last touched."
+
+**Sidebar freshness is "last reported," not "last changed."** The visible sidebar status pill (`set-status` / `set_status`) tracks the last time the agent *reported* the value: re-reporting the same status is a **heartbeat** that refreshes its freshness clock, so a live agent that keeps asserting the same status never false-decays. (Only the visible sidebar entry works this way; the canonical `metadata_sources` `ts` stays "last changed.") Progress freshness is likewise stamped on every write and round-trips across relaunch.
 
 ### Status/progress decay
 

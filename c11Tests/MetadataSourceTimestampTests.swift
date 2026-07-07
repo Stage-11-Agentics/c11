@@ -121,4 +121,25 @@ final class MetadataSourceTimestampTests: XCTestCase {
         XCTAssertGreaterThan(tsAfterChange, ts1,
                              "a value change must bump the ts")
     }
+
+    // C11-162 (MAJOR-2): a persisted progress snapshot must carry its write time
+    // so a restored progress bar ages from when it was written, not from restart.
+    func testProgressSnapshotRoundTripsTimestamp() throws {
+        let written: TimeInterval = 1_700_000_000
+        let snap = SessionProgressSnapshot(value: 0.4, label: "building", timestamp: written)
+        let data = try JSONEncoder().encode(snap)
+        let decoded = try JSONDecoder().decode(SessionProgressSnapshot.self, from: data)
+        XCTAssertEqual(decoded.timestamp, written)
+        XCTAssertEqual(decoded.value, 0.4)
+        XCTAssertEqual(decoded.label, "building")
+    }
+
+    // Backward compatibility: a pre-C11-162 snapshot (no timestamp field) still
+    // decodes, with timestamp nil (the restore path then falls back to `now`).
+    func testProgressSnapshotDecodesWithoutTimestamp() throws {
+        let legacy = Data(#"{"value":0.7,"label":"x"}"#.utf8)
+        let decoded = try JSONDecoder().decode(SessionProgressSnapshot.self, from: legacy)
+        XCTAssertNil(decoded.timestamp)
+        XCTAssertEqual(decoded.value, 0.7)
+    }
 }

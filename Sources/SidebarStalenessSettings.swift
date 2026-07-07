@@ -60,12 +60,22 @@ public enum SidebarStalenessSettings {
     }
 
     /// Testable seam: resolve with an explicit environment dictionary.
+    ///
+    /// C11-162 (m3): the expiry threshold is floored at the resolved stale
+    /// threshold so `expiry >= stale` always holds — otherwise `stage(...)`
+    /// checks stale first and would skip the `.stale` band entirely, producing
+    /// a non-monotonic fresh→expired jump. Enforcing the invariant here (the
+    /// single resolution point) keeps every consumer and the settings UI honest
+    /// regardless of what raw values are stored.
     static func expirySeconds(defaults: UserDefaults, environment: [String: String]) -> Double {
+        let resolved: Double
         if let raw = environment[expiryEnvKey], let value = Double(raw) {
-            return clamp(value)
+            resolved = clamp(value)
+        } else {
+            let stored = (defaults.object(forKey: expiryThresholdKey) as? Double) ?? defaultExpirySeconds
+            resolved = clamp(stored)
         }
-        let stored = (defaults.object(forKey: expiryThresholdKey) as? Double) ?? defaultExpirySeconds
-        return clamp(stored)
+        return max(resolved, staleSeconds(defaults: defaults, environment: environment))
     }
 
     /// Pure classifier: map an age (seconds) to a decay stage. Boundaries

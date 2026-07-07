@@ -98,4 +98,29 @@ final class SidebarStalenessSettingsTests: XCTestCase {
         let env = [SidebarStalenessSettings.staleEnvKey: "not-a-number"]
         XCTAssertEqual(SidebarStalenessSettings.staleSeconds(defaults: defaults, environment: env), 200)
     }
+
+    // C11-162 (m3): expiry must never resolve below stale. Otherwise an age
+    // between the (too-low) expiry and stale would report `.fresh` — a value the
+    // operator thinks is dead reads as live. Flooring expiry at stale keeps
+    // staging monotonic (fresh → expired, no premature expiry).
+    func testExpiryIsFlooredAtStale() {
+        let defaults = makeDefaults()
+        defaults.set(300.0, forKey: SidebarStalenessSettings.staleThresholdKey)   // 5m
+        defaults.set(100.0, forKey: SidebarStalenessSettings.expiryThresholdKey)  // 100s (inverted, < stale)
+        let env: [String: String] = [:]
+        let stale = SidebarStalenessSettings.staleSeconds(defaults: defaults, environment: env)
+        let expiry = SidebarStalenessSettings.expirySeconds(defaults: defaults, environment: env)
+        XCTAssertEqual(stale, 300)
+        XCTAssertGreaterThanOrEqual(expiry, stale, "expiry must be floored at stale")
+        // Effective expiry is now 300, so an age of 200s (past the bogus 100s
+        // stored expiry but below stale) is fresh — NOT prematurely expired.
+        XCTAssertEqual(
+            SidebarStalenessSettings.stage(ageSeconds: 200, staleSeconds: stale, expirySeconds: expiry),
+            .fresh
+        )
+        XCTAssertEqual(
+            SidebarStalenessSettings.stage(ageSeconds: 350, staleSeconds: stale, expirySeconds: expiry),
+            .expired
+        )
+    }
 }

@@ -69,6 +69,14 @@ enum SurfaceLivenessDeriver {
     ) {
         let derived = activityState(for: state)
         queue.async {
+            // NOTE (C11-162 m5 / C11-163): this realtime path runs on `Self.queue`
+            // while `reconcile(...)` runs on the AgentDetector sweep queue — two
+            // different serial queues. The store itself is internally serialized,
+            // but this `prior`→write→`after` read-modify-read is NOT atomic against
+            // an interleaved reconcile write, so `prior != after` can occasionally
+            // misfire. Harmless today (the transition seam is a DEBUG no-op); the
+            // future EVT-2 hook must add a shared serialization point before it
+            // relies on the transition edge.
             let prior = currentActivityRaw(workspaceId: workspaceId, surfaceId: surfaceId)
             applyToStore(derived: derived, workspaceId: workspaceId, surfaceId: surfaceId)
             // Fire the seam on the *actual* post-write truth, not the intended
@@ -79,10 +87,13 @@ enum SurfaceLivenessDeriver {
             if prior != after {
                 emitLivenessTransition(from: prior, to: after, surfaceId: surfaceId)
             }
-            // Mirror onto the main-actor Workspace projection.
+            // Mirror the *post-write* store truth (not the intended `derived`)
+            // onto the main-actor Workspace projection, so the sidebar can never
+            // show a value the store precedence-rejected. "Store is truth."
+            let mirrored = after.flatMap { SidebarActivityState(rawValue: $0) }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    workspace.setDerivedActivity(derived, forSurface: surfaceId)
+                    workspace.setDerivedActivity(mirrored, forSurface: surfaceId)
                 }
             }
         }

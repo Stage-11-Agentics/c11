@@ -213,7 +213,11 @@ extension Workspace {
         }
 
         let progressSnapshot = progress.map { progress in
-            SessionProgressSnapshot(value: progress.value, label: progress.label)
+            SessionProgressSnapshot(
+                value: progress.value,
+                label: progress.label,
+                timestamp: progress.timestamp.timeIntervalSince1970
+            )
         }
         let gitBranchSnapshot = gitBranch.map { branch in
             SessionGitBranchSnapshot(branch: branch.branch, isDirty: branch.isDirty)
@@ -319,7 +323,16 @@ extension Workspace {
                 timestamp: Date(timeIntervalSince1970: entry.timestamp)
             )
         }
-        progress = snapshot.progress.map { SidebarProgressState(value: $0.value, label: $0.label) }
+        // C11-162 (MAJOR-2): restore the original write time so a restored
+        // progress bar carries its real age instead of appearing freshly written.
+        // Falls back to now for pre-existing snapshots that lack the field.
+        progress = snapshot.progress.map {
+            SidebarProgressState(
+                value: $0.value,
+                label: $0.label,
+                timestamp: $0.timestamp.map { Date(timeIntervalSince1970: $0) } ?? Date()
+            )
+        }
         gitBranch = snapshot.gitBranch.map { SidebarGitBranchState(branch: $0.branch, isDirty: $0.isDirty) }
 
         recomputeListeningPorts()

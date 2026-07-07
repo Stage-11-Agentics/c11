@@ -101,7 +101,7 @@ A few areas carry strict rules. If you're editing near any of these, read the fu
 
 ## Working on the ghostty submodule
 
-The `ghostty` submodule points at [`manaflow-ai/ghostty`](https://github.com/manaflow-ai/ghostty) — a fork of upstream Ghostty carrying c11-specific patches.
+The `ghostty` submodule points at the Stage 11 fork [`Stage-11-Agentics/ghostty`](https://github.com/Stage-11-Agentics/ghostty) — a fork of upstream Ghostty (originally via [manaflow-ai/ghostty](https://github.com/manaflow-ai/ghostty)) carrying c11-specific patches. After a `--recursive` clone the submodule's `origin` remote is the Stage 11 fork; push submodule changes there, never to upstream.
 
 ```bash
 cd ghostty
@@ -109,7 +109,7 @@ git checkout -b my-ghostty-feature
 # make changes
 git add .
 git commit -m "Description of changes"
-git push manaflow my-ghostty-feature
+git push origin my-ghostty-feature   # origin = Stage-11-Agentics/ghostty
 ```
 
 Then bump the submodule pointer in the parent repo:
@@ -120,7 +120,7 @@ git add ghostty
 git commit -m "Bump ghostty submodule"
 ```
 
-**Always push the submodule commit to `manaflow/main` (or a branch on the fork) before committing the parent pointer.** A detached-HEAD submodule commit is orphaned and lost — verify with `git merge-base --is-ancestor HEAD origin/main` inside `ghostty/` before bumping.
+**Always push the submodule commit to the `Stage-11-Agentics/ghostty` fork before committing the parent pointer.** A detached-HEAD submodule commit is orphaned and lost — verify with `git merge-base --is-ancestor HEAD origin/main` inside `ghostty/` before bumping.
 
 Conflict notes and fork status live in [`docs/ghostty-fork.md`](docs/ghostty-fork.md) and [`docs/upstream-sync.md`](docs/upstream-sync.md).
 

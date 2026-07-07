@@ -228,6 +228,31 @@ def new_uuid() -> str:
     return str(uuid.uuid4())
 
 
+def screen_is_locked() -> bool:
+    """True if the macOS login session is locked. A locked screen restricts the
+    window server, so the tagged app can create workspaces over the socket but
+    the GUI never materialises them and their `--command` never runs (every
+    surface reads `ready=0`). Detect it up front so a locked-screen run fails
+    with an actionable message instead of a confusing all-zero oracle."""
+    try:
+        import Quartz  # pyobjc; present in the system python used for tests_v2
+        d = Quartz.CGSessionCopyCurrentDictionary()
+        return bool(d and d.get("CGSSessionScreenIsLocked"))
+    except Exception:
+        return False  # can't tell → don't block
+
+
+def require_unlocked_screen():
+    if screen_is_locked():
+        raise SystemExit(
+            "REFUSING TO RUN: the macOS screen is LOCKED. This harness drives a "
+            "real tagged c11 GUI (workspaces + PTYs); a locked session stalls the "
+            "window server so no agent shim ever runs (you would see ready=0 for "
+            "every surface). Unlock the screen and re-run. (CI's headless runner "
+            "and an unlocked interactive session are both fine.)"
+        )
+
+
 # --------------------------------------------------------------------------- #
 # Store-state oracle.
 # --------------------------------------------------------------------------- #
@@ -500,6 +525,7 @@ class MultiKindHarness:
             # (Workspace.swift:372) so the seeded + scraped + reclassified refs
             # stay observable instead of being re-captured to `alive`.
             env["CMUX_DISABLE_AGENT_RESTART"] = "1"
+        # Direct-exec of the inner Mach-O (mirrors the proven C11-131 harness).
         self.proc = subprocess.Popen(
             [self.exe], env=env,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -511,6 +537,9 @@ class MultiKindHarness:
                 os.kill(self.proc.pid, sig)
             except ProcessLookupError:
                 pass
+        # Belt-and-suspenders: also reap by token (the app may re-parent).
+        if sig == signal.SIGKILL:
+            subprocess.run(["pkill", "-9", "-f", PROC_TOKEN], capture_output=True)
         wait_socket_gone(self.cli_path)
         if self.proc:
             try:
@@ -682,8 +711,9 @@ class MultiKindHarness:
                     pass
 
     def cleanup(self):
-        if self.proc and self.proc.poll() is None:
-            self.stop(signal.SIGKILL)
+        # App is launched via `open` (no child handle) — always reap the tagged
+        # instance by token.
+        kill_tagged_instances()
         # Remove ONLY our own fixture files first, then our run-scoped session
         # dirs (safe because every dir here was minted from a run-unique cwd or
         # the run-scoped codex subdir — never a shared operator dir).

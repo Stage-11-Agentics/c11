@@ -22,6 +22,13 @@ Author-only; do NOT run inside the orchestration. To run it yourself:
     # Optional: run a subset by name substring, e.g.
     python3 tests_v2/test_crash_resume_multikind_e2e.py all_present kill_switch
 
+PREREQUISITES (interactive workstation): this harness drives a REAL tagged c11
+GUI, so the macOS screen must be UNLOCKED and (ideally) not asleep — a locked
+session restricts the window server and the app can't materialise workspaces, so
+every surface reads ready=0. The run aborts up front if it detects a locked
+screen. Run under `caffeinate -d -i` to hold the display awake. CI's headless
+runner has neither constraint.
+
 Everything is isolated to the `res-post` tagged bundle id / socket / snapshot,
 so it never touches the operator's prod c11 (this session) or its sessions.
 
@@ -479,6 +486,9 @@ SCENARIOS = [
 
 def main():
     only = sys.argv[1:] if len(sys.argv) > 1 else None
+    # Fail fast on a locked screen — otherwise every surface reads ready=0
+    # because the window server won't materialise the tagged app's workspaces.
+    S.require_unlocked_screen()
     S.kill_tagged_instances()
     h = S.MultiKindHarness()
     print(f"app:    {h.app}")

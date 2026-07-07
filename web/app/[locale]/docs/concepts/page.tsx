@@ -60,7 +60,7 @@ export default function ConceptsPage() {
           <tr>
             <td>{t("environmentVariable")}</td>
             <td>
-              <code>CMUX_WORKSPACE_ID</code>
+              <code>C11_WORKSPACE_ID</code>
             </td>
           </tr>
         </tbody>
@@ -159,7 +159,7 @@ export default function ConceptsPage() {
               <code>⌘N</code>
             </td>
             <td>
-              <code>CMUX_WORKSPACE_ID</code>
+              <code>C11_WORKSPACE_ID</code>
             </td>
           </tr>
           <tr>
@@ -177,7 +177,7 @@ export default function ConceptsPage() {
               <code>⌘T</code>
             </td>
             <td>
-              <code>CMUX_SURFACE_ID</code>
+              <code>C11_SURFACE_ID</code>
             </td>
           </tr>
           <tr>

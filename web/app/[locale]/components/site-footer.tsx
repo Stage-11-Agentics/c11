@@ -37,10 +37,9 @@ export async function SiteFooter() {
     {
       heading: t("social"),
       links: [
-        { label: t("github"), href: "https://github.com/manaflow-ai/cmux" },
-        { label: t("twitter"), href: "https://twitter.com/manaflowai" },
+        { label: t("github"), href: "https://github.com/Stage-11-Agentics/c11" },
         { label: t("discord"), href: "https://discord.gg/xsgFEVrWCZ" },
-        { label: t("contact"), href: "mailto:founders@manaflow.com" },
+        { label: t("contact"), href: "mailto:founders@stage11.ai" },
       ],
     },
   ];

@@ -155,7 +155,7 @@ printf '\\e]99;i=1;e=1;d=1;p=body:All tests passed\\e\\\\'`}</CodeBlock>
       <h3>{t("createHookScript")}</h3>
       <CodeBlock title="~/.claude/hooks/c11-notify.sh" lang="bash">{`#!/bin/bash
 # Skip if not in c11
-[ -S /tmp/cmux.sock ] || exit 0
+[ -S /tmp/c11.sock ] || exit 0
 
 EVENT=$(cat)
 EVENT_TYPE=$(echo "$EVENT" | jq -r '.hook_event_name // "unknown"')

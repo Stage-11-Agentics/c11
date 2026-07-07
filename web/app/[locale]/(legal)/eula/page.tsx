@@ -32,7 +32,7 @@ export default function EulaPage() {
         <li>
           <strong>&ldquo;Company&rdquo;</strong> (referred to as &ldquo;the
           Company&rdquo;, &ldquo;We&rdquo;, &ldquo;Us&rdquo; or
-          &ldquo;Our&rdquo;) refers to Manaflow.
+          &ldquo;Our&rdquo;) refers to Stage 11 Agentics.
         </li>
         <li>
           <strong>&ldquo;Content&rdquo;</strong> refers to content such as text,
@@ -199,7 +199,7 @@ export default function EulaPage() {
       <ul>
         <li>
           Email us at{" "}
-          <a href="mailto:founders@manaflow.com">founders@manaflow.com</a>
+          <a href="mailto:founders@stage11.ai">founders@stage11.ai</a>
         </li>
       </ul>
     </>

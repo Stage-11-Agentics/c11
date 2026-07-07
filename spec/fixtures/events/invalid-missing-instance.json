@@ -1,0 +1,9 @@
+{
+  "seq": 0,
+  "ts": "2026-07-07T08:20:00.123Z",
+  "type": "surface.created",
+  "v": 1,
+  "payload": {
+    "kind": "terminal"
+  }
+}

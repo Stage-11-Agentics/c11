@@ -50,6 +50,7 @@ c11 stamps your launch identity itself: the sidebar chip (agent type from proces
 | launch sub-agents, the tab-naming convention, layout patterns, write c11-aware prompts | [references/orchestration.md](references/orchestration.md) |
 | send/receive inter-agent messages (the mailbox) | [docs/c11-mailbox-guide.md](../../docs/c11-mailbox-guide.md) |
 | surface-manifest depth, sidebar reporting (`set-status` / `set-progress` / `log`), flash, precedence & sources | [references/metadata.md](references/metadata.md) |
+| tail the file-first events stream (`c11 events tail`), envelope schema, v1 taxonomy | [references/events.md](references/events.md) |
 | workspace persistence, snapshots, the conversation store & resume | [references/conversation.md](references/conversation.md) |
 | the Claude session-resume hook | [references/claude-resume.md](references/claude-resume.md) |
 | drive the embedded browser (validate UI without leaving c11) | [c11-browser skill](../c11-browser/SKILL.md) |

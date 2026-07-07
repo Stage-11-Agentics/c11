@@ -1,3 +1,38 @@
+# Event Envelope Spec
+
+`event-envelope.v1.schema.json` is the source of truth for the c11 events-stream envelope format (v1). The stream is a per-instance NDJSON log — one event per line — written to:
+
+```
+~/Library/Application Support/c11/events/events-<instance>.ndjson
+```
+
+where `<instance>` is the per-process instance id (e.g. `com.stage11.c11-12345`). Each running c11 process owns its own file; when a file grows past the rotation threshold it is renamed to `events-<instance>.ndjson.1` and a fresh `.ndjson` is opened. **Every line must validate against `event-envelope.v1.schema.json`.** One `EventEnvelope` (`Sources/Events/EventEnvelope.swift`) serializes to exactly one line.
+
+`fixtures/events/valid-*.json` must all parse successfully. `fixtures/events/invalid-*.json` must all violate exactly one documented rule. These fixtures drive:
+
+- A Swift validator unit test (mirrors `c11Tests/MailboxEnvelopeValidationTests.swift`) — asserts every `valid-*` validates and every `invalid-*` fails.
+- `tests_v2/test_events_parity.py` (to be created) — CLI vs raw-file parity test for `c11 events tail`.
+
+## What the schema enforces
+
+- `seq` is an integer ≥ 0 — the monotonic per-instance sequence number.
+- `ts` is an RFC3339 / ISO-8601 UTC timestamp with `Z` suffix and optional fractional seconds.
+- `type` is one of the closed v1 enum: `surface.created`, `surface.closed`, `workspace.selected`, `metadata.changed`, `liveness.derived`, `waiting.entered`, `waiting.left`, `mailbox.accepted`, `mailbox.delivered`, plus the stream-control markers `log.opened`, `log.rotated`, `log.dropped`.
+- `instance` is a non-empty string.
+- `v` is the integer `1`.
+- `workspace`, `surface`, `pane` are optional UUID strings.
+- `payload` is an optional, free-form object (any keys); its shape is keyed by `type`.
+- `seq`, `ts`, `type`, `instance`, `v` are required; `additionalProperties: false` at the top level.
+
+## What the schema does NOT enforce
+
+- **`seq` monotonicity across lines.** The schema validates one line in isolation; gap-free, strictly-increasing seq within a file is the writer's contract (`EventLog`, serial queue).
+- **`instance` uniqueness** across processes, and the seq namespace being per-instance.
+- **Ref UUIDs matching live surfaces/workspaces/panes.** `workspace` / `surface` / `pane` are validated as UUID strings only; whether they name an entity that currently exists lives in the emitter/consumer.
+- **`ts` ordering.** `ts` is captured on the emitting thread and is only approximately monotonic; it may invert relative to `seq` across racing threads.
+
+**`seq` (not `ts`) is the ordering oracle.** Consumers order by `seq`, which the writer assigns on its serial queue so file order and seq order always agree. Those cross-line and liveness invariants live in `Sources/Events/EventEnvelope.swift` and the `EventLog` writer / `c11 events tail` reader — not the schema.
+
 # Mailbox Envelope Spec
 
 `mailbox-envelope.v1.schema.json` is the source of truth for the c11 inter-agent mailbox envelope format (v1). Every envelope in `$C11_STATE/workspaces/<ws>/mailboxes/_outbox/*.msg` must validate against this schema.

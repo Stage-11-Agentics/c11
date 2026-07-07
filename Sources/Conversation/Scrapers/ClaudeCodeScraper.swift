@@ -65,14 +65,33 @@ struct ClaudeCodeScraper: ConversationScraper {
     }
 }
 
-/// Bounded filesystem I/O over `~/.codex/sessions/`. Same privacy contract
-/// as `ClaudeCodeScraper`: reads metadata only; never opens transcripts.
+/// Bounded filesystem I/O over `~/.codex/sessions/`. Reads filename + mtime +
+/// size for the session id (as `ClaudeCodeScraper` does) and, uniquely, a
+/// **bounded, allowlisted** first-line read to recover each session's real
+/// working directory.
 ///
-/// Codex filenames are `<uuid>.jsonl`; the scraper recovers the session id
-/// from the filename without parsing content.
+/// **Why the head read (C11-164 / RES-2):** Codex stores sessions flat by
+/// date (`~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`), NOT under
+/// a per-cwd directory like Claude Code. So the filename cannot say which pane
+/// a session belongs to, and the prior scraper stamped the *querying surface's*
+/// cwd onto every candidate — making `CodexStrategy`'s cwd filter a structural
+/// no-op (every candidate looked same-cwd → distinct-workspace codex sessions
+/// all read as mutually ambiguous and none resumed). Recovering the real cwd
+/// from the rollout header restores the filter.
+///
+/// **Privacy contract** (architecture doc §"Privacy contract for scrape"):
+/// the head read is capped at `codexHeadMaxBytes` and only the `cwd` string
+/// value is extracted via `parseCodexCwd`; no other field — and no transcript
+/// content — is parsed, retained, or logged. Codex writes the session-meta
+/// record as the first JSONL line with `payload.cwd` ahead of the large
+/// `instructions` field, so the cap captures cwd without slurping the body.
 struct CodexScraper: ConversationScraper {
     let kind: String = "codex"
     static let defaultMaxCandidates: Int = 16
+    /// Head-read byte cap for cwd recovery. Generous enough to include
+    /// `payload.cwd` (which precedes `payload.instructions` in the observed
+    /// rollout format) while staying bounded far below any transcript body.
+    static let codexHeadMaxBytes: Int = 8192
 
     let filesystem: ConversationFilesystem
     let maxCandidates: Int
@@ -112,14 +131,84 @@ struct CodexScraper: ConversationScraper {
             let stem = String(entry.fileName.dropLast(".jsonl".count))
             let id = String(stem.suffix(36))
             guard isValidConversationUUID(id) else { return nil }
+            // Recover the session's REAL cwd from its rollout header (bounded,
+            // allowlisted). On any read/parse miss the candidate keeps `cwd ==
+            // nil`, which the strategy treats as "can't discriminate" — the
+            // prior behaviour, never worse. We deliberately do NOT fall back to
+            // the querying surface's `cwd`: stamping it back would re-introduce
+            // the same-cwd no-op this recovery exists to remove.
+            let head = filesystem.readSessionHead(
+                atPath: entry.url.path,
+                maxBytes: Self.codexHeadMaxBytes
+            )
+            let realCwd = head.flatMap { Self.parseCodexCwd(fromHead: $0) }
             return ScrapeCandidate(
                 id: id,
                 filePath: entry.url.path,
                 mtime: entry.mtime,
                 size: entry.size,
-                cwd: cwd
+                cwd: realCwd
             )
         }
+    }
+
+    /// Extract ONLY the `cwd` string value from a bounded rollout header.
+    /// Deliberately not a full JSON parse: the header may be truncated at the
+    /// byte cap, and a narrow scan for the `"cwd"` key guarantees no other
+    /// field is ever read. Handles the minimal JSON string escapes that occur
+    /// in filesystem paths (`\/`, `\\`, `\"`). Returns nil if the key is
+    /// absent within the capped head. Package-visible for unit testing.
+    static func parseCodexCwd(fromHead head: String) -> String? {
+        let scalars = Array(head.unicodeScalars)
+        let key = Array("\"cwd\"".unicodeScalars)
+        // Find the first `"cwd"` occurrence.
+        var i = 0
+        let n = scalars.count
+        func matchesKey(at pos: Int) -> Bool {
+            guard pos + key.count <= n else { return false }
+            for k in 0..<key.count where scalars[pos + k] != key[k] { return false }
+            return true
+        }
+        while i < n {
+            if scalars[i] == "\"", matchesKey(at: i) {
+                var j = i + key.count
+                // Skip whitespace up to the colon.
+                while j < n, scalars[j] == " " || scalars[j] == "\t" { j += 1 }
+                guard j < n, scalars[j] == ":" else { i += 1; continue }
+                j += 1
+                while j < n, scalars[j] == " " || scalars[j] == "\t" { j += 1 }
+                guard j < n, scalars[j] == "\"" else { return nil }
+                j += 1
+                // Read the string value, honoring escapes, until the closing ".
+                var out = String.UnicodeScalarView()
+                while j < n {
+                    let c = scalars[j]
+                    if c == "\\" {
+                        guard j + 1 < n else { return nil } // truncated escape
+                        let e = scalars[j + 1]
+                        switch e {
+                        case "\"": out.append("\"")
+                        case "\\": out.append("\\")
+                        case "/": out.append("/")
+                        default: out.append(e) // pass through other escapes
+                        }
+                        j += 2
+                        continue
+                    }
+                    if c == "\"" {
+                        let value = String(out)
+                        return value.isEmpty ? nil : value
+                    }
+                    out.append(c)
+                    j += 1
+                }
+                // Closing quote fell outside the capped head — give up rather
+                // than return a partial path.
+                return nil
+            }
+            i += 1
+        }
+        return nil
     }
 }
 
@@ -149,6 +238,27 @@ protocol ConversationFilesystem: Sendable {
     /// transcript verification (`ClaudeCodeStrategy.transcriptExists`).
     /// Never opens the file — honors the scrape privacy contract.
     func fileExists(atPath path: String) -> Bool
+
+    /// C11-164 (RES-2): bounded read of a session file's head, capped at
+    /// `maxBytes`. This is the SINGLE content-reading method in the scrape
+    /// rail, added solely so `CodexScraper` can recover a session's real
+    /// working directory from its rollout header — Codex stores sessions flat
+    /// (`~/.codex/sessions/.../<uuid>.jsonl`), not under a cwd-slug directory,
+    /// so filename + mtime alone can't tell which pane a session belongs to,
+    /// and every candidate looked same-cwd (the disambiguation no-op the
+    /// architecture doc flagged). Honors the privacy contract: reads at most
+    /// `maxBytes` and the caller extracts ONLY the allowlisted `cwd` field —
+    /// no transcript content is retained or logged. Returns nil if the file
+    /// can't be read. A protocol-extension default returns nil so existing
+    /// stat-only mocks keep compiling (they simply provide no cwd recovery).
+    func readSessionHead(atPath path: String, maxBytes: Int) -> String?
+}
+
+extension ConversationFilesystem {
+    /// Default: no content read. Keeps stat-only mocks source-compatible and
+    /// means a filesystem that opts out of head reads degrades to the prior
+    /// no-cwd-recovery behaviour (candidate `cwd == nil`), never worse.
+    func readSessionHead(atPath path: String, maxBytes: Int) -> String? { nil }
 }
 
 struct ConversationFilesystemEntry: Sendable, Equatable {
@@ -176,6 +286,32 @@ struct DefaultConversationFilesystem: ConversationFilesystem {
 
     func fileExists(atPath path: String) -> Bool {
         FileManager.default.fileExists(atPath: path)
+    }
+
+    /// Bounded head read: opens the file, reads at most `maxBytes`, and
+    /// returns the first line (up to the first newline) as a UTF-8 string.
+    /// Never reads beyond the cap — a large transcript body after the header
+    /// is never pulled into memory. The caller extracts only the `cwd` field.
+    func readSessionHead(atPath path: String, maxBytes: Int) -> String? {
+        guard maxBytes > 0 else { return nil }
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+        let data: Data
+        do {
+            data = try handle.read(upToCount: maxBytes) ?? Data()
+        } catch {
+            return nil
+        }
+        guard !data.isEmpty else { return nil }
+        // First line only (session-meta record). If no newline is within the
+        // cap, use the whole capped buffer.
+        let lineData: Data
+        if let nl = data.firstIndex(of: 0x0A) {
+            lineData = data.subdata(in: data.startIndex..<nl)
+        } else {
+            lineData = data
+        }
+        return String(decoding: lineData, as: UTF8.self)
     }
 
     func listDirectoryByMtime(

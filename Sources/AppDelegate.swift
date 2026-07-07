@@ -3264,6 +3264,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // (TODO 0.46.0 / v1.1 in WorkspaceSnapshotConversationBridge).
         if let snapshot, !ConversationStorePolicy.isDisabled {
             WorkspaceSnapshotConversationBridge.seedFromSnapshot(snapshot)
+            // C11-164 (RES-2): restore the per-surface activity floor into the
+            // live tracker so post-restore operation (and the restore-time
+            // scrape below, which also reads it via `contexts(from:)`) carries
+            // the same disambiguation floor the pre-crash session had. Keyed by
+            // panel id — the id the store and scrape contexts key on.
+            var activityFloor: [String: Date] = [:]
+            for window in snapshot.windows {
+                for ws in window.tabManager.workspaces {
+                    for panel in ws.panels where panel.type == .terminal {
+                        if let ts = panel.lastActivityAt {
+                            activityFloor[panel.id.uuidString] = ts
+                        }
+                    }
+                }
+            }
+            if !activityFloor.isEmpty {
+                SurfaceActivityTracker.shared.seed(from: activityFloor)
+            }
             // C11-152: live scrape-capture seam. Now that the store is seeded,
             // run the per-kind scrapers for each restored terminal surface and
             // resolve real session ids via each strategy's `capture`, applying

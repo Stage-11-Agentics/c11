@@ -191,6 +191,53 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertNil(decoded.customTitle)
     }
 
+    // MARK: - C11-164 (RES-2): lastActivityAt persistence
+
+    /// A NON-NIL activity floor must survive save→load. This specifically
+    /// guards the `CodingKeys` trap: `SessionPanelSnapshot` has an explicit
+    /// `CodingKeys` enum, so a new field absent from it would compile and
+    /// decode-tolerate yet silently never encode (a persistence no-op a naive
+    /// nil-on-both-sides test would pass). Asserting the JSON key is present
+    /// AND a real value round-trips catches that.
+    func testSessionPanelSnapshotLastActivityAtRoundTrip() throws {
+        let panelId = UUID()
+        let floor = Date(timeIntervalSince1970: 1_700_000_123)
+        var snapshot = SessionPanelSnapshot(
+            id: panelId, type: .terminal, title: nil, customTitle: nil,
+            customColor: nil, directory: nil, isPinned: false, isManuallyUnread: false,
+            gitBranch: nil, listeningPorts: [], ttyName: nil, terminal: nil,
+            browser: nil, markdown: nil, metadata: nil, metadataSources: nil
+        )
+        snapshot.lastActivityAt = floor
+
+        let encoded = try JSONEncoder().encode(snapshot)
+        let json = try XCTUnwrap(String(data: encoded, encoding: .utf8))
+        XCTAssertTrue(json.contains("\"last_activity_at\""),
+                      "lastActivityAt must be in CodingKeys or it silently never encodes")
+
+        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: encoded)
+        XCTAssertEqual(decoded.lastActivityAt, floor)
+    }
+
+    /// Pre-C11-164 snapshots have no `last_activity_at` key; they must decode
+    /// with `lastActivityAt == nil` (no floor, prior behaviour) — not throw.
+    func testSessionPanelSnapshotDecodesLegacyJSONWithoutLastActivity() throws {
+        let panelId = UUID()
+        let legacyJSON = """
+        {
+          "id": "\(panelId.uuidString)",
+          "type": "terminal",
+          "isPinned": false,
+          "isManuallyUnread": false,
+          "listeningPorts": []
+        }
+        """
+        let data = try XCTUnwrap(legacyJSON.data(using: .utf8))
+        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: data)
+        XCTAssertEqual(decoded.id, panelId)
+        XCTAssertNil(decoded.lastActivityAt)
+    }
+
     func testWorkspaceCustomColorDecodeSupportsMissingLegacyField() throws {
         var snapshot = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
         snapshot.windows[0].tabManager.workspaces[0].customColor = nil

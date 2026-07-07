@@ -168,8 +168,8 @@ class TerminalController {
     private nonisolated(unsafe) var listenerStartInProgress = false
     private nonisolated let listenerStateLock = NSLock()
     private var clientHandlers: [Int32: Thread] = [:]
-    private var tabManager: TabManager?
-    private var accessMode: SocketControlMode = .c11Only
+    var tabManager: TabManager?
+    var accessMode: SocketControlMode = .c11Only
     private let myPid = getpid()
     private nonisolated(unsafe) static var socketCommandPolicyDepth: Int = 0
     private nonisolated(unsafe) static var socketCommandFocusAllowanceStack: [Bool] = []
@@ -265,26 +265,29 @@ class TerminalController {
         "debug.app.activate"
     ]
 
-    private enum V2HandleKind: String, CaseIterable {
+    // C11-159: widened private->internal so per-domain socket handler
+    // extensions in Sources/SocketHandlers/ can name this type. Module-internal
+    // only (app target, no library API surface). See DX-5 widening inventory.
+    enum V2HandleKind: String, CaseIterable {
         case window
         case workspace
         case pane
         case surface
     }
 
-    private var v2NextHandleOrdinal: [V2HandleKind: Int] = [
+    var v2NextHandleOrdinal: [V2HandleKind: Int] = [
         .window: 1,
         .workspace: 1,
         .pane: 1,
         .surface: 1,
     ]
-    private var v2RefByUUID: [V2HandleKind: [UUID: String]] = [
+    var v2RefByUUID: [V2HandleKind: [UUID: String]] = [
         .window: [:],
         .workspace: [:],
         .pane: [:],
         .surface: [:],
     ]
-    private var v2UUIDByRef: [V2HandleKind: [String: UUID]] = [
+    var v2UUIDByRef: [V2HandleKind: [String: UUID]] = [
         .window: [:],
         .workspace: [:],
         .pane: [:],
@@ -305,21 +308,21 @@ class TerminalController {
 
     private final class V2BrowserUndefinedSentinel {}
 
-    private static let v2BrowserEvalEnvelopeTypeKey = "__cmux_t"
-    private static let v2BrowserEvalEnvelopeValueKey = "__cmux_v"
-    private static let v2BrowserEvalEnvelopeTypeUndefined = "undefined"
-    private static let v2BrowserEvalEnvelopeTypeValue = "value"
+    static let v2BrowserEvalEnvelopeTypeKey = "__cmux_t"
+    static let v2BrowserEvalEnvelopeValueKey = "__cmux_v"
+    static let v2BrowserEvalEnvelopeTypeUndefined = "undefined"
+    static let v2BrowserEvalEnvelopeTypeValue = "value"
 
-    private var v2BrowserNextElementOrdinal: Int = 1
-    private var v2BrowserElementRefs: [String: V2BrowserElementRefEntry] = [:]
-    private var v2BrowserFrameSelectorBySurface: [UUID: String] = [:]
-    private var v2BrowserInitScriptsBySurface: [UUID: [String]] = [:]
-    private var v2BrowserInitStylesBySurface: [UUID: [String]] = [:]
-    private var v2BrowserDialogQueueBySurface: [UUID: [V2BrowserPendingDialog]] = [:]
-    private var v2BrowserDownloadEventsBySurface: [UUID: [[String: Any]]] = [:]
-    private var v2BrowserUnsupportedNetworkRequestsBySurface: [UUID: [[String: Any]]] = [:]
-    private let v2BrowserUndefinedSentinel = V2BrowserUndefinedSentinel()
-    private var browserDownloadObserver: NSObjectProtocol?
+    var v2BrowserNextElementOrdinal: Int = 1
+    var v2BrowserElementRefs: [String: V2BrowserElementRefEntry] = [:]
+    var v2BrowserFrameSelectorBySurface: [UUID: String] = [:]
+    var v2BrowserInitScriptsBySurface: [UUID: [String]] = [:]
+    var v2BrowserInitStylesBySurface: [UUID: [String]] = [:]
+    var v2BrowserDialogQueueBySurface: [UUID: [V2BrowserPendingDialog]] = [:]
+    var v2BrowserDownloadEventsBySurface: [UUID: [[String: Any]]] = [:]
+    var v2BrowserUnsupportedNetworkRequestsBySurface: [UUID: [[String: Any]]] = [:]
+    let v2BrowserUndefinedSentinel = V2BrowserUndefinedSentinel()
+    var browserDownloadObserver: NSObjectProtocol?
 
     private init() {
         browserDownloadObserver = NotificationCenter.default.addObserver(
@@ -410,18 +413,18 @@ class TerminalController {
         Self.allowsInAppFocusMutationsForActiveSocketCommand()
     }
 
-    private func v2FocusAllowed(requested: Bool = true) -> Bool {
+    func v2FocusAllowed(requested: Bool = true) -> Bool {
         requested && socketCommandAllowsInAppFocusMutations()
     }
 
-    private func v2MaybeFocusWindow(for tabManager: TabManager) {
+    func v2MaybeFocusWindow(for tabManager: TabManager) {
         guard socketCommandAllowsInAppFocusMutations(),
               let windowId = v2ResolveWindowId(tabManager: tabManager) else { return }
         _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
         setActiveTabManager(tabManager)
     }
 
-    private func v2MaybeSelectWorkspace(_ tabManager: TabManager, workspace: Workspace) {
+    func v2MaybeSelectWorkspace(_ tabManager: TabManager, workspace: Workspace) {
         guard socketCommandAllowsInAppFocusMutations() else { return }
         if tabManager.selectedTabId != workspace.id {
             tabManager.selectWorkspace(workspace)
@@ -435,7 +438,7 @@ class TerminalController {
         return focusIntentV1Commands.contains(commandKey)
     }
 
-    private nonisolated func withSocketCommandPolicy<T>(commandKey: String, isV2: Bool, _ body: () -> T) -> T {
+    nonisolated func withSocketCommandPolicy<T>(commandKey: String, isV2: Bool, _ body: () -> T) -> T {
         let allowsFocusMutation = Self.socketCommandAllowsInAppFocusMutations(commandKey: commandKey, isV2: isV2)
         Self.socketCommandPolicyLock.lock()
         Self.socketCommandPolicyDepth += 1
@@ -1888,7 +1891,8 @@ class TerminalController {
         case socketWorker
     }
 
-    private struct V2SocketRequest {
+    // C11-159: widened private->internal (see DX-5 widening inventory).
+    struct V2SocketRequest {
         let id: Any?
         let method: String
         let params: [String: Any]
@@ -1940,7 +1944,7 @@ class TerminalController {
         "notify_target",
     ]
 
-    private nonisolated static func executionPolicy(forV2Method method: String) -> SocketCommandExecutionPolicy {
+    nonisolated static func executionPolicy(forV2Method method: String) -> SocketCommandExecutionPolicy {
         if socketWorkerV2Methods.contains(method) {
             return .socketWorker
         }
@@ -2833,17 +2837,7 @@ class TerminalController {
                 ]
             )
 
-        // Windows
-        case "window.list":
-            return v2Result(id: id, self.v2WindowList(params: params))
-        case "window.current":
-            return v2Result(id: id, self.v2WindowCurrent(params: params))
-        case "window.focus":
-            return v2Result(id: id, self.v2WindowFocus(params: params))
-        case "window.create":
-            return v2Result(id: id, self.v2WindowCreate(params: params))
-        case "window.close":
-            return v2Result(id: id, self.v2WindowClose(params: params))
+        // Windows — see Sources/SocketHandlers/WindowHandlers.swift (C11-159)
 
         // Workspaces
         case "workspace.list":
@@ -3329,9 +3323,26 @@ class TerminalController {
 #endif
 
             default:
+                // C11-159: methods whose per-domain handlers have been relocated to
+                // Sources/SocketHandlers/ are routed here. Any method still not handled
+                // returns the identical method_not_found error as before.
+                if let extracted = v2DispatchExtracted(method, id: id, params: params) {
+                    return extracted
+                }
                 return v2Error(id: id, code: "method_not_found", message: "Unknown method")
             }
         }
+    }
+
+    /// C11-159 dispatcher seam (v2). Routes a method whose per-domain handler
+    /// unit lives under `Sources/SocketHandlers/` by its domain prefix. Returns
+    /// nil only when no relocated domain owns the prefix, so the caller falls
+    /// back to the identical `method_not_found` response. This is the handler
+    /// seam DX-1 asks for; the router (parse/auth-gate/policy/main-sync) is
+    /// unchanged. Runs on the main actor exactly like the switch it replaces.
+    func v2DispatchExtracted(_ method: String, id: Any?, params: [String: Any]) -> String? {
+        if method.hasPrefix("window.") { return v2DispatchWindow(method, id: id, params: params) }
+        return nil
     }
 
     private func v2Capabilities() -> [String: Any] {
@@ -4053,13 +4064,13 @@ class TerminalController {
     // MARK: - V2 Helpers (encoding + result plumbing)
     // MARK: - V2 Helpers (encoding + result plumbing)
 
-    private nonisolated func v2OrNull(_ value: Any?) -> Any {
+    nonisolated func v2OrNull(_ value: Any?) -> Any {
         // Avoid relying on `?? NSNull()` inference (Swift toolchains can disagree).
         if let value { return value }
         return NSNull()
     }
 
-    private func v2MainSync<T>(_ body: () -> T) -> T {
+    func v2MainSync<T>(_ body: () -> T) -> T {
         if Thread.isMainThread {
             return body()
         }
@@ -4071,7 +4082,7 @@ class TerminalController {
     // Must stay strictly less than SocketClient.configuredDefaultDeadlineSeconds (10 s).
     private static let kTier1MainThreadDeadlineSeconds: TimeInterval = 8.0
 
-    private func v2MainSyncWithDeadline<T>(seconds: TimeInterval = kTier1MainThreadDeadlineSeconds, _ body: @escaping () -> T) -> T? {
+    func v2MainSyncWithDeadline<T>(seconds: TimeInterval = kTier1MainThreadDeadlineSeconds, _ body: @escaping () -> T) -> T? {
         if Thread.isMainThread { return body() }
         var result: T?
         // Cancellation flag: written by the calling (socket) thread after a timeout, read by the
@@ -4090,7 +4101,7 @@ class TerminalController {
         return nil
     }
 
-    private nonisolated func v2Ok(id: Any?, result: Any) -> String {
+    nonisolated func v2Ok(id: Any?, result: Any) -> String {
         return v2Encode([
             "id": v2OrNull(id),
             "ok": true,
@@ -4098,7 +4109,7 @@ class TerminalController {
         ])
     }
 
-    private nonisolated func v2Error(id: Any?, code: String, message: String, data: Any? = nil) -> String {
+    nonisolated func v2Error(id: Any?, code: String, message: String, data: Any? = nil) -> String {
         var err: [String: Any] = ["code": code, "message": message]
         if let data {
             err["data"] = data
@@ -4110,12 +4121,14 @@ class TerminalController {
         ])
     }
 
-    private enum V2CallResult: Error {
+    // C11-159: widened private->internal so per-domain handler extensions can
+    // return this type (used as the return of ~all v2* handlers). See DX-5 inventory.
+    enum V2CallResult: Error {
         case ok(Any)
         case err(code: String, message: String, data: Any?)
     }
 
-    private nonisolated func v2Result(id: Any?, _ res: V2CallResult) -> String {
+    nonisolated func v2Result(id: Any?, _ res: V2CallResult) -> String {
         switch res {
         case .ok(let payload):
             return v2Ok(id: id, result: payload)
@@ -4124,7 +4137,7 @@ class TerminalController {
         }
     }
 
-    private nonisolated func v2Encode(_ object: Any) -> String {
+    nonisolated func v2Encode(_ object: Any) -> String {
         guard JSONSerialization.isValidJSONObject(object),
               let data = try? JSONSerialization.data(withJSONObject: object, options: []),
               var s = String(data: data, encoding: .utf8) else {
@@ -4136,7 +4149,7 @@ class TerminalController {
         return s
     }
 
-    private func v2EnsureHandleRef(kind: V2HandleKind, uuid: UUID) -> String {
+    func v2EnsureHandleRef(kind: V2HandleKind, uuid: UUID) -> String {
         if let existing = v2RefByUUID[kind]?[uuid] {
             return existing
         }
@@ -4152,7 +4165,7 @@ class TerminalController {
         return ref
     }
 
-    private func v2ResolveHandleRef(_ handle: String) -> UUID? {
+    func v2ResolveHandleRef(_ handle: String) -> UUID? {
         for kind in V2HandleKind.allCases {
             if let id = v2UUIDByRef[kind]?[handle] {
                 return id
@@ -4168,12 +4181,12 @@ class TerminalController {
         return nil
     }
 
-    private func v2Ref(kind: V2HandleKind, uuid: UUID?) -> Any {
+    func v2Ref(kind: V2HandleKind, uuid: UUID?) -> Any {
         guard let uuid else { return NSNull() }
         return v2EnsureHandleRef(kind: kind, uuid: uuid)
     }
 
-    private func v2TabRef(uuid: UUID?) -> Any {
+    func v2TabRef(uuid: UUID?) -> Any {
         guard let uuid else { return NSNull() }
         let surfaceRef = v2EnsureHandleRef(kind: .surface, uuid: uuid)
         return surfaceRef.replacingOccurrences(of: "surface:", with: "tab:")
@@ -4253,7 +4266,7 @@ class TerminalController {
         )
     }
 
-    private func v2RefreshKnownRefs() {
+    func v2RefreshKnownRefs() {
         guard let app = AppDelegate.shared else { return }
 
         let windows = app.listMainWindowSummaries()
@@ -4275,13 +4288,13 @@ class TerminalController {
 
     // MARK: - V2 Param Parsing
 
-    private nonisolated func v2String(_ params: [String: Any], _ key: String) -> String? {
+    nonisolated func v2String(_ params: [String: Any], _ key: String) -> String? {
         guard let raw = params[key] as? String else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private func v2StringArray(_ params: [String: Any], _ key: String) -> [String]? {
+    func v2StringArray(_ params: [String: Any], _ key: String) -> [String]? {
         if let raw = params[key] as? [String] {
             let normalized = raw
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -4301,7 +4314,7 @@ class TerminalController {
         return nil
     }
 
-    private func v2StringMap(_ params: [String: Any], _ key: String) -> [String: String]? {
+    func v2StringMap(_ params: [String: Any], _ key: String) -> [String: String]? {
         guard let raw = params[key] else { return nil }
         if let dict = raw as? [String: String] {
             return dict
@@ -4317,16 +4330,16 @@ class TerminalController {
         return nil
     }
 
-    private func v2ActionKey(_ params: [String: Any], _ key: String = "action") -> String? {
+    func v2ActionKey(_ params: [String: Any], _ key: String = "action") -> String? {
         guard let action = v2String(params, key) else { return nil }
         return action.lowercased().replacingOccurrences(of: "-", with: "_")
     }
 
-    private func v2RawString(_ params: [String: Any], _ key: String) -> String? {
+    func v2RawString(_ params: [String: Any], _ key: String) -> String? {
         params[key] as? String
     }
 
-    private func v2UUID(_ params: [String: Any], _ key: String) -> UUID? {
+    func v2UUID(_ params: [String: Any], _ key: String) -> UUID? {
         guard let s = v2String(params, key) else { return nil }
         if let uuid = UUID(uuidString: s) {
             return uuid
@@ -4334,7 +4347,7 @@ class TerminalController {
         return v2ResolveHandleRef(s)
     }
 
-    private func v2UUIDAny(_ raw: Any?) -> UUID? {
+    func v2UUIDAny(_ raw: Any?) -> UUID? {
         guard let s = raw as? String else { return nil }
         let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -4343,7 +4356,7 @@ class TerminalController {
         }
         return v2ResolveHandleRef(trimmed)
     }
-    private nonisolated func v2Bool(_ params: [String: Any], _ key: String) -> Bool? {
+    nonisolated func v2Bool(_ params: [String: Any], _ key: String) -> Bool? {
         if let b = params[key] as? Bool { return b }
         if let n = params[key] as? NSNumber { return n.boolValue }
         if let s = params[key] as? String {
@@ -4359,7 +4372,7 @@ class TerminalController {
         return nil
     }
 
-    private func v2LocatePane(_ paneUUID: UUID) -> (windowId: UUID, tabManager: TabManager, workspace: Workspace, paneId: PaneID)? {
+    func v2LocatePane(_ paneUUID: UUID) -> (windowId: UUID, tabManager: TabManager, workspace: Workspace, paneId: PaneID)? {
         guard let app = AppDelegate.shared else { return nil }
         let windows = app.listMainWindowSummaries()
         for item in windows {
@@ -4372,23 +4385,23 @@ class TerminalController {
         }
         return nil
     }
-    private nonisolated func v2Int(_ params: [String: Any], _ key: String) -> Int? {
+    nonisolated func v2Int(_ params: [String: Any], _ key: String) -> Int? {
         if let i = params[key] as? Int { return i }
         if let n = params[key] as? NSNumber { return n.intValue }
         if let s = params[key] as? String { return Int(s) }
         return nil
     }
 
-    private func v2HasNonNullParam(_ params: [String: Any], _ key: String) -> Bool {
+    func v2HasNonNullParam(_ params: [String: Any], _ key: String) -> Bool {
         guard let raw = params[key] else { return false }
         return !(raw is NSNull)
     }
 
-    private func v2StrictInt(_ params: [String: Any], _ key: String) -> Int? {
+    func v2StrictInt(_ params: [String: Any], _ key: String) -> Int? {
         v2StrictIntAny(params[key])
     }
 
-    private func v2StrictIntAny(_ raw: Any?) -> Int? {
+    func v2StrictIntAny(_ raw: Any?) -> Int? {
         guard let raw else { return nil }
 
         if let numberValue = raw as? NSNumber {
@@ -4413,7 +4426,7 @@ class TerminalController {
         return nil
     }
 
-    private func v2PanelType(_ params: [String: Any], _ key: String) -> PanelType? {
+    func v2PanelType(_ params: [String: Any], _ key: String) -> PanelType? {
         guard let s = v2String(params, key) else { return nil }
         return PanelType(rawValue: s.lowercased())
     }
@@ -4422,7 +4435,7 @@ class TerminalController {
     /// `surface_type_disabled` error envelope when blocked, or `nil` to proceed.
     /// Terminal is never gated. Restore/snapshot bypasses this by calling the
     /// low-level `Workspace.newBrowser*`/`newMarkdown*` methods directly.
-    private func v2SurfaceTypeDenial(_ type: PanelType) -> V2CallResult? {
+    func v2SurfaceTypeDenial(_ type: PanelType) -> V2CallResult? {
         guard !SurfaceTypeAvailability.isEnabled(type) else { return nil }
         return .err(
             code: "surface_type_disabled",
@@ -4433,7 +4446,7 @@ class TerminalController {
 
     /// Validate and resolve a markdown file path from raw input.
     /// Returns nil on success (resolved path stored in `resolved`), or a V2CallResult error.
-    private func v2ValidateMarkdownPath(_ rawPath: String?, context: String, resolved: inout String?) -> V2CallResult? {
+    func v2ValidateMarkdownPath(_ rawPath: String?, context: String, resolved: inout String?) -> V2CallResult? {
         guard let rawPath else {
             return .err(code: "invalid_params", message: "Missing --file for markdown \(context)", data: nil)
         }
@@ -4471,7 +4484,7 @@ class TerminalController {
     /// `CwdParamResolution.resolve(_:)` enum so it can be exercised from
     /// `c11LogicTests` without standing up a TerminalController; this method is
     /// the thin adapter that maps the outcome onto the socket result envelope.
-    private func v2ResolveCwdParam(_ params: [String: Any], resolved: inout String?) -> V2CallResult? {
+    func v2ResolveCwdParam(_ params: [String: Any], resolved: inout String?) -> V2CallResult? {
         resolved = nil
         switch CwdParamResolution.resolve(params["cwd"]) {
         case .inherit:
@@ -4487,7 +4500,7 @@ class TerminalController {
 
     // MARK: - V2 Context Resolution
 
-    private func v2ResolveTabManager(params: [String: Any]) -> TabManager? {
+    func v2ResolveTabManager(params: [String: Any]) -> TabManager? {
         // Prefer explicit window_id routing. Fall back to global lookup by workspace_id/surface_id/tab_id,
         // then panel_id (pane.confirm and other panel-scoped methods), and
         // finally to the active window's TabManager.
@@ -4515,93 +4528,17 @@ class TerminalController {
         return tabManager
     }
 
-    private func v2ResolveWindowId(tabManager: TabManager?) -> UUID? {
+    func v2ResolveWindowId(tabManager: TabManager?) -> UUID? {
         guard let tabManager else { return nil }
         return v2MainSync { AppDelegate.shared?.windowId(for: tabManager) }
     }
 
     // MARK: - V2 Window Methods
 
-    private func v2WindowList(params _: [String: Any]) -> V2CallResult {
-        let windows = v2MainSync { AppDelegate.shared?.listMainWindowSummaries() } ?? []
-        let payload: [[String: Any]] = windows.enumerated().map { index, item in
-            return [
-                "id": item.windowId.uuidString,
-                "ref": v2Ref(kind: .window, uuid: item.windowId),
-                "index": index,
-                "key": item.isKeyWindow,
-                "visible": item.isVisible,
-                "workspace_count": item.workspaceCount,
-                "selected_workspace_id": v2OrNull(item.selectedWorkspaceId?.uuidString),
-                "selected_workspace_ref": v2Ref(kind: .workspace, uuid: item.selectedWorkspaceId)
-            ]
-        }
-        return .ok(["windows": payload])
-    }
 
-    private func v2WindowCurrent(params _: [String: Any]) -> V2CallResult {
-        guard let tabManager else {
-            return .err(code: "unavailable", message: "TabManager not available", data: nil)
-        }
-        guard let windowId = v2ResolveWindowId(tabManager: tabManager) else {
-            return .err(code: "not_found", message: "Current window not found", data: nil)
-        }
-        return .ok([
-            "window_id": windowId.uuidString,
-            "window_ref": v2Ref(kind: .window, uuid: windowId)
-        ])
-    }
 
-    private func v2WindowFocus(params: [String: Any]) -> V2CallResult {
-        guard let windowId = v2UUID(params, "window_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid window_id", data: nil)
-        }
-        let ok = v2MainSync { AppDelegate.shared?.focusMainWindow(windowId: windowId) ?? false }
-        return ok
-            ? .ok([
-                "window_id": windowId.uuidString,
-                "window_ref": v2Ref(kind: .window, uuid: windowId)
-            ])
-            : .err(code: "not_found", message: "Window not found", data: [
-                "window_id": windowId.uuidString,
-                "window_ref": v2Ref(kind: .window, uuid: windowId)
-            ])
-    }
 
-    private func v2WindowCreate(params _: [String: Any]) -> V2CallResult {
-        // Two-step unwrap: outer nil = deadline fired; inner nil = AppDelegate.shared unavailable.
-        let rawWindowId = v2MainSyncWithDeadline({ AppDelegate.shared?.createMainWindow() })
-        guard let rawWindowId else {
-            return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)
-        }
-        guard let windowId = rawWindowId else {
-            return .err(code: "internal_error", message: "Failed to create window", data: nil)
-        }
-        // The new window should become key, but setActiveTabManager defensively.
-        if let tm = v2MainSync({ AppDelegate.shared?.tabManagerFor(windowId: windowId) }) {
-            setActiveTabManager(tm)
-        }
-        return .ok([
-            "window_id": windowId.uuidString,
-            "window_ref": v2Ref(kind: .window, uuid: windowId)
-        ])
-    }
 
-    private func v2WindowClose(params: [String: Any]) -> V2CallResult {
-        guard let windowId = v2UUID(params, "window_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid window_id", data: nil)
-        }
-        let ok = v2MainSync { AppDelegate.shared?.closeMainWindow(windowId: windowId) ?? false }
-        return ok
-            ? .ok([
-                "window_id": windowId.uuidString,
-                "window_ref": v2Ref(kind: .window, uuid: windowId)
-            ])
-            : .err(code: "not_found", message: "Window not found", data: [
-                "window_id": windowId.uuidString,
-                "window_ref": v2Ref(kind: .window, uuid: windowId)
-            ])
-    }
 
     // MARK: - V2 Workspace Methods
 
@@ -5374,7 +5311,7 @@ class TerminalController {
     /// Performs a main-actor read to locate the Workspace instance; callers
     /// should mutate `workspace.metadata` via `v2MainSync` since `Workspace`
     /// is `@MainActor` (see `Workspace.swift` class declaration).
-    private func v2ResolveWorkspaceForMetadata(
+    func v2ResolveWorkspaceForMetadata(
         params: [String: Any]
     ) -> (tabManager: TabManager, workspaceId: UUID)? {
         guard let tabManager = v2ResolveTabManager(params: params) else { return nil }
@@ -6831,7 +6768,7 @@ class TerminalController {
 
     // MARK: - V2 Surface Methods
 
-    private func v2ResolveWorkspace(params: [String: Any], tabManager: TabManager) -> Workspace? {
+    func v2ResolveWorkspace(params: [String: Any], tabManager: TabManager) -> Workspace? {
         if let wsId = v2UUID(params, "workspace_id") {
             return tabManager.tabs.first(where: { $0.id == wsId })
         }

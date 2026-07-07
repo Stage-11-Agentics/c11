@@ -103,8 +103,8 @@ export default function ApiPage() {
             <td>
               <strong>c11 processes only</strong>
             </td>
-            <td>{t("cmuxOnlyMode")}</td>
-            <td>{t("cmuxOnlyEnable")}</td>
+            <td>{t("c11OnlyMode")}</td>
+            <td>{t("c11OnlyEnable")}</td>
           </tr>
           <tr>
             <td>

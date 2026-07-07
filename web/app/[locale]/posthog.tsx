@@ -10,7 +10,7 @@ const posthogHost = process.env.NEXT_PUBLIC_POSTHOG_HOST;
 
 if (typeof window !== "undefined" && posthogKey) {
   posthog.init(posthogKey, {
-    api_host: posthogHost,
+    api_host: posthogHost ?? "https://us.i.posthog.com",
     ui_host: "https://us.posthog.com",
     person_profiles: "identified_only",
     capture_pageview: false,

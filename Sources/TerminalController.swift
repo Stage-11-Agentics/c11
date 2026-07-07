@@ -1903,6 +1903,12 @@ class TerminalController {
         "surface.send_key",
         "surface.read_text",
         "surface.clear_history",
+        // C11-165 COR-3: these block their caller on a semaphore waiting for a
+        // user click / async submission; on the default (main-actor) policy
+        // that wait freezes the app. Run them off-main; each hops to main only
+        // for bounded slices via `Task { @MainActor }`.
+        "pane.confirm",
+        "feedback.submit",
     ]
 
     // C11-4: v1 telemetry commands the worker is allowed to handle off-main.

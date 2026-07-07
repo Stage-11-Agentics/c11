@@ -903,20 +903,19 @@ extension TerminalController {
     ///   - "unavailable" — no TabManager
     ///   - "invalid_params" — missing panel_id or title
     ///   - "unknown_panel" — panel_id doesn't resolve to a panel in any workspace
-    private func v2PaneConfirm(params: [String: Any]) -> V2CallResult {
-        // Document and enforce the off-main contract: v2PaneConfirm blocks the
-        // calling thread on a DispatchSemaphore, so running this on main would
-        // hang the UI (v2MainSync falls through to direct execution when
-        // already on main, which would then dead-wait). Socket dispatch runs
-        // off-main via Thread.detachNewThread; this guard catches regressions.
+    // C11-165 COR-3: pane.confirm blocks its caller on a semaphore (≤300s)
+    // waiting for a user click. The June audit found it dispatched ON main
+    // (it was absent from socketWorkerV2Methods), where that wait beachballs
+    // the whole app. This handler is now `nonisolated` and on the socket-worker
+    // policy, so the wait blocks a worker thread. Every main-actor touch
+    // (tabManager/panel resolution, dialog present, race-time cancel) runs
+    // inside a bounded `Task { @MainActor }` + semaphore hop — v2MainSync is
+    // itself main-actor-isolated and cannot be called from here.
+    nonisolated func v2PaneConfirm(params: [String: Any]) -> V2CallResult {
         assert(!Thread.isMainThread, "v2PaneConfirm must not be called on the main thread")
 
-        guard let tabManager = v2ResolveTabManager(params: params) else {
-            return .err(code: "unavailable", message: "TabManager not available", data: nil)
-        }
-        guard let panelId = v2UUID(params, "panel_id") else {
-            return .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
-        }
+        // Off-main parse: v2String is nonisolated; String(localized:) is
+        // thread-safe. tabManager/panel_id resolution needs main (below).
         guard let title = v2String(params, "title"), !title.isEmpty else {
             return .err(code: "invalid_params", message: "Missing or empty title", data: nil)
         }
@@ -939,22 +938,35 @@ extension TerminalController {
             ?? String(localized: "dialog.pane.confirm.cancel", defaultValue: "Cancel")
 
         let semaphore = DispatchSemaphore(value: 0)
-        // `outcome` is written from the main-actor completion callback and read
-        // after the semaphore is signaled — single-writer, single-reader with
-        // happens-before ordering provided by the semaphore.
+        // `holder` is written from the main-actor completion callback and read
+        // after `semaphore` is signaled — happens-before ordering via the
+        // semaphore. `nonisolated(unsafe)` because it crosses the worker↔main hop.
         final class OutcomeHolder {
             var value: ConfirmResult = .dismissed
             var fired: Bool = false
         }
         let holder = OutcomeHolder()
-        var presented = false
-        var presentedInteractionId: UUID?
 
-        v2MainSync {
-            // Find the workspace that owns this panel. Iterate tabs across the
-            // resolved TabManager — pane.confirm accepts any workspace's panel.
-            guard let workspace = tabManager.tabs.first(where: { $0.panels[panelId] != nil }) else {
+        // Phase A (main): resolve tabManager + panel, present the dialog.
+        let presentSema = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var presented = false
+        nonisolated(unsafe) var presentedInteractionId: UUID?
+        nonisolated(unsafe) var resolvedPanelId: UUID?
+        nonisolated(unsafe) var resolveError: V2CallResult?
+        Task { @MainActor in
+            defer { presentSema.signal() }
+            guard let tabManager = v2ResolveTabManager(params: params) else {
+                resolveError = .err(code: "unavailable", message: "TabManager not available", data: nil)
                 return
+            }
+            guard let panelId = v2UUID(params, "panel_id") else {
+                resolveError = .err(code: "invalid_params", message: "Missing or invalid panel_id", data: nil)
+                return
+            }
+            resolvedPanelId = panelId
+            // pane.confirm accepts any workspace's panel across the resolved manager.
+            guard let workspace = tabManager.tabs.first(where: { $0.panels[panelId] != nil }) else {
+                return  // presented stays false -> unknown_panel
             }
             let content = ConfirmContent(
                 title: title,
@@ -976,29 +988,31 @@ extension TerminalController {
             presentedInteractionId = content.id
             presented = true
         }
+        presentSema.wait()
 
-        guard presented else {
-            return .err(code: "unknown_panel", message: "Panel not found", data: ["panel_id": panelId.uuidString])
+        if let resolveError { return resolveError }
+        guard presented, let panelId = resolvedPanelId else {
+            return .err(code: "unknown_panel", message: "Panel not found",
+                        data: ["panel_id": resolvedPanelId?.uuidString ?? ""])
         }
 
-        // Block the socket thread until the user responds or the timeout fires.
-        let waitDeadline: DispatchTime
-        if let timeoutSeconds {
-            waitDeadline = .now() + timeoutSeconds
-        } else {
-            waitDeadline = .now() + maxTimeoutSeconds
-        }
+        // Block the worker thread until the user responds or the timeout fires.
+        let waitDeadline: DispatchTime = .now() + (timeoutSeconds ?? maxTimeoutSeconds)
         let waitResult = semaphore.wait(timeout: waitDeadline)
         if waitResult == .timedOut {
             // Accept/timeout race: the user may have clicked Confirm just as the
-            // timeout fired. Re-read holder on the main thread before cancelling,
-            // and if the completion fired (holder.fired == true) return the user's
-            // actual outcome instead of overwriting with dismissed.
-            let raced: ConfirmResult? = v2MainSync {
+            // timeout fired. Re-read holder on main before cancelling; if the
+            // completion fired return the user's actual outcome.
+            let raceSema = DispatchSemaphore(value: 0)
+            nonisolated(unsafe) var raced: ConfirmResult?
+            Task { @MainActor in
+                defer { raceSema.signal() }
                 if holder.fired {
-                    return holder.value
+                    raced = holder.value
+                    return
                 }
-                if let workspace = tabManager.tabs.first(where: { $0.panels[panelId] != nil }) {
+                if let tabManager = v2ResolveTabManager(params: params),
+                   let workspace = tabManager.tabs.first(where: { $0.panels[panelId] != nil }) {
                     // Interaction-ID-guarded cancel: never cancel a successor
                     // that advanced after our present (synthesis-critical §1.5).
                     workspace.paneInteractionRuntime.cancelActive(
@@ -1006,8 +1020,8 @@ extension TerminalController {
                         ifInteractionId: presentedInteractionId
                     )
                 }
-                return nil
             }
+            raceSema.wait()
             if let raced {
                 return v2EncodePaneConfirmResult(raced)
             }
@@ -1017,7 +1031,7 @@ extension TerminalController {
         return v2EncodePaneConfirmResult(holder.value)
     }
 
-    private func v2EncodePaneConfirmResult(_ result: ConfirmResult) -> V2CallResult {
+    nonisolated private func v2EncodePaneConfirmResult(_ result: ConfirmResult) -> V2CallResult {
         switch result {
         case .confirmed:
             return .ok(["result": "ok"])

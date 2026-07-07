@@ -1,0 +1,10 @@
+{
+  "seq": 100000,
+  "ts": "2026-07-07T09:00:00.000Z",
+  "type": "log.rotated",
+  "instance": "com.stage11.c11-12345",
+  "v": 1,
+  "payload": {
+    "rolled_to": "events-com.stage11.c11-12345.ndjson.1"
+  }
+}

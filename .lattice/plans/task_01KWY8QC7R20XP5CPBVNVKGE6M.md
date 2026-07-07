@@ -1,0 +1,3 @@
+# C11-167: Wire TEL↔EVT derived-liveness event emission (one-line seam completion)
+
+The run's one open functional thread (T&S cycle, 2026-07-07): EVT (#318) shipped the liveness.derived event type + EventEmitter.emitDerivedLiveness(...) stub with no call site; TEL (#320) deliberately left the hookup unwired because #318 was unmerged. After BOTH PRs merge, add the one-line call at SurfaceLivenessDeriver.emitLivenessTransition(from:to:surfaceId:) (the exact wiring is documented at the site). Until wired, liveness.derived events silently never emit. Verify with: c11 events tail --filter type=liveness.derived while a pane goes silent→derived. See .lattice/orchestration/validation-report.md §Drift.

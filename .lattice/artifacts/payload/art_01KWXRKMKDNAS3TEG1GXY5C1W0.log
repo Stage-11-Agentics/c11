@@ -1,0 +1,7 @@
+=== WEB-5 discovery proof ===
+PATH 'cmux' binary present: True
+PATH 'c11' binary present : True
+shared cmux.find_cli_binary() -> /Users/atin/Library/Developer/Xcode/DerivedData/c11-dx-baseline/Build/Products/Debug/c11 DEV dx-baseline.app/Contents/Resources/bin/c11
+basename is 'c11': True
+(resolved in 0.0s)
+RESULT: discovery resolves a binary named 'c11'; no 'cmux' binary required.

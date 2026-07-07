@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-07T07:25:31Z",
+  "created_by": "agent:ts-orchestrator",
+  "custom_fields": {},
+  "id": "art_01KWXQFGD85CAKTWNQFQDC8SNC",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KWXQFGD85CAKTWNQFQDC8SNC.md",
+    "size_bytes": 504
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Merged by orchestrator (PR #315, squash, 2026-07-07T07:25:16Z). Gates verified: validation artifacts (inline validation note, stale-branch inventory file, PR reference) + review artifact + full CI gre",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

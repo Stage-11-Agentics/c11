@@ -1,17 +1,45 @@
 {
-  "assigned_to": null,
+  "assigned_to": "agent:ts-tel-delegator",
   "branch_links": [],
-  "comment_count": 0,
+  "c11_surface": "FCE6F758-762D-42C0-B09F-53B2FAB8007B",
+  "c11_workspace": "DB29BC45-D037-4643-8EF4-EAC84E8CBB0C",
+  "comment_count": 6,
   "complexity": "high",
   "created_at": "2026-07-07T02:46:22Z",
   "created_by": "agent:fable-consultant",
   "custom_fields": {},
   "description": "Wave 2, depends on the dispatcher extraction. SPEC IDs: TEL-1..TEL-8. Canonical metadata keys carry last-updated; sidebar pills decay by age (tunable thresholds, suggested 5m/15m); derived working/idle state from PTY output flow at the derived precedence tier; stale explicit status hands the pill to derived state, visually distinct; waiting-agent cluster restyled per docs/c11-waiting-agent-cluster-plan.md (commit that plan doc with this ticket). No hot-path work. Skill metadata reference updated in same PR. Contract: docs/cycles/2026-07-truth-and-stability/ (SPEC.md, EVALUATION.md, BUILDPLAN.md). Validation bar: tagged build + recorded scenario proof.",
   "done_at": null,
-  "evidence_refs": [],
+  "evidence_refs": [
+    {
+      "id": "art_01KWY1DQ3MZT2KN56K8Q4195M0",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KWY1DQ6PY45NRPDT7SV6M63W",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KWY1DQ9RXMAS3XFWRAMGKHDN",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KWY1DQCTA9FNJ7D48DWD9XK2",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KWY1GDT7X2MKDVV08SYR81BG",
+      "role": null,
+      "source_type": "artifact"
+    }
+  ],
   "id": "task_01KWX7GBPYA1SGH3TR34BJHZCD",
-  "last_event_id": "ev_01KWX7GMKB0XHH7BD2906XFBPD",
-  "last_status_changed_at": "2026-07-07T02:46:22Z",
+  "last_event_id": "ev_01KWY1XG5PKVHS9KEJQJKNPBR5",
+  "last_status_changed_at": "2026-07-07T10:20:38Z",
   "linked_files": [],
   "priority": "high",
   "relationships_out": [
@@ -26,13 +54,13 @@
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-162",
-  "status": "backlog",
+  "status": "pr_open",
   "tags": [
     "cycle-2026-07",
     "wave-2"
   ],
   "title": "Telemetry truth: metadata age and decay, PTY-derived liveness, waiting-agent cluster restyle",
   "type": "task",
-  "updated_at": "2026-07-07T02:46:31Z",
+  "updated_at": "2026-07-07T10:27:56Z",
   "urgency": null
 }

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-07T07:07:25Z",
+  "created_by": "agent:ts-dx-plan-reviewer",
+  "custom_fields": {},
+  "id": "art_01KWXPEBWP6B1ZG5DM9C36MNCZ",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KWXPEBWP6B1ZG5DM9C36MNCZ.md",
+    "size_bytes": 7376
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "plan-review (plan-review)",
+  "token_usage": null,
+  "type": "file"
+}

@@ -54,42 +54,47 @@ c11 conversation clear [--surface <id>]
 | Source | When written |
 |--------|--------------|
 | `hook` | Push from a TUI lifecycle hook (e.g. Claude Code SessionStart). Highest priority. |
-| `scrape` | Pull from on-disk session storage (`~/.claude/sessions/`, `~/.codex/sessions/`). |
+| `scrape` | Pull from on-disk session storage (`~/.claude/projects/<cwd-slug>/`, `~/.codex/sessions/`, `~/.pi/agent/sessions/<cwd-slug>/`, `~/.omp/agent/sessions/<cwd-slug>/`). Resolves a placeholder to a real id at restore. |
 | `manual` | Explicit operator action (`c11 conversation push --source manual`). |
 | `wrapperClaim` | Background claim from a TUI wrapper at launch. Lowest priority — never displaces a non-wrapperClaim source. |
 
 Reconciliation rule: latest `capturedAt` wins; on close timestamps, source priority breaks the tie. Wrapper-claims are conservative: they never displace a non-wrapperClaim source regardless of timestamp.
 
-## Strategies (v1)
+## Strategies
 
-| Kind | Resume tier | Capture (v1) | Resume action |
-|------|-------------|--------------|---------------|
-| `claude-code` | Strong (push-id deterministic) | SessionStart hook → `c11 conversation push`. Pull-scrape `~/.claude/sessions/` ships in v1.1. | `claude --dangerously-skip-permissions --resume <id>` (id shell-quoted) |
-| `codex` | Snapshot-only in v1 | Wrapper-claim placeholder → snapshot persists the captured ref → restore consumes it. **Pull-scrape disambiguation lands in v1.1** (see "v1 scope" below). | `codex resume <id>` (specific id; never `--last`) |
-| `opencode` | Fresh-launch only | Wrapper-claim placeholder | `opencode` (process launch) — `.skip` for placeholders |
+| Kind | Resume tier | Capture | Resume action |
+|------|-------------|---------|---------------|
+| `claude-code` | Strong (push-id deterministic) | SessionStart hook → `c11 conversation push`. Pull-scrape `~/.claude/projects/<cwd-slug>/` is the fallback when the hook was missed. | `claude --dangerously-skip-permissions --resume <id>` (id shell-quoted) |
+| `codex` | Exact, ambiguity-aware | Wrapper-claim placeholder → `CodexScraper` resolves the real id from `~/.codex/sessions/` at restore, filtered by **real cwd** (recovered from the rollout header, see below) + claim-time + activity floors. | `codex resume <id>` (specific id; never `--last`) |
+| `pi` | Exact, ambiguity-aware | Wrapper-claim placeholder → `PiScraper` resolves the real id from the cwd slug dir, claim-time + activity floors narrowing past stale sessions. | `pi --session '<id>'` (specific id) |
+| `omp` | Exact, ambiguity-aware | Wrapper-claim placeholder → `OmpScraper` resolves the real id from the cwd slug dir, claim-time + activity floors. | `omp --resume='<id>'` (specific id) |
+| `opencode` | Push (plugin rail) | Plugin-emitted push of the real id. No scraper in the pull registry. | `cd '<dir>' && opencode -s <id>` — `.skip` for placeholders |
+| `grok` | Best-effort resume | Wrapper-claim placeholder | `grok --always-approve --resume` (no id) — `.skip` for placeholders |
 | `kimi` | Fresh-launch only | Wrapper-claim placeholder | `kimi` (process launch) — `.skip` for placeholders |
-| `pi` | Exact (scrape) | Wrapper-claim placeholder → `PiScraper` resolves the real id from the cwd slug dir, claim-time floor narrowing past stale sessions. | `pi --session '<id>'` (specific id) |
-| `omp` | Exact (scrape) | Wrapper-claim placeholder → `OmpScraper` resolves the real id from the cwd slug dir, claim-time floor narrowing past stale sessions. | `omp --resume='<id>'` (specific id) |
+| `github-copilot` | Fresh-launch only | Wrapper-claim placeholder | `copilot` (process launch) — `.skip` for placeholders |
 
-### v1 scope and v1.1 follow-ups
+## Crash recovery — what it guarantees per kind
 
-The strategy machinery is complete (capture, resume, scrapers, ambiguity policy all unit-tested), but **v1 production restore is snapshot-only**: refs that landed in the snapshot at last clean shutdown resume; refs lost between snapshots do not. The forced pull-scrape pass that would re-discover them on dirty shutdown / first launch is a v1.1 follow-up. Tracked items:
+The forced-kill (`kill -9`) path is a first-class, tested guarantee as of the Truth & Stability cycle (C11-164), not a v1.1 aspiration. On launch c11 reads a per-bundle dirty/clean **shutdown sentinel** (`~/.c11/runtime/shutdown.<bundle>.{dirty,clean}`); `.dirty` (or missing) means the last run crashed. The dirty-launch restore ordering is:
 
-- **Pull-scrape pass on launch.** Wire `forcedPullScrapePass()` into `AppDelegate.applicationDidFinishLaunching` after `seedFromSnapshot` so missed Claude SessionStart hooks and Codex placeholder refs get re-classified before `pendingRestartPlans` runs.
-- **`SurfaceActivityTracker` snapshot persistence.** Today the tracker is in-memory only; the Codex `mtime ≥ surface lastActivityTimestamp` filter relies on it but has nothing to compare against on first launch after reboot.
-- **Codex cwd disambiguation.** `CodexScraper` stamps the surface's cwd into every candidate, so the strategy's `cwd != candCwd` filter is structurally a no-op. Real cwd recovery requires parsing the JSONL session metadata (bounded read; privacy-contract review needed before landing).
+1. **Seed** the store from the last snapshot (`seedFromSnapshot`), and seed the per-surface **activity floor** (persisted on each panel as `last_activity_at`).
+2. **Scrape-capture** (`runScrapeCapture`): for every restored terminal surface, run its kind's scraper and resolve any placeholder to the real on-disk session id.
+3. **Reclassify** (`reclassifyAfterCrash`): for each `.alive`/`.suspended` ref, `transcriptExists` stats the on-disk transcript (stat only — bytes never read). Verified → `.suspended` with `diagnostic_reason = "crash recovery: transcript verified on disk"` (resume fires); missing → `.unknown` with `"crash recovery: transcript not found"` (honest skip). Refs already `.unknown`/`.tombstoned` are untouched, so `/exit`-ended sessions never auto-resume.
 
-Until v1.1 lands, the **Codex two-panes-same-cwd** scenario the conversation store was built to fix relies on each pane having captured its own ref into the prior snapshot; if it didn't (e.g., first launch after dirty shutdown, or pane opened post-snapshot), the legacy "most-recent wins" behaviour is the current fallback. Operators who hit this can `c11 conversation clear --surface <id>` to force fresh launches.
+The contract: after a crash, **every conversation either resumes exactly per its kind's tier, or the surface carries an honest, specific `diagnostic_reason`.** There are no silent fresh-launches presented as resumes.
 
-### Codex ambiguity policy (deferred to v1.1)
+- **claude-code** — resumes when the hook-captured (or scrape-recovered) id has a transcript on disk; otherwise `transcript not found`.
+- **codex / pi / omp** — the scraper resolves the placeholder to the real id at restore, then reclassify verifies it. A surface whose session file is absent stays a placeholder and simply skips (no wrong resume).
+- **opencode / grok / kimi / github-copilot** — no exact-resume rail; a fresh launch is the honest outcome (placeholders skip).
 
-When pull-scrape lands, two Codex panes opened in the same project will be disambiguated as follows:
+### Codex real-cwd disambiguation
 
-- Codex pull-scrape filters candidates by cwd + mtime ≥ wrapper-claim time + mtime ≥ surface lastActivityTimestamp.
-- If **more than one** candidate matches the filter, the strategy returns the ref with `state = .unknown`, `id = most-plausible-candidate (newest mtime)`, and a `diagnosticReason` like `"ambiguous: 3 candidates; chose newest"`.
-- `resume()` returns `.skip(reason: "ambiguous")` for `state = .unknown`. Neither pane resumes the other's session; the operator clears via `c11 conversation clear --surface <id>` to force a fresh launch.
+Codex stores sessions flat (`~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`), not under a per-cwd directory, so the filename can't say which pane a session belongs to. `CodexScraper` therefore does a **bounded, allowlisted** read of each candidate's first JSONL line and extracts only `payload.cwd` (byte-capped; no transcript content read or logged, per the scrape privacy contract). The strategy then keeps only candidates whose recovered cwd matches the surface's cwd:
 
-The advisory is surfaced via `c11 conversation get`'s `diagnostic_reason` field once the pull-scrape pass is wired.
+- **Distinct-cwd codex panes** each match only their own session → each resumes cleanly.
+- **Two codex panes in the same cwd** (genuinely indistinguishable) → `state = .unknown`, `diagnostic_reason = "ambiguous: N candidates; chose newest"`, `resume()` returns `.skip("ambiguous")`. Neither pane resumes the other's session; clear with `c11 conversation clear --surface <id>` to force a fresh launch. This is the correct, honest behaviour — the ambiguity policy the store was built for.
+
+The per-surface **activity floor** (`SurfaceActivityTracker`, persisted in the snapshot) gives the codex/pi/omp filters a lower `mtime` bound that survives a restart, so stale sessions in a shared cwd are excluded rather than widening the candidate set into spurious ambiguity.
 
 ## Wrapper-claim flow (TUI integrators)
 
@@ -123,14 +128,26 @@ CMUX_DISABLE_CONVERSATION_STORE=1 open -a c11
 # List every captured conversation in this c11 process
 # (v1 stores process-wide; no per-workspace partitioning)
 c11 conversation list --json | jq '.conversations[] | {kind, id, state, surface_id}'
+
+# After a crash + relaunch: which surfaces resumed vs carry a diagnostic?
+c11 conversation list --json | jq -r '.conversations[]
+  | "\(.kind)\t\(.state)\t\(.diagnostic_reason // "-")"'
+# RESOLVED surfaces read `suspended` + "crash recovery: transcript verified on disk";
+# honest skips read `unknown` + "…transcript not found" / "ambiguous: N candidates".
+
+# Dry-run the resume decision for a saved snapshot without launching (test oracle)
+c11 state verify
 ```
 
-## Landing in v1.1 (0.45.0+)
+## Landed (Truth & Stability cycle, C11-131 + C11-151..154 + C11-164)
 
-- **Forced pull-scrape pass** on launch (after snapshot seed) — re-classifies Claude/Codex refs lost between snapshots.
-- **`SurfaceActivityTracker` snapshot persistence** — gives the Codex disambiguation rule a comparison floor across reboots.
-- **Codex cwd recovery** via bounded JSONL metadata parse, gated on a privacy-contract review.
-- Workspace partitioning on `c11 conversation list` (`--workspace` rejected with a clear error in v1).
+- **Live scrape-capture on restore** (`runScrapeCapture`) — resolves Claude/Codex/pi/omp placeholder refs from disk before the resume pass runs. Superseded the snapshot-only restore.
+- **Crash reclassification** (`reclassifyAfterCrash`) replacing the old blanket `markAllUnknown` — verified-transcript refs resume, missing ones carry an honest diagnostic.
+- **`SurfaceActivityTracker` snapshot persistence** — the activity floor now persists per panel (`last_activity_at`) and is seeded at restore, so codex/pi/omp disambiguation survives a reboot.
+- **Codex real-cwd recovery** via a bounded, allowlisted first-line read of the rollout header — the cwd filter now discriminates across workspaces.
+- **`c11 state save` / `c11 state verify` / `c11 app restart`** CLI + socket `session.save` — explicit checkpoint, dry-run resume report, and clean-bounce restart.
+
+Still open: workspace partitioning on `c11 conversation list` (`--workspace` rejected with a clear error).
 
 ## Removed in 0.46.0 / v1.1
 

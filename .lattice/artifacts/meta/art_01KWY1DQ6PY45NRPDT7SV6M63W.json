@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-07T10:19:19Z",
+  "created_by": "agent:ts-tel-delegator",
+  "custom_fields": {},
+  "id": "art_01KWY1DQ6PY45NRPDT7SV6M63W",
+  "model": null,
+  "payload": {
+    "content_type": "text/plain",
+    "file": "art_01KWY1DQ6PY45NRPDT7SV6M63W.txt",
+    "size_bytes": 1660
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "TEL-5 hot-path audit (clean)",
+  "token_usage": null,
+  "type": "log"
+}

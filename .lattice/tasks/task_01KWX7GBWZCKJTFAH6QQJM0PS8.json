@@ -1,17 +1,47 @@
 {
-  "assigned_to": null,
-  "branch_links": [],
-  "comment_count": 0,
+  "assigned_to": "agent:ts-res-delegator",
+  "branch_links": [
+    {
+      "branch": "ts/res-crash-resume",
+      "linked_at": "2026-07-07T12:03:37Z",
+      "linked_by": "agent:ts-res-delegator",
+      "repo": null
+    }
+  ],
+  "c11_surface": "1339AEC1-041A-4462-AB7E-AB5E29FED753",
+  "c11_workspace": "DB29BC45-D037-4643-8EF4-EAC84E8CBB0C",
+  "comment_count": 7,
   "complexity": "high",
   "created_at": "2026-07-07T02:46:22Z",
   "created_by": "agent:fable-consultant",
   "custom_fields": {},
   "description": "Wave 2, depends on the dispatcher extraction. SPEC IDs: RES-1..RES-5. Metric-driven: 10+ live conversations, 3+ workspaces, 3+ kinds (claude-code + codex + one of pi/omp/opencode), kill -9, relaunch; every conversation resumes per its declared tier or shows an honest diagnostic_reason; zero silent fresh-launches. Wire the pull-scrape rail and whatever else the scenario requires; nothing it does not. Scenario encoded as a repeatable harness runnable by delegator, validator, and CI. Clean-shutdown resume must not regress. references/conversation.md updated in same PR. Contract: docs/cycles/2026-07-truth-and-stability/ (SPEC.md, EVALUATION.md, BUILDPLAN.md). Validation bar: tagged build + recorded scenario proof.",
   "done_at": null,
-  "evidence_refs": [],
+  "evidence_refs": [
+    {
+      "id": "art_01KWY7AKEAWPWYM6SFGKK5S90R",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KWY7AKHAY04G83KFDYE4DFS3",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KWY7AKM7P1PDY5944E2FHFQP",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KWY7D5TNB194Y71F9H5NNZ70",
+      "role": null,
+      "source_type": "artifact"
+    }
+  ],
   "id": "task_01KWX7GBWZCKJTFAH6QQJM0PS8",
-  "last_event_id": "ev_01KWX7GMSA2YQEX67X5MNDTKPB",
-  "last_status_changed_at": "2026-07-07T02:46:22Z",
+  "last_event_id": "ev_01KWY7DTVKBMPZ35RNG6B0TH0A",
+  "last_status_changed_at": "2026-07-07T12:03:37Z",
   "linked_files": [],
   "priority": "high",
   "relationships_out": [
@@ -26,13 +56,13 @@
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-164",
-  "status": "backlog",
+  "status": "pr_open",
   "tags": [
     "cycle-2026-07",
     "wave-2"
   ],
   "title": "Crash-resume completion: force-kill scenario as the acceptance gate",
   "type": "task",
-  "updated_at": "2026-07-07T02:46:31Z",
+  "updated_at": "2026-07-07T12:04:14Z",
   "urgency": null
 }

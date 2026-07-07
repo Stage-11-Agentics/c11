@@ -289,6 +289,14 @@ final class MailboxDispatcher {
                 topic: envelope.topic
             )
         )
+        // C11-163: mailbox envelope accepted → events stream.
+        EventEmitter.shared.emitMailboxAccepted(
+            workspace: workspaceId,
+            id: envelope.id,
+            from: envelope.from,
+            to: envelope.to,
+            topic: envelope.topic
+        )
 
         // Step 3: resolve recipients. Stage 2 = `to` only.
         let recipients = resolveRecipients(envelope: envelope)
@@ -370,6 +378,13 @@ final class MailboxDispatcher {
             )
             try MailboxIO.atomicWrite(data: envelopeBytes, to: target)
             log.append(.copied(id: envelope.id, recipient: recipient.name))
+            // C11-163: mailbox envelope delivered to a recipient inbox.
+            EventEmitter.shared.emitMailboxDelivered(
+                workspace: workspaceId,
+                id: envelope.id,
+                recipient: recipient.name,
+                surface: recipient.surfaceId
+            )
         } catch {
             // The `resolved` event already lists the recipient; failure to
             // copy is logged as a handler-style failure so the operator can

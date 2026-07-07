@@ -686,8 +686,12 @@ final class TerminalNotificationStore: ObservableObject {
 
     @Published private(set) var notifications: [TerminalNotification] = [] {
         didSet {
+            // C11-163: capture the prior per-tab unread counts before the
+            // rebuild so waiting-agent edges can be detected (amendment H).
+            let previousUnreadByTab = indexes.unreadCountByTabId
             indexes = Self.buildIndexes(for: notifications)
             refreshDockBadge()
+            emitWaitingEdges(previous: previousUnreadByTab, current: indexes.unreadCountByTabId)
         }
     }
     @Published private(set) var authorizationState: NotificationAuthorizationState = .unknown
@@ -721,6 +725,25 @@ final class TerminalNotificationStore: ObservableObject {
         store.scheduleUserNotification(notification)
     }
     private var indexes = NotificationIndexes()
+
+    /// C11-163: emit waiting.entered / waiting.left on the per-tab unread
+    /// 0↔1 edge. "Agent is waiting" == the tab has an unread notification;
+    /// this fires through the single `notifications` didSet, covering every
+    /// caller (addNotification / markRead* / markUnread / markAllRead). The
+    /// waiting signal is a TEL-6 seam — if the waiting-agent cluster plan
+    /// redefines "attention demand", rewire the source here.
+    private func emitWaitingEdges(previous: [UUID: Int], current: [UUID: Int]) {
+        let tabs = Set(previous.keys).union(current.keys)
+        for tab in tabs {
+            let before = previous[tab] ?? 0
+            let after = current[tab] ?? 0
+            if before == 0, after > 0 {
+                EventEmitter.shared.emitWaiting(entered: true, workspace: tab, surface: nil)
+            } else if before > 0, after == 0 {
+                EventEmitter.shared.emitWaiting(entered: false, workspace: tab, surface: nil)
+            }
+        }
+    }
 
     private init() {
         indexes = Self.buildIndexes(for: notifications)

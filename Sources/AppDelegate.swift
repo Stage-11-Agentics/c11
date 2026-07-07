@@ -2448,6 +2448,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationDidFinishLaunching(_ notification: Notification) {
         mirrorC11CmuxEnv()
 
+        // C11-163: open the events stream early — before session restore
+        // recreates workspaces/surfaces — so surface.created and the
+        // log.opened marker land from the first instant (amendment K).
+        EventEmitter.shared.start()
+
         // C11-24/C11-131: capture the prior-shutdown decision and arm this
         // run's dirty sentinel as early as possible — before any potential
         // crash path. The write must precede crashes; the read must precede
@@ -2953,6 +2958,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func applicationWillTerminate(_ notification: Notification) {
         isTerminatingApp = true
+        // C11-163: drain any queued events before exit so a tailing consumer
+        // sees the final transitions of this instance.
+        EventEmitter.shared.flush()
         // C11-24: suspendAllAlive transitions every alive ConversationRef
         // to .suspended so resume on next launch is gated. Synchronous
         // bridge into the actor (bounded — store has no I/O).
@@ -3264,6 +3272,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // (TODO 0.46.0 / v1.1 in WorkspaceSnapshotConversationBridge).
         if let snapshot, !ConversationStorePolicy.isDisabled {
             WorkspaceSnapshotConversationBridge.seedFromSnapshot(snapshot)
+            // C11-164 (RES-2): restore the per-surface activity floor into the
+            // live tracker so post-restore operation (and the restore-time
+            // scrape below, which also reads it via `contexts(from:)`) carries
+            // the same disambiguation floor the pre-crash session had. Keyed by
+            // panel id — the id the store and scrape contexts key on.
+            var activityFloor: [String: Date] = [:]
+            for window in snapshot.windows {
+                for ws in window.tabManager.workspaces {
+                    for panel in ws.panels where panel.type == .terminal {
+                        if let ts = panel.lastActivityAt {
+                            activityFloor[panel.id.uuidString] = ts
+                        }
+                    }
+                }
+            }
+            if !activityFloor.isEmpty {
+                SurfaceActivityTracker.shared.seed(from: activityFloor)
+            }
             // C11-152: live scrape-capture seam. Now that the store is seeded,
             // run the per-kind scrapers for each restored terminal surface and
             // resolve real session ids via each strategy's `capture`, applying

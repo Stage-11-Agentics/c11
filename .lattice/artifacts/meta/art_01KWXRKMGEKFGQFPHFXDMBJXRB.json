@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-07T07:45:15Z",
+  "created_by": "agent:ts-web-delegator",
+  "custom_fields": {},
+  "id": "art_01KWXRKMGEKFGQFPHFXDMBJXRB",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KWXRKMGEKFGQFPHFXDMBJXRB.md",
+    "size_bytes": 4372
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "C11-161 validation evidence (WEB-1..5)",
+  "token_usage": null,
+  "type": "file"
+}

@@ -572,6 +572,8 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             if let existing = blob[key], sameJSONValue(existing, value), sblob[key]?.source == source {
                 return false
             }
+            // C11-163: capture prior before overwrite (amendment E).
+            let priorValue = blob[key]
             blob[key] = value
             sblob[key] = SourceRecord(source: source, ts: Date().timeIntervalSince1970)
 
@@ -583,6 +585,19 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             metadata[workspaceId, default: [:]][surfaceId] = blob
             sources[workspaceId, default: [:]][surfaceId] = sblob
             metadataStoreRevision &+= 1
+
+            // C11-163: publish canonical metadata change (post-commit).
+            if EventEmitter.canonicalMetadataEventKeys.contains(key) {
+                EventEmitter.shared.emitMetadataChanged(
+                    scope: "surface",
+                    workspace: workspaceId,
+                    surface: surfaceId,
+                    key: key,
+                    value: value,
+                    prior: priorValue,
+                    source: source.rawValue
+                )
+            }
             return true
         }
     }
@@ -624,6 +639,11 @@ final class SurfaceMetadataStore: @unchecked Sendable {
 
         let ts = Date().timeIntervalSince1970
         var mutated = false
+        // C11-163: canonical metadata changes to publish to the events stream
+        // AFTER the write commits (the size guard below can still abort).
+        // Prior value is captured inline here — the surface store does not
+        // populate WriteResult.priorValues (amendment E).
+        var canonicalEventChanges: [(key: String, value: Any, prior: Any?)] = []
 
         if mode == .replace {
             // `mode == .replace` discarded the prior blob above. If that prior
@@ -652,6 +672,9 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                 result.applied[k] = true
                 continue
             }
+            if EventEmitter.canonicalMetadataEventKeys.contains(k) {
+                canonicalEventChanges.append((key: k, value: v, prior: existing))
+            }
             blob[k] = v
             sblob[k] = SourceRecord(source: source, ts: ts)
             result.applied[k] = true
@@ -672,6 +695,21 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         result.metadata = blob
         result.sources = sblob.mapValues { $0.toJSON() }
         if mutated { metadataStoreRevision &+= 1 }
+
+        // C11-163: publish canonical metadata changes now that the write has
+        // committed (post size-guard). Off the store's serial queue; emit is
+        // fire-and-forget and never blocks this path.
+        for change in canonicalEventChanges {
+            EventEmitter.shared.emitMetadataChanged(
+                scope: "surface",
+                workspace: workspaceId,
+                surface: surfaceId,
+                key: change.key,
+                value: change.value,
+                prior: change.prior,
+                source: source.rawValue
+            )
+        }
         return result
     }
 

@@ -769,6 +769,14 @@ extension Workspace {
         if !ConversationStorePolicy.isDisabled, panel.panelType == .terminal {
             surfaceConversations = conversationsByPanelId[panelId.uuidString] ?? .empty
         }
+        // C11-164 (RES-2): persist the surface's live activity floor so the
+        // Codex/pi/omp scrape disambiguation survives a crash. Only terminal
+        // surfaces carry a meaningful floor; `lastActivity(for:)` is a bounded
+        // synchronous queue read (no main-thread hot-path work).
+        var lastActivityAt: Date? = nil
+        if !ConversationStorePolicy.isDisabled, panel.panelType == .terminal {
+            lastActivityAt = SurfaceActivityTracker.shared.lastActivity(for: panelId.uuidString)
+        }
         return SessionPanelSnapshot(
             id: panelId,
             type: panel.panelType,
@@ -786,7 +794,8 @@ extension Workspace {
             markdown: markdownSnapshot,
             metadata: persistedMetadata,
             metadataSources: persistedMetadataSources,
-            surfaceConversations: surfaceConversations
+            surfaceConversations: surfaceConversations,
+            lastActivityAt: lastActivityAt
         )
     }
 
@@ -5184,6 +5193,15 @@ final class Workspace: Identifiable, ObservableObject {
     /// Mapping from bonsplit TabID to our Panel instances
     @Published private(set) var panels: [UUID: any Panel] = [:]
 
+    /// C11-163 events stream: single create/close chokepoint. Subscribing to
+    /// `$panels` and diffing keys catches every surface lifecycle transition
+    /// through one path — split, tab, restore, reattach, rollback, bulk
+    /// teardown, detach — so no emit site can be missed (amendments C, D). A
+    /// `@Published` property can't carry a `didSet` observer, hence the Combine
+    /// subscription. `lastKnownPanelIds` is the diff baseline.
+    private var panelEventsCancellable: AnyCancellable?
+    private var lastKnownPanelIds: Set<UUID> = []
+
     /// Monotonically incrementing token used by the sidebar workspace row to
     /// observe focus flashes targeting any panel in this workspace. Bumped
     /// from `triggerFocusFlash(panelId:)` so a single fan-out drives the
@@ -5902,6 +5920,16 @@ final class Workspace: Identifiable, ObservableObject {
                     "markdown": counts.markdown,
                 ])
             }
+
+        // C11-163: emit surface.created / surface.closed by diffing $panels.
+        // Subscribing fires once synchronously with the current set (the seed
+        // terminal), then on every subsequent mutation — a single chokepoint
+        // that no create/close/reattach/teardown path can bypass. No debounce:
+        // events must be observable within 1s (EVT-6).
+        panelEventsCancellable = $panels
+            .sink { [weak self] newPanels in
+                self?.reconcilePanelEvents(newPanels)
+            }
     }
 
     deinit {
@@ -5921,6 +5949,29 @@ final class Workspace: Identifiable, ObservableObject {
             }
             persistentFlashPanels.removeAll()
         }
+    }
+
+    /// C11-163: diff the panel set against the last-known ids and publish
+    /// surface lifecycle events. Runs synchronously inside `$panels` delivery
+    /// (main actor); `EventEmitter.emit` is fire-and-forget so this never
+    /// blocks. A rolled-back create surfaces as a balanced created→closed pair;
+    /// a cross-pane detach→reattach as closed→created (amendment D move policy).
+    private func reconcilePanelEvents(_ newPanels: [UUID: any Panel]) {
+        let newIds = Set(newPanels.keys)
+        guard newIds != lastKnownPanelIds else { return }
+        for createdId in newIds.subtracting(lastKnownPanelIds) {
+            guard let panel = newPanels[createdId] else { continue }
+            EventEmitter.shared.emitSurfaceCreated(
+                workspace: id,
+                surface: createdId,
+                kind: panel.panelType.rawValue,
+                title: panel.displayTitle
+            )
+        }
+        for closedId in lastKnownPanelIds.subtracting(newIds) {
+            EventEmitter.shared.emitSurfaceClosed(workspace: id, surface: closedId)
+        }
+        lastKnownPanelIds = newIds
     }
 
     /// Creates a per-workspace mailbox dispatcher bound to this workspace's

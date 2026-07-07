@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-07T10:07:26Z",
+  "created_by": "agent:ts-evt-delegator",
+  "custom_fields": {},
+  "id": "art_01KWY0QZGMTEEJN9MF7VA5PJM0",
+  "model": null,
+  "payload": {
+    "content_type": "text/plain",
+    "file": "art_01KWY0QZGMTEEJN9MF7VA5PJM0.txt",
+    "size_bytes": 75
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "EVT-6 latency (267ms PASS)",
+  "token_usage": null,
+  "type": "log"
+}

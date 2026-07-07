@@ -42,7 +42,14 @@ struct ScrapeCaptureContext: Sendable, Equatable {
                     result.append(ScrapeCaptureContext(
                         surfaceId: panel.id.uuidString,
                         kind: kind,
-                        cwd: cwd
+                        cwd: cwd,
+                        // C11-164 (RES-2): thread the persisted activity floor
+                        // into the restore-time scrape. Without this the floor
+                        // is nil at cold restore and the Codex/pi/omp candidate
+                        // filter can no longer exclude stale sessions, producing
+                        // spurious ambiguity. `nil` (pre-C11-164 snapshot)
+                        // preserves the prior no-floor behaviour.
+                        lastActivityTimestamp: panel.lastActivityAt
                     ))
                 }
             }

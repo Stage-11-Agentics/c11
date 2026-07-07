@@ -49,3 +49,12 @@ The run log behind the skill's rules. Each entry preserves the story that shaped
 ## Holodeck v1 (HOLO-54, HOLO-57)
 
 - **Inline-full mode validated:** single-session delegators with headless reviews carried medium tickets end-to-end without sub-agent PTY pressure — the basis for inline-full as the default mode.
+
+## Truth & Stability cycle (C11-159..165, 2026-07-07)
+
+- **Seven tickets, ~5h50m fully autonomous overnight, zero parked, zero captains, GREEN audit (32/6/0/0).** Wave barrier + press-ahead planning-only variant meant the 4-ticket Wave 2 lost zero wall-clock to the DX keystone merge.
+- **The stray-commit save:** the DX delegator over-generalized the "absolute parent path for .lattice writes" rule to source files and committed extraction work onto the parent checkout's local main. The Master Validator's git-truth audit caught it within two 5-minute ticks — before any push. Recovery: freeze → cherry-pick to branch → per-file restore + reset --soft (never --hard; live .lattice). MV's ROI for the whole run was justified by this one catch.
+- **Locked-screen wall for overnight visual proofs:** a 6am autonomous run cannot capture screenshots — the display sleeps, and `caffeinate -u` wakes only the lock screen (verified: screencapture returns byte-identical black frames; CGSSessionScreenIsLocked=True also blocks GUI workspace materialization, which cost RES-3 its second harness run). Overnight contracts should pre-declare the fallback: code-path proof + repro script pre-merge, visuals to operator smoke.
+- **`lattice code-review` empty-diff bug hit 3/3 worktree delegators** (resolves parent checkout, not worktree — filed as LAT-250); the own-reviewer fallback carried all three cleanly, including one that found and fixed a MAJOR.
+- **A delegator self-caught a CI blind spot:** dependabot eslint-10 bump was green in CI (which runs no eslint), delegator ran `bun run lint` anyway, found the fatal break, reverted its own merge with reason, and filed the machine memory.
+- **Boot-burst 429s:** four simultaneous Opus spawns rate-limited every session and killed one boot turn outright. Stagger fleet spawns 10–15s.

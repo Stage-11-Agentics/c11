@@ -1,0 +1,1 @@
+EVT-6 latency (status write -> visible to a file consumer): 267 ms => PASS

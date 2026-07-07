@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-07T12:02:28Z",
+  "created_by": "agent:ts-res-delegator",
+  "custom_fields": {},
+  "id": "art_01KWY7AKHAY04G83KFDYE4DFS3",
+  "model": null,
+  "payload": {
+    "content_type": "text/plain",
+    "file": "art_01KWY7AKHAY04G83KFDYE4DFS3.log",
+    "size_bytes": 10155
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "All 5 scenarios green; acceptance 10 RESOLVED / 2 honestly-ambiguous / 0 FAIL across 4 kinds",
+  "tags": [],
+  "title": "Multi-kind kill-9 harness \u2014 full run 49/0",
+  "token_usage": null,
+  "type": "log"
+}

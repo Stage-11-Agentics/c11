@@ -28,6 +28,32 @@ final class ScrapeCapturePipelineTests: XCTestCase {
         }
     }
 
+    /// C11-164 (RES-2): logic-local filesystem mock supporting the bounded
+    /// head read used by `CodexScraper` cwd recovery. Recursive listing +
+    /// per-path head content; stat-only otherwise.
+    final class MockFS: ConversationFilesystem, @unchecked Sendable {
+        var home: URL?
+        // Keyed by normalized `.path` so a scraper root built with
+        // `appendingPathComponent(isDirectory: true)` (trailing slash) still
+        // matches a plainly-constructed key.
+        var recursiveEntriesByPath: [String: [ConversationFilesystemEntry]] = [:]
+        var headContents: [String: String] = [:]
+        var homeDirectory: URL? { home }
+        func fileExists(atPath path: String) -> Bool { false }
+        func listDirectoryByMtime(_ directory: URL, max: Int) -> [ConversationFilesystemEntry] { [] }
+        func listSessionsRecursivelyByMtime(_ root: URL, extensionFilter: String, max: Int) -> [ConversationFilesystemEntry] {
+            Array((recursiveEntriesByPath[root.path] ?? [])
+                .filter { $0.fileName.hasSuffix("." + extensionFilter) }
+                .sorted { $0.mtime > $1.mtime }
+                .prefix(max))
+        }
+        func readSessionHead(atPath path: String, maxBytes: Int) -> String? {
+            guard let full = headContents[path] else { return nil }
+            let firstLine = full.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? full
+            return String(firstLine.prefix(maxBytes))
+        }
+    }
+
     private let codexId = "abc12345-ef67-890a-bcde-f0123456789a"
     private let codexId2 = "eee22222-2222-3333-4444-555566667777"
 
@@ -185,6 +211,25 @@ final class ScrapeCapturePipelineTests: XCTestCase {
         XCTAssertEqual(contexts[0].surfaceId, codexPanelId.uuidString)
         XCTAssertEqual(contexts[0].kind, "codex")
         XCTAssertEqual(contexts[0].cwd, "/work/proj")
+        // Pre-C11-164 panels (no persisted floor) thread nil — prior behaviour.
+        XCTAssertNil(contexts[0].lastActivityTimestamp)
+    }
+
+    // C11-164 (RES-2): the persisted per-panel activity floor is threaded into
+    // the restore-time scrape context (without it, `lastActivityTimestamp` was
+    // hardcoded nil and the floor lost across a crash).
+    func testContextsThreadPersistedActivityFloor() {
+        let codexPanelId = UUID()
+        let floor = Date(timeIntervalSince1970: 1_700_000_000)
+        var codexPanel = makeTerminalPanel(
+            id: codexPanelId, directory: "/work/proj",
+            metadata: [SurfaceMetadataKeyName.terminalType: .string("codex")]
+        )
+        codexPanel.lastActivityAt = floor
+        let snapshot = makeSnapshot(panels: [codexPanel])
+        let contexts = ScrapeCaptureContext.contexts(from: snapshot)
+        XCTAssertEqual(contexts.count, 1)
+        XCTAssertEqual(contexts[0].lastActivityTimestamp, floor)
     }
 
     // MARK: - Snapshot builders
@@ -224,5 +269,105 @@ final class ScrapeCapturePipelineTests: XCTestCase {
         )
         return AppSessionSnapshot(version: SessionSnapshotSchema.currentVersion,
                                   createdAt: Date().timeIntervalSince1970, windows: [window])
+    }
+
+    // MARK: - C11-164 (RES-2): Codex real-cwd recovery
+
+    private func codexFS(sessions: [(id: String, cwd: String?, mtime: Date)]) -> MockFS {
+        let mock = MockFS()
+        mock.home = URL(fileURLWithPath: "/Users/test")
+        let root = URL(fileURLWithPath: "/Users/test/.codex/sessions")
+        var entries: [ConversationFilesystemEntry] = []
+        for s in sessions {
+            let file = "rollout-2026-07-07T00-00-00-\(s.id).jsonl"
+            let url = root.appendingPathComponent("2026/07/07/\(file)")
+            entries.append(ConversationFilesystemEntry(url: url, fileName: file, mtime: s.mtime, size: 4096))
+            if let cwd = s.cwd {
+                mock.headContents[url.path] = "{\"type\":\"session_meta\",\"payload\":{\"id\":\"\(s.id)\",\"cwd\":\"\(cwd)\",\"instructions\":\"stub body\"}}"
+            }
+        }
+        mock.recursiveEntriesByPath[root.path] = entries
+        return mock
+    }
+
+    /// The scraper recovers each candidate's REAL cwd from the rollout header
+    /// instead of stamping the querying surface's cwd (the disambiguation no-op).
+    func testCodexScraperRecoversRealCwdPerCandidate() {
+        let idA = "aaaa1111-2222-3333-4444-555566667777"
+        let idB = "bbbb1111-2222-3333-4444-555566667777"
+        let now = Date()
+        let mock = codexFS(sessions: [
+            (idA, "/Users/test/projA", now),
+            (idB, "/Users/test/projB", now.addingTimeInterval(-5))
+        ])
+        // Even with a surface cwd passed, candidates carry their OWN real cwd.
+        let cands = CodexScraper(filesystem: mock).candidates(cwd: "/Users/test/projA")
+        let byId = Dictionary(uniqueKeysWithValues: cands.map { ($0.id, $0.cwd) })
+        XCTAssertEqual(byId[idA], "/Users/test/projA")
+        XCTAssertEqual(byId[idB], "/Users/test/projB")
+    }
+
+    /// Distinct-cwd codex sessions resolve to their own session (state .alive),
+    /// no longer read as mutually ambiguous — the bug G3 fixes.
+    func testCodexDistinctCwdResolvesInsteadOfAmbiguous() {
+        let idA = "aaaa1111-2222-3333-4444-555566667777"
+        let idB = "bbbb1111-2222-3333-4444-555566667777"
+        let now = Date()
+        let mock = codexFS(sessions: [
+            (idA, "/Users/test/projA", now),
+            (idB, "/Users/test/projB", now.addingTimeInterval(-5))
+        ])
+        let cands = CodexScraper(filesystem: mock).candidates(cwd: nil)
+        let claim = ConversationRef(kind: "codex", id: "placeholder", placeholder: true,
+                                    cwd: "/Users/test/projA", capturedAt: now.addingTimeInterval(-60),
+                                    capturedVia: .wrapperClaim, state: .unknown, diagnosticReason: nil)
+        let inputs = ConversationStrategyInputs(surfaceId: "A", cwd: "/Users/test/projA",
+                                                lastActivityTimestamp: nil, wrapperClaim: claim,
+                                                push: nil, scrapeCandidates: cands)
+        let ref = CodexStrategy().capture(inputs: inputs)
+        XCTAssertEqual(ref?.id, idA)
+        XCTAssertEqual(ref?.state, .alive, "distinct-cwd codex must resolve, not read as ambiguous")
+    }
+
+    /// Same-cwd multi-session stays honestly ambiguous — the correct behaviour
+    /// the ambiguity policy exists for; cwd recovery must not paper over it.
+    func testCodexSameCwdStaysAmbiguous() {
+        let idA = "aaaa1111-2222-3333-4444-555566667777"
+        let idB = "bbbb1111-2222-3333-4444-555566667777"
+        let now = Date()
+        let mock = codexFS(sessions: [
+            (idA, "/Users/test/shared", now),
+            (idB, "/Users/test/shared", now.addingTimeInterval(-5))
+        ])
+        let cands = CodexScraper(filesystem: mock).candidates(cwd: nil)
+        let claim = ConversationRef(kind: "codex", id: "placeholder", placeholder: true,
+                                    cwd: "/Users/test/shared", capturedAt: now.addingTimeInterval(-60),
+                                    capturedVia: .wrapperClaim, state: .unknown, diagnosticReason: nil)
+        let inputs = ConversationStrategyInputs(surfaceId: "A", cwd: "/Users/test/shared",
+                                                lastActivityTimestamp: nil, wrapperClaim: claim,
+                                                push: nil, scrapeCandidates: cands)
+        let ref = CodexStrategy().capture(inputs: inputs)
+        XCTAssertEqual(ref?.state, .unknown)
+        XCTAssertEqual(ref?.diagnosticReason?.contains("ambiguous"), true)
+    }
+
+    // MARK: - C11-164: parseCodexCwd (bounded, allowlisted extractor)
+
+    func testParseCodexCwdExtractsOnlyCwd() {
+        let head = "{\"type\":\"session_meta\",\"payload\":{\"id\":\"x\",\"cwd\":\"/Users/test/proj\",\"instructions\":\"secret transcript body\"}}"
+        XCTAssertEqual(CodexScraper.parseCodexCwd(fromHead: head), "/Users/test/proj")
+    }
+
+    func testParseCodexCwdHandlesEscapedSlashes() {
+        XCTAssertEqual(CodexScraper.parseCodexCwd(fromHead: "{\"payload\":{\"cwd\":\"\\/Users\\/test\\/proj\"}}"),
+                       "/Users/test/proj")
+    }
+
+    func testParseCodexCwdReturnsNilWhenAbsent() {
+        XCTAssertNil(CodexScraper.parseCodexCwd(fromHead: "{\"payload\":{\"id\":\"x\"}}"))
+    }
+
+    func testParseCodexCwdReturnsNilOnTruncatedValue() {
+        XCTAssertNil(CodexScraper.parseCodexCwd(fromHead: "{\"payload\":{\"cwd\":\"/Users/test/pro"))
     }
 }

@@ -28,6 +28,8 @@ cd c11
 
 `setup.sh` initializes submodules (ghostty, bonsplit, homebrew-c11), builds `GhosttyKit.xcframework`, and lays down symlinks. Run it once; re-run when submodules change.
 
+The repo-root `node_modules/` (the `vercel` CLI, declared in the root `package.json`) is gitignored and no longer checked in. Nothing in the app build or CI depends on it; it exists only for manual Vercel deploys of the `web/` surface. If you need it, run `npm install` at the repo root to restore it. (The `web/` site itself installs its own deps with `bun install`; see `web/README.md`.)
+
 ## The hot-reload loop
 
 Day-to-day builds go through `./scripts/reload.sh`, which builds and launches a Debug app. **Always use `--tag`** — it gives your build its own name, bundle ID, socket, and DerivedData path, so it doesn't fight a co-located instance:

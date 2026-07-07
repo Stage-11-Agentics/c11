@@ -334,9 +334,15 @@ extension TerminalController {
             start(finish)
             guard !resolved else { return result }
 
-            let deadline = Date(timeIntervalSinceNow: timeout)
-            while !resolved && Date() < deadline {
-                CFRunLoopRunInMode(.defaultMode, 0.05, true)
+            // Monotonic deadline (systemUptime, mach-based) so an NTP/clock
+            // change during the await can't distort the timeout. Each slice
+            // blocks the full 50ms draining sources (returnAfterSourceHandled:
+            // false) rather than returning after one source — otherwise steady
+            // main-thread source traffic (WebKit render callbacks, timers) would
+            // busy-spin the loop for the whole timeout window.
+            let deadline = ProcessInfo.processInfo.systemUptime + timeout
+            while !resolved && ProcessInfo.processInfo.systemUptime < deadline {
+                CFRunLoopRunInMode(.defaultMode, 0.05, false)
             }
             return resolved ? result : nil
         }

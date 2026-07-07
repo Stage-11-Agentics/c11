@@ -5094,7 +5094,10 @@ struct CMUXCLI {
         let workspaceId = try normalizeWorkspaceHandle(workspaceArg, client: client, allowCurrent: true)
         // If a workspace is explicitly targeted and no tab/surface is provided, let server-side
         // tab.action resolve that workspace's focused tab instead of using global focus.
-        let allowFocusedFallback = (workspaceId == nil)
+        // C11-165 COR-1: rename is a surface/tab-scoped write — never resolve the
+        // operator-focused tab client-side; a ref-less rename must be rejected
+        // server-side (missing_ref). Other tab actions keep their focused fallback.
+        let allowFocusedFallback = (workspaceId == nil) && action != "rename"
         let surfaceId = try normalizeTabHandle(
             tabArg,
             client: client,
@@ -5269,17 +5272,22 @@ struct CMUXCLI {
         let surfaceRaw = surfaceOpt ?? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
         let workspaceRaw = workspaceOpt ?? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
         let workspaceId = try resolveWorkspaceId(workspaceRaw, client: client)
-        let surfaceId = try resolveSurfaceId(surfaceRaw, workspaceId: workspaceId, client: client)
 
         let source = sourceOpt?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "explicit"
 
         var params: [String: Any] = [
-            "surface_id": surfaceId,
             "workspace_id": workspaceId,
             "mode": "merge",
             "source": source,
             "metadata": [key: value]
         ]
+        // C11-165 COR-1: only send surface_id when the caller supplied one (flag
+        // or CMUX_SURFACE_ID). A ref-less external call must NOT resolve the
+        // operator-focused surface client-side — omit it so the server rejects
+        // (missing_ref) instead of stomping a peer's surface.
+        if let surfaceRaw {
+            params["surface_id"] = try resolveSurfaceId(surfaceRaw, workspaceId: workspaceId, client: client)
+        }
         if key == "description" && !autoExpand {
             params["auto_expand"] = false
         }
@@ -11018,7 +11026,8 @@ struct CMUXCLI {
     private func resolveMetadataTarget(
         commandArgs: [String],
         client: SocketClient,
-        windowOverride: String?
+        windowOverride: String?,
+        allowFocused: Bool = true
     ) throws -> (workspaceId: String?, surfaceId: String?) {
         let workspaceRaw = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowOverride)
         let workspaceId = try normalizeWorkspaceHandle(workspaceRaw, client: client)
@@ -11033,11 +11042,15 @@ struct CMUXCLI {
             ?? (explicitWorkspaceFlag == nil && windowOverride == nil
                 ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]
                 : nil)
+        // C11-165 COR-1: writes pass allowFocused:false, so a ref-less external
+        // caller (no --surface, no CMUX_SURFACE_ID) sends no surface_id and the
+        // server rejects (missing_ref) rather than the CLI resolving the
+        // operator-focused surface client-side. Reads keep the focused fallback.
         let surfaceId = try normalizeSurfaceHandle(
             surfaceRaw,
             client: client,
             workspaceHandle: workspaceId,
-            allowFocused: surfaceRaw == nil
+            allowFocused: allowFocused && surfaceRaw == nil
         )
         return (workspaceId, surfaceId)
     }
@@ -11054,7 +11067,8 @@ struct CMUXCLI {
     private func resolveMetadataCommandTarget(
         commandArgs: [String],
         client: SocketClient,
-        windowOverride: String?
+        windowOverride: String?,
+        allowFocused: Bool = true
     ) throws -> MetadataCommandTarget {
         let surfaceRaw = optionValue(commandArgs, name: "--surface")
             ?? optionValue(commandArgs, name: "--panel")
@@ -11080,7 +11094,8 @@ struct CMUXCLI {
         let (workspaceId, surfaceId) = try resolveMetadataTarget(
             commandArgs: commandArgs,
             client: client,
-            windowOverride: windowOverride
+            windowOverride: windowOverride,
+            allowFocused: allowFocused
         )
         return .surface(workspaceId: workspaceId, surfaceId: surfaceId)
     }
@@ -11258,7 +11273,8 @@ struct CMUXCLI {
         let (workspaceId, surfaceId) = try resolveMetadataTarget(
             commandArgs: commandArgs,
             client: client,
-            windowOverride: windowOverride
+            windowOverride: windowOverride,
+            allowFocused: false  // C11-165 COR-1: set-agent is a write — no client-side focused fallback
         )
         var params: [String: Any] = [
             "metadata": metadata,
@@ -11333,7 +11349,8 @@ struct CMUXCLI {
         let target = try resolveMetadataCommandTarget(
             commandArgs: commandArgs,
             client: client,
-            windowOverride: windowOverride
+            windowOverride: windowOverride,
+            allowFocused: false  // C11-165 COR-1: set-metadata is a write — no client-side focused fallback
         )
         var params: [String: Any] = [
             "metadata": metadata,
@@ -11427,7 +11444,8 @@ struct CMUXCLI {
         let target = try resolveMetadataCommandTarget(
             commandArgs: commandArgs,
             client: client,
-            windowOverride: windowOverride
+            windowOverride: windowOverride,
+            allowFocused: false  // C11-165 COR-1: clear-metadata is a write — no client-side focused fallback
         )
         var params: [String: Any] = ["source": source]
         if !keys.isEmpty { params["keys"] = keys }

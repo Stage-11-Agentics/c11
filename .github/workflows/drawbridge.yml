@@ -139,7 +139,7 @@ jobs:
       - name: Judge (read-only LLM triage)
         if: steps.resolve.outputs.open == 'true'
         continue-on-error: true
-        uses: anthropics/claude-code-action@fbda2eb1bdc90d319b8d853f5deb53bca199a7c1 # v1.0.140
+        uses: anthropics/claude-code-action@a92e7c70a4da9793dc164451d829089dc057a464 # v1.0.159
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Explicit token skips the action's GitHub-App OIDC exchange,
@@ -420,7 +420,7 @@ jobs:
 
       - name: Deep review (read-only LLM pass)
         continue-on-error: true
-        uses: anthropics/claude-code-action@fbda2eb1bdc90d319b8d853f5deb53bca199a7c1 # v1.0.140
+        uses: anthropics/claude-code-action@a92e7c70a4da9793dc164451d829089dc057a464 # v1.0.159
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Explicit token skips the action's GitHub-App OIDC exchange,

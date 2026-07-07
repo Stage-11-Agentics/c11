@@ -2,16 +2,17 @@
 
 Execution plan for the SPEC in this directory. Operator decisions (2026-07-06 interview) baked in; the Orchestrator's Phase 0 collapses to surface-and-confirm.
 
-## Run configuration (operator-decided)
+## Run configuration (operator-decided, finalized 2026-07-07)
 
-- **Orchestrator:** Opus instance, dedicated new workspace. Launch gate: operator sign-off on this contract.
-- **Autonomy:** Moderate (decide-and-log routine; surface architectural choices and scope expansions).
+- **Orchestrator:** Opus instance, dedicated new workspace. Delegators: **Opus everywhere** (all seven tickets). Launch: immediately on operator sign-off; run continuously, overnight included.
+- **Autonomy: Fully Autonomous.** The orchestrator decides architectural forks, scope calls, and dependency questions itself and logs every decision with rationale to run-state's append-only decision log. Only genuinely destructive or irreversible actions (force-push, data deletion, anything outside the repo) park as `needs_human`.
+- **Attention protocol: never interrupt.** No mid-run pings. Checkpoint digests (C1-C4) are written to run-state and a markdown surface, not pushed at the operator. Blocked work parks as `needs_human` and the run continues around it. One consolidated report plus a single notification at run end.
 - **Waves:** two, hard barrier. Wave 2 branches cut only after DX merges (everything in Wave 2 touches the dispatched command surface; building on the extracted base avoids four-way conflicts inside a 20k-line file).
-- **Concurrency:** Wave 1 N=3, Wave 2 N=4 (one delegator per ticket).
-- **Merge policy:** leave at `pr_open` (terminal pre-merge status; `done` only after operator merge). `pr_open` requires a validation-role artifact per board config; `done` requires a review-role artifact.
+- **Concurrency:** Wave 1 N=3, Wave 2 N=4 (one delegator per ticket). **Build lock: at most 2 concurrent xcodebuild/test invocations across the run** (orchestrator-managed; the operator is working on this machine).
+- **Merge policy:** the orchestrator **merges Wave 1 tickets itself**, gated on validation artifacts + CI green + (for DX) the recorded parity baseline, then moves them to `done` with review artifacts recorded in-flow. **Wave 2 tickets stop at `pr_open`** for operator merge. `pr_open` requires a validation-role artifact per board config; `done` requires a review-role artifact.
+- **Recovery ladder:** two failed fix attempts by a delegator → fresh-context captain with a handoff brief; captain failure → park as `needs_human` with a full state writeup; the run continues around parked tickets.
 - **Master Validator:** on. **Result Validator:** on (fresh session, runs the pre-merge-static rows of EVALUATION.md).
 - **Validation bar (every ticket):** tagged build + recorded live scenario proof, not CI-green alone.
-- **No coding before dispatch.** Contract authoring and ticket minting only until the operator approves.
 
 ## Tickets
 

@@ -189,18 +189,31 @@ enum SurfaceLivenessDeriver {
         }
     }
 
-    // MARK: - EVT transition seam (C11-163 hook point)
+    // MARK: - EVT transition seam (C11-163 / EVT-2 hook point)
 
     /// Single internal hook fired only on an *actual* working↔idle change
     /// (including to/from the absent/"unknown" state, represented by `nil`).
-    /// Currently a DEBUG-only no-op; ticket C11-163 (Events / EVT-2) will hook
-    /// this to emit the liveness transition event. Kept as the sole seam so
-    /// that later work has one place to attach.
+    /// This is the derived-liveness transition point EVT-2's taxonomy needs.
+    ///
+    /// SEAM (C11-162 ↔ C11-163): EVT (#318) ships the `liveness.derived` event
+    /// type and a stub `EventEmitter.emitDerivedLiveness(...)` with no call site;
+    /// this method IS that call site. It is deliberately NOT wired yet because
+    /// EVT is unmerged — referencing `EventEmitter` here would break `main`
+    /// while #318 is open. Once EVT merges, add the single line inside the
+    /// guard below:
+    ///
+    ///     EventEmitter.emitDerivedLiveness(surfaceId: surfaceId, from: from, to: to)
+    ///
+    /// (match the merged stub's actual signature). Firing only on a real
+    /// post-write transition — see the caller — is intentional so the event
+    /// stream never emits a phantom transition for a precedence-rejected write.
     private static func emitLivenessTransition(
         from: String?,
         to: String?,
         surfaceId: UUID
     ) {
+        // TODO(C11-163): once EVT #318 is merged, emit the liveness.derived
+        // event here via EventEmitter.emitDerivedLiveness(...). See doc above.
         #if DEBUG
         dlog(
             "surface.liveness.transition surface=\(surfaceId.uuidString.prefix(5)) " +

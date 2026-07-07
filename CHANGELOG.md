@@ -6,6 +6,27 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.57.0] - 2026-07-06
+
+Feature release. Headline: **agents launched from c11 now boot straight to a ready prompt — zero orientation turn — and can hold a pinned model and reasoning effort.** Starting an agent from c11 (the A-button, a new workspace, or the socket) no longer types an orientation prompt and waits out a first turn: the agent comes up idle and ready at 0s dead-time, and c11 itself stamps the sidebar identity (agent type, model chip, and an "Awaiting first task" placeholder title). Settings → Agents gains **Model** and **Effort** dropdowns, so a c11-launched agent runs at a chosen model family and reasoning effort regardless of your ambient default. Alongside the app changes, the installable skill library (Settings → Agent Skills) grows substantially: the **Tone** and **Chord** workflow families, plus **Sounding**, **Resonance**, **venture-partner**, and **distribution**, and a reworked **lattice-orchestrator**.
+
+### Added
+
+- **Pin a default model for c11-launched agents.** Settings → Agents has a **Model** dropdown; a launched agent gets `--model <family>` injected at launch so it runs at your chosen model family regardless of the ambient default. Opt-in (unset = inherit) and scoped to c11's launch paths — typing `claude` yourself is untouched. ([#307](https://github.com/Stage-11-Agentics/c11/pull/307)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **Pin a reasoning-effort level for c11-launched agents.** An **Effort** dropdown (Inherit / Low / Medium / High / Extra high / Max) sits beside Model; c11 injects `--effort <level>` at launch. Together they pin the full triple an agent runs at — harness + model family + effort. Opt-in and Claude Code-scoped. ([#311](https://github.com/Stage-11-Agentics/c11/pull/311)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **A large expansion of the installable skill library** (Settings → Agent Skills). New skills that now ship with c11: the **Tone** workflow (initiation / prototype / architect — idea → validated prototype → build contract), the **Chord** family (Tone in plural — one problem carried to a portfolio of complete, instrumented solutions), **Sounding** (idea generation upstream of Tone/Chord), **Resonance** (a marketing-capability program), **venture-partner** (evidence-first idea pressure-testing), and **distribution** (audience, channels, and instrumented-funnel planning). ([#306](https://github.com/Stage-11-Agentics/c11/pull/306), [#307](https://github.com/Stage-11-Agentics/c11/pull/307)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+### Changed
+
+- **Launched agents boot with no orientation prompt (0s dead-time).** A launch prompt used to be injected to make the agent c11-aware, which forced a first conversational turn (~10s at high effort before you could hand it a task). c11 now supplies that context itself — the agent-type chip comes from process inspection, and the model chip plus an "Awaiting first task" placeholder title are stamped by c11 at launch — so the agent comes up idle and ready and loads the c11 skill on demand once a task actually drives the workspace. A per-agent launch prompt is still configurable for operators who want one. ([#310](https://github.com/Stage-11-Agentics/c11/pull/310)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **`lattice-orchestrator` reworked to pure execution.** The orchestrator skill no longer plans; it takes a complete build contract (authored by the Tone workflow or by hand) and drives tickets → dispatch → audit, so the build is judged against a spec its builders did not write. ([#306](https://github.com/Stage-11-Agentics/c11/pull/306)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+_Note: the new Model and Effort dropdown labels ship English-only this release; the other six locales fall back to English until the next localization pass._
+
+### Thanks to 1 contributor!
+
+- [@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [0.56.1] - 2026-07-01
 
 Patch release. Headline: **auto-update failures are no longer a dead end.** When Sparkle can't launch its installer (error 4005 — most often a damaged `Sparkle.framework` on the installed copy, not a real location problem), the update popover used to show a misleading "c11 needs to live in Applications" message with only a Retry that re-hit the same wall. It now explains the failure plainly and offers a **Download Latest** button that opens the releases page so you can reinstall in one click. If auto-update ever errors with 4005, download the latest DMG and drag it over c11 in Applications once — auto-update resumes afterward.

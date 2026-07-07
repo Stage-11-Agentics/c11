@@ -1705,6 +1705,14 @@ struct CMUXCLI {
             return
         }
 
+        // C11-163: `c11 events tail` reads the NDJSON event log directly — the
+        // file is the contract, so it must work with no running app. Handle it
+        // before the socket connect, like `state verify`.
+        if command == "events" {
+            try runEventsCommand(commandArgs: commandArgs, jsonOutput: jsonOutput)
+            return
+        }
+
         let client = SocketClient(path: resolvedSocketPath)
         if resolvedSocketPath != socketPath {
             cliTelemetry.breadcrumb(
@@ -7774,6 +7782,8 @@ struct CMUXCLI {
 
             Print server capabilities as JSON.
             """
+        case "events":
+            return eventsUsage()
         case "help":
             return """
             Usage: c11 help
@@ -16431,6 +16441,7 @@ struct CMUXCLI {
           browser addscript <script>
           browser addstyle <css>
           browser identify [--surface <id|ref|index>]
+          events tail [--follow|-f] [--filter type=<type>] [--since <seq|duration>] [--instance <id>]
           help
 
         Environment:
@@ -17453,6 +17464,166 @@ extension CMUXCLI {
             flushHandle(handle)
             try? handle.close()
         }
+    }
+
+    // MARK: - Events stream (C11-163)
+
+    /// `c11 events <subcommand>`. File-first: reads the per-instance NDJSON
+    /// event log directly, no socket. Currently only `tail`.
+    private func runEventsCommand(commandArgs: [String], jsonOutput: Bool) throws {
+        let sub = commandArgs.first?.lowercased() ?? "help"
+        switch sub {
+        case "tail":
+            try runEventsTail(subArgs: Array(commandArgs.dropFirst()))
+        case "help", "--help", "-h":
+            print(eventsUsage())
+        default:
+            print(eventsUsage())
+            throw CLIError(message: "events: unknown subcommand '\(sub)'. Known: tail")
+        }
+    }
+
+    private func eventsUsage() -> String {
+        """
+        Usage: c11 events tail [--follow|-f] [--filter type=<type>] [--since <seq|duration>] [--instance <id>]
+
+        Stream the c11 events log (NDJSON). The file is the contract — this is
+        sugar over `~/Library/Application Support/c11/events/events-<instance>.ndjson`.
+        Works with no running app.
+
+          --follow, -f          Keep streaming new events (rotation-aware).
+          --filter type=<type>  Only lines whose `type` equals <type>.
+          --since <seq|dur>     Start at a seq number (e.g. 1200) or a duration
+                                ago (e.g. 10m, 90s, 2h), resolved against `ts`.
+          --instance <id>       Target a specific instance log (default: newest).
+
+        Examples:
+          c11 events tail
+          c11 events tail -f --filter type=surface.closed
+          c11 events tail --since 5m
+        """
+    }
+
+    /// Reads the current instance log, applies filters, prints matching lines.
+    /// One-shot by default; `--follow` streams with rotation detection so the
+    /// tail survives a size-capped roll (amendment A) — the mailbox loop cannot,
+    /// because the mailbox log never rotates.
+    private func runEventsTail(subArgs: [String]) throws {
+        let follow = hasFlag(subArgs, name: "--follow") || hasFlag(subArgs, name: "-f")
+        let typeFilter = eventsTypeFilter(subArgs)
+        let sinceSeq = eventsSinceSeq(subArgs)
+        let sinceDate = eventsSinceDate(subArgs)
+        let instance = optionValue(subArgs, name: "--instance")
+
+        let state = try EventLogLayout.defaultStateURL()
+        let logURL: URL
+        if let instance {
+            logURL = EventLogLayout.logURL(state: state, instance: instance)
+        } else {
+            do {
+                logURL = try EventLogLayout.newestLogURL(state: state)
+            } catch {
+                // No log yet. In --follow, wait for one to appear; else exit 0.
+                if !follow { return }
+                logURL = try eventsWaitForLog(state: state)
+            }
+        }
+
+        // Emit a line iff it passes every active filter.
+        func emit(_ line: String) {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            if let typeFilter, EventEnvelope.type(fromLine: trimmed) != typeFilter { return }
+            if let sinceSeq, let s = EventEnvelope.seq(fromLine: trimmed), s < sinceSeq { return }
+            if let sinceDate, let ts = EventEnvelope.timestamp(fromLine: trimmed), ts < sinceDate { return }
+            print(trimmed)
+        }
+
+        func drainLines(_ text: String) {
+            for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+                emit(String(line))
+            }
+            fflush(stdout)
+        }
+
+        // Initial read of the whole current file.
+        var lastSize: UInt64 = 0
+        var lastInode = eventsInode(of: logURL)
+        if let handle = try? FileHandle(forReadingFrom: logURL) {
+            let data = (try? handle.readToEnd()) ?? nil ?? Data()
+            if let text = String(data: data, encoding: .utf8) { drainLines(text) }
+            lastSize = (try? handle.offset()) ?? 0
+            try? handle.close()
+        }
+
+        guard follow else { return }
+
+        while true {
+            Thread.sleep(forTimeInterval: 0.25)
+            guard FileManager.default.fileExists(atPath: logURL.path) else { continue }
+            let currentInode = eventsInode(of: logURL)
+            let currentSize = eventsFileSize(of: logURL)
+            // Rotation detection: the file shrank or its inode changed → the log
+            // rolled. Re-read from the top (the fresh file opens with a
+            // log.rotated marker) so we never seek past EOF and stall.
+            if currentSize < lastSize || currentInode != lastInode {
+                lastSize = 0
+                lastInode = currentInode
+            }
+            guard let handle = try? FileHandle(forReadingFrom: logURL) else { continue }
+            try? handle.seek(toOffset: lastSize)
+            let data = (try? handle.readToEnd()) ?? nil ?? Data()
+            if let text = String(data: data, encoding: .utf8), !text.isEmpty { drainLines(text) }
+            lastSize = (try? handle.offset()) ?? lastSize
+            try? handle.close()
+        }
+    }
+
+    /// Blocks (polling) until an instance log exists, for `--follow` started
+    /// before the app opened its log.
+    private func eventsWaitForLog(state: URL) throws -> URL {
+        while true {
+            if let url = try? EventLogLayout.newestLogURL(state: state) { return url }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+    }
+
+    private func eventsTypeFilter(_ args: [String]) -> String? {
+        guard let raw = optionValue(args, name: "--filter") else { return nil }
+        // Accept `--filter type=surface.closed` (or a bare `type=` value).
+        if raw.hasPrefix("type=") { return String(raw.dropFirst("type=".count)) }
+        return raw
+    }
+
+    private func eventsSinceSeq(_ args: [String]) -> UInt64? {
+        guard let raw = optionValue(args, name: "--since") else { return nil }
+        return UInt64(raw)
+    }
+
+    /// Parses `--since <duration>` (e.g. 10m, 90s, 2h, 1d) into an absolute
+    /// cutoff date. Returns nil when `--since` is absent or a plain seq number.
+    private func eventsSinceDate(_ args: [String]) -> Date? {
+        guard let raw = optionValue(args, name: "--since"), UInt64(raw) == nil else { return nil }
+        guard let unit = raw.last, let value = Double(raw.dropLast()) else { return nil }
+        let seconds: Double
+        switch unit {
+        case "s": seconds = value
+        case "m": seconds = value * 60
+        case "h": seconds = value * 3600
+        case "d": seconds = value * 86400
+        default: return nil
+        }
+        return Date().addingTimeInterval(-seconds)
+    }
+
+    private func eventsInode(of url: URL) -> UInt64 {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        return (attrs?[.systemFileNumber] as? UInt64) ?? 0
+    }
+
+    private func eventsFileSize(of url: URL) -> UInt64 {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        return (attrs?[.size] as? UInt64) ?? 0
     }
 
     // MARK: - Helpers for raw-bash senders/receivers

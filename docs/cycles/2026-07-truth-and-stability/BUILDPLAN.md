@@ -4,7 +4,7 @@ Execution plan for the SPEC in this directory. Operator decisions (2026-07-06 in
 
 ## Run configuration (operator-decided, finalized 2026-07-07)
 
-- **Orchestrator:** Opus instance, dedicated new workspace. Delegators: **Opus everywhere** (all seven tickets). Launch: immediately on operator sign-off; run continuously, overnight included.
+- **Orchestrator:** Fable instance (claude-fable-5), dedicated new workspace. Delegators: **Opus everywhere** (all seven tickets). Launch: immediately on operator sign-off; run continuously, overnight included.
 - **Autonomy: Fully Autonomous.** The orchestrator decides architectural forks, scope calls, and dependency questions itself and logs every decision with rationale to run-state's append-only decision log. Only genuinely destructive or irreversible actions (force-push, data deletion, anything outside the repo) park as `needs_human`.
 - **Attention protocol: never interrupt.** No mid-run pings. Checkpoint digests (C1-C4) are written to run-state and a markdown surface, not pushed at the operator. Blocked work parks as `needs_human` and the run continues around it. One consolidated report plus a single notification at run end.
 - **Waves:** two, hard barrier. Wave 2 branches cut only after DX merges (everything in Wave 2 touches the dispatched command surface; building on the extracted base avoids four-way conflicts inside a 20k-line file).

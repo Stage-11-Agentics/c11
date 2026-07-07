@@ -1,0 +1,10 @@
+C11-162 Telemetry — c11-logic build+test result (final, post-review-fixes)
+Command: xcodebuild -scheme c11-logic -configuration Debug -destination platform=macOS test
+Result: ** TEST SUCCEEDED **   Executed 1223 tests, 3 skipped, 0 failures.
+
+New/changed test suites (all passed):
+- MetadataSourceTimestampTests   (TEL-1 ts stamping + PersistedMetadataSource round-trip + value-change bump/idempotent-freeze; + progress-snapshot timestamp round-trip incl. legacy-decode)
+- SidebarActivityProjectorTests  (TEL-4 takeover rules incl. boundaries + empty + no-derived)
+- SidebarStalenessSettingsTests  (TEL-2 decay classifier boundaries, clamp, env-override, expiry>=stale ordering)
+- SurfaceLivenessDeriverTests    (TEL-3 map/write-at-derived-tier/unknown-clears/precedence-reject/reconcile-decay)
+- WorkspaceDerivedActivityTests  (TEL-4 workspace glue: set/overwrite/clear + working-dominates rollup)

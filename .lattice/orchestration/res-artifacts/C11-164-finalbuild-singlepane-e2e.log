@@ -1,0 +1,23 @@
+run_dir: /var/folders/vr/9ty4n9qn6t77py2kdbm6wq_w0000gn/T/c11-res-post-e2e-ols940kj
+launched, socket ready
+cmd: SHIM_ID=9c79c6d0-79cf-4de0-a601-cabfe1b7ca8e claude
+new-workspace -> 'workspace:2'
+--- claude shim log ---
+INVOKE kind=claude-code pid=34243 cwd=/var/folders/vr/9ty4n9qn6t77py2kdbm6wq_w0000gn/T/c11-res-post-e2e-ols940kj/ws/cc0 args=--session-id 8842a139-aa66-40e2-945e-75dd88167534 --settings /var/folders/vr/9ty4n9qn6t77py2kdbm6wq_w0000gn/T//c11-claude-hooks-34243.json
+OK surface:5
+  terminal_type: applied
+OK conversation.claim kind=claude-code surface=4F6AB8A0-DDED-48D1-8A1E-716667550C2C
+OK conversation.push kind=claude-code surface=4F6AB8A0-DDED-48D1-8A1E-716667550C2C source=hook
+PUSHED id=9c79c6d0-79cf-4de0-a601-cabfe1b7ca8e cwd=/var/folders/vr/9ty4n9qn6t77py2kdbm6wq_w0000gn/T/c11-res-post-e2e-ols940kj/ws/cc0
+READY kind=claude-code cwd=/var/folders/vr/9ty4n9qn6t77py2kdbm6wq_w0000gn/T/c11-res-post-e2e-ols940kj/ws/cc0
+
+--- conversation list --- 1 refs
+   claude-code alive False
+--- tree ---
+window window:1 [current] ◀ active
+└── workspace workspace:1 "Workspace 1" [selected] ◀ active
+    ├── pane pane:1 size=50%×50% px=460×404 split=H:left,V:top [focused] ◀ active
+    │   └── surface surface:1 [terminal] "…/c11/c11-worktrees/res-crash-resume" [selected] ◀ active
+    ├── pane pane:2 size=50%×50% px=460×404 split=H:left,V:bottom
+    │   └── surface surface:2 [terminal] "~" [selected]
+ 

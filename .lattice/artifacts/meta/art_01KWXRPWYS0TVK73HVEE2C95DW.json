@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-07-07T07:47:02Z",
+  "created_by": "agent:ts-web-delegator",
+  "custom_fields": {
+    "url": "https://github.com/Stage-11-Agentics/c11/pull/316"
+  },
+  "id": "art_01KWXRPWYS0TVK73HVEE2C95DW",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": null,
+    "size_bytes": null
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "PR #316",
+  "token_usage": null,
+  "type": "reference"
+}

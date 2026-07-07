@@ -1,0 +1,9 @@
+SELF-REVIEW (inline, fast-track) — VERDICT: PASS with one caught incident, remediated.
+
+HYG-1 (untrack node_modules): PASS. Root cause verified: 4943 files under repo-root node_modules/ (the vercel CLI, single dep in root package.json), committed in e620ec734 before the node_modules/ ignore rule. Clean git rm -r --cached: 0 tracked at HEAD, still on disk, still git-check-ignore'd. No CI/build dependency (grep of .github/workflows clean; it is not in the Swift build). c11-logic suite green post-untrack (1183 tests, 0 failures, TEST SUCCEEDED) proving the build is unaffected. Restore path documented in CONTRIBUTING.md (npm install at root).
+
+HYG-2 (dependabot queue): PASS. 7 PRs resolved, zero open. 6 merged (5 CI-action bumps #279/#278/#277/#260/#259 + #308 web-minor-and-patch group), all green + MERGEABLE/CLEAN pre-merge. FINDING (caught in self-review discipline, remediated): #250 (eslint 9->10) auto-merged on green CI, but I verified locally that CI never runs eslint (web-typecheck is tsc), and eslint 10.6.0 fatally crashes 'bun run lint' (exit 2, TypeError contextOrFilename.getFilename) because eslint-config-next's eslint-plugin-react still calls eslint's removed context.getFilename(). Reverted via #314; origin/main back on eslint ^9 (verified). Reason documented on #250 and #314.
+
+HYG-3 (branch inventory): PASS. docs/cycles/2026-07-truth-and-stability/branch-inventory.md committed: 87 local + 164 remote branches with last-commit date, author, ahead/behind vs origin/main, merged-status, sorted stalest-first, with operator deletion guidance. NO branches deleted (operator-assisted per contract). upstream/manaflow excluded.
+
+Nits self-fixed before finalizing: removed em-dashes from authored doc content per house style; rewrote into two clean commits (HYG-1, HYG-3). Branch touches only CONTRIBUTING.md + branch-inventory.md + node_modules index removal — no overlap with the dependabot merges (.github/, web/), so no rebase needed.

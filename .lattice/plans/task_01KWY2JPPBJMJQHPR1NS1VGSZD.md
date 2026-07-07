@@ -1,0 +1,3 @@
+# C11-166: Fix c11-unit host-lane compile: TerminalAndGhosttyTests missing trigger: argument
+
+Pre-existing on origin/main, found during the Truth & Stability run (C11-164 delegator triage): c11Tests/TerminalAndGhosttyTests.swift calls TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronizeForAllWindows() without the now-required 'trigger:' String argument at lines ~2238/2296/2389/2468/2613 — the local c11-unit host lane fails to compile until fixed. Mechanical fix: supply a trigger string at each call site. Note the companion SurfaceActivityTests optional-accuracy break was already fixed in C11-164's PR (b56cf221f). Out of the 2026-07 cycle contract; not in the Result Validator's scope.

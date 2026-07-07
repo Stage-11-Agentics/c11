@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-07T07:45:15Z",
+  "created_by": "agent:ts-web-delegator",
+  "custom_fields": {},
+  "id": "art_01KWXRKMKDNAS3TEG1GXY5C1W0",
+  "model": null,
+  "payload": {
+    "content_type": "text/plain",
+    "file": "art_01KWXRKMKDNAS3TEG1GXY5C1W0.log",
+    "size_bytes": 384
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "WEB-5 discovery log (resolves c11 binary)",
+  "token_usage": null,
+  "type": "file"
+}

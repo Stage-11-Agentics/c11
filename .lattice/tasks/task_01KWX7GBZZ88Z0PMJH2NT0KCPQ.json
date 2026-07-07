@@ -1,17 +1,35 @@
 {
-  "assigned_to": null,
+  "assigned_to": "agent:ts-cor-delegator",
   "branch_links": [],
-  "comment_count": 0,
+  "c11_surface": "49534BC6-B572-4D31-A088-B41E819D1C2A",
+  "c11_workspace": "DB29BC45-D037-4643-8EF4-EAC84E8CBB0C",
+  "comment_count": 7,
   "complexity": "medium",
   "created_at": "2026-07-07T02:46:22Z",
   "created_by": "agent:fable-consultant",
   "custom_fields": {},
   "description": "Wave 2, depends on the dispatcher extraction. SPEC IDs: COR-1..COR-4. Empty/absent surface refs on all surface-scoped writes rejected with clear errors, never defaulted to the focused surface (June audit P0); skill footgun guidance updated. Main-thread-reachable socket paths eliminated: pane.confirm, feedback.submit, nested CFRunLoopRun genre swept fresh; hang monitor clean under a scripted C11-156-shaped hook/telemetry flood. Regression tests for both genres. Contract: docs/cycles/2026-07-truth-and-stability/ (SPEC.md, EVALUATION.md, BUILDPLAN.md). Validation bar: tagged build + recorded scenario proof.",
   "done_at": null,
-  "evidence_refs": [],
+  "evidence_refs": [
+    {
+      "id": "art_01KWY0ZJAQPHKYSBF41XD5CD0F",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KWY0ZJDRWWXNHZ54MW1R8TWA",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KWY11HQDCKJS8YMG2039T0A6",
+      "role": null,
+      "source_type": "artifact"
+    }
+  ],
   "id": "task_01KWX7GBZZ88Z0PMJH2NT0KCPQ",
-  "last_event_id": "ev_01KWX7GMWB5N215NC17VNN2MR7",
-  "last_status_changed_at": "2026-07-07T02:46:22Z",
+  "last_event_id": "ev_01KWY125WZH7FX542BMHAEPBJK",
+  "last_status_changed_at": "2026-07-07T10:12:32Z",
   "linked_files": [],
   "priority": "high",
   "relationships_out": [
@@ -26,13 +44,13 @@
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-165",
-  "status": "backlog",
+  "status": "pr_open",
   "tags": [
     "cycle-2026-07",
     "wave-2"
   ],
   "title": "P0 correctness: empty-ref rejection everywhere, main-thread socket paths eliminated",
   "type": "bug",
-  "updated_at": "2026-07-07T02:46:32Z",
+  "updated_at": "2026-07-07T10:13:00Z",
   "urgency": null
 }

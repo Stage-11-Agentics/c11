@@ -1,0 +1,33 @@
+=== TEL-5 HOT-PATH AUDIT (diff vs origin/main) ===
+
+1) hitTest() in TerminalWindowPortal.swift — touched by this ticket?
+   changed lines: 0
+
+2) forceRefresh() in GhosttyTerminalView.swift — touched?
+
+3) TabItemView body/Equatable in ContentView.swift — did our diff touch TabItemView's struct/==/body?
+103:+    @ObservedObject private var decayClock = SidebarDecayClock.shared
+183:+/// it can observe the coarse `SidebarDecayClock` (never done in TabItemView's
+193:+    @ObservedObject private var decayClock = SidebarDecayClock.shared
+259:+    @ObservedObject private var decayClock = SidebarDecayClock.shared
+   (SidebarDecayClock references above should be in CHILD subviews only, not TabItemView)
+
+4) New timers added (should be exactly ONE coarse SidebarDecayClock ~30s):
+1340:+        self.timer = timer
+
+5) Any DispatchQueue.main.sync added on telemetry paths?
+   (empty = none added)
+=== END AUDIT ===
+
+CONCLUSION (verified):
+- hitTest(): 0 changed lines — untouched.
+- forceRefresh(): untouched (no diff).
+- TabItemView (line 11257) struct/==/body: UNCHANGED. The SidebarDecayClock is
+  observed ONLY in the child subviews SidebarMetadataEntryRow / SidebarProgressIndicator /
+  SidebarDerivedActivityPill (lines 12979/13139/13205), never in TabItemView — the
+  Equatable typing fast-path is preserved.
+- Exactly ONE new timer added: SidebarDecayClock (coarse ~30s). The derived-liveness
+  recompute reuses the EXISTING AgentDetector 10s sweep (a reconcile CALL, no new timer)
+  and the EXISTING shell-integration transition signal. No per-keystroke/per-frame work.
+- No DispatchQueue.main.sync added on any telemetry path.
+TEL-5 SATISFIED.

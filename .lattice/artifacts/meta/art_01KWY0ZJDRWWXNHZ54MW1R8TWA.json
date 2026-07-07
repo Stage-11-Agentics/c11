@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-07T10:11:35Z",
+  "created_by": "agent:ts-cor-delegator",
+  "custom_fields": {},
+  "id": "art_01KWY0ZJDRWWXNHZ54MW1R8TWA",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KWY0ZJDRWWXNHZ54MW1R8TWA.md",
+    "size_bytes": 3861
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "2 independent reviewers; 2 HIGH fixed (CLI focused-fallback bypass, browser CPU spin) + 1 MED (monotonic clock)",
+  "tags": [],
+  "title": "C11-165 code-review triage",
+  "token_usage": null,
+  "type": "note"
+}

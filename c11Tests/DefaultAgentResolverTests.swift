@@ -265,6 +265,90 @@ final class DefaultAgentResolverTests: XCTestCase {
         )
     }
 
+    // MARK: - effort pinning
+
+    func testBuildCommandInjectsPinnedEffortBeforePrompt() {
+        let cfg = AgentConfig(
+            command: "claude --dangerously-skip-permissions",
+            initialPrompt: "go",
+            envOverridesText: "",
+            effort: "high"
+        )
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions --effort high 'go'"
+        )
+    }
+
+    func testBuildCommandInjectsBothModelAndEffort() {
+        let cfg = AgentConfig(
+            command: "claude --dangerously-skip-permissions",
+            initialPrompt: "go",
+            envOverridesText: "",
+            model: "opus",
+            effort: "xhigh"
+        )
+        // model first, then effort, then the positional prompt stays last.
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions --model opus --effort xhigh 'go'"
+        )
+    }
+
+    func testBuildCommandEmptyEffortInjectsNothing() {
+        let cfg = AgentConfig(
+            command: "claude --dangerously-skip-permissions",
+            initialPrompt: "",
+            envOverridesText: "",
+            model: "opus",
+            effort: ""
+        )
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions --model opus"
+        )
+    }
+
+    func testBuildCommandDoesNotDoubleEffortWhenCommandAlreadyHasOne() {
+        let cfg = AgentConfig(
+            command: "claude --dangerously-skip-permissions --effort low",
+            initialPrompt: "",
+            envOverridesText: "",
+            effort: "max"
+        )
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions --effort low"
+        )
+    }
+
+    func testBuildCommandDoesNotInjectEffortForNonClaudeAgent() {
+        let cfg = AgentConfig(
+            command: "codex --yolo",
+            initialPrompt: "",
+            envOverridesText: "",
+            effort: "high"
+        )
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .codex, config: cfg),
+            "codex --yolo"
+        )
+    }
+
+    func testLauncherCommandCarriesModelAndEffortForBareExport() {
+        let cfg = AgentConfig(
+            command: "claude --dangerously-skip-permissions",
+            initialPrompt: "some prompt",
+            envOverridesText: "",
+            model: "opus",
+            effort: "high"
+        )
+        XCTAssertEqual(
+            DefaultAgentResolver.launcherCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions --model opus --effort high"
+        )
+    }
+
     func testShellQuoteEmpty() {
         XCTAssertEqual(DefaultAgentResolver.shellQuote(""), "''")
     }

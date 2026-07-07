@@ -830,7 +830,7 @@ extension TerminalController {
     /// Called from `v2PaneCreate` / `v2SurfaceSplit` when the caller passes a
     /// `title` parameter. Atomic with the pane id becoming valid — agents can
     /// assume the seed is present before the RPC response returns.
-    private func v2SeedPaneTitle(
+    func v2SeedPaneTitle(
         workspaceId: UUID,
         paneUUID: UUID?,
         title: String?

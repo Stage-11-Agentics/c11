@@ -234,7 +234,7 @@ extension TerminalController {
         ])
     }
 
-    private func v2ConversationList(params: [String: Any]) -> V2CallResult {
+    func v2ConversationList(params: [String: Any]) -> V2CallResult {
         let snap = conversationStoreSync { store in
             await store.snapshot()
         } ?? [:]
@@ -265,7 +265,7 @@ extension TerminalController {
         ])
     }
 
-    private func v2ConversationGet(params: [String: Any]) -> V2CallResult {
+    func v2ConversationGet(params: [String: Any]) -> V2CallResult {
         let surfaceResult = v2ResolveSurfaceForConversation(params: params)
         guard case .success(let surfaceId) = surfaceResult else {
             if case .failure(let err) = surfaceResult { return err }

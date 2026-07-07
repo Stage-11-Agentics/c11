@@ -23,7 +23,7 @@ extension TerminalController {
         }
     }
 
-    private func v2TabAction(params: [String: Any]) -> V2CallResult {
+    func v2TabAction(params: [String: Any]) -> V2CallResult {
         guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }

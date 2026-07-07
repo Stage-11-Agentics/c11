@@ -273,7 +273,7 @@ extension TerminalController {
         return result
     }
 
-    private func v2SurfaceSplit(params: [String: Any]) -> V2CallResult {
+    func v2SurfaceSplit(params: [String: Any]) -> V2CallResult {
         guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
@@ -529,7 +529,7 @@ extension TerminalController {
         return result
     }
 
-    private func v2SurfaceMove(params: [String: Any]) -> V2CallResult {
+    func v2SurfaceMove(params: [String: Any]) -> V2CallResult {
         guard let surfaceId = v2UUID(params, "surface_id") else {
             return .err(code: "invalid_params", message: "Missing or invalid surface_id", data: nil)
         }
@@ -818,7 +818,7 @@ extension TerminalController {
     // v2AwaitCallback — repointing v2AwaitCallback's many @MainActor callers is
     // out of scope per ticket non-goals; this helper avoids touching them) and
     // then re-hops to @MainActor for the actual send.
-    private nonisolated func v2SurfaceSendText(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2SurfaceSendText(params: [String: Any]) -> V2CallResult {
         guard let text = params["text"] as? String else {
             return .err(code: "invalid_params", message: "Missing text", data: nil)
         }
@@ -935,7 +935,7 @@ extension TerminalController {
     // (v2MainSync wrap → waitForTerminalSurface → v2AwaitCallback nesting
     // CFRunLoopRun on a held main queue). Migrate it to the same Phase A /
     // Phase B pattern. See `v2SurfaceSendText` for the full rationale.
-    private nonisolated func v2SurfaceSendKey(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2SurfaceSendKey(params: [String: Any]) -> V2CallResult {
         guard let key = v2String(params, "key") else {
             return .err(code: "invalid_params", message: "Missing key", data: nil)
         }
@@ -1006,7 +1006,7 @@ extension TerminalController {
     // socketWorker policy for uniformity with the rest of the surface.* family.
     // Single-phase: one Task @MainActor + DispatchSemaphore wraps the whole
     // body, no Phase B waiting.
-    private nonisolated func v2SurfaceClearHistory(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2SurfaceClearHistory(params: [String: Any]) -> V2CallResult {
         let semaphore = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var result: V2CallResult = .err(code: "internal_error", message: "Failed to clear history", data: nil)
         Task { @MainActor in
@@ -1055,7 +1055,7 @@ extension TerminalController {
 
     // C11-26: surface.read_text matches surface.clear_history shape — no
     // waitForTerminalSurface, no deadlock vector — migrated for uniformity.
-    private nonisolated func v2SurfaceReadText(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2SurfaceReadText(params: [String: Any]) -> V2CallResult {
         var includeScrollback = v2Bool(params, "scrollback") ?? false
         let lineLimit = v2Int(params, "lines")
         if let lineLimit, lineLimit <= 0 {

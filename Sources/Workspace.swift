@@ -769,6 +769,14 @@ extension Workspace {
         if !ConversationStorePolicy.isDisabled, panel.panelType == .terminal {
             surfaceConversations = conversationsByPanelId[panelId.uuidString] ?? .empty
         }
+        // C11-164 (RES-2): persist the surface's live activity floor so the
+        // Codex/pi/omp scrape disambiguation survives a crash. Only terminal
+        // surfaces carry a meaningful floor; `lastActivity(for:)` is a bounded
+        // synchronous queue read (no main-thread hot-path work).
+        var lastActivityAt: Date? = nil
+        if !ConversationStorePolicy.isDisabled, panel.panelType == .terminal {
+            lastActivityAt = SurfaceActivityTracker.shared.lastActivity(for: panelId.uuidString)
+        }
         return SessionPanelSnapshot(
             id: panelId,
             type: panel.panelType,
@@ -786,7 +794,8 @@ extension Workspace {
             markdown: markdownSnapshot,
             metadata: persistedMetadata,
             metadataSources: persistedMetadataSources,
-            surfaceConversations: surfaceConversations
+            surfaceConversations: surfaceConversations,
+            lastActivityAt: lastActivityAt
         )
     }
 

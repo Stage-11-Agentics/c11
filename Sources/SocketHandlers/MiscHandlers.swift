@@ -35,6 +35,20 @@ extension TerminalController {
             return .err(code: "invalid_params", message: "Missing action", data: nil)
         }
 
+        // C11-165 COR-1: rename (rename-tab) is a surface/tab-scoped write; an
+        // empty or absent ref must not rename the operator-focused tab. Here
+        // `tab_id` and `surface_id` both pin the target (line 57 resolves both
+        // to a surface id). Other tab.action verbs (close_*, pin, duplicate, …)
+        // are outside COR-1's enumerated 10 and keep their focused-tab default.
+        if action == "rename",
+           let reject = v2RejectInvalidSurfaceRef(
+               params,
+               targetKeys: ["surface_id", "tab_id", "workspace_id"],
+               requiredAnyOf: ["surface_id", "tab_id"]
+           ) {
+            return reject
+        }
+
         let supportedActions = [
             "rename", "clear_name",
             "close_left", "close_right", "close_others",

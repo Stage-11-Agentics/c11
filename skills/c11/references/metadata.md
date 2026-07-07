@@ -100,7 +100,7 @@ c11 clear-metadata --key task
 c11 clear-metadata                   # clear everything (requires explicit source)
 ```
 
-> **Always pass `--surface "$C11_SURFACE_ID"` explicitly on surface-write commands** — `set-metadata`, `set-agent`, `set-title`, `set-description`, `rename-tab`, `clear-metadata`, etc. The env-var default is only safe on c11 binaries built after the `fix/set-metadata-env-default` fix; older binaries silently write to whatever surface the *operator* is focused on, which in a multi-surface workspace means you'll stomp a peer agent's metadata instead of your own. Defensive form costs one flag and works on every c11 version.
+> **Always pass `--surface "$C11_SURFACE_ID"` explicitly on surface-write commands** — `set-metadata`, `set-agent`, `set-title`, `set-description`, `rename-tab`, `clear-metadata`, etc. As of C11-165 a surface-scoped write with a missing or empty ref is **rejected** (`missing_ref` / `empty_ref`) rather than falling back to the operator-focused surface — so an omitted or empty flag now fails loudly instead of silently stomping a peer agent's metadata. Pass a valid ref: `--surface "$C11_SURFACE_ID"`, or the literal `surface:<n>` from `c11 identify --json` if the env var is empty. (On older, pre-C11-165 binaries the missing-ref default silently misrouted to the focused surface — the defensive form costs one flag and is correct on every version.)
 >
 > ```bash
 > c11 set-metadata --surface "$C11_SURFACE_ID" --key status --value "running"
@@ -176,7 +176,7 @@ Merge a partial metadata object into the surface's blob.
 
 | Param | Required | Notes |
 |-------|----------|-------|
-| `surface_id` | yes | UUID or ref; defaults to focused surface |
+| `surface_id` | yes | UUID or ref. **Required for writes** — a missing/empty ref is rejected (`missing_ref`/`empty_ref`), never defaulted to the focused surface (C11-165). |
 | `metadata` | yes | Partial or full object; ≤ 64 KiB post-merge |
 | `mode` | no | `"merge"` (default, shallow) or `"replace"` (requires `source: explicit`) |
 | `source` | no | Default `"explicit"`; other values: `"declare"`, `"osc"`, `"heuristic"` |

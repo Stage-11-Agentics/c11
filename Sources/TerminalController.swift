@@ -2540,6 +2540,49 @@ class TerminalController {
         return !(raw is NSNull)
     }
 
+    /// C11-165 COR-1: reject empty/absent surface refs on *write* commands
+    /// before resolution, so an empty (`--surface ""`) or absent ref can
+    /// never fall back to the operator-focused surface. `requiredAnyOf`
+    /// must be the granularity-pinning key(s) (e.g. `surface_id` for
+    /// surface metadata) — see `SocketSurfaceRefValidator`. Returns a
+    /// rejection `V2CallResult`, or nil to proceed with resolution.
+    func v2RejectInvalidSurfaceRef(
+        _ params: [String: Any],
+        targetKeys: [String],
+        requiredAnyOf: [String]
+    ) -> V2CallResult? {
+        // (1) Pure emptiness/presence check (logic-suite testable seam).
+        if let r = SocketSurfaceRefValidator.rejection(
+            params: params, targetKeys: targetKeys, requiredAnyOf: requiredAnyOf
+        ) {
+            return .err(code: r.code, message: r.message, data: nil)
+        }
+        // (2) Resolvability: the pinning key is present & non-empty, but if it
+        // does not resolve to a live handle the resolver's `?? focusedPanelId`
+        // chain would still misroute. `requiredAnyOf` is the pinning key set.
+        return v2RejectUnresolvedPin(params, pinningKeys: requiredAnyOf)
+    }
+
+    /// C11-165 COR-1 (companion to `v2RejectInvalidSurfaceRef`): after the
+    /// pure emptiness/presence check passes, confirm at least one pinning ref
+    /// actually RESOLVES to a live handle. Without this, a present-but-stale
+    /// or garbage ref (e.g. `surface:999`, a typo) makes `v2UUID` return nil
+    /// and the resolver's `?? focusedPanelId` chain falls back to the focused
+    /// surface — the exact misroute COR-1 forbids. Must run on the main actor
+    /// (`v2UUID` resolves handle refs against live state). Returns a not_found
+    /// rejection, or nil to proceed.
+    func v2RejectUnresolvedPin(_ params: [String: Any], pinningKeys: [String]) -> V2CallResult? {
+        let anyResolves = pinningKeys.contains { key in
+            v2HasNonNullParam(params, key) && v2UUID(params, key) != nil
+        }
+        if anyResolves { return nil }
+        return .err(
+            code: "not_found",
+            message: "surface ref did not resolve to a known handle (one of \(pinningKeys.joined(separator: ", "))); refusing to fall back to the focused surface",
+            data: nil
+        )
+    }
+
     func v2StrictInt(_ params: [String: Any], _ key: String) -> Int? {
         v2StrictIntAny(params[key])
     }
@@ -7074,6 +7117,24 @@ class TerminalController {
         return (positional, options)
     }
 
+    /// C11-165 COR-1: reject a v1 sidebar-metadata *write* (`set_status` /
+    /// `set_progress` / `log`) that carries no explicit `--tab` target, or an
+    /// empty one, instead of silently defaulting to the *selected* tab (audit
+    /// P0.2). These writes are tab(workspace)-scoped, so `--tab` is the
+    /// granularity-pinning ref. The CLI forwards `--workspace` /
+    /// `CMUX_WORKSPACE_ID` as `--tab=<id>`, so in-pane callers are unaffected;
+    /// only truly ref-less callers (cron / launchd / a fresh shell) are
+    /// rejected. Returns a v1 `ERROR:` string, or nil to proceed.
+    private func v1RejectMissingTabRef(_ args: String) -> String? {
+        let options = parseOptions(args).options
+        guard let r = SocketSurfaceRefValidator.rejection(
+            params: options.mapValues { $0 as Any },
+            targetKeys: ["tab"],
+            requiredAnyOf: ["tab"]
+        ) else { return nil }
+        return "ERROR: \(r.code): \(r.message)"
+    }
+
     private func resolveTabForReport(_ args: String) -> Tab? {
         guard let tabManager else { return nil }
         let parsed = parseOptions(args)
@@ -7363,7 +7424,8 @@ class TerminalController {
     }
 
     func setStatus(_ args: String) -> String {
-        upsertSidebarMetadata(
+        if let reject = v1RejectMissingTabRef(args) { return reject }
+        return upsertSidebarMetadata(
             args,
             missingError: "ERROR: Missing status key or value — usage: set_status <key> <value> [--icon=X] [--color=#hex] [--url=X] [--priority=N] [--format=plain|markdown] [--tab=X]"
         )
@@ -7507,6 +7569,7 @@ class TerminalController {
     }
 
     func appendLog(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         let parsed = parseOptions(args)
         guard !parsed.positional.isEmpty else {
             return "ERROR: Missing message — usage: log [--level=X] [--source=X] [--tab=X] -- <message>"
@@ -7587,6 +7650,7 @@ class TerminalController {
     }
 
     func setProgress(_ args: String) -> String {
+        if let reject = v1RejectMissingTabRef(args) { return reject }
         let parsed = parseOptions(args)
         guard let first = parsed.positional.first else {
             return "ERROR: Missing progress value — usage: set_progress <0.0-1.0> [--label=X] [--tab=X]"

@@ -703,6 +703,18 @@ extension TerminalController {
             return .err(code: rejection.code, message: rejection.message, data: nil)
         }
 
+        // C11-165 COR-1: pane metadata is a pane-scoped write; an empty or
+        // absent ref must not fall back to the focused pane. `pane_id` is the
+        // granularity-pinning key (surface_id/workspace_id only reach the
+        // focused-pane fallback in v2ResolvePaneForMetadata).
+        if let reject = v2RejectInvalidSurfaceRef(
+            params,
+            targetKeys: ["pane_id", "surface_id", "workspace_id", "tab_id"],
+            requiredAnyOf: ["pane_id"]
+        ) {
+            return reject
+        }
+
         guard let resolved = v2ResolvePaneForMetadata(params: params) else {
             return .err(code: "pane_not_found", message: "Pane not found", data: nil)
         }
@@ -803,6 +815,16 @@ extension TerminalController {
         // standing up a full socket frame loop.
         if let rejection = SocketMetadataSourceValidator.externalRejectionMessage(for: source) {
             return .err(code: rejection.code, message: rejection.message, data: nil)
+        }
+
+        // C11-165 COR-1: reject empty/absent refs on this pane-scoped write;
+        // never fall back to the focused pane.
+        if let reject = v2RejectInvalidSurfaceRef(
+            params,
+            targetKeys: ["pane_id", "surface_id", "workspace_id", "tab_id"],
+            requiredAnyOf: ["pane_id"]
+        ) {
+            return reject
         }
 
         guard let resolved = v2ResolvePaneForMetadata(params: params) else {

@@ -58,6 +58,13 @@ extension TerminalController {
             return v2Result(id: request.id, v2SurfaceReadText(params: request.params))
         case "surface.clear_history":
             return v2Result(id: request.id, v2SurfaceClearHistory(params: request.params))
+        // C11-165 COR-3: off-main handlers that block on a user click / async
+        // submission. Each must have a matching entry in socketWorkerV2Methods;
+        // a mismatch here would return method_not_found instead of executing.
+        case "pane.confirm":
+            return v2Result(id: request.id, v2PaneConfirm(params: request.params))
+        case "feedback.submit":
+            return v2Result(id: request.id, v2FeedbackSubmit(params: request.params))
         default:
             return v2Error(id: request.id, code: "method_not_found", message: "Unknown method")
         }

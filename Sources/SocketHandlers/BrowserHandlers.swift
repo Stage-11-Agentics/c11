@@ -312,30 +312,39 @@ extension TerminalController {
         start: (@escaping (T) -> Void) -> Void
     ) -> T? {
         if Thread.isMainThread {
-            let runLoop = CFRunLoopGetCurrent()
+            // C11-165 COR-3: pump the main run loop in short slices instead of
+            // one CFRunLoopRun stopped via CFRunLoopStop. Concurrent browser
+            // commands nest this call, and CFRunLoopStop only stops the
+            // *innermost* run loop — so an outer invocation's stop was swallowed
+            // and its socket thread wedged permanently (audit P0.4). Slicing
+            // lets each nested invocation observe its OWN `resolved` flag and
+            // deadline and unwind independently. The loop still pumps events
+            // (WebKit completion callbacks, rendering, main-queue blocks), so
+            // main is not frozen and WebKit calls stay on their required main
+            // thread — the reason this path runs on main at all.
             var resolved = false
-            var timedOut = false
             var result: T?
 
             let finish: (T) -> Void = { value in
                 guard !resolved else { return }
                 resolved = true
                 result = value
-                CFRunLoopStop(runLoop)
             }
 
             start(finish)
             guard !resolved else { return result }
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
-                guard !resolved else { return }
-                resolved = true
-                timedOut = true
-                CFRunLoopStop(runLoop)
+            // Monotonic deadline (systemUptime, mach-based) so an NTP/clock
+            // change during the await can't distort the timeout. Each slice
+            // blocks the full 50ms draining sources (returnAfterSourceHandled:
+            // false) rather than returning after one source — otherwise steady
+            // main-thread source traffic (WebKit render callbacks, timers) would
+            // busy-spin the loop for the whole timeout window.
+            let deadline = ProcessInfo.processInfo.systemUptime + timeout
+            while !resolved && ProcessInfo.processInfo.systemUptime < deadline {
+                CFRunLoopRunInMode(.defaultMode, 0.05, false)
             }
-
-            CFRunLoopRun()
-            return timedOut ? nil : result
+            return resolved ? result : nil
         }
 
         let semaphore = DispatchSemaphore(value: 0)

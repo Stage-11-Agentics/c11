@@ -1232,6 +1232,18 @@ extension TerminalController {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
 
+        // C11-165 COR-1: trigger-flash is a surface-scoped write; an empty or
+        // absent ref must not flash the operator-focused surface.
+        // v2ResolveTargetSurface reads only surface_id (then falls to focus), so
+        // surface_id is the granularity-pinning key — do not accept pane_id.
+        if let reject = v2RejectInvalidSurfaceRef(
+            params,
+            targetKeys: ["surface_id", "workspace_id", "tab_id"],
+            requiredAnyOf: ["surface_id"]
+        ) {
+            return reject
+        }
+
         // CMUX-10: parse + validate the optional color override off-main, before
         // hopping to the main actor. Per CLAUDE.md socket-threading policy.
         let appearance: FlashAppearance
@@ -1355,6 +1367,18 @@ extension TerminalController {
             return .err(code: rejection.code, message: rejection.message, data: nil)
         }
 
+        // C11-165 COR-1: an empty or absent surface ref must never fall back
+        // to the operator-focused surface on a write. `surface_id` is the
+        // granularity-pinning key (workspace_id/tab_id only reach the
+        // focused-surface fallback in v2ResolveSurfaceForMetadata).
+        if let reject = v2RejectInvalidSurfaceRef(
+            params,
+            targetKeys: ["surface_id", "workspace_id", "tab_id"],
+            requiredAnyOf: ["surface_id"]
+        ) {
+            return reject
+        }
+
         guard let resolved = v2ResolveSurfaceForMetadata(params: params) else {
             return .err(code: "surface_not_found", message: "Surface not found", data: nil)
         }
@@ -1458,6 +1482,16 @@ extension TerminalController {
         // standing up a full socket frame loop.
         if let rejection = SocketMetadataSourceValidator.externalRejectionMessage(for: source) {
             return .err(code: rejection.code, message: rejection.message, data: nil)
+        }
+
+        // C11-165 COR-1: reject empty/absent surface refs on this write;
+        // never fall back to the operator-focused surface.
+        if let reject = v2RejectInvalidSurfaceRef(
+            params,
+            targetKeys: ["surface_id", "workspace_id", "tab_id"],
+            requiredAnyOf: ["surface_id"]
+        ) {
+            return reject
         }
 
         guard let resolved = v2ResolveSurfaceForMetadata(params: params) else {

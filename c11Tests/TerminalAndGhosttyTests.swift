@@ -2235,7 +2235,7 @@ final class TerminalWindowPortalLifecycleTests: XCTestCase {
             "Before the external geometry sync, hit-testing should still point at the stale portal location"
         )
 
-        TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronizeForAllWindows()
+        TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronizeForAllWindows(trigger: "test")
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
 
         XCTAssertNil(
@@ -2293,7 +2293,7 @@ final class TerminalWindowPortalLifecycleTests: XCTestCase {
             "Initial hit-testing should resolve the portal-hosted terminal at its original window position"
         )
 
-        TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronize(for: window)
+        TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronize(for: window, trigger: "test")
         DispatchQueue.main.async {
             shiftedContainer.frame.origin.x += 72
             contentView.layoutSubtreeIfNeeded()
@@ -2386,7 +2386,7 @@ final class TerminalWindowPortalLifecycleTests: XCTestCase {
             shiftedContainer.frame.origin.x += 72
             contentView.layoutSubtreeIfNeeded()
             window.displayIfNeeded()
-            TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronizeForAllWindows()
+            TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronizeForAllWindows(trigger: "test")
         }
 
         drainMainQueue()
@@ -2465,7 +2465,7 @@ final class TerminalWindowPortalLifecycleTests: XCTestCase {
         shiftedContainer.frame.size.width -= 72
         contentView.layoutSubtreeIfNeeded()
         window.displayIfNeeded()
-        TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronize(for: window)
+        TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronize(for: window, trigger: "test")
 
         drainMainQueue()
 
@@ -2610,7 +2610,7 @@ final class TerminalWindowPortalLifecycleTests: XCTestCase {
             "Before syncing, unrelated windows should still report the stale portal location"
         )
 
-        TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronize(for: firstWindow)
+        TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronize(for: firstWindow, trigger: "test")
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
 
         XCTAssertNil(

@@ -157,7 +157,10 @@ extension Workspace {
         )
     }
 
-    func sessionSnapshot(includeScrollback: Bool) -> SessionWorkspaceSnapshot {
+    func sessionSnapshot(
+        includeScrollback: Bool,
+        conversationsByPanelId injectedConversations: [String: SurfaceConversations]? = nil
+    ) -> SessionWorkspaceSnapshot {
         let tree = bonsplitController.treeSnapshot()
         let layout = sessionLayoutSnapshot(from: tree)
 
@@ -178,7 +181,21 @@ extension Workspace {
         // not run while main was blocked on the semaphore wait. Single
         // `Task.detached` breaks the isolation inheritance; one
         // round-trip per save instead of N.
-        let conversationsByPanelId = Workspace.readConversationsByPanelIdSync()
+        //
+        // C11-170: the store snapshot is *global* (all panels across all
+        // workspaces), so a full-app `session.save` iterating W workspaces
+        // used to fire W independent `Task.detached` + 2s-semaphore reads —
+        // one per workspace, each an independent timeout dice-roll on the
+        // main thread. Under the concurrent load the TEL/EVT telemetry now
+        // generates during pane build, some of those reads missed the
+        // window and the workspace persisted an empty `surface_conversations`
+        // (dropped `active` refs → RES acceptance-harness flake). The caller
+        // (`AppDelegate.buildSessionSnapshot`) now reads the store once and
+        // injects the same map into every workspace; the self-read below is
+        // the fallback for the standalone call sites that snapshot a single
+        // workspace (DebugHandlers).
+        let conversationsByPanelId = injectedConversations
+            ?? Workspace.readConversationsByPanelIdSync()
 
         let panelSnapshots = allPanelIds
             .prefix(SessionPersistencePolicy.maxPanelsPerWorkspace)

@@ -1,3 +1,12 @@
-# C11-170: RES crash-resume acceptance harness flaky on main: session.save snapshot drops surface_conversations under telemetry load (12x redundant actor reads)
+# C11-170 — Plan
 
-RES multi-kind crash-resume acceptance harness (tests_v2/test_crash_resume_multikind_e2e.py) went red on main after the cycle-2026-07 merges (47/2, 46/3) having been 49/0 on branch ts/res-crash-resume. Failures are pre-crash capture-side. Root cause: session.save reads the global ConversationStore once PER WORKSPACE (12x) via Task.detached + 2s semaphore on the main thread; TEL(#320)+EVT(#322) telemetry added concurrent per-shell-transition work that contends the cooperative pool during the pane-build/save window, so some of the 12 timeout dice-rolls lose and those workspaces persist empty surface_conversations. Not a correctness regression in the RES machinery. Fix: single bulk read per save, threaded through TabManager/Workspace sessionSnapshot.
+De-flake the RES acceptance gate: read the global ConversationStore **once** per
+`session.save` instead of once per workspace (W independent 2s-timeout dice-rolls
+on main → one).
+
+1. `Workspace.sessionSnapshot` — optional `conversationsByPanelId` param (nil → self-read).
+2. `TabManager.sessionSnapshot` — thread the injected map to each workspace.
+3. `AppDelegate.buildSessionSnapshot` — read the store once, inject into every window.
+
+Validate: `xcodebuild -scheme c11-logic build` (green). Behavioral gate = the RES
+harness itself (rebuild tag `res-post`, run acceptance → expect 49/0).

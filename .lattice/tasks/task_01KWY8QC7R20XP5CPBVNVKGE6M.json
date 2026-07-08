@@ -1,27 +1,38 @@
 {
-  "assigned_to": null,
+  "assigned_to": "agent:ts-followups",
   "branch_links": [],
-  "comment_count": 0,
+  "comment_count": 4,
   "complexity": null,
   "created_at": "2026-07-07T12:26:55Z",
   "created_by": "agent:ts-orchestrator",
   "custom_fields": {},
   "description": "The run's one open functional thread (T&S cycle, 2026-07-07): EVT (#318) shipped the liveness.derived event type + EventEmitter.emitDerivedLiveness(...) stub with no call site; TEL (#320) deliberately left the hookup unwired because #318 was unmerged. After BOTH PRs merge, add the one-line call at SurfaceLivenessDeriver.emitLivenessTransition(from:to:surfaceId:) (the exact wiring is documented at the site). Until wired, liveness.derived events silently never emit. Verify with: c11 events tail --filter type=liveness.derived while a pane goes silent\u2192derived. See .lattice/orchestration/validation-report.md \u00a7Drift.",
-  "done_at": null,
-  "evidence_refs": [],
+  "done_at": "2026-07-08T17:35:17Z",
+  "evidence_refs": [
+    {
+      "id": "art_01KX1AXY061WNWPK23N866CN7E",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01KX1CRQTV8RJKAT1VKWQSRZMN",
+      "role": "review",
+      "source_type": "comment"
+    }
+  ],
   "id": "task_01KWY8QC7R20XP5CPBVNVKGE6M",
-  "last_event_id": "ev_01KWY8QC7SX3A3V48FHRFZSKS8",
-  "last_status_changed_at": "2026-07-07T12:26:55Z",
+  "last_event_id": "ev_01KX1CRQZDG4G191BX9GQX7NFG",
+  "last_status_changed_at": "2026-07-08T17:35:17Z",
   "linked_files": [],
   "priority": "high",
   "relationships_out": [],
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-167",
-  "status": "backlog",
+  "status": "done",
   "tags": null,
   "title": "Wire TEL\u2194EVT derived-liveness event emission (one-line seam completion)",
   "type": "task",
-  "updated_at": "2026-07-07T12:26:55Z",
+  "updated_at": "2026-07-08T17:35:17Z",
   "urgency": null
 }

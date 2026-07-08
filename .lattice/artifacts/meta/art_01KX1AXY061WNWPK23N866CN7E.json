@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-08T17:03:10Z",
+  "created_by": "agent:ts-followups",
+  "custom_fields": {},
+  "id": "art_01KX1AXY061WNWPK23N866CN7E",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KX1AXY061WNWPK23N866CN7E.md",
+    "size_bytes": 2567
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "c11-167-demonstration.md",
+  "token_usage": null,
+  "type": "file"
+}

@@ -4,10 +4,10 @@
   "description": "Build/test concurrency lock: max 2 concurrent xcodebuild/test invocations across the T&S run",
   "holders": [],
   "id": "res_01KWXMXMA2R65PYT0N5SBE3Q7W",
-  "last_event_id": "ev_01KWY11V415ZN5X0WBWZVZHZ0Z",
+  "last_event_id": "ev_01KX1CA8C4WY41E6GJQQKN92VW",
   "max_holders": 2,
   "name": "xcodebuild",
   "schema_version": 1,
   "ttl_seconds": 1800,
-  "updated_at": "2026-07-07T10:12:49Z"
+  "updated_at": "2026-07-08T17:27:23Z"
 }

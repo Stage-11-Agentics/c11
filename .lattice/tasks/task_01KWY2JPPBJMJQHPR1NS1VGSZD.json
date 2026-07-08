@@ -1,27 +1,38 @@
 {
-  "assigned_to": null,
+  "assigned_to": "agent:ts-followups",
   "branch_links": [],
-  "comment_count": 0,
+  "comment_count": 4,
   "complexity": null,
   "created_at": "2026-07-07T10:39:31Z",
   "created_by": "agent:ts-orchestrator",
   "custom_fields": {},
   "description": "Pre-existing on origin/main, found during the Truth & Stability run (C11-164 delegator triage): c11Tests/TerminalAndGhosttyTests.swift calls TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronizeForAllWindows() without the now-required 'trigger:' String argument at lines ~2238/2296/2389/2468/2613 \u2014 the local c11-unit host lane fails to compile until fixed. Mechanical fix: supply a trigger string at each call site. Note the companion SurfaceActivityTests optional-accuracy break was already fixed in C11-164's PR (b56cf221f). Out of the 2026-07 cycle contract; not in the Result Validator's scope.",
-  "done_at": null,
-  "evidence_refs": [],
+  "done_at": "2026-07-08T17:35:17Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01KX1B8WYK06DG8EMA4JK1EG19",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01KX1CRQM34APZV6QZWRYPY3VP",
+      "role": "review",
+      "source_type": "comment"
+    }
+  ],
   "id": "task_01KWY2JPPBJMJQHPR1NS1VGSZD",
-  "last_event_id": "ev_01KWY2JPPCQV3YB2G6FWHNVAAC",
-  "last_status_changed_at": "2026-07-07T10:39:31Z",
+  "last_event_id": "ev_01KX1CRQQBP21D2F566WBK1A0Y",
+  "last_status_changed_at": "2026-07-08T17:35:17Z",
   "linked_files": [],
   "priority": "medium",
   "relationships_out": [],
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-166",
-  "status": "backlog",
+  "status": "done",
   "tags": null,
   "title": "Fix c11-unit host-lane compile: TerminalAndGhosttyTests missing trigger: argument",
   "type": "chore",
-  "updated_at": "2026-07-07T10:39:31Z",
+  "updated_at": "2026-07-08T17:35:17Z",
   "urgency": null
 }

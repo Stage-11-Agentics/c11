@@ -58,8 +58,8 @@ Wave 2 branch bases: `origin/main` post-DX-merge (never the in-review DX branch 
 - [x] **C1** (2026-07-07 09:06Z) — DX merged (#317 @ 16c9c2d2a); HYG merged (#315); WEB merged (#316); DX-2 parity recorded (subset deviation logged); CI green on all three. Wave 1: 3/3 done, zero parked.
 - [x] **C2** (2026-07-07 09:14Z) — four Wave 2 delegators in_progress on worktrees cut from 16c9c2d2a; TEL/RES in sub-agent-full impl, EVT/COR inline-full. Planning phase completed pre-merge via press-ahead (zero barrier wall-clock lost).
 - [x] **C3** (2026-07-07 12:04Z) — all four Wave 2 tickets at pr_open with validation artifacts: #318 EVT, #319 COR, #320 TEL, #321 RES. Zero parked tickets; zero captains needed. Merge-order note: TEL and RES both touch SessionPanelSnapshot/SurfaceActivity (RES additive/namespaced) — second merge may need a trivial reconcile.
-- [ ] **C4** — Result Validator report at `.lattice/orchestration/validation-report.md`
-- [ ] **C5** — operator merges Wave 2, runs post-merge smoke checklist, closeout audit
+- [x] **C4** (2026-07-07 08:22) — Result Validator report written: GREEN, 32 pass / 6 partial / 0 fail / 0 blocked; all partials proof-gaps from the locked overnight display. Follow-ups minted: C11-166/167/168/169 + LAT-250.
+- [ ] **C5** (OPERATOR) — merge #318/#319/#320/#321 (TEL/RES pair: second merge may need trivial SessionPanelSnapshot reconcile), run the smoke checklist in RUN-REPORT.md, decide branch deletions, wire C11-167 post-merge. Run artifacts committed to main @ deb3bd970.
 
 ## Coordination notes
 

@@ -10,13 +10,13 @@
   ],
   "c11_surface": "21314CEE-9CE0-41B6-B75F-C7663AE15939",
   "c11_workspace": "DB29BC45-D037-4643-8EF4-EAC84E8CBB0C",
-  "comment_count": 5,
+  "comment_count": 6,
   "complexity": "medium",
   "created_at": "2026-07-07T02:46:22Z",
   "created_by": "agent:fable-consultant",
   "custom_fields": {},
   "description": "Wave 2, depends on the dispatcher extraction. SPEC IDs: EVT-1..EVT-8. File-first pub/sub: append-only NDJSON per-instance event log (seq, ts, type, refs, payload); v1 taxonomy = surface lifecycle, workspace select, canonical-metadata changes with source tier, derived-liveness transitions, waiting transitions, mailbox accepted/delivered; off-main non-blocking writes; size-capped rotation; c11 events tail --follow/--filter/--since as sugar over the file; envelope JSON schema in spec/; skill documents it all. <1s consumer latency. Contract: docs/cycles/2026-07-truth-and-stability/ (SPEC.md, EVALUATION.md, BUILDPLAN.md). Validation bar: tagged build + recorded scenario proof.",
-  "done_at": null,
+  "done_at": "2026-07-07T20:59:58Z",
   "evidence_refs": [
     {
       "id": "art_01KWY0QZAEN75A5VB77RFGG4NF",
@@ -42,11 +42,16 @@
       "id": "art_01KWY0T3WHEPZDJPRZV456D2QM",
       "role": null,
       "source_type": "artifact"
+    },
+    {
+      "id": "ev_01KWZ62S519DSF1W371BMNFDDA",
+      "role": "review",
+      "source_type": "comment"
     }
   ],
   "id": "task_01KWX7GBSX4DA3CS2KHCWZT5FB",
-  "last_event_id": "ev_01KWY0TWJ0KW14PN78DEN0BR5W",
-  "last_status_changed_at": "2026-07-07T10:08:24Z",
+  "last_event_id": "ev_01KWZ62S83DFHS9XKZH9ABJS62",
+  "last_status_changed_at": "2026-07-07T20:59:58Z",
   "linked_files": [],
   "priority": "high",
   "relationships_out": [
@@ -61,13 +66,13 @@
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-163",
-  "status": "pr_open",
+  "status": "done",
   "tags": [
     "cycle-2026-07",
     "wave-2"
   ],
   "title": "Events stream: NDJSON event log, v1 taxonomy, rotation, c11 events tail",
   "type": "task",
-  "updated_at": "2026-07-07T10:09:02Z",
+  "updated_at": "2026-07-07T20:59:58Z",
   "urgency": null
 }

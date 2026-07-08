@@ -9,7 +9,7 @@
   "created_by": "agent:fable-consultant",
   "custom_fields": {},
   "description": "Wave 2, depends on the dispatcher extraction. SPEC IDs: TEL-1..TEL-8. Canonical metadata keys carry last-updated; sidebar pills decay by age (tunable thresholds, suggested 5m/15m); derived working/idle state from PTY output flow at the derived precedence tier; stale explicit status hands the pill to derived state, visually distinct; waiting-agent cluster restyled per docs/c11-waiting-agent-cluster-plan.md (commit that plan doc with this ticket). No hot-path work. Skill metadata reference updated in same PR. Contract: docs/cycles/2026-07-truth-and-stability/ (SPEC.md, EVALUATION.md, BUILDPLAN.md). Validation bar: tagged build + recorded scenario proof.",
-  "done_at": null,
+  "done_at": "2026-07-07T20:59:33Z",
   "evidence_refs": [
     {
       "id": "art_01KWY1DQ3MZT2KN56K8Q4195M0",
@@ -38,8 +38,8 @@
     }
   ],
   "id": "task_01KWX7GBPYA1SGH3TR34BJHZCD",
-  "last_event_id": "ev_01KWY1XG5PKVHS9KEJQJKNPBR5",
-  "last_status_changed_at": "2026-07-07T10:20:38Z",
+  "last_event_id": "ev_01KWZ6214DNYBT4FB7XN1XYGRW",
+  "last_status_changed_at": "2026-07-07T20:59:33Z",
   "linked_files": [],
   "priority": "high",
   "relationships_out": [
@@ -54,13 +54,13 @@
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-162",
-  "status": "pr_open",
+  "status": "done",
   "tags": [
     "cycle-2026-07",
     "wave-2"
   ],
   "title": "Telemetry truth: metadata age and decay, PTY-derived liveness, waiting-agent cluster restyle",
   "type": "task",
-  "updated_at": "2026-07-07T10:27:56Z",
+  "updated_at": "2026-07-07T20:59:33Z",
   "urgency": null
 }

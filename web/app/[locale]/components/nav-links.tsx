@@ -36,7 +36,7 @@ export function NavLinks() {
         href="https://github.com/Stage-11-Agentics/c11"
         target="_blank"
         rel="noopener noreferrer"
-        onClick={() => posthog.capture("cmuxterm_github_clicked", { location: "navbar" })}
+        onClick={() => posthog.capture("c11_github_clicked", { location: "navbar" })}
         className="hover:text-foreground transition-colors"
       >
         {t("github")}

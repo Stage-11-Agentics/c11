@@ -5,15 +5,15 @@ export const blogPosts = [
     title: "Cmd+Shift+U",
     date: "2026-03-04",
     summary:
-      "How Cmd+Shift+U navigates between finished agents across workspaces in cmux.",
+      "How Cmd+Shift+U navigates between finished agents across workspaces in c11.",
   },
   {
     slug: "zen-of-cmux",
     key: "zenOfCmux",
-    title: "The Zen of cmux",
+    title: "The Zen of c11",
     date: "2026-02-27",
     summary:
-      "cmux is a primitive, not a solution. It gives you composable pieces and your workflow is up to you.",
+      "c11 is a primitive, not a solution. It gives you composable pieces and your workflow is up to you.",
   },
   {
     slug: "show-hn-launch",
@@ -26,7 +26,7 @@ export const blogPosts = [
   {
     slug: "introducing-c11",
     key: "introducingCmux",
-    title: "Introducing cmux",
+    title: "Introducing c11",
     date: "2026-02-12",
     summary:
       "A native macOS terminal built on Ghostty, designed for running multiple AI coding agents side by side.",

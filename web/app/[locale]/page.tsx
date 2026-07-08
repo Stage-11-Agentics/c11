@@ -31,12 +31,12 @@ function HomeContent() {
         <div className="flex items-center gap-4 mb-10" data-dev="header">
           <img
             src="/logo.png"
-            alt="cmux icon"
+            alt="c11 icon"
             width={48}
             height={48}
             className="rounded-xl"
           />
-          <h1 className="text-2xl font-semibold tracking-tight">cmux</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">c11</h1>
         </div>
 
         {/* Tagline */}
@@ -126,7 +126,7 @@ function HomeContent() {
         >
           <FadeImage
             src={landingImage}
-            alt="cmux terminal app screenshot"
+            alt="c11 terminal app screenshot"
             priority
             className="w-full rounded-xl"
           />

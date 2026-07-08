@@ -4378,6 +4378,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         guard !contexts.isEmpty else { return nil }
 
+        // C11-170: read the *global* conversation store exactly once for the
+        // whole save, then inject the same map into every window/workspace.
+        // The store snapshot spans all panels regardless of workspace, so the
+        // previous per-workspace read (`Workspace.sessionSnapshot` self-read)
+        // fired N independent `Task.detached` + 2s-semaphore round-trips on
+        // main — N timeout dice-rolls where one loss under load dropped a
+        // workspace's `surface_conversations`. One read collapses N rolls into
+        // one and cuts main-thread blocking on save from up-to-N×2s to ≤2s.
+        // (`readConversationsByPanelIdSync` already short-circuits to `[:]`
+        // when the store is disabled, before spawning the detached read.)
+        let conversationsByPanelId = Workspace.readConversationsByPanelIdSync()
+
         let windows: [SessionWindowSnapshot] = contexts
             .prefix(SessionPersistencePolicy.maxWindowsPerSnapshot)
             .map { context in
@@ -4385,7 +4397,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 return SessionWindowSnapshot(
                     frame: window.map { SessionRectSnapshot($0.frame) },
                     display: displaySnapshot(for: window),
-                    tabManager: context.tabManager.sessionSnapshot(includeScrollback: includeScrollback),
+                    tabManager: context.tabManager.sessionSnapshot(
+                        includeScrollback: includeScrollback,
+                        conversationsByPanelId: conversationsByPanelId
+                    ),
                     sidebar: SessionSidebarSnapshot(
                         isVisible: context.sidebarState.isVisible,
                         selection: SessionSidebarSelection(selection: context.sidebarSelectionState.selection),

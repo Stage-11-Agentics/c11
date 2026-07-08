@@ -5547,12 +5547,21 @@ extension TabManager {
         return hasher.finalize()
     }
 
-    func sessionSnapshot(includeScrollback: Bool) -> SessionTabManagerSnapshot {
+    func sessionSnapshot(
+        includeScrollback: Bool,
+        conversationsByPanelId: [String: SurfaceConversations]? = nil
+    ) -> SessionTabManagerSnapshot {
         let restorableTabs = tabs
             .filter { !$0.isRemoteWorkspace }
             .prefix(SessionPersistencePolicy.maxWorkspacesPerWindow)
+        // C11-170: thread the single pre-read store map (from
+        // `AppDelegate.buildSessionSnapshot`) into every workspace so the
+        // full-app save does one actor round-trip, not one per workspace.
         let workspaceSnapshots = restorableTabs
-            .map { $0.sessionSnapshot(includeScrollback: includeScrollback) }
+            .map { $0.sessionSnapshot(
+                includeScrollback: includeScrollback,
+                conversationsByPanelId: conversationsByPanelId
+            ) }
         let selectedWorkspaceIndex = selectedTabId.flatMap { selectedTabId in
             restorableTabs.firstIndex(where: { $0.id == selectedTabId })
         }

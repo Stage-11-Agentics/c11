@@ -1,0 +1,33 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 1,
+  "complexity": "medium",
+  "created_at": "2026-07-08T17:50:46Z",
+  "created_by": "agent:res-investigator",
+  "custom_fields": {},
+  "description": "RES multi-kind crash-resume acceptance harness (tests_v2/test_crash_resume_multikind_e2e.py) went red on main after the cycle-2026-07 merges (47/2, 46/3) having been 49/0 on branch ts/res-crash-resume. Failures are pre-crash capture-side. Root cause: session.save reads the global ConversationStore once PER WORKSPACE (12x) via Task.detached + 2s semaphore on the main thread; TEL(#320)+EVT(#322) telemetry added concurrent per-shell-transition work that contends the cooperative pool during the pane-build/save window, so some of the 12 timeout dice-rolls lose and those workspaces persist empty surface_conversations. Not a correctness regression in the RES machinery. Fix: single bulk read per save, threaded through TabManager/Workspace sessionSnapshot.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KX1DN2Y8M47TKXSYATZ23G8Z",
+  "last_event_id": "ev_01KX1DPZVXVYZR6WCJ8CKJDM1D",
+  "last_status_changed_at": "2026-07-08T17:50:46Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-170",
+  "status": "in_planning",
+  "tags": [
+    "cycle-2026-07",
+    "res",
+    "crash-resume",
+    "telemetry",
+    "flaky"
+  ],
+  "title": "RES crash-resume acceptance harness flaky on main: session.save snapshot drops surface_conversations under telemetry load (12x redundant actor reads)",
+  "type": "bug",
+  "updated_at": "2026-07-08T17:51:49Z",
+  "urgency": "high"
+}

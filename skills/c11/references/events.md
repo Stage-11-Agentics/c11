@@ -49,7 +49,7 @@ The nine taxonomy types below are the closed v1 enum. `workspace` / `surface` / 
 | `surface.closed` | workspace + surface | — | Surface torn down. |
 | `workspace.selected` | workspace (the selected one) | `{previous?}` | Sidebar tab switch. `previous` is the prior workspace UUID. |
 | `metadata.changed` | workspace + surface | `{scope, key, value?, prior?, source}` | A canonical/non-canonical metadata write landed. `scope` ∈ `surface`\|`pane`; `source` is the precedence tier (`explicit`\|`declare`\|`osc`\|`derived`\|`heuristic`). **`progress` is excluded in v1** (flood control); this covers `status`/`title`/`description` (+`role`/`task`/`model`). See [metadata.md](metadata.md). |
-| `liveness.derived` | workspace + surface | `{state}` | Derived agent activity, `state` ∈ `working`\|`idle`. Rides a seam with the TEL ticket (C11-162), which *produces* the derived-liveness signal; documented here as v1 taxonomy but **wired by TEL**. |
+| `liveness.derived` | workspace + surface | `{state}` | Derived agent activity, `state` ∈ `working`\|`idle`. Emitted on an actual derived working↔idle transition, computed from shell-activity ground truth; a settle back to the absent/unknown state emits nothing. |
 | `waiting.entered` | workspace (= tabId) + surface? | — | The "agent is waiting" edge — the unread-notification transition, per tab. |
 | `waiting.left` | workspace (= tabId) + surface? | — | Paired exit edge for `waiting.entered`. |
 | `mailbox.accepted` | workspace | `{id, from, to?, topic?}` | A mailbox message was accepted onto the bus. |

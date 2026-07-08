@@ -85,7 +85,7 @@ enum SurfaceLivenessDeriver {
             // happened.
             let after = currentActivityRaw(workspaceId: workspaceId, surfaceId: surfaceId)
             if prior != after {
-                emitLivenessTransition(from: prior, to: after, surfaceId: surfaceId)
+                emitLivenessTransition(from: prior, to: after, surfaceId: surfaceId, workspaceId: workspaceId)
             }
             // Mirror the *post-write* store truth (not the intended `derived`)
             // onto the main-actor Workspace projection, so the sidebar can never
@@ -138,7 +138,8 @@ enum SurfaceLivenessDeriver {
         emitLivenessTransition(
             from: SidebarActivityState.working.rawValue,
             to: SidebarActivityState.idle.rawValue,
-            surfaceId: surfaceId
+            surfaceId: surfaceId,
+            workspaceId: workspaceId
         )
         // Mirror onto the Workspace projection if it is currently resident.
         DispatchQueue.main.async {
@@ -195,31 +196,36 @@ enum SurfaceLivenessDeriver {
     /// (including to/from the absent/"unknown" state, represented by `nil`).
     /// This is the derived-liveness transition point EVT-2's taxonomy needs.
     ///
-    /// SEAM (C11-162 ↔ C11-163): EVT (#318) ships the `liveness.derived` event
-    /// type and a stub `EventEmitter.emitDerivedLiveness(...)` with no call site;
-    /// this method IS that call site. It is deliberately NOT wired yet because
-    /// EVT is unmerged — referencing `EventEmitter` here would break `main`
-    /// while #318 is open. Once EVT merges, add the single line inside the
-    /// guard below:
-    ///
-    ///     EventEmitter.emitDerivedLiveness(surfaceId: surfaceId, from: from, to: to)
-    ///
-    /// (match the merged stub's actual signature). Firing only on a real
-    /// post-write transition — see the caller — is intentional so the event
-    /// stream never emits a phantom transition for a precedence-rejected write.
+    /// SEAM (C11-162 ↔ C11-163), wired in C11-167: EVT (#318) ships the
+    /// `liveness.derived` event type + `EventEmitter.emitDerivedLiveness(...)`;
+    /// this method IS its call site. A `liveness.derived` event fires whenever
+    /// the derived truth settles on a concrete state (`working`/`idle`); a
+    /// transition *to* the absent/"unknown" state (`to == nil`) emits nothing,
+    /// since it is not one of the derived liveness states the stub carries.
+    /// Firing only on a real post-write transition — see the caller — is
+    /// intentional so the event stream never emits a phantom transition for a
+    /// precedence-rejected write.
     private static func emitLivenessTransition(
         from: String?,
         to: String?,
-        surfaceId: UUID
+        surfaceId: UUID,
+        workspaceId: UUID
     ) {
-        // TODO(C11-163): once EVT #318 is merged, emit the liveness.derived
-        // event here via EventEmitter.emitDerivedLiveness(...). See doc above.
         #if DEBUG
         dlog(
             "surface.liveness.transition surface=\(surfaceId.uuidString.prefix(5)) " +
             "from=\(from ?? "-") to=\(to ?? "-")"
         )
         #endif
-        // C11-163 EVT-2 hook point — intentionally empty in this ticket.
+        // EVT-2 derived-liveness event. Emit only for a concrete destination
+        // state; `emit` is internally locked + non-blocking (EVT-3), so this is
+        // safe on the off-main queues both callers run on.
+        if let to {
+            EventEmitter.shared.emitDerivedLiveness(
+                workspace: workspaceId,
+                surface: surfaceId,
+                state: to
+            )
+        }
     }
 }

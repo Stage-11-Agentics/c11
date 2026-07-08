@@ -638,6 +638,55 @@ class TerminalController {
         return (workspaceId, panelId)
     }
 
+    /// Resolve the (workspace, surface) a shell-activity report actually targets.
+    ///
+    /// C11-171: shell integration reports `report_shell_state <state>
+    /// --tab=$CMUX_TAB_ID --panel=$CMUX_PANEL_ID`, and `CMUX_TAB_ID` is a legacy
+    /// alias for the **surface** uuid (see `GhosttyTerminalView` env injection) —
+    /// NOT the workspace. So the workspace must be looked up from the panel, never
+    /// trusted from `--tab`. `--panel` is always the authoritative surface.
+    ///
+    /// `workspaceForPanel` maps a panel/surface uuid to its owning workspace uuid
+    /// (nil when the panel does not resolve to a live workspace). Backed by
+    /// `AppDelegate.workspaceContainingPanel(...)` at the call site; injected as a
+    /// closure so the resolution contract is unit-testable off-host.
+    nonisolated static func resolveShellActivityTarget(
+        panelId: UUID,
+        workspaceForPanel: (UUID) -> UUID?
+    ) -> (workspaceId: UUID, panelId: UUID)? {
+        guard let workspaceId = workspaceForPanel(panelId) else { return nil }
+        return (workspaceId, panelId)
+    }
+
+    /// C11-171: agent-reportable canonical keys that a `set_status` fast-path
+    /// write mirrors into the evented `SurfaceMetadataStore` (at the `.explicit`
+    /// tier), so the canonical last-updated `ts` is recorded (TEL-1) and a
+    /// `metadata.changed` event fires for the SPEC-evented keys (EVT-2).
+    /// Arbitrary display-only chips (e.g. "build", "deploy") are not canonical
+    /// and stay in the tab-scoped sidebar store only.
+    nonisolated static let sidebarMirrorCanonicalKeys: Set<String> = [
+        MetadataKey.status,
+        MetadataKey.task,
+        MetadataKey.role,
+        MetadataKey.model,
+        MetadataKey.progress
+    ]
+
+    /// Returns the canonical `SurfaceMetadataStore` key a `set_status` write
+    /// should mirror to, or nil when the key is a non-canonical display chip.
+    nonisolated static func sidebarStatusCanonicalMirrorKey(_ key: String) -> String? {
+        sidebarMirrorCanonicalKeys.contains(key) ? key : nil
+    }
+
+    /// Resolve the surface a workspace-scoped sidebar write mirrors its canonical
+    /// value onto: the explicit surface when it belongs to the tab, else the
+    /// tab's focused surface. Called from the same main-queue blocks that already
+    /// mutate `tab` state, so it stays non-isolated to match those call sites.
+    static func sidebarMirrorSurface(tab: Tab, explicit: UUID?) -> UUID? {
+        if let explicit, tab.panels[explicit] != nil { return explicit }
+        return tab.focusedPanelId
+    }
+
     nonisolated static func normalizeReportedDirectory(_ directory: String) -> String {
         let trimmed = directory.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return directory }
@@ -7308,8 +7357,28 @@ class TerminalController {
             return nil
         }()
 
+        // C11-171: explicit surface ref (uuid, resolved by the CLI) for the
+        // canonical-store mirror. Falls back to the tab's focused surface.
+        let explicitSurfaceId: UUID? = normalizedOptionValue(parsed.options["surface"] ?? parsed.options["panel"])
+            .flatMap { UUID(uuidString: $0) }
+        let mirrorKey = Self.sidebarStatusCanonicalMirrorKey(key)
+
         DispatchQueue.main.async { [weak self] in
             guard let self, let tab = self.tabForSidebarMutation(id: targetTabId) else { return }
+            // C11-171: mirror canonical keys into the evented surface store so a
+            // last-updated `ts` is recorded and `status` changes emit
+            // `metadata.changed`. `setInternal` runs on the store's own serial
+            // queue (no main.sync); non-canonical display chips are skipped.
+            if let mirrorKey,
+               let surfaceId = Self.sidebarMirrorSurface(tab: tab, explicit: explicitSurfaceId) {
+                SurfaceMetadataStore.shared.setInternal(
+                    workspaceId: tab.id,
+                    surfaceId: surfaceId,
+                    key: mirrorKey,
+                    value: value,
+                    source: .explicit
+                )
+            }
             guard Self.shouldReplaceStatusEntry(
                 current: tab.statusEntries[key],
                 key: key,
@@ -7687,6 +7756,10 @@ class TerminalController {
         }
         let clamped = min(1.0, max(0.0, value))
         let label = parsed.options["label"]
+        // C11-171: explicit surface ref (uuid, resolved by the CLI) for the
+        // canonical-store mirror; falls back to the tab's focused surface.
+        let explicitSurfaceId: UUID? = normalizedOptionValue(parsed.options["surface"] ?? parsed.options["panel"])
+            .flatMap { UUID(uuidString: $0) }
 
         var result = "OK"
         v2MainSync {
@@ -7695,6 +7768,19 @@ class TerminalController {
                 return
             }
             tab.progress = SidebarProgressState(value: clamped, label: label)
+            // C11-171: mirror `progress` into the evented surface store so
+            // `get_metadata` sees a last-updated `ts` (TEL-1). No event fires —
+            // `progress` is deliberately excluded from the event stream for
+            // flood-control (EventEmitter.canonicalMetadataEventKeys).
+            if let surfaceId = Self.sidebarMirrorSurface(tab: tab, explicit: explicitSurfaceId) {
+                SurfaceMetadataStore.shared.setInternal(
+                    workspaceId: tab.id,
+                    surfaceId: surfaceId,
+                    key: MetadataKey.progress,
+                    value: clamped,
+                    source: .explicit
+                )
+            }
         }
         return result
     }
@@ -7997,8 +8083,20 @@ class TerminalController {
                 return "OK"
             }
             DispatchQueue.main.async {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId) else { return }
-                tabManager.updateSurfaceShellActivity(tabId: scope.workspaceId, surfaceId: scope.panelId, state: state)
+                guard let app = AppDelegate.shared else { return }
+                // C11-171: resolve the workspace from the PANEL, not from `--tab`
+                // (shell integration sends the surface uuid in `--tab`). Without
+                // this the report silently no-ops and derived liveness never fires.
+                guard let target = Self.resolveShellActivityTarget(
+                    panelId: scope.panelId,
+                    workspaceForPanel: { panel in
+                        app.workspaceContainingPanel(
+                            panelId: panel,
+                            preferredWorkspaceId: scope.workspaceId
+                        )?.workspace.id
+                    }
+                ), let tabManager = app.tabManagerFor(tabId: target.workspaceId) else { return }
+                tabManager.updateSurfaceShellActivity(tabId: target.workspaceId, surfaceId: target.panelId, state: state)
             }
             return "OK"
         }

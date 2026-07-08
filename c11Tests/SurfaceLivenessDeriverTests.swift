@@ -182,4 +182,50 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         XCTAssertEqual(activityValue(ws, surface), SidebarActivityState.working.rawValue)
         XCTAssertEqual(activitySource(ws, surface), .explicit)
     }
+
+    // MARK: - C11-171: shell-activity report resolves the workspace from the PANEL
+
+    /// Shell integration reports `report_shell_state --tab=$CMUX_TAB_ID
+    /// --panel=$CMUX_PANEL_ID` with BOTH set to the surface uuid (`CMUX_TAB_ID`
+    /// is a legacy surface alias). The resolver must find the owning workspace
+    /// from the panel, never trust `--tab` as the workspace — otherwise the
+    /// report no-ops and derived liveness never fires (the v0.58.0 blocker).
+    func testShellActivityTargetResolvesWorkspaceFromPanel() {
+        let realWorkspace = UUID()
+        let surface = UUID()
+
+        // Shell-integration shape: --tab == --panel == the surface uuid.
+        let target = TerminalController.resolveShellActivityTarget(
+            panelId: surface,
+            workspaceForPanel: { panel in
+                panel == surface ? realWorkspace : nil
+            }
+        )
+        XCTAssertEqual(target?.workspaceId, realWorkspace,
+                       "workspace must come from the panel lookup, not from --tab")
+        XCTAssertEqual(target?.panelId, surface)
+    }
+
+    /// A panel that owns no live workspace yields no target (silent no-op),
+    /// rather than misrouting to a stale/guessed workspace.
+    func testShellActivityTargetNilWhenPanelUnowned() {
+        XCTAssertNil(TerminalController.resolveShellActivityTarget(
+            panelId: UUID(),
+            workspaceForPanel: { _ in nil }
+        ))
+    }
+
+    /// The legitimate CLI/test shape (`--tab=<real workspace>`, `--panel=<real
+    /// surface>`) still resolves — the lookup closure is backed by a
+    /// preferred-workspace-first resolver, so pre-C11-171 callers are unaffected.
+    func testShellActivityTargetHonorsRealWorkspacePanelPair() {
+        let workspace = UUID()
+        let panel = UUID()
+        let target = TerminalController.resolveShellActivityTarget(
+            panelId: panel,
+            workspaceForPanel: { $0 == panel ? workspace : nil }
+        )
+        XCTAssertEqual(target?.workspaceId, workspace)
+        XCTAssertEqual(target?.panelId, panel)
+    }
 }

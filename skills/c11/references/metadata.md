@@ -262,6 +262,8 @@ Every canonical key's `metadata_sources[key]` record carries a `ts` (seconds sin
 
 **Sidebar freshness is "last reported," not "last changed."** The visible sidebar status pill (`set-status` / `set_status`) tracks the last time the agent *reported* the value: re-reporting the same status is a **heartbeat** that refreshes its freshness clock, so a live agent that keeps asserting the same status never false-decays. (Only the visible sidebar entry works this way; the canonical `metadata_sources` `ts` stays "last changed.") Progress freshness is likewise stamped on every write and round-trips across relaunch.
 
+**`set-status` / `set-progress` also mirror the canonical key into the surface store.** When the entry's key is a canonical agent-reportable key (`status`, `task`, `role`, `model`, `progress`), the fast path writes it through the evented `SurfaceMetadataStore` at the `explicit` tier — so `get-metadata` returns it with a last-changed `ts`, and a `status` change emits a `metadata.changed` event (`progress` records a `ts` but is deliberately not evented, for flood-control). Arbitrary display-only chips (e.g. `build`, `deploy`) stay in the sidebar store only. The mirror targets the explicit `--surface` (resolved from a ref) when you pass one, else the workspace's focused surface — pass `--surface "$C11_SURFACE_ID"` so your status lands on *your* surface in a multi-agent workspace.
+
 ### Status/progress decay
 
 Sidebar `status`/`progress` pills decay visually as they age against two operator-tunable thresholds:

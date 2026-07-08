@@ -17,15 +17,15 @@
   "done_at": null,
   "evidence_refs": [],
   "id": "task_01KX1DN2Y8M47TKXSYATZ23G8Z",
-  "last_event_id": "ev_01KX1GJQV29MYC5SQD8N2WWS4P",
-  "last_status_changed_at": "2026-07-08T18:41:55Z",
+  "last_event_id": "ev_01KX1GK2BF5CR2AN7352AX4H27",
+  "last_status_changed_at": "2026-07-08T18:42:06Z",
   "linked_files": [],
   "priority": "high",
   "relationships_out": [],
   "reopened_count": 0,
   "schema_version": 1,
   "short_id": "C11-170",
-  "status": "in_progress",
+  "status": "review",
   "tags": [
     "cycle-2026-07",
     "res",
@@ -35,6 +35,6 @@
   ],
   "title": "RES crash-resume acceptance harness flaky on main: session.save snapshot drops surface_conversations under telemetry load (12x redundant actor reads)",
   "type": "bug",
-  "updated_at": "2026-07-08T18:41:55Z",
+  "updated_at": "2026-07-08T18:42:06Z",
   "urgency": "high"
 }

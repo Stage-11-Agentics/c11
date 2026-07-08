@@ -142,4 +142,43 @@ final class MetadataSourceTimestampTests: XCTestCase {
         XCTAssertNil(decoded.timestamp)
         XCTAssertEqual(decoded.value, 0.7)
     }
+
+    // MARK: - C11-171: set_status/set_progress mirror canonical keys, stamping ts
+
+    /// Only agent-reportable canonical keys mirror into the evented surface
+    /// store; arbitrary sidebar display chips (build/deploy) do not.
+    func testSidebarCanonicalMirrorKeySelection() {
+        for key in ["status", "task", "role", "model", "progress"] {
+            XCTAssertEqual(TerminalController.sidebarStatusCanonicalMirrorKey(key), key,
+                           "\(key) is canonical and must mirror")
+        }
+        for key in ["build", "deploy", "claude_code", "worktree", "activity"] {
+            XCTAssertNil(TerminalController.sidebarStatusCanonicalMirrorKey(key),
+                         "\(key) must stay display-only / runtime-derived")
+        }
+    }
+
+    /// The set_status mirror records a canonical `ts` on the surface store so
+    /// `get_metadata` sees a last-updated stamp (TEL-1) — the blocker was that
+    /// set_status wrote no canonical store at all.
+    func testStatusMirrorStampsTimestamp() throws {
+        let ws = UUID(); let surface = UUID()
+        defer { store.removeSurface(workspaceId: ws, surfaceId: surface) }
+
+        let before = Date().timeIntervalSince1970
+        XCTAssertTrue(store.setInternal(
+            workspaceId: ws, surfaceId: surface,
+            key: TerminalController.sidebarStatusCanonicalMirrorKey("status")!,
+            value: "working", source: .explicit))
+        let after = Date().timeIntervalSince1970
+
+        let got = store.getMetadata(workspaceId: ws, surfaceId: surface)
+        XCTAssertEqual(got.metadata["status"] as? String, "working")
+        guard let ts = got.sources["status"]?["ts"] as? Double else {
+            return XCTFail("mirrored status carries no ts")
+        }
+        XCTAssertGreaterThanOrEqual(ts, before)
+        XCTAssertLessThanOrEqual(ts, after + 1.0)
+        XCTAssertEqual(got.sources["status"]?["source"] as? String, MetadataSource.explicit.rawValue)
+    }
 }

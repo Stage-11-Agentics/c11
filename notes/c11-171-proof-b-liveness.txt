@@ -1,0 +1,24 @@
+=== C11-171 PROOF (b): PTY output burst then idle -> liveness.derived transitions ===
+staging: com.stage11.c11.staging.rel-v0-58-0-fix2  socket=/tmp/c11-rel-v0-58-0-fix2.sock  build=RELEASE
+captured 2026-07-08T22:11:43Z
+
+Action: c11 send --workspace workspace:1 --surface surface:1 \
+         'for i in $(seq 1 15); do echo tick $i; sleep 0.3; done'
+surface:1 = B3AFC291-E6AF-4F18-8667-CD12650F8DDE
+
+The driven burst is the working->idle pair ~4.7s apart (15 x 0.3s):
+  seq 15  state=working  22:11:02.676Z   <- preexec 'running' reached the deriver
+  seq 17  state=idle     22:11:07.417Z   <- precmd 'prompt' after the burst finished
+(seq 6-10 @ 22:09:25 are launch-time shell-integration reports on the two terminal surfaces.)
+
+--- captured liveness.derived events (events tail --follow --filter type=liveness.derived) ---
+{"instance":"com.stage11.c11.staging.rel.v0.58.0.fix2-90613","payload":{"state":"idle"},"seq":6,"surface":"B3AFC291-E6AF-4F18-8667-CD12650F8DDE","ts":"2026-07-08T22:09:25.184Z","type":"liveness.derived","v":1,"workspace":"C474B1B1-8C57-410A-8D00-C9E8D7A75D4E"}
+{"instance":"com.stage11.c11.staging.rel.v0.58.0.fix2-90613","payload":{"state":"working"},"seq":7,"surface":"B3AFC291-E6AF-4F18-8667-CD12650F8DDE","ts":"2026-07-08T22:09:25.185Z","type":"liveness.derived","v":1,"workspace":"C474B1B1-8C57-410A-8D00-C9E8D7A75D4E"}
+{"instance":"com.stage11.c11.staging.rel.v0.58.0.fix2-90613","payload":{"state":"idle"},"seq":8,"surface":"B3AFC291-E6AF-4F18-8667-CD12650F8DDE","ts":"2026-07-08T22:09:25.230Z","type":"liveness.derived","v":1,"workspace":"C474B1B1-8C57-410A-8D00-C9E8D7A75D4E"}
+{"instance":"com.stage11.c11.staging.rel.v0.58.0.fix2-90613","payload":{"state":"idle"},"seq":9,"surface":"63769F5D-1BB7-4F5C-9F40-6582C50AE67C","ts":"2026-07-08T22:09:25.230Z","type":"liveness.derived","v":1,"workspace":"C474B1B1-8C57-410A-8D00-C9E8D7A75D4E"}
+{"instance":"com.stage11.c11.staging.rel.v0.58.0.fix2-90613","payload":{"state":"working"},"seq":10,"surface":"63769F5D-1BB7-4F5C-9F40-6582C50AE67C","ts":"2026-07-08T22:09:25.230Z","type":"liveness.derived","v":1,"workspace":"C474B1B1-8C57-410A-8D00-C9E8D7A75D4E"}
+{"instance":"com.stage11.c11.staging.rel.v0.58.0.fix2-90613","payload":{"state":"working"},"seq":15,"surface":"B3AFC291-E6AF-4F18-8667-CD12650F8DDE","ts":"2026-07-08T22:11:02.676Z","type":"liveness.derived","v":1,"workspace":"C474B1B1-8C57-410A-8D00-C9E8D7A75D4E"}
+{"instance":"com.stage11.c11.staging.rel.v0.58.0.fix2-90613","payload":{"state":"idle"},"seq":17,"surface":"B3AFC291-E6AF-4F18-8667-CD12650F8DDE","ts":"2026-07-08T22:11:07.417Z","type":"liveness.derived","v":1,"workspace":"C474B1B1-8C57-410A-8D00-C9E8D7A75D4E"}
+
+Before C11-171: liveness.derived had fired 3 times EVER (all in one C11-167 dev instance),
+zero in any staging/prod log — report_shell_state --tab=<surfaceUUID> never resolved a workspace.

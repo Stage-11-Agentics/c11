@@ -330,10 +330,22 @@ extension TerminalController {
         }
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId) else { return }
+                guard let app = AppDelegate.shared else { return }
+                // C11-171: resolve the workspace from the PANEL, not from `--tab`
+                // (shell integration sends the surface uuid in `--tab`). Without
+                // this the report silently no-ops and derived liveness never fires.
+                guard let target = TerminalController.resolveShellActivityTarget(
+                    panelId: scope.panelId,
+                    workspaceForPanel: { panel in
+                        app.workspaceContainingPanel(
+                            panelId: panel,
+                            preferredWorkspaceId: scope.workspaceId
+                        )?.workspace.id
+                    }
+                ), let tabManager = app.tabManagerFor(tabId: target.workspaceId) else { return }
                 tabManager.updateSurfaceShellActivity(
-                    tabId: scope.workspaceId,
-                    surfaceId: scope.panelId,
+                    tabId: target.workspaceId,
+                    surfaceId: target.panelId,
                     state: state
                 )
             }

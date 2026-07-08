@@ -213,4 +213,57 @@ final class EventLogTests: XCTestCase {
         XCTAssertEqual(payload?["source"] as? String, "explicit")
         XCTAssertEqual(payload?["scope"] as? String, "surface")
     }
+
+    // MARK: - C11-171: set_status mirror emits metadata.changed via the store
+
+    /// The set_status fast path mirrors a canonical `status` write into the
+    /// evented `SurfaceMetadataStore` at `.explicit`. This is the seam the fast
+    /// path exercises — it must fire a `metadata.changed` event (the v0.58.0
+    /// blocker was that set_status wrote only the display store and emitted
+    /// nothing).
+    func testStatusMirrorThroughStoreEmitsMetadataChanged() {
+        let log = EventLog(url: logURL(), instance: "mirror-inst")
+        EventEmitter.shared.startForTesting(log: log, instance: "mirror-inst")
+        let ws = UUID(), sf = UUID()
+        defer { SurfaceMetadataStore.shared.removeSurface(workspaceId: ws, surfaceId: sf) }
+
+        // Only canonical keys mirror; non-canonical display chips do not.
+        XCTAssertEqual(TerminalController.sidebarStatusCanonicalMirrorKey("status"), "status")
+        XCTAssertNil(TerminalController.sidebarStatusCanonicalMirrorKey("build"))
+
+        // Mirror the canonical status exactly as the fast path does.
+        XCTAssertTrue(SurfaceMetadataStore.shared.setInternal(
+            workspaceId: ws, surfaceId: sf,
+            key: TerminalController.sidebarStatusCanonicalMirrorKey("status")!,
+            value: "working", source: .explicit))
+        EventEmitter.shared.flush()
+
+        let events = readLines(logURL()).map(parse)
+            .filter { ($0["type"] as? String) == "metadata.changed" }
+        XCTAssertEqual(events.count, 1, "one metadata.changed for the mirrored status")
+        let payload = events[0]["payload"] as? [String: Any]
+        XCTAssertEqual(payload?["key"] as? String, "status")
+        XCTAssertEqual(payload?["value"] as? String, "working")
+        XCTAssertEqual(payload?["source"] as? String, "explicit")
+        XCTAssertEqual(events[0]["surface"] as? String, sf.uuidString)
+    }
+
+    /// `progress` mirrors into the store (records a ts, TEL-1) but is
+    /// deliberately excluded from the event stream for flood-control, so the
+    /// mirror must NOT emit a `metadata.changed` for it.
+    func testProgressMirrorDoesNotEmitEvent() {
+        let log = EventLog(url: logURL(), instance: "prog-inst")
+        EventEmitter.shared.startForTesting(log: log, instance: "prog-inst")
+        let ws = UUID(), sf = UUID()
+        defer { SurfaceMetadataStore.shared.removeSurface(workspaceId: ws, surfaceId: sf) }
+
+        XCTAssertTrue(SurfaceMetadataStore.shared.setInternal(
+            workspaceId: ws, surfaceId: sf,
+            key: MetadataKey.progress, value: 0.5, source: .explicit))
+        EventEmitter.shared.flush()
+
+        let progressEvents = readLines(logURL()).map(parse)
+            .filter { ($0["type"] as? String) == "metadata.changed" }
+        XCTAssertTrue(progressEvents.isEmpty, "progress must not flood the event stream")
+    }
 }

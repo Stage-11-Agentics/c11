@@ -12294,6 +12294,10 @@ struct CMUXCLI {
 
         var forwardedArgs: [String] = []
         var resolvedExplicitWorkspace = false
+        var resolvedWorkspaceId: String?
+        // C11-171: a raw (unresolved) surface ref carried through from the
+        // command line, held until the workspace it resolves against is known.
+        var pendingSurfaceRaw: String?
         var index = 0
 
         while index < commandArgs.count {
@@ -12302,6 +12306,7 @@ struct CMUXCLI {
                 let workspaceId = try resolveWorkspaceId(commandArgs[index + 1], client: client)
                 forwardedArgs.append("--tab=\(workspaceId)")
                 resolvedExplicitWorkspace = true
+                resolvedWorkspaceId = workspaceId
                 index += 2
                 continue
             }
@@ -12310,6 +12315,25 @@ struct CMUXCLI {
                 let workspaceId = try resolveWorkspaceId(rawWorkspace, client: client)
                 forwardedArgs.append("--tab=\(workspaceId)")
                 resolvedExplicitWorkspace = true
+                resolvedWorkspaceId = workspaceId
+                index += 1
+                continue
+            }
+            // C11-171: capture the surface/panel ref (do not forward it raw); it
+            // is resolved to a uuid and re-emitted once the workspace is known so
+            // the app can mirror canonical status/progress onto the right surface.
+            if arg == "--surface" || arg == "--panel", index + 1 < commandArgs.count {
+                pendingSurfaceRaw = commandArgs[index + 1]
+                index += 2
+                continue
+            }
+            if arg.hasPrefix("--surface=") {
+                pendingSurfaceRaw = String(arg.dropFirst("--surface=".count))
+                index += 1
+                continue
+            }
+            if arg.hasPrefix("--panel=") {
+                pendingSurfaceRaw = String(arg.dropFirst("--panel=".count))
                 index += 1
                 continue
             }
@@ -12321,6 +12345,15 @@ struct CMUXCLI {
            let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowOverride) {
             let workspaceId = try resolveWorkspaceId(workspaceArg, client: client)
             insertArgumentBeforeSeparator("--tab=\(workspaceId)", into: &forwardedArgs)
+            resolvedWorkspaceId = workspaceId
+        }
+
+        // C11-171: resolve an explicit surface ref against the resolved workspace
+        // and forward it as a uuid, so the app mirrors the canonical key onto the
+        // agent's own surface rather than falling back to the focused one.
+        if let pendingSurfaceRaw, let resolvedWorkspaceId {
+            let surfaceId = try resolveSurfaceId(pendingSurfaceRaw, workspaceId: resolvedWorkspaceId, client: client)
+            insertArgumentBeforeSeparator("--surface=\(surfaceId)", into: &forwardedArgs)
         }
 
         let command = ([socketCommand] + forwardedArgs)

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { Link } from "../../../../i18n/navigation";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy — cmux",
-  description: "Privacy policy for cmux",
+  title: "Privacy Policy — c11",
+  description: "Privacy policy for c11",
   alternates: { canonical: "./" },
 };
 
@@ -23,7 +23,7 @@ export default function PrivacyPolicyPage() {
         For purposes of this policy, &ldquo;Site&rdquo; refers to the
         Company&rsquo;s website at{" "}
         <a href="https://c11.stage11.systems">c11.stage11.systems</a>.
-        &ldquo;Application&rdquo; refers to the cmux desktop application for
+        &ldquo;Application&rdquo; refers to the c11 desktop application for
         macOS. &ldquo;Service&rdquo; refers to the Site and Application
         collectively. The terms &ldquo;we,&rdquo; &ldquo;us,&rdquo; and
         &ldquo;our&rdquo; refer to the Company. &ldquo;You&rdquo; refers to

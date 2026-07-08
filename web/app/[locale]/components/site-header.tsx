@@ -34,13 +34,13 @@ export function SiteHeader({
                 <Link href="/" className="flex items-center gap-2.5">
                   <img
                     src="/logo.png"
-                    alt="cmux"
+                    alt="c11"
                     width={24}
                     height={24}
                     className="rounded-md"
                   />
                   <span className="text-sm font-semibold tracking-tight">
-                    cmux
+                    c11
                   </span>
                 </Link>
                 {section && (

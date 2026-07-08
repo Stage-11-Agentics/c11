@@ -1,0 +1,18 @@
+=== C11-171 PROOF (a): set-status -> metadata.changed event + last-updated ts ===
+staging: com.stage11.c11.staging.rel-v0-58-0-fix2  socket=/tmp/c11-rel-v0-58-0-fix2.sock  build=RELEASE
+captured 2026-07-08T22:10:21Z
+
+--- BEFORE: get-metadata surface:1 (no status key expected) ---
+activity = idle  [derived @ 1783548565.230]
+title = ~  [osc @ 1783548565.345]
+
+--- ACTION: set-status --workspace workspace:1 --surface surface:1 status 'working on C11-171' ---
+OK
+
+--- AFTER: get-metadata surface:1 --include-sources (status + ts expected) ---
+activity = idle  [derived @ 1783548565.230]
+status = working on C11-171  [explicit @ 1783548622.111]
+title = ~  [osc @ 1783548565.345]
+
+--- EVENTS: metadata.changed for status (with source tier) ---
+{"instance":"com.stage11.c11.staging.rel.v0.58.0.fix2-90613","payload":{"key":"status","scope":"surface","source":"explicit","value":"working on C11-171"},"seq":14,"surface":"B3AFC291-E6AF-4F18-8667-CD12650F8DDE","ts":"2026-07-08T22:10:22.111Z","type":"metadata.changed","v":1,"workspace":"C474B1B1-8C57-410A-8D00-C9E8D7A75D4E"}

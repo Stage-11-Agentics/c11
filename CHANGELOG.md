@@ -6,6 +6,32 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.58.0] - 2026-07-08
+
+The Truth & Stability release. Headline: **the sidebar stops lying.** Every status an agent reports now carries its age and visibly decays when it goes stale, and c11 itself derives a live working/idle state for every terminal from what it can observe externally — so a pane whose agent never self-reports (or stopped reporting twenty minutes ago) still shows the truth. Alongside it: a subscribable **events stream** (`c11 events tail`) so agents and tools can react to workspace changes instead of polling, **crash-proof session resume** (force-quit or crash, relaunch, your agent conversations come back), and the elimination of a class of main-thread hangs and silent write-misroutes on the socket.
+
+### Added
+
+- **Events stream — file-first pub/sub for the whole workspace.** c11 appends structured NDJSON events (surface created/closed, workspace selected, status/title/description/progress changes with their source tier, derived working/idle transitions, waiting-agent transitions, mailbox deliveries) to an append-only per-instance log, rotated at a size cap. `c11 events tail --follow --filter type=... --since ...` subscribes from the CLI; any process can consume the file directly — the envelope schema ships in `spec/`. Orchestrators and monitoring tools can now react in under a second instead of polling. ([#318](https://github.com/Stage-11-Agentics/c11/pull/318), [#322](https://github.com/Stage-11-Agentics/c11/pull/322)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **Derived liveness — the sidebar shows what c11 observes, not just what agents claim.** c11 derives a working/idle state per terminal from PTY output flow and prompt state, with zero agent cooperation required. When an agent's self-reported status goes stale past its expiry, the derived state takes over the pill, visually marked as observed-not-claimed; when the agent reports again, its status resumes. ([#320](https://github.com/Stage-11-Agentics/c11/pull/320)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **Status age and decay.** Self-reported status and progress pills carry a last-updated timestamp, dim past a staleness threshold, and gray out past expiry (defaults 5m/15m, tunable in settings), so a confident green "working" from forty minutes ago no longer reads as current truth. ([#320](https://github.com/Stage-11-Agentics/c11/pull/320)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+### Changed
+
+- **Waiting Agent sidebar cluster restyled.** The next-notification control becomes a two-row Waiting Agent cluster with workspace prev/next arrows, a paper-fill lit state, and two-tier adaptive sizing. ([#320](https://github.com/Stage-11-Agentics/c11/pull/320)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **Surface-scoped socket writes now reject empty or absent surface refs** (set-metadata, set-status, rename-tab, and the rest of the write family) instead of silently defaulting to the operator-focused surface. If you have automation that relied on the implicit fallback, pass `--surface "$C11_SURFACE_ID"` explicitly — the c11 skill has always taught this form. ([#319](https://github.com/Stage-11-Agentics/c11/pull/319)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **Model and Effort agent-launch settings are now localized** in all six translations (ja, uk, ko, zh-Hans, zh-Hant, ru), closing the gap noted in 0.57.0. ([#313](https://github.com/Stage-11-Agentics/c11/pull/313)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+### Fixed
+
+- **Crash-resume: agent conversations now survive a crash or force-quit.** Relaunching after a dirty shutdown recovers each surface's conversation via per-kind scrape with a persisted per-surface activity floor for disambiguation, and Codex sessions recover their real working directory (distinct-cwd Codex panes resume instead of reading as mutually ambiguous). Where resume is genuinely ambiguous, the surface says so with a specific diagnostic instead of silently starting fresh. Validated by a repeatable multi-kind force-kill acceptance harness (12 conversations, 4 agent kinds, kill -9: 49/49 checks green). ([#321](https://github.com/Stage-11-Agentics/c11/pull/321)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **Session save no longer drops workspace conversations under load.** Saving read the conversation store once per workspace with a 2-second timeout each — under heavy telemetry load some reads lost the race and those workspaces persisted empty conversation lists. One bulk read per save ends the dice-rolls and cuts save-time main-thread blocking. ([#325](https://github.com/Stage-11-Agentics/c11/pull/325)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **Two more main-thread-hang paths eliminated on the socket** (`pane.confirm`, `feedback.submit`, and a nested run-loop pattern), verified by a scripted multi-agent hook flood with the hang monitor clean — the same genre as the 0.55.0 beachball fix, now with a regression test that fails if main-thread sync work is reintroduced. ([#319](https://github.com/Stage-11-Agentics/c11/pull/319)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+### Thanks to 1 contributor!
+
+- [@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [0.57.0] - 2026-07-06
 
 Feature release. Headline: **agents launched from c11 now boot straight to a ready prompt — zero orientation turn — and can hold a pinned model and reasoning effort.** Starting an agent from c11 (the A-button, a new workspace, or the socket) no longer types an orientation prompt and waits out a first turn: the agent comes up idle and ready at 0s dead-time, and c11 itself stamps the sidebar identity (agent type, model chip, and an "Awaiting first task" placeholder title). Settings → Agents gains **Model** and **Effort** dropdowns, so a c11-launched agent runs at a chosen model family and reasoning effort regardless of your ambient default. Alongside the app changes, the installable skill library (Settings → Agent Skills) grows substantially: the **Tone** and **Chord** workflow families, plus **Sounding**, **Resonance**, **venture-partner**, and **distribution**, and a reworked **lattice-orchestrator**.

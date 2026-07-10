@@ -11432,16 +11432,18 @@ private struct TabItemView: View, Equatable {
         explicitRailColor != nil
     }
 
-    // The selected workspace is conveyed by one consistent signal in every
-    // indicator style: a thick white outline. Custom-colored workspaces keep
-    // their color as a rail (.leftRail) or fill (.solidFill) for identity, but
-    // selection itself is always the white outline.
+    // Every workspace row carries a rule-gray hairline so it reads as one
+    // cohesive card against the void. Selection is conveyed by one consistent
+    // signal in every indicator style: the hairline thickens into a white
+    // outline. Custom-colored workspaces keep their color as a rail
+    // (.leftRail) or fill (.solidFill) for identity, but selection itself is
+    // always the white outline.
     private var activeBorderLineWidth: CGFloat {
-        isActive ? 2.5 : 0
+        isActive ? 2.5 : 1
     }
 
     private var activeBorderColor: Color {
-        isActive ? BrandColors.whiteSwiftUI : .clear
+        isActive ? BrandColors.whiteSwiftUI : BrandColors.ruleSwiftUI
     }
 
     // When a workspace has a custom color and is selected in .solidFill mode,

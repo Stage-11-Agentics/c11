@@ -15309,7 +15309,22 @@ struct CMUXCLI {
                     client: client
                 )
             }
-            print("OK")
+            // Inject a one-time orientation nudge into the fresh Claude
+            // session. This SessionStart hook already fires for every claude
+            // launched inside c11 — the Resources/bin/claude wrapper injects a
+            // per-PID `--settings` tempfile that wires it — so emitting
+            // hookSpecificOutput.additionalContext here reaches every in-c11
+            // claude with no per-agent config write. Advisory only: the hook
+            // must never fail startup, and jsonString() degrades to "{}" on any
+            // malformed input, so the worst case is a session with no nudge.
+            let orientation = "You are running inside a c11 surface: c11 is the terminal multiplexer hosting this session. Before other work, load the c11 skill. It owns tab naming, splits, surface targeting, sub-agent orchestration, the embedded browser, and sidebar telemetry. As your first action, name this tab so the operator can see your role: c11 rename-tab --surface \"$C11_SURFACE_ID\" \"<2-4 word role>\". A working agent must not sit under \"Awaiting first task\"."
+            let hookOutput: [String: Any] = [
+                "hookSpecificOutput": [
+                    "hookEventName": "SessionStart",
+                    "additionalContext": orientation
+                ]
+            ]
+            print(jsonString(hookOutput))
 
         case "stop", "idle":
             telemetry.breadcrumb("claude-hook.stop")

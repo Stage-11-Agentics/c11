@@ -45,7 +45,7 @@ final class ConversationCrashRecoveryTests: XCTestCase {
 
     // MARK: - Slug derivation
 
-    func testProjectSlugReplacesSlashesAndDots() {
+    func testProjectSlugReplacesEveryNonAlphanumeric() {
         XCTAssertEqual(
             ClaudeCodeStrategy.projectSlug(forCwd: "/Users/atin/Projects/Stage11/code/c11"),
             "-Users-atin-Projects-Stage11-code-c11"
@@ -54,6 +54,24 @@ final class ConversationCrashRecoveryTests: XCTestCase {
         XCTAssertEqual(
             ClaudeCodeStrategy.projectSlug(forCwd: "/Users/atin/Projects/Stage11/code/c11/.claude/worktrees/c11-41"),
             "-Users-atin-Projects-Stage11-code-c11--claude-worktrees-c11-41"
+        )
+    }
+
+    /// Regression: underscores in the cwd must slug to `-`, exactly as Claude
+    /// Code encodes them. A prior implementation translated only `/` and `.`,
+    /// so every underscore-cwd session (`…/singularist_salon`,
+    /// `…/govee_control`) was pointed at a nonexistent transcript dir on crash
+    /// recovery and silently refused to resume.
+    func testProjectSlugReplacesUnderscoresAndPunctuation() {
+        XCTAssertEqual(
+            ClaudeCodeStrategy.projectSlug(
+                forCwd: "/Users/atin/Projects/Gregorovich/projects/singularist_salon"),
+            "-Users-atin-Projects-Gregorovich-projects-singularist-salon"
+        )
+        // Mixed separators each map to a single dash; digits and case survive.
+        XCTAssertEqual(
+            ClaudeCodeStrategy.projectSlug(forCwd: "/tmp/a_b.c-d E"),
+            "-tmp-a-b-c-d-E"
         )
     }
 
@@ -71,6 +89,23 @@ final class ConversationCrashRecoveryTests: XCTestCase {
         let ref = ConversationRef(kind: "claude-code", id: uuidA, cwd: cwd,
                                   capturedVia: .hook, state: .suspended)
         XCTAssertEqual(ClaudeCodeStrategy().transcriptExists(for: ref, filesystem: fs), false)
+    }
+
+    /// The true crash-recovery regression guard: the transcript lives at the
+    /// DASHED slug dir Claude actually creates. The expected path is written
+    /// out by hand (not via `projectSlug`/`mockFS`) so a slug bug can't cancel
+    /// itself out on both sides of the comparison — the exact way the original
+    /// underscore defect slipped past `testTranscriptExists…WhenPresent`.
+    func testTranscriptExistsFindsUnderscoreCwdTranscriptOnDisk() {
+        let fs = MockFS()  // home = /Users/test
+        let underscoreCwd = "/Users/atin/Projects/Gregorovich/projects/singularist_salon"
+        fs.existingPaths.insert(
+            "/Users/test/.claude/projects/"
+            + "-Users-atin-Projects-Gregorovich-projects-singularist-salon/\(uuidA).jsonl"
+        )
+        let ref = ConversationRef(kind: "claude-code", id: uuidA, cwd: underscoreCwd,
+                                  capturedVia: .hook, state: .suspended)
+        XCTAssertEqual(ClaudeCodeStrategy().transcriptExists(for: ref, filesystem: fs), true)
     }
 
     func testTranscriptExistsNilWhenCwdMissing() {

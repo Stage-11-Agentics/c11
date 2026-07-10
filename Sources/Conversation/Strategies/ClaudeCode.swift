@@ -87,15 +87,29 @@ struct ClaudeCodeStrategy: ConversationStrategy {
     }
 
     /// Claude Code derives the per-project transcript directory by replacing
-    /// every `/` and `.` in the absolute cwd with `-`. Example:
+    /// **every character that is not an ASCII letter or digit** with `-`
+    /// (JavaScript `cwd.replace(/[^a-zA-Z0-9]/g, "-")`). So `/`, `.`, `_`,
+    /// spaces — all separators — map to `-`, while existing `-` and letter/
+    /// digit case are preserved. Examples:
     /// `/Users/atin/Projects/Stage11/code/c11` →
-    /// `-Users-atin-Projects-Stage11-code-c11`. A path containing `/.claude`
-    /// collapses to `--claude` (slash + dot both map to `-`).
+    /// `-Users-atin-Projects-Stage11-code-c11`; a `/.claude` segment collapses
+    /// to `--claude`; `…/singularist_salon` → `…-singularist-salon`.
+    ///
+    /// Matching this exactly is load-bearing for crash recovery: an
+    /// underscore (or any other non-alphanumeric) left untranslated points
+    /// `transcriptExists` at a directory Claude never created, so a perfectly
+    /// resumable session is misclassified "transcript not found" and silently
+    /// refused on restore.
     static func projectSlug(forCwd cwd: String) -> String {
         var out = ""
-        out.reserveCapacity(cwd.count)
-        for ch in cwd {
-            out.append(ch == "/" || ch == "." ? "-" : ch)
+        out.unicodeScalars.reserveCapacity(cwd.unicodeScalars.count)
+        for scalar in cwd.unicodeScalars {
+            let v = scalar.value
+            let isASCIIAlphanumeric =
+                (v >= 48 && v <= 57)   // 0-9
+                || (v >= 65 && v <= 90)   // A-Z
+                || (v >= 97 && v <= 122)  // a-z
+            out.unicodeScalars.append(isASCIIAlphanumeric ? scalar : "-")
         }
         return out
     }

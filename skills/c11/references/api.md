@@ -172,7 +172,9 @@ c11 send --surface surface:3 -- "$(cat brief.md)"   # Multi-line brief: one past
 
 **Interior newlines are content; a trailing newline means "and press Enter".** A multi-line brief arrives whole and becomes *one* turn — you don't need to stage it in a file and send a pointer. `send --no-submit "cmd\n"` still runs `cmd`, because the trailing newline is the Enter.
 
-**Targeting is strict.** An empty or unresolvable ref (`--surface ""`, a stale `surface:99`) is an error, never a fallback to whatever pane is focused. A surface ref is a global handle: `--surface` alone reaches a pane in any workspace.
+**Targeting is strict.** An empty or unresolvable ref (`--surface ""`, a stale `surface:99`) is an error — `send` never falls back to whatever pane happens to be focused. For `send` / `send-key`, a surface ref is a global handle: `--surface` alone reaches a pane in any workspace of the window. (Other commands, `read-screen` included, still resolve a surface within the caller's workspace, so pass `--workspace` alongside it there.)
+
+Naming only a workspace (`send --workspace workspace:3 "ls"`, no `--surface`) still targets that workspace's focused pane — you named a target, just a coarser one.
 
 **`c11 send-key <key>` dispatches a single keypress** to the surface's PTY, encoded for the terminal's current mode (so arrow keys drive arrow-select menus like codex's hooks-trust prompt). Vocabulary:
 

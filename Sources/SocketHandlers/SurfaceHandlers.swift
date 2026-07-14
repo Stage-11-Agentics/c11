@@ -863,7 +863,13 @@ extension TerminalController {
             resolvedSurface = waitForTerminalSurfaceOffMain(resolved.terminalPanel, waitUpTo: 2.0)
         }
 
+        // C11-173: what actually happened, for an honest response. `submitted`
+        // is the effective submit (a trailing newline in the payload means Enter
+        // even when `submit` is false); `queued` means the surface had no PTY, so
+        // nothing has reached the target yet and the payload flushes on attach.
         let queued: Bool
+        nonisolated(unsafe) var submitted = false
+        let wantsReturn = submit || TerminalController.trimmingTrailingNewlines(text) != text
         let phaseBSema = DispatchSemaphore(value: 0)
         if resolvedSurface != nil {
             // C11-26 review B2: revalidate the live surface pointer inside the
@@ -878,7 +884,7 @@ extension TerminalController {
             Task { @MainActor in
                 defer { phaseBSema.signal() }
                 if let liveSurface = resolved.terminalPanel.surface.surface {
-                    deliverSocketSendText(
+                    submitted = deliverSocketSendText(
                         text,
                         submit: submit,
                         terminalSurface: resolved.terminalPanel.surface,
@@ -897,11 +903,12 @@ extension TerminalController {
                     // bracketed-paste envelope would swallow.
                     // Same newline rule as the live path (see deliverSocketSendText):
                     // a trailing newline means "and press Enter".
-                    if submit || TerminalController.trimmingTrailingNewlines(text) != text {
+                    if wantsReturn {
                         resolved.terminalPanel.surface.sendSubmitFormText(text)
                     } else {
                         resolved.terminalPanel.sendText(text)
                     }
+                    submitted = wantsReturn
                 }
             }
             phaseBSema.wait()
@@ -910,17 +917,32 @@ extension TerminalController {
             // Surface not available within 2s (e.g., terminal not yet attached to any window).
             // Fall back to the pending queue as a last resort. Use the canonical submit
             // helper so the Return flushes as a real key event on attach instead of a
-            // bare \r swallowed inside the bracketed-paste envelope.
+            // bare \r swallowed inside the bracketed-paste envelope. It may have attached
+            // during the hop, in which case the text goes straight through — report that
+            // rather than claiming it queued.
+            nonisolated(unsafe) var attachedLate = false
             Task { @MainActor in
-                if submit || TerminalController.trimmingTrailingNewlines(text) != text {
+                defer { phaseBSema.signal() }
+                if let liveSurface = resolved.terminalPanel.surface.surface {
+                    submitted = deliverSocketSendText(
+                        text,
+                        submit: submit,
+                        terminalSurface: resolved.terminalPanel.surface,
+                        surface: liveSurface
+                    )
+                    resolved.terminalPanel.surface.forceRefresh(reason: "terminalController.v2SurfaceSendText")
+                    attachedLate = true
+                    return
+                }
+                if wantsReturn {
                     resolved.terminalPanel.surface.sendSubmitFormText(text)
                 } else {
                     resolved.terminalPanel.sendText(text)
                 }
-                phaseBSema.signal()
+                submitted = wantsReturn
             }
             phaseBSema.wait()
-            queued = true
+            queued = !attachedLate
         }
 
         #if DEBUG
@@ -930,12 +952,8 @@ extension TerminalController {
         )
         #endif
 
-        // C11-173: report what actually happened, not just "bytes accepted".
-        // `queued` means the surface had no PTY yet, so nothing has reached the
-        // target: the payload flushes when the surface attaches. Callers that
-        // assumed a bare OK meant "delivered" had no way to tell those apart.
         var envelope = resolved.responseEnvelope
-        envelope["submit"] = submit
+        envelope["submitted"] = submitted
         envelope["queued"] = queued
         envelope["delivered"] = !queued
         return .ok(envelope)

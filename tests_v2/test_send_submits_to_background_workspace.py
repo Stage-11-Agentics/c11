@@ -157,6 +157,48 @@ def test_send_key_space_writes_a_space(c: cmux) -> None:
             pass
 
 
+def test_control_byte_send_still_reaches_the_pty(c: cmux) -> None:
+    """A payload carrying a control byte is a keystroke sequence, not prose.
+
+    Ghostty's paste encoder replaces control bytes with spaces (xterm's strip
+    list), so routing `send $'\\x03'` through the paste path would type a space
+    at a stuck agent instead of interrupting it. Control bytes stay on the
+    key-event path; this drives the real one: interrupt a running `sleep`.
+    """
+    ws, surface = _new_shell_workspace(c)
+    try:
+        # `expr` again as the probe: 66001 is printed only if the sleep ran to
+        # completion, and it never appears in the typed source.
+        c._call("surface.send_text", {
+            "workspace_id": ws, "surface_id": surface,
+            "text": "sleep 45; expr 66000 + 1", "submit": True,
+        })
+        time.sleep(1.5)
+        # Ctrl-C as a raw byte in the payload, the way an agent unsticks a peer.
+        c._call("surface.send_text", {
+            "workspace_id": ws, "surface_id": surface,
+            "text": "\x03", "submit": False,
+        })
+        time.sleep(1.0)
+        # If the interrupt landed, the shell is back at a prompt and this runs
+        # immediately — 45s before the sleep could have finished on its own.
+        c._call("surface.send_text", {
+            "workspace_id": ws, "surface_id": surface,
+            "text": "expr 55000 + 1", "submit": True,
+        })
+        screen = _wait_for(c, ws, surface, "55001", timeout_s=10.0)
+        _must(
+            "66001" not in screen,
+            f"The sleep completed instead of being interrupted:\n{screen}",
+        )
+        print("PASS: a control byte in the payload still reaches the PTY as a key")
+    finally:
+        try:
+            c.close_workspace(ws)
+        except Exception:
+            pass
+
+
 def test_unresolvable_surface_ref_errors_instead_of_hitting_the_focused_pane(c: cmux) -> None:
     """A stale ref used to fall back to `ws.focusedPanelId` — the payload landed in
     whatever pane happened to be focused, usually the caller's own."""
@@ -208,6 +250,7 @@ def main() -> int:
         test_send_submits_into_a_background_workspace(c)
         test_multiline_payload_does_not_submit_line_by_line(c)
         test_send_key_space_writes_a_space(c)
+        test_control_byte_send_still_reaches_the_pty(c)
         test_unresolvable_surface_ref_errors_instead_of_hitting_the_focused_pane(c)
     return 0
 

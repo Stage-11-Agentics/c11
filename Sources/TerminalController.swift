@@ -2999,19 +2999,24 @@ class TerminalController {
         // never a fallback. The old `v2UUID(...) ?? ws.focusedPanelId` meant an
         // empty string or a stale ref (`surface:999`) silently injected the
         // payload into whatever pane happened to be focused — usually the
-        // caller's own. Only an *absent* surface_id may fall back to focused.
-        let rawSurfaceId = params["surface_id"]
-        let surfaceIdProvided = rawSurfaceId != nil && !(rawSurfaceId is NSNull)
+        // caller's own. Only an *absent* surface_id may fall back to the focused
+        // pane of the workspace the caller named (that is the `--workspace`-only
+        // targeting form, still supported).
+        //
+        // The empty case reuses SocketSurfaceRefValidator's classification and
+        // `empty_ref` code (C11-165 COR-1) so clients see one rejection contract
+        // across every write, `send` included.
+        let surfaceRefState = SocketSurfaceRefValidator.classify(params["surface_id"])
         let resolvedSurfaceId: UUID?
-        if surfaceIdProvided {
-            guard let handle = v2String(params, "surface_id"),
-                  !handle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                return .err(.err(
-                    code: "invalid_params",
-                    message: "surface_id is empty; pass a surface id or ref (e.g. surface:2)",
-                    data: nil
-                ))
-            }
+        let surfaceIdProvided: Bool
+        switch surfaceRefState {
+        case .empty:
+            return .err(.err(
+                code: SocketSurfaceRefValidator.emptyRefCode,
+                message: "surface ref 'surface_id' was provided but empty — pass a concrete id (no focused-surface fallback)",
+                data: nil
+            ))
+        case .present(let handle):
             guard let uuid = v2UUID(params, "surface_id") else {
                 return .err(.err(
                     code: "not_found",
@@ -3019,8 +3024,10 @@ class TerminalController {
                     data: ["surface_id": handle]
                 ))
             }
+            surfaceIdProvided = true
             resolvedSurfaceId = uuid
-        } else {
+        case .absent:
+            surfaceIdProvided = false
             resolvedSurfaceId = ws.focusedPanelId
         }
         guard let surfaceId = resolvedSurfaceId else {
@@ -6233,14 +6240,20 @@ class TerminalController {
     /// exactly where the payload ends, embedded newlines stay literal, and the
     /// Return that follows is unambiguously a submit.
     ///
-    /// Payloads carrying ESC / tab / DEL are keystroke sequences (escape codes,
-    /// completion, editing), not prose — those keep the key-event path.
+    /// Payloads carrying control bytes are keystroke sequences (escape codes,
+    /// completion, an interrupt), not prose — those keep the key-event path.
+    /// This is not a preference: Ghostty's paste encoder *replaces* control
+    /// bytes with spaces (`input/paste.zig` mirrors xterm's strip list — NUL,
+    /// ESC, DEL, and the tty control chars including 0x03 VINTR and 0x04 VEOF),
+    /// so pasting `c11 send $'\x03'` would type a space instead of interrupting
+    /// the target. Any C0 byte other than the newlines therefore goes out as a
+    /// key event, exactly as it did before.
     nonisolated static func socketTextIsPasteDeliverable(_ text: String) -> Bool {
         for scalar in text.unicodeScalars {
             switch scalar.value {
             case 0x0A, 0x0D:
-                continue
-            case 0x09, 0x1B, 0x7F:
+                continue // newlines are payload content on the paste path
+            case 0x00...0x1F, 0x7F:
                 return false
             default:
                 continue
@@ -6264,32 +6277,35 @@ class TerminalController {
     /// submit it. See `socketTextIsPasteDeliverable` for why prose goes through
     /// the paste path and keystroke sequences do not.
     ///
-    /// Newline rule on the paste path: *interior* newlines are content (they
-    /// stay literal inside the paste, so a multi-line brief arrives whole), a
-    /// *trailing* newline means "and press Enter" — which is what a caller
-    /// writing `send --no-submit 'cmd\n'` has always meant. Either that trailing
-    /// newline or `submit` produces exactly one Return, never two.
+    /// Newline rule: *interior* newlines are content — on the paste path they
+    /// stay literal, so a multi-line brief arrives whole; on the key path they
+    /// are the Returns the caller spelled out. A *trailing* newline means "and
+    /// press Enter", which is what a caller writing `send --no-submit 'cmd\n'`
+    /// has always meant. It is stripped from the body on *both* paths and
+    /// reissued as the single submit Return, so neither `submit` nor a trailing
+    /// newline can produce two.
+    ///
+    /// Returns whether a submit Return was dispatched, so the caller can report
+    /// what happened rather than what was asked for.
     @MainActor
+    @discardableResult
     func deliverSocketSendText(
         _ text: String,
         submit: Bool,
         terminalSurface: TerminalSurface,
         surface: ghostty_surface_t
-    ) {
-        var wantsReturn = submit
-        if Self.socketTextIsPasteDeliverable(text) {
-            let body = Self.trimmingTrailingNewlines(text)
-            if body != text {
-                wantsReturn = true
-            }
-            if !body.isEmpty {
+    ) -> Bool {
+        let body = Self.trimmingTrailingNewlines(text)
+        let wantsReturn = submit || body != text
+
+        if !body.isEmpty {
+            if Self.socketTextIsPasteDeliverable(body) {
                 terminalSurface.sendText(body)
+            } else {
+                sendSocketText(body, surface: surface)
             }
-        } else {
-            // Keystroke sequences keep the key-event path; its own newline
-            // handling already emits Returns for embedded newlines.
-            sendSocketText(text, surface: surface)
         }
+
         if wantsReturn {
             // The Return must land *after* the target has finished ingesting the
             // paste — a Return inside the paste-processing window is silently
@@ -6297,6 +6313,7 @@ class TerminalController {
             // interactive text box uses.
             terminalSurface.scheduleSubmitReturnAfterPasteDelay()
         }
+        return wantsReturn
     }
 
     private nonisolated static func isSocketControlScalar(_ scalar: UnicodeScalar) -> Bool {

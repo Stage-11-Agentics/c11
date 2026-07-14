@@ -2498,12 +2498,12 @@ struct CMUXCLI {
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
             if let sfId { params["surface_id"] = sfId }
             let payload = try client.sendV2(method: "surface.send_text", params: params)
-            // C11-173: a bare OK used to mean only "bytes accepted". Say so when the
-            // target had no PTY yet and the payload is waiting on attach.
-            let queued = (payload["queued"] as? Bool) ?? false
-            let summary = v2OKSummary(payload, idFormat: idFormat)
-                + (queued ? " queued=1 (surface not attached yet; payload flushes on attach)" : "")
-            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: summary)
+            printV2Payload(
+                payload,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat,
+                fallbackText: sendTextSummary(payload, idFormat: idFormat)
+            )
 
         case "send-key":
             let (wsArgRaw, rem0) = parseOption(commandArgs, name: "--workspace")
@@ -2546,7 +2546,12 @@ struct CMUXCLI {
             let sfId = try normalizeSurfaceHandle(panelArg, client: client, workspaceHandle: wsId)
             if let sfId { params["surface_id"] = sfId }
             let payload = try client.sendV2(method: "surface.send_text", params: params)
-            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
+            printV2Payload(
+                payload,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat,
+                fallbackText: sendTextSummary(payload, idFormat: idFormat)
+            )
 
         case "send-key-panel":
             let (wsArgRaw, rem0) = parseOption(commandArgs, name: "--workspace")
@@ -4593,6 +4598,16 @@ struct CMUXCLI {
             throw CLIError(message: "\(command): \(flag) was empty. Pass an id, ref (e.g. surface:2), or index.")
         }
         return trimmed
+    }
+
+    /// C11-173: a bare `OK` used to mean only "bytes accepted by the socket".
+    /// Say so when the target had no PTY yet and the payload is waiting to flush
+    /// on attach — that is the one case where the send has *not* reached anyone.
+    private func sendTextSummary(_ payload: [String: Any], idFormat: CLIIDFormat) -> String {
+        let base = v2OKSummary(payload, idFormat: idFormat)
+        let queued = (payload["queued"] as? Bool) ?? false
+        guard queued else { return base }
+        return base + " queued=1 (surface not attached yet; payload flushes on attach)"
     }
 
     /// An exported-but-empty env var is not a target. Treat it as unset so the

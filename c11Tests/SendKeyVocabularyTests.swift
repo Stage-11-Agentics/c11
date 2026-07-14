@@ -145,6 +145,24 @@ final class SocketSendDeliveryTests: XCTestCase {
         XCTAssertFalse(TerminalController.socketTextIsPasteDeliverable("oops\u{7F}"), "backspace")
     }
 
+    /// Ghostty's paste encoder *replaces* control bytes with spaces (xterm's
+    /// strip list: NUL, ESC, DEL, and the tty control chars — 0x03 VINTR,
+    /// 0x04 VEOF, 0x1A VSUSP, …). Routing a control byte through the paste path
+    /// would silently type a space instead of interrupting the target, so every
+    /// C0 byte except the newlines must stay on the key path.
+    func testControlBytesNeverGoThroughThePastePath() {
+        for value in 0x00...0x1F where value != 0x0A && value != 0x0D {
+            let scalar = UnicodeScalar(UInt8(value))
+            XCTAssertFalse(
+                TerminalController.socketTextIsPasteDeliverable(String(Character(scalar))),
+                "C0 byte \(String(format: "0x%02X", value)) must not be pasted (paste strips it to a space)"
+            )
+        }
+        // The two that matter most in a fleet: Ctrl-C and Ctrl-D to a stuck agent.
+        XCTAssertFalse(TerminalController.socketTextIsPasteDeliverable("\u{03}"), "Ctrl-C (VINTR)")
+        XCTAssertFalse(TerminalController.socketTextIsPasteDeliverable("\u{04}"), "Ctrl-D (VEOF)")
+    }
+
     /// The newline rule: interior newlines are content, a trailing newline means
     /// "and press Enter". `trimmingTrailingNewlines(text) != text` is how both the
     /// live and queued send paths detect that trailing-newline submit intent, so

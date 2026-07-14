@@ -35,17 +35,25 @@ ARROW_BYTES = {
     "left": "1b5b44",   # ESC [ D
 }
 
-# Reader: force DECCKM-normal so arrows encode as CSI, print a readiness marker
-# (split so the literal "RDYMARK" never appears in the source text we type —
-# otherwise the readiness poll would match the unexecuted command echo), then do
-# exactly one raw read and hex-dump it. `dd bs=16 count=1` is one read syscall,
-# so it returns the whole escape sequence in a single chunk.
-READER = (
-    r"printf '\033[?1l'; printf 'RDY''MARK\n'; "
-    r"stty raw -echo 2>/dev/null; dd bs=16 count=1 2>/dev/null | xxd -p; "
-    r"stty sane 2>/dev/null"
-)
-READY_MARKER = "RDYMARK"
+# Reader: force DECCKM-normal so arrows encode as CSI, print a readiness marker,
+# then do exactly one raw read and hex-dump it. `dd bs=16 count=1` is one read
+# syscall, so it returns the whole escape sequence in a single chunk.
+#
+# The marker is per-iteration and split (`RDY''MARK_up`) for two reasons: the
+# literal marker must never appear in the source text we type, or the readiness
+# poll matches the unexecuted command echo; and it must never match the *previous*
+# iteration's marker, or the poll returns before this iteration's reader is up and
+# the arrow gets injected into the shell's line editor instead of into `dd`.
+def _reader(name: str) -> str:
+    return (
+        r"printf '\033[?1l'; printf 'RDY''MARK_" + name + r"\n'; "
+        r"stty raw -echo 2>/dev/null; dd bs=16 count=1 2>/dev/null | xxd -p; "
+        r"stty sane 2>/dev/null"
+    )
+
+
+def _ready_marker(name: str) -> str:
+    return f"RDYMARK_{name}"
 
 
 def _must(cond: bool, msg: str) -> None:
@@ -69,10 +77,10 @@ def _wait_for(c: cmux, ws: str, surface: str, needle: str, timeout_s: float = 8.
     raise cmuxError(f"Timed out waiting for {needle!r}; last screen:\n{last}")
 
 
-def _captured_esc_hex(screen: str) -> str | None:
-    """Return the CSI-looking hex token (starts with 1b) printed after the most
-    recent readiness marker, so a prior iteration's capture can't leak in."""
-    idx = screen.rfind(READY_MARKER)
+def _captured_esc_hex(screen: str, marker: str) -> str | None:
+    """Return the CSI-looking hex token (starts with 1b) printed after this
+    iteration's readiness marker, so a prior iteration's capture can't leak in."""
+    idx = screen.rfind(marker)
     region = screen[idx:] if idx >= 0 else screen
     found = None
     for m in re.finditer(r"\b([0-9a-f]{4,})\b", region):
@@ -92,15 +100,16 @@ def test_arrow_keys_emit_csi_bytes(c: cmux) -> None:
         _must(bool(surface), "surface.list returned surface without id")
 
         for name, expected_hex in ARROW_BYTES.items():
+            marker = _ready_marker(name)
             # Launch the reader with submit:False — the text carries its own
-            # trailing newline to run, so we must NOT also dispatch the deferred
-            # submit Return (that stray Return would be the byte the reader
-            # captures instead of the arrow under test).
+            # trailing newline, which is the Enter that runs it, so we must NOT
+            # also ask for a submit (that stray Return would be the byte the
+            # reader captures instead of the arrow under test).
             c._call("surface.send_text", {
                 "workspace_id": ws, "surface_id": surface,
-                "text": READER + "\n", "submit": False,
+                "text": _reader(name) + "\n", "submit": False,
             })
-            _wait_for(c, ws, surface, READY_MARKER, timeout_s=8.0)
+            _wait_for(c, ws, surface, marker, timeout_s=8.0)
             # Small settle so the reader has entered its raw read before the key.
             time.sleep(0.4)
 
@@ -111,7 +120,7 @@ def test_arrow_keys_emit_csi_bytes(c: cmux) -> None:
             got = None
             deadline = time.time() + 6.0
             while time.time() < deadline:
-                got = _captured_esc_hex(_screen(c, ws, surface))
+                got = _captured_esc_hex(_screen(c, ws, surface), marker)
                 if got:
                     break
                 time.sleep(0.1)

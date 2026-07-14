@@ -2994,17 +2994,64 @@ class TerminalController {
         guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
             return .err(.err(code: "not_found", message: "Workspace not found", data: nil))
         }
-        let resolvedSurfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
+
+        // C11-173: an explicit surface_id that fails to resolve must be an error,
+        // never a fallback. The old `v2UUID(...) ?? ws.focusedPanelId` meant an
+        // empty string or a stale ref (`surface:999`) silently injected the
+        // payload into whatever pane happened to be focused — usually the
+        // caller's own. Only an *absent* surface_id may fall back to the focused
+        // pane of the workspace the caller named (that is the `--workspace`-only
+        // targeting form, still supported).
+        //
+        // The empty case reuses SocketSurfaceRefValidator's classification and
+        // `empty_ref` code (C11-165 COR-1) so clients see one rejection contract
+        // across every write, `send` included.
+        let surfaceRefState = SocketSurfaceRefValidator.classify(params["surface_id"])
+        let resolvedSurfaceId: UUID?
+        let surfaceIdProvided: Bool
+        switch surfaceRefState {
+        case .empty:
+            return .err(.err(
+                code: SocketSurfaceRefValidator.emptyRefCode,
+                message: "surface ref 'surface_id' was provided but empty — pass a concrete id (no focused-surface fallback)",
+                data: nil
+            ))
+        case .present(let handle):
+            guard let uuid = v2UUID(params, "surface_id") else {
+                return .err(.err(
+                    code: "not_found",
+                    message: "Unknown surface: \(handle)",
+                    data: ["surface_id": handle]
+                ))
+            }
+            surfaceIdProvided = true
+            resolvedSurfaceId = uuid
+        case .absent:
+            surfaceIdProvided = false
+            resolvedSurfaceId = ws.focusedPanelId
+        }
         guard let surfaceId = resolvedSurfaceId else {
             return .err(.err(code: "not_found", message: "No focused surface", data: nil))
         }
-        guard let terminalPanel = ws.terminalPanel(for: surfaceId) else {
+
+        // An explicit surface ref is a global handle. A caller inside workspace 1
+        // sending to a pane in workspace 3 passes its own C11_WORKSPACE_ID as the
+        // workspace default, so honour the surface it actually named and target
+        // that surface's owning workspace.
+        var targetWorkspace = ws
+        if surfaceIdProvided,
+           targetWorkspace.terminalPanel(for: surfaceId) == nil,
+           let owner = tabManager.tabs.first(where: { $0.panels[surfaceId] != nil }) {
+            targetWorkspace = owner
+        }
+
+        guard let terminalPanel = targetWorkspace.terminalPanel(for: surfaceId) else {
             return .err(.err(code: "invalid_params", message: "Surface is not a terminal", data: ["surface_id": surfaceId.uuidString]))
         }
         let windowId = v2ResolveWindowId(tabManager: tabManager)
         let envelope: [String: Any] = [
-            "workspace_id": ws.id.uuidString,
-            "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
+            "workspace_id": targetWorkspace.id.uuidString,
+            "workspace_ref": v2Ref(kind: .workspace, uuid: targetWorkspace.id),
             "surface_id": surfaceId.uuidString,
             "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
             "window_id": v2OrNull(windowId?.uuidString),
@@ -3013,7 +3060,7 @@ class TerminalController {
         return .ok(SurfaceSendPhaseAResolved(
             terminalPanel: terminalPanel,
             initialSurface: terminalPanel.surface.surface,
-            workspaceIdString: ws.id.uuidString,
+            workspaceIdString: targetWorkspace.id.uuidString,
             surfaceIdString: surfaceId.uuidString,
             responseEnvelope: envelope
         ))
@@ -6182,6 +6229,93 @@ class TerminalController {
         return chunks
     }
 
+    /// C11-173: whether a `send` payload should be delivered as a real paste
+    /// (`ghostty_surface_text`, which frames it in bracketed-paste markers when
+    /// the app has that mode on) instead of as a burst of synthetic key events.
+    ///
+    /// Key-event delivery turns every embedded newline into a Return, so a
+    /// multi-line payload sent to an agent TUI either fragments into one turn
+    /// per line or trips the TUI's timing-based paste heuristic and swallows the
+    /// submit. Neither is a delivered message. A paste is framed: the TUI knows
+    /// exactly where the payload ends, embedded newlines stay literal, and the
+    /// Return that follows is unambiguously a submit.
+    ///
+    /// Payloads carrying control bytes are keystroke sequences (escape codes,
+    /// completion, an interrupt), not prose — those keep the key-event path.
+    /// This is not a preference: Ghostty's paste encoder *replaces* control
+    /// bytes with spaces (`input/paste.zig` mirrors xterm's strip list — NUL,
+    /// ESC, DEL, and the tty control chars including 0x03 VINTR and 0x04 VEOF),
+    /// so pasting `c11 send $'\x03'` would type a space instead of interrupting
+    /// the target. Any C0 byte other than the newlines therefore goes out as a
+    /// key event, exactly as it did before.
+    nonisolated static func socketTextIsPasteDeliverable(_ text: String) -> Bool {
+        for scalar in text.unicodeScalars {
+            switch scalar.value {
+            case 0x0A, 0x0D:
+                continue // newlines are payload content on the paste path
+            case 0x00...0x1F, 0x7F:
+                return false
+            default:
+                continue
+            }
+        }
+        return true
+    }
+
+    /// Strip the trailing newlines a caller tacked on to mean "and submit".
+    /// The submit is a real Return key event now, so a trailing newline inside
+    /// the payload would only add a blank line to the composer.
+    nonisolated static func trimmingTrailingNewlines(_ text: String) -> String {
+        var body = text
+        while let last = body.unicodeScalars.last, last.value == 0x0A || last.value == 0x0D {
+            body.unicodeScalars.removeLast()
+        }
+        return body
+    }
+
+    /// Write a socket `send` payload into a live surface and, when asked,
+    /// submit it. See `socketTextIsPasteDeliverable` for why prose goes through
+    /// the paste path and keystroke sequences do not.
+    ///
+    /// Newline rule: *interior* newlines are content — on the paste path they
+    /// stay literal, so a multi-line brief arrives whole; on the key path they
+    /// are the Returns the caller spelled out. A *trailing* newline means "and
+    /// press Enter", which is what a caller writing `send --no-submit 'cmd\n'`
+    /// has always meant. It is stripped from the body on *both* paths and
+    /// reissued as the single submit Return, so neither `submit` nor a trailing
+    /// newline can produce two.
+    ///
+    /// Returns whether a submit Return was dispatched, so the caller can report
+    /// what happened rather than what was asked for.
+    @MainActor
+    @discardableResult
+    func deliverSocketSendText(
+        _ text: String,
+        submit: Bool,
+        terminalSurface: TerminalSurface,
+        surface: ghostty_surface_t
+    ) -> Bool {
+        let body = Self.trimmingTrailingNewlines(text)
+        let wantsReturn = submit || body != text
+
+        if !body.isEmpty {
+            if Self.socketTextIsPasteDeliverable(body) {
+                terminalSurface.sendText(body)
+            } else {
+                sendSocketText(body, surface: surface)
+            }
+        }
+
+        if wantsReturn {
+            // The Return must land *after* the target has finished ingesting the
+            // paste — a Return inside the paste-processing window is silently
+            // dropped by Claude Code and codex. Same paste-settle delay the
+            // interactive text box uses.
+            terminalSurface.scheduleSubmitReturnAfterPasteDelay()
+        }
+        return wantsReturn
+    }
+
     private nonisolated static func isSocketControlScalar(_ scalar: UnicodeScalar) -> Bool {
         switch scalar.value {
         case 0x0A, 0x0D, 0x09, 0x1B, 0x7F:
@@ -6250,9 +6384,21 @@ class TerminalController {
     struct NamedKeyEvent: Equatable {
         let keycode: UInt32
         let mods: ghostty_input_mods_e
+        /// C11-173: the text a real keypress would carry. Ghostty's legacy
+        /// encoder emits *printable* keys from the event's UTF-8 text, not from
+        /// the keycode — so a keycode-only `space` encoded to zero bytes and
+        /// `send-key space` was a silent no-op. Control keys (enter, arrows,
+        /// ctrl-*) encode from the keycode alone and carry no text.
+        let text: String?
+
+        init(keycode: UInt32, mods: ghostty_input_mods_e, text: String? = nil) {
+            self.keycode = keycode
+            self.mods = mods
+            self.text = text
+        }
 
         static func == (lhs: NamedKeyEvent, rhs: NamedKeyEvent) -> Bool {
-            lhs.keycode == rhs.keycode && lhs.mods.rawValue == rhs.mods.rawValue
+            lhs.keycode == rhs.keycode && lhs.mods.rawValue == rhs.mods.rawValue && lhs.text == rhs.text
         }
     }
 
@@ -6262,6 +6408,9 @@ class TerminalController {
     static func namedKeyEvent(for keyName: String) -> NamedKeyEvent? {
         func ev(_ keycode: Int, _ mods: ghostty_input_mods_e = GHOSTTY_MODS_NONE) -> NamedKeyEvent {
             NamedKeyEvent(keycode: UInt32(keycode), mods: mods)
+        }
+        func printable(_ keycode: Int, _ text: String) -> NamedKeyEvent {
+            NamedKeyEvent(keycode: UInt32(keycode), mods: GHOSTTY_MODS_NONE, text: text)
         }
         let name = keyName.lowercased()
         switch name {
@@ -6276,7 +6425,7 @@ class TerminalController {
         case "escape", "esc": return ev(kVK_Escape)
         case "backspace", "bs": return ev(kVK_Delete)
         case "delete", "del", "forward-delete": return ev(kVK_ForwardDelete)
-        case "space": return ev(kVK_Space)
+        case "space": return printable(kVK_Space, " ")
         // Arrow keys
         case "up", "arrow-up", "arrowup": return ev(kVK_UpArrow)
         case "down", "arrow-down", "arrowdown": return ev(kVK_DownArrow)
@@ -6313,7 +6462,7 @@ class TerminalController {
 
     func sendNamedKey(_ surface: ghostty_surface_t, keyName: String) -> Bool {
         guard let event = Self.namedKeyEvent(for: keyName) else { return false }
-        sendKeyEvent(surface: surface, keycode: event.keycode, mods: event.mods)
+        sendKeyEvent(surface: surface, keycode: event.keycode, mods: event.mods, text: event.text)
         return true
     }
 

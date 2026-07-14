@@ -2474,17 +2474,19 @@ struct CMUXCLI {
             }
 
         case "send":
-            let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
-            let (sfArg, rem1) = parseOption(rem0, name: "--surface")
+            let (wsArgRaw, rem0) = parseOption(commandArgs, name: "--workspace")
+            let (sfArgRaw, rem1) = parseOption(rem0, name: "--surface")
             let (noSubmit, rem2) = parseBoolFlag(rem1, name: "--no-submit")
-            let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
-            let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
+            let wsArg = try requireNonEmptyHandle(wsArgRaw, flag: "--workspace", command: "send")
+            let sfArg = try requireNonEmptyHandle(sfArgRaw, flag: "--surface", command: "send")
+            let envSurface = nonEmptyEnv("CMUX_SURFACE_ID")
+            let workspaceArg = wsArg ?? (windowId == nil ? nonEmptyEnv("CMUX_WORKSPACE_ID") : nil)
+            let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? envSurface : nil)
             // Require explicit surface targeting. Shell-integrated callers inside a c11
             // surface have CMUX_SURFACE_ID set automatically. External callers must pass
             // --surface. The windowId path is excluded: --window without --surface still
             // routes to ws.focusedPanelId, which is the ambient misdirection we're removing.
-            guard sfArg != nil
-                || ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] != nil else {
+            guard sfArg != nil || envSurface != nil else {
                 throw CLIError(message: "send requires --surface <id|ref> (or run inside a c11 surface so CMUX_SURFACE_ID is set)")
             }
             let rawText = rem2.dropFirst(rem2.first == "--" ? 1 : 0).joined(separator: " ")
@@ -2496,17 +2498,24 @@ struct CMUXCLI {
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
             if let sfId { params["surface_id"] = sfId }
             let payload = try client.sendV2(method: "surface.send_text", params: params)
-            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
+            // C11-173: a bare OK used to mean only "bytes accepted". Say so when the
+            // target had no PTY yet and the payload is waiting on attach.
+            let queued = (payload["queued"] as? Bool) ?? false
+            let summary = v2OKSummary(payload, idFormat: idFormat)
+                + (queued ? " queued=1 (surface not attached yet; payload flushes on attach)" : "")
+            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: summary)
 
         case "send-key":
-            let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
-            let (sfArg, rem1) = parseOption(rem0, name: "--surface")
-            let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
-            let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
+            let (wsArgRaw, rem0) = parseOption(commandArgs, name: "--workspace")
+            let (sfArgRaw, rem1) = parseOption(rem0, name: "--surface")
+            let wsArg = try requireNonEmptyHandle(wsArgRaw, flag: "--workspace", command: "send-key")
+            let sfArg = try requireNonEmptyHandle(sfArgRaw, flag: "--surface", command: "send-key")
+            let envSurface = nonEmptyEnv("CMUX_SURFACE_ID")
+            let workspaceArg = wsArg ?? (windowId == nil ? nonEmptyEnv("CMUX_WORKSPACE_ID") : nil)
+            let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? envSurface : nil)
             // Require explicit surface targeting (same policy as send).
             // windowId alone is excluded for the same reason: it still routes to focusedPanelId.
-            guard sfArg != nil
-                || ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] != nil else {
+            guard sfArg != nil || envSurface != nil else {
                 throw CLIError(message: "send-key requires --surface <id|ref> (or run inside a c11 surface so CMUX_SURFACE_ID is set)")
             }
             let keyArgs = rem1.first == "--" ? Array(rem1.dropFirst()) : rem1
@@ -2520,11 +2529,12 @@ struct CMUXCLI {
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
         case "send-panel":
-            let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
-            let (panelArg, rem1) = parseOption(rem0, name: "--panel")
+            let (wsArgRaw, rem0) = parseOption(commandArgs, name: "--workspace")
+            let (panelArgRaw, rem1) = parseOption(rem0, name: "--panel")
             let (noSubmit, rem2) = parseBoolFlag(rem1, name: "--no-submit")
-            let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
-            guard let panelArg else {
+            let wsArg = try requireNonEmptyHandle(wsArgRaw, flag: "--workspace", command: "send-panel")
+            let workspaceArg = wsArg ?? (windowId == nil ? nonEmptyEnv("CMUX_WORKSPACE_ID") : nil)
+            guard let panelArg = try requireNonEmptyHandle(panelArgRaw, flag: "--panel", command: "send-panel") else {
                 throw CLIError(message: "send-panel requires --panel")
             }
             let rawText = rem2.dropFirst(rem2.first == "--" ? 1 : 0).joined(separator: " ")
@@ -2539,10 +2549,11 @@ struct CMUXCLI {
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
         case "send-key-panel":
-            let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
-            let (panelArg, rem1) = parseOption(rem0, name: "--panel")
-            let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
-            guard let panelArg else {
+            let (wsArgRaw, rem0) = parseOption(commandArgs, name: "--workspace")
+            let (panelArgRaw, rem1) = parseOption(rem0, name: "--panel")
+            let wsArg = try requireNonEmptyHandle(wsArgRaw, flag: "--workspace", command: "send-key-panel")
+            let workspaceArg = wsArg ?? (windowId == nil ? nonEmptyEnv("CMUX_WORKSPACE_ID") : nil)
+            guard let panelArg = try requireNonEmptyHandle(panelArgRaw, flag: "--panel", command: "send-key-panel") else {
                 throw CLIError(message: "send-key-panel requires --panel")
             }
             let skpArgs = rem1.first == "--" ? Array(rem1.dropFirst()) : rem1
@@ -4567,6 +4578,29 @@ struct CMUXCLI {
             return (item["ref"] as? String) ?? (item["id"] as? String)
         }
         throw CLIError(message: "Pane index not found")
+    }
+
+    /// C11-173: an explicitly-passed but empty ref — `--surface "$REF"` where the
+    /// shell lookup produced nothing — must be an error, not a fallback. Empty
+    /// used to trim to nil, the CLI then omitted `surface_id`, and the server
+    /// fell back to the focused pane of the workspace it defaulted from the
+    /// *caller's* environment: the caller's own input box. Silent, and aimed at
+    /// the wrong target.
+    private func requireNonEmptyHandle(_ raw: String?, flag: String, command: String) throws -> String? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw CLIError(message: "\(command): \(flag) was empty. Pass an id, ref (e.g. surface:2), or index.")
+        }
+        return trimmed
+    }
+
+    /// An exported-but-empty env var is not a target. Treat it as unset so the
+    /// "requires --surface" guard fires instead of silently defaulting.
+    private func nonEmptyEnv(_ name: String) -> String? {
+        guard let value = ProcessInfo.processInfo.environment[name] else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func normalizeSurfaceHandle(

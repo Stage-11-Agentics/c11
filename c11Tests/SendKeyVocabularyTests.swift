@@ -105,4 +105,67 @@ final class SendKeyVocabularyTests: XCTestCase {
         XCTAssertNil(TerminalController.namedKeyEvent(for: ""))
         XCTAssertNil(TerminalController.namedKeyEvent(for: "ctrl-"))
     }
+
+    // MARK: C11-173 — printable keys must carry their text
+
+    /// Ghostty's legacy encoder emits printable keys from the event's UTF-8
+    /// text, not from the keycode. A keycode-only `space` encoded to zero bytes,
+    /// so `c11 send-key space` returned OK and wrote nothing to the PTY.
+    func testSpaceCarriesItsText() {
+        XCTAssertEqual(TerminalController.namedKeyEvent(for: "space")?.text, " ")
+    }
+
+    /// Control keys encode from the keycode alone. Handing them text would make
+    /// Ghostty's encoder treat them as committed IME text instead.
+    func testControlKeysCarryNoText() {
+        for name in ["enter", "return", "tab", "escape", "backspace", "up", "down", "ctrl-c"] {
+            XCTAssertNil(
+                TerminalController.namedKeyEvent(for: name)?.text,
+                "\(name) must not carry text"
+            )
+        }
+    }
+}
+
+/// C11-173: how a socket `send` payload is delivered. Prose (including
+/// multi-line prose) goes through the paste path so embedded newlines stay
+/// literal; keystroke sequences keep the key-event path.
+final class SocketSendDeliveryTests: XCTestCase {
+
+    func testPlainAndMultiLineTextIsPasteDeliverable() {
+        XCTAssertTrue(TerminalController.socketTextIsPasteDeliverable("echo hi"))
+        XCTAssertTrue(TerminalController.socketTextIsPasteDeliverable("line one\nline two\nline three"))
+        XCTAssertTrue(TerminalController.socketTextIsPasteDeliverable("trailing\n"))
+        XCTAssertTrue(TerminalController.socketTextIsPasteDeliverable(""))
+    }
+
+    func testKeystrokeSequencesAreNotPasteDeliverable() {
+        XCTAssertFalse(TerminalController.socketTextIsPasteDeliverable("\u{1B}[A"), "ESC sequence")
+        XCTAssertFalse(TerminalController.socketTextIsPasteDeliverable("git ch\t"), "tab completion")
+        XCTAssertFalse(TerminalController.socketTextIsPasteDeliverable("oops\u{7F}"), "backspace")
+    }
+
+    /// The newline rule: interior newlines are content, a trailing newline means
+    /// "and press Enter". `trimmingTrailingNewlines(text) != text` is how both the
+    /// live and queued send paths detect that trailing-newline submit intent, so
+    /// `send --no-submit 'cmd\n'` still runs the command.
+    func testTrailingNewlineIsDistinguishableFromInteriorNewlines() {
+        func wantsReturn(_ text: String) -> Bool {
+            TerminalController.trimmingTrailingNewlines(text) != text
+        }
+        XCTAssertTrue(wantsReturn("run me\n"))
+        XCTAssertTrue(wantsReturn("\n"))
+        XCTAssertFalse(wantsReturn("line one\nline two"))
+        XCTAssertFalse(wantsReturn("no newline at all"))
+    }
+
+    func testTrailingNewlinesAreTrimmedFromSubmittedPayload() {
+        // The submit is a real Return key event, so a trailing newline in the
+        // payload would only add a blank line to the target's composer.
+        XCTAssertEqual(TerminalController.trimmingTrailingNewlines("run it\n"), "run it")
+        XCTAssertEqual(TerminalController.trimmingTrailingNewlines("run it\r\n\n"), "run it")
+        XCTAssertEqual(TerminalController.trimmingTrailingNewlines("a\nb\n"), "a\nb")
+        XCTAssertEqual(TerminalController.trimmingTrailingNewlines("\n"), "")
+        XCTAssertEqual(TerminalController.trimmingTrailingNewlines("no newline"), "no newline")
+    }
 }

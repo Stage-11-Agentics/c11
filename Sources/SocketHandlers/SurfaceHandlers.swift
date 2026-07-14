@@ -878,16 +878,12 @@ extension TerminalController {
             Task { @MainActor in
                 defer { phaseBSema.signal() }
                 if let liveSurface = resolved.terminalPanel.surface.surface {
-                    sendSocketText(text, surface: liveSurface)
-                    if submit {
-                        // Dispatch the submit Return as a distinct key event AFTER the
-                        // typed text has settled. The text lands as a burst of synthetic
-                        // key events; paste-detecting TUIs (codex, Claude Code) swallow a
-                        // Return that arrives inside that burst window, leaving the message
-                        // sitting unsent in the composer. Reuse the same paste-settle delay
-                        // the interactive text box uses so submit is deterministic.
-                        resolved.terminalPanel.surface.scheduleSubmitReturnAfterPasteDelay()
-                    }
+                    deliverSocketSendText(
+                        text,
+                        submit: submit,
+                        terminalSurface: resolved.terminalPanel.surface,
+                        surface: liveSurface
+                    )
                     // Ensure we present a new frame after injecting input so snapshot-based tests
                     // (and socket-driven agents) can observe the updated terminal without requiring
                     // a focus change to trigger a draw.
@@ -899,7 +895,9 @@ extension TerminalController {
                     // so the Return is dispatched as a real key event once the queued text
                     // flushes on attach, rather than appending a bare \r that the queue's
                     // bracketed-paste envelope would swallow.
-                    if submit {
+                    // Same newline rule as the live path (see deliverSocketSendText):
+                    // a trailing newline means "and press Enter".
+                    if submit || TerminalController.trimmingTrailingNewlines(text) != text {
                         resolved.terminalPanel.surface.sendSubmitFormText(text)
                     } else {
                         resolved.terminalPanel.sendText(text)
@@ -914,7 +912,7 @@ extension TerminalController {
             // helper so the Return flushes as a real key event on attach instead of a
             // bare \r swallowed inside the bracketed-paste envelope.
             Task { @MainActor in
-                if submit {
+                if submit || TerminalController.trimmingTrailingNewlines(text) != text {
                     resolved.terminalPanel.surface.sendSubmitFormText(text)
                 } else {
                     resolved.terminalPanel.sendText(text)
@@ -932,7 +930,15 @@ extension TerminalController {
         )
         #endif
 
-        return .ok(resolved.responseEnvelope)
+        // C11-173: report what actually happened, not just "bytes accepted".
+        // `queued` means the surface had no PTY yet, so nothing has reached the
+        // target: the payload flushes when the surface attaches. Callers that
+        // assumed a bare OK meant "delivered" had no way to tell those apart.
+        var envelope = resolved.responseEnvelope
+        envelope["submit"] = submit
+        envelope["queued"] = queued
+        envelope["delivered"] = !queued
+        return .ok(envelope)
     }
 
     // C11-26: surface.send_key matches surface.send_text's deadlock shape

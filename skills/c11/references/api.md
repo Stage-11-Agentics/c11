@@ -165,9 +165,14 @@ c11 send "echo hello"                # Types text AND submits (default behavior)
 c11 send --no-submit "cd /tmp/"      # Types text only, no Return — for partial-line construction
 c11 send-key down                    # Send a keypress directly (no text) — drives TUI menus
 c11 send --workspace workspace:2 --surface surface:3 "ls"
+c11 send --surface surface:3 -- "$(cat brief.md)"   # Multi-line brief: one paste, one turn
 ```
 
-**`c11 send` types the text and submits.** The synthetic Return is dispatched as a distinct key event after the typed text settles, so paste-detecting TUIs (codex, Claude Code) reliably register it as a submit rather than swallowing it into the paste. The receiving TUI sees one user turn. Pass `--no-submit` to type into the prompt without executing — typically to build a partial line across multiple sends, or to stage text before the operator hits Enter manually.
+**`c11 send` delivers the payload as a paste, then submits it with a separate Return.** The Return is a real key event dispatched after the target has ingested the paste, so paste-detecting TUIs (Claude Code, codex) register a submit rather than swallowing it. This holds whether or not the target's workspace is the one on screen — a send into a background agent lands exactly like one into the focused pane.
+
+**Interior newlines are content; a trailing newline means "and press Enter".** A multi-line brief arrives whole and becomes *one* turn — you don't need to stage it in a file and send a pointer. `send --no-submit "cmd\n"` still runs `cmd`, because the trailing newline is the Enter.
+
+**Targeting is strict.** An empty or unresolvable ref (`--surface ""`, a stale `surface:99`) is an error, never a fallback to whatever pane is focused. A surface ref is a global handle: `--surface` alone reaches a pane in any workspace.
 
 **`c11 send-key <key>` dispatches a single keypress** to the surface's PTY, encoded for the terminal's current mode (so arrow keys drive arrow-select menus like codex's hooks-trust prompt). Vocabulary:
 

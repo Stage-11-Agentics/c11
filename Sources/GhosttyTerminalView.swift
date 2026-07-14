@@ -3876,9 +3876,38 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
     /// Named-key wrapper used by `TextBoxInputContainer` when routing
     /// decides a keystroke belongs to the terminal (Rule 5/9) or when
-    /// submitting via bracket-paste (`TextBoxSubmit`).
+    /// submitting via bracket-paste (`TextBoxSubmit`), and by the socket
+    /// `send` submit path.
+    ///
+    /// C11-173: `sendSyntheticKey` needs `view.window` to fabricate an
+    /// `NSEvent`, and a pane in a *background workspace* is portal-detached —
+    /// its view has no window. That made every socket-driven submit into a
+    /// background agent a silent no-op: the text landed, the Return did not,
+    /// and the message sat in the composer forever while `send` reported OK.
+    /// Inject straight into Ghostty when there is no window; every key in
+    /// `TerminalKey` is a control key, so the keycode alone encodes it.
     func sendKey(_ key: TextBoxKeyRouting.TerminalKey) {
+        if surfaceView.window == nil, let surface {
+            sendKeyDirectlyToSurface(keyCode: key.keyCode, surface: surface)
+            return
+        }
         sendSyntheticKey(characters: key.characters, keyCode: key.keyCode)
+    }
+
+    /// Window-independent key injection: hand Ghostty the key event directly
+    /// rather than routing a synthesized `NSEvent` through AppKit. Ghostty owns
+    /// the keycode → PTY-bytes translation, so this produces the same bytes a
+    /// real keypress would.
+    private func sendKeyDirectlyToSurface(keyCode: UInt16, surface: ghostty_surface_t) {
+        var event = ghostty_input_key_s()
+        event.action = GHOSTTY_ACTION_PRESS
+        event.keycode = UInt32(keyCode)
+        event.mods = GHOSTTY_MODS_NONE
+        event.consumed_mods = GHOSTTY_MODS_NONE
+        event.unshifted_codepoint = 0
+        event.composing = false
+        event.text = nil
+        _ = ghostty_surface_key(surface, event)
     }
 
     /// Pass-through for a fully-formed NSEvent (Rule 2 `forwardControl`).

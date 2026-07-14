@@ -6,6 +6,28 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.59.0] - 2026-07-14
+
+Headline: **`c11 send` actually submits.** Sending a message to an agent in a background workspace — the normal fleet case, where only one workspace is on screen — used to type the text and silently drop the Return, so the message sat unsent in the composer while `send` reported OK. A briefed-looking agent that never received anything was the single biggest source of friction in multi-agent runs. That path is fixed four ways, and `send` now tells you what actually happened (`submitted` / `queued` / `delivered`) instead of only "bytes accepted."
+
+### Added
+
+- **Fresh Claude Code sessions get oriented to c11 automatically.** A session-start claude-hook injects a short c11 orientation into new Claude sessions, so an agent launched inside a c11 surface knows it can drive panes, report status, and target other surfaces without being told. ([#328](https://github.com/Stage-11-Agentics/c11/pull/328)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+### Changed
+
+- **Waiting Agent button restyled.** The sidebar's next-notification control gets a gold lit state and a cleaner gap above the workspace-nav arrows. ([#329](https://github.com/Stage-11-Agentics/c11/pull/329)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **Every workspace card now carries a rule-gray hairline outline** in the sidebar, so cards read as discrete surfaces at a glance. ([#331](https://github.com/Stage-11-Agentics/c11/pull/331)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+### Fixed
+
+- **`c11 send` reliably submits — including into a background workspace.** Four defects fixed together: (1) the submit Return was dropped for any pane not in an on-screen window (the fleet case — a background agent got typed at but never submitted), now injected straight into Ghostty so it lands regardless of window; (2) multi-line briefs fragmented into one turn per line or tripped the TUI's paste heuristic and submitted nothing — prose now goes out as a real bracketed paste with a single trailing Return, so a brief arrives whole; (3) `send-key space` wrote nothing (keycode-only printable keys encoded to zero bytes) and now emits its character; (4) an empty or stale `--surface` ref silently misrouted to the caller's own input box and is now a hard error, while an explicit surface ref resolves across workspaces. `send` also reports `submitted` / `queued` / `delivered` rather than a bare OK. ([#340](https://github.com/Stage-11-Agentics/c11/pull/340)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **Crash-recovery resume works for working directories with underscores** (or any non-alphanumeric character). A path like `~/Projects/my_app` no longer blocks a surface's conversation from resuming after a crash or force-quit. ([#330](https://github.com/Stage-11-Agentics/c11/pull/330)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [0.58.0] - 2026-07-08
 
 The Truth & Stability release. Headline: **the sidebar stops lying.** Every status an agent reports now carries its age and visibly decays when it goes stale, and c11 itself derives a live working/idle state for every terminal from what it can observe externally — so a pane whose agent never self-reports (or stopped reporting twenty minutes ago) still shows the truth. Alongside it: a subscribable **events stream** (`c11 events tail`) so agents and tools can react to workspace changes instead of polling, **crash-proof session resume** (force-quit or crash, relaunch, your agent conversations come back), and the elimination of a class of main-thread hangs and silent write-misroutes on the socket.

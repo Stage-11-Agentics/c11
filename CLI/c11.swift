@@ -2322,9 +2322,21 @@ struct CMUXCLI {
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
 
         case "close-surface":
-            let csWsFlag = optionValue(commandArgs, name: "--workspace")
+            // Closing the caller's own surface is the right default for a bare
+            // `c11 close-surface`, and only for a bare one. Any argument that
+            // names a target is honored or refused, never discarded: a discarded
+            // ref used to fall through to $CMUX_SURFACE_ID and make
+            // `c11 close-surface surface:101` silently mean "close myself".
+            let csPlan: CLISurfaceRefArguments.CloseSurfacePlan
+            switch CLISurfaceRefArguments.parseCloseSurface(commandArgs) {
+            case .reject(let message):
+                throw CLIError(message: message)
+            case .plan(let parsed):
+                csPlan = parsed
+            }
+            let csWsFlag = csPlan.workspace
             let workspaceArg = csWsFlag ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
-            let surfaceRaw = optionValue(commandArgs, name: "--surface") ?? optionValue(commandArgs, name: "--panel") ?? (csWsFlag == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
+            let surfaceRaw = csPlan.surface ?? (csWsFlag == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
@@ -5264,6 +5276,19 @@ struct CMUXCLI {
         }
 
         let action = actionRaw.lowercased().replacingOccurrences(of: "-", with: "_")
+
+        // A leftover positional handle is a mis-typed target, not a title. Left
+        // alone it is swallowed into `title` and the tab resolver falls back to
+        // $CMUX_TAB_ID/$CMUX_SURFACE_ID, so `tab-action --action close-others
+        // surface:9` would close every tab *except* the caller's, while the
+        // operator is looking at the ref they typed. Refuse instead: the
+        // positional slot here already belongs to the action and the rename
+        // title, so there is no unambiguous way to honor it.
+        if action != "rename",
+           let stray = positional.first(where: { CLISurfaceRefArguments.looksLikeHandle($0) }) {
+            throw CLIError(message: "tab-action: unexpected argument '\(stray)'. Did you mean '--tab \(stray)'?")
+        }
+
         let workspaceArg = workspaceOpt ?? (windowOverride == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
         let tabArg = tabOpt
             ?? surfaceOpt
@@ -8701,9 +8726,12 @@ struct CMUXCLI {
             """
         case "close-surface":
             return """
-            Usage: c11 close-surface [flags]
+            Usage: c11 close-surface [<surface>] [flags]
 
-            Close a surface. Defaults to the focused surface if none specified.
+            Close a surface. With no arguments, closes the caller's own surface
+            ($CMUX_SURFACE_ID). Naming a target, positionally or by flag, never
+            falls back to the caller's surface; an argument that cannot be
+            honored is an error, not a silent default.
 
             Flags:
               --surface <id|ref>     Surface to close (default: $CMUX_SURFACE_ID)
@@ -8712,7 +8740,9 @@ struct CMUXCLI {
 
             Example:
               c11 close-surface
+              c11 close-surface surface:3
               c11 close-surface --surface surface:3
+              c11 close-surface --surface=surface:3
             """
         case "drag-surface-to-split":
             return """

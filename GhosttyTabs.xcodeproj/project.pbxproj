@@ -45,6 +45,7 @@
 		2DAD13E51CF90A021D8893D5 /* SocketSurfaceRefRejectionWiringTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36732611CC1BEFB8D99BB606 /* SocketSurfaceRefRejectionWiringTests.swift */; };
 		2E31BAE909C0A3DD44589F3E /* HealthIPSParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH010BF1A1B2C3D4E5F60718 /* HealthIPSParserTests.swift */; };
 		3175B7C8AE075F8D71BFA104 /* CLIAdvisoryConnectivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70B3BF1A1B2C3D4E5F60720 /* CLIAdvisoryConnectivityTests.swift */; };
+		D71C0FE2A1B2C3D4E5F60718 /* CLISurfaceRefArgumentsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D71C0FE3A1B2C3D4E5F60718 /* CLISurfaceRefArgumentsTests.swift */; };
 		33575F7E4C63569F35E154A9 /* NewWorkspaceTitleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93B19DC55D6C39A2387147C3 /* NewWorkspaceTitleTests.swift */; };
 		352C25FFD890137B5F7A23B3 /* AgentManifestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBA0F437E5CCBA5E90C3EC3F /* AgentManifestTests.swift */; };
 		ACB000000000000000000101 /* AgentCompanionContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACB000000000000000000001 /* AgentCompanionContext.swift */; };
@@ -347,6 +348,8 @@
 		D70A3BF0A1B2C3D4E5F60719 /* WorkspaceMetadataKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70A3BF1A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift */; };
 		D70B3BF0A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70B3BF1A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift */; };
 		D70B3BF0A1B2C3D4E5F60719 /* CLIAdvisoryConnectivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70B3BF1A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift */; };
+		D71C0FE0A1B2C3D4E5F60718 /* CLISurfaceRefArguments.swift in Sources */ = {isa = PBXBuildFile; fileRef = D71C0FE1A1B2C3D4E5F60718 /* CLISurfaceRefArguments.swift */; };
+		D71C0FE0A1B2C3D4E5F60719 /* CLISurfaceRefArguments.swift in Sources */ = {isa = PBXBuildFile; fileRef = D71C0FE1A1B2C3D4E5F60718 /* CLISurfaceRefArguments.swift */; };
 		D7100BF0A1B2C3D4E5F60718 /* MailboxLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7100BF1A1B2C3D4E5F60718 /* MailboxLayout.swift */; };
 		D7102BF0A1B2C3D4E5F60718 /* MailboxIO.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7102BF1A1B2C3D4E5F60718 /* MailboxIO.swift */; };
 		D7103BF0A1B2C3D4E5F60718 /* MailboxULID.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7103BF1A1B2C3D4E5F60718 /* MailboxULID.swift */; };
@@ -787,7 +790,9 @@
 		D70A3BF1A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceMetadataKeys.swift; sourceTree = "<group>"; };
 		D70A4BF1A1B2C3D4E5F60718 /* WorkspaceMetadataValidatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceMetadataValidatorTests.swift; sourceTree = "<group>"; };
 		D70B3BF1A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIAdvisoryConnectivity.swift; sourceTree = "<group>"; };
+		D71C0FE1A1B2C3D4E5F60718 /* CLISurfaceRefArguments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLISurfaceRefArguments.swift; sourceTree = "<group>"; };
 		D70B3BF1A1B2C3D4E5F60720 /* CLIAdvisoryConnectivityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIAdvisoryConnectivityTests.swift; sourceTree = "<group>"; };
+		D71C0FE3A1B2C3D4E5F60718 /* CLISurfaceRefArgumentsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLISurfaceRefArgumentsTests.swift; sourceTree = "<group>"; };
 		D7100BF1A1B2C3D4E5F60718 /* MailboxLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/MailboxLayout.swift; sourceTree = "<group>"; };
 		D7101BF1A1B2C3D4E5F60718 /* MailboxLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailboxLayoutTests.swift; sourceTree = "<group>"; };
 		D7102BF1A1B2C3D4E5F60718 /* MailboxIO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mailbox/MailboxIO.swift; sourceTree = "<group>"; };
@@ -1046,6 +1051,7 @@
 				A5001543 /* SurfaceMetadataStore.swift */,
 				D70A3BF1A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift */,
 				D70B3BF1A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift */,
+				D71C0FE1A1B2C3D4E5F60718 /* CLISurfaceRefArguments.swift */,
 				D7005BF1A1B2C3D4E5F60718 /* PersistedMetadata.swift */,
 				D7010BF1A1B2C3D4E5F60718 /* PaneMetadataStore.swift */,
 				D7C24002A1B2C3D4E5F60718 /* SurfaceManifestView.swift */,
@@ -1368,6 +1374,7 @@
 				D8019BF1A1B2C3D4E5F60718 /* WorkspaceBlueprintMarkdownTests.swift */,
 				D801BBF1A1B2C3D4E5F60718 /* WorkspaceSnapshotSetCodableTests.swift */,
 				D70B3BF1A1B2C3D4E5F60720 /* CLIAdvisoryConnectivityTests.swift */,
+				D71C0FE3A1B2C3D4E5F60718 /* CLISurfaceRefArgumentsTests.swift */,
 				A5C36031 /* StatusBarButtonDisplayTests.swift */,
 				D7101BF1A1B2C3D4E5F60718 /* MailboxLayoutTests.swift */,
 				D7104BF1A1B2C3D4E5F60718 /* MailboxIOTests.swift */,
@@ -1664,6 +1671,7 @@
 				53A8353DD72E0C6954D5F42A /* ChromeScaleSettingsTests.swift in Sources */,
 				9C51A1CE6AEEBF2E0B4C3E61 /* ChromeScaleTokensTests.swift in Sources */,
 				3175B7C8AE075F8D71BFA104 /* CLIAdvisoryConnectivityTests.swift in Sources */,
+				D71C0FE2A1B2C3D4E5F60718 /* CLISurfaceRefArgumentsTests.swift in Sources */,
 				C622796239CFCFB69D68C5D9 /* CLIHealthRuntimeTests.swift in Sources */,
 				C75D53A733AD58B6F40CFE9C /* CLIResolutionSnapshotTests.swift in Sources */,
 				949D60897130D3A2A359CC20 /* CommandPaletteSearchEngineTests.swift in Sources */,
@@ -1802,6 +1810,7 @@
 				A5001542 /* SurfaceMetadataStore.swift in Sources */,
 				D70A3BF0A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift in Sources */,
 				D70B3BF0A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift in Sources */,
+				D71C0FE0A1B2C3D4E5F60718 /* CLISurfaceRefArguments.swift in Sources */,
 				D7005BF0A1B2C3D4E5F60718 /* PersistedMetadata.swift in Sources */,
 				D7010BF0A1B2C3D4E5F60718 /* PaneMetadataStore.swift in Sources */,
 				D7C24001A1B2C3D4E5F60718 /* SurfaceManifestView.swift in Sources */,
@@ -1998,6 +2007,7 @@
 				D7206BF0A1B2C3D4E5F60719 /* MailboxEnvelope.swift in Sources */,
 				D70A3BF0A1B2C3D4E5F60719 /* WorkspaceMetadataKeys.swift in Sources */,
 				D70B3BF0A1B2C3D4E5F60719 /* CLIAdvisoryConnectivity.swift in Sources */,
+				D71C0FE0A1B2C3D4E5F60719 /* CLISurfaceRefArguments.swift in Sources */,
 				75B580E4A1859423B310E203 /* EventLogLayout.swift in Sources */,
 				365F4BE2806EC0D12A9336BD /* EventEnvelope.swift in Sources */,
 				D1510386129C337B5868E50D /* AgentLaunchStats.swift in Sources */,

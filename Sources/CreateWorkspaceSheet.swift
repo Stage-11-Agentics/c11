@@ -218,6 +218,7 @@ struct CreateWorkspaceSheet: View {
                     TextField("", text: $directory)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12, design: .monospaced))
+                        .onSubmit { submit() }
                     Button {
                         chooseDirectory()
                     } label: {
@@ -510,6 +511,7 @@ struct CreateWorkspaceSheet: View {
             )
             .textFieldStyle(.roundedBorder)
             .font(.system(size: 12))
+            .onSubmit { submit() }
             Text(String(
                 localized: "createWorkspace.name.hint",
                 defaultValue: "Defaults to the directory name. Override to give this workspace a custom label."
@@ -600,6 +602,16 @@ struct CreateWorkspaceSheet: View {
             .frame(height: 200)
 
             HStack(spacing: 12) {
+                HStack(spacing: 5) {
+                    Image(systemName: "cursorarrow.click.2")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(String(
+                        localized: "createWorkspace.layouts.doubleClickHint",
+                        defaultValue: "Double-click a layout to create instantly"
+                    ))
+                    .font(.system(size: 11))
+                }
+                .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.45))
                 Spacer()
                 legendBadge("A", String(localized: "createWorkspace.legend.agent", defaultValue: "agent"))
                 legendBadge("T", String(localized: "createWorkspace.legend.terminal", defaultValue: "terminal"))
@@ -764,9 +776,20 @@ struct CreateWorkspaceSheet: View {
             }
             .keyboardShortcut(.cancelAction)
 
-            Button(String(localized: "createWorkspace.create", defaultValue: "Create")) {
+            Button {
                 submit()
+            } label: {
+                HStack(spacing: 8) {
+                    Text(String(
+                        localized: "createWorkspace.createWorkspace",
+                        defaultValue: "Create Workspace"
+                    ))
+                    Text("\u{23CE}")
+                        .font(.system(size: 11, weight: .semibold))
+                        .opacity(0.55)
+                }
             }
+            .buttonStyle(GoldCTAButtonStyle())
             .keyboardShortcut(.defaultAction)
             .disabled(!canSubmit)
         }
@@ -865,6 +888,40 @@ struct CreateWorkspaceSheet: View {
         case .user:    return String(localized: "createWorkspace.badge.user", defaultValue: "User")
         case .builtIn: return String(localized: "createWorkspace.badge.builtIn", defaultValue: "Built-in")
         }
+    }
+}
+
+// MARK: - Gold CTA button style
+
+/// The standard c11 gold button (solid gold fill, void-black content) sized
+/// up as the sheet's primary call to action.
+private struct GoldCTAButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(
+                isEnabled ? BrandColors.blackSwiftUI : BrandColors.whiteSwiftUI.opacity(0.35)
+            )
+            .padding(.horizontal, 26)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(
+                        isEnabled
+                        ? BrandColors.goldSwiftUI.opacity(configuration.isPressed ? 0.82 : 1.0)
+                        : BrandColors.surface3SwiftUI
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(
+                        isEnabled ? BrandColors.goldSwiftUI : BrandColors.ruleSwiftUI,
+                        lineWidth: isEnabled ? 0.75 : 1
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 

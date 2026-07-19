@@ -1577,6 +1577,67 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         )
     }
 
+    func testSpawnButtonInUnfocusedPaneFocusesNewSurface() {
+        // Regression: a tab-bar spawn click ("A"/terminal/browser/markdown/"+") routes
+        // through the didRequestNewTab delegate with an explicit pane. When that pane is
+        // NOT the currently focused pane, the new surface must still take focus — the
+        // view should switch to it — rather than being created silently in the
+        // background. Previously the surface creators only auto-focused when the clicked
+        // pane already had focus, so a spawn in the other pane left focus behind and the
+        // new tab never became active.
+        let workspace = Workspace()
+        guard let firstPanelId = workspace.focusedPanelId else {
+            XCTFail("Expected initial focused panel")
+            return
+        }
+
+        // Split to create a second pane; the new split becomes the focused pane.
+        guard let splitPanel = workspace.newTerminalSplit(from: firstPanelId, orientation: .horizontal),
+              let splitPaneId = workspace.paneId(forPanelId: splitPanel.id) else {
+            XCTFail("Expected split panel and its pane")
+            return
+        }
+        workspace.focusPanel(splitPanel.id)
+        drainMainQueue()
+
+        // Re-derive the original pane after the split (ids are stable, but be robust).
+        guard let targetPaneId = workspace.paneId(forPanelId: firstPanelId) else {
+            XCTFail("Expected the original panel to still resolve to a pane")
+            return
+        }
+        XCTAssertNotEqual(targetPaneId, splitPaneId)
+        XCTAssertEqual(
+            workspace.bonsplitController.focusedPaneId,
+            splitPaneId,
+            "Precondition: the split pane holds focus before the spawn"
+        )
+
+        // Simulate clicking a spawn button in the OTHER (unfocused) pane.
+        let beforePanels = Set(workspace.panels.keys)
+        workspace.splitTabBar(
+            workspace.bonsplitController,
+            didRequestNewTab: "terminal",
+            inPane: targetPaneId
+        )
+        drainMainQueue()
+        drainMainQueue()
+
+        let created = Set(workspace.panels.keys).subtracting(beforePanels)
+        XCTAssertEqual(created.count, 1, "Expected exactly one new surface")
+        guard let newPanelId = created.first else { return }
+
+        XCTAssertEqual(
+            workspace.focusedPanelId,
+            newPanelId,
+            "Expected the spawn-button surface to be focused even though its pane was unfocused"
+        )
+        XCTAssertEqual(
+            workspace.bonsplitController.focusedPaneId,
+            targetPaneId,
+            "Expected focus to move to the pane the spawn button was clicked in"
+        )
+    }
+
     func testClosingFocusedSplitRestoresBranchForRemainingFocusedPanel() {
         let workspace = Workspace()
         guard let firstPanelId = workspace.focusedPanelId else {

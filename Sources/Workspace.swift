@@ -11881,6 +11881,15 @@ extension Workspace: BonsplitDelegate {
     }
 
     func splitTabBar(_ controller: BonsplitController, didRequestNewTab kind: String, inPane pane: PaneID) {
+        // An explicit tab-bar spawn click ("A"/terminal/browser/markdown/"+") is an
+        // unambiguous "open a new surface here and let me use it" gesture, so the new
+        // surface must take focus immediately. Focus the clicked pane first — mirroring
+        // how tapping a tab focuses its pane — so the surface creators (which default
+        // `focus` to `focusedPaneId == pane`) reliably focus + select what they create.
+        // Without this, clicking a spawn button in a pane that was NOT the focused pane
+        // created the surface but left focus on the other pane, so the view never
+        // switched to the new tab.
+        bonsplitController.focusPane(pane)
         switch kind {
         case "terminal":
             _ = newTerminalSurface(inPane: pane)

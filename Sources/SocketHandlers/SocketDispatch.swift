@@ -884,6 +884,7 @@ extension TerminalController {
     /// seam DX-1 asks for; the router (parse/auth-gate/policy/main-sync) is
     /// unchanged. Runs on the main actor exactly like the switch it replaces.
     func v2DispatchExtracted(_ method: String, id: Any?, params: [String: Any]) -> String? {
+        if method.hasPrefix("agent.") { return v2DispatchAgent(method, id: id, params: params) }
         if method.hasPrefix("window.") { return v2DispatchWindow(method, id: id, params: params) }
         if method.hasPrefix("workspace.") { return v2DispatchWorkspace(method, id: id, params: params) }
         if method.hasPrefix("pane.") { return v2DispatchPane(method, id: id, params: params) }
@@ -900,4 +901,234 @@ extension TerminalController {
         return nil
     }
 
+}
+
+// MARK: - agent.* domain (launch-agent)
+
+extension TerminalController {
+    /// v2 dispatch slice for the `agent.*` domain — the typed-agent launch
+    /// primitive behind `c11 launch-agent` (docs/launch-agent-reference.md).
+    func v2DispatchAgent(_ method: String, id: Any?, params: [String: Any]) -> String {
+        switch method {
+        case "agent.launch":
+            return v2Result(id: id, self.v2AgentLaunch(params: params))
+        default:
+            return v2Error(id: id, code: "method_not_found", message: "Unknown method")
+        }
+    }
+
+    /// `agent.launch` — resolve a typed agent's launch plan, create the target
+    /// surface (pane / workspace / fresh workspace), inject the identity env,
+    /// stamp metadata, and type the composed command, atomically server-side.
+    /// Parsing/planning runs off-main; only surface creation + stamping is
+    /// main-synced (socket threading policy).
+    func v2AgentLaunch(params: [String: Any]) -> V2CallResult {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+        guard let kindRaw = v2RawString(params, "type")?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !kindRaw.isEmpty else {
+            return .err(code: "invalid_params", message: "Missing required param: type", data: nil)
+        }
+
+        let newWorkspace = v2Bool(params, "new_workspace") ?? false
+        let paneParam = v2UUID(params, "pane_id")
+        if newWorkspace && (paneParam != nil || params["workspace_id"] != nil) {
+            return .err(code: "invalid_params", message: "new_workspace is mutually exclusive with pane_id/workspace_id", data: nil)
+        }
+
+        var cwdOverride: String?
+        if let err = v2ResolveCwdParam(params, resolved: &cwdOverride) {
+            return err
+        }
+
+        // Config + (for custom kinds) template I/O happens here, off-main.
+        let lookupCwd = cwdOverride ?? FileManager.default.currentDirectoryPath
+        let userDefault = DefaultAgentConfigStore.shared.current
+        let projectConfig = DefaultAgentProjectConfig.find(from: lookupCwd)
+        let userTemplate: UserAgentLaunchTemplate? =
+            AgentType(rawValue: kindRaw) == nil ? UserAgentLaunchTemplate.load(kind: kindRaw) : nil
+
+        let request = AgentLaunchRequest(
+            kind: kindRaw,
+            model: v2RawString(params, "model"),
+            effort: v2RawString(params, "effort"),
+            task: v2RawString(params, "task"),
+            prompt: v2RawString(params, "prompt"),
+            extraEnv: v2StringMap(params, "env") ?? [:]
+        )
+        let plan: AgentLaunchPlan
+        switch AgentLaunchPlanner.plan(
+            request: request,
+            userDefault: userDefault,
+            projectConfig: projectConfig,
+            userTemplate: userTemplate
+        ) {
+        case .failure(let error):
+            return .err(code: error.code, message: error.message, data: nil)
+        case .success(let composed):
+            plan = composed
+        }
+
+        var warnings = plan.warnings
+        if let binaryWarning = Self.agentLaunchBinaryWarning(launchLine: plan.launchLine) {
+            warnings.append(binaryWarning)
+        }
+
+        let title = v2RawString(params, "title")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        var result: V2CallResult = .err(code: "internal_error", message: "Failed to launch agent", data: nil)
+        guard v2MainSyncWithDeadline({
+            let callerWantsFocus = self.v2Bool(params, "focus") ?? true
+            let focus = self.v2FocusAllowed(requested: callerWantsFocus)
+
+            let ws: Workspace
+            let panel: TerminalPanel
+            let paneUUID: UUID?
+            if newWorkspace {
+                // Identity env rides workspace creation so it is present at
+                // PTY birth; the launch line is *typed* into the interactive
+                // shell below (queue-until-ready, same as the A button) rather
+                // than baked as the ghostty spawn command — a spawn command
+                // execs over the shell (agent exit kills the surface) and
+                // skips shell rc, which changes PATH-wrapper resolution.
+                // autoWelcome is suppressed: this workspace hosts an agent,
+                // not the onboarding grid.
+                let created = tabManager.addWorkspace(
+                    workingDirectory: cwdOverride,
+                    initialTerminalEnvironment: plan.env,
+                    select: focus,
+                    eagerLoadTerminal: !focus,
+                    autoWelcomeIfNeeded: false
+                )
+                guard let initialPanel = created.focusedTerminalPanel else {
+                    result = .err(code: "internal_error", message: "New workspace has no terminal surface", data: nil)
+                    return
+                }
+                ws = created
+                panel = initialPanel
+                paneUUID = created.bonsplitController.focusedPaneId?.id
+                panel.sendText(plan.launchLine + "\n")
+            } else {
+                guard let target = self.v2ResolveWorkspace(params: params, tabManager: tabManager) else {
+                    result = .err(code: "not_found", message: "Workspace not found", data: nil)
+                    return
+                }
+                if focus {
+                    self.v2MaybeFocusWindow(for: tabManager)
+                    self.v2MaybeSelectWorkspace(tabManager, workspace: target)
+                }
+                let paneId: PaneID? = {
+                    if let paneParam {
+                        return target.bonsplitController.allPaneIds.first(where: { $0.id == paneParam })
+                    }
+                    return target.bonsplitController.focusedPaneId
+                }()
+                guard let paneId else {
+                    result = .err(code: "not_found", message: "Pane not found", data: nil)
+                    return
+                }
+                guard let created = target.newTerminalSurface(
+                    inPane: paneId,
+                    focus: focus,
+                    workingDirectory: cwdOverride,
+                    startupEnvironment: plan.env
+                ) else {
+                    result = .err(code: "internal_error", message: "Failed to create surface", data: nil)
+                    return
+                }
+                ws = target
+                panel = created
+                paneUUID = paneId.id
+                // A surface created in an unselected workspace stays lazily
+                // unattached (`tty: null`) and would never flush a queued
+                // command — kick the background start like
+                // `launchInExistingSurface` does (C11-121), then use the same
+                // queue-until-ready delivery as the A button.
+                if panel.surface.surface == nil {
+                    panel.surface.requestBackgroundSurfaceStartIfNeeded()
+                }
+                panel.sendText(plan.launchLine + "\n")
+            }
+
+            ws.stampAgentLaunchIdentity(
+                surfaceId: panel.id,
+                kind: plan.kind,
+                model: plan.model,
+                task: request.task,
+                title: title
+            )
+
+            if let delayedPrompt = plan.delayedPrompt {
+                // Post-boot delivery for TUIs with no argv prompt. Same fixed
+                // delay rail as `default-agent launch` (readiness detection is
+                // a follow-up there too).
+                let panelId = panel.id
+                let wsId = ws.id
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(2500)) { [weak tabManager] in
+                    guard let tabManager,
+                          let liveWs = tabManager.tabs.first(where: { $0.id == wsId }),
+                          let livePanel = liveWs.terminalPanel(for: panelId) else { return }
+                    livePanel.surface.sendSubmitFormText(delayedPrompt)
+                }
+            }
+
+            // Make the just-minted refs resolvable by the caller's next command.
+            self.v2RefreshKnownRefs()
+
+            let windowId = self.v2ResolveWindowId(tabManager: tabManager)
+            var agent: [String: Any] = ["type": plan.kind]
+            agent["model"] = plan.model.isEmpty ? NSNull() : plan.model
+            agent["effort"] = plan.effort.isEmpty ? NSNull() : plan.effort
+            agent["task"] = self.v2OrNull(request.task)
+            result = .ok([
+                "agent": agent,
+                "command": plan.launchLine,
+                "window_id": self.v2OrNull(windowId?.uuidString),
+                "window_ref": self.v2Ref(kind: .window, uuid: windowId),
+                "workspace_id": ws.id.uuidString,
+                "workspace_ref": self.v2Ref(kind: .workspace, uuid: ws.id),
+                "pane_id": self.v2OrNull(paneUUID?.uuidString),
+                "pane_ref": paneUUID.map { self.v2Ref(kind: .pane, uuid: $0) } ?? NSNull(),
+                "surface_id": panel.id.uuidString,
+                "surface_ref": self.v2Ref(kind: .surface, uuid: panel.id),
+                "warnings": warnings
+            ])
+        }) != nil else {
+            return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)
+        }
+        return result
+    }
+
+    /// Best-effort binary availability check for the launch line's argv[0].
+    /// A warning, never a hard error: the app process PATH (especially when
+    /// c11 was launched from Finder) is poorer than the login-shell PATH a
+    /// surface actually gets, so an absent binary here may still resolve in
+    /// the pane. Searches the bundled wrapper dir, the app PATH, and the
+    /// common user-install dirs.
+    nonisolated static func agentLaunchBinaryWarning(launchLine: String) -> String? {
+        guard let binary = launchLine.split(separator: " ").first.map(String.init),
+              !binary.isEmpty else { return nil }
+        let fm = FileManager.default
+        if binary.contains("/") {
+            return fm.isExecutableFile(atPath: (binary as NSString).expandingTildeInPath)
+                ? nil
+                : "launch binary not found: \(binary)"
+        }
+        var dirs: [String] = []
+        if let bundled = Bundle.main.resourceURL?.appendingPathComponent("bin").path {
+            dirs.append(bundled)
+        }
+        if let path = ProcessInfo.processInfo.environment["PATH"] {
+            dirs.append(contentsOf: path.split(separator: ":").map(String.init))
+        }
+        let home = fm.homeDirectoryForCurrentUser.path
+        dirs.append(contentsOf: [
+            "/opt/homebrew/bin", "/usr/local/bin",
+            "\(home)/.local/bin", "\(home)/bin", "\(home)/.grok/bin"
+        ])
+        for dir in dirs where fm.isExecutableFile(atPath: "\(dir)/\(binary)") {
+            return nil
+        }
+        return "binary '\(binary)' not found on the app PATH or common install dirs; the pane's login shell may still resolve it"
+    }
 }

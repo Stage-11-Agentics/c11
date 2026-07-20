@@ -40,7 +40,7 @@ c11 stamps your launch identity itself: the sidebar chip (agent type from proces
 - **Title = what the surface *is*** — generic, reusable. A filename for file-backed surfaces (`PHILOSOPHY.md`); a role for terminals (`Phase 2 agent`, `Log tail`).
 - **Description = why it's open *right now*** — one or two sentences of current context the operator can read without opening the surface.
 - **Refresh both when scope shifts** (plan → impl, ticket → ticket, file → file) — at the pivot, not at session end.
-- **Lineage for downstream panes:** chain parent → child with `::` in the title (`Login Button :: MA Review :: Claude`) and lead the description with a `Lineage:` breadcrumb. **Sibling** workers the operator drives directly are *not* downstream — use plain anchors (`Feature Left`, `Lattice Manager`), no chain. Before renaming, check `c11 get-titlebar-state`; if a chain exists, preserve the prefix and refine only the trailing segment.
+- **Lineage lives in the DESCRIPTION, not the title (revised 2026-07-20).** Titles are 2–3 words, role-first, DISTINCT — make the first word differ between sibling tabs; `::` parent-prefix chains are retired (at fleet scale every sibling truncates to the same parent prefix and the sidebar becomes unreadable — operator verdict). Lead the description with a `Lineage: <parent> → <role>` breadcrumb instead. Before renaming, check `c11 get-titlebar-state`; keep names short, keep the description's lineage line.
 
 ## What c11 can do — load the reference when you need it
 

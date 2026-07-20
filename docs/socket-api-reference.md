@@ -72,6 +72,10 @@ The `c11` CLI wraps these methods: e.g. `c11 list-workspaces` → `workspace.lis
 
 All dotted v2 methods, grouped by domain. Method names are stable identifiers; arguments travel in `params` and results in `result`. The `debug.*` domain is a set of test/automation hooks and is only meaningful on debug/tagged builds.
 
+### Agents (`agent.*`) — 1
+
+- `agent.launch` — launch a typed coding agent into a new surface or fresh workspace: per-kind invocation, model/effort flags, identity env + metadata at birth, refs returned. See `docs/launch-agent-reference.md`.
+
 ### System (`system.*`) — 5
 
 - `system.brand`

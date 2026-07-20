@@ -110,6 +110,7 @@ extension TerminalController {
             "surface.set_metadata",
             "surface.get_metadata",
             "surface.clear_metadata",
+            "agent.launch",
             "mailbox.resolve",
             "pane.list",
             "pane.focus",

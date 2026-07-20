@@ -12017,6 +12017,52 @@ extension Workspace: BonsplitDelegate {
         syncPanelTitleFromMetadata(panelId: surfaceId)
     }
 
+    /// Identity-at-birth stamp for `agent.launch` (`c11 launch-agent`). Unlike
+    /// `stampLaunchIdentity` (A button), the caller *explicitly requested* this
+    /// agent kind, so `terminal_type` is stamped as a declaration too — the
+    /// same tier `c11 set-agent` writes, so a later explicit declaration still
+    /// cleanly wins, and `AgentDetector`'s heuristic tier never fights it.
+    /// Models that don't fit the canonical kebab grammar (e.g. `gpt-5.2`,
+    /// `provider/model`) land on the non-canonical `model_label` display hint
+    /// instead so the chip still shows them.
+    func stampAgentLaunchIdentity(
+        surfaceId: UUID,
+        kind: String,
+        model: String,
+        task: String?,
+        title: String?
+    ) {
+        var partial: [String: Any] = [
+            MetadataKey.terminalType: kind,
+            MetadataKey.title: title?.isEmpty == false
+                ? title!
+                : String(
+                    localized: "agent.launch.placeholderTitle",
+                    defaultValue: "Awaiting first task"
+                )
+        ]
+        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedModel.isEmpty {
+            if trimmedModel.range(of: "^[a-z][a-z0-9-]*$", options: .regularExpression) != nil,
+               trimmedModel.count <= 64 {
+                partial[MetadataKey.model] = trimmedModel
+            } else {
+                partial[MetadataKey.modelLabel] = String(trimmedModel.prefix(16))
+            }
+        }
+        if let task = task?.trimmingCharacters(in: .whitespacesAndNewlines), !task.isEmpty {
+            partial[MetadataKey.task] = String(task.prefix(128))
+        }
+        _ = try? SurfaceMetadataStore.shared.setMetadata(
+            workspaceId: id,
+            surfaceId: surfaceId,
+            partial: partial,
+            mode: .merge,
+            source: .declare
+        )
+        syncPanelTitleFromMetadata(panelId: surfaceId)
+    }
+
     func splitTabBar(_ controller: BonsplitController, menuItemsForNewTabKind kind: String, inPane pane: PaneID) -> [BonsplitNewTabMenuItem] {
         guard kind == "agent" else { return [] }
         let current = DefaultAgentConfigStore.shared.current.defaultAgent

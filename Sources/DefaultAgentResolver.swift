@@ -157,13 +157,14 @@ enum DefaultAgentResolver {
 // MARK: - launch-agent planning
 
 /// The caller's request for `agent.launch` / `c11 launch-agent`, normalized.
+/// The tab title is not part of this request — it never influences command
+/// composition, so the handler threads it straight to the metadata stamp.
 struct AgentLaunchRequest: Equatable {
     var kind: String
     var model: String?
     var effort: String?
     var task: String?
     var prompt: String?
-    var title: String?
     var extraEnv: [String: String] = [:]
 }
 

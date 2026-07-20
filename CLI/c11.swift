@@ -8598,8 +8598,10 @@ struct CMUXCLI {
               --prompt-file <path>     Read the initial prompt from a file
               --title <text>           Tab title (default: launch placeholder)
               --env KEY=VALUE          Extra spawn env (repeatable)
-              --no-focus               Do not focus the new surface
               --json                   Print the machine-readable result object
+
+            Launches never steal focus or selection (socket focus policy) —
+            the new surface is created in the background.
 
             Examples:
               c11 launch-agent --type claude-code --model opus --effort high

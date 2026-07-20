@@ -955,7 +955,6 @@ extension TerminalController {
             effort: v2RawString(params, "effort"),
             task: v2RawString(params, "task"),
             prompt: v2RawString(params, "prompt"),
-            title: v2RawString(params, "title"),
             extraEnv: v2StringMap(params, "env") ?? [:]
         )
         let plan: AgentLaunchPlan
@@ -976,7 +975,7 @@ extension TerminalController {
             warnings.append(binaryWarning)
         }
 
-        let title = request.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = v2RawString(params, "title")?.trimmingCharacters(in: .whitespacesAndNewlines)
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to launch agent", data: nil)
         guard v2MainSyncWithDeadline({
             let callerWantsFocus = self.v2Bool(params, "focus") ?? true

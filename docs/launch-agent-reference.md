@@ -73,13 +73,17 @@ passed through and the agent CLI enforces.
   the current workspace — same target the A button would hit).
 - `--pane <ref>`: a new surface in that pane.
 - `--workspace <ref>`: a new surface in that workspace's focused pane.
-- `--new-workspace`: a fresh workspace whose first terminal is the agent
-  (uses `workspace.create` `initial_env` + `initial_command`, so identity and
-  command are present at PTY birth with no follow-up sends).
+- `--new-workspace`: a fresh workspace whose first terminal is the agent. The
+  identity env rides workspace creation (present at PTY birth); the launch
+  line is *typed* into the interactive shell (queue-until-ready), not baked as
+  the ghostty spawn command — a spawn command execs over the shell, so agent
+  exit would kill the surface, and it skips shell rc.
 
 `--cwd <path>` sets the working directory (resolved CLI-side relative to the
-caller, validated server-side). Placement never steals macOS focus (socket focus
-policy).
+caller, validated server-side). Launches never steal focus or selection — 
+`agent.launch` is not a focus-intent method under the socket focus policy, so
+the new surface is created unfocused regardless of flags (`--no-focus` is
+accepted as a no-op for symmetry with `new-surface`).
 
 ### Identity at birth
 
@@ -128,18 +132,25 @@ Human-readable by default; `--json` prints one object:
 
 Refs are immediately valid targets for `send`, `read-screen`, `set-*`.
 
-### Errors
+### Errors and warnings
 
-All errors are structured (`--json` gives `{"ok":false,"error":{"code":…,"message":…}}`):
+Errors are structured (`--json` gives `{"ok":false,"error":{"code":…,"message":…}}`):
 
 | code | when |
 |---|---|
 | `unknown_agent_type` | `--type` is not a built-in kind and no user template exists |
-| `binary_not_found` | the launch command's binary is not on the surface PATH |
+| `empty_command` | the kind resolved to an empty launch command (unconfigured `custom`/template) |
 | `model_flag_unsupported` / `effort_flag_unsupported` | `--model`/`--effort` passed for a kind whose template declares no syntax for it |
 | `invalid_effort` | value outside the template's declared allowed list |
-| `prompt_flag_conflict` | both `--prompt` and `--prompt-file` |
-| `target_not_found` / `invalid_cwd` | bad `--pane`/`--workspace` ref or cwd |
+| `invalid_params` | bad `cwd`, or `new_workspace` combined with `pane_id`/`workspace_id` |
+| `not_found` | target workspace or pane doesn't resolve |
+
+A conflicting `--prompt`/`--prompt-file` pair is rejected CLI-side before the
+socket call. A launch binary that can't be found is a **warning**, not an
+error — the app-process PATH is poorer than the login-shell PATH a pane
+actually gets, so the result carries `"warnings": ["binary '<x>' not found …"]`
+and the launch proceeds (a truly missing binary shows the shell error in the
+pane).
 
 ## Launch templates
 
@@ -147,14 +158,16 @@ The per-kind launch facts are **data on the agent manifest**
 (`Sources/AgentManifest.swift` → `LaunchTemplate`), not code at call sites:
 
 ```swift
-struct LaunchTemplate {
-    let modelArg: ArgSpec?      // how "--model <id>" renders for this CLI
-    let effortArg: ArgSpec?     // how "--effort <tier>" renders
-    let effortValues: [String]  // non-empty → validated early
-    let promptDelivery: PromptDelivery  // .positional | .flag(String) | .postBoot
+struct AgentLaunchTemplate {
+    let modelArg: AgentLaunchArgStyle?   // how "--model <id>" renders for this CLI
+    let effortArg: AgentLaunchArgStyle?  // how "--effort <tier>" renders
+    let effortValues: [String]           // non-empty → validated early
+    let promptDelivery: AgentPromptDelivery  // .positional | .flag(String) | .postBoot
 }
-enum ArgSpec { case flag(String)          // "--model" → `--model <v>`
-               case configKV(String) }    // "model_reasoning_effort" → `-c k=<v>`
+enum AgentLaunchArgStyle {
+    case flag(String)       // "--model" → `--model <v>`
+    case configKV(String)   // "model_reasoning_effort" → `-c k=<v>`
+}
 ```
 
 ### Built-in seeds
@@ -205,9 +218,13 @@ CLI `launch-agent` is a thin client over one v2 method, `agent.launch`:
 { "method": "agent.launch",
   "params": { "type": "codex", "model": "gpt-5.2", "effort": "high",
               "task": "sekhem-42", "prompt": "…", "title": "…",
-              "pane": "pane:9" | "workspace": "workspace:4" | "new_workspace": true,
+              "pane_id": "<uuid>" | "workspace_id": "<uuid>" | "new_workspace": true,
               "cwd": "/path", "env": {"K": "V"} } }
 ```
+
+`pane_id`/`workspace_id` take UUIDs — the CLI resolves `pane:N`/`workspace:N`
+short refs client-side before sending, and direct socket callers must do the
+same (resolve via `system.tree` or `c11 identify`).
 
 The handler performs resolution, surface creation, env injection, metadata
 stamping, and command typing **atomically server-side** — a caller never has to

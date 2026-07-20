@@ -5212,6 +5212,12 @@ final class Workspace: Identifiable, ObservableObject {
     /// `chromeScaleObserver`.
     private var surfaceAvailabilityObserver: SurfaceAvailabilityObserver?
 
+    /// Keeps the Bonsplit "N: " tab-ordinal prefix in sync with the persisted
+    /// "Show surface IDs in tab titles" toggle for any writer (Settings UI,
+    /// `defaults write`). Same composed-NSObject KVO pattern as
+    /// `chromeScaleObserver`.
+    private var tabOrdinalDisplayObserver: TabOrdinalDisplayObserver?
+
     /// Operator-authored workspace metadata (e.g. "description", "icon").
     /// Workspace-scoped; not to be confused with surface-scoped
     /// `SurfaceMetadataStore`. Persisted across restart via
@@ -5686,6 +5692,18 @@ final class Workspace: Identifiable, ObservableObject {
         bonsplitController.configuration = next
     }
 
+    /// Live-update path for the "Show surface IDs in tab titles" toggle.
+    /// Flips `Appearance.showTabOrdinals`; tabs already carry their
+    /// `displayOrdinal`, so the prefix appears/disappears in a single
+    /// configuration reassignment with no title re-push.
+    func applyTabOrdinalDisplay() {
+        let showIds = TabOrdinalDisplaySettings.showsSurfaceIds()
+        var next = bonsplitController.configuration
+        guard next.appearance.showTabOrdinals != showIds else { return }
+        next.appearance.showTabOrdinals = showIds
+        bonsplitController.configuration = next
+    }
+
     func applyGhosttyChrome(from config: GhosttyConfig, reason: String = "unspecified") {
         applyGhosttyChrome(
             backgroundColor: config.backgroundColor,
@@ -5819,6 +5837,7 @@ final class Workspace: Identifiable, ObservableObject {
         )
         // C11-41: tab bar chrome state was removed; always show the full tab bar.
         appearance.showsTabBar = true
+        appearance.showTabOrdinals = TabOrdinalDisplaySettings.showsSurfaceIds()
         let config = BonsplitConfiguration(
             allowSplits: true,
             allowCloseTabs: true,
@@ -5865,6 +5884,11 @@ final class Workspace: Identifiable, ObservableObject {
             self?.applySurfaceAvailability()
         }
 
+        // React to the "Show surface IDs in tab titles" toggle live.
+        self.tabOrdinalDisplayObserver = TabOrdinalDisplayObserver { [weak self] in
+            self?.applyTabOrdinalDisplay()
+        }
+
         // Remove the default "Welcome" tab that bonsplit creates
         let welcomeTabIds = bonsplitController.allTabIds
 
@@ -5889,7 +5913,8 @@ final class Workspace: Identifiable, ObservableObject {
             icon: "terminal.fill",
             kind: SurfaceKind.terminal,
             isDirty: false,
-            isPinned: false
+            isPinned: false,
+            displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: terminalPanel.id)
         ) {
             surfaceIdToPanelId[tabId] = terminalPanel.id
             initialTabId = tabId
@@ -7322,7 +7347,8 @@ final class Workspace: Identifiable, ObservableObject {
             titleSource: Self.extractSource(snapshot.sources[MetadataKey.title]),
             descriptionSource: Self.extractSource(snapshot.sources[MetadataKey.description]),
             visible: titleBarVisible,
-            collapsed: titleBarCollapsed[panelId] ?? true
+            collapsed: titleBarCollapsed[panelId] ?? true,
+            ordinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: panelId)
         )
     }
 
@@ -8243,7 +8269,8 @@ final class Workspace: Identifiable, ObservableObject {
             icon: newPanel.displayIcon,
             kind: SurfaceKind.terminal,
             isDirty: newPanel.isDirty,
-            isPinned: false
+            isPinned: false,
+            displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: newPanel.id)
         )
         surfaceIdToPanelId[newTab.id] = newPanel.id
         let previousFocusedPanelId = focusedPanelId
@@ -8334,6 +8361,7 @@ final class Workspace: Identifiable, ObservableObject {
             kind: SurfaceKind.terminal,
             isDirty: newPanel.isDirty,
             isPinned: false,
+            displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: newPanel.id),
             inPane: paneId
         ) else {
             panels.removeValue(forKey: newPanel.id)
@@ -8426,7 +8454,8 @@ final class Workspace: Identifiable, ObservableObject {
             kind: SurfaceKind.browser,
             isDirty: browserPanel.isDirty,
             isLoading: browserPanel.isLoading,
-            isPinned: false
+            isPinned: false,
+            displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: browserPanel.id)
         )
         surfaceIdToPanelId[newTab.id] = browserPanel.id
         let previousFocusedPanelId = focusedPanelId
@@ -8513,6 +8542,7 @@ final class Workspace: Identifiable, ObservableObject {
             isDirty: browserPanel.isDirty,
             isLoading: browserPanel.isLoading,
             isPinned: false,
+            displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: browserPanel.id),
             inPane: paneId
         ) else {
             panels.removeValue(forKey: browserPanel.id)
@@ -8568,7 +8598,8 @@ final class Workspace: Identifiable, ObservableObject {
             kind: SurfaceKind.markdown,
             isDirty: markdownPanel.isDirty,
             isLoading: false,
-            isPinned: false
+            isPinned: false,
+            displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: markdownPanel.id)
         )
         surfaceIdToPanelId[newTab.id] = markdownPanel.id
         let previousFocusedPanelId = focusedPanelId
@@ -8623,6 +8654,7 @@ final class Workspace: Identifiable, ObservableObject {
             isDirty: markdownPanel.isDirty,
             isLoading: false,
             isPinned: false,
+            displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: markdownPanel.id),
             inPane: paneId
         ) else {
             panels.removeValue(forKey: markdownPanel.id)
@@ -9184,6 +9216,7 @@ final class Workspace: Identifiable, ObservableObject {
             isLoading: detached.isLoading,
             isPinned: detached.isPinned,
             customColorHex: detached.customColor,
+            displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: detached.panelId),
             inPane: paneId
         ) else {
             panels.removeValue(forKey: detached.panelId)
@@ -9818,7 +9851,8 @@ final class Workspace: Identifiable, ObservableObject {
             icon: newPanel.displayIcon,
             kind: SurfaceKind.terminal,
             isDirty: newPanel.isDirty,
-            isPinned: false
+            isPinned: false,
+            displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: newPanel.id)
         ) {
             surfaceIdToPanelId[newTabId] = newPanel.id
         }
@@ -11851,6 +11885,7 @@ extension Workspace: BonsplitDelegate {
             kind: SurfaceKind.terminal,
             isDirty: newPanel.isDirty,
             isPinned: false,
+            displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: newPanel.id),
             inPane: newPane
         ) else {
             panels.removeValue(forKey: newPanel.id)

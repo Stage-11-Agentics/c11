@@ -20,6 +20,9 @@ struct SurfaceTitleBarState: Equatable {
     var descriptionSource: MetadataSource?
     var visible: Bool = true
     var collapsed: Bool = true
+    /// The surface's `surface:N` ordinal, rendered as an "N: " title prefix
+    /// when the "Show surface IDs in tab titles" setting is on.
+    var ordinal: Int?
 }
 
 /// Maximum description render region: ~5 × line height at 11pt.
@@ -36,6 +39,8 @@ struct SurfaceTitleBarView: View {
     @AppStorage(ThemeAppStorage.Keys.m1bSurfaceTitleBarMigrated, store: ThemeAppStorage.defaults)
     private var m1bSurfaceTitleBarMigrated = false
     @State private var measuredDescriptionHeight: CGFloat = 0
+    @AppStorage(TabOrdinalDisplaySettings.showSurfaceIdsInTabTitlesKey)
+    private var showSurfaceIds = TabOrdinalDisplaySettings.defaultShowSurfaceIds
 
     private var descriptionIsEmpty: Bool {
         state.description?.isEmpty ?? true
@@ -136,8 +141,12 @@ struct SurfaceTitleBarView: View {
 
     private var headerRow: some View {
         HStack(spacing: 6) {
-            Text(state.title ?? String(localized: "titlebar.empty_title",
-                                       defaultValue: "Untitled"))
+            Text(TitleFormatting.ordinalPrefixed(
+                ordinal: state.ordinal,
+                title: state.title ?? String(localized: "titlebar.empty_title",
+                                             defaultValue: "Untitled"),
+                show: showSurfaceIds
+            ))
                 .font(.system(size: chromeTokens.surfaceTitleBarTitle, weight: .semibold))
                 .foregroundColor(resolvedForegroundColor)
                 .lineLimit(effectiveCollapsed ? 1 : nil)

@@ -27,6 +27,8 @@ Commands accept UUIDs, short refs, or indexes:
 window:1   workspace:1   pane:2   surface:3   tab:1
 ```
 
+**Operator-spoken tab numbers are surface refs.** With the "Show Surface IDs in Tab Titles" setting on (Settings → Surfaces), every tab renders as `N: title` where N is its `surface:N` ordinal. When the operator says "send this to 292", target `surface:292` — never a bare `292`: to the CLI a bare integer is a *positional index* (the Nth surface in list order), which is a different surface. Your own number is `$C11_SURFACE_NUM`.
+
 **`--workspace` AND `--surface` must be used together** when targeting a remote surface. Either flag alone fails or targets the wrong thing.
 
 ```bash
@@ -49,6 +51,7 @@ Auto-exported into every c11 surface child process.
 |-----|---------|
 | `C11_WORKSPACE_ID` | Auto-set in c11 terminals; default for `--workspace` |
 | `C11_SURFACE_ID` | Auto-set; default for `--surface` |
+| `C11_SURFACE_NUM` | Integer N of this surface's `surface:N` ref — the number shown in the tab bar when surface-ID display is on. Address yourself as `surface:$C11_SURFACE_NUM` |
 | `C11_TAB_ID` | Optional alias for tab commands |
 | `C11_SOCKET_PATH` | Override socket path (auto-discovers tagged/debug sockets) |
 | `C11_SOCKET_PASSWORD` | Socket auth password (if set in Settings) |
@@ -242,6 +245,8 @@ c11 set-description --from-file /tmp/desc.md
 ```
 
 `c11 rename-tab` is an alias for `c11 set-title` on the target surface. The sidebar tab label is a truncated projection of the title.
+
+`c11 get-titlebar-state` prints the surface's `ref=surface:N` alongside title/description — the same N the tab bar displays when surface-ID display is on. The "N: " prefix is rendered by the app, not stored: titles never contain it, and `set-title` must not add one.
 
 ## Sidebar reporting
 

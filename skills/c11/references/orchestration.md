@@ -42,26 +42,40 @@ Read `c11 tree` before reshaping — splits reshape the screen and disorient eve
 
 **Name every tab, including your own.** An unnamed "Claude Code" tab is an unidentifiable agent — useless when multiple agents are running. The sidebar truncates from the right; the full title shows in the title bar.
 
-### Lineage is the default
+### Titles are short and DISTINCT; lineage lives in the description
 
-When a pane is downstream of another — a sub-agent an orchestrator spawned, a code review spawned over a feature's work, a fix agent rooted in a review finding — the title must show the chain. Use `::` (double colon) as the separator, **parent first**. Multiple rungs chain in order:
+**(Revised 2026-07-20 after operator verdict on a real fleet run.)** The old rule here — chain
+`Parent :: Child` in the title, parent first — is an **anti-pattern at fleet scale** and is
+retired. When one orchestrator spawns six workers, parent-first titles make every sibling tab
+render as the same truncated prefix (`PostHog Orche…` × 7): the sidebar becomes a wall of
+identical strings and the operator can't tell any two agents apart. Exactly the information the
+title exists to carry — *which agent is this* — is what the shared prefix destroys.
 
-| Pane | Title |
-|------|-------|
-| Feature agent | `Login Button` |
-| Its multi-agent review | `Login Button :: MA Review` |
-| One reviewer inside that review | `Login Button :: MA Review :: Claude` |
-| A fix agent spawned from a review finding | `Login Button :: Fix Null Check` |
+The rules now:
 
-Parent-first groups siblings in the sidebar — they all truncate to the parent's leading word (`Login Bu…`), which is usually what the operator wants at a glance: "these panes are all Login Button family." The full chain survives in the title bar. Keep each segment short so the whole chain stays readable: `Login Button :: MA Review :: Claude` wraps cleanly; `Adding Login Button Feature :: Multi-Agent Code Review :: Claude Reviewer` will overflow.
+- **Title = 2–3 words, role-first, distinct.** Make the FIRST word differ between sibling tabs
+  wherever possible — the leading characters are all that survives sidebar truncation.
+  `F2 Routes`, `P2 SPA Plan`, `P4 ImportSync Plan` — not `PostHog Orchestrator :: F2 Impl`.
+- **No `::` chains, no shared prefixes in titles.** A run's family identity comes from the
+  workspace and from descriptions, not from repeating the parent's name in every child title.
+- **Lineage moves to the DESCRIPTION**, which was already mandatory: first line
+  `Lineage: <parent> → <child role>`, then current context. The operator hovers/opens for the
+  chain; the sidebar shows the distinct role.
 
-The user may override any tab name; lineage is the default, not a lock.
+| Pane | Title | Description first line |
+|------|-------|------------------------|
+| Epic orchestrator | `PostHog Orch` | — |
+| A lane's planner | `P2 SPA Plan` | `Lineage: PostHog Orch → P2 planner.` |
+| A lane's implementer | `F2 Routes` | `Lineage: PostHog Orch → F2 implementer.` |
+| A review spawned over it | `F2 Review` | `Lineage: PostHog Orch → F2 → reviewer.` |
+
+The user may override any tab name; these are defaults, not locks.
 
 ### Who writes the lineage
 
-- **Orchestrator spawning a sub-agent.** Name the child's tab immediately after `c11 new-surface` / `c11 new-split`, **before** launching the sub-agent or sending the prompt. The orchestrator knows the full lineage (its own title plus the child's role) so it's the right actor to compose. It also writes the description with a lineage breadcrumb — see below.
-- **Sub-agent orienting itself.** Before calling `c11 rename-tab`, read the existing title with `c11 get-titlebar-state`. If a chain is already there (orchestrator pre-named it), **preserve the prefix** and refine only the trailing segment if your role needs sharpening. If no title exists, extract lineage from your initial prompt (orchestrators should pass it explicitly) and compose `<parent> :: <your role>`. Only fall back to a lineage-free name when no parent exists.
-- **Solo agent (no parent).** Name with your mission, no `::` prefix.
+- **Orchestrator spawning a sub-agent.** Name the child's tab immediately after `c11 new-surface` / `c11 new-split`, **before** launching the sub-agent or sending the prompt — a short distinct role title, plus the description whose first line is the lineage breadcrumb. The orchestrator knows the lineage, so it writes it — into the description.
+- **Sub-agent orienting itself.** Before calling `c11 rename-tab`, read the existing title with `c11 get-titlebar-state`. If the orchestrator pre-named it, keep that name unless your role sharpened — and keep it SHORT and distinct, never re-expanding it into a `Parent :: Child` chain. Preserve the description's `Lineage:` line on every update.
+- **Solo agent (no parent).** Name with your mission.
 
 ### Description tells the story up the chain
 
@@ -78,10 +92,10 @@ The orchestrator writes the first lineage line when it spawns the child so the c
 
 - **Orchestrators / delegators:** name on startup. Role + project in 2–4 words.
   `c11 rename-tab "SIG Delegator"`, `c11 rename-tab "Review Orchestrator"`
-- **Sub-agents:** orchestrator composes lineage right after creating the surface:
-  `c11 rename-tab --workspace $WS --surface $SURF "Login Button :: Plan"`
-  `c11 rename-tab --workspace $WS --surface $SURF "Login Button :: Lint Fixes"`
-- **Solo agents (no parent):** mission only, no lineage prefix.
+- **Sub-agents:** orchestrator names them right after creating the surface — short, distinct, role-first; lineage goes in the description:
+  `c11 rename-tab --workspace $WS --surface $SURF "Login Plan"`
+  `c11 rename-tab --workspace $WS --surface $SURF "Lint Fixes"`
+- **Solo agents (no parent):** mission only.
   `c11 rename-tab "Fix Auth Tests"`, `c11 rename-tab "CSS Cleanup"`
 
 `c11 rename-tab` is an alias for `c11 set-title` — either command writes the canonical `title` metadata key on the target surface. The description (including the lineage breadcrumb) goes via `c11 set-description`.

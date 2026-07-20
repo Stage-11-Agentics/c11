@@ -91,43 +91,42 @@ enum DefaultAgentResolver {
         return result
     }
 
-    /// Whether c11 injects a `--model` flag for this agent kind. Only agents
-    /// whose CLI accepts `--model <family-alias>` qualify; today that's Claude
-    /// Code. Kept as a seam so codex (also `--model`) can opt in later.
+    /// Whether c11 injects a model flag for this agent kind — driven by the
+    /// kind's launch template (`AgentManifest.launch.modelArg`), so an agent
+    /// opts in by declaring its flag syntax as data, not by editing call sites.
     static func supportsModelFlag(_ agent: AgentType) -> Bool {
-        agent == .claudeCode
+        AgentRegistry.shared.manifest(for: agent)?.launch.modelArg != nil
     }
 
-    /// The `--model <family>` flag to append for a launch, or `nil` when none
-    /// should be injected: the agent doesn't support it, no family is pinned,
-    /// or the operator already put a model in the command themselves (their
-    /// explicit choice wins, and we must not pass `--model` twice).
-    /// Visible for testing.
+    /// The model flag to append for a launch (rendered per the kind's launch
+    /// template), or `nil` when none should be injected: the agent's template
+    /// declares no model syntax, no model is pinned, or the operator already
+    /// put a model in the command themselves (their explicit choice wins, and
+    /// we must not pass the flag twice). Visible for testing.
     static func modelFlag(agent: AgentType, config: AgentConfig, command: String) -> String? {
-        guard supportsModelFlag(agent) else { return nil }
+        guard let arg = AgentRegistry.shared.manifest(for: agent)?.launch.modelArg else { return nil }
         let model = config.model.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !model.isEmpty else { return nil }
-        guard !command.lowercased().contains("--model") else { return nil }
-        return "--model \(model)"
+        guard !command.lowercased().contains(arg.detectToken) else { return nil }
+        return arg.render(model)
     }
 
-    /// Whether c11 injects an `--effort` flag for this agent kind. Same set as
-    /// the model flag today (Claude Code); kept separate so an agent that
-    /// accepts one flag but not the other can diverge later.
+    /// Whether c11 injects an effort flag for this agent kind — like
+    /// `supportsModelFlag`, driven by the kind's launch template.
     static func supportsEffortFlag(_ agent: AgentType) -> Bool {
-        agent == .claudeCode
+        AgentRegistry.shared.manifest(for: agent)?.launch.effortArg != nil
     }
 
-    /// The `--effort <level>` flag to append for a launch, or `nil` when none
-    /// should be injected: the agent doesn't support it, no level is pinned, or
-    /// the operator already put an effort in the command themselves (their
-    /// explicit choice wins). Visible for testing.
+    /// The effort flag to append for a launch (rendered per the kind's launch
+    /// template — `--effort` for claude, `-c model_reasoning_effort=` for
+    /// codex, `--thinking` for pi/omp), or `nil` when none should be injected.
+    /// Visible for testing.
     static func effortFlag(agent: AgentType, config: AgentConfig, command: String) -> String? {
-        guard supportsEffortFlag(agent) else { return nil }
+        guard let arg = AgentRegistry.shared.manifest(for: agent)?.launch.effortArg else { return nil }
         let effort = config.effort.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !effort.isEmpty else { return nil }
-        guard !command.lowercased().contains("--effort") else { return nil }
-        return "--effort \(effort)"
+        guard !command.lowercased().contains(arg.detectToken) else { return nil }
+        return arg.render(effort)
     }
 
     /// Single-quote a value for /bin/sh, escaping embedded single quotes via
@@ -136,5 +135,227 @@ enum DefaultAgentResolver {
         if value.isEmpty { return "''" }
         let escaped = value.replacingOccurrences(of: "'", with: "'\\''")
         return "'\(escaped)'"
+    }
+
+    /// Quote only when the value needs it, so the common flag values stay
+    /// byte-identical to their historical bare form (`--model opus`) while
+    /// anything with shell-significant characters is safely single-quoted.
+    static func shellQuoteIfNeeded(_ value: String) -> String {
+        if value.isEmpty { return "''" }
+        let safe = value.unicodeScalars.allSatisfy { scalar in
+            switch scalar {
+            case "a"..."z", "A"..."Z", "0"..."9", ".", "_", "-", "/", ":", ",", "@", "+", "=", "%":
+                return true
+            default:
+                return false
+            }
+        }
+        return safe ? value : shellQuote(value)
+    }
+}
+
+// MARK: - launch-agent planning
+
+/// The caller's request for `agent.launch` / `c11 launch-agent`, normalized.
+struct AgentLaunchRequest: Equatable {
+    var kind: String
+    var model: String?
+    var effort: String?
+    var task: String?
+    var prompt: String?
+    var title: String?
+    var extraEnv: [String: String] = [:]
+}
+
+/// Structured planning failures — each maps 1:1 onto a wire error code so the
+/// CLI/socket surface stays machine-readable (docs/launch-agent-reference.md).
+enum AgentLaunchPlanError: Error, Equatable {
+    case unknownAgentType(String)
+    case emptyCommand(String)
+    case modelFlagUnsupported(String)
+    case effortFlagUnsupported(String)
+    case invalidEffort(value: String, allowed: [String])
+
+    var code: String {
+        switch self {
+        case .unknownAgentType: return "unknown_agent_type"
+        case .emptyCommand: return "empty_command"
+        case .modelFlagUnsupported: return "model_flag_unsupported"
+        case .effortFlagUnsupported: return "effort_flag_unsupported"
+        case .invalidEffort: return "invalid_effort"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .unknownAgentType(let kind):
+            let builtIn = AgentType.allCases.map(\.rawValue).joined(separator: ", ")
+            return "unknown agent type '\(kind)' — built-in types: \(builtIn); custom kinds need \(UserAgentLaunchTemplate.templateURL(kind: kind).path)"
+        case .emptyCommand(let kind):
+            return "agent '\(kind)' resolved to an empty launch command (configure it in Settings → Agents & Automation)"
+        case .modelFlagUnsupported(let kind):
+            return "agent '\(kind)' declares no model-flag syntax; --model is not supported for it"
+        case .effortFlagUnsupported(let kind):
+            return "agent '\(kind)' declares no effort-flag syntax; --effort is not supported for it"
+        case .invalidEffort(let value, let allowed):
+            return "invalid effort '\(value)' — allowed: \(allowed.joined(separator: ", "))"
+        }
+    }
+}
+
+/// A fully composed launch: the line to type, the env to spawn with, the
+/// identity to stamp, and any prompt that must follow post-boot.
+struct AgentLaunchPlan: Equatable {
+    let kind: String
+    /// `nil` for custom kebab kinds that only exist as a user template.
+    let agentType: AgentType?
+    /// The full line typed into the new PTY (launcher + flags [+ prompt]).
+    let launchLine: String
+    /// Non-nil when the kind's template delivers prompts post-boot.
+    let delayedPrompt: String?
+    /// Spawn environment: operator env overrides, then the launch identity
+    /// (`C11_AGENT_TYPE/MODEL/TASK` + `CMUX_*` aliases), then caller extras.
+    let env: [String: String]
+    /// The resolved model pin ("" = inherit the agent's ambient default).
+    let model: String
+    let effort: String
+    let warnings: [String]
+}
+
+/// Pure composer for `agent.launch`. No I/O — callers pass the merged configs
+/// and (for custom kinds) the pre-loaded user template, so the whole planning
+/// path is exercisable from `c11LogicTests`.
+enum AgentLaunchPlanner {
+
+    static func plan(
+        request: AgentLaunchRequest,
+        userDefault: DefaultAgentConfig,
+        projectConfig: DefaultAgentConfig?,
+        userTemplate: UserAgentLaunchTemplate?
+    ) -> Result<AgentLaunchPlan, AgentLaunchPlanError> {
+        let kind = request.kind.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let agentType = AgentType(rawValue: kind)
+        let template: AgentLaunchTemplate
+        let baseCommand: String
+        let baseEnv: [String: String]
+        let pinnedModel: String
+        let pinnedEffort: String
+
+        if let agentType {
+            guard let manifest = AgentRegistry.shared.manifest(for: agentType) else {
+                return .failure(.unknownAgentType(kind))
+            }
+            // Same per-agent config pick as the A button: project entry beats
+            // user Settings, factory fills the gaps.
+            let config = projectConfig?.agents[agentType] ?? userDefault.config(for: agentType)
+            template = manifest.launch
+            baseCommand = config.command.trimmingCharacters(in: .whitespacesAndNewlines)
+            baseEnv = config.envMap
+            pinnedModel = config.model.trimmingCharacters(in: .whitespacesAndNewlines)
+            pinnedEffort = config.effort.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if let userTemplate {
+            template = userTemplate.template
+            baseCommand = userTemplate.command.trimmingCharacters(in: .whitespacesAndNewlines)
+            baseEnv = userTemplate.env ?? [:]
+            pinnedModel = ""
+            pinnedEffort = ""
+        } else {
+            return .failure(.unknownAgentType(kind))
+        }
+
+        guard !baseCommand.isEmpty else {
+            return .failure(.emptyCommand(kind))
+        }
+
+        var warnings: [String] = []
+        var line = baseCommand
+
+        // Model: an operator-hardcoded flag in the command always wins; then
+        // the caller's --model; then the Settings/project pin; then nothing.
+        let requestedModel = request.model?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let requestedModel, !requestedModel.isEmpty, template.modelArg == nil {
+            return .failure(.modelFlagUnsupported(kind))
+        }
+        var resolvedModel = ""
+        if let arg = template.modelArg {
+            let hardcoded = baseCommand.lowercased().contains(arg.detectToken)
+            let value = (requestedModel?.isEmpty == false) ? requestedModel! : pinnedModel
+            if hardcoded {
+                if requestedModel?.isEmpty == false {
+                    warnings.append("configured command already pins a model; --model \(requestedModel!) ignored")
+                }
+            } else if !value.isEmpty {
+                line += " \(arg.render(value))"
+                resolvedModel = value
+            }
+        }
+
+        // Effort: same precedence ladder as model.
+        let requestedEffort = request.effort?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let requestedEffort, !requestedEffort.isEmpty, template.effortArg == nil {
+            return .failure(.effortFlagUnsupported(kind))
+        }
+        var resolvedEffort = ""
+        if let arg = template.effortArg {
+            let hardcoded = baseCommand.lowercased().contains(arg.detectToken)
+            let value = (requestedEffort?.isEmpty == false) ? requestedEffort! : pinnedEffort
+            if hardcoded {
+                if requestedEffort?.isEmpty == false {
+                    warnings.append("configured command already pins an effort; --effort \(requestedEffort!) ignored")
+                }
+            } else if !value.isEmpty {
+                if !template.effortValues.isEmpty, !template.effortValues.contains(value) {
+                    return .failure(.invalidEffort(value: value, allowed: template.effortValues))
+                }
+                line += " \(arg.render(value))"
+                resolvedEffort = value
+            }
+        }
+
+        // Prompt: one-shot argv where the template supports it; post-boot send
+        // otherwise.
+        var delayedPrompt: String?
+        let prompt = request.prompt?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let prompt, !prompt.isEmpty {
+            switch template.promptDelivery {
+            case .positional:
+                line += " \(DefaultAgentResolver.shellQuote(prompt))"
+            case .flag(let flagName):
+                line += " \(flagName) \(DefaultAgentResolver.shellQuote(prompt))"
+            case .postBoot:
+                delayedPrompt = prompt
+            }
+        }
+
+        // Spawn env: operator/template env first, then the launch identity,
+        // then caller extras (caller wins on collision). Both C11_* and the
+        // legacy CMUX_* names are set — the PATH-shim wrappers read CMUX_*.
+        var env = baseEnv
+        var identity: [String: String] = [
+            "C11_AGENT_TYPE": kind,
+            "CMUX_AGENT_TYPE": kind
+        ]
+        if !resolvedModel.isEmpty {
+            identity["C11_AGENT_MODEL"] = resolvedModel
+            identity["CMUX_AGENT_MODEL"] = resolvedModel
+        }
+        if let task = request.task?.trimmingCharacters(in: .whitespacesAndNewlines), !task.isEmpty {
+            identity["C11_AGENT_TASK"] = task
+            identity["CMUX_AGENT_TASK"] = task
+        }
+        env.merge(identity) { _, new in new }
+        env.merge(request.extraEnv) { _, new in new }
+
+        return .success(AgentLaunchPlan(
+            kind: kind,
+            agentType: agentType,
+            launchLine: line,
+            delayedPrompt: delayedPrompt,
+            env: env,
+            model: resolvedModel,
+            effort: resolvedEffort,
+            warnings: warnings
+        ))
     }
 }

@@ -2182,6 +2182,69 @@ struct CMUXCLI {
             printSizeWarning(payload)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
 
+        case "launch-agent":
+            // Typed-agent launch: one command that owns per-agent invocation
+            // quirks, identity-at-birth, and machine-readable refs. Thin
+            // client over `agent.launch` (docs/launch-agent-reference.md).
+            guard let agentKind = optionValue(commandArgs, name: "--type") else {
+                throw CLIError(message: "launch-agent requires --type <kind> (built-in: claude-code, codex, grok, kimi, opencode, github-copilot, pi, omp; or a kebab-case custom kind with ~/.config/c11/agents/<kind>.json)")
+            }
+            let launchNewWorkspace = commandArgs.contains("--new-workspace")
+            let launchPaneRaw = optionValue(commandArgs, name: "--pane")
+            let launchWorkspaceRaw = optionValue(commandArgs, name: "--workspace")
+            if launchNewWorkspace && (launchPaneRaw != nil || launchWorkspaceRaw != nil) {
+                throw CLIError(message: "launch-agent: --new-workspace is mutually exclusive with --pane/--workspace")
+            }
+            let launchPromptInline = optionValue(commandArgs, name: "--prompt")
+            let launchPromptFile = optionValue(commandArgs, name: "--prompt-file")
+            if launchPromptInline != nil && launchPromptFile != nil {
+                throw CLIError(message: "launch-agent: --prompt and --prompt-file are mutually exclusive")
+            }
+            var launchPrompt = launchPromptInline
+            if let launchPromptFile {
+                let path = resolvePath(launchPromptFile)
+                guard let contents = try? String(contentsOfFile: path, encoding: .utf8),
+                      !contents.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw CLIError(message: "launch-agent: failed to read --prompt-file: \(path)")
+                }
+                launchPrompt = contents
+            }
+            // Repeatable --env KEY=VALUE.
+            var launchEnv: [String: Any] = [:]
+            var launchEnvIdx = 0
+            while launchEnvIdx < commandArgs.count {
+                if commandArgs[launchEnvIdx] == "--env", launchEnvIdx + 1 < commandArgs.count {
+                    let entry = commandArgs[launchEnvIdx + 1]
+                    guard let eq = entry.firstIndex(of: "="), eq != entry.startIndex else {
+                        throw CLIError(message: "launch-agent: --env expects KEY=VALUE (got: \(entry))")
+                    }
+                    launchEnv[String(entry[..<eq])] = String(entry[entry.index(after: eq)...])
+                    launchEnvIdx += 2
+                } else {
+                    launchEnvIdx += 1
+                }
+            }
+            var params: [String: Any] = ["type": agentKind]
+            if let v = optionValue(commandArgs, name: "--model") { params["model"] = v }
+            if let v = optionValue(commandArgs, name: "--effort") { params["effort"] = v }
+            if let v = optionValue(commandArgs, name: "--task") { params["task"] = v }
+            if let v = optionValue(commandArgs, name: "--title") { params["title"] = v }
+            if let launchPrompt { params["prompt"] = launchPrompt }
+            if let v = optionValue(commandArgs, name: "--cwd") { params["cwd"] = resolvePath(v) }
+            if !launchEnv.isEmpty { params["env"] = launchEnv }
+            if launchNewWorkspace {
+                params["new_workspace"] = true
+            } else {
+                let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
+                let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
+                if let wsId { params["workspace_id"] = wsId }
+                let paneId = try normalizePaneHandle(launchPaneRaw, client: client, workspaceHandle: wsId)
+                if let paneId { params["pane_id"] = paneId }
+            }
+            if commandArgs.contains("--no-focus") { params["focus"] = false }
+            let launchPayload = try client.sendV2(method: "agent.launch", params: params)
+            printV2Payload(launchPayload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(launchPayload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
+
         case "new-surface":
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
             let type = optionValue(commandArgs, name: "--type")
@@ -8506,6 +8569,39 @@ struct CMUXCLI {
               c11 new-pane --title "Parent :: Code Review"
               c11 new-pane --cwd /Users/me/project
               c11 new-pane --allow-undersized
+            """
+        case "launch-agent":
+            return """
+            Usage: c11 launch-agent --type <kind> [flags]
+
+            Launch a typed coding agent into a new surface (or a fresh workspace):
+            correct per-agent invocation, model/effort flags, identity stamped at
+            birth (env + sidebar metadata + tab title), machine-readable refs back.
+            Canonical reference: docs/launch-agent-reference.md.
+
+            Flags:
+              --type <kind>            Required. Built-in: claude-code, codex, grok,
+                                       kimi, opencode, github-copilot, pi, omp — or a
+                                       kebab-case custom kind backed by
+                                       ~/.config/c11/agents/<kind>.json
+              --model <id>             Model to pin (rendered per the kind's template)
+              --effort <tier>          Effort/thinking tier (errors if the kind has none)
+              --task <id>              Task identifier for sidebar telemetry
+              --pane <id|ref>          Target pane (default: focused pane)
+              --workspace <id|ref>     Target workspace (default: $C11_WORKSPACE_ID)
+              --new-workspace          Launch into a fresh workspace instead
+              --cwd <path>             Working directory for the agent
+              --prompt <text>          Initial prompt (one-shot argv where supported)
+              --prompt-file <path>     Read the initial prompt from a file
+              --title <text>           Tab title (default: launch placeholder)
+              --env KEY=VALUE          Extra spawn env (repeatable)
+              --no-focus               Do not focus the new surface
+              --json                   Print the machine-readable result object
+
+            Examples:
+              c11 launch-agent --type claude-code --model opus --effort high
+              c11 launch-agent --type codex --model gpt-5.2 --new-workspace --json
+              c11 launch-agent --type opencode --prompt-file /tmp/brief.md --pane pane:2
             """
         case "new-surface":
             return """
@@ -16492,6 +16588,7 @@ struct CMUXCLI {
           claude-hook <session-start|stop|notification> [--workspace <id|ref>] [--surface <id|ref>]
           set-agent --type <terminal_type> [--model <id>] [--task <id>] [--role <id>] [--surface <id|ref>] [--workspace <id|ref>]
           default-agent {get | set <type> | launch [--in-surface <id|ref> | --pane <id>] [--agent <type>] [--cwd <path>] [--prompt <text> | --prompt-file <path>]}
+          launch-agent --type <kind> [--model <id>] [--effort <tier>] [--task <id>] [--pane <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--title <text>] [--env K=V ...] [--json]
           set-metadata (--json '{...}' | --key <K> --value <V> [--type string|number|bool|json]) [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>] [--mode merge|replace] [--source <src>]
           get-metadata [--key <K> ...] [--sources] [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
           clear-metadata [--key <K> ...] [--source <src>] [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]

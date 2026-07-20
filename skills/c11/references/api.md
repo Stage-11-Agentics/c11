@@ -115,6 +115,14 @@ c11 new-workspace [--cwd <path>] [--command <text>] [--title <text>] [--layout <
 c11 new-split <left|right|up|down> [--cwd <path|inherit>]   # Split any pane; the new pane is always a terminal
 c11 new-pane [--type <terminal|browser|markdown>] [--direction <dir>] [--url <url>] [--cwd <path|inherit>]
 c11 new-surface [--type <terminal|browser|markdown>] [--pane <id|ref>] [--workspace <id|ref>]
+c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] [--task <id>] \
+    [--pane <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] \
+    [--prompt <text> | --prompt-file <path>] [--title <text>] [--env K=V ...] [--json]
+    # Launch a typed agent (claude-code|codex|grok|kimi|opencode|github-copilot|pi|omp,
+    # or a custom kind with ~/.config/c11/agents/<kind>.json) into a new surface or a
+    # fresh workspace. One command owns the per-agent invocation quirks, model/effort
+    # flag syntax, identity-at-birth (env + metadata + title), and prompt delivery;
+    # --json returns the new refs. Canonical reference: docs/launch-agent-reference.md.
 
 # Navigate
 c11 select-workspace --workspace <id|ref>

@@ -88,6 +88,26 @@ The orchestrator writes the first lineage line when it spawns the child so the c
 
 ## Launching sub-agents in panes
 
+**The one-command path: `c11 launch-agent`.** For launching a *typed* agent —
+a specific kind, optionally with a pinned model/effort and an initial prompt —
+prefer the dedicated command over hand-composing the steps below:
+
+```bash
+c11 launch-agent --type codex --model gpt-5.2 --effort high \
+    --prompt-file /tmp/brief.md --title "Login Button :: Codex Impl" --json
+```
+
+It creates the surface (in a pane, a workspace, or `--new-workspace`), renders
+the right per-agent invocation (claude wrapper + skip-permissions, codex
+`--yolo` + `-c model_reasoning_effort=`, pi/omp `--thinking`, …), injects
+`C11_AGENT_TYPE/MODEL/TASK` into the spawn env, stamps sidebar identity at
+birth, and delivers the prompt one-shot via argv where the agent supports it —
+no ready-state race. `--json` returns the new surface/pane/workspace refs for
+follow-up `send`/`read-screen`. Full reference: `docs/launch-agent-reference.md`.
+
+The manual pattern below remains for launches into an *existing* surface, or
+when you need custom composition.
+
 Use **`claude --dangerously-skip-permissions`** — never bare `claude` (stalls on approvals) or `claude -p` (headless, breaks the auth chain):
 
 - **`claude -p` (headless)** breaks the c11 auth chain. The subprocess is reparented to `launchd` and cannot call any `c11` command. Sub-agents lose the ability to self-report.

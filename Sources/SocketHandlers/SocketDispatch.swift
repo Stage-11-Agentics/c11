@@ -986,13 +986,16 @@ extension TerminalController {
             let panel: TerminalPanel
             let paneUUID: UUID?
             if newWorkspace {
-                // Env + command ride workspace creation itself, so identity is
-                // present at PTY birth and the command flushes on shell-ready —
-                // no follow-up sends, no race. autoWelcome is suppressed: this
-                // workspace hosts an agent, not the onboarding grid.
+                // Identity env rides workspace creation so it is present at
+                // PTY birth; the launch line is *typed* into the interactive
+                // shell below (queue-until-ready, same as the A button) rather
+                // than baked as the ghostty spawn command — a spawn command
+                // execs over the shell (agent exit kills the surface) and
+                // skips shell rc, which changes PATH-wrapper resolution.
+                // autoWelcome is suppressed: this workspace hosts an agent,
+                // not the onboarding grid.
                 let created = tabManager.addWorkspace(
                     workingDirectory: cwdOverride,
-                    initialTerminalCommand: plan.launchLine + "\n",
                     initialTerminalEnvironment: plan.env,
                     select: focus,
                     eagerLoadTerminal: !focus,
@@ -1005,6 +1008,7 @@ extension TerminalController {
                 ws = created
                 panel = initialPanel
                 paneUUID = created.bonsplitController.focusedPaneId?.id
+                panel.sendText(plan.launchLine + "\n")
             } else {
                 guard let target = self.v2ResolveWorkspace(params: params, tabManager: tabManager) else {
                     result = .err(code: "not_found", message: "Workspace not found", data: nil)
@@ -1036,7 +1040,14 @@ extension TerminalController {
                 ws = target
                 panel = created
                 paneUUID = paneId.id
-                // Same queue-until-ready delivery as the A button.
+                // A surface created in an unselected workspace stays lazily
+                // unattached (`tty: null`) and would never flush a queued
+                // command — kick the background start like
+                // `launchInExistingSurface` does (C11-121), then use the same
+                // queue-until-ready delivery as the A button.
+                if panel.surface.surface == nil {
+                    panel.surface.requestBackgroundSurfaceStartIfNeeded()
+                }
                 panel.sendText(plan.launchLine + "\n")
             }
 

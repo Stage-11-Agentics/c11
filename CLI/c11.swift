@@ -2243,7 +2243,10 @@ struct CMUXCLI {
             }
             if commandArgs.contains("--no-focus") { params["focus"] = false }
             let launchPayload = try client.sendV2(method: "agent.launch", params: params)
-            printV2Payload(launchPayload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(launchPayload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
+            // Accept --json in trailing position too (the documented form);
+            // the global parser only consumes it before the subcommand.
+            let launchJSONOut = jsonOutput || commandArgs.contains("--json")
+            printV2Payload(launchPayload, jsonOutput: launchJSONOut, idFormat: idFormat, fallbackText: v2OKSummary(launchPayload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
 
         case "new-surface":
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)

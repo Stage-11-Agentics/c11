@@ -76,6 +76,33 @@ c11 version                          # Version string
 
 The `caller` block in `c11 identify` always reflects the pane invoking the command; the `focused` block reflects whatever the user (or last `focus-pane`) is looking at. They are frequently different.
 
+### There is no `c11 list` (silent-empty footgun)
+
+Enumeration is **scoped** — there is no bare `list`. `c11 list` exits non-zero with `Error: Unknown
+command: list` and dumps the usage banner.
+
+```bash
+# WRONG — not a command; prints usage to stderr and exits non-zero
+c11 list
+c11 list --json | grep "ACE-387"        # ← greps the ERROR TEXT, matches nothing, LOOKS like "no results"
+
+# RIGHT — pick the scope you actually want
+c11 tree --all                          # every window: workspaces → panes → surfaces, with titles
+c11 tree --all --json                   # same, structured (parse this when scripting)
+c11 list-workspaces                     # workspaces only
+c11 list-panes                          # panes in the current workspace
+c11 list-pane-surfaces                  # surfaces in the current pane
+
+# "Is any agent working on X?" — sweep every surface title in the whole app
+c11 tree --all | grep -i "ACE-387"
+```
+
+The danger isn't the typo, it's the **failure shape**: a failed c11 command still writes to the pipe,
+so `c11 list | grep <x>` returns empty and reads exactly like a clean "nothing found." An agent can
+confidently report "nobody is working on that" on the strength of a command that never ran. If an
+enumeration comes back empty and the answer matters, **run the command bare first** and confirm it
+actually produced a tree.
+
 ## Workspaces, panes, surfaces
 
 ```bash

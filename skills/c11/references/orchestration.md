@@ -108,7 +108,7 @@ prefer the dedicated command over hand-composing the steps below:
 
 ```bash
 c11 launch-agent --type codex --model gpt-5.2 --effort high \
-    --prompt-file /tmp/brief.md --title "Login Button :: Codex Impl" --json
+    --prompt-file /tmp/brief.md --title "Login Impl" --json
 ```
 
 It creates the surface (in a pane, a workspace, or `--new-workspace`), renders

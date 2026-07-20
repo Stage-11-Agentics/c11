@@ -12,9 +12,9 @@ This card is deliberately short. It covers **orientation** — the one thing eve
 
 ## Detect c11
 
-`C11_SHELL_INTEGRATION=1` means you're inside c11 — prefer native workflows (splits, the embedded browser, `c11 set-metadata`) over Chrome MCP or plain `open`. Other env vars available to child processes: `C11_WORKSPACE_ID`, `C11_SURFACE_ID`, `C11_TAB_ID`, `C11_SOCKET_PATH`. The spawn path may also pre-seed `C11_AGENT_TYPE`, `C11_AGENT_MODEL`, `C11_AGENT_TASK`.
+`C11_SHELL_INTEGRATION=1` means you're inside c11 — prefer native workflows (splits, the embedded browser, `c11 set-metadata`) over Chrome MCP or plain `open`. Other env vars available to child processes: `C11_WORKSPACE_ID`, `C11_SURFACE_ID`, `C11_TAB_ID`, `C11_SOCKET_PATH`, `C11_SURFACE_NUM`. The spawn path may also pre-seed `C11_AGENT_TYPE`, `C11_AGENT_MODEL`, `C11_AGENT_TASK`.
 
-Refs accept UUIDs, short refs, or indexes: `workspace:1`, `pane:2`, `surface:3`, `tab:1`.
+Refs accept UUIDs, short refs, or indexes: `workspace:1`, `pane:2`, `surface:3`, `tab:1`. **A bare number from the operator is a surface ref.** With the "Show Surface IDs in Tab Titles" setting on, every tab displays `N: title` where N is its `surface:N` ordinal — so "send that to 292" means target `surface:292` (with its `--workspace`). Always write the `surface:N` form; a bare integer in a CLI flag is a positional index, a different thing. Your own N is `$C11_SURFACE_NUM`.
 
 **Where new work goes:** a new **pane** when the work wants its own spatial slot (a sub-agent, a log tail, a browser for validation); a new **surface** when a pane just wants another tab; a new **workspace** when the operator names a different project or mission. Default to one workspace per project unless the operator's setup says otherwise.
 
@@ -58,6 +58,7 @@ c11 stamps your launch identity itself: the sidebar chip (agent type from proces
 
 A few cross-cutting rules worth knowing before you reach for those:
 
+- **There is no `c11 list`.** Enumeration is scoped: `c11 tree --all` (every window — the one to reach for when asking "is any agent working on X?"), `c11 tree --all --json` to script against, or `list-workspaces` / `list-panes` / `list-pane-surfaces`. `c11 list` is *not* a command — it errors and prints usage, so `c11 list | grep <x>` greps the **error text**, comes back empty, and reads exactly like a clean "nothing found." Don't let a command that never ran become a confident answer: if an enumeration is empty and it matters, run it bare and confirm you got a tree.
 - **`send` / `set-status` / `log` take their text as a trailing positional, not `--text`.** `c11 send --surface <s> "npm test"`. Writing `--text "…"` types the literal string `--text` into the terminal.
 - **`send` / `send-key` require explicit targeting.** Pass `--workspace` and `--surface` *together* when the target isn't your own surface; `--window` alone is not enough. An empty or stale ref (`--surface ""`, a dead `surface:99`) is an error, not a quiet fallback to whatever pane is focused.
 - **A multi-line `send` arrives whole and becomes one turn**, in a background workspace as reliably as in the focused one. Brief a sibling agent directly; you don't need to stage the text in a file and send a pointer.

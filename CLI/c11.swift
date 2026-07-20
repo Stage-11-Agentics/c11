@@ -164,7 +164,7 @@ private final class CLISocketSentryTelemetry {
         self.command = command.lowercased()
         self.subcommand = commandArgs.first?.lowercased() ?? "help"
         self.socketPath = socketPath
-        self.envSocketPath = processEnv["C11_SOCKET"] ?? processEnv["CMUX_SOCKET_PATH"] ?? processEnv["CMUX_SOCKET"]
+        self.envSocketPath = processEnv["C11_SOCKET"] ?? processEnv["C11_SOCKET_PATH"] ?? processEnv["CMUX_SOCKET_PATH"] ?? processEnv["CMUX_SOCKET"]
         self.workspaceId = processEnv["CMUX_WORKSPACE_ID"]
         self.surfaceId = processEnv["CMUX_SURFACE_ID"]
         self.disabledByEnv =
@@ -259,7 +259,7 @@ private final class CLISocketSentryTelemetry {
         if CLISocketPathResolver.isImplicitDefaultPath(socketPath),
            (envSocketPath?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
            !taggedSockets.isEmpty {
-            context["possible_root_cause"] = "C11_SOCKET/CMUX_SOCKET_PATH/CMUX_SOCKET missing while tagged sockets exist"
+            context["possible_root_cause"] = "C11_SOCKET/C11_SOCKET_PATH/CMUX_SOCKET_PATH/CMUX_SOCKET missing while tagged sockets exist"
         }
 
         return context
@@ -1466,7 +1466,7 @@ struct CMUXCLI {
     }
 
     private static func defaultSocketPath(environment: [String: String]) -> String {
-        for key in ["C11_SOCKET", "CMUX_SOCKET_PATH", "CMUX_SOCKET"] {
+        for key in ["C11_SOCKET", "C11_SOCKET_PATH", "CMUX_SOCKET_PATH", "CMUX_SOCKET"] {
             if let explicit = normalizedEnvValue(environment[key]) {
                 return explicit
             }
@@ -1516,7 +1516,7 @@ struct CMUXCLI {
     func run() throws {
         let processEnv = ProcessInfo.processInfo.environment
         let envSocketPath: String? = {
-            for key in ["C11_SOCKET", "CMUX_SOCKET_PATH", "CMUX_SOCKET"] {
+            for key in ["C11_SOCKET", "C11_SOCKET_PATH", "CMUX_SOCKET_PATH", "CMUX_SOCKET"] {
                 guard let raw = processEnv[key] else { continue }
                 let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty {
@@ -5395,6 +5395,9 @@ struct CMUXCLI {
         } else {
             let surfaceStr = (payload["surface_id"] as? String) ?? surfaceId
             var lines: [String] = ["surface=\(surfaceStr)"]
+            if let ref = payload["surface_ref"] as? String {
+                lines.append("ref=\(ref)")
+            }
             if let title = payload["title"] as? String {
                 let src = (payload["title_source"] as? String) ?? "?"
                 lines.append("title=\(title)   [\(src)]")
@@ -14250,7 +14253,7 @@ struct CMUXCLI {
 
     private func claudeTeamsResolvedSocketPath(processEnvironment: [String: String]) -> String {
         let envSocketPath: String? = {
-            for key in ["C11_SOCKET", "CMUX_SOCKET_PATH", "CMUX_SOCKET"] {
+            for key in ["C11_SOCKET", "C11_SOCKET_PATH", "CMUX_SOCKET_PATH", "CMUX_SOCKET"] {
                 guard let raw = processEnvironment[key] else { continue }
                 let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty {

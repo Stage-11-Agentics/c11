@@ -33842,6 +33842,147 @@
         }
       }
     },
+    "settings.app.showSurfaceIdsInTabTitles": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Surface IDs in Tab Titles"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブのタイトルにサーフェスIDを表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在标签页标题中显示界面 ID"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在標籤頁標題中顯示介面 ID"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "탭 제목에 서피스 ID 표시"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показывать ID поверхностей в заголовках вкладок"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показувати ID поверхонь у заголовках вкладок"
+          }
+        }
+      }
+    },
+    "settings.app.showSurfaceIdsInTabTitles.subtitleOff": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tabs display their title only. Turn on to prefix every tab with its addressable surface number."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブにはタイトルのみが表示されます。オンにすると、各タブの先頭にアドレス指定可能なサーフェス番号が付きます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签页仅显示其标题。开启后，会在每个标签页前面加上可寻址的界面编号。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標籤頁僅顯示其標題。開啟後，會在每個標籤頁前面加上可定址的介面編號。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "탭에는 제목만 표시됩니다. 켜면 모든 탭 앞에 주소로 지정할 수 있는 서피스 번호가 붙습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладки показывают только заголовок. Включите, чтобы добавить в начало каждой вкладки её адресуемый номер поверхности."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладки показують лише заголовок. Увімкніть, щоб додати на початок кожної вкладки її адресований номер поверхні."
+          }
+        }
+      }
+    },
+    "settings.app.showSurfaceIdsInTabTitles.subtitleOn": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tabs display their surface number (\"292: Build agent\"). Say the number to address a surface; agents target it as surface:N."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブにサーフェス番号が表示されます（「292: Build agent」）。番号を伝えてサーフェスを指定できます。エージェントは surface:N として指定します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签页会显示其界面编号（“292: Build agent”）。说出编号即可指定某个界面；代理以 surface:N 定位它。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標籤頁會顯示其介面編號（「292: Build agent」）。說出編號即可指定某個介面；代理以 surface:N 定位它。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "탭에 서피스 번호가 표시됩니다(\"292: Build agent\"). 번호를 말해 서피스를 지정하세요. 에이전트는 surface:N으로 대상을 지정합니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладки показывают номер своей поверхности («292: Build agent»). Назовите номер, чтобы указать поверхность; агенты обращаются к ней как surface:N."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вкладки показують номер своєї поверхні («292: Build agent»). Назвіть номер, щоб указати поверхню; агенти звертаються до неї як surface:N."
+          }
+        }
+      }
+    },
     "settings.app.showWorkspaceTitlebar": {
       "extractionState": "manual",
       "localizations": {

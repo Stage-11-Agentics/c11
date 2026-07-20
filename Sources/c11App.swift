@@ -4386,6 +4386,8 @@ struct SettingsView: View {
     private var internalBrowserEnabled = SurfaceTypeAvailability.defaultEnabled
     @AppStorage(SurfaceTypeAvailability.markdownSurfacesEnabledKey)
     private var markdownSurfacesEnabled = SurfaceTypeAvailability.defaultEnabled
+    @AppStorage(TabOrdinalDisplaySettings.showSurfaceIdsInTabTitlesKey)
+    private var showSurfaceIdsInTabTitles = TabOrdinalDisplaySettings.defaultShowSurfaceIds
     @AppStorage(ClaudeCodeIntegrationSettings.hooksEnabledKey)
     private var claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
     @AppStorage(TelemetrySettings.sendAnonymousTelemetryKey)
@@ -5120,6 +5122,20 @@ struct SettingsView: View {
                 Toggle("", isOn: $markdownSurfacesEnabled)
                     .labelsHidden()
                     .controlSize(.small)
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                String(localized: "settings.app.showSurfaceIdsInTabTitles", defaultValue: "Show Surface IDs in Tab Titles"),
+                subtitle: showSurfaceIdsInTabTitles
+                    ? String(localized: "settings.app.showSurfaceIdsInTabTitles.subtitleOn", defaultValue: "Tabs display their surface number (\"292: Build agent\"). Say the number to address a surface; agents target it as surface:N.")
+                    : String(localized: "settings.app.showSurfaceIdsInTabTitles.subtitleOff", defaultValue: "Tabs display their title only. Turn on to prefix every tab with its addressable surface number.")
+            ) {
+                Toggle("", isOn: $showSurfaceIdsInTabTitles)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .accessibilityIdentifier("SettingsShowSurfaceIdsToggle")
             }
         }
     }
@@ -6491,6 +6507,7 @@ struct SettingsView: View {
         socketControlMode = SocketControlSettings.defaultMode.rawValue
         internalBrowserEnabled = SurfaceTypeAvailability.defaultEnabled
         markdownSurfacesEnabled = SurfaceTypeAvailability.defaultEnabled
+        showSurfaceIdsInTabTitles = TabOrdinalDisplaySettings.defaultShowSurfaceIds
         claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
         sendAnonymousTelemetry = TelemetrySettings.defaultSendAnonymousTelemetry
         browserSearchEngine = BrowserSearchSettings.defaultSearchEngine.rawValue

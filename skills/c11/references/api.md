@@ -27,6 +27,8 @@ Commands accept UUIDs, short refs, or indexes:
 window:1   workspace:1   pane:2   surface:3   tab:1
 ```
 
+**Operator-spoken tab numbers are surface refs.** With the "Show Surface IDs in Tab Titles" setting on (Settings → Surfaces), every tab renders as `N: title` where N is its `surface:N` ordinal. When the operator says "send this to 292", target `surface:292` — never a bare `292`: to the CLI a bare integer is a *positional index* (the Nth surface in list order), which is a different surface. Your own number is `$C11_SURFACE_NUM`.
+
 **`--workspace` AND `--surface` must be used together** when targeting a remote surface. Either flag alone fails or targets the wrong thing.
 
 ```bash
@@ -49,6 +51,7 @@ Auto-exported into every c11 surface child process.
 |-----|---------|
 | `C11_WORKSPACE_ID` | Auto-set in c11 terminals; default for `--workspace` |
 | `C11_SURFACE_ID` | Auto-set; default for `--surface` |
+| `C11_SURFACE_NUM` | Integer N of this surface's `surface:N` ref — the number shown in the tab bar when surface-ID display is on. Address yourself as `surface:$C11_SURFACE_NUM` |
 | `C11_TAB_ID` | Optional alias for tab commands |
 | `C11_SOCKET_PATH` | Override socket path (auto-discovers tagged/debug sockets) |
 | `C11_SOCKET_PASSWORD` | Socket auth password (if set in Settings) |
@@ -75,6 +78,33 @@ c11 version                          # Version string
 ```
 
 The `caller` block in `c11 identify` always reflects the pane invoking the command; the `focused` block reflects whatever the user (or last `focus-pane`) is looking at. They are frequently different.
+
+### There is no `c11 list` (silent-empty footgun)
+
+Enumeration is **scoped** — there is no bare `list`. `c11 list` exits non-zero with `Error: Unknown
+command: list` and dumps the usage banner.
+
+```bash
+# WRONG — not a command; prints usage to stderr and exits non-zero
+c11 list
+c11 list --json | grep "ACE-387"        # ← greps the ERROR TEXT, matches nothing, LOOKS like "no results"
+
+# RIGHT — pick the scope you actually want
+c11 tree --all                          # every window: workspaces → panes → surfaces, with titles
+c11 tree --all --json                   # same, structured (parse this when scripting)
+c11 list-workspaces                     # workspaces only
+c11 list-panes                          # panes in the current workspace
+c11 list-pane-surfaces                  # surfaces in the current pane
+
+# "Is any agent working on X?" — sweep every surface title in the whole app
+c11 tree --all | grep -i "ACE-387"
+```
+
+The danger isn't the typo, it's the **failure shape**: a failed c11 command still writes to the pipe,
+so `c11 list | grep <x>` returns empty and reads exactly like a clean "nothing found." An agent can
+confidently report "nobody is working on that" on the strength of a command that never ran. If an
+enumeration comes back empty and the answer matters, **run the command bare first** and confirm it
+actually produced a tree.
 
 ## Workspaces, panes, surfaces
 
@@ -222,6 +252,8 @@ c11 set-description --from-file /tmp/desc.md
 ```
 
 `c11 rename-tab` is an alias for `c11 set-title` on the target surface. The sidebar tab label is a truncated projection of the title.
+
+`c11 get-titlebar-state` prints the surface's `ref=surface:N` alongside title/description — the same N the tab bar displays when surface-ID display is on. The "N: " prefix is rendered by the app, not stored: titles never contain it, and `set-title` must not add one.
 
 ## Sidebar reporting
 

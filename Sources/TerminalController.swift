@@ -2398,6 +2398,15 @@ class TerminalController {
         v2EnsureHandleRef(kind: .surface, uuid: surfaceId)
     }
 
+    /// The integer N of a surface's `surface:N` handle, minting the ref if the
+    /// surface doesn't have one yet. Called at tab creation so every surface is
+    /// numbered the moment it exists (the tab-bar ordinal display and
+    /// `C11_SURFACE_NUM` both depend on eager minting).
+    func surfaceOrdinal(forSurfaceUUID surfaceId: UUID) -> Int {
+        let ref = v2EnsureHandleRef(kind: .surface, uuid: surfaceId)
+        return Int(ref.dropFirst("surface:".count)) ?? 0
+    }
+
     /// UI-facing handle lookup for the Surface Details panel.
     ///
     /// Mints (or returns) the friendly `surface:N` / `tab:N` / `pane:M` /

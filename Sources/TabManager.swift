@@ -119,6 +119,59 @@ enum SidebarBranchLayoutSettings {
     }
 }
 
+/// "Show surface IDs in tab titles": when on, every surface tab in the bonsplit
+/// tab bar (and the surface title bar) renders its `surface:N` ordinal as an
+/// "N: " title prefix so a voice operator can address any tab by its number.
+enum TabOrdinalDisplaySettings {
+    static let showSurfaceIdsInTabTitlesKey = "showSurfaceIdsInTabTitles"
+    static let defaultShowSurfaceIds = false
+
+    static func showsSurfaceIds(defaults: UserDefaults = .standard) -> Bool {
+        if defaults.object(forKey: showSurfaceIdsInTabTitlesKey) == nil {
+            return defaultShowSurfaceIds
+        }
+        return defaults.bool(forKey: showSurfaceIdsInTabTitlesKey)
+    }
+}
+
+/// KVO bridge so each `Workspace` (an `ObservableObject`, not an `NSObject`)
+/// can react to the "Show surface IDs in tab titles" toggle live, without an
+/// app restart. Mirrors `SurfaceAvailabilityObserver`.
+final class TabOrdinalDisplayObserver: NSObject {
+    private let onChange: () -> Void
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard, onChange: @escaping () -> Void) {
+        self.defaults = defaults
+        self.onChange = onChange
+        super.init()
+        defaults.addObserver(
+            self,
+            forKeyPath: TabOrdinalDisplaySettings.showSurfaceIdsInTabTitlesKey,
+            options: [.new],
+            context: nil
+        )
+    }
+
+    deinit {
+        defaults.removeObserver(
+            self,
+            forKeyPath: TabOrdinalDisplaySettings.showSurfaceIdsInTabTitlesKey
+        )
+    }
+
+    override func observeValue(
+        forKeyPath keyPath: String?,
+        of object: Any?,
+        change: [NSKeyValueChangeKey: Any]?,
+        context: UnsafeMutableRawPointer?
+    ) {
+        guard keyPath == TabOrdinalDisplaySettings.showSurfaceIdsInTabTitlesKey else { return }
+        let onChange = self.onChange
+        Task { @MainActor in onChange() }
+    }
+}
+
 enum SidebarWorkspaceDetailSettings {
     static let hideAllDetailsKey = "sidebarHideAllDetails"
     static let showNotificationMessageKey = "sidebarShowNotificationMessage"

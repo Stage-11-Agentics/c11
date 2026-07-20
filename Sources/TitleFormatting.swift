@@ -36,6 +36,15 @@ public enum TitleFormatting {
         return String(hardCut) + "\u{2026}"
     }
 
+    /// Compose the "N: title" surface-ordinal prefix used when the
+    /// "Show surface IDs in tab titles" setting is on. Must stay format-identical
+    /// to bonsplit's `TabItem.displayedTitle(showOrdinals:)` so the surface title
+    /// bar and the tab strip render the same string.
+    public static func ordinalPrefixed(ordinal: Int?, title: String, show: Bool) -> String {
+        guard show, let ordinal else { return title }
+        return "\(ordinal): \(title)"
+    }
+
     private static func collapseInternalWhitespace(_ s: String) -> String {
         var result = ""
         var inWhitespace = false

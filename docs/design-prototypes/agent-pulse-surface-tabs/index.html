@@ -198,8 +198,8 @@
       flex: 0 0 var(--tab-width, 146px);
       display: flex;
       align-items: center;
-      gap: 5px;
-      padding: 0 6px 1px;
+      gap: 0;
+      padding: 0 2px 1px;
       overflow: hidden;
       color: var(--dim);
       background: transparent;
@@ -249,16 +249,17 @@
     }
 
     .close-tab {
-      width: 19px;
-      height: 19px;
-      flex: 0 0 19px;
+      width: 24px;
+      height: 27px;
+      flex: 0 0 24px;
       display: grid;
       place-items: center;
+      margin-left: auto;
       padding: 0;
       color: currentColor;
       background: transparent;
       border: 0;
-      border-radius: 50%;
+      border-radius: 4px;
       opacity: .54;
       cursor: default;
       font-size: 12px;
@@ -268,6 +269,7 @@
     .agent-mark {
       width: 11px;
       flex: 0 0 11px;
+      margin: 0 4px 0 3px;
       color: color-mix(in srgb, var(--text-soft) 72%, transparent);
       font: 9px var(--mono);
       text-align: center;
@@ -284,6 +286,13 @@
       border-radius: 50%;
       font: 8px/1 var(--mono);
       font-weight: 700;
+    }
+    .surface-tab > .state-mark {
+      width: 20px;
+      height: 20px;
+      flex: 0 0 20px;
+      margin-right: 4px;
+      font-size: 10px;
     }
     .state-running .state-mark {
       border-color: color-mix(in srgb, var(--running) 28%, transparent);
@@ -578,7 +587,7 @@
             </div>
 
             <div class="collision-note">
-              <b>State is not selection.</b> The white top rail and raised fill say “you are here.” The state glyph says what the agent is doing. Only <b>your turn</b> earns the lower gold demand rail.
+              <b>Read the edges first.</b> State owns the hard-left edge; close owns the hard-right. The white top rail and raised fill say “you are here.” Only <b>your turn</b> earns the lower gold demand rail.
             </div>
           </aside>
         </div>
@@ -630,10 +639,10 @@
              data-id="${surface.id}" role="tab" tabindex="0"
              aria-selected="${surface.id === selectedId}" aria-label="${surface.title}, ${copy.label}"
              title="surface:${surface.id} · ${surface.title} · ${copy.label}">
-          <button class="close-tab" aria-label="Close ${surface.title}" title="Close tab">×</button>
-          <span class="agent-mark" aria-hidden="true">${surface.agent}</span>
           <span class="state-mark" aria-hidden="true"><span>${copy.glyph}</span></span>
+          <span class="agent-mark" aria-hidden="true">${surface.agent}</span>
           <span class="tab-title"><span class="surface-id">${surface.id}: </span>${surface.title}</span>
+          <button class="close-tab" aria-label="Close ${surface.title}" title="Close tab">×</button>
         </div>`;
     }
 

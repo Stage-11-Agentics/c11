@@ -8915,13 +8915,22 @@ class TerminalController {
         }
 
         if let inSurfaceArg {
-            return launchInExistingSurface(
+            let outcome = launchInExistingSurface(
                 surfaceArg: inSurfaceArg,
                 agent: resolved.agent,
                 bareCommand: resolved.launch.bareCommand,
                 cwd: cwdArg,
                 prompt: promptText
             )
+            // C11-178 rail-1: record only a successful launch. `--in-surface` is
+            // CLI-originated → `.launchAgent`. Re-derive cfg the same way sites 1
+            // and 4 do (the composition plan doesn't carry model/effort scalars).
+            if !outcome.hasPrefix("ERROR"), let store = AgentLaunchStatsStore.shared {
+                let cfg = projectConfig?.agents[resolved.agent] ?? userDefault.config(for: resolved.agent)
+                let stats = ResolvedLaunch(harness: resolved.agent.rawValue, model: cfg.model, effort: cfg.effort)
+                DispatchQueue.global(qos: .utility).async { store.recordLaunch(stats, source: .launchAgent) }
+            }
+            return outcome
         } else {
             // A-button mimic: create a new surface in a pane. Prompt args are
             // ignored on this path (the operator's configured initial prompt
@@ -8950,7 +8959,9 @@ class TerminalController {
                     result = "ERROR: Pane not found"
                     return
                 }
-                tab.launchAgentSurface(inPane: pane, explicitAgent: explicitAgent)
+                // CLI-originated launch → tag `.launchAgent` (not `.aButton`), so
+                // the stats rail distinguishes button-clicks from CLI launches.
+                tab.launchAgentSurface(inPane: pane, explicitAgent: explicitAgent, source: .launchAgent)
                 result = "OK"
             }
             return result

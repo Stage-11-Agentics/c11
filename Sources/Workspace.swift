@@ -11953,7 +11953,11 @@ extension Workspace: BonsplitDelegate {
     /// `explicitAgent` lets the caller override the configured default —
     /// used by the right-click menu's "launch this one now" affordance and
     /// the `c11 default-agent launch --agent <type>` socket command.
-    func launchAgentSurface(inPane pane: PaneID, explicitAgent: AgentType? = nil) {
+    /// - Parameter source: launch-stats provenance (C11-178). Defaults to
+    ///   `.aButton` (the real UI spawn button); the CLI `default-agent launch`
+    ///   new-surface path passes `.launchAgent` so button-clicks and CLI launches
+    ///   are honestly distinguished in the stats rail.
+    func launchAgentSurface(inPane pane: PaneID, explicitAgent: AgentType? = nil, source: AgentLaunchSource = .aButton) {
         let userDefault = DefaultAgentConfigStore.shared.current
         let projectConfig = DefaultAgentProjectConfig.find(from: resolverCwdForAgentLaunch())
         let resolved = DefaultAgentResolver.resolve(
@@ -11980,6 +11984,37 @@ extension Workspace: BonsplitDelegate {
             projectConfig: projectConfig
         )
         panel.sendText(resolved.launch.command + "\n")
+        // C11-178 rail-1: record the launch off the critical path. Mirror the
+        // resolver's per-agent config pick (as stampLaunchIdentity does) to
+        // recover the resolved model/effort scalars, which ResolvedAgentLaunch
+        // bakes into the command string rather than exposing.
+        recordAgentLaunchStats(
+            agent: resolved.agent,
+            userDefault: userDefault,
+            projectConfig: projectConfig,
+            source: source
+        )
+    }
+
+    /// C11-178: emit a rail-1 launch-stats record for an A-button-lineage launch.
+    /// Config-only read; dispatched to a utility queue so no disk touches the
+    /// launch path. `nil` store (state dir unavailable) is a silent no-op.
+    private func recordAgentLaunchStats(
+        agent: AgentType,
+        userDefault: DefaultAgentConfig,
+        projectConfig: DefaultAgentConfig?,
+        source: AgentLaunchSource
+    ) {
+        guard let store = AgentLaunchStatsStore.shared else { return }
+        let cfg = projectConfig?.agents[agent] ?? userDefault.config(for: agent)
+        let resolved = ResolvedLaunch(
+            harness: agent.rawValue,
+            model: cfg.model,
+            effort: cfg.effort
+        )
+        DispatchQueue.global(qos: .utility).async {
+            store.recordLaunch(resolved, source: source)
+        }
     }
 
     /// Populate a freshly launched agent surface with the identity the sidebar

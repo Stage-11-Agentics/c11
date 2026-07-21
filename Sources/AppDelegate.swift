@@ -6526,6 +6526,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                         injected.surfaces[idx].metadata = meta
                     }
                 }
+                // C11-178 rail-1: record the blueprint launch, but only when a
+                // real command resolved — matches site 1's
+                // `guard !command.isEmpty` contract so an empty-resolvable agent
+                // (which injects a bare "\n") never logs a phantom launch.
+                if !command.isEmpty, let store = AgentLaunchStatsStore.shared {
+                    let stats = ResolvedLaunch(harness: resolved.agent.rawValue, model: cfg.model, effort: cfg.effort)
+                    DispatchQueue.global(qos: .utility).async { store.recordLaunch(stats, source: .blueprint) }
+                }
             }
         }
 

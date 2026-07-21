@@ -142,6 +142,88 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         #endif
     }
 
+    // MARK: - Opt-in submit (blueprint `submit: true`)
+
+    /// Shared driver: apply a single-terminal plan carrying `command` and the
+    /// given `submitCommand`, then return the freshly created (not-yet-attached)
+    /// terminal surface so the caller can inspect what was queued.
+    private func applySingleTerminal(
+        command: String,
+        submitCommand: Bool
+    ) throws -> TerminalSurface {
+        let plan = WorkspaceApplyPlan(
+            version: 1,
+            workspace: WorkspaceSpec(title: "submit opt-in"),
+            layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["t"])),
+            surfaces: [
+                SurfaceSpec(
+                    id: "t",
+                    kind: .terminal,
+                    title: "launcher",
+                    command: command,
+                    submitCommand: submitCommand
+                )
+            ]
+        )
+        let deps = WorkspaceLayoutExecutorDependencies(
+            tabManager: tabManager,
+            workspaceRefMinter: { "workspace:\($0.uuidString)" },
+            surfaceRefMinter: { "surface:\($0.uuidString)" },
+            paneRefMinter: { "pane:\($0.uuidString)" }
+        )
+        let result = WorkspaceLayoutExecutor.apply(
+            plan,
+            options: ApplyOptions(select: false),
+            dependencies: deps
+        )
+        let workspace = try XCTUnwrap(resolveWorkspace(from: result.workspaceRef))
+        let panelId = try XCTUnwrap(parseUUIDSuffix(result.surfaceRefs["t"]))
+        let terminal = try XCTUnwrap(workspace.panels[panelId] as? TerminalPanel)
+        return terminal.surface
+    }
+
+    /// `submit: true` routes an explicit command through `sendSubmitFormText`,
+    /// which on a not-yet-attached surface queues the bytes AND arms a Return
+    /// to fire on flush. Both the command text and the armed submit are
+    /// observable.
+    func testSubmitTrueArmsReturnOnFlush() throws {
+        let surface = try applySingleTerminal(
+            command: "python3 /path/position.py --watch",
+            submitCommand: true
+        )
+        #if DEBUG
+        XCTAssertEqual(
+            surface.pendingInitialInputForTests,
+            "python3 /path/position.py --watch",
+            "submit:true still delivers the command bytes"
+        )
+        XCTAssertTrue(
+            surface.pendingSubmitOnFlushForTests,
+            "submit:true must arm a synthetic Return via sendSubmitFormText"
+        )
+        #endif
+    }
+
+    /// Default (`submit` absent / false) preserves Phase 0 parity: the command
+    /// is typed via `sendText` but no Return is armed, so it sits at the prompt.
+    func testSubmitFalseDoesNotArmReturn() throws {
+        let surface = try applySingleTerminal(
+            command: "python3 /path/position.py --watch",
+            submitCommand: false
+        )
+        #if DEBUG
+        XCTAssertEqual(
+            surface.pendingInitialInputForTests,
+            "python3 /path/position.py --watch",
+            "default path still delivers the command bytes"
+        )
+        XCTAssertFalse(
+            surface.pendingSubmitOnFlushForTests,
+            "default must not submit — sendText leaves the line at the prompt"
+        )
+        #endif
+    }
+
     // MARK: - In-place restore (I2)
 
     /// BL-1 regression: with a single workspace in the window, in-place

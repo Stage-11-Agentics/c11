@@ -2665,6 +2665,18 @@ final class TerminalSurface: Identifiable, ObservableObject {
         for chunk in pendingTextQueue { bytes.append(chunk) }
         return String(data: bytes, encoding: .utf8) ?? ""
     }
+
+    /// Test-only accessor mirroring `pendingInitialInputForTests`: reports
+    /// whether a submit (synthetic Return) is armed to fire when the pending
+    /// text flushes on surface attach. The layout-executor harness uses it to
+    /// distinguish a blueprint's `submit: true` leaf (routed through
+    /// `sendSubmitFormText`, which sets this on a not-yet-attached surface)
+    /// from the default type-but-don't-submit path (`sendText`, which does
+    /// not). Same `@MainActor` rationale as the accessor above.
+    @MainActor
+    var pendingSubmitOnFlushForTests: Bool {
+        pendingSubmitOnFlush
+    }
 #endif
     private enum PortalLifecycleState: String {
         case live

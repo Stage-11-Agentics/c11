@@ -1,0 +1,795 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>c11 — Surface pulse prototype</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --void: #08090b;
+      --chrome: #0d0f12;
+      --chrome-raised: #15181d;
+      --panel: #101216;
+      --panel-raised: #171a20;
+      --rule: #2b2e34;
+      --rule-strong: #3a3e46;
+      --text: #ececef;
+      --text-soft: #b4b7be;
+      --dim: #777b84;
+      --selection: #f0f0ed;
+      --gold: #d0aa45;
+      --running: #79aee8;
+      --idle: #78b59e;
+      --cold: #707681;
+      --harness-claude: #d88968;
+      --harness-codex: #69b5a8;
+      --harness-shell: #818791;
+      --badge-ink: #08090b;
+      --shadow: rgba(0, 0, 0, .72);
+      --terminal-line: #b8bcc4;
+      --mono: "SFMono-Regular", "JetBrains Mono", Menlo, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    }
+
+    body[data-theme="light"] {
+      color-scheme: light;
+      --void: #f4f3ef;
+      --chrome: #e8e7e2;
+      --chrome-raised: #dcdad4;
+      --panel: #efeee9;
+      --panel-raised: #ffffff;
+      --rule: #c9c7c0;
+      --rule-strong: #aaa79f;
+      --text: #202126;
+      --text-soft: #4d5058;
+      --dim: #777a81;
+      --selection: #24252a;
+      --gold: #9b7415;
+      --running: #326d9e;
+      --idle: #357b61;
+      --cold: #7f8289;
+      --harness-claude: #a84f32;
+      --harness-codex: #28776d;
+      --harness-shell: #6d7178;
+      --badge-ink: #fffdf8;
+      --shadow: rgba(35, 34, 30, .25);
+      --terminal-line: #4b4e55;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      color: var(--text);
+      background: #030405;
+      font-family: var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+    body[data-theme="light"] { background: #d7d5ce; }
+    button { color: inherit; font: inherit; }
+
+    .prototype-stamp {
+      position: fixed;
+      top: 12px;
+      left: 50%;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      transform: translateX(-50%);
+      color: #8c9099;
+      font: 10px var(--mono);
+      letter-spacing: .035em;
+      white-space: nowrap;
+    }
+    .prototype-badge {
+      padding: 3px 7px;
+      color: var(--gold);
+      border: 1px solid color-mix(in srgb, var(--gold) 54%, transparent);
+      border-radius: 4px;
+      letter-spacing: .14em;
+    }
+
+    .window {
+      width: min(1480px, calc(100vw - 34px));
+      height: min(850px, calc(100vh - 66px));
+      min-height: 610px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--void);
+      border: 1px solid var(--rule-strong);
+      border-radius: 12px;
+      box-shadow: 0 28px 90px var(--shadow);
+    }
+
+    .mac-titlebar {
+      height: 38px;
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      background: var(--chrome);
+      border-bottom: 1px solid var(--rule);
+    }
+    .traffic { display: flex; gap: 7px; }
+    .traffic i { width: 11px; height: 11px; border-radius: 50%; }
+    .traffic i:nth-child(1) { background: #ff5f57; }
+    .traffic i:nth-child(2) { background: #febc2e; }
+    .traffic i:nth-child(3) { background: #28c840; }
+    .window-title {
+      margin: 0 auto;
+      color: var(--dim);
+      font: 11px var(--mono);
+      letter-spacing: .04em;
+    }
+    .body { min-height: 0; flex: 1; display: flex; }
+
+    /* Shell context only. Agent-state treatment intentionally does not appear here. */
+    .sidebar {
+      position: relative;
+      width: 205px;
+      flex: 0 0 auto;
+      padding: 12px 8px;
+      background: var(--chrome);
+      border-right: 1px solid var(--rule);
+    }
+    .sidebar-label {
+      padding: 2px 8px 10px;
+      color: var(--dim);
+      font: 9px var(--mono);
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    .workspace-row {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      height: 37px;
+      margin-bottom: 3px;
+      padding: 0 9px;
+      color: var(--text-soft);
+      border: 1px solid transparent;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+    .workspace-row.selected {
+      color: var(--text);
+      background: var(--panel-raised);
+      border-color: var(--rule);
+    }
+    .folder {
+      width: 14px;
+      color: var(--dim);
+      font: 11px var(--mono);
+      text-align: center;
+    }
+    .sidebar-foot {
+      position: absolute;
+      bottom: 17px;
+      padding: 0 9px;
+      color: var(--dim);
+      font: 9px/1.5 var(--mono);
+    }
+
+    .pane { min-width: 0; flex: 1; display: flex; flex-direction: column; background: var(--void); }
+    .tabbar-shell {
+      position: relative;
+      height: 30px;
+      flex: 0 0 30px;
+      overflow: hidden;
+      background: var(--chrome);
+      border-bottom: 1px solid var(--rule);
+    }
+    .tab-scroll {
+      height: 30px;
+      display: flex;
+      align-items: stretch;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding-right: 178px;
+      scrollbar-width: none;
+      scroll-behavior: smooth;
+    }
+    .tab-scroll::-webkit-scrollbar { display: none; }
+    .surface-tab {
+      --state: var(--cold);
+      --harness: var(--harness-shell);
+      position: relative;
+      height: 30px;
+      min-width: 112px;
+      max-width: 220px;
+      flex: 0 0 var(--tab-width, 146px);
+      display: flex;
+      align-items: center;
+      gap: 0;
+      padding: 0 2px 1px;
+      overflow: hidden;
+      color: var(--dim);
+      background: transparent;
+      border-right: 1px solid var(--rule);
+      cursor: default;
+      user-select: none;
+    }
+    .surface-tab:hover { color: var(--text-soft); background: color-mix(in srgb, var(--panel-raised) 72%, transparent); }
+    .surface-tab.selected {
+      color: var(--text);
+      background: var(--panel-raised);
+      box-shadow: inset 0 3px 0 var(--selection);
+    }
+    .surface-tab.state-running { --state: var(--running); }
+    .surface-tab.state-idle { --state: var(--idle); }
+    .surface-tab.state-cold { --state: var(--cold); color: color-mix(in srgb, var(--dim) 74%, transparent); }
+    .surface-tab.harness-claude { --harness: var(--harness-claude); }
+    .surface-tab.harness-codex { --harness: var(--harness-codex); }
+    .surface-tab.harness-shell { --harness: var(--harness-shell); }
+    body.neutral-harness .surface-tab { --harness: var(--text-soft); }
+    .surface-tab.state-waiting {
+      --state: var(--gold);
+    }
+    .surface-tab.state-changed { animation: state-arrival .9s ease-out 1; }
+    @keyframes state-arrival {
+      0% { box-shadow: inset 0 0 0 1px var(--state), 0 0 0 0 color-mix(in srgb, var(--state) 60%, transparent); }
+      50% { box-shadow: inset 0 0 0 1px var(--state), 0 0 0 4px transparent; }
+      100% { box-shadow: none; }
+    }
+    .surface-tab.selected.state-changed { animation-name: selected-state-arrival; }
+    @keyframes selected-state-arrival {
+      0% { box-shadow: inset 0 3px 0 var(--selection), inset 0 0 0 1px var(--state), 0 0 0 0 color-mix(in srgb, var(--state) 60%, transparent); }
+      50% { box-shadow: inset 0 3px 0 var(--selection), inset 0 0 0 1px var(--state), 0 0 0 4px transparent; }
+      100% { box-shadow: inset 0 3px 0 var(--selection); }
+    }
+
+    .close-tab {
+      width: 24px;
+      height: 27px;
+      flex: 0 0 24px;
+      display: grid;
+      place-items: center;
+      margin-left: auto;
+      padding: 0;
+      color: currentColor;
+      background: transparent;
+      border: 0;
+      border-radius: 4px;
+      opacity: .54;
+      cursor: default;
+      font-size: 12px;
+      line-height: 1;
+    }
+    .close-tab:hover { color: var(--text); background: var(--rule); opacity: 1; }
+    .state-mark {
+      width: 13px;
+      height: 13px;
+      flex: 0 0 13px;
+      display: grid;
+      place-items: center;
+      color: var(--state);
+      border: 1px solid color-mix(in srgb, var(--state) 76%, transparent);
+      border-radius: 50%;
+      font: 8px/1 var(--mono);
+      font-weight: 700;
+    }
+    .surface-tab > .state-mark {
+      width: 22px;
+      height: 22px;
+      flex: 0 0 22px;
+      margin-right: 5px;
+      color: var(--harness);
+      border-color: color-mix(in srgb, var(--harness) 76%, transparent);
+      font-size: 10px;
+    }
+    .surface-tab.state-running > .state-mark {
+      color: var(--badge-ink);
+      background: var(--harness);
+      border-color: var(--harness);
+      border-top-color: color-mix(in srgb, var(--badge-ink) 74%, transparent);
+      box-shadow: 0 0 7px color-mix(in srgb, var(--harness) 24%, transparent);
+      animation: turn 1.8s linear infinite;
+    }
+    .surface-tab.state-running > .state-mark span { animation: counter-turn 1.8s linear infinite; }
+    .surface-tab.state-idle > .state-mark {
+      color: var(--badge-ink);
+      background: var(--harness);
+      border-color: var(--harness);
+      border-radius: 4px;
+      box-shadow: 0 0 7px color-mix(in srgb, var(--harness) 24%, transparent);
+    }
+    .surface-tab.state-cold > .state-mark {
+      color: var(--harness);
+      background: color-mix(in srgb, var(--harness) 12%, transparent);
+      border-color: var(--harness);
+      border-style: dotted;
+      opacity: .9;
+    }
+    .surface-tab.state-waiting > .state-mark {
+      color: var(--badge-ink);
+      background: var(--gold);
+      border-color: var(--gold);
+      border-radius: 4px;
+      box-shadow: 0 0 8px color-mix(in srgb, var(--gold) 30%, transparent);
+    }
+    @keyframes turn { to { transform: rotate(360deg); } }
+    @keyframes counter-turn { to { transform: rotate(-360deg); } }
+    .tab-title {
+      min-width: 0;
+      overflow: hidden;
+      font-size: 11px;
+      line-height: 1;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .surface-tab.selected .tab-title { font-weight: 650; }
+    .surface-id { color: var(--dim); font: 9px var(--mono); }
+    body.hide-ids .surface-id { display: none; }
+
+    .tab-toolbar {
+      position: absolute;
+      top: 0;
+      right: 0;
+      z-index: 4;
+      height: 29px;
+      display: flex;
+      align-items: center;
+      padding-left: 22px;
+      background: linear-gradient(90deg, transparent, var(--chrome) 20px);
+    }
+    .tool-button {
+      width: 25px;
+      height: 25px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      color: var(--dim);
+      background: transparent;
+      border: 0;
+      border-radius: 4px;
+      cursor: default;
+      font: 13px var(--mono);
+    }
+    .tool-button:hover { color: var(--text); background: var(--panel-raised); }
+    .tool-divider { width: 1px; height: 18px; margin: 0 3px; background: var(--rule); }
+
+    .surface-titlebar {
+      min-height: 60px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--rule);
+    }
+    .surface-title-copy { min-width: 0; }
+    .surface-title {
+      overflow: hidden;
+      font-size: 12px;
+      font-weight: 650;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .surface-description {
+      margin-top: 4px;
+      overflow: hidden;
+      color: var(--dim);
+      font: 10px var(--mono);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .surface-state-readout {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--selected-state, var(--running));
+      font: 9px var(--mono);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .surface-state-readout .state-mark { --state: var(--selected-state, var(--running)); }
+
+    .content {
+      min-height: 0;
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 312px;
+    }
+    .terminal {
+      min-width: 0;
+      padding: 22px;
+      overflow: hidden;
+      color: var(--terminal-line);
+      background:
+        radial-gradient(circle at 26% 20%, color-mix(in srgb, var(--running) 5%, transparent), transparent 30%),
+        var(--void);
+      font: 12px/1.72 var(--mono);
+    }
+    .terminal .dim { color: var(--dim); }
+    .terminal .gold { color: var(--gold); }
+    .terminal .blue { color: var(--running); }
+    .terminal .green { color: var(--idle); }
+    .terminal .rule { margin: 18px 0; color: var(--rule-strong); }
+
+    .inspector {
+      min-width: 0;
+      padding: 18px;
+      background: var(--panel);
+      border-left: 1px solid var(--rule);
+      overflow-y: auto;
+    }
+    .eyebrow {
+      color: var(--dim);
+      font: 9px var(--mono);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .inspector h1 { margin: 7px 0 8px; font-size: 16px; line-height: 1.2; }
+    .inspector p { margin: 0 0 15px; color: var(--dim); font: 10px/1.5 var(--mono); }
+    .state-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .state-button, .option-button {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 31px;
+      padding: 6px 8px;
+      color: var(--text-soft);
+      background: transparent;
+      border: 1px solid var(--rule-strong);
+      border-radius: 5px;
+      cursor: default;
+      font: 9px var(--mono);
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+    .state-button:hover, .option-button:hover { color: var(--text); background: var(--panel-raised); }
+    .state-button.active { color: var(--state-button-color); border-color: var(--state-button-color); background: color-mix(in srgb, var(--state-button-color) 10%, transparent); }
+    .state-button[data-state="running"] { --state-button-color: var(--running); }
+    .state-button[data-state="idle"] { --state-button-color: var(--idle); }
+    .state-button[data-state="cold"] { --state-button-color: var(--cold); }
+    .state-button[data-state="waiting"] { --state-button-color: var(--gold); }
+    .section-rule { height: 1px; margin: 17px 0; background: var(--rule); }
+    .legend { display: grid; gap: 9px; margin-top: 11px; }
+    .legend-row { display: grid; grid-template-columns: 18px 62px 1fr; align-items: center; gap: 6px; }
+    .legend-row .state-mark { --state: var(--legend-state); }
+    .legend-row.running { --legend-state: var(--text-soft); }
+    .legend-row.idle { --legend-state: var(--text-soft); }
+    .legend-row.cold { --legend-state: var(--text-soft); }
+    .legend-row.waiting { --legend-state: var(--gold); }
+    .legend-row strong { color: var(--text-soft); font: 9px var(--mono); font-weight: 650; text-transform: uppercase; }
+    .legend-row span:last-child { color: var(--dim); font: 9px/1.3 var(--mono); }
+    .legend-row.running .state-mark,
+    .legend-row.idle .state-mark {
+      color: var(--badge-ink);
+      background: var(--text-soft);
+      border-color: var(--text-soft);
+    }
+    .legend-row.running .state-mark { border-top-color: color-mix(in srgb, var(--badge-ink) 74%, transparent); }
+    .legend-row.idle .state-mark { border-radius: 3px; }
+    .legend-row.cold .state-mark { border-style: dotted; }
+    .legend-row.waiting .state-mark { color: var(--badge-ink); background: var(--gold); border-color: var(--gold); border-radius: 3px; }
+    .harness-key {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+      color: var(--dim);
+      font: 8px var(--mono);
+      text-transform: uppercase;
+    }
+    .harness-key span { display: inline-flex; align-items: center; gap: 4px; }
+    body.neutral-harness .harness-key { opacity: .35; }
+    .harness-swatch { width: 7px; height: 7px; border-radius: 50%; background: var(--swatch); }
+    .harness-swatch.claude { --swatch: var(--harness-claude); }
+    .harness-swatch.codex { --swatch: var(--harness-codex); }
+    .harness-swatch.shell { --swatch: var(--harness-shell); }
+    .option-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .option-button[aria-pressed="true"] { color: var(--gold); border-color: color-mix(in srgb, var(--gold) 55%, var(--rule)); }
+    .collision-note {
+      margin-top: 14px;
+      padding: 10px;
+      color: var(--text-soft);
+      background: var(--void);
+      border-left: 2px solid var(--selection);
+      font: 9px/1.5 var(--mono);
+    }
+    .collision-note b { color: var(--gold); font-weight: 650; }
+    .toast {
+      position: fixed;
+      bottom: 17px;
+      left: 50%;
+      z-index: 30;
+      padding: 7px 10px;
+      color: var(--text);
+      background: var(--panel-raised);
+      border: 1px solid var(--rule-strong);
+      border-radius: 5px;
+      box-shadow: 0 8px 30px var(--shadow);
+      opacity: 0;
+      transform: translate(-50%, 6px);
+      transition: opacity .16s, transform .16s;
+      pointer-events: none;
+      font: 9px var(--mono);
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after {
+      scroll-behavior: auto !important;
+      animation: none !important;
+      transition-duration: 0s !important;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition-duration: 0s !important; }
+    }
+    @media (max-width: 970px) {
+      .sidebar { width: 160px; }
+      .content { grid-template-columns: minmax(0, 1fr) 275px; }
+    }
+  </style>
+</head>
+<body class="hide-ids">
+  <div class="prototype-stamp">
+    <span class="prototype-badge">PROTOTYPE</span>
+    <span>surface-tab state study · not wired to real data</span>
+  </div>
+
+  <main class="window">
+    <header class="mac-titlebar">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <div class="window-title">c11 — Stage 11</div>
+    </header>
+
+    <div class="body">
+      <aside class="sidebar" aria-label="Workspace shell context">
+        <div class="sidebar-label">Workspaces</div>
+        <div class="workspace-row"><span class="folder">◇</span><span>Acetate</span></div>
+        <div class="workspace-row selected"><span class="folder">◇</span><span>c11</span></div>
+        <div class="workspace-row"><span class="folder">◇</span><span>Lattice</span></div>
+        <div class="workspace-row"><span class="folder">◇</span><span>Overwatch</span></div>
+        <div class="sidebar-foot">Workspace rows are shell context only.<br>No state treatment is proposed here.</div>
+      </aside>
+
+      <section class="pane">
+        <div class="tabbar-shell" aria-label="Surface tab state experiment">
+          <div class="tab-scroll" id="tabScroll" role="tablist"></div>
+          <div class="tab-toolbar" aria-label="Pane controls">
+            <button class="tool-button" id="scrollLeft" aria-label="Scroll tabs left">‹</button>
+            <button class="tool-button" id="scrollRight" aria-label="Scroll tabs right">›</button>
+            <div class="tool-divider"></div>
+            <button class="tool-button" aria-label="New surface">＋</button>
+            <button class="tool-button" aria-label="Split pane">⊞</button>
+            <button class="tool-button" aria-label="More pane actions">•••</button>
+          </div>
+        </div>
+
+        <div class="surface-titlebar">
+          <div class="surface-title-copy">
+            <div class="surface-title" id="surfaceTitle"></div>
+            <div class="surface-description" id="surfaceDescription"></div>
+          </div>
+          <div class="surface-state-readout" id="surfaceStateReadout">
+            <span class="state-mark"><span id="readoutGlyph"></span></span>
+            <span id="readoutLabel"></span>
+          </div>
+        </div>
+
+        <div class="content">
+          <div class="terminal" id="terminalCopy"></div>
+
+          <aside class="inspector">
+            <div class="eyebrow">Selected surface</div>
+            <h1 id="inspectorTitle"></h1>
+            <p>Click any tab, then force a state. Selection and state should remain readable in every combination.</p>
+
+            <div class="state-controls" aria-label="Change selected surface state">
+              <button class="state-button" data-state="running">R Running</button>
+              <button class="state-button" data-state="idle">I Idle</button>
+              <button class="state-button" data-state="cold">C Cold</button>
+              <button class="state-button" data-state="waiting">W Your turn</button>
+            </div>
+
+            <div class="section-rule"></div>
+            <div class="eyebrow">Grammar</div>
+            <div class="legend">
+              <div class="legend-row running"><span class="state-mark"><span>R</span></span><strong>Running</strong><span>R + slow rim; work is moving</span></div>
+              <div class="legend-row idle"><span class="state-mark"><span>I</span></span><strong>Idle</strong><span>I; prompt is ready</span></div>
+              <div class="legend-row cold"><span class="state-mark"><span>C</span></span><strong>Cold</strong><span>C + dotted shell; no live session</span></div>
+              <div class="legend-row waiting"><span class="state-mark"><span>W</span></span><strong>Your turn</strong><span>prominent gold W; no second signal</span></div>
+            </div>
+            <div class="harness-key" aria-label="Harness color key">
+              <span><i class="harness-swatch claude"></i> Claude</span>
+              <span><i class="harness-swatch codex"></i> Codex</span>
+              <span><i class="harness-swatch shell"></i> Shell</span>
+            </div>
+
+            <div class="section-rule"></div>
+            <div class="eyebrow">Stress the strip</div>
+            <div class="option-grid">
+              <button class="option-button" id="toggleIds" aria-pressed="false">Surface IDs</button>
+              <button class="option-button" id="toggleHarness" aria-pressed="true">Harness color</button>
+              <button class="option-button" id="toggleTheme" aria-pressed="false">Light theme</button>
+              <button class="option-button" id="toggleMotion" aria-pressed="false">Reduce motion</button>
+            </div>
+
+            <div class="collision-note">
+              <b>One badge, two reads.</b> R/I/C/W names state; solid badge hue names the harness. Waiting overrides hue with gold alone. Close remains hard-right.
+            </div>
+          </aside>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div class="toast" id="toast">Close hover is live; prototype tabs stay in place.</div>
+
+  <script>
+    const surfaces = [
+      { id: 54, title: 'Agent Pulse', state: 'waiting', harness: 'claude', description: 'Waiting for the operator to choose the workspace-level direction.' },
+      { id: 62, title: 'Surface Pulse', state: 'running', harness: 'codex', description: 'Prototyping agent presence on dense horizontal surface tabs.' },
+      { id: 72, title: 'Release staging', state: 'running', harness: 'claude', description: 'Building and validating the signed release candidate.' },
+      { id: 77, title: 'Mailbox attribution', state: 'idle', harness: 'codex', description: 'At the prompt after completing the attribution copy pass.' },
+      { id: 91, title: 'Socket watchdog', state: 'cold', harness: 'shell', description: 'Resumable terminal; no agent process is currently live.' },
+      { id: 105, title: 'Browser regression sweep', state: 'running', harness: 'claude', description: 'Exercising browser navigation, snapshots, and auth-state restore.' },
+      { id: 118, title: 'Theme conformance', state: 'idle', harness: 'codex', description: 'Dark and light c11 theme slot review is complete.' },
+      { id: 126, title: 'Japanese localization', state: 'cold', harness: 'claude', description: 'Session ended after committing the locale update.' },
+      { id: 144, title: 'Workspace snapshot recovery validation and persistence audit', state: 'waiting', harness: 'codex', description: 'Needs approval to replace the corrupted fixture with a captured snapshot.' },
+      { id: 158, title: 'Docs pruning', state: 'idle', harness: 'claude', description: 'At the prompt with a clean documentation diff.' },
+      { id: 203, title: 'Flaky focus test diagnosis', state: 'running', harness: 'codex', description: 'Repeating the focused-pane event test under contention.' }
+    ];
+
+    const stateCopy = {
+      running: { glyph: 'R', label: 'Running · work in motion', color: 'var(--running)', line: 'Command in flight. Output and prompt-state observation say this agent is moving.' },
+      idle: { glyph: 'I', label: 'Idle · at the prompt', color: 'var(--idle)', line: 'Live session, quiet prompt. Available for another task without a resume step.' },
+      cold: { glyph: 'C', label: 'Cold · no live agent', color: 'var(--cold)', line: 'The surface remains, but no agent session is currently live. It may be resumable.' },
+      waiting: { glyph: 'W', label: 'Your turn · response needed', color: 'var(--gold)', line: 'The agent has yielded with a question or decision. This is the operator’s turn.' }
+    };
+
+    const harnessColors = {
+      claude: 'var(--harness-claude)',
+      codex: 'var(--harness-codex)',
+      shell: 'var(--harness-shell)'
+    };
+
+    let selectedId = 62;
+    const tabScroll = document.getElementById('tabScroll');
+
+    function widthFor(surface) {
+      const idCost = document.body.classList.contains('hide-ids') ? 0 : 23;
+      // Deliberately exercise Bonsplit's dense end of the real 112–220pt range:
+      // eight tabs remain scannable by default, while IDs and long titles still
+      // push the strip into its native horizontal-overflow behavior.
+      return Math.max(112, Math.min(190, 52 + idCost + surface.title.length * 4));
+    }
+
+    function tabMarkup(surface) {
+      const copy = stateCopy[surface.state];
+      return `
+        <div class="surface-tab state-${surface.state} harness-${surface.harness}${surface.id === selectedId ? ' selected' : ''}"
+             style="--tab-width:${widthFor(surface)}px"
+             data-id="${surface.id}" role="tab" tabindex="0"
+             aria-selected="${surface.id === selectedId}" aria-label="${surface.title}, ${copy.label}, ${surface.harness} harness"
+             title="surface:${surface.id} · ${surface.title} · ${copy.label} · ${surface.harness}">
+          <span class="state-mark" aria-hidden="true"><span>${copy.glyph}</span></span>
+          <span class="tab-title"><span class="surface-id">${surface.id}: </span>${surface.title}</span>
+          <button class="close-tab" aria-label="Close ${surface.title}" title="Close tab">×</button>
+        </div>`;
+    }
+
+    function renderTabs({ changedId = null } = {}) {
+      tabScroll.innerHTML = surfaces.map(tabMarkup).join('');
+      tabScroll.querySelectorAll('.surface-tab').forEach(tab => {
+        const id = Number(tab.dataset.id);
+        tab.addEventListener('click', event => {
+          if (event.target.closest('.close-tab')) return;
+          selectSurface(id);
+        });
+        tab.addEventListener('keydown', event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            selectSurface(id);
+          }
+        });
+        tab.querySelector('.close-tab').addEventListener('click', event => {
+          event.stopPropagation();
+          showToast();
+        });
+      });
+      if (changedId !== null) {
+        const changed = tabScroll.querySelector(`[data-id="${changedId}"]`);
+        if (changed) {
+          changed.classList.add('state-changed');
+          setTimeout(() => changed.classList.remove('state-changed'), 950);
+        }
+      }
+    }
+
+    function selectSurface(id) {
+      selectedId = id;
+      renderTabs();
+      updateSelection();
+      const tab = tabScroll.querySelector(`[data-id="${id}"]`);
+      if (tab) tab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+
+    function updateSelection() {
+      const surface = surfaces.find(item => item.id === selectedId);
+      const copy = stateCopy[surface.state];
+      const harnessColor = document.body.classList.contains('neutral-harness')
+        ? 'var(--text-soft)'
+        : harnessColors[surface.harness];
+      const badgeColor = surface.state === 'waiting' ? copy.color : harnessColor;
+      const waitingCount = surfaces.filter(item => item.state === 'waiting').length;
+      document.getElementById('surfaceTitle').textContent = `surface:${surface.id} · ${surface.title}`;
+      document.getElementById('surfaceDescription').textContent = surface.description;
+      document.getElementById('inspectorTitle').textContent = surface.title;
+      document.getElementById('readoutGlyph').textContent = copy.glyph;
+      document.getElementById('readoutLabel').textContent = copy.label;
+      document.getElementById('surfaceStateReadout').style.setProperty('--selected-state', badgeColor);
+      document.querySelectorAll('.state-button').forEach(button => {
+        button.classList.toggle('active', button.dataset.state === surface.state);
+      });
+      document.getElementById('terminalCopy').innerHTML = `
+        <div><span class="dim">$</span> c11 inspect surface:${surface.id}</div>
+        <br>
+        <div><span style="color:${badgeColor}">${copy.glyph}</span> <strong>${copy.label}</strong> <span class="dim">· ${surface.harness}</span></div>
+        <div class="dim">${copy.line}</div>
+        <div class="rule">────────────────────────────────────────────────────────</div>
+        <div><span class="gold">${waitingCount}</span> of ${surfaces.length} surfaces currently need the operator.</div>
+        <div class="dim">The tab strip keeps that answer visible through selection, truncation, and overflow.</div>
+        <br>
+        <div><span class="blue">selection</span> → neutral top rail + raised fill</div>
+        <div><span class="gold">operator turn</span> → prominent gold W alone</div>
+        <div><span class="green">harness</span> → badge hue; no second glyph</div>`;
+    }
+
+    function setSelectedState(state) {
+      const surface = surfaces.find(item => item.id === selectedId);
+      surface.state = state;
+      renderTabs({ changedId: selectedId });
+      updateSelection();
+    }
+
+    function showToast() {
+      const toast = document.getElementById('toast');
+      toast.classList.add('show');
+      clearTimeout(window.prototypeToastTimer);
+      window.prototypeToastTimer = setTimeout(() => toast.classList.remove('show'), 1600);
+    }
+
+    document.querySelectorAll('.state-button').forEach(button => {
+      button.addEventListener('click', () => setSelectedState(button.dataset.state));
+    });
+
+    document.getElementById('toggleIds').addEventListener('click', event => {
+      document.body.classList.toggle('hide-ids');
+      const shown = !document.body.classList.contains('hide-ids');
+      event.currentTarget.setAttribute('aria-pressed', shown);
+      renderTabs();
+    });
+    document.getElementById('toggleHarness').addEventListener('click', event => {
+      document.body.classList.toggle('neutral-harness');
+      const shown = !document.body.classList.contains('neutral-harness');
+      event.currentTarget.setAttribute('aria-pressed', shown);
+      updateSelection();
+    });
+    document.getElementById('toggleTheme').addEventListener('click', event => {
+      const light = document.body.dataset.theme !== 'light';
+      document.body.dataset.theme = light ? 'light' : 'dark';
+      event.currentTarget.setAttribute('aria-pressed', light);
+      event.currentTarget.textContent = light ? 'Dark theme' : 'Light theme';
+    });
+    document.getElementById('toggleMotion').addEventListener('click', event => {
+      const reduced = document.body.classList.toggle('reduce-motion');
+      event.currentTarget.setAttribute('aria-pressed', reduced);
+    });
+    document.getElementById('scrollLeft').addEventListener('click', () => tabScroll.scrollBy({ left: -360, behavior: 'smooth' }));
+    document.getElementById('scrollRight').addEventListener('click', () => tabScroll.scrollBy({ left: 360, behavior: 'smooth' }));
+
+    renderTabs();
+    updateSelection();
+  </script>
+</body>
+</html>

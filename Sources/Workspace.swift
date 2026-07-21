@@ -12144,6 +12144,10 @@ extension Workspace: BonsplitDelegate {
     /// `explicitAgent` lets the caller override the configured default —
     /// used by the right-click menu's "launch this one now" affordance and
     /// the `c11 default-agent launch --agent <type>` socket command.
+    /// `explicitConfig` (C11-181) launches a *specific* saved config now — the
+    /// A-button picker's "row click = launch". When set it takes precedence over
+    /// `effectiveDefault()`; when both it and `explicitAgent` are nil the plain
+    /// left-click path (launch `effectiveDefault()`) is unchanged.
     /// - Parameter source: launch-stats provenance (C11-178). Defaults to
     ///   `.aButton` (the real UI spawn button); the CLI `default-agent launch`
     ///   new-surface path passes `.launchAgent` so button-clicks and CLI launches
@@ -12170,10 +12174,10 @@ extension Workspace: BonsplitDelegate {
         let resolvedSystemPromptMode: String?
         let savedConfigId: String?
 
-        // A caller-chosen config (Settings "Save & Launch", C11-182) launches
-        // exactly that recipe. Otherwise a plain left-click consults the
-        // saved-config library's `effectiveDefault()`; an explicit agent keeps
-        // `nil` here and takes the raw-harness path below.
+        // A caller-chosen config (Settings "Save & Launch", C11-182; or the
+        // C11-181 A-button picker) launches exactly that recipe. Otherwise a plain
+        // left-click consults the saved-config library's `effectiveDefault()`; an
+        // explicit agent keeps `nil` here and takes the raw-harness path below.
         let overlaySaved: SavedAgentConfig?
         if let explicitConfig {
             overlaySaved = explicitConfig
@@ -12390,24 +12394,90 @@ extension Workspace: BonsplitDelegate {
 
     func splitTabBar(_ controller: BonsplitController, menuItemsForNewTabKind kind: String, inPane pane: PaneID) -> [BonsplitNewTabMenuItem] {
         guard kind == "agent" else { return [] }
-        let current = DefaultAgentConfigStore.shared.current.defaultAgent
-        return AgentType.allCases.map { type in
-            BonsplitNewTabMenuItem(
-                id: type.rawValue,
-                label: type.displayName,
-                isCurrent: type == current
-            )
+        // C11-181: a right-click on the A button opens the rich launch picker
+        // popover instead of a native menu — the picker replaces both the old
+        // 9-harness menu AND its click-sets-default gesture (design §5/§8.8). We
+        // reuse bonsplit's existing `.contextMenu` trigger with ZERO vendor edits:
+        // open the popover as a side-effect and return `[]` so no native menu is
+        // shown. Guard on a genuine right-mouse event so a SwiftUI eager
+        // menu-content diff (no right-click in flight) can't spuriously open it.
+        if let event = NSApp.currentEvent,
+           event.type == .rightMouseDown || event.type == .rightMouseUp {
+            let location = NSEvent.mouseLocation
+            DispatchQueue.main.async { [weak self] in
+                self?.presentAgentPicker(inPane: pane, at: location)
+            }
         }
+        return []
     }
 
     func splitTabBar(_ controller: BonsplitController, didSelectNewTabMenuItem itemId: String, forKind kind: String, inPane pane: PaneID) {
-        guard kind == "agent",
-              let chosen = AgentType(rawValue: itemId) else { return }
-        // Update the default only; the next left-click on A spawns the chosen
-        // agent. Launching here would contradict right-click semantics (a
-        // preference gesture, not an action gesture).
-        DefaultAgentConfigStore.shared.setDefaultAgent(chosen)
-        refreshSplitButtonTooltips()
+        // C11-181: unreachable — `menuItemsForNewTabKind` now returns `[]` and
+        // routes the right-click to the picker popover, which owns launch + pin.
+        // Kept for delegate conformance; no-op by design.
+    }
+
+    /// Present the tier-1 agent launch picker popover anchored to the A button
+    /// (design §5.1). `screenPoint` anchors under the right-clicked button; `nil`
+    /// (⌘⇧A / menu) anchors at the window's top-trailing corner. Row click =
+    /// launch now; pin / ⌥-click = set default without launching (C11-181).
+    func presentAgentPicker(inPane pane: PaneID, at screenPoint: NSPoint? = nil) {
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
+
+        let controller = AgentPickerController(model: makeAgentPickerModel())
+        controller.rebuild = { [weak self] in self?.makeAgentPickerModel() }
+        controller.onLaunch = { [weak self] config in
+            self?.launchAgentSurface(inPane: pane, explicitConfig: config, source: .aButton)
+        }
+        controller.onPin = { [weak self] config in
+            try? AgentConfigLibraryStore.shared.setDefault(configId: config.id)
+            self?.refreshSplitButtonTooltips()
+        }
+        controller.onToggleFollowRecent = {
+            let current = AgentConfigLibraryStore.shared.current.default.mode
+            try? AgentConfigLibraryStore.shared.setMode(current == .followRecent ? .pinned : .followRecent)
+        }
+        // Tier-2 (configure sheet / stats view) is C11-182; no seam exists on
+        // main yet, so these are no-ops today. The Launch-stats row still shows a
+        // real inline headline below.
+        controller.onViewAll = {}
+        controller.onStats = {}
+        controller.onNotInstalledHint = { _ in }
+
+        AgentPickerPresenter.shared.present(controller: controller, in: window, at: screenPoint)
+    }
+
+    /// Build the picker view-model from the current library, registry, a cached
+    /// PATH install probe, the (absent-today) cost catalog, and the stats headline.
+    private func makeAgentPickerModel() -> AgentPickerModel {
+        let library = AgentConfigLibraryStore.shared.current
+        let effective = AgentConfigLibraryStore.shared.effectiveDefault()
+        let env = AgentPickerEnvironment(
+            displayName: { kind in
+                AgentRegistry.shared.manifest(forKind: kind)?.displayName
+                    ?? AgentType(rawValue: kind)?.displayName ?? kind
+            },
+            provider: { AgentLaunchStats.provider(harness: $0, model: $1) },
+            isInstalled: { AgentHarnessInstallProbe.isInstalled($0) },
+            costFor: { _ in nil }, // token-cost catalog is greenfield (design §5.6) → column omitted
+            now: Date(),
+            statsHeadline: Self.agentPickerStatsHeadline()
+        )
+        return AgentPickerModel(library: library, effectiveDefault: effective, env: env)
+    }
+
+    /// Inline "N% Model · M launches" from the lifetime stats aggregate (C11-178).
+    /// `nil` (no store / no launches) → the headline is omitted.
+    private static func agentPickerStatsHeadline() -> String? {
+        guard let store = AgentLaunchStatsStore.shared else { return nil }
+        let result = store.stats(window: .all, by: .model)
+        guard result.count > 0, let leader = result.tally.max(by: { $0.value < $1.value }) else { return nil }
+        let pct = Int((Double(leader.value) / Double(result.count) * 100).rounded())
+        let model = leader.key.prefix(1).uppercased() + leader.key.dropFirst()
+        return String(
+            localized: "agentPicker.stats.headline",
+            defaultValue: "\(pct)% \(model) · \(result.count) launches"
+        )
     }
 
     func splitTabBar(_ controller: BonsplitController, didRequestClosePane pane: PaneID) {

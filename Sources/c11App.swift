@@ -487,6 +487,13 @@ struct cmuxApp: App {
                     NotificationCenter.default.post(name: .commandPaletteRequested, object: targetWindow)
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
+
+                // C11-181: open the A-button agent launch picker for the active
+                // workspace's focused pane.
+                Button(String(localized: "menu.file.launchAgentPicker", defaultValue: "Launch Agent Picker…")) {
+                    AppDelegate.shared?.presentAgentPickerForActiveWorkspace()
+                }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
             }
 
             // AppKit auto-injects a Help menu (with its search field) whenever

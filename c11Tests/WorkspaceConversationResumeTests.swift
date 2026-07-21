@@ -218,4 +218,108 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         XCTAssertTrue(captured.isEmpty,
                       "expected empty dict from empty store; got \(captured.count) entries")
     }
+
+    // MARK: - C11-183: autosave stalls at high surface count
+
+    /// The autosave fingerprint must flip when any surface's active
+    /// conversation ref changes (so wrapper-claim / hook-push / tombstone
+    /// activity forces a save — the C11-24 invariant) and must be
+    /// order-independent (dictionary iteration order must not spuriously
+    /// change the fingerprint and cause churn). `hashConversationState` is
+    /// the pure, off-main seam extracted from `sessionAutosaveFingerprint`
+    /// so the async autosave tick can feed it the map it read via `await`
+    /// instead of blocking main on a semaphore. Pure (no `Workspace`), so
+    /// this one runs in the bare local xctest runner too.
+    func testAutosaveConversationHashChangeSensitiveAndOrderIndependent() {
+        func hash(_ map: [String: SurfaceConversations]) -> Int {
+            var hasher = Hasher()
+            AppDelegate.hashConversationState(map, into: &hasher)
+            return hasher.finalize()
+        }
+        func ref(
+            id: String,
+            state: ConversationState = .alive,
+            via: CaptureSource = .hook,
+            kind: String = "claude-code"
+        ) -> SurfaceConversations {
+            SurfaceConversations(active: ConversationRef(
+                kind: kind, id: id, capturedVia: via, state: state))
+        }
+
+        let base: [String: SurfaceConversations] = [
+            "surface-a": ref(id: "sess-1"),
+            "surface-b": ref(id: "sess-2"),
+        ]
+        // Same entries, rebuilt dict → identical hash (order-independent).
+        let reordered: [String: SurfaceConversations] = [
+            "surface-b": ref(id: "sess-2"),
+            "surface-a": ref(id: "sess-1"),
+        ]
+        XCTAssertEqual(hash(base), hash(reordered),
+                       "fingerprint must not depend on dictionary iteration order")
+
+        // A changed active id / lifecycle state / capture source each flips it.
+        XCTAssertNotEqual(hash(base), hash([
+            "surface-a": ref(id: "sess-1-CHANGED"),
+            "surface-b": ref(id: "sess-2"),
+        ]), "a changed active id must change the fingerprint")
+        XCTAssertNotEqual(hash(base), hash([
+            "surface-a": ref(id: "sess-1", state: .tombstoned),
+            "surface-b": ref(id: "sess-2"),
+        ]), "a changed lifecycle state must change the fingerprint")
+        XCTAssertNotEqual(hash(base), hash([
+            "surface-a": ref(id: "sess-1", via: .scrape),
+            "surface-b": ref(id: "sess-2"),
+        ]), "a changed capture source must change the fingerprint")
+
+        // A surface with no active ref must not contribute (empty == none),
+        // so idle terminals don't force perpetual autosaves.
+        let withEmpty = base.merging(["surface-c": .empty]) { existing, _ in existing }
+        XCTAssertEqual(hash(base), hash(withEmpty),
+                       "a surface with no active ref must not change the fingerprint")
+    }
+
+    /// C11-183: the async autosave tick reads the conversation store off-main
+    /// via `await` and injects the resulting map into `sessionSnapshot`, so
+    /// the 8 s tick no longer blocks main on a `DispatchSemaphore.wait`.
+    /// Injection must be honored verbatim (the map the tick read is exactly
+    /// what gets persisted), while synchronous callers that pass no map still
+    /// fall back to the in-process store read. Both keep `surface_conversations`
+    /// populated (C11-24 — guards against the C11-170 "drops under load" class).
+    ///
+    /// Constructs a live terminal surface → CI-only (the bare local xctest
+    /// runner crashes on `Workspace` construction; see CLAUDE.md).
+    func testSessionSnapshotHonorsInjectedConversationMapOverStore() async throws {
+        let workspace = Workspace()
+        let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
+        let panel = try XCTUnwrap(workspace.newTerminalSurface(inPane: paneId, focus: false))
+        let surfaceId = panel.id.uuidString
+
+        // Store holds ref X (claude) for the surface.
+        await ConversationStore.shared.push(
+            surfaceId: surfaceId,
+            kind: "claude-code",
+            id: claudeSessionId,
+            source: .hook,
+            state: .alive
+        )
+
+        // Inject a DIFFERENT map (ref Y, codex). Injection wins over the store.
+        let injectedY = SurfaceConversations(active: ConversationRef(
+            kind: "codex", id: codexSessionId, capturedVia: .scrape, state: .suspended))
+        let injectedSnapshot = workspace.sessionSnapshot(
+            includeScrollback: false,
+            conversationsByPanelId: [surfaceId: injectedY]
+        )
+        let injectedPanel = try XCTUnwrap(injectedSnapshot.panels.first { $0.id == panel.id })
+        XCTAssertEqual(injectedPanel.surfaceConversations?.active?.id, codexSessionId,
+                       "injected conversation map must be honored verbatim")
+        XCTAssertEqual(injectedPanel.surfaceConversations?.active?.kind, "codex")
+
+        // No injection → synchronous in-process store read (ref X) still populates.
+        let fallbackSnapshot = workspace.sessionSnapshot(includeScrollback: false)
+        let fallbackPanel = try XCTUnwrap(fallbackSnapshot.panels.first { $0.id == panel.id })
+        XCTAssertEqual(fallbackPanel.surfaceConversations?.active?.id, claudeSessionId,
+                       "sync fallback must still read the live store (C11-24)")
+    }
 }

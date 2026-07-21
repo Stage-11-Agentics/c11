@@ -262,6 +262,7 @@
     .state-mark::before {
       content: "";
       display: block;
+      grid-area: 1 / 1;
       width: 8px;
       height: 8px;
       background: currentColor;
@@ -307,10 +308,15 @@
       box-shadow: 0 0 8px color-mix(in srgb, var(--gold) 30%, transparent);
     }
     .state-mark.state-waiting > span {
-      display: block;
-      position: absolute;
+      grid-area: 1 / 1;
+      display: grid;
+      place-items: center;
+      width: 17px;
+      height: 17px;
+      z-index: 1;
       font: 8px/1 var(--mono);
-      font-weight: 750;
+      font-weight: 700;
+      text-align: center;
     }
     @keyframes turn { to { transform: rotate(360deg); } }
     .tab-title {

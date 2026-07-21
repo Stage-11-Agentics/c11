@@ -1,0 +1,33 @@
+{
+  "assigned_to": "agent:opus-c11-173",
+  "branch_links": [],
+  "comment_count": 6,
+  "complexity": null,
+  "created_at": "2026-07-13T22:45:33Z",
+  "created_by": "agent:opus-acetate-sweep",
+  "custom_fields": {},
+  "description": null,
+  "done_at": "2026-07-14T02:11:38Z",
+  "evidence_refs": [
+    {
+      "id": "ev_01KXF69S9P0FEH8ZR5Y28CG8GP",
+      "role": "review",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01KXETGDVS70ENC3JZK1XM9684",
+  "last_event_id": "ev_01KXF69SFGACNQNS8JWN42ZPQX",
+  "last_status_changed_at": "2026-07-14T02:11:38Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-173",
+  "status": "done",
+  "tags": null,
+  "title": "c11 send: messages silently never submit \u2014 bracketed-paste swallows the newline, send-key is a no-op, overlays eat input, empty --surface routes to the caller",
+  "type": "bug",
+  "updated_at": "2026-07-14T02:11:38Z",
+  "urgency": null
+}

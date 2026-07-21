@@ -1,0 +1,30 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 2,
+  "complexity": "medium",
+  "created_at": "2026-07-08T19:29:26Z",
+  "created_by": "agent:fable-consultant",
+  "custom_fields": {},
+  "description": "Found in v0.58.0 staging smoke (Release artifact, com.stage11.c11.staging). (1) c11 set-status writes the sidebar display store but NOT SurfaceMetadataStore: no metadata.changed event, no last-updated, so TEL age/decay and EVT status events never apply to the command agents actually use; set-metadata --key status works correctly (event observed). set-progress/log likely same seam - audit all fast-path telemetry commands. (2) Derived liveness (TEL-3/4, EVT-2): no liveness.derived events, no derived metadata key, no visible UI state after minutes of PTY output on a surface with a registered agent. Determine whether the deriver runs at all in Release and where its output goes (SidebarActivityProjector?). Fix on branch release/v0.58.0. Acceptance: on a rebuilt staging artifact, set-status produces a metadata.changed event with last-updated and the pill decays (accelerated TTL ok); PTY output produces liveness.derived transitions observable via events tail; both captured as recorded proof. Repro notes in this ticket's comments.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KX1K9R1MX7A0PPT8Y3RB3KC1",
+  "last_event_id": "ev_01KX1XZJB30F079QWFNZAD8V8T",
+  "last_status_changed_at": "2026-07-08T22:36:07Z",
+  "linked_files": [],
+  "priority": "critical",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-171",
+  "status": "pr_open",
+  "tags": [
+    "cycle-2026-07",
+    "release-v0.58.0"
+  ],
+  "title": "v0.58.0 staging blocker: set-status fast path bypasses evented metadata store; derived liveness not observable",
+  "type": "bug",
+  "updated_at": "2026-07-08T22:36:07Z",
+  "urgency": null
+}

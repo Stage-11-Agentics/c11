@@ -1,0 +1,49 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 0,
+  "complexity": null,
+  "created_at": "2026-07-21T00:03:54Z",
+  "created_by": "agent:orchestrator-c11175",
+  "custom_fields": {},
+  "description": "Design: docs/agent-config-primitive-design.md \u00a71.3 (merge/precedence ladder), \u00a73, \u00a73.1, \u00a77. Make the saved-config overlay the first value source in DefaultAgentResolver/AgentLaunchPlanner: command/initialPrompt/env/model/effort/systemPrompt each resolve config-field ?? harnessSettings ?? factory, env merged per-key (factory \u25c1 settings \u25c1 config), flag injection reusing the existing hardcoded-detection logic. A-button left-click launches effectiveDefault (mode==follow-recent && recent!=nil ? recent : pinned). Every launch path calls recordLaunch (C11-178 sink) with the resolved config + source; A-button identity stamp (stampLaunchIdentity) reflects the overlay-resolved model. Tooltip at-a-glance (\u00a75.3 v1): refreshSplitButtonTooltips string carries resolved default name\u00b7model\u00b7effort. Factory pure-inherit configs reproduce today's launches byte-identically (regression AC). Depends: C11-176 (store/types), C11-177 (system-prompt injector), C11-178 (sink). AC: precedence ladder unit-locked per field; effectiveDefault; byte-identical factory regression; recordLaunch fired on all launch paths. Mostly pure logic \u2014 c11-logic.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KY0ZRXVBVPPSM2CFCWZGSRMA",
+  "last_event_id": "ev_01KY0ZS6AKCNTKKMDH6K47NK09",
+  "last_status_changed_at": "2026-07-21T00:03:54Z",
+  "linked_files": [],
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-07-21T00:04:02Z",
+      "created_by": "agent:orchestrator-c11175",
+      "note": null,
+      "target_task_id": "task_01KY0ZPY9SAPP1RATJGQE1WHSK",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-07-21T00:04:02Z",
+      "created_by": "agent:orchestrator-c11175",
+      "note": null,
+      "target_task_id": "task_01KY0ZQWYW767N6M8R9X8XCEJR",
+      "type": "depends_on"
+    },
+    {
+      "created_at": "2026-07-21T00:04:03Z",
+      "created_by": "agent:orchestrator-c11175",
+      "note": null,
+      "target_task_id": "task_01KY0ZQX3ZNBT3P3VK0BYPQQWB",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-179",
+  "status": "backlog",
+  "tags": null,
+  "title": "Launch composition overlay: config-first resolution, effectiveDefault, recordLaunch wiring",
+  "type": "task",
+  "updated_at": "2026-07-21T00:04:03Z",
+  "urgency": null
+}

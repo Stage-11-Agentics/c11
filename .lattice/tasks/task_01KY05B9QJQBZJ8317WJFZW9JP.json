@@ -1,0 +1,38 @@
+{
+  "assigned_to": null,
+  "branch_links": [],
+  "comment_count": 5,
+  "complexity": null,
+  "created_at": "2026-07-20T16:22:04Z",
+  "created_by": "agent:config-primitive-designer",
+  "custom_fields": {},
+  "description": "Design + UX spec for a native c11 model-config primitive across four axes (provider, model, effort, harness): saved/named configs, default vs most-recent resolution rule, session-watching (claude hook + scrapers), A-button launcher UX. Deliverable: docs/agent-config-primitive-design.md. Architect only, then stop for review.",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "art_01KY05GZDJQ077E65NYWNYD31C",
+      "role": null,
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KY05B9QJQBZJ8317WJFZW9JP",
+  "last_event_id": "ev_01KY0ZS70RFHP35BVVXE27KWGW",
+  "last_status_changed_at": "2026-07-20T16:22:04Z",
+  "linked_files": [],
+  "needs_human": {
+    "flagged_by": "agent:config-primitive-designer",
+    "reason": "Design + UX spec complete at docs/agent-config-primitive-design.md. Architect-only, awaiting operator review before implementation. Please weigh the 6 open questions in section 8 (esp. saved-config scope, the menu gesture change, most-recent persistence).",
+    "since": "2026-07-20T16:25:10Z"
+  },
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-175",
+  "status": "backlog",
+  "tags": null,
+  "title": "Config Primitive: model-configuration selection primitive (design)",
+  "type": "task",
+  "updated_at": "2026-07-21T00:04:03Z",
+  "urgency": null
+}

@@ -587,12 +587,13 @@ public final class AgentLaunchStatsStore: @unchecked Sendable {
         do {
             if appendHandle == nil {
                 try ensureDirectoryLocked()
-                if !FileManager.default.fileExists(atPath: jsonlURL.path) {
-                    FileManager.default.createFile(atPath: jsonlURL.path, contents: nil)
-                }
-                let fh = try FileHandle(forWritingTo: jsonlURL)
-                try fh.seekToEnd()
-                appendHandle = fh
+                // Open with O_APPEND so every write() is kernel-serialized to the
+                // file's true end — atomic even if a second c11 instance shares the
+                // state root. No manual seekToEnd (a cached offset can lag the real
+                // end across writers); the kernel repositions to EOF per write.
+                let fd = open(jsonlURL.path, O_WRONLY | O_APPEND | O_CREAT, 0o644)
+                guard fd >= 0 else { return }
+                appendHandle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
             }
             try appendHandle?.write(contentsOf: lineData)
         } catch {

@@ -92,10 +92,12 @@ final class AgentLaunchStatsTests: XCTestCase {
             provider: "anthropic", configId: nil, systemPromptMode: nil, source: "a-button"
         )
         let data = try AgentLaunchStatsDate.makeEncoder().encode(record)
-        let json = String(data: data, encoding: .utf8)!
-        XCTAssertTrue(json.contains("\"system_prompt_mode\"") == false, "nil mode should be omitted")
-        XCTAssertTrue(json.contains("\"config_id\"") == false, "nil config_id should be omitted")
-        XCTAssertTrue(json.contains("\"source\":\"a-button\""))
+        // Decode into a raw object and assert the exact key set + snake_case
+        // (codec output shape is the on-disk contract C11-179 consumes).
+        let obj = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(Set(obj.keys), Set(["ts", "harness", "model", "effort", "provider", "source"]),
+                       "nil config_id / system_prompt_mode must be omitted; present axes use snake_case")
+        XCTAssertEqual(obj["source"] as? String, "a-button")
         let back = try AgentLaunchStatsDate.makeDecoder().decode(LaunchRecord.self, from: data)
         XCTAssertEqual(back, record)
     }
@@ -109,10 +111,13 @@ final class AgentLaunchStatsTests: XCTestCase {
         agg.since = iso("2026-07-01T00:00:00.000Z")
         agg.lastTs = iso("2026-07-20T21:14:00.000Z")
         let data = try AgentLaunchStatsDate.makeEncoder().encode(agg)
-        let json = String(data: data, encoding: .utf8)!
-        XCTAssertTrue(json.contains("\"totals\""), "tallies must nest under totals (design §2.4)")
-        XCTAssertTrue(json.contains("\"by_model\""))
-        XCTAssertTrue(json.contains("\"schema_version\":1"))
+        // Assert the nested `totals` envelope + snake_case via the decoded object
+        // shape — this is the file contract C11-179's `c11 config stats` reads.
+        let obj = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(obj["schema_version"] as? Int, 1)
+        let totals = try XCTUnwrap(obj["totals"] as? [String: Any], "tallies must nest under totals (design §2.4)")
+        XCTAssertEqual(Set(totals.keys), Set(["by_model", "by_harness", "by_provider"]))
+        XCTAssertEqual((totals["by_model"] as? [String: Int])?["opus"], 3)
         let back = try AgentLaunchStatsDate.makeDecoder().decode(AgentLaunchStatsAggregate.self, from: data)
         XCTAssertEqual(back, agg)
     }

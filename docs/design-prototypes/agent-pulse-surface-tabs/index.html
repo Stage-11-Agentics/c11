@@ -199,7 +199,7 @@
       display: flex;
       align-items: center;
       gap: 0;
-      padding: 0 2px 1px;
+      padding: 0 2px 1px 4px;
       overflow: hidden;
       color: var(--dim);
       background: transparent;
@@ -270,12 +270,16 @@
     }
     .state-mark > span { display: none; }
     .surface-tab > .state-mark {
-      width: 18px;
+      width: 10px;
       height: 18px;
-      flex: 0 0 18px;
-      place-items: center start;
-      margin-right: 5px;
+      flex: 0 0 10px;
+      place-items: center;
+      margin-right: 4px;
       color: var(--state);
+    }
+    .surface-tab > .state-mark.state-waiting {
+      width: 17px;
+      flex-basis: 17px;
     }
     .state-mark.state-running::before {
       width: 10px;

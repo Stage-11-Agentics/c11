@@ -12437,11 +12437,19 @@ extension Workspace: BonsplitDelegate {
             let current = AgentConfigLibraryStore.shared.current.default.mode
             try? AgentConfigLibraryStore.shared.setMode(current == .followRecent ? .pinned : .followRecent)
         }
-        // Tier-2 (configure sheet / stats view) is C11-182; no seam exists on
-        // main yet, so these are no-ops today. The Launch-stats row still shows a
-        // real inline headline below.
-        controller.onViewAll = {}
-        controller.onStats = {}
+        // Tier-2 (configure sheet / stats view) is C11-182, now on main. "View
+        // all" opens the editor focused on the current default (or a new config
+        // when the effective default is a transient with no id); "Launch stats"
+        // opens the stats view. `origin: .popover` lets the sheet order Settings
+        // out on close. The Launch-stats row also shows a real inline headline.
+        controller.onViewAll = {
+            let eff = AgentConfigLibraryStore.shared.effectiveDefault()
+            let focus: AgentConfigEditorFocus = eff.id.isEmpty ? .new : .config(eff.id)
+            AppDelegate.shared?.openAgentConfigEditor(focus: focus, origin: .popover)
+        }
+        controller.onStats = {
+            AppDelegate.shared?.openAgentConfigEditor(focus: .stats, origin: .popover)
+        }
         controller.onNotInstalledHint = { _ in }
 
         AgentPickerPresenter.shared.present(controller: controller, in: window, at: screenPoint)

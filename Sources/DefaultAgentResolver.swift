@@ -88,6 +88,12 @@ enum DefaultAgentResolver {
         if let flag = effortFlag(agent: agent, config: config, command: result) {
             result += " \(flag)"
         }
+        // System-prompt flag rides after model/effort but before claude-code's
+        // positional prompt (baked later in buildCommand), matching the launch
+        // line the planner composes.
+        if let flag = systemPromptFlag(agent: agent, config: config, command: result) {
+            result += " \(flag)"
+        }
         return result
     }
 
@@ -129,6 +135,51 @@ enum DefaultAgentResolver {
         return arg.render(effort)
     }
 
+    /// Whether c11 injects a system-prompt flag for this agent kind — driven by
+    /// the kind's launch template (`AgentManifest.launch.systemPromptArg`), the
+    /// same data-gated shape as `supportsModelFlag`/`supportsEffortFlag`.
+    static func supportsSystemPromptFlag(_ agent: AgentType) -> Bool {
+        AgentRegistry.shared.manifest(for: agent)?.launch.systemPromptArg != nil
+    }
+
+    /// The system-prompt flag to append for a launch, or `nil` when none should
+    /// be injected: the agent declares no system-prompt syntax, the setting is
+    /// `nil`/`.inherit`, the CLI has no flag for the requested mode, or the
+    /// operator already put a system-prompt flag in the command (their choice
+    /// wins, and we must not pass one on top). `replace` with empty text still
+    /// emits the flag with an empty value — the intentional blank-slate launch.
+    /// Visible for testing.
+    static func systemPromptFlag(agent: AgentType, config: AgentConfig, command: String) -> String? {
+        renderSystemPromptFlag(
+            AgentRegistry.shared.manifest(for: agent)?.launch.systemPromptArg,
+            setting: config.systemPrompt,
+            command: command
+        )
+    }
+
+    /// Template-based core of system-prompt injection, shared by the resolver
+    /// (`AgentType`-keyed) and the planner (`AgentLaunchTemplate`-keyed, so it
+    /// serves custom kebab kinds too). Pure; visible for testing.
+    static func renderSystemPromptFlag(
+        _ arg: AgentSystemPromptArg?,
+        setting: SystemPromptSetting?,
+        command: String
+    ) -> String? {
+        guard let arg,
+              let setting,
+              setting.mode != .inherit,
+              let flag = arg.flag(for: setting.mode) else { return nil }
+        // An operator who hardcoded *either* system-prompt flag owns the axis —
+        // c11 injects nothing on top (mirrors model/effort hardcoded detection).
+        let lower = command.lowercased()
+        if arg.detectTokens.contains(where: { lower.contains($0.lowercased()) }) { return nil }
+        // System-prompt text is free-form prose, so it is always single-quoted —
+        // the same treatment as the positional initial prompt (`shellQuote`),
+        // not the constrained-flag-value `shellQuoteIfNeeded`. `.replace` + ""
+        // therefore renders `--system-prompt ''`, the intended blank slate.
+        return "\(flag) \(shellQuote(setting.text))"
+    }
+
     /// Single-quote a value for /bin/sh, escaping embedded single quotes via
     /// the standard `'\''` close-reopen trick. Visible for testing.
     static func shellQuote(_ value: String) -> String {
@@ -165,6 +216,12 @@ struct AgentLaunchRequest: Equatable {
     var effort: String?
     var task: String?
     var prompt: String?
+    /// The caller's system-prompt choice (`--system-prompt-mode` + text on
+    /// `launch-agent`), or `nil` to fall back to the pinned Settings base (which
+    /// is itself `nil`/inherit by default). A non-inherit mode on a kind whose
+    /// template declares no system-prompt axis fails `system_prompt_unsupported`,
+    /// mirroring `--model`/`--effort` on an unsupported kind.
+    var systemPrompt: SystemPromptSetting?
     var extraEnv: [String: String] = [:]
 }
 
@@ -175,6 +232,7 @@ enum AgentLaunchPlanError: Error, Equatable {
     case emptyCommand(String)
     case modelFlagUnsupported(String)
     case effortFlagUnsupported(String)
+    case systemPromptUnsupported(String)
     case invalidEffort(value: String, allowed: [String])
 
     var code: String {
@@ -183,6 +241,7 @@ enum AgentLaunchPlanError: Error, Equatable {
         case .emptyCommand: return "empty_command"
         case .modelFlagUnsupported: return "model_flag_unsupported"
         case .effortFlagUnsupported: return "effort_flag_unsupported"
+        case .systemPromptUnsupported: return "system_prompt_unsupported"
         case .invalidEffort: return "invalid_effort"
         }
     }
@@ -198,6 +257,8 @@ enum AgentLaunchPlanError: Error, Equatable {
             return "agent '\(kind)' declares no model-flag syntax; --model is not supported for it"
         case .effortFlagUnsupported(let kind):
             return "agent '\(kind)' declares no effort-flag syntax; --effort is not supported for it"
+        case .systemPromptUnsupported(let kind):
+            return "agent '\(kind)' declares no system-prompt-flag syntax; --system-prompt-mode is not supported for it"
         case .invalidEffort(let value, let allowed):
             return "invalid effort '\(value)' — allowed: \(allowed.joined(separator: ", "))"
         }
@@ -242,6 +303,7 @@ enum AgentLaunchPlanner {
         let baseEnv: [String: String]
         let pinnedModel: String
         let pinnedEffort: String
+        let pinnedSystemPrompt: SystemPromptSetting?
 
         if let agentType {
             guard let manifest = AgentRegistry.shared.manifest(for: agentType) else {
@@ -255,12 +317,14 @@ enum AgentLaunchPlanner {
             baseEnv = config.envMap
             pinnedModel = config.model.trimmingCharacters(in: .whitespacesAndNewlines)
             pinnedEffort = config.effort.trimmingCharacters(in: .whitespacesAndNewlines)
+            pinnedSystemPrompt = config.systemPrompt
         } else if let userTemplate {
             template = userTemplate.template
             baseCommand = userTemplate.command.trimmingCharacters(in: .whitespacesAndNewlines)
             baseEnv = userTemplate.env ?? [:]
             pinnedModel = ""
             pinnedEffort = ""
+            pinnedSystemPrompt = nil
         } else {
             return .failure(.unknownAgentType(kind))
         }
@@ -311,6 +375,28 @@ enum AgentLaunchPlanner {
                 }
                 line += " \(arg.render(value))"
                 resolvedEffort = value
+            }
+        }
+
+        // System prompt: same precedence + hardcoded-wins ladder as model/effort.
+        // A caller-requested non-inherit mode on a kind with no system-prompt
+        // axis errors (parity with --model/--effort); a silent pinned base on
+        // such a kind never errors. The flag rides after model/effort, before
+        // the positional prompt below.
+        let requestedSystemPrompt = request.systemPrompt
+        if let requested = requestedSystemPrompt, requested.mode != .inherit, template.systemPromptArg == nil {
+            return .failure(.systemPromptUnsupported(kind))
+        }
+        if let arg = template.systemPromptArg {
+            let hardcoded = arg.detectTokens.contains { baseCommand.lowercased().contains($0.lowercased()) }
+            if hardcoded {
+                if let requested = requestedSystemPrompt, requested.mode != .inherit {
+                    warnings.append("configured command already pins a system prompt; --system-prompt-mode \(requested.mode.rawValue) ignored")
+                }
+            } else if let flag = DefaultAgentResolver.renderSystemPromptFlag(
+                arg, setting: requestedSystemPrompt ?? pinnedSystemPrompt, command: baseCommand
+            ) {
+                line += " \(flag)"
             }
         }
 

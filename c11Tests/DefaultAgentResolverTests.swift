@@ -380,6 +380,150 @@ final class DefaultAgentResolverTests: XCTestCase {
         )
     }
 
+    // MARK: - system-prompt axis
+
+    private func claudeConfig(
+        command: String = "claude --dangerously-skip-permissions",
+        model: String = "",
+        effort: String = "",
+        systemPrompt: SystemPromptSetting? = nil
+    ) -> AgentConfig {
+        AgentConfig(command: command, initialPrompt: "", envOverridesText: "",
+                    model: model, effort: effort, systemPrompt: systemPrompt)
+    }
+
+    func testSystemPromptAppendRendersBeforePositionalPrompt() {
+        let cfg = AgentConfig(
+            command: "claude --dangerously-skip-permissions", initialPrompt: "go",
+            envOverridesText: "",
+            systemPrompt: SystemPromptSetting(mode: .append, text: "Prefer terse answers.")
+        )
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions --append-system-prompt 'Prefer terse answers.' 'go'"
+        )
+    }
+
+    func testSystemPromptReplaceRenders() {
+        let cfg = claudeConfig(systemPrompt: SystemPromptSetting(mode: .replace, text: "You are a shell."))
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions --system-prompt 'You are a shell.'"
+        )
+    }
+
+    func testSystemPromptReplaceEmptyIsBlankSlate() {
+        // The Gregorovich blank slate: replace + "" still emits the flag with an
+        // empty single-quoted value.
+        let cfg = claudeConfig(systemPrompt: SystemPromptSetting(mode: .replace, text: ""))
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions --system-prompt ''"
+        )
+    }
+
+    func testSystemPromptInheritInjectsNothing() {
+        let cfg = claudeConfig(systemPrompt: SystemPromptSetting(mode: .inherit, text: "ignored"))
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions"
+        )
+    }
+
+    func testSystemPromptNilInjectsNothingByteIdentical() {
+        // The AC's byte-identical regression: nil systemPrompt renders exactly
+        // today's line (the default for every existing config).
+        let cfg = claudeConfig(model: "opus", systemPrompt: nil)
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions --model opus"
+        )
+    }
+
+    func testSystemPromptNotInjectedForAxislessHarness() {
+        // codex has no system-prompt axis — a stray setting must be ignored,
+        // never guessed into a flag.
+        let cfg = AgentConfig(
+            command: "codex --yolo", initialPrompt: "", envOverridesText: "",
+            systemPrompt: SystemPromptSetting(mode: .replace, text: "nope")
+        )
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .codex, config: cfg),
+            "codex --yolo"
+        )
+    }
+
+    func testSystemPromptHardcodedReplaceFlagWins() {
+        // Operator hardcoded --system-prompt — c11 injects nothing on top.
+        let cfg = claudeConfig(
+            command: "claude --dangerously-skip-permissions --system-prompt 'mine'",
+            systemPrompt: SystemPromptSetting(mode: .append, text: "extra")
+        )
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions --system-prompt 'mine'"
+        )
+    }
+
+    func testSystemPromptHardcodedAppendFlagWins() {
+        let cfg = claudeConfig(
+            command: "claude --dangerously-skip-permissions --append-system-prompt 'mine'",
+            systemPrompt: SystemPromptSetting(mode: .replace, text: "extra")
+        )
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions --append-system-prompt 'mine'"
+        )
+    }
+
+    func testSystemPromptOrdersAfterModelAndEffortBeforePrompt() {
+        let cfg = AgentConfig(
+            command: "claude --dangerously-skip-permissions", initialPrompt: "go",
+            envOverridesText: "", model: "opus", effort: "high",
+            systemPrompt: SystemPromptSetting(mode: .append, text: "hi")
+        )
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions --model opus --effort high --append-system-prompt 'hi' 'go'"
+        )
+    }
+
+    func testSystemPromptEscapesSingleQuote() {
+        let cfg = claudeConfig(systemPrompt: SystemPromptSetting(mode: .replace, text: "don't"))
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
+            #"claude --dangerously-skip-permissions --system-prompt 'don'\''t'"#
+        )
+    }
+
+    func testSystemPromptRidesLauncherForBareExport() {
+        // The bare export (C11_DEFAULT_AGENT_LAUNCH) carries the system-prompt
+        // flag but never the positional prompt.
+        let cfg = AgentConfig(
+            command: "claude --dangerously-skip-permissions", initialPrompt: "some prompt",
+            envOverridesText: "",
+            systemPrompt: SystemPromptSetting(mode: .append, text: "hi")
+        )
+        XCTAssertEqual(
+            DefaultAgentResolver.launcherCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions --append-system-prompt 'hi'"
+        )
+    }
+
+    func testSystemPromptByteIdenticalThroughDecodedLegacyConfig() throws {
+        // A config JSON written before the axis existed decodes systemPrompt=nil
+        // → inherit → today's exact line.
+        let cfg = try JSONDecoder().decode(
+            AgentConfig.self,
+            from: Data(#"{"command":"claude --dangerously-skip-permissions","initialPrompt":"","envOverridesText":"","model":"opus"}"#.utf8)
+        )
+        XCTAssertNil(cfg.systemPrompt)
+        XCTAssertEqual(
+            DefaultAgentResolver.buildCommand(agent: .claudeCode, config: cfg),
+            "claude --dangerously-skip-permissions --model opus"
+        )
+    }
+
     func testShellQuoteEmpty() {
         XCTAssertEqual(DefaultAgentResolver.shellQuote(""), "''")
     }
@@ -717,6 +861,140 @@ final class AgentLaunchPlannerTests: XCTestCase {
         XCTAssertFalse(UserAgentLaunchTemplate.isValidKind("-bad"))
         XCTAssertFalse(UserAgentLaunchTemplate.isValidKind(""))
         XCTAssertFalse(UserAgentLaunchTemplate.isValidKind(String(repeating: "a", count: 33)))
+    }
+
+    // MARK: system-prompt axis
+
+    func testPlannerSystemPromptAppendRenders() throws {
+        // The factory pins claude-code to --model opus; the system-prompt flag
+        // renders after it.
+        let p = try plan(AgentLaunchRequest(
+            kind: "claude-code",
+            systemPrompt: SystemPromptSetting(mode: .append, text: "be terse")
+        )).get()
+        XCTAssertEqual(
+            p.launchLine,
+            "claude --dangerously-skip-permissions --model opus --append-system-prompt 'be terse'"
+        )
+    }
+
+    func testPlannerSystemPromptReplaceBlankSlate() throws {
+        let p = try plan(AgentLaunchRequest(
+            kind: "claude-code",
+            systemPrompt: SystemPromptSetting(mode: .replace, text: "")
+        )).get()
+        XCTAssertEqual(p.launchLine, "claude --dangerously-skip-permissions --model opus --system-prompt ''")
+    }
+
+    func testPlannerSystemPromptRidesAfterModelEffortBeforePrompt() throws {
+        let p = try plan(AgentLaunchRequest(
+            kind: "claude-code", model: "opus", effort: "high", prompt: "do it",
+            systemPrompt: SystemPromptSetting(mode: .append, text: "hi")
+        )).get()
+        XCTAssertEqual(
+            p.launchLine,
+            "claude --dangerously-skip-permissions --model opus --effort high --append-system-prompt 'hi' 'do it'"
+        )
+    }
+
+    func testPlannerSystemPromptInheritInjectsNothing() throws {
+        let p = try plan(AgentLaunchRequest(
+            kind: "claude-code",
+            systemPrompt: SystemPromptSetting(mode: .inherit, text: "ignored")
+        )).get()
+        // inherit adds no system-prompt flag; the factory model pin still rides.
+        XCTAssertEqual(p.launchLine, "claude --dangerously-skip-permissions --model opus")
+    }
+
+    func testPlannerSystemPromptUnsupportedFails() {
+        guard case .failure(let err) = plan(AgentLaunchRequest(
+            kind: "grok",
+            systemPrompt: SystemPromptSetting(mode: .replace, text: "x")
+        )) else {
+            return XCTFail("expected failure")
+        }
+        XCTAssertEqual(err.code, "system_prompt_unsupported")
+    }
+
+    func testPlannerSystemPromptInheritOnAxislessHarnessSucceeds() throws {
+        // An explicit inherit is a no-op even on a harness with no axis — only a
+        // non-inherit request errors.
+        let p = try plan(AgentLaunchRequest(
+            kind: "grok",
+            systemPrompt: SystemPromptSetting(mode: .inherit, text: "")
+        )).get()
+        XCTAssertEqual(p.launchLine, "grok --always-approve")
+    }
+
+    func testPlannerRequestSystemPromptBeatsPinnedBase() throws {
+        var cfg = DefaultAgentConfig.factory
+        cfg.agents[.claudeCode] = AgentConfig(
+            command: "claude --dangerously-skip-permissions", initialPrompt: "",
+            envOverridesText: "",
+            systemPrompt: SystemPromptSetting(mode: .append, text: "pinned")
+        )
+        let p = try plan(
+            AgentLaunchRequest(
+                kind: "claude-code",
+                systemPrompt: SystemPromptSetting(mode: .replace, text: "requested")
+            ),
+            userDefault: cfg
+        ).get()
+        XCTAssertEqual(
+            p.launchLine,
+            "claude --dangerously-skip-permissions --system-prompt 'requested'"
+        )
+    }
+
+    func testPlannerPinnedSystemPromptAppliesWhenRequestOmits() throws {
+        var cfg = DefaultAgentConfig.factory
+        cfg.agents[.claudeCode] = AgentConfig(
+            command: "claude --dangerously-skip-permissions", initialPrompt: "",
+            envOverridesText: "",
+            systemPrompt: SystemPromptSetting(mode: .append, text: "pinned")
+        )
+        let p = try plan(AgentLaunchRequest(kind: "claude-code"), userDefault: cfg).get()
+        XCTAssertEqual(
+            p.launchLine,
+            "claude --dangerously-skip-permissions --append-system-prompt 'pinned'"
+        )
+    }
+
+    func testPlannerHardcodedSystemPromptWinsWithWarning() throws {
+        var cfg = DefaultAgentConfig.factory
+        cfg.agents[.claudeCode] = AgentConfig(
+            command: "claude --dangerously-skip-permissions --system-prompt 'mine'",
+            initialPrompt: "", envOverridesText: ""
+        )
+        let p = try plan(
+            AgentLaunchRequest(
+                kind: "claude-code",
+                systemPrompt: SystemPromptSetting(mode: .append, text: "extra")
+            ),
+            userDefault: cfg
+        ).get()
+        XCTAssertFalse(p.launchLine.contains("extra"))
+        XCTAssertEqual(p.launchLine, "claude --dangerously-skip-permissions --system-prompt 'mine'")
+        XCTAssertEqual(p.warnings.count, 1)
+    }
+
+    func testPlannerCustomKindRejectsSystemPrompt() {
+        // Custom kinds have no system-prompt axis in v1 → a non-inherit request
+        // errors rather than silently dropping.
+        let template = UserAgentLaunchTemplate(
+            command: "aider --yes-always", modelFlag: "--model", effortFlag: nil,
+            effortValues: nil, promptDelivery: "post-boot", env: nil
+        )
+        guard case .failure(let err) = plan(
+            AgentLaunchRequest(
+                kind: "aider",
+                systemPrompt: SystemPromptSetting(mode: .replace, text: "x")
+            ),
+            userTemplate: template
+        ) else {
+            return XCTFail("expected failure")
+        }
+        XCTAssertEqual(err.code, "system_prompt_unsupported")
     }
 
     // MARK: quoting

@@ -118,6 +118,30 @@ final class AgentManifestTests: XCTestCase {
         }
     }
 
+    /// System-prompt axis seed: claude-code declares both flags; every other
+    /// built-in has no system-prompt axis in v1 (`systemPromptArg == nil`), the
+    /// same gating shape as `effortArg`. Locks the per-harness seed so a new
+    /// harness that quietly grows a system-prompt flag (or claude losing one) is
+    /// caught here.
+    func testSystemPromptAxisSeed() {
+        for m in registry.all {
+            if m.kind == "claude-code" {
+                let arg = m.launch.systemPromptArg
+                XCTAssertNotNil(arg, "claude-code must declare a system-prompt axis")
+                XCTAssertEqual(arg?.appendFlag, "--append-system-prompt")
+                XCTAssertEqual(arg?.replaceFlag, "--system-prompt")
+                XCTAssertEqual(arg?.flag(for: .append), "--append-system-prompt")
+                XCTAssertEqual(arg?.flag(for: .replace), "--system-prompt")
+                XCTAssertNil(arg?.flag(for: .inherit))
+                XCTAssertEqual(Set(arg?.detectTokens ?? []),
+                               ["--append-system-prompt", "--system-prompt"])
+            } else {
+                XCTAssertNil(m.launch.systemPromptArg,
+                             "\(m.kind) must have no system-prompt axis in v1")
+            }
+        }
+    }
+
     /// Spot-check the literal claude resume string (the cd-prefixed branch),
     /// so a regression in the shared evaluator is caught even if phase1 drifts
     /// in lockstep.

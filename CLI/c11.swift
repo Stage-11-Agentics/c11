@@ -2224,9 +2224,39 @@ struct CMUXCLI {
                     launchEnvIdx += 1
                 }
             }
+            // System-prompt axis: --system-prompt-mode gates the axis; the text
+            // rides --system-prompt (inline) or --system-prompt-file (path),
+            // mutually exclusive like --prompt. Empty text is allowed (blank
+            // slate on replace), so --system-prompt-file does not reject an
+            // empty file the way --prompt-file rejects an empty prompt.
+            let sysPromptModeRaw = optionValue(commandArgs, name: "--system-prompt-mode")
+            let sysPromptInline = optionValue(commandArgs, name: "--system-prompt")
+            let sysPromptFile = optionValue(commandArgs, name: "--system-prompt-file")
+            if sysPromptInline != nil && sysPromptFile != nil {
+                throw CLIError(message: "launch-agent: --system-prompt and --system-prompt-file are mutually exclusive")
+            }
+            var sysPromptText = sysPromptInline
+            if let sysPromptFile {
+                let path = resolvePath(sysPromptFile)
+                guard let contents = try? String(contentsOfFile: path, encoding: .utf8) else {
+                    throw CLIError(message: "launch-agent: failed to read --system-prompt-file: \(path)")
+                }
+                sysPromptText = contents
+            }
+
             var params: [String: Any] = ["type": agentKind]
             if let v = optionValue(commandArgs, name: "--model") { params["model"] = v }
             if let v = optionValue(commandArgs, name: "--effort") { params["effort"] = v }
+            if let sysPromptModeRaw {
+                let mode = sysPromptModeRaw.lowercased()
+                guard ["inherit", "append", "replace"].contains(mode) else {
+                    throw CLIError(message: "launch-agent: --system-prompt-mode must be inherit|append|replace (got: \(sysPromptModeRaw))")
+                }
+                params["system_prompt_mode"] = mode
+                if let sysPromptText { params["system_prompt"] = sysPromptText }
+            } else if sysPromptText != nil {
+                throw CLIError(message: "launch-agent: --system-prompt/--system-prompt-file requires --system-prompt-mode append|replace")
+            }
             if let v = optionValue(commandArgs, name: "--task") { params["task"] = v }
             if let v = optionValue(commandArgs, name: "--title") { params["title"] = v }
             if let launchPrompt { params["prompt"] = launchPrompt }
@@ -8589,6 +8619,16 @@ struct CMUXCLI {
                                        ~/.config/c11/agents/<kind>.json
               --model <id>             Model to pin (rendered per the kind's template)
               --effort <tier>          Effort/thinking tier (errors if the kind has none)
+              --system-prompt-mode <m> inherit | append | replace. append/replace
+                                       inject the kind's system-prompt flag (errors
+                                       if the kind has no system-prompt axis;
+                                       claude-code only in v1)
+              --system-prompt <text>   System-prompt text (append adds to the
+                                       default; replace supplants it; empty +
+                                       replace = blank slate)
+              --system-prompt-file <p> Read the system-prompt text from a file
+                                       (mutually exclusive with --system-prompt;
+                                       an empty file is allowed = blank slate)
               --task <id>              Task identifier for sidebar telemetry
               --pane <id|ref>          Target pane (default: focused pane)
               --workspace <id|ref>     Target workspace (default: $C11_WORKSPACE_ID)
@@ -8607,6 +8647,10 @@ struct CMUXCLI {
               c11 launch-agent --type claude-code --model opus --effort high
               c11 launch-agent --type codex --model gpt-5.2 --new-workspace --json
               c11 launch-agent --type opencode --prompt-file /tmp/brief.md --pane pane:2
+              c11 launch-agent --type claude-code --system-prompt-mode append \\
+                --system-prompt 'Prefer terse answers.'
+              c11 launch-agent --type claude-code --system-prompt-mode replace \\
+                --system-prompt ''      # Gregorovich blank slate
             """
         case "new-surface":
             return """
@@ -16593,7 +16637,7 @@ struct CMUXCLI {
           claude-hook <session-start|stop|notification> [--workspace <id|ref>] [--surface <id|ref>]
           set-agent --type <terminal_type> [--model <id>] [--task <id>] [--role <id>] [--surface <id|ref>] [--workspace <id|ref>]
           default-agent {get | set <type> | launch [--in-surface <id|ref> | --pane <id>] [--agent <type>] [--cwd <path>] [--prompt <text> | --prompt-file <path>]}
-          launch-agent --type <kind> [--model <id>] [--effort <tier>] [--task <id>] [--pane <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--title <text>] [--env K=V ...] [--json]
+          launch-agent --type <kind> [--model <id>] [--effort <tier>] [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] [--task <id>] [--pane <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--title <text>] [--env K=V ...] [--json]
           set-metadata (--json '{...}' | --key <K> --value <V> [--type string|number|bool|json]) [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>] [--mode merge|replace] [--source <src>]
           get-metadata [--key <K> ...] [--sources] [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
           clear-metadata [--key <K> ...] [--source <src>] [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]

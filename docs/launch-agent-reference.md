@@ -6,7 +6,10 @@ stamped at birth, machine-readable refs back to the caller.
 
 ```
 c11 launch-agent --type <kind>
-    [--model <id>] [--effort <tier>] [--task <id>]
+    [--model <id>] [--effort <tier>]
+    [--system-prompt-mode inherit|append|replace]
+    [--system-prompt <text> | --system-prompt-file <path>]
+    [--task <id>]
     [--pane <ref> | --workspace <ref> | --new-workspace] [--cwd <path>]
     [--prompt <text> | --prompt-file <path>]
     [--title <text>] [--env KEY=VALUE ...] [--json]
@@ -66,6 +69,41 @@ If the kind's template declares no model (or effort) syntax and the caller passe
 template declares an allowed-values list (claude effort tiers, pi/omp thinking
 levels), the value is validated early with a friendly error; otherwise it is
 passed through and the agent CLI enforces.
+
+### System prompt (`--system-prompt-mode`, `--system-prompt` / `--system-prompt-file`)
+
+A launch-time override of the agent's system prompt, injected as a flag using
+the kind's launch template — data, not caller knowledge. Three modes:
+
+- `inherit` (the absence of the flag): leave the harness default untouched — no
+  flag injected. This is the default when `--system-prompt-mode` is omitted.
+- `append`: add the text on top of the harness default (claude
+  `--append-system-prompt '<text>'`).
+- `replace`: supplant the default with the text (claude `--system-prompt
+  '<text>'`). An **empty** text is allowed and intentional — the blank-slate
+  launch (`--system-prompt ''`).
+
+The text rides `--system-prompt <text>` (inline) or `--system-prompt-file
+<path>` (mutually exclusive, for prompts longer than a sentence). Unlike
+`--prompt-file`, an **empty** system-prompt file is accepted (it is the blank
+slate). System-prompt text is free-form prose and is always single-quoted, the
+same treatment as the positional initial prompt.
+
+Precedence, top wins (mirrors `--model`/`--effort`):
+
+1. a system-prompt flag the operator hardcoded into the configured command
+   (either `--append-system-prompt` or `--system-prompt` — c11 injects nothing
+   on top, with a warning if a mode was also requested),
+2. the `--system-prompt-mode` CLI request,
+3. the system prompt pinned in Settings (the config base layer),
+4. nothing — inherit.
+
+If the kind's template declares no system-prompt syntax and the caller passed a
+non-`inherit` `--system-prompt-mode`, the launch fails with
+`system_prompt_unsupported` rather than silently dropping the request. **v1 seeds
+the axis for `claude-code` only**; every other built-in (and custom kinds) has no
+system-prompt axis, so a non-inherit request for them errors. The system-prompt
+flag renders after `--model`/`--effort` and before the positional prompt.
 
 ### Placement (`--pane` | `--workspace` | `--new-workspace`)
 
@@ -141,6 +179,7 @@ Errors are structured (`--json` gives `{"ok":false,"error":{"code":…,"message"
 | `unknown_agent_type` | `--type` is not a built-in kind and no user template exists |
 | `empty_command` | the kind resolved to an empty launch command (unconfigured `custom`/template) |
 | `model_flag_unsupported` / `effort_flag_unsupported` | `--model`/`--effort` passed for a kind whose template declares no syntax for it |
+| `system_prompt_unsupported` | a non-inherit `--system-prompt-mode` passed for a kind whose template declares no system-prompt syntax |
 | `invalid_effort` | value outside the template's declared allowed list |
 | `invalid_params` | bad `cwd`, or `new_workspace` combined with `pane_id`/`workspace_id` |
 | `not_found` | target workspace or pane doesn't resolve |
@@ -163,25 +202,34 @@ struct AgentLaunchTemplate {
     let effortArg: AgentLaunchArgStyle?  // how "--effort <tier>" renders
     let effortValues: [String]           // non-empty → validated early
     let promptDelivery: AgentPromptDelivery  // .positional | .flag(String) | .postBoot
+    let systemPromptArg: AgentSystemPromptArg?  // append/replace flags, or nil (no axis)
 }
 enum AgentLaunchArgStyle {
     case flag(String)       // "--model" → `--model <v>`
     case configKV(String)   // "model_reasoning_effort" → `-c k=<v>`
 }
+struct AgentSystemPromptArg {
+    let appendFlag: String?   // append mode → `<appendFlag> '<text>'`
+    let replaceFlag: String?  // replace mode → `<replaceFlag> '<text>'` (empty allowed)
+}
 ```
 
 ### Built-in seeds
 
-| kind | model | effort | effort values | prompt |
-|---|---|---|---|---|
-| `claude-code` | `--model` | `--effort` | low, medium, high, xhigh, max | positional |
-| `codex` | `--model` | `-c model_reasoning_effort=` | (pass-through) | positional |
-| `grok` | `--model` | — | | positional |
-| `kimi` | `--model` | — | | post-boot |
-| `opencode` | `--model` (provider/model) | — | | positional (`run` form) |
-| `github-copilot` | `--model` | — | | post-boot |
-| `pi` | `--model` | `--thinking` | off, minimal, low, medium, high, xhigh | positional |
-| `omp` | `--model` | `--thinking` | off, minimal, low, medium, high, xhigh | positional |
+| kind | model | effort | effort values | system prompt | prompt |
+|---|---|---|---|---|---|
+| `claude-code` | `--model` | `--effort` | low, medium, high, xhigh, max | `--append-system-prompt` / `--system-prompt` | positional |
+| `codex` | `--model` | `-c model_reasoning_effort=` | (pass-through) | — | positional |
+| `grok` | `--model` | — | | — | positional |
+| `kimi` | `--model` | — | | — | post-boot |
+| `opencode` | `--model` (provider/model) | — | | — | positional (`run` form) |
+| `github-copilot` | `--model` | — | | — | post-boot |
+| `pi` | `--model` | `--thinking` | off, minimal, low, medium, high, xhigh | — | positional |
+| `omp` | `--model` | `--thinking` | off, minimal, low, medium, high, xhigh | — | positional |
+
+The system-prompt axis is claude-code-only in v1 (other harnesses map to their
+equivalent flag in a later phase, the same way effort was staged); a non-inherit
+system-prompt request for a kind with `—` errors `system_prompt_unsupported`.
 
 Notes: opencode's prompt is positional **because** its factory command is the
 `opencode run` form; an operator who reconfigures the base command to the bare
@@ -217,10 +265,17 @@ CLI `launch-agent` is a thin client over one v2 method, `agent.launch`:
 ```json
 { "method": "agent.launch",
   "params": { "type": "codex", "model": "gpt-5.2", "effort": "high",
+              "system_prompt_mode": "append", "system_prompt": "…",
               "task": "sekhem-42", "prompt": "…", "title": "…",
               "pane_id": "<uuid>" | "workspace_id": "<uuid>" | "new_workspace": true,
               "cwd": "/path", "env": {"K": "V"} } }
 ```
+
+`system_prompt_mode` ∈ `inherit | append | replace` gates the axis;
+`system_prompt` carries the text (empty allowed on `replace` = blank slate). An
+unparseable mode is treated as no override; the planner is the single validation
+authority (it emits `system_prompt_unsupported` for a non-inherit mode on a kind
+with no axis).
 
 `pane_id`/`workspace_id` take UUIDs — the CLI resolves `pane:N`/`workspace:N`
 short refs client-side before sending, and direct socket callers must do the

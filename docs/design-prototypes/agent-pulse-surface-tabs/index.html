@@ -24,6 +24,7 @@
       --cold: #707681;
       --harness-claude: #d88968;
       --harness-codex: #69b5a8;
+      --harness-other: #6f9ed6;
       --harness-shell: #818791;
       --badge-ink: #08090b;
       --shadow: rgba(0, 0, 0, .72);
@@ -51,6 +52,7 @@
       --cold: #7f8289;
       --harness-claude: #a84f32;
       --harness-codex: #28776d;
+      --harness-other: #386fa8;
       --harness-shell: #6d7178;
       --badge-ink: #fffdf8;
       --shadow: rgba(35, 34, 30, .25);
@@ -225,6 +227,7 @@
     .surface-tab.state-cold { --state: var(--cold); color: color-mix(in srgb, var(--dim) 74%, transparent); }
     .surface-tab.harness-claude { --harness: var(--harness-claude); }
     .surface-tab.harness-codex { --harness: var(--harness-codex); }
+    .surface-tab.harness-other { --harness: var(--harness-other); }
     .surface-tab.harness-shell { --harness: var(--harness-shell); }
     body.neutral-harness .surface-tab { --harness: var(--text-soft); }
     .surface-tab.state-waiting {
@@ -283,27 +286,25 @@
       font-size: 10px;
     }
     .surface-tab.state-running > .state-mark {
-      color: var(--badge-ink);
-      background: var(--harness);
-      border-color: var(--harness);
-      border-top-color: color-mix(in srgb, var(--badge-ink) 74%, transparent);
-      box-shadow: 0 0 7px color-mix(in srgb, var(--harness) 24%, transparent);
+      color: var(--harness);
+      background: transparent;
+      border-color: color-mix(in srgb, var(--harness) 44%, transparent);
+      border-top-color: var(--harness);
       animation: turn 1.8s linear infinite;
     }
     .surface-tab.state-running > .state-mark span { animation: counter-turn 1.8s linear infinite; }
     .surface-tab.state-idle > .state-mark {
-      color: var(--badge-ink);
-      background: var(--harness);
-      border-color: var(--harness);
+      color: var(--harness);
+      background: transparent;
+      border-color: color-mix(in srgb, var(--harness) 78%, transparent);
       border-radius: 4px;
-      box-shadow: 0 0 7px color-mix(in srgb, var(--harness) 24%, transparent);
     }
     .surface-tab.state-cold > .state-mark {
       color: var(--harness);
-      background: color-mix(in srgb, var(--harness) 12%, transparent);
-      border-color: var(--harness);
+      background: transparent;
+      border-color: color-mix(in srgb, var(--harness) 68%, transparent);
       border-style: dotted;
-      opacity: .9;
+      opacity: .8;
     }
     .surface-tab.state-waiting > .state-mark {
       color: var(--badge-ink);
@@ -461,19 +462,14 @@
     .legend-row.waiting { --legend-state: var(--gold); }
     .legend-row strong { color: var(--text-soft); font: 9px var(--mono); font-weight: 650; text-transform: uppercase; }
     .legend-row span:last-child { color: var(--dim); font: 9px/1.3 var(--mono); }
-    .legend-row.running .state-mark,
-    .legend-row.idle .state-mark {
-      color: var(--badge-ink);
-      background: var(--text-soft);
-      border-color: var(--text-soft);
-    }
-    .legend-row.running .state-mark { border-top-color: color-mix(in srgb, var(--badge-ink) 74%, transparent); }
+    .legend-row.running .state-mark { border-color: color-mix(in srgb, var(--text-soft) 44%, transparent); border-top-color: var(--text-soft); }
     .legend-row.idle .state-mark { border-radius: 3px; }
     .legend-row.cold .state-mark { border-style: dotted; }
     .legend-row.waiting .state-mark { color: var(--badge-ink); background: var(--gold); border-color: var(--gold); border-radius: 3px; }
     .harness-key {
       display: flex;
       align-items: center;
+      flex-wrap: wrap;
       gap: 10px;
       margin-top: 12px;
       color: var(--dim);
@@ -485,6 +481,7 @@
     .harness-swatch { width: 7px; height: 7px; border-radius: 50%; background: var(--swatch); }
     .harness-swatch.claude { --swatch: var(--harness-claude); }
     .harness-swatch.codex { --swatch: var(--harness-codex); }
+    .harness-swatch.other { --swatch: var(--harness-other); }
     .harness-swatch.shell { --swatch: var(--harness-shell); }
     .option-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
     .option-button[aria-pressed="true"] { color: var(--gold); border-color: color-mix(in srgb, var(--gold) 55%, var(--rule)); }
@@ -602,6 +599,7 @@
             <div class="harness-key" aria-label="Harness color key">
               <span><i class="harness-swatch claude"></i> Claude</span>
               <span><i class="harness-swatch codex"></i> Codex</span>
+              <span><i class="harness-swatch other"></i> Other agent</span>
               <span><i class="harness-swatch shell"></i> Shell</span>
             </div>
 
@@ -615,7 +613,7 @@
             </div>
 
             <div class="collision-note">
-              <b>One badge, two reads.</b> R/I/C/W names state; solid badge hue names the harness. Waiting overrides hue with gold alone. Close remains hard-right.
+              <b>One badge, two reads.</b> R/I/C/W names state; quiet outline hue names the harness. Other agent harnesses share blue. Waiting overrides hue with gold alone. Close remains hard-right.
             </div>
           </aside>
         </div>
@@ -632,11 +630,11 @@
       { id: 72, title: 'Release staging', state: 'running', harness: 'claude', description: 'Building and validating the signed release candidate.' },
       { id: 77, title: 'Mailbox attribution', state: 'idle', harness: 'codex', description: 'At the prompt after completing the attribution copy pass.' },
       { id: 91, title: 'Socket watchdog', state: 'cold', harness: 'shell', description: 'Resumable terminal; no agent process is currently live.' },
-      { id: 105, title: 'Browser regression sweep', state: 'running', harness: 'claude', description: 'Exercising browser navigation, snapshots, and auth-state restore.' },
-      { id: 118, title: 'Theme conformance', state: 'idle', harness: 'codex', description: 'Dark and light c11 theme slot review is complete.' },
+      { id: 105, title: 'Browser regression sweep', state: 'running', harness: 'opencode', description: 'Exercising browser navigation, snapshots, and auth-state restore.' },
+      { id: 118, title: 'Theme conformance', state: 'idle', harness: 'oh-my-pi', description: 'Dark and light c11 theme slot review is complete.' },
       { id: 126, title: 'Japanese localization', state: 'cold', harness: 'claude', description: 'Session ended after committing the locale update.' },
       { id: 144, title: 'Workspace snapshot recovery validation and persistence audit', state: 'waiting', harness: 'codex', description: 'Needs approval to replace the corrupted fixture with a captured snapshot.' },
-      { id: 158, title: 'Docs pruning', state: 'idle', harness: 'claude', description: 'At the prompt with a clean documentation diff.' },
+      { id: 158, title: 'Docs pruning', state: 'idle', harness: 'pi', description: 'At the prompt with a clean documentation diff.' },
       { id: 203, title: 'Flaky focus test diagnosis', state: 'running', harness: 'codex', description: 'Repeating the focused-pane event test under contention.' }
     ];
 
@@ -650,6 +648,7 @@
     const harnessColors = {
       claude: 'var(--harness-claude)',
       codex: 'var(--harness-codex)',
+      other: 'var(--harness-other)',
       shell: 'var(--harness-shell)'
     };
 
@@ -664,10 +663,14 @@
       return Math.max(112, Math.min(190, 52 + idCost + surface.title.length * 4));
     }
 
+    function harnessFamily(harness) {
+      return ['claude', 'codex', 'shell'].includes(harness) ? harness : 'other';
+    }
+
     function tabMarkup(surface) {
       const copy = stateCopy[surface.state];
       return `
-        <div class="surface-tab state-${surface.state} harness-${surface.harness}${surface.id === selectedId ? ' selected' : ''}"
+        <div class="surface-tab state-${surface.state} harness-${harnessFamily(surface.harness)}${surface.id === selectedId ? ' selected' : ''}"
              style="--tab-width:${widthFor(surface)}px"
              data-id="${surface.id}" role="tab" tabindex="0"
              aria-selected="${surface.id === selectedId}" aria-label="${surface.title}, ${copy.label}, ${surface.harness} harness"
@@ -719,7 +722,7 @@
       const copy = stateCopy[surface.state];
       const harnessColor = document.body.classList.contains('neutral-harness')
         ? 'var(--text-soft)'
-        : harnessColors[surface.harness];
+        : harnessColors[harnessFamily(surface.harness)];
       const badgeColor = surface.state === 'waiting' ? copy.color : harnessColor;
       const waitingCount = surfaces.filter(item => item.state === 'waiting').length;
       document.getElementById('surfaceTitle').textContent = `surface:${surface.id} · ${surface.title}`;
@@ -742,7 +745,7 @@
         <br>
         <div><span class="blue">selection</span> → neutral top rail + raised fill</div>
         <div><span class="gold">operator turn</span> → prominent gold W alone</div>
-        <div><span class="green">harness</span> → badge hue; no second glyph</div>`;
+        <div><span class="green">harness</span> → quiet outline hue; other agents share blue</div>`;
     }
 
     function setSelectedState(state) {

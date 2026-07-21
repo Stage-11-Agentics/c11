@@ -6526,6 +6526,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                         injected.surfaces[idx].metadata = meta
                     }
                 }
+                // C11-178 rail-1: an agent command was actually injected into this
+                // surface → record the blueprint launch. Config-only read,
+                // dispatched off the launch path.
+                if let store = AgentLaunchStatsStore.shared {
+                    let stats = ResolvedLaunch(harness: resolved.agent.rawValue, model: cfg.model, effort: cfg.effort)
+                    DispatchQueue.global(qos: .utility).async { store.recordLaunch(stats, source: .blueprint) }
+                }
             }
         }
 

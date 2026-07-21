@@ -1093,6 +1093,15 @@ extension TerminalController {
                 "surface_ref": self.v2Ref(kind: .surface, uuid: panel.id),
                 "warnings": warnings
             ])
+
+            // C11-178 rail-1: record the resolved launch. `plan` exposes model/
+            // effort as scalars ("" = inherit → normalized to nil). Tagged
+            // `.launchAgent`; raw-socket vs CLI is indistinguishable here without
+            // a wire param (deferred to C11-179). Dispatched off-main.
+            if let store = AgentLaunchStatsStore.shared {
+                let stats = ResolvedLaunch(harness: plan.kind, model: plan.model, effort: plan.effort)
+                DispatchQueue.global(qos: .utility).async { store.recordLaunch(stats, source: .launchAgent) }
+            }
         }) != nil else {
             return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)
         }

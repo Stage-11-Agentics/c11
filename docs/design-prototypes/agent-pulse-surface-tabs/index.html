@@ -19,13 +19,13 @@
       --dim: #777b84;
       --selection: #f0f0ed;
       --gold: #d0aa45;
-      --gold-soft: rgba(208, 170, 69, .15);
       --running: #79aee8;
       --idle: #78b59e;
       --cold: #707681;
       --harness-claude: #d88968;
       --harness-codex: #69b5a8;
       --harness-shell: #818791;
+      --badge-ink: #08090b;
       --shadow: rgba(0, 0, 0, .72);
       --terminal-line: #b8bcc4;
       --mono: "SFMono-Regular", "JetBrains Mono", Menlo, monospace;
@@ -46,13 +46,13 @@
       --dim: #777a81;
       --selection: #24252a;
       --gold: #9b7415;
-      --gold-soft: rgba(155, 116, 21, .12);
       --running: #326d9e;
       --idle: #357b61;
       --cold: #7f8289;
       --harness-claude: #a84f32;
       --harness-codex: #28776d;
       --harness-shell: #6d7178;
+      --badge-ink: #fffdf8;
       --shadow: rgba(35, 34, 30, .25);
       --terminal-line: #4b4e55;
     }
@@ -229,22 +229,6 @@
     body.neutral-harness .surface-tab { --harness: var(--text-soft); }
     .surface-tab.state-waiting {
       --state: var(--gold);
-      color: color-mix(in srgb, var(--text) 92%, var(--gold));
-      background: linear-gradient(90deg, var(--gold-soft), transparent 76%);
-    }
-    .surface-tab.state-waiting::after {
-      content: "";
-      position: absolute;
-      right: 0;
-      bottom: 0;
-      left: 0;
-      height: 3px;
-      background: repeating-linear-gradient(90deg, var(--gold) 0 7px, transparent 7px 10px);
-    }
-    .surface-tab.selected.state-waiting {
-      background:
-        linear-gradient(90deg, var(--gold-soft), transparent 80%),
-        var(--panel-raised);
     }
     .surface-tab.state-changed { animation: state-arrival .9s ease-out 1; }
     @keyframes state-arrival {
@@ -290,27 +274,42 @@
       font-weight: 700;
     }
     .surface-tab > .state-mark {
-      width: 20px;
-      height: 20px;
-      flex: 0 0 20px;
-      margin-right: 4px;
+      width: 22px;
+      height: 22px;
+      flex: 0 0 22px;
+      margin-right: 5px;
       color: var(--harness);
       border-color: color-mix(in srgb, var(--harness) 76%, transparent);
       font-size: 10px;
     }
     .surface-tab.state-running > .state-mark {
-      border-color: color-mix(in srgb, var(--harness) 28%, transparent);
-      border-top-color: var(--harness);
+      color: var(--badge-ink);
+      background: var(--harness);
+      border-color: var(--harness);
+      border-top-color: color-mix(in srgb, var(--badge-ink) 74%, transparent);
+      box-shadow: 0 0 7px color-mix(in srgb, var(--harness) 24%, transparent);
       animation: turn 1.8s linear infinite;
     }
     .surface-tab.state-running > .state-mark span { animation: counter-turn 1.8s linear infinite; }
-    .surface-tab.state-idle > .state-mark { border-radius: 3px; }
-    .surface-tab.state-cold > .state-mark { border-style: dotted; opacity: .72; }
+    .surface-tab.state-idle > .state-mark {
+      color: var(--badge-ink);
+      background: var(--harness);
+      border-color: var(--harness);
+      border-radius: 4px;
+      box-shadow: 0 0 7px color-mix(in srgb, var(--harness) 24%, transparent);
+    }
+    .surface-tab.state-cold > .state-mark {
+      color: var(--harness);
+      background: color-mix(in srgb, var(--harness) 12%, transparent);
+      border-color: var(--harness);
+      border-style: dotted;
+      opacity: .9;
+    }
     .surface-tab.state-waiting > .state-mark {
-      color: var(--void);
+      color: var(--badge-ink);
       background: var(--gold);
       border-color: var(--gold);
-      border-radius: 3px;
+      border-radius: 4px;
       box-shadow: 0 0 8px color-mix(in srgb, var(--gold) 30%, transparent);
     }
     @keyframes turn { to { transform: rotate(360deg); } }
@@ -462,10 +461,16 @@
     .legend-row.waiting { --legend-state: var(--gold); }
     .legend-row strong { color: var(--text-soft); font: 9px var(--mono); font-weight: 650; text-transform: uppercase; }
     .legend-row span:last-child { color: var(--dim); font: 9px/1.3 var(--mono); }
-    .legend-row.running .state-mark { border-top-color: var(--text-soft); }
+    .legend-row.running .state-mark,
+    .legend-row.idle .state-mark {
+      color: var(--badge-ink);
+      background: var(--text-soft);
+      border-color: var(--text-soft);
+    }
+    .legend-row.running .state-mark { border-top-color: color-mix(in srgb, var(--badge-ink) 74%, transparent); }
     .legend-row.idle .state-mark { border-radius: 3px; }
     .legend-row.cold .state-mark { border-style: dotted; }
-    .legend-row.waiting .state-mark { color: var(--void); background: var(--gold); border-color: var(--gold); border-radius: 3px; }
+    .legend-row.waiting .state-mark { color: var(--badge-ink); background: var(--gold); border-color: var(--gold); border-radius: 3px; }
     .harness-key {
       display: flex;
       align-items: center;
@@ -592,7 +597,7 @@
               <div class="legend-row running"><span class="state-mark"><span>R</span></span><strong>Running</strong><span>R + slow rim; work is moving</span></div>
               <div class="legend-row idle"><span class="state-mark"><span>I</span></span><strong>Idle</strong><span>I; prompt is ready</span></div>
               <div class="legend-row cold"><span class="state-mark"><span>C</span></span><strong>Cold</strong><span>C + dotted shell; no live session</span></div>
-              <div class="legend-row waiting"><span class="state-mark"><span>W</span></span><strong>Your turn</strong><span>W + striped demand rail</span></div>
+              <div class="legend-row waiting"><span class="state-mark"><span>W</span></span><strong>Your turn</strong><span>prominent gold W; no second signal</span></div>
             </div>
             <div class="harness-key" aria-label="Harness color key">
               <span><i class="harness-swatch claude"></i> Claude</span>
@@ -610,7 +615,7 @@
             </div>
 
             <div class="collision-note">
-              <b>One badge, two reads.</b> R/I/C/W names state; badge hue names the harness. Waiting overrides hue with gold and the demand rail. Close remains hard-right.
+              <b>One badge, two reads.</b> R/I/C/W names state; solid badge hue names the harness. Waiting overrides hue with gold alone. Close remains hard-right.
             </div>
           </aside>
         </div>
@@ -736,7 +741,7 @@
         <div class="dim">The tab strip keeps that answer visible through selection, truncation, and overflow.</div>
         <br>
         <div><span class="blue">selection</span> → neutral top rail + raised fill</div>
-        <div><span class="gold">operator turn</span> → W + patterned lower rail</div>
+        <div><span class="gold">operator turn</span> → prominent gold W alone</div>
         <div><span class="green">harness</span> → badge hue; no second glyph</div>`;
     }
 

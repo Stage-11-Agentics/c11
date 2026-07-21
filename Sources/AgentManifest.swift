@@ -124,26 +124,13 @@ enum AgentLaunchArgStyle: Sendable, Equatable {
     }
 }
 
-/// An operator's system-prompt choice for a launch: which of the three modes,
-/// and the prompt text (ignored for `.inherit`; `""` + `.replace` is the
-/// intentional blank-slate launch). This is the primitive the launch axis
-/// consumes; the sibling config-overlay stores it on a saved config.
-struct SystemPromptSetting: Codable, Equatable, Sendable {
-    /// `inherit` leaves the harness default untouched (no flag injected);
-    /// `append` adds `text` on top of the default; `replace` supplants the
-    /// default with `text` (empty `text` = blank slate).
-    enum Mode: String, Codable, Sendable, CaseIterable { case inherit, append, replace }
-    var mode: Mode
-    /// The system-prompt text. Ignored when `mode == .inherit`; an empty string
-    /// with `.replace` is the Gregorovich blank-slate launch (still emits the
-    /// flag with an empty value).
-    var text: String
-
-    init(mode: Mode, text: String = "") {
-        self.mode = mode
-        self.text = text
-    }
-}
+// `SystemPromptSetting` (the operator's three-mode system-prompt choice) is
+// defined in `AgentConfigLibraryStore.swift` — the single canonical home, a
+// member of both the app and CLI targets so the config store resolves it
+// without importing app-only AgentManifest. The launch/sysprompt axis
+// (`AgentSystemPromptArg` below) and the config-overlay store share that one
+// definition. (C11-176/C11-177 wave-1 reconciliation: both tickets landed the
+// same design §1.4 primitive; the duplicate that lived here was removed.)
 
 /// How a system-prompt override renders onto an agent's command line. Unlike
 /// model/effort (one flag each), the system-prompt axis has two delivery flags —

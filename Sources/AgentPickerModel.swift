@@ -214,8 +214,9 @@ struct AgentPickerModel {
     }
 
     /// Apply a key. Arrows mutate `selectedIndex` and return `.none`; everything
-    /// else resolves to a `PickerAction`. `option` = the ⌥ modifier (⌥⏎ = pin).
-    mutating func handleKey(_ key: PickerKey, option: Bool = false) -> PickerAction {
+    /// else resolves to a `PickerAction`. `option` = the ⌥ modifier (⌥⏎ = pin),
+    /// `command` = the ⌘ modifier (⌘⏎ = View all, never launches).
+    mutating func handleKey(_ key: PickerKey, option: Bool = false, command: Bool = false) -> PickerAction {
         switch key {
         case .down:
             guard maxIndex >= 0 else { return .none }
@@ -232,10 +233,15 @@ struct AgentPickerModel {
             let cfg = configs[n - 1]
             return launchOrNoop(cfg) // installed → launch, else no-op (caller may hint)
         case .enter:
-            // Recent row focused → launch the recent config.
+            // ⌘⏎ opens the tier-2 configure sheet (View all) — never launches
+            // (prototype: `if (e.metaKey){ openSheet(...); return; }`).
+            if command { return .viewAll }
+            // Recent row focused → pin (⌥) or launch it, honoring the installed
+            // guard exactly like the shortlist/digit paths (prototype: `if altKey
+            // pin; else if installed launch`).
             if hasRecent, selectedIndex == configs.count {
-                if let rc = recentConfig { return .launch(rc) }
-                return .none
+                guard let rc = recentConfig else { return .none }
+                return option ? .pin(rc) : launchOrNoop(rc)
             }
             // A shortlist row focused → pin (⌥) or launch it.
             if let cfg = selectedConfig {
@@ -246,7 +252,9 @@ struct AgentPickerModel {
             if option {
                 return effectiveDefault.id.isEmpty ? .none : .pin(effectiveDefault)
             }
-            return .launch(effectiveDefault)
+            // Plain launch runs through the installed guard too, so an uninstalled
+            // pinned default no-ops symmetrically with its 1–9 digit.
+            return launchOrNoop(effectiveDefault)
         }
     }
 
@@ -345,11 +353,13 @@ struct AgentPickerModel {
         let secs = max(0, now.timeIntervalSince(date))
         if secs < 45 { return String(localized: "agentPicker.recent.justNow", defaultValue: "just now") }
         if secs < 3600 {
-            let m = Int((secs / 60).rounded())
+            // Clamp so the top of the bucket (e.g. 59m59s) shows "59m ago", never
+            // "60m ago" — 3600s rolls cleanly to "1h ago".
+            let m = min(59, Int((secs / 60).rounded()))
             return String(localized: "agentPicker.recent.minutesAgo", defaultValue: "\(m)m ago")
         }
         if secs < 86_400 {
-            let h = Int((secs / 3600).rounded())
+            let h = min(23, Int((secs / 3600).rounded()))
             return String(localized: "agentPicker.recent.hoursAgo", defaultValue: "\(h)h ago")
         }
         let d = Int((secs / 86_400).rounded())

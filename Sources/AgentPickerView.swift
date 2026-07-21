@@ -62,8 +62,8 @@ final class AgentPickerController: ObservableObject {
 
     // MARK: Key + gesture handling
 
-    func handleKey(_ key: PickerKey, option: Bool) {
-        dispatch(model.handleKey(key, option: option))
+    func handleKey(_ key: PickerKey, option: Bool, command: Bool = false) {
+        dispatch(model.handleKey(key, option: option, command: command))
     }
 
     /// A pointer click on a shortlist row: ⌥ pins, a plain click launches (or hints
@@ -105,7 +105,9 @@ final class AgentPickerController: ObservableObject {
     private func refresh() {
         guard var next = rebuild() else { return }
         let sel = model.selectedIndex
-        next.selectedIndex = min(max(sel, -1), next.content.shortlist.count)
+        // Max nav index = last shortlist row, plus the recent row when present.
+        let maxSel = next.content.shortlist.count - 1 + (next.content.recent != nil ? 1 : 0)
+        next.selectedIndex = min(max(sel, -1), maxSel)
         model = next
     }
 }
@@ -155,8 +157,7 @@ struct AgentPickerView: View {
     private var header: some View {
         HStack {
             Text(String(localized: "agentPicker.header.launchAgent", defaultValue: "Launch agent"))
-                .ucLabel()
-                .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.7))
+                .ucLabel(color: BrandColors.whiteSwiftUI.opacity(0.7))
             Spacer()
             if content.followRecent {
                 Text(String(localized: "agentPicker.header.following", defaultValue: "◉ following recent"))
@@ -290,14 +291,17 @@ private struct PickerRowView: View {
             if isFocused { Rectangle().fill(BrandColors.goldSwiftUI).frame(width: 2) }
         }
         .contentShape(Rectangle())
-        .onHover { hovering = $0 && row.isInstalled }
+        // Hover is tracked even for not-installed rows so the pin ○ stays
+        // discoverable (they remain pinnable); only the background highlight is
+        // gated to installed rows (prototype: `.cfg-row.disabled:hover { transparent }`).
+        .onHover { hovering = $0 }
         .onTapGesture { onClick(NSEvent.modifierFlags.contains(.option)) }
     }
 
     private var rowBackground: some View {
         Group {
             if isFocused { BrandColors.goldFaintSwiftUI }
-            else if hovering { BrandColors.whiteSwiftUI.opacity(0.03) }
+            else if hovering && row.isInstalled { BrandColors.whiteSwiftUI.opacity(0.03) }
             else { Color.clear }
         }
     }
@@ -327,7 +331,7 @@ private struct RecentRowView: View {
                         .font(.system(size: 9.5, design: .monospaced))
                         .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.45))
                 }
-                SubLine(row.subLine)
+                SubLine(row.subLine, brightenProvider: false)
             }
             Spacer(minLength: 6)
             HStack(spacing: 7) {
@@ -336,6 +340,8 @@ private struct RecentRowView: View {
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.68))
                     .frame(minWidth: 82, alignment: .trailing)
+                // Empty key-cap slot so the recent cost aligns with shortlist costs.
+                Color.clear.frame(width: 16, height: 1)
             }
         }
         .padding(.leading, 10)
@@ -383,6 +389,7 @@ private struct DefaultTag: View {
         Text(text)
             .font(.system(size: 8.5, weight: .medium, design: .monospaced))
             .tracking(0.8)
+            .textCase(.uppercase)
             .foregroundStyle(BrandColors.goldSwiftUI)
             .padding(.horizontal, 4).padding(.vertical, 0.5)
             .overlay(RoundedRectangle(cornerRadius: 3).stroke(BrandColors.goldFaintSwiftUI, lineWidth: 0.5))
@@ -392,7 +399,14 @@ private struct DefaultTag: View {
 /// `harness · provider · model` with the provider segment brightened (prototype).
 private struct SubLine: View {
     let text: String
-    init(_ text: String) { self.text = text }
+    /// Shortlist sub-lines are `harness · provider · model` — brighten the middle
+    /// (provider). The recent sub-line is `harness · model · effort`, which has no
+    /// provider span, so it stays fully dim (prototype `.cfg-sub` with no `.prov`).
+    let brightenProvider: Bool
+    init(_ text: String, brightenProvider: Bool = true) {
+        self.text = text
+        self.brightenProvider = brightenProvider
+    }
     var body: some View {
         let parts = text.components(separatedBy: " · ")
         return HStack(spacing: 0) {
@@ -400,8 +414,7 @@ private struct SubLine: View {
                 if i > 0 {
                     Text(" · ").foregroundStyle(PickerPalette.subDim)
                 }
-                // Middle segment of a 3-part line is the provider.
-                Text(part).foregroundStyle(parts.count == 3 && i == 1 ? PickerPalette.subProvider : PickerPalette.subDim)
+                Text(part).foregroundStyle(brightenProvider && parts.count == 3 && i == 1 ? PickerPalette.subProvider : PickerPalette.subDim)
             }
         }
         .font(.system(size: 10.5, design: .monospaced))
@@ -529,11 +542,11 @@ private struct CheckboxGlyph: View {
 // MARK: - View helpers
 
 private extension View {
-    func ucLabel() -> some View {
+    func ucLabel(color: Color = BrandColors.dimSwiftUI) -> some View {
         self.font(.system(size: 9.5, weight: .medium, design: .monospaced))
             .tracking(1.2)
             .textCase(.uppercase)
-            .foregroundStyle(BrandColors.dimSwiftUI)
+            .foregroundStyle(color)
     }
 }
 
@@ -596,11 +609,18 @@ final class AgentPickerPresenter: NSObject, NSPopoverDelegate {
     private var keyMonitor: Any?
     private weak var controller: AgentPickerController?
 
-    /// Present (or, if already open, toggle closed). `screenPoint` anchors under the
-    /// right-clicked A button; `nil` anchors at the window's top-trailing corner
-    /// (⌘⇧A / menu path).
+    /// Present the picker. `screenPoint` anchors under the right-clicked A button
+    /// (pointer path); `nil` anchors at the window's top-trailing corner (⌘⇧A / menu).
+    ///
+    /// Re-entry policy: only the keyboard path (nil `screenPoint`) toggles closed —
+    /// pressing ⌘⇧A again dismisses. The pointer path is idempotent: if the popover
+    /// is already shown, a repeat present is a no-op, so a double-evaluated
+    /// `.contextMenu` builder within one right-click can't open-then-close (flicker).
     func present(controller: AgentPickerController, in window: NSWindow, at screenPoint: NSPoint?) {
-        if let p = popover, p.isShown { dismiss(); return }
+        if let p = popover, p.isShown {
+            if screenPoint == nil { dismiss() }
+            return
+        }
         guard let contentView = window.contentView else { return }
 
         self.controller = controller
@@ -642,6 +662,10 @@ final class AgentPickerPresenter: NSObject, NSPopoverDelegate {
     }
 
     func popoverDidClose(_ notification: Notification) {
+        // Ignore a delayed close callback for a popover we've already replaced —
+        // otherwise a rapid toggle/reopen inside the close animation would let the
+        // stale close tear down the NEW popover's key monitor + presenter state.
+        guard (notification.object as? NSPopover) === popover else { return }
         removeKeyMonitor()
         popover = nil
         controller = nil
@@ -650,8 +674,14 @@ final class AgentPickerPresenter: NSObject, NSPopoverDelegate {
     private func installKeyMonitor() {
         removeKeyMonitor()
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            // Gate on the popover being shown. (A tighter "event belongs to the
+            // popover's own window" check was considered but deferred: an .transient
+            // popover already auto-dismisses on outside interaction, so the
+            // shown-but-not-key window is negligible, and the window-identity
+            // assumption can't be verified without a runtime pass.)
             guard let self, let controller = self.controller, self.popover?.isShown == true else { return event }
             let option = event.modifierFlags.contains(.option)
+            let command = event.modifierFlags.contains(.command)
             let key: PickerKey?
             switch event.keyCode {
             case 125: key = .down
@@ -666,7 +696,7 @@ final class AgentPickerPresenter: NSObject, NSPopoverDelegate {
                 }
             }
             guard let k = key else { return event }
-            controller.handleKey(k, option: option)
+            controller.handleKey(k, option: option, command: command)
             return nil // swallow handled keys
         }
     }

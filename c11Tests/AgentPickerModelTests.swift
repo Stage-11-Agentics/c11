@@ -359,4 +359,63 @@ final class AgentPickerModelTests: XCTestCase {
         )
         XCTAssertEqual(m.content.statsHeadline, "87% Opus · 474 launches")
     }
+
+    // MARK: 10. Review-regression: recent-row + default Enter honor pin/installed (F1/F2)
+
+    func testOptionEnterOnRecentRowPinsNotLaunch() {
+        let configs = sampleConfigs()
+        let recent = RecentAgentConfig(configId: "c4", harness: "codex", model: "gpt-5.2")
+        var m = AgentPickerModel(
+            library: library(configs, default: .init(mode: .pinned, configId: "c1"), recent: recent),
+            effectiveDefault: configs[0], env: env()
+        )
+        for _ in 0..<6 { _ = m.handleKey(.down) } // recent row (index 5)
+        XCTAssertEqual(m.selectedIndex, 5)
+        // ⌥⏎ on the recent row PINS (was: silently launched).
+        XCTAssertEqual(m.handleKey(.enter, option: true), .pin(configs[3]))
+    }
+
+    func testEnterOnNotInstalledRecentRowNoops() {
+        let configs = sampleConfigs()
+        let recent = RecentAgentConfig(configId: "c4", harness: "codex", model: "gpt-5.2")
+        var m = AgentPickerModel(
+            library: library(configs, default: .init(mode: .pinned, configId: "c1"), recent: recent),
+            effectiveDefault: configs[0],
+            env: env(installed: { $0 != "codex" }) // codex not installed
+        )
+        for _ in 0..<6 { _ = m.handleKey(.down) }
+        XCTAssertEqual(m.handleKey(.enter), .none)                 // plain ⏎ no-ops (was: launched)
+        XCTAssertEqual(m.handleKey(.enter, option: true), .pin(configs[3])) // ⌥⏎ still pins
+    }
+
+    func testEnterDefaultRespectsInstalledGuard() {
+        let configs = sampleConfigs() // default c1 = claude-code
+        var m = AgentPickerModel(
+            library: library(configs, default: .init(mode: .pinned, configId: "c1")),
+            effectiveDefault: configs[0],
+            env: env(installed: { $0 != "claude-code" }) // default's harness not installed
+        )
+        XCTAssertEqual(m.selectedIndex, -1)
+        XCTAssertEqual(m.handleKey(.enter), .none) // was .launch(default) before the fix
+    }
+
+    func testRelativeTimeBucketTopsClamp() {
+        let now = Date(timeIntervalSince1970: 3_000_000)
+        XCTAssertEqual(AgentPickerModel.relativeTime(from: now.addingTimeInterval(-3599), now: now), "59m ago")   // not "60m ago"
+        XCTAssertEqual(AgentPickerModel.relativeTime(from: now.addingTimeInterval(-86_399), now: now), "23h ago") // not "24h ago"
+        XCTAssertEqual(AgentPickerModel.relativeTime(from: now.addingTimeInterval(-3600), now: now), "1h ago")
+        XCTAssertEqual(AgentPickerModel.relativeTime(from: now.addingTimeInterval(-86_400), now: now), "1d ago")
+    }
+
+    func testCommandEnterOpensViewAllNeverLaunches() {
+        let configs = sampleConfigs()
+        var m = AgentPickerModel(
+            library: library(configs, default: .init(mode: .pinned, configId: "c1")),
+            effectiveDefault: configs[0], env: env()
+        )
+        // ⌘⏎ = View all, from any selection state — never launches.
+        XCTAssertEqual(m.handleKey(.enter, command: true), .viewAll)
+        _ = m.handleKey(.down) // select row 0
+        XCTAssertEqual(m.handleKey(.enter, command: true), .viewAll)
+    }
 }

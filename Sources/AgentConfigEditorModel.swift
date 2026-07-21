@@ -259,6 +259,13 @@ enum AgentConfigAxes {
         return sp.mode == .replace && sp.text.isEmpty
     }
 
+    /// The library row sub-line: `describe` plus a ` · ·blank·` suffix for the
+    /// blank-slate case. The single source of truth for both the sheet's rail
+    /// and the Settings subsection row.
+    static func subline(_ config: AgentLaunchConfig) -> String {
+        isBlankSlate(config) ? "\(describe(config)) · ·blank·" : describe(config)
+    }
+
     /// The model a `.families` harness inherits when its recipe model is unset —
     /// the harness's per-harness Settings base, defaulting to `opus` for
     /// claude-code (matching the factory pin). `nil` when there is no base.
@@ -303,7 +310,7 @@ struct StatsBarRow: Equatable {
     let isLeader: Bool
 }
 
-enum AgentLaunchStatsView {
+enum LaunchStatsBars {
     /// Turn a windowed query result into sorted bar rows (descending by count,
     /// ties broken by label for determinism). Empty tally → `[]`.
     static func statsBars(from result: LaunchStatsResult) -> [StatsBarRow] {

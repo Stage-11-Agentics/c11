@@ -268,7 +268,11 @@ struct DefaultAgentSettingsSection: View {
                           systemImage: "plus")
                 }
                 Button(String(localized: "settings.savedConfigs.viewAll", defaultValue: "View all models & configs…")) {
-                    openEditor(library.pinnedConfig.map { .config($0.id) } ?? .new)
+                    // Land on the pinned config, else the first — never a blank
+                    // new draft (that is what "New config" is for).
+                    openEditor(library.pinnedConfig.map { .config($0.id) }
+                               ?? library.configs.first.map { .config($0.id) }
+                               ?? .new)
                 }
                 Button(String(localized: "settings.savedConfigs.stats", defaultValue: "Launch stats")) {
                     openEditor(.stats)
@@ -288,8 +292,7 @@ struct DefaultAgentSettingsSection: View {
                 .font(.caption)
             VStack(alignment: .leading, spacing: 1) {
                 Text(config.name).font(.callout)
-                Text(AgentConfigAxes.describe(config.config)
-                     + (AgentConfigAxes.isBlankSlate(config.config) ? " · ·blank·" : ""))
+                Text(AgentConfigAxes.subline(config.config))
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)

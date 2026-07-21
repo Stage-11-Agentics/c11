@@ -86,39 +86,53 @@ enum AgentConfigEditorRequest {
 final class AgentInstalledProbe: ObservableObject {
     static let shared = AgentInstalledProbe()
 
-    /// nil = not yet resolved (treat as installed); non-nil = the resolved PATH dirs.
-    @Published private(set) var pathDirs: [String]?
+    /// Per-harness installed verdict, computed once when the PATH resolves. An
+    /// absent key = unresolved (treat as installed); the render path only reads
+    /// this dict, never the filesystem.
+    @Published private(set) var verdicts: [String: Bool] = [:]
     private var didStart = false
 
-    /// Kick the async login-shell PATH capture once. Safe to call repeatedly.
+    /// Kick the async login-shell PATH capture + verdict computation once. Safe
+    /// to call repeatedly.
     func startIfNeeded() {
         guard !didStart else { return }
         didStart = true
         Task.detached(priority: .utility) {
             let dirs = Self.captureLoginShellPath()
-            await MainActor.run { self.pathDirs = dirs }
+            let verdicts = Self.computeVerdicts(pathDirs: dirs)
+            await MainActor.run { self.verdicts = verdicts }
         }
     }
 
-    /// Whether the harness's binary resolves on the captured PATH. Returns
-    /// `true` while the PATH is still resolving or on any failure (degrade-never-block).
+    /// Whether the harness's binary resolves on the captured PATH. Returns `true`
+    /// while the PATH is still resolving or on any failure (degrade-never-block).
+    /// A pure dictionary read — no filesystem stat on the render path.
     func isInstalled(harness: String) -> Bool {
-        guard let dirs = pathDirs, !dirs.isEmpty else { return true }
-        let command = AgentRegistry.shared.manifest(forKind: harness)?.factoryCommand ?? ""
-        guard let bin = AgentConfigAxes.firstBinaryToken(command) else { return true }
-        // An absolute path: check it directly.
-        if bin.contains("/") {
-            return FileManager.default.isExecutableFile(atPath: bin)
-        }
-        for dir in dirs {
-            if FileManager.default.isExecutableFile(atPath: dir + "/" + bin) { return true }
-        }
-        return false
+        verdicts[harness] ?? true
     }
 
-    /// Run the user's login shell once to capture their real PATH. Returns nil on
-    /// any failure so callers degrade to "installed". `nonisolated` so the
-    /// detached capture task can call it off the main actor.
+    /// Stat each harness's binary against the captured PATH once, off-main. An
+    /// empty/unresolved PATH yields `[:]` so every harness reads as installed.
+    private nonisolated static func computeVerdicts(pathDirs: [String]?) -> [String: Bool] {
+        guard let dirs = pathDirs, !dirs.isEmpty else { return [:] }
+        let fm = FileManager.default
+        var out: [String: Bool] = [:]
+        for type in AgentType.allCases {
+            let command = AgentRegistry.shared.manifest(forKind: type.rawValue)?.factoryCommand ?? ""
+            guard let bin = AgentConfigAxes.firstBinaryToken(command) else { out[type.rawValue] = true; continue }
+            if bin.contains("/") {
+                out[type.rawValue] = fm.isExecutableFile(atPath: bin)
+            } else {
+                out[type.rawValue] = dirs.contains { fm.isExecutableFile(atPath: $0 + "/" + bin) }
+            }
+        }
+        return out
+    }
+
+    /// Run the user's login shell once to capture their real PATH, killing it
+    /// after a short deadline so a prompting rc file can't hang the task. Returns
+    /// nil on any failure/timeout so callers degrade to "installed". `nonisolated`
+    /// so the detached capture task can call it off the main actor.
     private nonisolated static func captureLoginShellPath() -> [String]? {
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let process = Process()
@@ -127,13 +141,18 @@ final class AgentInstalledProbe: ObservableObject {
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
+        let done = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in done.signal() }
         do {
             try process.run()
         } catch {
             return nil
         }
+        if done.wait(timeout: .now() + 3.0) == .timedOut {
+            process.terminate()
+            return nil
+        }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
         guard process.terminationStatus == 0,
               let raw = String(data: data, encoding: .utf8) else { return nil }
         let dirs = raw.split(separator: ":").map { String($0).trimmingCharacters(in: .whitespaces) }
@@ -209,10 +228,14 @@ final class AgentConfigLibraryViewModel: ObservableObject {
     func move(fromOffsets source: IndexSet, toOffset destination: Int) {
         var ordered = configs
         ordered.move(fromOffsets: source, toOffset: destination)
-        // Persist the new order by reindexing through the store one move at a time.
-        for (index, config) in ordered.enumerated() {
-            try? store.reorder(id: config.id, to: index)
+        // Compose the new order once and write the whole file atomically, so a
+        // mid-drop failure can never persist a partially-applied order.
+        let orderById = Dictionary(uniqueKeysWithValues: ordered.enumerated().map { ($1.id, $0) })
+        var file = store.current
+        for i in file.configs.indices {
+            if let newOrder = orderById[file.configs[i].id] { file.configs[i].order = newOrder }
         }
+        try? store.write(file)
         reload()
     }
 
@@ -279,6 +302,7 @@ struct AgentConfigEditorSheet: View {
     @State private var advancedOpen = false
     @State private var modelFilter = ""
     @State private var savedFlashId: String?
+    @State private var launchFeedback: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -297,6 +321,14 @@ struct AgentConfigEditorSheet: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
             if !statsMode {
+                if let launchFeedback {
+                    HStack {
+                        Text(launchFeedback).font(.system(size: 10.5))
+                            .foregroundStyle(BrandColors.goldSwiftUI)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 22).padding(.top, 6)
+                }
                 Divider().overlay(BrandColors.ruleSwiftUI)
                 footer
             }
@@ -433,9 +465,7 @@ struct AgentConfigEditorSheet: View {
     }
 
     private func sublineText(_ config: AgentLaunchConfig) -> String {
-        var s = AgentConfigAxes.describe(config)
-        if AgentConfigAxes.isBlankSlate(config) { s += " · ·blank·" }
-        return s
+        AgentConfigAxes.subline(config)
     }
 
     // MARK: Editor (imported from AgentConfigRecipeEditorContent to keep body small)
@@ -520,7 +550,7 @@ struct AgentConfigEditorSheet: View {
             if let match = library.configs.first(where: { $0.id == id }) { selectConfig(match) }
             else { newConfig() }
         case .new:
-            if let first = library.configs.first { selectConfig(first) } else { newConfig() }
+            newConfig()
         case .stats:
             statsMode = true
         }
@@ -531,6 +561,7 @@ struct AgentConfigEditorSheet: View {
         draft = .from(config)
         advancedOpen = false
         modelFilter = ""
+        launchFeedback = nil
     }
 
     private func newConfig() {
@@ -538,9 +569,11 @@ struct AgentConfigEditorSheet: View {
         draft = .new()
         advancedOpen = false
         modelFilter = ""
+        launchFeedback = nil
     }
 
     private func saveOnly() {
+        launchFeedback = nil
         guard let saved = library.save(draft) else { return }
         draft.sourceId = saved.id
         flashSaved(saved.id)
@@ -548,8 +581,21 @@ struct AgentConfigEditorSheet: View {
 
     private func saveAndLaunch() {
         guard !statsMode, let saved = library.save(draft) else { return }
-        _ = AppDelegate.shared?.launchSavedAgentConfig(saved)
-        onClose(false) // launched — do not return to the popover
+        draft.sourceId = saved.id
+        // Never silently no-op (design MINOR-5): keep the sheet open + explain
+        // when there is nothing to launch into or the recipe has no command.
+        switch AppDelegate.shared?.launchSavedAgentConfig(saved) ?? .noWorkspace {
+        case .launched:
+            onClose(false) // launched — do not return to the popover
+        case .noWorkspace:
+            flashSaved(saved.id)
+            launchFeedback = String(localized: "agentConfigEditor.launch.noWorkspace",
+                                    defaultValue: "Saved. No workspace open to launch into — open one, then launch.")
+        case .emptyCommand:
+            flashSaved(saved.id)
+            launchFeedback = String(localized: "agentConfigEditor.launch.emptyCommand",
+                                    defaultValue: "Saved. This recipe has no command to launch — set one under Advanced.")
+        }
     }
 
     private func backOut() {
@@ -906,7 +952,7 @@ struct AgentConfigRecipeEditor: View {
                         let text = draft.config.systemPrompt?.text ?? ""
                         draft.config.systemPrompt = SystemPromptSetting(mode: m, text: text)
                     } label: {
-                        Text(m.rawValue).font(.system(size: 11))
+                        Text(Self.systemPromptModeLabel(m)).font(.system(size: 11))
                             .foregroundStyle(mode == m ? BrandColors.goldSwiftUI : BrandColors.whiteSwiftUI.opacity(0.65))
                             .padding(.horizontal, 13).padding(.vertical, 4)
                             .background(mode == m ? EditorTheme.goldGhost : BrandColors.surface2SwiftUI)
@@ -1005,6 +1051,15 @@ struct AgentConfigRecipeEditor: View {
 
     // MARK: Shared bits
 
+    /// Localized label for a system-prompt mode; `rawValue` stays logic-only.
+    static func systemPromptModeLabel(_ mode: SystemPromptSetting.Mode) -> String {
+        switch mode {
+        case .inherit: return String(localized: "agentConfigEditor.sysMode.inherit", defaultValue: "inherit")
+        case .append:  return String(localized: "agentConfigEditor.sysMode.append", defaultValue: "append")
+        case .replace: return String(localized: "agentConfigEditor.sysMode.replace", defaultValue: "replace")
+        }
+    }
+
     private func axisOff(_ text: String) -> some View {
         Text(text).font(.system(size: 10.5)).foregroundStyle(Color(white: 0.29)).padding(.vertical, 6)
     }
@@ -1069,7 +1124,9 @@ private struct FlowChips: View {
     }
 }
 
-/// A horizontal, wrapping stack of arbitrary chip content.
+/// A single horizontal row of chip content. Today's chip counts (≤7 effort
+/// tiers, ≤3 suggestions) fit the editor's width inside the 860-pt sheet, so no
+/// wrapping is needed; revisit if a harness ever declares many more.
 private struct FlowChipsRaw<Content: View>: View {
     @ViewBuilder let content: Content
     var body: some View {
@@ -1171,7 +1228,7 @@ struct LaunchStatsView: View {
             AgentLaunchStatsStore.shared?.stats(window: w, by: .model)
         }.value
         guard let result else { bars = []; total = 0; return }
-        bars = AgentLaunchStatsView.statsBars(from: result)
+        bars = LaunchStatsBars.statsBars(from: result)
         total = result.count
     }
 }

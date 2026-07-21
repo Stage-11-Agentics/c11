@@ -177,6 +177,18 @@ final class AgentConfigEditorModelTests: XCTestCase {
                        "oh-my-pi · deepseek-chat-v3.1")
     }
 
+    func testSubline() {
+        // Non-blank recipe → plain describe.
+        XCTAssertEqual(
+            AgentConfigAxes.subline(AgentLaunchConfig(harness: "claude-code", model: "opus", effort: "high")),
+            "claude-code · opus · high")
+        // Blank-slate recipe → describe + the ·blank· suffix.
+        XCTAssertEqual(
+            AgentConfigAxes.subline(AgentLaunchConfig(harness: "claude-code", model: "opus",
+                                                      systemPrompt: SystemPromptSetting(mode: .replace, text: ""))),
+            "claude-code · opus · ·blank·")
+    }
+
     func testIsBlankSlate() {
         XCTAssertTrue(AgentConfigAxes.isBlankSlate(
             AgentLaunchConfig(harness: "claude-code", systemPrompt: SystemPromptSetting(mode: .replace, text: ""))))
@@ -233,7 +245,7 @@ final class AgentConfigEditorModelTests: XCTestCase {
             tally: ["opus": 412, "fable": 24, "sonnet": 19],
             count: 455, lastTs: nil
         )
-        let bars = AgentLaunchStatsView.statsBars(from: result)
+        let bars = LaunchStatsBars.statsBars(from: result)
         XCTAssertEqual(bars.map(\.label), ["opus", "fable", "sonnet"])
         XCTAssertTrue(bars[0].isLeader)
         XCTAssertFalse(bars[1].isLeader)
@@ -247,12 +259,12 @@ final class AgentConfigEditorModelTests: XCTestCase {
             window: .today, axis: .model,
             tally: ["zeta": 5, "alpha": 5], count: 10, lastTs: nil
         )
-        let bars = AgentLaunchStatsView.statsBars(from: result)
+        let bars = LaunchStatsBars.statsBars(from: result)
         XCTAssertEqual(bars.map(\.label), ["alpha", "zeta"], "ties break by label ascending")
     }
 
     func testStatsBarsEmpty() {
         let result = LaunchStatsResult(window: .all, axis: .model, tally: [:], count: 0, lastTs: nil)
-        XCTAssertTrue(AgentLaunchStatsView.statsBars(from: result).isEmpty)
+        XCTAssertTrue(LaunchStatsBars.statsBars(from: result).isEmpty)
     }
 }

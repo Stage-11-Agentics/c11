@@ -7529,18 +7529,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    /// The outcome of a "Save & Launch" attempt, so the editor can give inline
+    /// feedback instead of silently no-op'ing (design C11-182 MINOR-5 resolution).
+    enum SavedConfigLaunchResult {
+        case launched
+        case noWorkspace
+        case emptyCommand
+    }
+
     /// C11-182 seam: launch a chosen saved config as a new agent surface in the
-    /// current workspace ("Save & Launch"). Returns `false` when no workspace is
-    /// open to launch into (the editor then degrades to save-only + a toast).
+    /// current workspace ("Save & Launch"). Never silently no-ops — the caller
+    /// keeps the sheet open and shows feedback for `.noWorkspace` (nothing to
+    /// launch into) and `.emptyCommand` (a custom harness whose recipe resolves
+    /// to an empty command, which `launchAgentSurface` would drop).
     @MainActor
-    @discardableResult
-    func launchSavedAgentConfig(_ saved: SavedAgentConfig) -> Bool {
+    func launchSavedAgentConfig(_ saved: SavedAgentConfig) -> SavedConfigLaunchResult {
         guard let workspace = tabManager?.selectedWorkspace,
               let pane = workspace.bonsplitController.focusedPaneId else {
-            return false
+            return .noWorkspace
+        }
+        // Detect the empty-command case up front (best-effort: no project overlay)
+        // so the operator gets feedback rather than a vanished sheet + no launch.
+        if let overlay = DefaultAgentResolver.resolveOverlay(
+            savedConfig: saved,
+            userDefault: DefaultAgentConfigStore.shared.current,
+            projectConfig: nil
+        ), overlay.launch.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return .emptyCommand
         }
         workspace.launchAgentSurface(inPane: pane, explicitConfig: saved, source: .configEditor)
-        return true
+        return .launched
     }
 
     func refreshMenuBarExtraForDebug() {

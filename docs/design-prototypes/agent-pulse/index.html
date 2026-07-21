@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>c11 — Agent Pulse prototype</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --void: #08090b;
+      --surface: #101216;
+      --surface-2: #171a20;
+      --rule: #2b2e34;
+      --text: #ececef;
+      --dim: #8a8e97;
+      --gold: #c9a84c;
+      --running: #62a8ff;
+      --idle: #7fc7aa;
+      --cold: #68707c;
+      --mono: "SFMono-Regular", "JetBrains Mono", Menlo, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      background: #000;
+      color: var(--text);
+      font-family: var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button { font: inherit; }
+
+    .prototype-note {
+      position: fixed;
+      top: 14px;
+      left: 50%;
+      z-index: 5;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font: 10px var(--mono);
+      color: #81858d;
+      letter-spacing: .04em;
+    }
+
+    .prototype-badge {
+      color: var(--gold);
+      border: 1px solid rgba(201, 168, 76, .45);
+      border-radius: 4px;
+      padding: 3px 7px;
+      letter-spacing: .14em;
+    }
+
+    .window {
+      width: min(1160px, calc(100vw - 44px));
+      height: min(720px, calc(100vh - 72px));
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--void);
+      border: 1px solid #303238;
+      border-radius: 12px;
+      box-shadow: 0 28px 90px rgba(0, 0, 0, .72);
+    }
+
+    .titlebar {
+      height: 38px;
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--rule);
+      background: #0d0f12;
+    }
+
+    .traffic { display: flex; gap: 7px; }
+    .traffic i { width: 11px; height: 11px; border-radius: 50%; }
+    .traffic i:nth-child(1) { background: #ff5f57; }
+    .traffic i:nth-child(2) { background: #febc2e; }
+    .traffic i:nth-child(3) { background: #28c840; }
+    .window-title {
+      margin: 0 auto;
+      color: #6d7078;
+      font: 11px var(--mono);
+      letter-spacing: .05em;
+    }
+
+    .body { min-height: 0; flex: 1; display: flex; }
+
+    .sidebar {
+      width: 270px;
+      flex: 0 0 auto;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--rule);
+      background: #0c0e11;
+    }
+
+    .sidebar-head {
+      display: flex;
+      align-items: baseline;
+      padding: 15px 13px 10px;
+      color: #6e727a;
+      font: 9px var(--mono);
+      letter-spacing: .15em;
+      text-transform: uppercase;
+    }
+    .sidebar-head span:last-child {
+      margin-left: auto;
+      color: var(--gold);
+      letter-spacing: .05em;
+      text-transform: none;
+    }
+
+    .workspaces { padding: 0 8px; display: grid; gap: 7px; }
+
+    .workspace {
+      --state: var(--cold);
+      position: relative;
+      width: 100%;
+      min-height: 93px;
+      display: grid;
+      grid-template-columns: 22px 1fr;
+      gap: 9px;
+      padding: 11px 10px;
+      overflow: hidden;
+      color: var(--text);
+      text-align: left;
+      background: #101216;
+      border: 1px solid var(--rule);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background .14s, border-color .14s, opacity .14s;
+    }
+    .workspace:hover { background: #15181d; }
+    .workspace.active { border: 2px solid rgba(255,255,255,.88); padding: 10px 9px; }
+    .workspace[data-state="running"] { --state: var(--running); }
+    .workspace[data-state="waiting"] { --state: var(--gold); }
+    .workspace[data-state="idle"] { --state: var(--idle); }
+    .workspace[data-state="cold"] { --state: var(--cold); opacity: .72; }
+    .workspace[data-state="cold"]:hover,
+    .workspace[data-state="cold"].active { opacity: 1; }
+    .workspace[data-state="waiting"] {
+      background: linear-gradient(90deg, rgba(201,168,76,.15), #111316 72%);
+      border-color: rgba(201,168,76,.58);
+    }
+
+    .beacon {
+      position: relative;
+      width: 20px;
+      height: 20px;
+      display: grid;
+      place-items: center;
+      margin-top: 1px;
+      border: 1px solid color-mix(in srgb, var(--state) 75%, transparent);
+      border-radius: 50%;
+      color: var(--state);
+      font: 10px var(--mono);
+    }
+    [data-state="running"] .beacon::after {
+      content: "";
+      position: absolute;
+      inset: -1px;
+      border: 1px solid var(--running);
+      border-radius: 50%;
+      animation: breathe 1.8s ease-out infinite;
+    }
+    @keyframes breathe {
+      0%, 35% { transform: scale(.75); opacity: .7; }
+      100% { transform: scale(1.65); opacity: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      [data-state="running"] .beacon::after { animation: none; }
+    }
+
+    .workspace-copy { min-width: 0; }
+    .workspace-title {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 5px;
+      font-size: 13px;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+    .agent-chip {
+      padding: 2px 5px;
+      color: #aaadb4;
+      border: 1px solid #35383f;
+      border-radius: 4px;
+      font: 8px var(--mono);
+      font-weight: 500;
+    }
+    .description {
+      overflow: hidden;
+      color: var(--dim);
+      font: 10px/1.4 var(--mono);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .state-line {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 9px;
+      color: var(--state);
+      font: 9px var(--mono);
+      letter-spacing: .09em;
+      text-transform: uppercase;
+    }
+    .state-line::before {
+      content: "";
+      width: 18px;
+      height: 2px;
+      border-radius: 2px;
+      background: var(--state);
+    }
+    [data-state="waiting"] .state-line {
+      width: fit-content;
+      margin-top: 7px;
+      padding: 4px 7px;
+      color: #0b0c0e;
+      background: var(--gold);
+      border-radius: 4px;
+      font-weight: 750;
+    }
+    [data-state="waiting"] .state-line::before { display: none; }
+
+    .sidebar-foot {
+      margin-top: auto;
+      padding: 11px 12px 13px;
+      border-top: 1px solid var(--rule);
+      color: #666a72;
+      font: 9px/1.45 var(--mono);
+    }
+    .sidebar-foot strong { color: var(--gold); font-weight: 500; }
+
+    .main { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+    .tabstrip {
+      height: 37px;
+      display: flex;
+      align-items: stretch;
+      border-bottom: 1px solid var(--rule);
+      background: #0c0e11;
+    }
+    .surface-tab {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 170px;
+      padding: 0 13px;
+      color: #8b8e95;
+      border-right: 1px solid var(--rule);
+      font-size: 11px;
+    }
+    .surface-tab.active { color: var(--text); background: var(--surface-2); }
+    .surface-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--running); }
+    .tools { margin-left: auto; display: flex; align-items: center; gap: 13px; padding: 0 14px; color: #72767e; font: 12px var(--mono); }
+
+    .surface-bar {
+      min-height: 72px;
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      padding: 12px 17px;
+      border-bottom: 1px solid var(--rule);
+      background: #111318;
+    }
+    .large-beacon {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      color: var(--running);
+      border: 1px solid currentColor;
+      border-radius: 50%;
+      font: 13px var(--mono);
+    }
+    .surface-copy { min-width: 0; }
+    .surface-name { font-size: 13px; font-weight: 650; }
+    .surface-desc { margin-top: 5px; color: var(--dim); font: 10px var(--mono); }
+    .surface-state {
+      margin-left: auto;
+      padding: 5px 8px;
+      color: var(--running);
+      border: 1px solid currentColor;
+      border-radius: 5px;
+      font: 9px var(--mono);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .terminal {
+      flex: 1;
+      min-height: 0;
+      padding: 20px;
+      overflow: hidden;
+      color: #b9bdc4;
+      background: var(--void);
+      font: 12px/1.68 var(--mono);
+    }
+    .terminal .dim { color: #686c74; }
+    .terminal .blue { color: var(--running); }
+    .terminal .gold { color: var(--gold); }
+    .terminal .green { color: var(--idle); }
+    .cursor { display: inline-block; width: 7px; height: 14px; vertical-align: -2px; background: var(--gold); }
+
+    .state-lab {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 53px;
+      padding: 9px 14px;
+      border-top: 1px solid var(--rule);
+      background: #0e1013;
+    }
+    .lab-label {
+      margin-right: auto;
+      color: #676b73;
+      font: 9px var(--mono);
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .state-button {
+      padding: 6px 9px;
+      color: #8c9098;
+      background: transparent;
+      border: 1px solid #34373d;
+      border-radius: 5px;
+      cursor: pointer;
+      font: 9px var(--mono);
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .state-button:hover { color: var(--text); background: #191c21; }
+    .state-button[data-set="waiting"] { color: var(--gold); border-color: rgba(201,168,76,.5); }
+  </style>
+</head>
+<body>
+  <div class="prototype-note">
+    <span class="prototype-badge">PROTOTYPE</span>
+    <span>not wired to real agent data · click a tab, then change its state</span>
+  </div>
+
+  <main class="window">
+    <header class="titlebar">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <div class="window-title">c11 — Stage 11</div>
+    </header>
+
+    <div class="body">
+      <aside class="sidebar">
+        <div class="sidebar-head"><span>Workspaces</span><span>1 needs you</span></div>
+        <div class="workspaces">
+          <button class="workspace active" data-state="running" data-title="Release captain" data-desc="Building and validating the release candidate.">
+            <span class="beacon">▶</span>
+            <span class="workspace-copy">
+              <span class="workspace-title">Release captain <span class="agent-chip">CODEX</span></span>
+              <span class="description">Running the tagged build and smoke tests</span>
+              <span class="state-line">Working</span>
+            </span>
+          </button>
+
+          <button class="workspace" data-state="waiting" data-title="Mailbox review" data-desc="Waiting for your decision on the attribution copy.">
+            <span class="beacon">!</span>
+            <span class="workspace-copy">
+              <span class="workspace-title">Mailbox review <span class="agent-chip">CLAUDE</span></span>
+              <span class="description">Choose between the two attribution labels</span>
+              <span class="state-line">Your turn</span>
+            </span>
+          </button>
+
+          <button class="workspace" data-state="idle" data-title="Agent pulse" data-desc="At the prompt and ready for another task.">
+            <span class="beacon">Ⅱ</span>
+            <span class="workspace-copy">
+              <span class="workspace-title">Agent pulse <span class="agent-chip">CODEX</span></span>
+              <span class="description">Prototype pass complete</span>
+              <span class="state-line">Idle</span>
+            </span>
+          </button>
+
+          <button class="workspace" data-state="cold" data-title="Docs sweep" data-desc="No live agent session; reopen to resume.">
+            <span class="beacon">❄</span>
+            <span class="workspace-copy">
+              <span class="workspace-title">Docs sweep <span class="agent-chip">CODEX</span></span>
+              <span class="description">Last active 2h ago</span>
+              <span class="state-line">Cold</span>
+            </span>
+          </button>
+        </div>
+        <div class="sidebar-foot"><strong>State beats decoration.</strong> Color, glyph, and text always agree; selection remains a separate white outline.</div>
+      </aside>
+
+      <section class="main">
+        <div class="tabstrip">
+          <div class="surface-tab active"><span class="surface-dot"></span><span>Release captain</span></div>
+          <div class="surface-tab">Preview</div>
+          <div class="tools">＋ &nbsp; ⋯</div>
+        </div>
+
+        <div class="surface-bar">
+          <div class="large-beacon">▶</div>
+          <div class="surface-copy">
+            <div class="surface-name">Release captain</div>
+            <div class="surface-desc">Building and validating the release candidate.</div>
+          </div>
+          <div class="surface-state">Working</div>
+        </div>
+
+        <div class="terminal">
+          <div><span class="dim">$</span> ./scripts/reload.sh --tag agent-pulse</div>
+          <br>
+          <div><span class="blue">●</span> Building c11 DEV (agent-pulse)…</div>
+          <div><span class="green">✓</span> Swift package dependencies resolved</div>
+          <div><span class="green">✓</span> c11-logic tests passed</div>
+          <div><span class="gold">→</span> Launching tagged build for validation</div>
+          <br>
+          <div class="dim">The sidebar answers one question before you open a pane:</div>
+          <div>“Which agents are moving, and which one needs me?” <span class="cursor"></span></div>
+        </div>
+
+        <div class="state-lab">
+          <span class="lab-label">Set selected tab</span>
+          <button class="state-button" data-set="running">▶ Running</button>
+          <button class="state-button" data-set="waiting">! Waiting</button>
+          <button class="state-button" data-set="idle">Ⅱ Idle</button>
+          <button class="state-button" data-set="cold">❄ Cold</button>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const rows = [...document.querySelectorAll('.workspace')];
+    const stateCopy = {
+      running: { glyph: '▶', label: 'Working', color: 'var(--running)', terminal: 'Command in flight; output is still moving.' },
+      waiting: { glyph: '!', label: 'Your turn', color: 'var(--gold)', terminal: 'The agent asked a question and is blocked on your response.' },
+      idle: { glyph: 'Ⅱ', label: 'Idle', color: 'var(--idle)', terminal: 'The agent is at its prompt and ready for another task.' },
+      cold: { glyph: '❄', label: 'Cold', color: 'var(--cold)', terminal: 'No live agent session; reopen this workspace to resume.' }
+    };
+
+    function select(row) {
+      rows.forEach(item => item.classList.toggle('active', item === row));
+      const state = row.dataset.state;
+      const copy = stateCopy[state];
+      document.querySelector('.surface-tab span:last-child').textContent = row.dataset.title;
+      document.querySelector('.surface-dot').style.background = copy.color;
+      document.querySelector('.surface-name').textContent = row.dataset.title;
+      document.querySelector('.surface-desc').textContent = row.dataset.desc;
+      document.querySelector('.surface-state').textContent = copy.label;
+      document.querySelector('.surface-state').style.color = copy.color;
+      document.querySelector('.large-beacon').textContent = copy.glyph;
+      document.querySelector('.large-beacon').style.color = copy.color;
+      document.querySelector('.terminal').innerHTML = `<div><span class="dim">agent.state</span> → <span style="color:${copy.color}">${copy.label}</span></div><br><div>${copy.terminal}</div><br><div class="dim">Color + glyph + text carry the same meaning.</div>`;
+    }
+
+    function updateNeedsYouCount() {
+      const count = rows.filter(row => row.dataset.state === 'waiting').length;
+      document.querySelector('.sidebar-head span:last-child').textContent = `${count} need${count === 1 ? 's' : ''} you`;
+    }
+
+    rows.forEach(row => row.addEventListener('click', () => select(row)));
+    document.querySelectorAll('.state-button').forEach(button => {
+      button.addEventListener('click', () => {
+        const row = document.querySelector('.workspace.active');
+        const state = button.dataset.set;
+        const copy = stateCopy[state];
+        row.dataset.state = state;
+        row.querySelector('.beacon').textContent = copy.glyph;
+        row.querySelector('.state-line').textContent = copy.label;
+        updateNeedsYouCount();
+        select(row);
+      });
+    });
+  </script>
+</body>
+</html>

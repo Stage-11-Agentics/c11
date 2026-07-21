@@ -650,7 +650,11 @@ final class AgentPickerPresenter: NSObject, NSPopoverDelegate {
             let topY = contentView.isFlipped ? b.minY : b.maxY
             rect = NSRect(x: b.maxX - 130, y: topY, width: 1, height: 1)
         }
-        pop.show(relativeTo: rect, of: contentView, preferredEdge: .maxY)
+        // Drop the popover downward from the anchor in either coordinate convention:
+        // on a flipped view "below" is the maxY edge, on a non-flipped view it's minY.
+        // (NSPopover self-corrects if there's no room, but pick the right side first.)
+        let preferredEdge: NSRectEdge = contentView.isFlipped ? .maxY : .minY
+        pop.show(relativeTo: rect, of: contentView, preferredEdge: preferredEdge)
         installKeyMonitor()
     }
 

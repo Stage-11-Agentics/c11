@@ -1958,6 +1958,17 @@ class TerminalController {
         // for bounded slices via `Task { @MainActor }`.
         "pane.confirm",
         "feedback.submit",
+        // C11-180: `config.*` reads + mutations are pure state-root file I/O with
+        // no AppKit touch → off-main per the socket threading policy. `config.launch`
+        // is deliberately ABSENT (it creates a surface → main actor).
+        "config.list",
+        "config.recent",
+        "config.stats",
+        "config.save",
+        "config.edit",
+        "config.rm",
+        "config.reorder",
+        "config.default",
     ]
 
     // C11-4: v1 telemetry commands the worker is allowed to handle off-main.

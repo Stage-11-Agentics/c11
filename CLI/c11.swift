@@ -1713,6 +1713,16 @@ struct CMUXCLI {
             return
         }
 
+        // C11-180: `c11 config` reads/mutations operate on the state-root files
+        // directly (app-down capable) — handle them before the socket connect
+        // like `state verify` / `events`. Only `config launch` needs the running
+        // app (it spawns a surface) and falls through to the post-connect switch.
+        if command == "config",
+           (commandArgs.first?.lowercased() ?? "") != "launch" {
+            try runConfigCommand(commandArgs: commandArgs, jsonOutput: jsonOutput)
+            return
+        }
+
         let client = SocketClient(path: resolvedSocketPath)
         if resolvedSocketPath != socketPath {
             cliTelemetry.breadcrumb(
@@ -2277,6 +2287,19 @@ struct CMUXCLI {
             // the global parser only consumes it before the subcommand.
             let launchJSONOut = jsonOutput || commandArgs.contains("--json")
             printV2Payload(launchPayload, jsonOutput: launchJSONOut, idFormat: idFormat, fallbackText: v2OKSummary(launchPayload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
+
+        case "config":
+            // Only `config launch` reaches here — the app-down subcommands
+            // returned before the socket connect. Thin client over the
+            // `config.launch` socket method (design §6).
+            let cfgSub = commandArgs.first?.lowercased() ?? ""
+            guard cfgSub == "launch" else {
+                throw CLIError(message: "config: '\(cfgSub)' should have been handled app-down; this is a bug")
+            }
+            let (cfgParams, cfgJSON) = try buildConfigLaunchParams(subArgs: Array(commandArgs.dropFirst()))
+            let cfgPayload = try client.sendV2(method: "config.launch", params: cfgParams)
+            let cfgJSONOut = jsonOutput || cfgJSON
+            printV2Payload(cfgPayload, jsonOutput: cfgJSONOut, idFormat: idFormat, fallbackText: v2OKSummary(cfgPayload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
 
         case "new-surface":
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)

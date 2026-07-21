@@ -23,6 +23,9 @@
       --running: #79aee8;
       --idle: #78b59e;
       --cold: #707681;
+      --harness-claude: #d88968;
+      --harness-codex: #69b5a8;
+      --harness-shell: #818791;
       --shadow: rgba(0, 0, 0, .72);
       --terminal-line: #b8bcc4;
       --mono: "SFMono-Regular", "JetBrains Mono", Menlo, monospace;
@@ -47,6 +50,9 @@
       --running: #326d9e;
       --idle: #357b61;
       --cold: #7f8289;
+      --harness-claude: #a84f32;
+      --harness-codex: #28776d;
+      --harness-shell: #6d7178;
       --shadow: rgba(35, 34, 30, .25);
       --terminal-line: #4b4e55;
     }
@@ -191,6 +197,7 @@
     .tab-scroll::-webkit-scrollbar { display: none; }
     .surface-tab {
       --state: var(--cold);
+      --harness: var(--harness-shell);
       position: relative;
       height: 30px;
       min-width: 112px;
@@ -216,6 +223,10 @@
     .surface-tab.state-running { --state: var(--running); }
     .surface-tab.state-idle { --state: var(--idle); }
     .surface-tab.state-cold { --state: var(--cold); color: color-mix(in srgb, var(--dim) 74%, transparent); }
+    .surface-tab.harness-claude { --harness: var(--harness-claude); }
+    .surface-tab.harness-codex { --harness: var(--harness-codex); }
+    .surface-tab.harness-shell { --harness: var(--harness-shell); }
+    body.neutral-harness .surface-tab { --harness: var(--text-soft); }
     .surface-tab.state-waiting {
       --state: var(--gold);
       color: color-mix(in srgb, var(--text) 92%, var(--gold));
@@ -266,15 +277,6 @@
       line-height: 1;
     }
     .close-tab:hover { color: var(--text); background: var(--rule); opacity: 1; }
-    .agent-mark {
-      width: 11px;
-      flex: 0 0 11px;
-      margin: 0 4px 0 3px;
-      color: color-mix(in srgb, var(--text-soft) 72%, transparent);
-      font: 9px var(--mono);
-      text-align: center;
-    }
-    body.hide-agents .agent-mark { display: none; }
     .state-mark {
       width: 13px;
       height: 13px;
@@ -292,17 +294,19 @@
       height: 20px;
       flex: 0 0 20px;
       margin-right: 4px;
+      color: var(--harness);
+      border-color: color-mix(in srgb, var(--harness) 76%, transparent);
       font-size: 10px;
     }
-    .state-running .state-mark {
-      border-color: color-mix(in srgb, var(--running) 28%, transparent);
-      border-top-color: var(--running);
+    .surface-tab.state-running > .state-mark {
+      border-color: color-mix(in srgb, var(--harness) 28%, transparent);
+      border-top-color: var(--harness);
       animation: turn 1.8s linear infinite;
     }
-    .state-running .state-mark span { animation: counter-turn 1.8s linear infinite; }
-    .state-idle .state-mark { border-radius: 3px; }
-    .state-cold .state-mark { border-style: dotted; opacity: .72; }
-    .state-waiting .state-mark {
+    .surface-tab.state-running > .state-mark span { animation: counter-turn 1.8s linear infinite; }
+    .surface-tab.state-idle > .state-mark { border-radius: 3px; }
+    .surface-tab.state-cold > .state-mark { border-style: dotted; opacity: .72; }
+    .surface-tab.state-waiting > .state-mark {
       color: var(--void);
       background: var(--gold);
       border-color: var(--gold);
@@ -452,16 +456,31 @@
     .legend { display: grid; gap: 9px; margin-top: 11px; }
     .legend-row { display: grid; grid-template-columns: 18px 62px 1fr; align-items: center; gap: 6px; }
     .legend-row .state-mark { --state: var(--legend-state); }
-    .legend-row.running { --legend-state: var(--running); }
-    .legend-row.idle { --legend-state: var(--idle); }
-    .legend-row.cold { --legend-state: var(--cold); }
+    .legend-row.running { --legend-state: var(--text-soft); }
+    .legend-row.idle { --legend-state: var(--text-soft); }
+    .legend-row.cold { --legend-state: var(--text-soft); }
     .legend-row.waiting { --legend-state: var(--gold); }
     .legend-row strong { color: var(--text-soft); font: 9px var(--mono); font-weight: 650; text-transform: uppercase; }
     .legend-row span:last-child { color: var(--dim); font: 9px/1.3 var(--mono); }
-    .legend-row.running .state-mark { border-top-color: var(--running); }
+    .legend-row.running .state-mark { border-top-color: var(--text-soft); }
     .legend-row.idle .state-mark { border-radius: 3px; }
     .legend-row.cold .state-mark { border-style: dotted; }
     .legend-row.waiting .state-mark { color: var(--void); background: var(--gold); border-color: var(--gold); border-radius: 3px; }
+    .harness-key {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+      color: var(--dim);
+      font: 8px var(--mono);
+      text-transform: uppercase;
+    }
+    .harness-key span { display: inline-flex; align-items: center; gap: 4px; }
+    body.neutral-harness .harness-key { opacity: .35; }
+    .harness-swatch { width: 7px; height: 7px; border-radius: 50%; background: var(--swatch); }
+    .harness-swatch.claude { --swatch: var(--harness-claude); }
+    .harness-swatch.codex { --swatch: var(--harness-codex); }
+    .harness-swatch.shell { --swatch: var(--harness-shell); }
     .option-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
     .option-button[aria-pressed="true"] { color: var(--gold); border-color: color-mix(in srgb, var(--gold) 55%, var(--rule)); }
     .collision-note {
@@ -503,7 +522,6 @@
     @media (max-width: 970px) {
       .sidebar { width: 160px; }
       .content { grid-template-columns: minmax(0, 1fr) 275px; }
-      .agent-mark { display: none; }
     }
   </style>
 </head>
@@ -562,32 +580,37 @@
             <p>Click any tab, then force a state. Selection and state should remain readable in every combination.</p>
 
             <div class="state-controls" aria-label="Change selected surface state">
-              <button class="state-button" data-state="running">↻ Running</button>
-              <button class="state-button" data-state="idle">Ⅱ Idle</button>
-              <button class="state-button" data-state="cold">– Cold</button>
-              <button class="state-button" data-state="waiting">! Your turn</button>
+              <button class="state-button" data-state="running">R Running</button>
+              <button class="state-button" data-state="idle">I Idle</button>
+              <button class="state-button" data-state="cold">C Cold</button>
+              <button class="state-button" data-state="waiting">W Your turn</button>
             </div>
 
             <div class="section-rule"></div>
             <div class="eyebrow">Grammar</div>
             <div class="legend">
-              <div class="legend-row running"><span class="state-mark"><span>↻</span></span><strong>Running</strong><span>slow rotor; work is moving</span></div>
-              <div class="legend-row idle"><span class="state-mark"><span>Ⅱ</span></span><strong>Idle</strong><span>quiet pause; prompt is ready</span></div>
-              <div class="legend-row cold"><span class="state-mark"><span>–</span></span><strong>Cold</strong><span>dotted shell; no live session</span></div>
-              <div class="legend-row waiting"><span class="state-mark"><span>!</span></span><strong>Your turn</strong><span>boxed bang + striped demand rail</span></div>
+              <div class="legend-row running"><span class="state-mark"><span>R</span></span><strong>Running</strong><span>R + slow rim; work is moving</span></div>
+              <div class="legend-row idle"><span class="state-mark"><span>I</span></span><strong>Idle</strong><span>I; prompt is ready</span></div>
+              <div class="legend-row cold"><span class="state-mark"><span>C</span></span><strong>Cold</strong><span>C + dotted shell; no live session</span></div>
+              <div class="legend-row waiting"><span class="state-mark"><span>W</span></span><strong>Your turn</strong><span>W + striped demand rail</span></div>
+            </div>
+            <div class="harness-key" aria-label="Harness color key">
+              <span><i class="harness-swatch claude"></i> Claude</span>
+              <span><i class="harness-swatch codex"></i> Codex</span>
+              <span><i class="harness-swatch shell"></i> Shell</span>
             </div>
 
             <div class="section-rule"></div>
             <div class="eyebrow">Stress the strip</div>
             <div class="option-grid">
               <button class="option-button" id="toggleIds" aria-pressed="false">Surface IDs</button>
-              <button class="option-button" id="toggleAgents" aria-pressed="true">Agent glyphs</button>
+              <button class="option-button" id="toggleHarness" aria-pressed="true">Harness color</button>
               <button class="option-button" id="toggleTheme" aria-pressed="false">Light theme</button>
               <button class="option-button" id="toggleMotion" aria-pressed="false">Reduce motion</button>
             </div>
 
             <div class="collision-note">
-              <b>Read the edges first.</b> State owns the hard-left edge; close owns the hard-right. The white top rail and raised fill say “you are here.” Only <b>your turn</b> earns the lower gold demand rail.
+              <b>One badge, two reads.</b> R/I/C/W names state; badge hue names the harness. Waiting overrides hue with gold and the demand rail. Close remains hard-right.
             </div>
           </aside>
         </div>
@@ -599,24 +622,30 @@
 
   <script>
     const surfaces = [
-      { id: 54, title: 'Agent Pulse', state: 'waiting', agent: 'C', description: 'Waiting for the operator to choose the workspace-level direction.' },
-      { id: 62, title: 'Surface Pulse', state: 'running', agent: '◇', description: 'Prototyping agent presence on dense horizontal surface tabs.' },
-      { id: 72, title: 'Release staging', state: 'running', agent: 'C', description: 'Building and validating the signed release candidate.' },
-      { id: 77, title: 'Mailbox attribution', state: 'idle', agent: '◇', description: 'At the prompt after completing the attribution copy pass.' },
-      { id: 91, title: 'Socket watchdog', state: 'cold', agent: '·', description: 'Resumable terminal; no agent process is currently live.' },
-      { id: 105, title: 'Browser regression sweep', state: 'running', agent: 'C', description: 'Exercising browser navigation, snapshots, and auth-state restore.' },
-      { id: 118, title: 'Theme conformance', state: 'idle', agent: '◇', description: 'Dark and light c11 theme slot review is complete.' },
-      { id: 126, title: 'Japanese localization', state: 'cold', agent: 'C', description: 'Session ended after committing the locale update.' },
-      { id: 144, title: 'Workspace snapshot recovery validation and persistence audit', state: 'waiting', agent: '◇', description: 'Needs approval to replace the corrupted fixture with a captured snapshot.' },
-      { id: 158, title: 'Docs pruning', state: 'idle', agent: 'C', description: 'At the prompt with a clean documentation diff.' },
-      { id: 203, title: 'Flaky focus test diagnosis', state: 'running', agent: '◇', description: 'Repeating the focused-pane event test under contention.' }
+      { id: 54, title: 'Agent Pulse', state: 'waiting', harness: 'claude', description: 'Waiting for the operator to choose the workspace-level direction.' },
+      { id: 62, title: 'Surface Pulse', state: 'running', harness: 'codex', description: 'Prototyping agent presence on dense horizontal surface tabs.' },
+      { id: 72, title: 'Release staging', state: 'running', harness: 'claude', description: 'Building and validating the signed release candidate.' },
+      { id: 77, title: 'Mailbox attribution', state: 'idle', harness: 'codex', description: 'At the prompt after completing the attribution copy pass.' },
+      { id: 91, title: 'Socket watchdog', state: 'cold', harness: 'shell', description: 'Resumable terminal; no agent process is currently live.' },
+      { id: 105, title: 'Browser regression sweep', state: 'running', harness: 'claude', description: 'Exercising browser navigation, snapshots, and auth-state restore.' },
+      { id: 118, title: 'Theme conformance', state: 'idle', harness: 'codex', description: 'Dark and light c11 theme slot review is complete.' },
+      { id: 126, title: 'Japanese localization', state: 'cold', harness: 'claude', description: 'Session ended after committing the locale update.' },
+      { id: 144, title: 'Workspace snapshot recovery validation and persistence audit', state: 'waiting', harness: 'codex', description: 'Needs approval to replace the corrupted fixture with a captured snapshot.' },
+      { id: 158, title: 'Docs pruning', state: 'idle', harness: 'claude', description: 'At the prompt with a clean documentation diff.' },
+      { id: 203, title: 'Flaky focus test diagnosis', state: 'running', harness: 'codex', description: 'Repeating the focused-pane event test under contention.' }
     ];
 
     const stateCopy = {
-      running: { glyph: '↻', label: 'Running · work in motion', color: 'var(--running)', line: 'Command in flight. Output and prompt-state observation say this agent is moving.' },
-      idle: { glyph: 'Ⅱ', label: 'Idle · at the prompt', color: 'var(--idle)', line: 'Live session, quiet prompt. Available for another task without a resume step.' },
-      cold: { glyph: '–', label: 'Cold · no live agent', color: 'var(--cold)', line: 'The surface remains, but no agent session is currently live. It may be resumable.' },
-      waiting: { glyph: '!', label: 'Your turn · response needed', color: 'var(--gold)', line: 'The agent has yielded with a question or decision. This is the operator’s turn.' }
+      running: { glyph: 'R', label: 'Running · work in motion', color: 'var(--running)', line: 'Command in flight. Output and prompt-state observation say this agent is moving.' },
+      idle: { glyph: 'I', label: 'Idle · at the prompt', color: 'var(--idle)', line: 'Live session, quiet prompt. Available for another task without a resume step.' },
+      cold: { glyph: 'C', label: 'Cold · no live agent', color: 'var(--cold)', line: 'The surface remains, but no agent session is currently live. It may be resumable.' },
+      waiting: { glyph: 'W', label: 'Your turn · response needed', color: 'var(--gold)', line: 'The agent has yielded with a question or decision. This is the operator’s turn.' }
+    };
+
+    const harnessColors = {
+      claude: 'var(--harness-claude)',
+      codex: 'var(--harness-codex)',
+      shell: 'var(--harness-shell)'
     };
 
     let selectedId = 62;
@@ -624,23 +653,21 @@
 
     function widthFor(surface) {
       const idCost = document.body.classList.contains('hide-ids') ? 0 : 23;
-      const agentCost = document.body.classList.contains('hide-agents') ? 0 : 15;
       // Deliberately exercise Bonsplit's dense end of the real 112–220pt range:
       // eight tabs remain scannable by default, while IDs and long titles still
       // push the strip into its native horizontal-overflow behavior.
-      return Math.max(112, Math.min(190, 52 + idCost + agentCost + surface.title.length * 4));
+      return Math.max(112, Math.min(190, 52 + idCost + surface.title.length * 4));
     }
 
     function tabMarkup(surface) {
       const copy = stateCopy[surface.state];
       return `
-        <div class="surface-tab state-${surface.state}${surface.id === selectedId ? ' selected' : ''}"
+        <div class="surface-tab state-${surface.state} harness-${surface.harness}${surface.id === selectedId ? ' selected' : ''}"
              style="--tab-width:${widthFor(surface)}px"
              data-id="${surface.id}" role="tab" tabindex="0"
-             aria-selected="${surface.id === selectedId}" aria-label="${surface.title}, ${copy.label}"
-             title="surface:${surface.id} · ${surface.title} · ${copy.label}">
+             aria-selected="${surface.id === selectedId}" aria-label="${surface.title}, ${copy.label}, ${surface.harness} harness"
+             title="surface:${surface.id} · ${surface.title} · ${copy.label} · ${surface.harness}">
           <span class="state-mark" aria-hidden="true"><span>${copy.glyph}</span></span>
-          <span class="agent-mark" aria-hidden="true">${surface.agent}</span>
           <span class="tab-title"><span class="surface-id">${surface.id}: </span>${surface.title}</span>
           <button class="close-tab" aria-label="Close ${surface.title}" title="Close tab">×</button>
         </div>`;
@@ -685,28 +712,32 @@
     function updateSelection() {
       const surface = surfaces.find(item => item.id === selectedId);
       const copy = stateCopy[surface.state];
+      const harnessColor = document.body.classList.contains('neutral-harness')
+        ? 'var(--text-soft)'
+        : harnessColors[surface.harness];
+      const badgeColor = surface.state === 'waiting' ? copy.color : harnessColor;
       const waitingCount = surfaces.filter(item => item.state === 'waiting').length;
       document.getElementById('surfaceTitle').textContent = `surface:${surface.id} · ${surface.title}`;
       document.getElementById('surfaceDescription').textContent = surface.description;
       document.getElementById('inspectorTitle').textContent = surface.title;
       document.getElementById('readoutGlyph').textContent = copy.glyph;
       document.getElementById('readoutLabel').textContent = copy.label;
-      document.getElementById('surfaceStateReadout').style.setProperty('--selected-state', copy.color);
+      document.getElementById('surfaceStateReadout').style.setProperty('--selected-state', badgeColor);
       document.querySelectorAll('.state-button').forEach(button => {
         button.classList.toggle('active', button.dataset.state === surface.state);
       });
       document.getElementById('terminalCopy').innerHTML = `
         <div><span class="dim">$</span> c11 inspect surface:${surface.id}</div>
         <br>
-        <div><span style="color:${copy.color}">${copy.glyph}</span> <strong>${copy.label}</strong></div>
+        <div><span style="color:${badgeColor}">${copy.glyph}</span> <strong>${copy.label}</strong> <span class="dim">· ${surface.harness}</span></div>
         <div class="dim">${copy.line}</div>
         <div class="rule">────────────────────────────────────────────────────────</div>
         <div><span class="gold">${waitingCount}</span> of ${surfaces.length} surfaces currently need the operator.</div>
         <div class="dim">The tab strip keeps that answer visible through selection, truncation, and overflow.</div>
         <br>
         <div><span class="blue">selection</span> → neutral top rail + raised fill</div>
-        <div><span class="gold">operator turn</span> → ! glyph + patterned lower rail</div>
-        <div><span class="green">availability</span> → quiet geometric glyph</div>`;
+        <div><span class="gold">operator turn</span> → W + patterned lower rail</div>
+        <div><span class="green">harness</span> → badge hue; no second glyph</div>`;
     }
 
     function setSelectedState(state) {
@@ -733,11 +764,11 @@
       event.currentTarget.setAttribute('aria-pressed', shown);
       renderTabs();
     });
-    document.getElementById('toggleAgents').addEventListener('click', event => {
-      document.body.classList.toggle('hide-agents');
-      const shown = !document.body.classList.contains('hide-agents');
+    document.getElementById('toggleHarness').addEventListener('click', event => {
+      document.body.classList.toggle('neutral-harness');
+      const shown = !document.body.classList.contains('neutral-harness');
       event.currentTarget.setAttribute('aria-pressed', shown);
-      renderTabs();
+      updateSelection();
     });
     document.getElementById('toggleTheme').addEventListener('click', event => {
       const light = document.body.dataset.theme !== 'light';

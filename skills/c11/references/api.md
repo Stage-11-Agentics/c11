@@ -128,6 +128,28 @@ c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     # (claude-code only in v1; replace + empty text = blank slate). errors
     # system_prompt_unsupported for a kind with no system-prompt axis.
 
+# Saved agent configs (the model picker's CLI, design §6)
+c11 config list [--json]                          # saved configs + default(mode) + most-recent
+c11 config recent [--json]                        # observed most-recent, with per-field source
+c11 config stats [--window today|all|<N>d] [--by model|harness|provider] [--json]
+c11 config save <name> --harness <k> [--model <id>] [--effort <tier>] \
+    [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] \
+    [--command <c>] [--initial-prompt <p>] [--env K=V ...] [--json]
+c11 config edit <name|id> [ …same field flags… ]  # supply only what changes; empty string clears to inherit
+c11 config rm <name|id>
+c11 config reorder <name|id> --to <index>
+c11 config default <name|id> | --follow-recent | --pin-current [<name>]
+c11 config launch <name|id> [--pane <id|ref> | --workspace <id|ref> | --new-workspace] \
+    [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--json]
+    # A saved config is a full launch recipe (harness + model/effort/system-prompt +
+    # advanced command/initial-prompt/env). `list/recent/stats/save/edit/rm/reorder/
+    # default` read & write the state-root files DIRECTLY — they work with the app down.
+    # `config launch` is the one command that needs the running app (it spawns a
+    # surface); it's a thin client over agent.launch, honoring the config's full recipe
+    # and reusing its error codes (unknown_agent_type, invalid_effort, …).
+    # `default --pin-current` snapshots the most-recent launch into a new saved config
+    # and pins it (optional name overrides the auto label). `--window <N>d` = last N days.
+
 # Navigate
 c11 select-workspace --workspace <id|ref>
 c11 focus-pane --pane <id|ref>

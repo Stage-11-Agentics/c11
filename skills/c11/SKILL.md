@@ -47,6 +47,7 @@ c11 stamps your launch identity itself: the sidebar chip (agent type from proces
 | You want to… | Load |
 |---|---|
 | split / create / resize panes & surfaces, `tree`, `send`, `read-screen`, targeting, `--cwd` | [references/api.md](references/api.md) |
+| launch a typed agent (`launch-agent`); save/list/launch reusable agent configs + read launch stats (`c11 config …`) | [references/api.md](references/api.md) |
 | launch sub-agents, the tab-naming convention, layout patterns, write c11-aware prompts | [references/orchestration.md](references/orchestration.md) |
 | send/receive inter-agent messages (the mailbox) | [docs/c11-mailbox-guide.md](../../docs/c11-mailbox-guide.md) |
 | surface-manifest depth, sidebar reporting (`set-status` / `set-progress` / `log`), flash, precedence & sources | [references/metadata.md](references/metadata.md) |

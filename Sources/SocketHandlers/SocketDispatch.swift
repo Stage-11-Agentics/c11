@@ -65,6 +65,10 @@ extension TerminalController {
             return v2Result(id: request.id, v2PaneConfirm(params: request.params))
         case "feedback.submit":
             return v2Result(id: request.id, v2FeedbackSubmit(params: request.params))
+        // C11-180: config reads/mutations run off-main (pure file I/O).
+        case "config.list", "config.recent", "config.stats",
+             "config.save", "config.edit", "config.rm", "config.reorder", "config.default":
+            return v2Result(id: request.id, TerminalController.v2ConfigNonLaunch(method: request.method, params: request.params))
         default:
             return v2Error(id: request.id, code: "method_not_found", message: "Unknown method")
         }
@@ -885,6 +889,7 @@ extension TerminalController {
     /// unchanged. Runs on the main actor exactly like the switch it replaces.
     func v2DispatchExtracted(_ method: String, id: Any?, params: [String: Any]) -> String? {
         if method.hasPrefix("agent.") { return v2DispatchAgent(method, id: id, params: params) }
+        if method.hasPrefix("config.") { return v2DispatchConfig(method, id: id, params: params) }
         if method.hasPrefix("window.") { return v2DispatchWindow(method, id: id, params: params) }
         if method.hasPrefix("workspace.") { return v2DispatchWorkspace(method, id: id, params: params) }
         if method.hasPrefix("pane.") { return v2DispatchPane(method, id: id, params: params) }
@@ -966,7 +971,10 @@ extension TerminalController {
             task: v2RawString(params, "task"),
             prompt: v2RawString(params, "prompt"),
             systemPrompt: systemPromptSetting,
-            extraEnv: v2StringMap(params, "env") ?? [:]
+            extraEnv: v2StringMap(params, "env") ?? [:],
+            // C11-180: `config launch` rides its saved config's full-command
+            // recipe field through here so this stays the one launch composer.
+            commandOverride: v2RawString(params, "command_override")
         )
         let plan: AgentLaunchPlan
         switch AgentLaunchPlanner.plan(
@@ -1106,12 +1114,40 @@ extension TerminalController {
             ])
 
             // C11-178 rail-1: record the resolved launch. `plan` exposes model/
-            // effort as scalars ("" = inherit → normalized to nil). Tagged
-            // `.launchAgent`; raw-socket vs CLI is indistinguishable here without
-            // a wire param (deferred to C11-179). Dispatched off-main.
+            // effort as scalars ("" = inherit → normalized to nil). Dispatched
+            // off-main. C11-180: `config launch` passes `source=socket` +
+            // `config_id` + the resolved system-prompt mode so config-originated
+            // launches are honestly tagged and carry their config id.
+            let launchSource = AgentLaunchSource(rawValue: self.v2RawString(params, "source") ?? "")
+                ?? .launchAgent
+            let launchConfigId = self.v2RawString(params, "config_id")
+            let systemPromptMode = request.systemPrompt?.mode.rawValue
             if let store = AgentLaunchStatsStore.shared {
-                let stats = ResolvedLaunch(harness: plan.kind, model: plan.model, effort: plan.effort)
-                DispatchQueue.global(qos: .utility).async { store.recordLaunch(stats, source: .launchAgent) }
+                let stats = ResolvedLaunch(
+                    harness: plan.kind,
+                    model: plan.model,
+                    effort: plan.effort,
+                    systemPromptMode: systemPromptMode,
+                    configId: launchConfigId
+                )
+                DispatchQueue.global(qos: .utility).async { store.recordLaunch(stats, source: launchSource) }
+            }
+            // C11-180 (R2): a `config launch` keeps the follow-recent pointer in
+            // `agent-configs.json` live so `effectiveDefault()` resolves against a
+            // fresh observation. Off the critical path; never fails the launch.
+            if let launchConfigId {
+                let recent = RecentAgentConfig(
+                    configId: launchConfigId,
+                    harness: plan.kind,
+                    model: plan.model.isEmpty ? nil : plan.model,
+                    effort: plan.effort.isEmpty ? nil : plan.effort,
+                    observedAt: Date(),
+                    source: "launch",
+                    fieldSources: ["model": "launch", "effort": "launch"]
+                )
+                DispatchQueue.global(qos: .utility).async {
+                    try? AgentConfigLibraryStore.shared.recordRecent(recent)
+                }
             }
         }) != nil else {
             return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)

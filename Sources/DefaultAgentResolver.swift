@@ -349,6 +349,15 @@ struct AgentLaunchRequest: Equatable {
     /// mirroring `--model`/`--effort` on an unsupported kind.
     var systemPrompt: SystemPromptSetting?
     var extraEnv: [String: String] = [:]
+    /// Full launch-command override (C11-180 `config launch`, design §1.3
+    /// advanced tier). When non-empty it replaces the harness Settings base
+    /// command as the line flags inject onto — so a saved config's `command`
+    /// recipe field is honored while model/effort/system-prompt flag injection
+    /// and hardcoded-detection still run over it. `nil`/empty = inherit the
+    /// harness base (byte-identical to today). The A-button overlay path reaches
+    /// the equivalent merge via `mergeOverlay`; this is its planner-path twin so
+    /// `config launch` stays a thin client over `AgentLaunchPlanner`.
+    var commandOverride: String? = nil
 }
 
 /// Structured planning failures — each maps 1:1 onto a wire error code so the
@@ -425,7 +434,7 @@ enum AgentLaunchPlanner {
 
         let agentType = AgentType(rawValue: kind)
         let template: AgentLaunchTemplate
-        let baseCommand: String
+        var baseCommand: String
         let baseEnv: [String: String]
         let pinnedModel: String
         let pinnedEffort: String
@@ -453,6 +462,14 @@ enum AgentLaunchPlanner {
             pinnedSystemPrompt = nil
         } else {
             return .failure(.unknownAgentType(kind))
+        }
+
+        // C11-180: a saved config's full-command override (`config launch`)
+        // replaces the harness base before flag injection / hardcoded-detection,
+        // so model/effort/system-prompt still compose over the overridden line.
+        if let override = request.commandOverride?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !override.isEmpty {
+            baseCommand = override
         }
 
         guard !baseCommand.isEmpty else {

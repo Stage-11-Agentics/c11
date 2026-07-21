@@ -5506,13 +5506,12 @@ final class Workspace: Identifiable, ObservableObject {
 
     private static func currentSplitButtonTooltips() -> BonsplitConfiguration.SplitButtonTooltips {
         BonsplitConfiguration.SplitButtonTooltips(
-            newAgent: {
-                let template = String(
-                    localized: "workspace.tooltip.newAgent",
-                    defaultValue: "Launch Agent (%@)"
-                )
-                return String(format: template, locale: Locale.current, DefaultAgentConfigStore.shared.current.defaultAgent.displayName)
-            }(),
+            // §5.3 v1: the A-button tooltip carries the resolved default config's
+            // name · model · effort (C11-179), read from the saved-config library
+            // and resolved through the overlay for the display axes.
+            newAgent: DefaultAgentResolver.resolvedDefaultTooltip(
+                userDefault: DefaultAgentConfigStore.shared.current
+            ),
             newTerminal: KeyboardShortcutSettings.Action.newSurface.tooltip(
                 String(localized: "workspace.tooltip.newTerminal", defaultValue: "New Terminal")
             ),
@@ -11960,60 +11959,140 @@ extension Workspace: BonsplitDelegate {
     func launchAgentSurface(inPane pane: PaneID, explicitAgent: AgentType? = nil, source: AgentLaunchSource = .aButton) {
         let userDefault = DefaultAgentConfigStore.shared.current
         let projectConfig = DefaultAgentProjectConfig.find(from: resolverCwdForAgentLaunch())
-        let resolved = DefaultAgentResolver.resolve(
-            explicitAgent: explicitAgent,
-            userDefault: userDefault,
-            projectConfig: projectConfig
-        )
-        guard !resolved.launch.command.isEmpty else { return }
+
+        // A plain left-click (no explicit agent) launches the saved-config
+        // library's `effectiveDefault()` through the overlay resolver (C11-179).
+        // An explicit agent (right-click "launch this kind" / socket) stays on
+        // the raw-harness path. A custom-harness overlay the resolver can't
+        // materialize falls back to the raw-harness default (design §5.6).
+        let agent: AgentType
+        let launch: ResolvedAgentLaunch
+        let resolvedModel: String
+        let resolvedEffort: String
+        let resolvedSystemPromptMode: String?
+        let savedConfigId: String?
+
+        // Only a plain left-click consults the saved-config library; an explicit
+        // agent keeps `nil` here and takes the raw-harness path below.
+        let overlaySaved: SavedAgentConfig? = explicitAgent == nil
+            ? AgentConfigLibraryStore.shared.effectiveDefault()
+            : nil
+        if let saved = overlaySaved,
+           let overlay = DefaultAgentResolver.resolveOverlay(
+               savedConfig: saved,
+               userDefault: userDefault,
+               projectConfig: projectConfig
+           ) {
+            agent = overlay.agent
+            launch = overlay.launch
+            resolvedModel = overlay.mergedConfig.model.trimmingCharacters(in: .whitespacesAndNewlines)
+            resolvedEffort = overlay.mergedConfig.effort.trimmingCharacters(in: .whitespacesAndNewlines)
+            resolvedSystemPromptMode = overlay.mergedConfig.systemPrompt?.mode.rawValue
+            savedConfigId = saved.id.isEmpty ? nil : saved.id
+        } else {
+            let resolved = DefaultAgentResolver.resolve(
+                explicitAgent: explicitAgent,
+                userDefault: userDefault,
+                projectConfig: projectConfig
+            )
+            agent = resolved.agent
+            launch = resolved.launch
+            let cfg = projectConfig?.agents[agent] ?? userDefault.config(for: agent)
+            resolvedModel = cfg.model.trimmingCharacters(in: .whitespacesAndNewlines)
+            resolvedEffort = cfg.effort.trimmingCharacters(in: .whitespacesAndNewlines)
+            resolvedSystemPromptMode = cfg.systemPrompt?.mode.rawValue
+            savedConfigId = nil
+        }
+
+        guard !launch.command.isEmpty else { return }
         guard let panel = newTerminalSurface(
             inPane: pane,
-            startupEnvironment: resolved.launch.envOverrides
+            startupEnvironment: launch.envOverrides
         ) else { return }
         // By default no orientation prompt is baked (see `c11OrientPrompt`),
         // so the agent boots straight to ready with no dead-time. c11 stamps
         // the identity the sidebar needs itself — no agent round-trip: the
-        // type comes from `AgentDetector`, and we stamp the pinned model plus
-        // a placeholder title here. An operator who configured a launch prompt
-        // still gets it delivered below (baked positional for claude-code,
-        // post-ready sendText for other TUIs is a follow-up).
-        stampLaunchIdentity(
-            surfaceId: panel.id,
-            agent: resolved.agent,
-            userDefault: userDefault,
-            projectConfig: projectConfig
-        )
-        panel.sendText(resolved.launch.command + "\n")
-        // C11-178 rail-1: record the launch off the critical path. Mirror the
-        // resolver's per-agent config pick (as stampLaunchIdentity does) to
-        // recover the resolved model/effort scalars, which ResolvedAgentLaunch
-        // bakes into the command string rather than exposing.
+        // type comes from `AgentDetector`, and we stamp the overlay-resolved
+        // model plus a placeholder title here. An operator who configured a
+        // launch prompt still gets it delivered below (baked positional for
+        // claude-code, post-ready sendText for other TUIs is a follow-up).
+        stampLaunchIdentity(surfaceId: panel.id, resolvedModel: resolvedModel)
+        panel.sendText(launch.command + "\n")
+        // C11-178 rail-1: record the launch off the critical path, now with the
+        // overlay-resolved axes + `config_id` + system-prompt mode (C11-179).
         recordAgentLaunchStats(
-            agent: resolved.agent,
-            userDefault: userDefault,
-            projectConfig: projectConfig,
+            harness: agent.rawValue,
+            model: resolvedModel,
+            effort: resolvedEffort,
+            systemPromptMode: resolvedSystemPromptMode,
+            configId: savedConfigId,
             source: source
         )
+        // C11-179 (R2): keep the follow-recent pointer that `effectiveDefault()`
+        // reads — `recent` in `agent-configs.json` — live for A-button-lineage
+        // launches. (The stats rail's own `recent` in `agent-launch-stats.json`
+        // is durable-telemetry only and is NEVER read for resolution, so the two
+        // homes cannot cause a follow-recent divergence.) Off-main, best-effort.
+        recordOverlayRecent(
+            harness: agent.rawValue,
+            model: resolvedModel,
+            effort: resolvedEffort,
+            configId: savedConfigId
+        )
+        // The tooltip carries the resolved default (§5.3 v1); in follow-recent
+        // mode this launch changes what the next left-click launches, so refresh
+        // this workspace's A-button tooltip. Cheap: `refreshSplitButtonTooltips`
+        // diffs and no-ops when unchanged.
+        refreshSplitButtonTooltips()
     }
 
-    /// C11-178: emit a rail-1 launch-stats record for an A-button-lineage launch.
-    /// Config-only read; dispatched to a utility queue so no disk touches the
-    /// launch path. `nil` store (state dir unavailable) is a silent no-op.
+    /// C11-178/179: emit a rail-1 launch-stats record for an A-button-lineage
+    /// launch, carrying the overlay-resolved axes. Dispatched to a utility queue
+    /// so no disk touches the launch path. `nil` store (state dir unavailable)
+    /// is a silent no-op.
     private func recordAgentLaunchStats(
-        agent: AgentType,
-        userDefault: DefaultAgentConfig,
-        projectConfig: DefaultAgentConfig?,
+        harness: String,
+        model: String,
+        effort: String,
+        systemPromptMode: String?,
+        configId: String?,
         source: AgentLaunchSource
     ) {
         guard let store = AgentLaunchStatsStore.shared else { return }
-        let cfg = projectConfig?.agents[agent] ?? userDefault.config(for: agent)
         let resolved = ResolvedLaunch(
-            harness: agent.rawValue,
-            model: cfg.model,
-            effort: cfg.effort
+            harness: harness,
+            model: model,
+            effort: effort,
+            systemPromptMode: systemPromptMode,
+            configId: configId
         )
         DispatchQueue.global(qos: .utility).async {
             store.recordLaunch(resolved, source: source)
+        }
+    }
+
+    /// C11-179 (R2): persist the observed launch as `recent` in
+    /// `agent-configs.json` (the single home `effectiveDefault()`'s follow-recent
+    /// branch reads). Off-main, best-effort — a telemetry hiccup never fails a
+    /// launch. Empty `harness` is a no-op guard.
+    private func recordOverlayRecent(
+        harness: String,
+        model: String,
+        effort: String,
+        configId: String?
+    ) {
+        guard !harness.isEmpty else { return }
+        let recent = RecentAgentConfig(
+            configId: configId,
+            harness: harness,
+            model: model.isEmpty ? nil : model,
+            effort: effort.isEmpty ? nil : effort,
+            observedAt: Date(),
+            source: "launch",
+            fieldSources: ["model": "launch", "effort": "launch"]
+        )
+        DispatchQueue.global(qos: .utility).async {
+            try? AgentConfigLibraryStore.shared.recordRecent(recent)
         }
     }
 
@@ -12025,9 +12104,7 @@ extension Workspace: BonsplitDelegate {
     /// stamped here — `AgentDetector` owns it authoritatively.
     private func stampLaunchIdentity(
         surfaceId: UUID,
-        agent: AgentType,
-        userDefault: DefaultAgentConfig,
-        projectConfig: DefaultAgentConfig?
+        resolvedModel: String
     ) {
         var partial: [String: Any] = [
             MetadataKey.title: String(
@@ -12035,10 +12112,10 @@ extension Workspace: BonsplitDelegate {
                 defaultValue: "Awaiting first task"
             )
         ]
-        // Mirror the resolver's per-agent config pick so the chip shows the
-        // model c11 launched with. Reads config only; no mutation.
-        let cfg = projectConfig?.agents[agent] ?? userDefault.config(for: agent)
-        let model = cfg.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        // `resolvedModel` is the overlay-resolved model the launch actually used
+        // (C11-179), so the chip shows what c11 launched with — including a
+        // saved-config override, not just the harness base pin.
+        let model = resolvedModel.trimmingCharacters(in: .whitespacesAndNewlines)
         if !model.isEmpty {
             partial[MetadataKey.model] = model
         }

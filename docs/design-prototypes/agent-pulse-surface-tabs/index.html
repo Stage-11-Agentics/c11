@@ -22,10 +22,6 @@
       --running: #79aee8;
       --idle: #78b59e;
       --cold: #707681;
-      --harness-claude: #d88968;
-      --harness-codex: #69b5a8;
-      --harness-other: #6f9ed6;
-      --harness-shell: #818791;
       --badge-ink: #08090b;
       --shadow: rgba(0, 0, 0, .72);
       --terminal-line: #b8bcc4;
@@ -50,10 +46,6 @@
       --running: #326d9e;
       --idle: #357b61;
       --cold: #7f8289;
-      --harness-claude: #a84f32;
-      --harness-codex: #28776d;
-      --harness-other: #386fa8;
-      --harness-shell: #6d7178;
       --badge-ink: #fffdf8;
       --shadow: rgba(35, 34, 30, .25);
       --terminal-line: #4b4e55;
@@ -199,7 +191,6 @@
     .tab-scroll::-webkit-scrollbar { display: none; }
     .surface-tab {
       --state: var(--cold);
-      --harness: var(--harness-shell);
       position: relative;
       height: 30px;
       min-width: 112px;
@@ -225,11 +216,6 @@
     .surface-tab.state-running { --state: var(--running); }
     .surface-tab.state-idle { --state: var(--idle); }
     .surface-tab.state-cold { --state: var(--cold); color: color-mix(in srgb, var(--dim) 74%, transparent); }
-    .surface-tab.harness-claude { --harness: var(--harness-claude); }
-    .surface-tab.harness-codex { --harness: var(--harness-codex); }
-    .surface-tab.harness-other { --harness: var(--harness-other); }
-    .surface-tab.harness-shell { --harness: var(--harness-shell); }
-    body.neutral-harness .surface-tab { --harness: var(--text-soft); }
     .surface-tab.state-waiting {
       --state: var(--gold);
     }
@@ -270,51 +256,63 @@
       flex: 0 0 13px;
       display: grid;
       place-items: center;
+      position: relative;
       color: var(--state);
-      border: 1px solid color-mix(in srgb, var(--state) 76%, transparent);
-      border-radius: 50%;
-      font: 8px/1 var(--mono);
-      font-weight: 700;
     }
+    .state-mark::before {
+      content: "";
+      display: block;
+      width: 8px;
+      height: 8px;
+      background: currentColor;
+      border-radius: 2px;
+    }
+    .state-mark > span { display: none; }
     .surface-tab > .state-mark {
-      width: 22px;
-      height: 22px;
-      flex: 0 0 22px;
+      width: 18px;
+      height: 18px;
+      flex: 0 0 18px;
+      place-items: center start;
       margin-right: 5px;
-      color: var(--harness);
-      border-color: color-mix(in srgb, var(--harness) 76%, transparent);
-      font-size: 10px;
+      color: var(--state);
     }
-    .surface-tab.state-running > .state-mark {
-      color: var(--harness);
+    .state-mark.state-running::before {
+      width: 10px;
+      height: 10px;
       background: transparent;
-      border-color: color-mix(in srgb, var(--harness) 44%, transparent);
-      border-top-color: var(--harness);
-      animation: turn 1.8s linear infinite;
+      border: 1px solid color-mix(in srgb, currentColor 38%, transparent);
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: turn 2.4s linear infinite;
     }
-    .surface-tab.state-running > .state-mark span { animation: counter-turn 1.8s linear infinite; }
-    .surface-tab.state-idle > .state-mark {
-      color: var(--harness);
-      background: transparent;
-      border-color: color-mix(in srgb, var(--harness) 78%, transparent);
-      border-radius: 4px;
+    .state-mark.state-idle::before {
+      width: 8px;
+      height: 8px;
+      opacity: .82;
     }
-    .surface-tab.state-cold > .state-mark {
-      color: var(--harness);
-      background: transparent;
-      border-color: color-mix(in srgb, var(--harness) 68%, transparent);
-      border-style: dotted;
-      opacity: .8;
+    .state-mark.state-cold::before {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      opacity: .48;
     }
-    .surface-tab.state-waiting > .state-mark {
+    .state-mark.state-waiting {
       color: var(--badge-ink);
+    }
+    .state-mark.state-waiting::before {
+      width: 17px;
+      height: 17px;
       background: var(--gold);
-      border-color: var(--gold);
       border-radius: 4px;
       box-shadow: 0 0 8px color-mix(in srgb, var(--gold) 30%, transparent);
     }
+    .state-mark.state-waiting > span {
+      display: block;
+      position: absolute;
+      font: 8px/1 var(--mono);
+      font-weight: 750;
+    }
     @keyframes turn { to { transform: rotate(360deg); } }
-    @keyframes counter-turn { to { transform: rotate(-360deg); } }
     .tab-title {
       min-width: 0;
       overflow: hidden;
@@ -390,7 +388,7 @@
       text-transform: uppercase;
       white-space: nowrap;
     }
-    .surface-state-readout .state-mark { --state: var(--selected-state, var(--running)); }
+    .surface-state-readout .state-mark { width: 18px; height: 18px; --state: var(--selected-state, var(--running)); }
 
     .content {
       min-height: 0;
@@ -452,38 +450,28 @@
     .state-button[data-state="idle"] { --state-button-color: var(--idle); }
     .state-button[data-state="cold"] { --state-button-color: var(--cold); }
     .state-button[data-state="waiting"] { --state-button-color: var(--gold); }
+    .control-mark {
+      width: 7px;
+      height: 7px;
+      flex: 0 0 7px;
+      background: var(--state-button-color);
+      border-radius: 2px;
+      opacity: .8;
+    }
+    .state-button[data-state="running"] .control-mark { background: transparent; border: 1px solid var(--running); border-radius: 50%; }
+    .state-button[data-state="cold"] .control-mark { width: 5px; height: 5px; flex-basis: 5px; border-radius: 50%; opacity: .48; }
+    .state-button[data-state="waiting"] .control-mark { display: none; }
     .section-rule { height: 1px; margin: 17px 0; background: var(--rule); }
     .legend { display: grid; gap: 9px; margin-top: 11px; }
     .legend-row { display: grid; grid-template-columns: 18px 62px 1fr; align-items: center; gap: 6px; }
     .legend-row .state-mark { --state: var(--legend-state); }
-    .legend-row.running { --legend-state: var(--text-soft); }
-    .legend-row.idle { --legend-state: var(--text-soft); }
-    .legend-row.cold { --legend-state: var(--text-soft); }
+    .legend-row.running { --legend-state: var(--running); }
+    .legend-row.idle { --legend-state: var(--idle); }
+    .legend-row.cold { --legend-state: var(--cold); }
     .legend-row.waiting { --legend-state: var(--gold); }
     .legend-row strong { color: var(--text-soft); font: 9px var(--mono); font-weight: 650; text-transform: uppercase; }
     .legend-row span:last-child { color: var(--dim); font: 9px/1.3 var(--mono); }
-    .legend-row.running .state-mark { border-color: color-mix(in srgb, var(--text-soft) 44%, transparent); border-top-color: var(--text-soft); }
-    .legend-row.idle .state-mark { border-radius: 3px; }
-    .legend-row.cold .state-mark { border-style: dotted; }
-    .legend-row.waiting .state-mark { color: var(--badge-ink); background: var(--gold); border-color: var(--gold); border-radius: 3px; }
-    .harness-key {
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-top: 12px;
-      color: var(--dim);
-      font: 8px var(--mono);
-      text-transform: uppercase;
-    }
-    .harness-key span { display: inline-flex; align-items: center; gap: 4px; }
-    body.neutral-harness .harness-key { opacity: .35; }
-    .harness-swatch { width: 7px; height: 7px; border-radius: 50%; background: var(--swatch); }
-    .harness-swatch.claude { --swatch: var(--harness-claude); }
-    .harness-swatch.codex { --swatch: var(--harness-codex); }
-    .harness-swatch.other { --swatch: var(--harness-other); }
-    .harness-swatch.shell { --swatch: var(--harness-shell); }
-    .option-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .option-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
     .option-button[aria-pressed="true"] { color: var(--gold); border-color: color-mix(in srgb, var(--gold) 55%, var(--rule)); }
     .collision-note {
       margin-top: 14px;
@@ -568,7 +556,7 @@
             <div class="surface-description" id="surfaceDescription"></div>
           </div>
           <div class="surface-state-readout" id="surfaceStateReadout">
-            <span class="state-mark"><span id="readoutGlyph"></span></span>
+            <span class="state-mark" id="readoutMark"><span id="readoutGlyph"></span></span>
             <span id="readoutLabel"></span>
           </div>
         </div>
@@ -582,38 +570,31 @@
             <p>Click any tab, then force a state. Selection and state should remain readable in every combination.</p>
 
             <div class="state-controls" aria-label="Change selected surface state">
-              <button class="state-button" data-state="running">R Running</button>
-              <button class="state-button" data-state="idle">I Idle</button>
-              <button class="state-button" data-state="cold">C Cold</button>
+              <button class="state-button" data-state="running"><span class="control-mark"></span>Running</button>
+              <button class="state-button" data-state="idle"><span class="control-mark"></span>Idle</button>
+              <button class="state-button" data-state="cold"><span class="control-mark"></span>Cold</button>
               <button class="state-button" data-state="waiting">W Your turn</button>
             </div>
 
             <div class="section-rule"></div>
             <div class="eyebrow">Grammar</div>
             <div class="legend">
-              <div class="legend-row running"><span class="state-mark"><span>R</span></span><strong>Running</strong><span>R + slow rim; work is moving</span></div>
-              <div class="legend-row idle"><span class="state-mark"><span>I</span></span><strong>Idle</strong><span>I; prompt is ready</span></div>
-              <div class="legend-row cold"><span class="state-mark"><span>C</span></span><strong>Cold</strong><span>C + dotted shell; no live session</span></div>
-              <div class="legend-row waiting"><span class="state-mark"><span>W</span></span><strong>Your turn</strong><span>prominent gold W; no second signal</span></div>
-            </div>
-            <div class="harness-key" aria-label="Harness color key">
-              <span><i class="harness-swatch claude"></i> Claude</span>
-              <span><i class="harness-swatch codex"></i> Codex</span>
-              <span><i class="harness-swatch other"></i> Other agent</span>
-              <span><i class="harness-swatch shell"></i> Shell</span>
+              <div class="legend-row running"><span class="state-mark state-running"></span><strong>Running</strong><span>blue + slow rim; work is moving</span></div>
+              <div class="legend-row idle"><span class="state-mark state-idle"></span><strong>Idle</strong><span>static green mark; prompt is ready</span></div>
+              <div class="legend-row cold"><span class="state-mark state-cold"></span><strong>Cold</strong><span>quiet gray dot; no live session</span></div>
+              <div class="legend-row waiting"><span class="state-mark state-waiting"><span>W</span></span><strong>Your turn</strong><span>compact gold W; explicit demand</span></div>
             </div>
 
             <div class="section-rule"></div>
             <div class="eyebrow">Stress the strip</div>
             <div class="option-grid">
               <button class="option-button" id="toggleIds" aria-pressed="false">Surface IDs</button>
-              <button class="option-button" id="toggleHarness" aria-pressed="true">Harness color</button>
               <button class="option-button" id="toggleTheme" aria-pressed="false">Light theme</button>
               <button class="option-button" id="toggleMotion" aria-pressed="false">Reduce motion</button>
             </div>
 
             <div class="collision-note">
-              <b>One badge, two reads.</b> R/I/C/W names state; quiet outline hue names the harness. Other agent harnesses share blue. Waiting overrides hue with gold alone. Close remains hard-right.
+              <b>State first.</b> Color carries routine state; only running moves. Waiting is the deliberate exception: a compact gold W makes the operator demand explicit. Close remains hard-right.
             </div>
           </aside>
         </div>
@@ -639,17 +620,10 @@
     ];
 
     const stateCopy = {
-      running: { glyph: 'R', label: 'Running · work in motion', color: 'var(--running)', line: 'Command in flight. Output and prompt-state observation say this agent is moving.' },
-      idle: { glyph: 'I', label: 'Idle · at the prompt', color: 'var(--idle)', line: 'Live session, quiet prompt. Available for another task without a resume step.' },
-      cold: { glyph: 'C', label: 'Cold · no live agent', color: 'var(--cold)', line: 'The surface remains, but no agent session is currently live. It may be resumable.' },
+      running: { glyph: '', label: 'Running · work in motion', color: 'var(--running)', line: 'Command in flight. Output and prompt-state observation say this agent is moving.' },
+      idle: { glyph: '', label: 'Idle · at the prompt', color: 'var(--idle)', line: 'Live session, quiet prompt. Available for another task without a resume step.' },
+      cold: { glyph: '', label: 'Cold · no live agent', color: 'var(--cold)', line: 'The surface remains, but no agent session is currently live. It may be resumable.' },
       waiting: { glyph: 'W', label: 'Your turn · response needed', color: 'var(--gold)', line: 'The agent has yielded with a question or decision. This is the operator’s turn.' }
-    };
-
-    const harnessColors = {
-      claude: 'var(--harness-claude)',
-      codex: 'var(--harness-codex)',
-      other: 'var(--harness-other)',
-      shell: 'var(--harness-shell)'
     };
 
     let selectedId = 62;
@@ -663,19 +637,15 @@
       return Math.max(112, Math.min(190, 52 + idCost + surface.title.length * 4));
     }
 
-    function harnessFamily(harness) {
-      return ['claude', 'codex', 'shell'].includes(harness) ? harness : 'other';
-    }
-
     function tabMarkup(surface) {
       const copy = stateCopy[surface.state];
       return `
-        <div class="surface-tab state-${surface.state} harness-${harnessFamily(surface.harness)}${surface.id === selectedId ? ' selected' : ''}"
+        <div class="surface-tab state-${surface.state}${surface.id === selectedId ? ' selected' : ''}"
              style="--tab-width:${widthFor(surface)}px"
              data-id="${surface.id}" role="tab" tabindex="0"
              aria-selected="${surface.id === selectedId}" aria-label="${surface.title}, ${copy.label}, ${surface.harness} harness"
              title="surface:${surface.id} · ${surface.title} · ${copy.label} · ${surface.harness}">
-          <span class="state-mark" aria-hidden="true"><span>${copy.glyph}</span></span>
+          <span class="state-mark state-${surface.state}" aria-hidden="true"><span>${copy.glyph}</span></span>
           <span class="tab-title"><span class="surface-id">${surface.id}: </span>${surface.title}</span>
           <button class="close-tab" aria-label="Close ${surface.title}" title="Close tab">×</button>
         </div>`;
@@ -720,16 +690,14 @@
     function updateSelection() {
       const surface = surfaces.find(item => item.id === selectedId);
       const copy = stateCopy[surface.state];
-      const harnessColor = document.body.classList.contains('neutral-harness')
-        ? 'var(--text-soft)'
-        : harnessColors[harnessFamily(surface.harness)];
-      const badgeColor = surface.state === 'waiting' ? copy.color : harnessColor;
+      const badgeColor = copy.color;
       const waitingCount = surfaces.filter(item => item.state === 'waiting').length;
       document.getElementById('surfaceTitle').textContent = `surface:${surface.id} · ${surface.title}`;
       document.getElementById('surfaceDescription').textContent = surface.description;
       document.getElementById('inspectorTitle').textContent = surface.title;
       document.getElementById('readoutGlyph').textContent = copy.glyph;
       document.getElementById('readoutLabel').textContent = copy.label;
+      document.getElementById('readoutMark').className = `state-mark state-${surface.state}`;
       document.getElementById('surfaceStateReadout').style.setProperty('--selected-state', badgeColor);
       document.querySelectorAll('.state-button').forEach(button => {
         button.classList.toggle('active', button.dataset.state === surface.state);
@@ -737,15 +705,15 @@
       document.getElementById('terminalCopy').innerHTML = `
         <div><span class="dim">$</span> c11 inspect surface:${surface.id}</div>
         <br>
-        <div><span style="color:${badgeColor}">${copy.glyph}</span> <strong>${copy.label}</strong> <span class="dim">· ${surface.harness}</span></div>
+        <div><span style="color:${badgeColor}">${surface.state === 'waiting' ? 'W' : '●'}</span> <strong>${copy.label}</strong> <span class="dim">· ${surface.harness}</span></div>
         <div class="dim">${copy.line}</div>
         <div class="rule">────────────────────────────────────────────────────────</div>
         <div><span class="gold">${waitingCount}</span> of ${surfaces.length} surfaces currently need the operator.</div>
         <div class="dim">The tab strip keeps that answer visible through selection, truncation, and overflow.</div>
         <br>
         <div><span class="blue">selection</span> → neutral top rail + raised fill</div>
-        <div><span class="gold">operator turn</span> → prominent gold W alone</div>
-        <div><span class="green">harness</span> → quiet outline hue; other agents share blue</div>`;
+        <div><span class="gold">operator turn</span> → compact gold W alone</div>
+        <div><span class="green">state</span> → color first; motion only while running</div>`;
     }
 
     function setSelectedState(state) {
@@ -771,12 +739,6 @@
       const shown = !document.body.classList.contains('hide-ids');
       event.currentTarget.setAttribute('aria-pressed', shown);
       renderTabs();
-    });
-    document.getElementById('toggleHarness').addEventListener('click', event => {
-      document.body.classList.toggle('neutral-harness');
-      const shown = !document.body.classList.contains('neutral-harness');
-      event.currentTarget.setAttribute('aria-pressed', shown);
-      updateSelection();
     });
     document.getElementById('toggleTheme').addEventListener('click', event => {
       const light = document.body.dataset.theme !== 'light';

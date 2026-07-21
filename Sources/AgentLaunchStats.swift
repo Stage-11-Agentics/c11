@@ -514,7 +514,10 @@ public final class AgentLaunchStatsStore: @unchecked Sendable {
     }
 
     private func bumpLocked(_ agg: inout AgentLaunchStatsAggregate, with record: LaunchRecord) {
-        if agg.since == nil { agg.since = record.ts }
+        // `since` = earliest observed launch. min() (not first-write) so an
+        // out-of-order stamp (clock skew, or a rebuild scanning non-chronological
+        // file order) still yields the true minimum, matching the design's intent.
+        if agg.since == nil || record.ts < agg.since! { agg.since = record.ts }
         if let m = AgentLaunchStats.nilIfBlank(record.model) { agg.totals.byModel[m, default: 0] += 1 }
         if let h = AgentLaunchStats.nilIfBlank(record.harness) { agg.totals.byHarness[h, default: 0] += 1 }
         if let p = AgentLaunchStats.nilIfBlank(record.provider) { agg.totals.byProvider[p, default: 0] += 1 }

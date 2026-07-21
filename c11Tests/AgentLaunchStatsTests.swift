@@ -288,6 +288,21 @@ final class AgentLaunchStatsTests: XCTestCase {
         XCTAssertEqual(rebuilt.since, live.since)
     }
 
+    func testSinceIsEarliestTimestampEvenOutOfOrder() {
+        // Records stamped in non-chronological order (a later ts written before an
+        // earlier one) must still yield the minimum ts as `since`.
+        var t = iso("2026-07-20T15:00:00.000Z")
+        let store = AgentLaunchStatsStore(directory: tempDir, clock: { t })
+        store.recordLaunch(ResolvedLaunch(harness: "claude-code", model: "opus"), source: .aButton)   // 15:00 first
+        t = iso("2026-07-20T09:00:00.000Z")
+        store.recordLaunch(ResolvedLaunch(harness: "claude-code", model: "sonnet"), source: .aButton) // 09:00 second
+        store.flush()
+        XCTAssertEqual(store.aggregate().since, iso("2026-07-20T09:00:00.000Z"))
+        XCTAssertEqual(store.aggregate().lastTs, iso("2026-07-20T15:00:00.000Z"))
+        // Rebuild (scans file/append order 15:00 then 09:00) must agree.
+        XCTAssertEqual(store.rebuildAggregate().since, iso("2026-07-20T09:00:00.000Z"))
+    }
+
     func testRebuildPreservesRecent() {
         let now = iso("2026-07-20T21:14:00.000Z")
         let store = makeStore(now: now)

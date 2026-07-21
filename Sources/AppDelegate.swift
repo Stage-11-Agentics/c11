@@ -4048,7 +4048,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         didDisableSuddenTermination = false
     }
 
-    private func sessionAutosaveFingerprint(includeScrollback: Bool) -> Int? {
+    private func sessionAutosaveFingerprint(
+        includeScrollback: Bool,
+        conversationsByPanelId injectedConversations: [String: SurfaceConversations]? = nil
+    ) -> Int? {
         guard !includeScrollback else { return nil }
 
         var hasher = Hasher()
@@ -4087,24 +4090,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // snapshot is the one written at clean shutdown — losing every
         // ref captured in a session that ended any other way.
         if !ConversationStorePolicy.isDisabled {
-            let conversations = Workspace.readConversationsByPanelIdSync(timeout: 0.5)
-            // Order-independent: sort surface ids before hashing.
-            for surfaceId in conversations.keys.sorted() {
-                guard let surface = conversations[surfaceId],
-                      let active = surface.active else { continue }
-                hasher.combine(surfaceId)
-                hasher.combine(active.kind)
-                hasher.combine(active.id)
-                hasher.combine(active.state.rawValue)
-                hasher.combine(active.capturedVia.rawValue)
-            }
+            // C11-183: the autosave tick injects the conversation map it
+            // already read off-main via `await`, so this hot path no longer
+            // blocks main on `readConversationsByPanelIdSync`'s semaphore.
+            // Synchronous callers pass nil and fall back to the sync bridge.
+            let conversations = injectedConversations
+                ?? Workspace.readConversationsByPanelIdSync(timeout: 0.5)
+            Self.hashConversationState(conversations, into: &hasher)
         }
 
         return hasher.finalize()
     }
 
+    /// C11-183: pure, order-independent hash of the conversation store's
+    /// active refs, extracted so the autosave fingerprint's conversation
+    /// contribution is unit-testable off-main. Only `active` refs move the
+    /// hash; a change to any surface's active id/kind/state/capture source
+    /// flips the fingerprint so the next tick persists (the C11-24 invariant
+    /// that conversation activity — wrapper-claim / hook-push / tombstone —
+    /// forces an autosave write).
+    nonisolated static func hashConversationState(
+        _ conversations: [String: SurfaceConversations],
+        into hasher: inout Hasher
+    ) {
+        for surfaceId in conversations.keys.sorted() {
+            guard let surface = conversations[surfaceId],
+                  let active = surface.active else { continue }
+            hasher.combine(surfaceId)
+            hasher.combine(active.kind)
+            hasher.combine(active.id)
+            hasher.combine(active.state.rawValue)
+            hasher.combine(active.capturedVia.rawValue)
+        }
+    }
+
     @discardableResult
-    private func saveSessionSnapshot(includeScrollback: Bool, removeWhenEmpty: Bool = false) -> Bool {
+    private func saveSessionSnapshot(
+        includeScrollback: Bool,
+        removeWhenEmpty: Bool = false,
+        conversationsByPanelId: [String: SurfaceConversations]? = nil
+    ) -> Bool {
         if Self.shouldSkipSessionSaveDuringStartupRestore(
             isApplyingStartupSessionRestore: isApplyingStartupSessionRestore,
             includeScrollback: includeScrollback
@@ -4130,7 +4155,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 #endif
 
-        guard let snapshot = buildSessionSnapshot(includeScrollback: includeScrollback) else {
+        guard let snapshot = buildSessionSnapshot(
+            includeScrollback: includeScrollback,
+            conversationsByPanelId: conversationsByPanelId
+        ) else {
             persistSessionSnapshot(
                 nil,
                 removeWhenEmpty: removeWhenEmpty,
@@ -4216,14 +4244,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
 
+        // C11-183: claim the in-flight slot synchronously (so the next timer
+        // tick coalesces), then run the actual save on the main actor via an
+        // async hop. The conversation-store read happens with a non-blocking
+        // `await` instead of a main-thread `DispatchSemaphore.wait`, so the
+        // 8 s tick no longer stalls the UI at high surface count. The
+        // in-flight flag is released in `performSessionAutosaveTick`'s defer,
+        // which spans the await.
         sessionAutosaveTickInFlight = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.performSessionAutosaveTick(source: source)
+        }
+    }
+
+    private func performSessionAutosaveTick(source: String) async {
+        defer { sessionAutosaveTickInFlight = false }
+
+        // Non-blocking read of the *global* conversation store off the main
+        // thread. Unlike the old `readConversationsByPanelIdSync` semaphore
+        // wait, this never blocks main and never times out to a partial map
+        // (the C11-170 "drops under load" class), so the injected snapshot
+        // still carries full `surface_conversations` (C11-24).
+        let conversations: [String: SurfaceConversations]
+        if ConversationStorePolicy.isDisabled {
+            conversations = [:]
+        } else {
+            conversations = await ConversationStore.shared.snapshot()
+        }
+
+        // State may have changed across the await (app started terminating,
+        // or a synchronous save already ran).
+        guard Self.shouldRunSessionAutosaveTick(isTerminatingApp: isTerminatingApp) else { return }
+
 #if DEBUG
+        // Time only the synchronous main-thread work after the await — that
+        // is the "main-thread stall" the acceptance criterion targets
+        // (< 100 ms at ≥150 surfaces); the await itself never blocks main.
         let timingStart = CmuxTypingTiming.start()
         let phaseStart = ProcessInfo.processInfo.systemUptime
         var fingerprintMs: Double = 0
         var saveMs: Double = 0
         defer {
-            sessionAutosaveTickInFlight = false
             let totalMs = (ProcessInfo.processInfo.systemUptime - phaseStart) * 1000.0
             CmuxTypingTiming.logBreakdown(
                 path: "session.autosaveTick.phase",
@@ -4241,15 +4303,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 extra: "source=\(source)"
             )
         }
-#else
-        defer { sessionAutosaveTickInFlight = false }
 #endif
 
         let now = Date()
 #if DEBUG
         let fingerprintStart = ProcessInfo.processInfo.systemUptime
 #endif
-        let autosaveFingerprint = sessionAutosaveFingerprint(includeScrollback: false)
+        let autosaveFingerprint = sessionAutosaveFingerprint(
+            includeScrollback: false,
+            conversationsByPanelId: conversations
+        )
 #if DEBUG
         fingerprintMs = (ProcessInfo.processInfo.systemUptime - fingerprintStart) * 1000.0
 #endif
@@ -4272,7 +4335,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #if DEBUG
         let saveStart = ProcessInfo.processInfo.systemUptime
 #endif
-        _ = saveSessionSnapshot(includeScrollback: false)
+        _ = saveSessionSnapshot(includeScrollback: false, conversationsByPanelId: conversations)
 #if DEBUG
         saveMs = (ProcessInfo.processInfo.systemUptime - saveStart) * 1000.0
 #endif
@@ -4364,7 +4427,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    private func buildSessionSnapshot(includeScrollback: Bool) -> AppSessionSnapshot? {
+    private func buildSessionSnapshot(
+        includeScrollback: Bool,
+        conversationsByPanelId injectedConversations: [String: SurfaceConversations]? = nil
+    ) -> AppSessionSnapshot? {
         let contexts = mainWindowContexts.values.sorted { lhs, rhs in
             let lhsWindow = lhs.window ?? windowForMainWindowId(lhs.windowId)
             let rhsWindow = rhs.window ?? windowForMainWindowId(rhs.windowId)
@@ -4388,7 +4454,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // one and cuts main-thread blocking on save from up-to-N×2s to ≤2s.
         // (`readConversationsByPanelIdSync` already short-circuits to `[:]`
         // when the store is disabled, before spawning the detached read.)
-        let conversationsByPanelId = Workspace.readConversationsByPanelIdSync()
+        //
+        // C11-183: the recurring autosave tick now reads the store off-main
+        // via `await` and injects the map here, so the hot path never blocks
+        // main on the semaphore. Synchronous callers (termination, power-off,
+        // window unregister) pass nil and keep the sync bridge — blocking is
+        // acceptable there (rare, one-shot, correct when the app is dying).
+        let conversationsByPanelId = injectedConversations
+            ?? Workspace.readConversationsByPanelIdSync()
 
         let windows: [SessionWindowSnapshot] = contexts
             .prefix(SessionPersistencePolicy.maxWindowsPerSnapshot)

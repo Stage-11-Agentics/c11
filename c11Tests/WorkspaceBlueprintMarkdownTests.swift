@@ -191,6 +191,92 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
         XCTAssertEqual(markdown?.filePath,         "~/notes/today.md")
     }
 
+    // MARK: - Opt-in submit flag (`submit: true`)
+
+    private func parseSingleTerminal(submitLine: String) throws -> SurfaceSpec {
+        let source = """
+        ---
+        title: Launcher
+        ---
+
+        ## Layout
+
+        ```yaml
+        layout:
+          - type: terminal
+            title: Dashboard
+            cwd: ~/work
+            command: python3 /path/position.py --watch
+        \(submitLine)
+        ```
+        """
+        let parsed = try WorkspaceBlueprintMarkdown.parse(Data(source.utf8))
+        return try XCTUnwrap(parsed.plan.surfaces.first)
+    }
+
+    func testParseSubmitTrueSetsFlag() throws {
+        let spec = try parseSingleTerminal(submitLine: "    submit: true")
+        XCTAssertTrue(spec.submitCommand)
+        XCTAssertEqual(spec.command, "python3 /path/position.py --watch")
+    }
+
+    func testParseSubmitAbsentDefaultsToFalse() throws {
+        let spec = try parseSingleTerminal(submitLine: "")
+        XCTAssertFalse(spec.submitCommand)
+    }
+
+    func testParseSubmitNonTrueScalarIsFalse() throws {
+        let spec = try parseSingleTerminal(submitLine: "    submit: yes")
+        XCTAssertFalse(spec.submitCommand, "only the literal `true` opts in")
+    }
+
+    /// `submitCommand == true` must survive serialize → parse and the emitted
+    /// markdown must carry `submit: true` so `export-blueprint` round-trips.
+    func testRoundTripPreservesSubmitFlag() throws {
+        let file = WorkspaceBlueprintFile(
+            name: "Launcher",
+            description: nil,
+            plan: WorkspaceApplyPlan(
+                version: 1,
+                workspace: WorkspaceSpec(title: "Launcher"),
+                layout: .pane(.init(surfaceIds: ["s1"])),
+                surfaces: [
+                    SurfaceSpec(
+                        id: "s1",
+                        kind: .terminal,
+                        title: "Dashboard",
+                        command: "python3 /path/position.py --watch",
+                        submitCommand: true
+                    )
+                ]
+            )
+        )
+        let data = try WorkspaceBlueprintMarkdown.serialize(file)
+        let text = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertTrue(text.contains("submit: true"), "emitter must write submit: true; got:\n\(text)")
+        let reparsed = try WorkspaceBlueprintMarkdown.parse(data)
+        XCTAssertEqual(reparsed, file)
+        XCTAssertTrue(try XCTUnwrap(reparsed.plan.surfaces.first).submitCommand)
+    }
+
+    /// The default (no submit) blueprint must not gain a `submit:` line.
+    func testDefaultBlueprintOmitsSubmitLine() throws {
+        let file = WorkspaceBlueprintFile(
+            name: "Plain",
+            description: nil,
+            plan: WorkspaceApplyPlan(
+                version: 1,
+                workspace: WorkspaceSpec(title: "Plain"),
+                layout: .pane(.init(surfaceIds: ["s1"])),
+                surfaces: [
+                    SurfaceSpec(id: "s1", kind: .terminal, command: "ls")
+                ]
+            )
+        )
+        let text = String(data: try WorkspaceBlueprintMarkdown.serialize(file), encoding: .utf8) ?? ""
+        XCTAssertFalse(text.contains("submit:"), "default blueprint must stay submit-free")
+    }
+
     // MARK: - Errors surface readable strings
 
     func testParseRejectsMissingLayoutSection() {

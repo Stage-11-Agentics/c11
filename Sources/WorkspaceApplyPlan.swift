@@ -69,6 +69,13 @@ struct SurfaceSpec: Codable, Sendable, Equatable {
     /// Terminal: sent via `TerminalPanel.sendText` once the surface is created.
     /// Pre-surface-ready sends auto-queue and flush when the surface comes up.
     var command: String?
+    /// Terminal: opt-in. When `true`, an explicit `command` is *executed* — the
+    /// executor routes it through `sendSubmitFormText`, which types the bytes
+    /// and dispatches a synthetic Return outside the bracketed-paste sequence
+    /// so the shell/TUI actually submits. Default `false` preserves Phase 0
+    /// parity: the command is pre-typed at the prompt but never submitted,
+    /// which also keeps whitespace-only "kick" commands working verbatim.
+    var submitCommand: Bool = false
     /// Browser: passed to `newBrowserSplit(url:)` / `newBrowserSurface(url:)`.
     var url: String?
     /// Markdown: passed to `newMarkdownSplit(filePath:)` / `newMarkdownSurface(filePath:)`.
@@ -93,7 +100,8 @@ struct SurfaceSpec: Codable, Sendable, Equatable {
         url: String? = nil,
         filePath: String? = nil,
         metadata: [String: PersistedJSONValue]? = nil,
-        paneMetadata: [String: PersistedJSONValue]? = nil
+        paneMetadata: [String: PersistedJSONValue]? = nil,
+        submitCommand: Bool = false
     ) {
         self.id = id
         self.kind = kind
@@ -105,6 +113,50 @@ struct SurfaceSpec: Codable, Sendable, Equatable {
         self.filePath = filePath
         self.metadata = metadata
         self.paneMetadata = paneMetadata
+        self.submitCommand = submitCommand
+    }
+
+    // Custom Codable: `submitCommand` is a defaulted non-optional Bool. Swift's
+    // synthesized decoder throws `keyNotFound` for a missing non-optional key
+    // rather than falling back to the property default, so an older snapshot or
+    // plan (pickled by `SessionPersistence` before this field existed) would
+    // fail to decode. Decode it with `decodeIfPresent(...) ?? false`, and on
+    // encode omit it when `false` so existing serialized output is unchanged
+    // for the common case.
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, title, description, workingDirectory, command, url
+        case filePath, metadata, paneMetadata, submitCommand
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        kind = try c.decode(SurfaceSpecKind.self, forKey: .kind)
+        title = try c.decodeIfPresent(String.self, forKey: .title)
+        description = try c.decodeIfPresent(String.self, forKey: .description)
+        workingDirectory = try c.decodeIfPresent(String.self, forKey: .workingDirectory)
+        command = try c.decodeIfPresent(String.self, forKey: .command)
+        url = try c.decodeIfPresent(String.self, forKey: .url)
+        filePath = try c.decodeIfPresent(String.self, forKey: .filePath)
+        metadata = try c.decodeIfPresent([String: PersistedJSONValue].self, forKey: .metadata)
+        paneMetadata = try c.decodeIfPresent([String: PersistedJSONValue].self, forKey: .paneMetadata)
+        submitCommand = try c.decodeIfPresent(Bool.self, forKey: .submitCommand) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(kind, forKey: .kind)
+        try c.encodeIfPresent(title, forKey: .title)
+        try c.encodeIfPresent(description, forKey: .description)
+        try c.encodeIfPresent(workingDirectory, forKey: .workingDirectory)
+        try c.encodeIfPresent(command, forKey: .command)
+        try c.encodeIfPresent(url, forKey: .url)
+        try c.encodeIfPresent(filePath, forKey: .filePath)
+        try c.encodeIfPresent(metadata, forKey: .metadata)
+        try c.encodeIfPresent(paneMetadata, forKey: .paneMetadata)
+        // Omit when false so pre-existing serialized specs stay byte-identical.
+        if submitCommand { try c.encode(submitCommand, forKey: .submitCommand) }
     }
 }
 

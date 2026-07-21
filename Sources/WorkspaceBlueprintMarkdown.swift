@@ -359,6 +359,9 @@ enum WorkspaceBlueprintMarkdown {
         let url = node.lookup("url")?.asScalar
         let file = node.lookup("file")?.asScalar
         let command = node.lookup("command")?.asScalar
+        // Opt-in `submit:` — only the exact scalar `true` (case-insensitive)
+        // enables execution; anything else, including absence, stays false.
+        let submit = node.lookup("submit")?.asScalar?.lowercased() == "true"
         return SurfaceSpec(
             id: id,
             kind: kind,
@@ -369,7 +372,8 @@ enum WorkspaceBlueprintMarkdown {
             url: nullIfEmpty(url),
             filePath: nullIfEmpty(file),
             metadata: nil,
-            paneMetadata: nil
+            paneMetadata: nil,
+            submitCommand: submit
         )
     }
 
@@ -481,6 +485,11 @@ enum WorkspaceBlueprintMarkdown {
         }
         if let command = surface.command {
             out += "\(restPad)command: \(quoteIfNeeded(command))\n"
+        }
+        // Opt-in flag: emit only when set so default blueprints round-trip
+        // unchanged and stay free of noise.
+        if surface.submitCommand {
+            out += "\(restPad)submit: true\n"
         }
         return out
     }

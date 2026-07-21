@@ -272,6 +272,13 @@ enum WorkspaceLayoutExecutor {
                 // dispatches a synthetic Return outside the bracketed-paste
                 // sequence so the receiving shell or TUI actually submits.
                 terminalPanel.surface.sendSubmitFormText(cmd)
+            } else if surfaceSpec.submitCommand {
+                // Opt-in execute: the blueprint asked for this command to run,
+                // not sit at the prompt. `sendSubmitFormText` types the bytes
+                // (queueing if the surface isn't yet attached) and dispatches a
+                // synthetic Return outside the bracketed-paste sequence so the
+                // shell/TUI actually submits.
+                terminalPanel.surface.sendSubmitFormText(cmd)
             } else {
                 // Explicit `SurfaceSpec.command` — Phase 0 parity. Deliver
                 // raw bytes verbatim, including whitespace-only "kick"

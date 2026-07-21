@@ -378,9 +378,20 @@ public final class AgentLaunchStatsStore: @unchecked Sendable {
             fieldSources: nil
         )
         queue.sync {
+            // The jsonl is authoritative — append first (O_APPEND, atomic).
             appendLineLocked(record)
-            var agg = loadAggregateLocked()
-            bumpLocked(&agg, with: record)
+            var agg: AgentLaunchStatsAggregate
+            if var clean = loadDecodableAggregateLocked() {
+                // Fast path: cleanly-decoded aggregate → O(1) incremental bump.
+                bumpLocked(&clean, with: record)
+                agg = clean
+            } else {
+                // Fresh install or corrupt aggregate: the post-append jsonl is the
+                // ground truth and already includes this record, so rescan rather
+                // than bump (bumping on top of a rescan would double-count). This
+                // recovers all-time counts from a corrupt file instead of resetting.
+                agg = rescanAggregateLocked(preservingRecent: nil)
+            }
             applyRecentLocked(&agg, incoming: observation)
             try? writeAggregateLocked(agg)
         }
@@ -465,14 +476,20 @@ public final class AgentLaunchStatsStore: @unchecked Sendable {
     @discardableResult
     public func rebuildAggregate() -> AgentLaunchStatsAggregate {
         queue.sync {
-            let existingRecent = loadAggregateLocked().recent
-            let records = scanRecordsLocked()
-            var agg = AgentLaunchStatsAggregate.empty
-            agg.recent = existingRecent
-            for r in records { bumpLocked(&agg, with: r) }
+            let agg = rescanAggregateLocked(preservingRecent: loadAggregateLocked().recent)
             try? writeAggregateLocked(agg)
             return agg
         }
+    }
+
+    /// Recompute totals/count/since/last_ts purely from the jsonl ground truth.
+    /// Read-only (no write); callers persist if they want to. Recent cannot be
+    /// derived from the jsonl (it lives only in the aggregate), so it is passed in.
+    private func rescanAggregateLocked(preservingRecent recent: RecentObservation?) -> AgentLaunchStatsAggregate {
+        var agg = AgentLaunchStatsAggregate.empty
+        agg.recent = recent
+        for r in scanRecordsLocked() { bumpLocked(&agg, with: r) }
+        return agg
     }
 
     /// Test/shutdown barrier: block until all queued work has drained and close
@@ -532,16 +549,20 @@ public final class AgentLaunchStatsStore: @unchecked Sendable {
         return true
     }
 
-    private func loadAggregateLocked() -> AgentLaunchStatsAggregate {
-        guard let data = try? Data(contentsOf: aggregateURL), !data.isEmpty else {
-            return .empty
-        }
-        guard let agg = try? AgentLaunchStatsDate.makeDecoder().decode(AgentLaunchStatsAggregate.self, from: data) else {
-            // Corrupt aggregate: fall back to empty. The jsonl remains ground
-            // truth; rebuildAggregate() can restore all-time counts.
-            return .empty
+    /// Cleanly-decoded aggregate, or nil if the file is absent, empty, or corrupt.
+    private func loadDecodableAggregateLocked() -> AgentLaunchStatsAggregate? {
+        guard let data = try? Data(contentsOf: aggregateURL), !data.isEmpty,
+              let agg = try? AgentLaunchStatsDate.makeDecoder().decode(AgentLaunchStatsAggregate.self, from: data) else {
+            return nil
         }
         return agg
+    }
+
+    /// Query/rebuild-facing load: the cleanly-decoded aggregate, else a value
+    /// recovered from the jsonl ground truth (empty on fresh install; full counts
+    /// on a corrupt file) so `.all` never silently reports zero for a corrupt file.
+    private func loadAggregateLocked() -> AgentLaunchStatsAggregate {
+        loadDecodableAggregateLocked() ?? rescanAggregateLocked(preservingRecent: nil)
     }
 
     private func writeAggregateLocked(_ agg: AgentLaunchStatsAggregate) throws {

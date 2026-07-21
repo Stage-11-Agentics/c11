@@ -318,6 +318,32 @@ final class AgentLaunchStatsTests: XCTestCase {
         XCTAssertEqual(rebuilt.recent, recentBefore)
     }
 
+    // MARK: - Corrupt aggregate recovery
+
+    func testCorruptAggregateRecoversCountsFromJsonl() throws {
+        let now = iso("2026-07-20T21:14:00.000Z")
+        let store = makeStore(now: now)
+        // Seed three real launches (jsonl = ground truth).
+        for m in ["opus", "opus", "sonnet"] {
+            store.recordLaunch(ResolvedLaunch(harness: "claude-code", model: m), source: .aButton)
+        }
+        store.flush()
+        XCTAssertEqual(store.aggregate().count, 3)
+
+        // Corrupt the aggregate file (non-empty, undecodable).
+        let aggURL = tempDir.appendingPathComponent(AgentLaunchStatsStore.aggregateName)
+        try "{ this is not valid json".write(to: aggURL, atomically: true, encoding: .utf8)
+
+        // A recordLaunch through the corrupt file must NOT reset to count == 1:
+        // counts recover from the jsonl (3) then bump to 4.
+        store.recordLaunch(ResolvedLaunch(harness: "claude-code", model: "opus"), source: .aButton)
+        store.flush()
+        let agg = store.aggregate()
+        XCTAssertEqual(agg.count, 4, "corrupt aggregate must recover from jsonl, not reset")
+        XCTAssertEqual(agg.totals.byModel["opus"], 3)
+        XCTAssertEqual(agg.totals.byModel["sonnet"], 1)
+    }
+
     // MARK: - Fresh install
 
     func testFreshInstallEmptyAndNoThrow() {

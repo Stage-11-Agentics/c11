@@ -11956,7 +11956,7 @@ extension Workspace: BonsplitDelegate {
     ///   `.aButton` (the real UI spawn button); the CLI `default-agent launch`
     ///   new-surface path passes `.launchAgent` so button-clicks and CLI launches
     ///   are honestly distinguished in the stats rail.
-    func launchAgentSurface(inPane pane: PaneID, explicitAgent: AgentType? = nil, source: AgentLaunchSource = .aButton) {
+    func launchAgentSurface(inPane pane: PaneID, explicitAgent: AgentType? = nil, explicitConfig: SavedAgentConfig? = nil, source: AgentLaunchSource = .aButton) {
         let userDefault = DefaultAgentConfigStore.shared.current
         let projectConfig = DefaultAgentProjectConfig.find(from: resolverCwdForAgentLaunch())
 
@@ -11972,11 +11972,18 @@ extension Workspace: BonsplitDelegate {
         let resolvedSystemPromptMode: String?
         let savedConfigId: String?
 
-        // Only a plain left-click consults the saved-config library; an explicit
-        // agent keeps `nil` here and takes the raw-harness path below.
-        let overlaySaved: SavedAgentConfig? = explicitAgent == nil
-            ? AgentConfigLibraryStore.shared.effectiveDefault()
-            : nil
+        // A caller-chosen config (Settings "Save & Launch", C11-182) launches
+        // exactly that recipe. Otherwise a plain left-click consults the
+        // saved-config library's `effectiveDefault()`; an explicit agent keeps
+        // `nil` here and takes the raw-harness path below.
+        let overlaySaved: SavedAgentConfig?
+        if let explicitConfig {
+            overlaySaved = explicitConfig
+        } else if explicitAgent == nil {
+            overlaySaved = AgentConfigLibraryStore.shared.effectiveDefault()
+        } else {
+            overlaySaved = nil
+        }
         if let saved = overlaySaved,
            let overlay = DefaultAgentResolver.resolveOverlay(
                savedConfig: saved,

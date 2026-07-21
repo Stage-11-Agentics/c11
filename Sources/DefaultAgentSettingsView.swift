@@ -96,12 +96,27 @@ final class DefaultAgentSettingsViewModel: ObservableObject {
     }
 }
 
+/// Identifies a presentation of the agent-config editor sheet.
+struct AgentConfigEditorPresentation: Identifiable {
+    let id = UUID()
+    let focus: AgentConfigEditorFocus
+}
+
 struct DefaultAgentSettingsSection: View {
     @StateObject private var vm = DefaultAgentSettingsViewModel()
+    @StateObject private var library = AgentConfigLibraryViewModel()
     @State private var showEnvOverrides = false
+    @State private var editorPresentation: AgentConfigEditorPresentation?
+    @State private var editorOrigin: AgentConfigEditorOrigin = .settings
+    @State private var pendingReturnToPopover = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            // Tier 0 — the saved-config library (C11-182), above the per-harness editor.
+            savedConfigsSubsection
+
+            Divider()
+
             // Tier 1 — which agent the A button launches.
             HStack(spacing: 8) {
                 Text(String(localized: "settings.defaultAgent.picker.label",
@@ -176,6 +191,125 @@ struct DefaultAgentSettingsSection: View {
                 .controlSize(.small)
             }
         }
+        .sheet(item: $editorPresentation, onDismiss: handleEditorDismiss) { presentation in
+            AgentConfigEditorSheet(
+                library: library,
+                initialFocus: presentation.focus,
+                onClose: { returnToPopover in
+                    pendingReturnToPopover = returnToPopover && editorOrigin == .popover
+                    editorPresentation = nil
+                }
+            )
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AgentConfigEditorRequest.openName)) { note in
+            editorOrigin = AgentConfigEditorRequest.origin(from: note)
+            editorPresentation = AgentConfigEditorPresentation(focus: AgentConfigEditorRequest.focus(from: note))
+        }
+        .onAppear { library.reload() }
+    }
+
+    /// Post the close request from the dismiss handler (fires for Back/Esc/launch
+    /// and any programmatic dismissal) so the C11-181 popover is never stranded.
+    /// When the operator backed out of a popover-origin session, order the
+    /// Settings window out so the popover returns as the single visible surface.
+    private func handleEditorDismiss() {
+        if pendingReturnToPopover {
+            SettingsWindowController.shared.window?.orderOut(nil)
+        }
+        AgentConfigEditorRequest.postClosed(returnToPopover: pendingReturnToPopover)
+        pendingReturnToPopover = false
+        editorOrigin = .settings
+        library.reload()
+    }
+
+    // MARK: - Saved Configs subsection (design §5.4)
+
+    private var savedConfigsSubsection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(String(localized: "settings.savedConfigs.heading", defaultValue: "Saved configs"))
+                .font(.headline)
+            Text(String(localized: "settings.savedConfigs.note",
+                        defaultValue: "each config is a full launch recipe layered over its harness's Settings. click one to edit; the A button launches the pinned default."))
+                .font(.caption).foregroundStyle(.secondary)
+
+            VStack(spacing: 0) {
+                ForEach(library.configs, id: \.id) { config in
+                    savedConfigRow(config)
+                    Divider().opacity(0.4)
+                }
+            }
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.25), lineWidth: 1))
+
+            HStack(spacing: 12) {
+                Text(String(localized: "settings.savedConfigs.default", defaultValue: "Default:"))
+                    .font(.callout)
+                Menu {
+                    ForEach(library.configs, id: \.id) { config in
+                        Button(config.name) { library.setDefault(id: config.id) }
+                    }
+                } label: {
+                    Text(library.pinnedConfig?.name
+                         ?? String(localized: "settings.savedConfigs.none", defaultValue: "—"))
+                }
+                .fixedSize()
+                Toggle(String(localized: "settings.savedConfigs.followRecent", defaultValue: "follow most recent"),
+                       isOn: Binding(
+                        get: { library.defaultState.mode == .followRecent },
+                        set: { library.setFollowRecent($0) }))
+                    .toggleStyle(.checkbox).controlSize(.small)
+                Spacer()
+            }
+
+            HStack(spacing: 14) {
+                Button {
+                    openEditor(.new)
+                } label: {
+                    Label(String(localized: "settings.savedConfigs.new", defaultValue: "New config"),
+                          systemImage: "plus")
+                }
+                Button(String(localized: "settings.savedConfigs.viewAll", defaultValue: "View all models & configs…")) {
+                    openEditor(library.pinnedConfig.map { .config($0.id) } ?? .new)
+                }
+                Button(String(localized: "settings.savedConfigs.stats", defaultValue: "Launch stats")) {
+                    openEditor(.stats)
+                }
+                Spacer()
+            }
+            .controlSize(.small)
+        }
+    }
+
+    private func savedConfigRow(_ config: SavedAgentConfig) -> some View {
+        // Not a Button wrapping a Button (a macOS SwiftUI footgun): the row is a
+        // tappable HStack; the trash is the only nested Button.
+        HStack(spacing: 8) {
+            Text(library.isPinnedDefault(config) ? "●" : "○")
+                .foregroundStyle(library.isPinnedDefault(config) ? Color.accentColor : Color.secondary)
+                .font(.caption)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(config.name).font(.callout)
+                Text(AgentConfigAxes.describe(config.config)
+                     + (AgentConfigAxes.isBlankSlate(config.config) ? " · ·blank·" : ""))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture { openEditor(.config(config.id)) }
+            Image(systemName: "pencil").font(.caption).foregroundStyle(.secondary)
+            Button {
+                library.remove(id: config.id)
+            } label: {
+                Image(systemName: "trash").font(.caption)
+            }
+            .buttonStyle(.borderless)
+            .help(String(localized: "settings.savedConfigs.delete", defaultValue: "Delete this config"))
+        }
+        .padding(.horizontal, 10).padding(.vertical, 7)
+    }
+
+    private func openEditor(_ focus: AgentConfigEditorFocus) {
+        editorOrigin = .settings
+        editorPresentation = AgentConfigEditorPresentation(focus: focus)
     }
 
     /// Model-family picker, shown only for agents c11 pins a `--model` flag

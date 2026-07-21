@@ -7513,6 +7513,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         openPreferencesWindow(debugSource: "appDelegate")
     }
 
+    /// C11-182 seam: open the Settings Saved Configs editor sheet, focused on a
+    /// config / a new config / the stats view. Navigates Settings to the Agents
+    /// page, then posts the open-sheet notification the section observes. The
+    /// single call the C11-181 A-button popover's "View all" / "Launch stats"
+    /// makes; `origin: .popover` lets the sheet order the Settings window out on
+    /// close so the popover returns as the one visible surface.
+    @MainActor
+    func openAgentConfigEditor(focus: AgentConfigEditorFocus, origin: AgentConfigEditorOrigin = .popover) {
+        Self.presentPreferencesWindow(navigationTarget: .agents)
+        // Defer so the Settings view has mounted and switched to the Agents page
+        // before the section's observer receives the open request.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            AgentConfigEditorRequest.postOpen(focus: focus, origin: origin)
+        }
+    }
+
+    /// C11-182 seam: launch a chosen saved config as a new agent surface in the
+    /// current workspace ("Save & Launch"). Returns `false` when no workspace is
+    /// open to launch into (the editor then degrades to save-only + a toast).
+    @MainActor
+    @discardableResult
+    func launchSavedAgentConfig(_ saved: SavedAgentConfig) -> Bool {
+        guard let workspace = tabManager?.selectedWorkspace,
+              let pane = workspace.bonsplitController.focusedPaneId else {
+            return false
+        }
+        workspace.launchAgentSurface(inPane: pane, explicitConfig: saved, source: .configEditor)
+        return true
+    }
+
     func refreshMenuBarExtraForDebug() {
         menuBarExtraController?.refreshForDebugControls()
     }

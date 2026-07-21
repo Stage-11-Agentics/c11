@@ -124,6 +124,60 @@ enum AgentLaunchArgStyle: Sendable, Equatable {
     }
 }
 
+/// An operator's system-prompt choice for a launch: which of the three modes,
+/// and the prompt text (ignored for `.inherit`; `""` + `.replace` is the
+/// intentional blank-slate launch). This is the primitive the launch axis
+/// consumes; the sibling config-overlay stores it on a saved config.
+struct SystemPromptSetting: Codable, Equatable, Sendable {
+    /// `inherit` leaves the harness default untouched (no flag injected);
+    /// `append` adds `text` on top of the default; `replace` supplants the
+    /// default with `text` (empty `text` = blank slate).
+    enum Mode: String, Codable, Sendable, CaseIterable { case inherit, append, replace }
+    var mode: Mode
+    /// The system-prompt text. Ignored when `mode == .inherit`; an empty string
+    /// with `.replace` is the Gregorovich blank-slate launch (still emits the
+    /// flag with an empty value).
+    var text: String
+
+    init(mode: Mode, text: String = "") {
+        self.mode = mode
+        self.text = text
+    }
+}
+
+/// How a system-prompt override renders onto an agent's command line. Unlike
+/// model/effort (one flag each), the system-prompt axis has two delivery flags —
+/// append (adds to the harness default) and replace (supplants it) — so it is
+/// its own arg style rather than an `AgentLaunchArgStyle`. `nil` on a template
+/// means the axis is disabled for that harness (v1: only claude-code declares
+/// it), the same gating pattern `effortArg == nil` uses.
+struct AgentSystemPromptArg: Sendable, Equatable {
+    /// Flag that appends to the harness default (claude `--append-system-prompt`),
+    /// or `nil` when the CLI has no append form.
+    let appendFlag: String?
+    /// Flag that replaces the harness default (claude `--system-prompt`), or
+    /// `nil` when the CLI has no replace form. An empty value is allowed — the
+    /// blank-slate launch.
+    let replaceFlag: String?
+
+    /// The flag to render for a given mode, or `nil` when the mode is
+    /// `.inherit` or the CLI has no form for it.
+    func flag(for mode: SystemPromptSetting.Mode) -> String? {
+        switch mode {
+        case .inherit: return nil
+        case .append: return appendFlag
+        case .replace: return replaceFlag
+        }
+    }
+
+    /// Substrings whose presence in the operator's configured command means a
+    /// system prompt is already pinned there — c11 must not inject one on top.
+    /// Both flags count: an operator who hardcoded either form owns the axis.
+    var detectTokens: [String] {
+        [appendFlag, replaceFlag].compactMap { $0 }
+    }
+}
+
 /// How an initial prompt reaches the agent at launch.
 enum AgentPromptDelivery: Sendable, Equatable {
     /// Appended to the launch argv as a single-quoted positional argument —
@@ -153,6 +207,11 @@ struct AgentLaunchTemplate: Sendable, Equatable {
     /// error; empty → passed through and the agent CLI enforces.
     let effortValues: [String]
     let promptDelivery: AgentPromptDelivery
+    /// System-prompt flag syntax (append/replace), or `nil` when the CLI has no
+    /// system-prompt axis c11 knows — a non-inherit system-prompt request for
+    /// such a kind errors instead of guessing. v1 seeds this for claude-code
+    /// only; every other built-in is `nil` (same gating shape as `effortArg`).
+    let systemPromptArg: AgentSystemPromptArg?
 }
 
 /// How a captured session is resumed on restart. Mirrors today's
@@ -212,7 +271,14 @@ struct AgentRegistry: Sendable {
                 modelArg: .flag("--model"),
                 effortArg: .flag("--effort"),
                 effortValues: ["low", "medium", "high", "xhigh", "max"],
-                promptDelivery: .positional
+                promptDelivery: .positional,
+                // The only harness with a system-prompt axis in v1: append adds
+                // to the c11/Claude default, replace supplants it (empty text =
+                // the Gregorovich blank slate).
+                systemPromptArg: AgentSystemPromptArg(
+                    appendFlag: "--append-system-prompt",
+                    replaceFlag: "--system-prompt"
+                )
             ),
             isCanonicalTerminalType: true,
             hasConversationStrategy: true
@@ -234,7 +300,8 @@ struct AgentRegistry: Sendable {
             // config-override syntax. Values pass through (codex enforces).
                 effortArg: .configKV("model_reasoning_effort"),
                 effortValues: [],
-                promptDelivery: .positional
+                promptDelivery: .positional,
+                systemPromptArg: nil
             ),
             isCanonicalTerminalType: true,
             hasConversationStrategy: true
@@ -254,7 +321,8 @@ struct AgentRegistry: Sendable {
                 modelArg: .flag("--model"),
                 effortArg: nil,
                 effortValues: [],
-                promptDelivery: .positional
+                promptDelivery: .positional,
+                systemPromptArg: nil
             ),
             isCanonicalTerminalType: true,
             hasConversationStrategy: true
@@ -275,7 +343,8 @@ struct AgentRegistry: Sendable {
             // kimi's --thinking is boolean, not tiered — no effort axis.
                 effortArg: nil,
                 effortValues: [],
-                promptDelivery: .postBoot
+                promptDelivery: .postBoot,
+                systemPromptArg: nil
             ),
             isCanonicalTerminalType: true,
             hasConversationStrategy: true
@@ -298,7 +367,8 @@ struct AgentRegistry: Sendable {
             // Positional because the factory command is the `opencode run`
             // form, whose message is positional. An operator who rebases
             // the command onto the bare TUI owns the delivery consequences.
-                promptDelivery: .positional
+                promptDelivery: .positional,
+                systemPromptArg: nil
             ),
             isCanonicalTerminalType: true,
             hasConversationStrategy: true
@@ -319,7 +389,8 @@ struct AgentRegistry: Sendable {
                 modelArg: .flag("--model"),
                 effortArg: nil,
                 effortValues: [],
-                promptDelivery: .postBoot
+                promptDelivery: .postBoot,
+                systemPromptArg: nil
             ),
             isCanonicalTerminalType: true,
             hasConversationStrategy: true
@@ -348,7 +419,8 @@ struct AgentRegistry: Sendable {
                 modelArg: .flag("--model"),
                 effortArg: .flag("--thinking"),
                 effortValues: ["off", "minimal", "low", "medium", "high", "xhigh"],
-                promptDelivery: .positional
+                promptDelivery: .positional,
+                systemPromptArg: nil
             ),
             isCanonicalTerminalType: true,
             hasConversationStrategy: true
@@ -375,7 +447,8 @@ struct AgentRegistry: Sendable {
                 modelArg: .flag("--model"),
                 effortArg: .flag("--thinking"),
                 effortValues: ["off", "minimal", "low", "medium", "high", "xhigh"],
-                promptDelivery: .positional
+                promptDelivery: .positional,
+                systemPromptArg: nil
             ),
             isCanonicalTerminalType: true,
             hasConversationStrategy: true
@@ -395,7 +468,8 @@ struct AgentRegistry: Sendable {
                 modelArg: nil,
                 effortArg: nil,
                 effortValues: [],
-                promptDelivery: .postBoot
+                promptDelivery: .postBoot,
+                systemPromptArg: nil
             ),
             isCanonicalTerminalType: false,
             hasConversationStrategy: false
@@ -452,7 +526,10 @@ struct UserAgentLaunchTemplate: Codable, Equatable {
                 case .some(let s) where s.hasPrefix("-"): return .flag(s)
                 default: return .postBoot
                 }
-            }()
+            }(),
+            // Custom kinds have no system-prompt axis in v1 (the axis is
+            // claude-code-only; other harnesses land in v2).
+            systemPromptArg: nil
         )
     }
 

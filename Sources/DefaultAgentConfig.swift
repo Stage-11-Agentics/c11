@@ -152,13 +152,20 @@ struct AgentConfig: Codable, Equatable {
     /// Claude Code). Empty means "don't pin" — inherit the agent's ambient
     /// effort. An effort the operator hardcoded into `command` always wins.
     var effort: String
+    /// Pinned system-prompt override (append/replace/inherit), or `nil` to
+    /// inherit the harness default. Injected at launch for agents whose
+    /// manifest declares a system-prompt axis (v1: Claude Code only); a system
+    /// prompt the operator hardcoded into `command` always wins. `nil` — the
+    /// default — reproduces prior launch behavior byte-for-byte.
+    var systemPrompt: SystemPromptSetting?
 
-    init(command: String, initialPrompt: String, envOverridesText: String, model: String = "", effort: String = "") {
+    init(command: String, initialPrompt: String, envOverridesText: String, model: String = "", effort: String = "", systemPrompt: SystemPromptSetting? = nil) {
         self.command = command
         self.initialPrompt = initialPrompt
         self.envOverridesText = envOverridesText
         self.model = model
         self.effort = effort
+        self.systemPrompt = systemPrompt
     }
 
     init(from decoder: Decoder) throws {
@@ -170,6 +177,9 @@ struct AgentConfig: Codable, Equatable {
         // decode to "" (inherit), preserving prior launch behavior.
         self.model = (try? c.decode(String.self, forKey: .model)) ?? ""
         self.effort = (try? c.decode(String.self, forKey: .effort)) ?? ""
+        // Absent in configs written before the system-prompt axis existed →
+        // nil (inherit), preserving prior launch behavior byte-for-byte.
+        self.systemPrompt = try? c.decodeIfPresent(SystemPromptSetting.self, forKey: .systemPrompt)
     }
 
     /// Factory defaults for a given agent type.
@@ -202,7 +212,7 @@ struct AgentConfig: Codable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case command, initialPrompt, envOverridesText, model, effort
+        case command, initialPrompt, envOverridesText, model, effort, systemPrompt
     }
 }
 

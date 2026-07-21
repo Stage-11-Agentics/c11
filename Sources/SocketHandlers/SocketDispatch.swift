@@ -949,12 +949,23 @@ extension TerminalController {
         let userTemplate: UserAgentLaunchTemplate? =
             AgentType(rawValue: kindRaw) == nil ? UserAgentLaunchTemplate.load(kind: kindRaw) : nil
 
+        // System prompt (append/replace/inherit + free-form text). The mode
+        // gates the axis; text may be empty (blank slate on replace). An
+        // unparseable mode string maps to nil (no override) rather than erroring
+        // here — the planner is the single validation authority for the axis.
+        var systemPromptSetting: SystemPromptSetting?
+        if let modeRaw = v2RawString(params, "system_prompt_mode")?.trimmingCharacters(in: .whitespacesAndNewlines),
+           let mode = SystemPromptSetting.Mode(rawValue: modeRaw.lowercased()) {
+            systemPromptSetting = SystemPromptSetting(mode: mode, text: v2RawString(params, "system_prompt") ?? "")
+        }
+
         let request = AgentLaunchRequest(
             kind: kindRaw,
             model: v2RawString(params, "model"),
             effort: v2RawString(params, "effort"),
             task: v2RawString(params, "task"),
             prompt: v2RawString(params, "prompt"),
+            systemPrompt: systemPromptSetting,
             extraEnv: v2StringMap(params, "env") ?? [:]
         )
         let plan: AgentLaunchPlan

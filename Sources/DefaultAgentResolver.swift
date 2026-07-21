@@ -55,6 +55,132 @@ enum DefaultAgentResolver {
         ))
     }
 
+    // MARK: - Saved-config overlay (C11-179, design §1.3)
+
+    /// Resolve a launch from a saved-config **overlay** (`AgentConfigLibraryStore`)
+    /// layered over the harness Settings base. This is what the A-button
+    /// left-click launches (`effectiveDefault()`); the `resolve(explicitAgent:…)`
+    /// path above stays the raw-harness launcher used by the right-click "launch
+    /// this kind" affordance and the CLI.
+    ///
+    /// The overlay is applied by **flattening it onto the harness-base
+    /// `AgentConfig`** and then reusing `buildCommand`/`launcherCommand`
+    /// unchanged — so a pure-inherit overlay (every field `nil`) yields a merged
+    /// config identical to the base, hence a launch command byte-identical to
+    /// today's (the regression AC), and the existing per-field flag injection
+    /// (model/effort/system-prompt, with hardcoded-in-command detection) applies
+    /// to the overlaid values for free.
+    ///
+    /// Returns `nil` when the saved config's `harness` is not a built-in
+    /// `AgentType` (a custom kebab kind); the caller falls back to the
+    /// raw-harness `resolve` path (graceful degradation, design §5.6). The
+    /// returned `mergedConfig` exposes the overlay-resolved model/effort/
+    /// system-prompt scalars so the caller can stamp identity and record stats
+    /// without re-deriving them.
+    ///
+    /// - Important: the overlay-merged env lives ONLY in the returned
+    ///   `ResolvedAgentLaunch.envOverrides`; `mergedConfig.envMap` reflects the
+    ///   base env, NOT the overlay merge (see `mergeOverlay`). No caller may read
+    ///   `mergedConfig.envMap` for the resolved env.
+    static func resolveOverlay(
+        savedConfig: SavedAgentConfig,
+        userDefault: DefaultAgentConfig,
+        projectConfig: DefaultAgentConfig?
+    ) -> (agent: AgentType, mergedConfig: AgentConfig, launch: ResolvedAgentLaunch)? {
+        guard let agent = AgentType(rawValue: savedConfig.config.harness) else { return nil }
+        // Same per-agent base pick as `resolve` / the A button: project entry
+        // beats user Settings, factory fills the gaps. This base already equals
+        // `factory ◁ settings` (factory env is always empty).
+        let base = projectConfig?.agents[agent] ?? userDefault.config(for: agent)
+        let (merged, env) = mergeOverlay(savedConfig.config, onto: base)
+        let command = buildCommand(agent: agent, config: merged)
+        let bare = launcherCommand(agent: agent, config: merged)
+        return (agent, merged, ResolvedAgentLaunch(
+            command: command,
+            bareCommand: bare,
+            initialPrompt: merged.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines),
+            envOverrides: env
+        ))
+    }
+
+    /// Flatten a saved-config overlay onto a harness-base `AgentConfig` (design
+    /// §1.3 ladder), overlay winning per field; an unset (`nil`) overlay field
+    /// inherits the base. Pure — no store/AppKit dependency — so the ladder is
+    /// unit-locked field-by-field.
+    ///
+    /// Env is returned as a **separate merged dict** (`base.envMap` then
+    /// `overlay.env` per key, overlay wins → `factory ◁ settings ◁ config`, since
+    /// the base already folds factory under settings and factory env is empty).
+    /// It is deliberately NOT written back into the merged config's
+    /// `envOverridesText` — round-tripping a dict through that line-oriented text
+    /// is lossy — so `mergedConfig.envMap` is base-only and must not be read for
+    /// the resolved env. The resolved env is the second tuple element.
+    static func mergeOverlay(
+        _ overlay: AgentLaunchConfig,
+        onto base: AgentConfig
+    ) -> (config: AgentConfig, env: [String: String]) {
+        var env = base.envMap
+        if let overlayEnv = overlay.env {
+            for (key, value) in overlayEnv { env[key] = value }
+        }
+        let merged = AgentConfig(
+            command: overlay.command ?? base.command,
+            initialPrompt: overlay.initialPrompt ?? base.initialPrompt,
+            // Base env text is carried verbatim; the resolved env is the dict
+            // above, NOT this text (see doc comment). Do not read merged.envMap.
+            envOverridesText: base.envOverridesText,
+            model: overlay.model ?? base.model,
+            effort: overlay.effort ?? base.effort,
+            systemPrompt: overlay.systemPrompt ?? base.systemPrompt
+        )
+        return (merged, env)
+    }
+
+    /// The at-a-glance tooltip string for the A button (design §5.3 v1): the
+    /// resolved default config's `name · model · effort`, empty segments
+    /// omitted. Pure — visible for testing. `model`/`effort` are the
+    /// overlay-resolved values (what actually launches); `model` is mapped to
+    /// its Claude family display name when it matches, else shown verbatim.
+    static func formatAgentTooltip(name: String, model: String, effort: String) -> String {
+        let modelLabel = ClaudeModelFamily(rawValue: model)?.displayName ?? model
+        let segments = [name, modelLabel, effort]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let detail = segments.joined(separator: " · ")
+        let template = String(
+            localized: "workspace.tooltip.newAgent.resolved",
+            defaultValue: "Launch Agent — %@"
+        )
+        return String(format: template, locale: Locale.current, detail)
+    }
+
+    /// Resolve the A-button tooltip from the saved-config library: read
+    /// `effectiveDefault()`, resolve its overlay for the display model/effort,
+    /// and format. Falls back to the config's own name/harness when the harness
+    /// is a custom kind the overlay resolver can't materialize. Project config is
+    /// intentionally not consulted here — the tooltip is a workspace-agnostic
+    /// at-a-glance hint, and the library (name) is user-global; a project
+    /// override to the harness base affects the launch, not this hint (v1).
+    static func resolvedDefaultTooltip(
+        library: AgentConfigLibraryStore = .shared,
+        userDefault: DefaultAgentConfig
+    ) -> String {
+        let saved = library.effectiveDefault()
+        if let resolved = resolveOverlay(savedConfig: saved, userDefault: userDefault, projectConfig: nil) {
+            return formatAgentTooltip(
+                name: saved.name,
+                model: resolved.mergedConfig.model,
+                effort: resolved.mergedConfig.effort
+            )
+        }
+        // Custom/unknown harness: show the saved axes directly.
+        return formatAgentTooltip(
+            name: saved.name,
+            model: saved.config.model ?? "",
+            effort: saved.config.effort ?? ""
+        )
+    }
+
     /// Build the shell command line for an agent's config. For claude-code, an
     /// initial prompt is appended as a single-quoted positional argument
     /// (claude accepts that). For other agents the prompt is delivered via a

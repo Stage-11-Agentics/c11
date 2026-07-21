@@ -202,10 +202,20 @@ struct DefaultAgentSettingsSection: View {
             )
         }
         .onReceive(NotificationCenter.default.publisher(for: AgentConfigEditorRequest.openName)) { note in
+            // Warm-mount fast path. Clear any stashed pending focus so a later
+            // appear can't re-open a stale request.
+            _ = AppDelegate.shared?.consumePendingAgentConfigEditorFocus()
             editorOrigin = AgentConfigEditorRequest.origin(from: note)
             editorPresentation = AgentConfigEditorPresentation(focus: AgentConfigEditorRequest.focus(from: note))
         }
-        .onAppear { library.reload() }
+        .onAppear {
+            library.reload()
+            // Cold-mount path: drain a request that fired before this section existed.
+            if let pending = AppDelegate.shared?.consumePendingAgentConfigEditorFocus() {
+                editorOrigin = pending.origin
+                editorPresentation = AgentConfigEditorPresentation(focus: pending.focus)
+            }
+        }
     }
 
     /// Post the close request from the dismiss handler (fires for Back/Esc/launch

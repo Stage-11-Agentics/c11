@@ -7513,17 +7513,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         openPreferencesWindow(debugSource: "appDelegate")
     }
 
+    /// A pending open request for the agent-config editor, set by
+    /// `openAgentConfigEditor` and drained by the Settings section on appear.
+    /// Covers the cold-first-mount race where the open notification would fire
+    /// before any observer exists.
+    @MainActor private(set) var pendingAgentConfigEditorFocus: (focus: AgentConfigEditorFocus, origin: AgentConfigEditorOrigin)?
+
+    /// Read-and-clear the pending editor focus (nil if none).
+    @MainActor
+    func consumePendingAgentConfigEditorFocus() -> (focus: AgentConfigEditorFocus, origin: AgentConfigEditorOrigin)? {
+        defer { pendingAgentConfigEditorFocus = nil }
+        return pendingAgentConfigEditorFocus
+    }
+
     /// C11-182 seam: open the Settings Saved Configs editor sheet, focused on a
     /// config / a new config / the stats view. Navigates Settings to the Agents
-    /// page, then posts the open-sheet notification the section observes. The
-    /// single call the C11-181 A-button popover's "View all" / "Launch stats"
-    /// makes; `origin: .popover` lets the sheet order the Settings window out on
-    /// close so the popover returns as the one visible surface.
+    /// page, then posts the open-sheet notification the section observes (the
+    /// warm-mount fast path) while also stashing the request for the section to
+    /// drain on appear (the cold-mount path). The single call the C11-181
+    /// A-button popover's "View all" / "Launch stats" makes; `origin: .popover`
+    /// lets the sheet order the Settings window out on close so the popover
+    /// returns as the one visible surface.
     @MainActor
     func openAgentConfigEditor(focus: AgentConfigEditorFocus, origin: AgentConfigEditorOrigin = .popover) {
+        pendingAgentConfigEditorFocus = (focus, origin)
         Self.presentPreferencesWindow(navigationTarget: .agents)
-        // Defer so the Settings view has mounted and switched to the Agents page
-        // before the section's observer receives the open request.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
             AgentConfigEditorRequest.postOpen(focus: focus, origin: origin)
         }
@@ -7534,31 +7548,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     enum SavedConfigLaunchResult {
         case launched
         case noWorkspace
-        case emptyCommand
+        /// The recipe couldn't launch: an empty resolved command, or an
+        /// unresolvable/unknown harness. `launchAgentSurface` declined it.
+        case cannotLaunch
     }
 
     /// C11-182 seam: launch a chosen saved config as a new agent surface in the
     /// current workspace ("Save & Launch"). Never silently no-ops — the caller
     /// keeps the sheet open and shows feedback for `.noWorkspace` (nothing to
-    /// launch into) and `.emptyCommand` (a custom harness whose recipe resolves
-    /// to an empty command, which `launchAgentSurface` would drop).
+    /// launch into) and `.cannotLaunch` (the launch path declined the recipe).
+    /// `launchAgentSurface` resolves with the correct project overlay and reports
+    /// whether it launched, so there is no duplicate resolution here.
     @MainActor
     func launchSavedAgentConfig(_ saved: SavedAgentConfig) -> SavedConfigLaunchResult {
         guard let workspace = tabManager?.selectedWorkspace,
               let pane = workspace.bonsplitController.focusedPaneId else {
             return .noWorkspace
         }
-        // Detect the empty-command case up front (best-effort: no project overlay)
-        // so the operator gets feedback rather than a vanished sheet + no launch.
-        if let overlay = DefaultAgentResolver.resolveOverlay(
-            savedConfig: saved,
-            userDefault: DefaultAgentConfigStore.shared.current,
-            projectConfig: nil
-        ), overlay.launch.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return .emptyCommand
-        }
-        workspace.launchAgentSurface(inPane: pane, explicitConfig: saved, source: .configEditor)
-        return .launched
+        return workspace.launchAgentSurface(inPane: pane, explicitConfig: saved, source: .configEditor)
+            ? .launched : .cannotLaunch
     }
 
     func refreshMenuBarExtraForDebug() {

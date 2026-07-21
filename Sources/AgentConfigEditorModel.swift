@@ -212,9 +212,23 @@ enum AgentConfigAxes {
         case .none:
             c.systemPrompt = nil
         case .supported:
-            if c.systemPrompt == nil { c.systemPrompt = SystemPromptSetting(mode: .inherit) }
+            // Leave as-is: nil is the true "inherit" (C11-179 contract: nil =
+            // inherit the base). The editor renders `?? .inherit` for display, so
+            // seeding a non-nil `.inherit` here would clobber a configured base
+            // system prompt through mergeOverlay.
+            break
         }
 
+        return c
+    }
+
+    /// Normalize a recipe for persistence so it faithfully round-trips the
+    /// nil=inherit contract: an explicit `.inherit` system-prompt setting (a
+    /// transient editor working state) collapses to `nil`, so a saved "inherit"
+    /// config never overrides a configured base system prompt at launch.
+    static func normalizedForPersistence(_ config: AgentLaunchConfig) -> AgentLaunchConfig {
+        var c = config
+        if c.systemPrompt?.mode == .inherit { c.systemPrompt = nil }
         return c
     }
 

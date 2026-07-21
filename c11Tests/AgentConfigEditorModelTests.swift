@@ -142,16 +142,31 @@ final class AgentConfigEditorModelTests: XCTestCase {
         XCTAssertNil(out.systemPrompt, "codex has no system-prompt axis → dropped")
     }
 
-    func testReconcileSeedsInheritSystemPromptWhenSupported() {
+    func testReconcileLeavesSystemPromptNilOnSupportedHarness() {
+        // Switching to a supported harness must NOT seed a non-nil `.inherit`
+        // (that would clobber a configured base system prompt via mergeOverlay).
         let c = AgentLaunchConfig(harness: "codex", model: "gpt-5.2")
-        let out = AgentConfigAxes.reconcileHarnessSwitch(c, to: "claude-code")
-        XCTAssertEqual(out.systemPrompt, SystemPromptSetting(mode: .inherit))
+        XCTAssertNil(AgentConfigAxes.reconcileHarnessSwitch(c, to: "claude-code").systemPrompt)
     }
 
-    func testReconcileDropsFreeformModelWithSlashToRouter() {
+    func testReconcileDropsNonSlashFreeformModelToRouter() {
         // freeform harness carrying a non-slash id → switching to router drops it.
         let c = AgentLaunchConfig(harness: "codex", model: "gpt-5.2")
         XCTAssertNil(AgentConfigAxes.reconcileHarnessSwitch(c, to: "opencode").model)
+    }
+
+    func testNormalizedForPersistenceDropsInheritSysPrompt() {
+        // An explicit `.inherit` collapses to nil (true inherit).
+        let inherit = AgentLaunchConfig(harness: "claude-code", model: "opus",
+                                        systemPrompt: SystemPromptSetting(mode: .inherit, text: "x"))
+        XCTAssertNil(AgentConfigAxes.normalizedForPersistence(inherit).systemPrompt)
+        // A real override survives untouched.
+        let replace = AgentLaunchConfig(harness: "claude-code",
+                                        systemPrompt: SystemPromptSetting(mode: .replace, text: ""))
+        XCTAssertEqual(AgentConfigAxes.normalizedForPersistence(replace).systemPrompt,
+                       SystemPromptSetting(mode: .replace, text: ""))
+        // Already-nil stays nil.
+        XCTAssertNil(AgentConfigAxes.normalizedForPersistence(AgentLaunchConfig(harness: "codex")).systemPrompt)
     }
 
     // MARK: Naming + description

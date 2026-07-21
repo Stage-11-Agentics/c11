@@ -93,13 +93,18 @@ final class AgentInstalledProbe: ObservableObject {
     private var didStart = false
 
     /// Kick the async login-shell PATH capture + verdict computation once. Safe
-    /// to call repeatedly.
+    /// to call repeatedly. Snapshots the operator's configured per-harness
+    /// commands on the main actor so the probe reflects a rebound binary, not
+    /// just the factory command.
     func startIfNeeded() {
         guard !didStart else { return }
         didStart = true
+        let base = DefaultAgentConfigStore.shared.current
+        let commands = Dictionary(uniqueKeysWithValues:
+            AgentType.allCases.map { ($0.rawValue, base.config(for: $0).command) })
         Task.detached(priority: .utility) {
             let dirs = Self.captureLoginShellPath()
-            let verdicts = Self.computeVerdicts(pathDirs: dirs)
+            let verdicts = Self.computeVerdicts(pathDirs: dirs, configuredCommands: commands)
             await MainActor.run { self.verdicts = verdicts }
         }
     }
@@ -111,14 +116,19 @@ final class AgentInstalledProbe: ObservableObject {
         verdicts[harness] ?? true
     }
 
-    /// Stat each harness's binary against the captured PATH once, off-main. An
-    /// empty/unresolved PATH yields `[:]` so every harness reads as installed.
-    private nonisolated static func computeVerdicts(pathDirs: [String]?) -> [String: Bool] {
+    /// Stat each harness's binary against the captured PATH once, off-main. Uses
+    /// the operator's configured command where set, falling back to the factory
+    /// command. An empty/unresolved PATH yields `[:]` so every harness reads as
+    /// installed.
+    private nonisolated static func computeVerdicts(pathDirs: [String]?, configuredCommands: [String: String]) -> [String: Bool] {
         guard let dirs = pathDirs, !dirs.isEmpty else { return [:] }
         let fm = FileManager.default
         var out: [String: Bool] = [:]
         for type in AgentType.allCases {
-            let command = AgentRegistry.shared.manifest(forKind: type.rawValue)?.factoryCommand ?? ""
+            let configured = configuredCommands[type.rawValue]?.trimmingCharacters(in: .whitespaces) ?? ""
+            let command = configured.isEmpty
+                ? (AgentRegistry.shared.manifest(forKind: type.rawValue)?.factoryCommand ?? "")
+                : configured
             guard let bin = AgentConfigAxes.firstBinaryToken(command) else { out[type.rawValue] = true; continue }
             if bin.contains("/") {
                 out[type.rawValue] = fm.isExecutableFile(atPath: bin)
@@ -198,23 +208,24 @@ final class AgentConfigLibraryViewModel: ObservableObject {
     @discardableResult
     func save(_ draft: EditorDraft) -> SavedAgentConfig? {
         let name = draft.resolvedName
+        let config = draft.normalizedConfig
         do {
-            if let id = draft.sourceId, let existing = configs.first(where: { $0.id == id }) {
-                let updated = SavedAgentConfig(id: id, name: name, order: existing.order, config: draft.config)
+            // Update path: only when the id still exists in the on-disk file.
+            if let id = draft.sourceId {
                 var file = store.current
                 if let i = file.configs.firstIndex(where: { $0.id == id }) {
+                    let updated = SavedAgentConfig(id: id, name: name, order: file.configs[i].order, config: config)
                     file.configs[i] = updated
                     try store.write(file)
+                    reload()
+                    return updated
                 }
-                reload()
-                return updated
-            } else {
-                let stored = try store.add(
-                    SavedAgentConfig(id: "", name: name, order: 0, config: draft.config)
-                )
-                reload()
-                return stored
+                // The id vanished (deleted out from under us): fall through to add
+                // rather than silently reporting a save that never happened.
             }
+            let stored = try store.add(SavedAgentConfig(id: "", name: name, order: 0, config: config))
+            reload()
+            return stored
         } catch {
             return nil
         }
@@ -264,10 +275,15 @@ struct EditorDraft: Equatable {
         return trimmed.isEmpty ? AgentConfigAxes.autoName(for: config) : trimmed
     }
 
+    /// The config as it should be persisted — an explicit `.inherit` system
+    /// prompt (transient editor state) collapses to `nil` (true inherit).
+    var normalizedConfig: AgentLaunchConfig {
+        AgentConfigAxes.normalizedForPersistence(config)
+    }
+
     static func new() -> EditorDraft {
-        EditorDraft(sourceId: nil, name: "",
-                    config: AgentLaunchConfig(harness: "claude-code",
-                                              systemPrompt: SystemPromptSetting(mode: .inherit)))
+        // systemPrompt nil = inherit; the editor renders `?? .inherit` for display.
+        EditorDraft(sourceId: nil, name: "", config: AgentLaunchConfig(harness: "claude-code"))
     }
 
     static func from(_ saved: SavedAgentConfig) -> EditorDraft {
@@ -574,16 +590,24 @@ struct AgentConfigEditorSheet: View {
 
     private func saveOnly() {
         launchFeedback = nil
-        guard let saved = library.save(draft) else { return }
+        guard let saved = library.save(draft) else {
+            launchFeedback = saveFailedMessage
+            return
+        }
         draft.sourceId = saved.id
         flashSaved(saved.id)
     }
 
     private func saveAndLaunch() {
-        guard !statsMode, let saved = library.save(draft) else { return }
+        guard !statsMode else { return }
+        launchFeedback = nil
+        guard let saved = library.save(draft) else {
+            launchFeedback = saveFailedMessage
+            return
+        }
         draft.sourceId = saved.id
         // Never silently no-op (design MINOR-5): keep the sheet open + explain
-        // when there is nothing to launch into or the recipe has no command.
+        // when there is nothing to launch into or the recipe can't launch.
         switch AppDelegate.shared?.launchSavedAgentConfig(saved) ?? .noWorkspace {
         case .launched:
             onClose(false) // launched — do not return to the popover
@@ -591,11 +615,15 @@ struct AgentConfigEditorSheet: View {
             flashSaved(saved.id)
             launchFeedback = String(localized: "agentConfigEditor.launch.noWorkspace",
                                     defaultValue: "Saved. No workspace open to launch into — open one, then launch.")
-        case .emptyCommand:
+        case .cannotLaunch:
             flashSaved(saved.id)
-            launchFeedback = String(localized: "agentConfigEditor.launch.emptyCommand",
-                                    defaultValue: "Saved. This recipe has no command to launch — set one under Advanced.")
+            launchFeedback = String(localized: "agentConfigEditor.launch.cannotLaunch",
+                                    defaultValue: "Saved. This recipe can't launch — check the harness and its command under Advanced.")
         }
+    }
+
+    private var saveFailedMessage: String {
+        String(localized: "agentConfigEditor.saveFailed", defaultValue: "Couldn't save — please try again.")
     }
 
     private func backOut() {

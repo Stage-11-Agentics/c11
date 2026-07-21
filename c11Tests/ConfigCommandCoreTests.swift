@@ -259,11 +259,28 @@ final class ConfigCommandCoreTests: XCTestCase {
         }
     }
 
-    func testParseLaunchInputsPromptPrecedence() throws {
+    func testParseLaunchInputsInlinePrompt() throws {
         let inputs = try ConfigCommandCore.parseLaunchInputs(
             nameOrId: "a", pane: nil, workspace: nil, newWorkspace: false,
-            cwd: nil, prompt: "inline", promptFile: "/x", promptFileContents: "fromfile", json: false)
-        XCTAssertEqual(inputs.prompt, "inline")   // inline wins over file
+            cwd: nil, prompt: "inline", promptFile: nil, promptFileContents: nil, json: false)
+        XCTAssertEqual(inputs.prompt, "inline")
+    }
+
+    func testParseLaunchInputsPromptFileResolves() throws {
+        // --prompt-file (no inline --prompt): the file's contents become the prompt.
+        let inputs = try ConfigCommandCore.parseLaunchInputs(
+            nameOrId: "a", pane: nil, workspace: nil, newWorkspace: false,
+            cwd: nil, prompt: nil, promptFile: "/x", promptFileContents: "fromfile", json: false)
+        XCTAssertEqual(inputs.prompt, "fromfile")
+    }
+
+    func testParseLaunchInputsRejectsBothPromptForms() {
+        // --prompt and --prompt-file are mutually exclusive.
+        XCTAssertThrowsError(try ConfigCommandCore.parseLaunchInputs(
+            nameOrId: "a", pane: nil, workspace: nil, newWorkspace: false,
+            cwd: nil, prompt: "inline", promptFile: "/x", promptFileContents: "fromfile", json: false)) {
+            XCTAssertEqual(($0 as? ConfigCoreError)?.code, "prompt_conflict")
+        }
     }
 
     // MARK: stats

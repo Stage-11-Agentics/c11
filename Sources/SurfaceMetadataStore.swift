@@ -172,6 +172,9 @@ final class SurfaceMetadataStore: @unchecked Sendable {
 
     private let queue = DispatchQueue(label: "com.stage11.c11.surface-metadata", qos: .userInitiated)
     private let terminalKindChangeSubject = PassthroughSubject<TerminalKindChange, Never>()
+    private let terminalKindDeliveryLock = NSLock()
+    private var pendingTerminalKindChanges: [TerminalKindChange] = []
+    private var isDeliveringTerminalKindChanges = false
 
     var terminalKindChanges: AnyPublisher<TerminalKindChange, Never> {
         terminalKindChangeSubject.eraseToAnyPublisher()
@@ -438,7 +441,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         mode: WriteMode,
         source: MetadataSource
     ) throws -> WriteResult {
-        let outcome: (result: WriteResult, terminalKindChange: TerminalKindChange?) = try queue.sync {
+        let result: WriteResult = try queue.sync {
             let oldKind = terminalKindLocked(workspaceId: workspaceId, surfaceId: surfaceId)
             let result = try setMetadataLocked(
                 workspaceId: workspaceId,
@@ -449,20 +452,19 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             )
             let newKind = terminalKindLocked(workspaceId: workspaceId, surfaceId: surfaceId)
             let origin: TerminalKindChangeOrigin = mode == .replace ? .replace : .merge
-            return (
-                result,
-                terminalKindChange(
-                    workspaceId: workspaceId,
-                    surfaceId: surfaceId,
-                    oldKind: oldKind,
-                    newKind: newKind,
-                    origin: origin,
-                    source: source
-                )
+            let change = terminalKindChange(
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                oldKind: oldKind,
+                newKind: newKind,
+                origin: origin,
+                source: source
             )
+            enqueueTerminalKindChangeLocked(change)
+            return result
         }
-        publish(outcome.terminalKindChange)
-        return outcome.result
+        drainTerminalKindChanges()
+        return result
     }
 
     enum WriteMode: String {
@@ -501,7 +503,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         keys: [String]?,
         source: MetadataSource
     ) throws -> WriteResult {
-        let outcome: (result: WriteResult, terminalKindChange: TerminalKindChange?) = try queue.sync {
+        let result: WriteResult = try queue.sync {
             let oldKind = terminalKindLocked(workspaceId: workspaceId, surfaceId: surfaceId)
             var result = WriteResult()
             if keys == nil {
@@ -520,17 +522,16 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                 if !existing.isEmpty || !existingSrc.isEmpty {
                     metadataStoreRevision &+= 1
                 }
-                return (
-                    result,
-                    terminalKindChange(
-                        workspaceId: workspaceId,
-                        surfaceId: surfaceId,
-                        oldKind: oldKind,
-                        newKind: nil,
-                        origin: .clearAll,
-                        source: source
-                    )
+                let change = terminalKindChange(
+                    workspaceId: workspaceId,
+                    surfaceId: surfaceId,
+                    oldKind: oldKind,
+                    newKind: nil,
+                    origin: .clearAll,
+                    source: source
                 )
+                enqueueTerminalKindChangeLocked(change)
+                return result
             }
 
             var blob = metadata[workspaceId]?[surfaceId] ?? [:]
@@ -560,20 +561,19 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             result.sources = sblob.mapValues { $0.toJSON() }
             if removedAny { metadataStoreRevision &+= 1 }
             let newKind = terminalKindLocked(workspaceId: workspaceId, surfaceId: surfaceId)
-            return (
-                result,
-                terminalKindChange(
-                    workspaceId: workspaceId,
-                    surfaceId: surfaceId,
-                    oldKind: oldKind,
-                    newKind: newKind,
-                    origin: .keyedClear,
-                    source: source
-                )
+            let change = terminalKindChange(
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                oldKind: oldKind,
+                newKind: newKind,
+                origin: .keyedClear,
+                source: source
             )
+            enqueueTerminalKindChangeLocked(change)
+            return result
         }
-        publish(outcome.terminalKindChange)
-        return outcome.result
+        drainTerminalKindChanges()
+        return result
     }
 
     /// Restore metadata + sources for a surface from a session snapshot
@@ -592,7 +592,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         values: [String: Any],
         sources: [String: SourceRecord]
     ) {
-        let change: TerminalKindChange? = queue.sync {
+        queue.sync {
             let oldKind = terminalKindLocked(workspaceId: workspaceId, surfaceId: surfaceId)
             metadata[workspaceId, default: [:]][surfaceId] = values
             self.sources[workspaceId, default: [:]][surfaceId] = sources
@@ -601,7 +601,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             // restored contents back to disk with a fresh createdAt.
             metadataStoreRevision &+= 1
             let newKind = terminalKindLocked(workspaceId: workspaceId, surfaceId: surfaceId)
-            return terminalKindChange(
+            let change = terminalKindChange(
                 workspaceId: workspaceId,
                 surfaceId: surfaceId,
                 oldKind: oldKind,
@@ -609,8 +609,9 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                 origin: .restore,
                 source: sources[MetadataKey.terminalType]?.source
             )
+            enqueueTerminalKindChangeLocked(change)
         }
-        publish(change)
+        drainTerminalKindChanges()
     }
 
     /// Remove all metadata for a surface. Called from `pruneSurfaceMetadata`
@@ -657,20 +658,20 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         value: Any,
         source: MetadataSource
     ) -> Bool {
-        let outcome: (applied: Bool, terminalKindChange: TerminalKindChange?) = queue.sync {
+        let applied: Bool = queue.sync {
             let oldKind = terminalKindLocked(workspaceId: workspaceId, surfaceId: surfaceId)
             var blob = metadata[workspaceId]?[surfaceId] ?? [:]
             var sblob = sources[workspaceId]?[surfaceId] ?? [:]
 
             if let cur = sblob[key], source.precedence < cur.source.precedence {
-                return (false, nil)
+                return false
             }
             if SurfaceMetadataStore.validateReservedKey(key, value) != nil {
-                return (false, nil)
+                return false
             }
             // Avoid churn on no-op same-source same-value writes.
             if let existing = blob[key], sameJSONValue(existing, value), sblob[key]?.source == source {
-                return (false, nil)
+                return false
             }
             // C11-163: capture prior before overwrite (amendment E).
             let priorValue = blob[key]
@@ -679,7 +680,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
 
             if let encoded = try? JSONSerialization.data(withJSONObject: blob, options: []),
                encoded.count > SurfaceMetadataStore.payloadCapBytes {
-                return (false, nil)
+                return false
             }
 
             metadata[workspaceId, default: [:]][surfaceId] = blob
@@ -699,22 +700,21 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                 )
             }
             let newKind = terminalKindLocked(workspaceId: workspaceId, surfaceId: surfaceId)
-            return (
-                true,
-                key == MetadataKey.terminalType
-                    ? terminalKindChange(
-                        workspaceId: workspaceId,
-                        surfaceId: surfaceId,
-                        oldKind: oldKind,
-                        newKind: newKind,
-                        origin: .internalWrite,
-                        source: source
-                    )
-                    : nil
-            )
+            let change = key == MetadataKey.terminalType
+                ? terminalKindChange(
+                    workspaceId: workspaceId,
+                    surfaceId: surfaceId,
+                    oldKind: oldKind,
+                    newKind: newKind,
+                    origin: .internalWrite,
+                    source: source
+                )
+                : nil
+            enqueueTerminalKindChangeLocked(change)
+            return true
         }
-        publish(outcome.terminalKindChange)
-        return outcome.applied
+        drainTerminalKindChanges()
+        return applied
     }
 
     // MARK: - Locked merge helper
@@ -866,9 +866,34 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         )
     }
 
-    private func publish(_ change: TerminalKindChange?) {
+    /// Called while the metadata queue owns commit order. Delivery happens
+    /// after that queue is released so subscribers may safely re-enter the
+    /// store, while this FIFO prevents later commits from overtaking earlier
+    /// ones when concurrent writers return from `queue.sync` out of order.
+    private func enqueueTerminalKindChangeLocked(_ change: TerminalKindChange?) {
         guard let change else { return }
-        terminalKindChangeSubject.send(change)
+        terminalKindDeliveryLock.lock()
+        pendingTerminalKindChanges.append(change)
+        terminalKindDeliveryLock.unlock()
+    }
+
+    private func drainTerminalKindChanges() {
+        terminalKindDeliveryLock.lock()
+        guard !isDeliveringTerminalKindChanges else {
+            terminalKindDeliveryLock.unlock()
+            return
+        }
+        isDeliveringTerminalKindChanges = true
+
+        while !pendingTerminalKindChanges.isEmpty {
+            let change = pendingTerminalKindChanges.removeFirst()
+            terminalKindDeliveryLock.unlock()
+            terminalKindChangeSubject.send(change)
+            terminalKindDeliveryLock.lock()
+        }
+
+        isDeliveringTerminalKindChanges = false
+        terminalKindDeliveryLock.unlock()
     }
 }
 

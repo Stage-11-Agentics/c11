@@ -7,6 +7,29 @@ import XCTest
 @testable import c11
 #endif
 
+private final class LockedTerminalKindChangeRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var changes: [TerminalKindChange] = []
+
+    func append(_ change: TerminalKindChange) {
+        lock.lock()
+        changes.append(change)
+        lock.unlock()
+    }
+
+    func removeAll() {
+        lock.lock()
+        changes.removeAll()
+        lock.unlock()
+    }
+
+    func snapshot() -> [TerminalKindChange] {
+        lock.lock()
+        defer { lock.unlock() }
+        return changes
+    }
+}
+
 /// Integration tests for the write-time validator guarding the
 /// `claude.session_id` reserved key (CMUX-37 Phase 1 / B1).
 ///
@@ -427,5 +450,54 @@ final class SurfaceMetadataStoreValidationTests: XCTestCase {
         XCTAssertEqual(changes[1].newKind, "shell")
         XCTAssertEqual(changes[1].origin, .restore)
         XCTAssertEqual(changes[1].source, .heuristic)
+    }
+
+    func testConcurrentTerminalKindWritesPublishInCommitOrder() {
+        let workspace = UUID()
+        let surface = UUID()
+        let recorder = LockedTerminalKindChangeRecorder()
+        let cancellable = store.terminalKindChanges
+            .filter { $0.workspaceID == workspace && $0.surfaceID == surface }
+            .sink { recorder.append($0) }
+        defer {
+            cancellable.cancel()
+            store.removeSurface(workspaceId: workspace, surfaceId: surface)
+        }
+
+        XCTAssertTrue(
+            store.setInternal(
+                workspaceId: workspace,
+                surfaceId: surface,
+                key: MetadataKey.terminalType,
+                value: "shell",
+                source: .explicit
+            )
+        )
+        recorder.removeAll()
+
+        DispatchQueue.concurrentPerform(iterations: 1_000) { index in
+            _ = store.setInternal(
+                workspaceId: workspace,
+                surfaceId: surface,
+                key: MetadataKey.terminalType,
+                value: index.isMultiple(of: 2) ? "codex" : "claude-code",
+                source: .explicit
+            )
+        }
+
+        let changes = recorder.snapshot()
+        XCTAssertGreaterThan(changes.count, 1)
+        for index in changes.indices.dropFirst() {
+            XCTAssertEqual(
+                changes[index].oldKind,
+                changes[changes.index(before: index)].newKind,
+                "Published terminal-kind events must form the store's serialized commit chain"
+            )
+        }
+        XCTAssertEqual(
+            changes.last?.newKind,
+            store.getMetadata(workspaceId: workspace, surfaceId: surface)
+                .metadata[MetadataKey.terminalType] as? String
+        )
     }
 }

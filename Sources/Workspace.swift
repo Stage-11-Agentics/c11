@@ -5389,6 +5389,26 @@ final class Workspace: Identifiable, ObservableObject {
         case terminalFirstResponder
     }
 
+    /// The terminal portal reports first-responder convergence for both real
+    /// pointer clicks and programmatic responder maintenance. Only the former
+    /// is operator intent and may establish agent context.
+    private static func resolvedAgentContextProvenance(
+        requested: AgentContextFocusProvenance,
+        trigger: FocusPanelTrigger,
+        currentEventType: NSEvent.EventType?
+    ) -> AgentContextFocusProvenance {
+        guard requested == .maintenance,
+              trigger == .terminalFirstResponder else {
+            return requested
+        }
+        switch currentEventType {
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+            return .operatorInteraction
+        default:
+            return .maintenance
+        }
+    }
+
     /// Published directory for each panel
     @Published var panelDirectories: [UUID: String] = [:]
     @Published var panelTitles: [UUID: String] = [:]
@@ -6104,7 +6124,6 @@ final class Workspace: Identifiable, ObservableObject {
 
     func companionPresentationValue(for browserID: UUID) -> BrowserCompanionPresentation {
         guard let browser = panels[browserID] as? BrowserPanel else { return .unlinked }
-        refreshCompanionLastKnownNames()
         return BrowserCompanionPolicy.presentation(
             browserSurfaceID: browserID,
             link: browser.linkedAgent,
@@ -9029,7 +9048,9 @@ final class Workspace: Identifiable, ObservableObject {
         // Keyboard/browser-open paths want "new tab at end" regardless of global new-tab placement.
         if insertAtEnd {
             let targetIndex = max(0, bonsplitController.tabs(inPane: paneId).count - 1)
-            _ = bonsplitController.reorderTab(newTabId, toIndex: targetIndex)
+            _ = withBonsplitSelectionProvenance(.maintenance) {
+                bonsplitController.reorderTab(newTabId, toIndex: targetIndex)
+            }
         }
 
         // Match terminal behavior: enforce deterministic selection + focus.
@@ -9747,7 +9768,9 @@ final class Workspace: Identifiable, ObservableObject {
 
         surfaceIdToPanelId[newTabId] = detached.panelId
         if let index {
-            _ = bonsplitController.reorderTab(newTabId, toIndex: index)
+            _ = withBonsplitSelectionProvenance(.maintenance) {
+                bonsplitController.reorderTab(newTabId, toIndex: index)
+            }
         }
         syncPinnedStateForTab(newTabId, panelId: detached.panelId)
         syncSurfaceTabActivityStateForPanel(detached.panelId)
@@ -9872,9 +9895,15 @@ final class Workspace: Identifiable, ObservableObject {
         _ panelId: UUID,
         previousHostedView: GhosttySurfaceScrollView? = nil,
         trigger: FocusPanelTrigger = .standard,
-        agentContextProvenance: AgentContextFocusProvenance = .maintenance
+        agentContextProvenance: AgentContextFocusProvenance = .maintenance,
+        currentEventType: NSEvent.EventType? = NSApp?.currentEvent?.type
     ) {
         markExplicitFocusIntent(on: panelId)
+        let resolvedAgentContextProvenance = Self.resolvedAgentContextProvenance(
+            requested: agentContextProvenance,
+            trigger: trigger,
+            currentEventType: currentEventType
+        )
 #if DEBUG
         let pane = bonsplitController.focusedPaneId?.id.uuidString.prefix(5) ?? "nil"
         let triggerLabel = trigger == .terminalFirstResponder ? "firstResponder" : "standard"
@@ -9934,7 +9963,7 @@ final class Workspace: Identifiable, ObservableObject {
                 "panel=\(panelId.uuidString.prefix(5)) pane=\(targetPaneId.id.uuidString.prefix(5))"
             )
 #endif
-            withBonsplitSelectionProvenance(agentContextProvenance) {
+            withBonsplitSelectionProvenance(resolvedAgentContextProvenance) {
                 bonsplitController.focusPane(targetPaneId)
             }
         }
@@ -9946,7 +9975,7 @@ final class Workspace: Identifiable, ObservableObject {
                 "panel=\(panelId.uuidString.prefix(5)) tab=\(tabId.uuid.uuidString.prefix(5))"
             )
 #endif
-            withBonsplitSelectionProvenance(agentContextProvenance) {
+            withBonsplitSelectionProvenance(resolvedAgentContextProvenance) {
                 bonsplitController.selectTab(tabId)
             }
         }
@@ -9959,7 +9988,7 @@ final class Workspace: Identifiable, ObservableObject {
                 reassertAppKitFocus: !shouldSuppressReentrantRefocus,
                 focusIntent: activationIntent,
                 previousTerminalHostedView: previousTerminalHostedView,
-                agentContextProvenance: agentContextProvenance
+                agentContextProvenance: resolvedAgentContextProvenance
             )
         }
 

@@ -10,6 +10,31 @@ import XCTest
 @MainActor
 final class BrowserCompanionWorkspaceTests: XCTestCase {
     private let metadataStore = SurfaceMetadataStore.shared
+    private var previousFeatureEnvironment: String?
+
+    override func setUp() {
+        super.setUp()
+        previousFeatureEnvironment = getenv(AgentCompanionBrowserFeature.environmentKey)
+            .map { String(cString: $0) }
+        // Xcode's hosted XCTest launcher does not inherit arbitrary shell
+        // environment variables from xcodebuild. Enable the default-off
+        // feature process-locally for this behavioral fixture.
+        setenv(AgentCompanionBrowserFeature.environmentKey, "1", 1)
+    }
+
+    override func tearDown() {
+        if let previousFeatureEnvironment {
+            setenv(
+                AgentCompanionBrowserFeature.environmentKey,
+                previousFeatureEnvironment,
+                1
+            )
+        } else {
+            unsetenv(AgentCompanionBrowserFeature.environmentKey)
+        }
+        previousFeatureEnvironment = nil
+        super.tearDown()
+    }
 
     private func initialTerminalID(in workspace: Workspace) throws -> UUID {
         try XCTUnwrap(
@@ -64,7 +89,21 @@ final class BrowserCompanionWorkspaceTests: XCTestCase {
         workspace.focusPanel(agent, agentContextProvenance: .maintenance)
         XCTAssertNil(workspace.agentContextState.activeAgentSurfaceID)
 
-        workspace.focusPanel(agent, agentContextProvenance: .operatorInteraction)
+        workspace.focusPanel(
+            agent,
+            trigger: .terminalFirstResponder,
+            currentEventType: nil
+        )
+        XCTAssertNil(
+            workspace.agentContextState.activeAgentSurfaceID,
+            "Programmatic first-responder maintenance must not establish context"
+        )
+
+        workspace.focusPanel(
+            agent,
+            trigger: .terminalFirstResponder,
+            currentEventType: .leftMouseDown
+        )
         XCTAssertEqual(workspace.agentContextState.activeAgentSurfaceID, agent)
         XCTAssertEqual(workspace.agentContextState.generation, 1)
 
@@ -290,5 +329,69 @@ final class BrowserCompanionWorkspaceTests: XCTestCase {
             destination.agentContextState.activeAgentSurfaceID,
             "Move/attach maintenance must not establish context"
         )
+    }
+
+    func testInsertAtEndReorderPreservesExplicitLatePromotionCandidate() async throws {
+        let workspace = Workspace()
+        let pane = try paneID(in: workspace)
+        let candidate = try initialTerminalID(in: workspace)
+        try setTerminalKind("shell", surfaceID: candidate, workspace: workspace)
+        await drainMainQueue()
+
+        workspace.focusPanel(candidate, agentContextProvenance: .operatorInteraction)
+        XCTAssertNil(workspace.agentContextState.activeAgentSurfaceID)
+        let focusedBeforeInsert = workspace.focusedPanelId
+
+        XCTAssertNotNil(
+            workspace.newBrowserSurface(
+                inPane: pane,
+                focus: false,
+                insertAtEnd: true
+            )
+        )
+        XCTAssertEqual(workspace.focusedPanelId, focusedBeforeInsert)
+
+        try setTerminalKind("codex", surfaceID: candidate, workspace: workspace)
+        await drainMainQueue()
+        XCTAssertEqual(
+            workspace.agentContextState.activeAgentSurfaceID,
+            candidate,
+            "Maintenance reorder callbacks must not clear explicit late-promotion intent"
+        )
+    }
+
+    func testIndexedAttachWithoutFocusPreservesDestinationAgentContext() async throws {
+        let manager = TabManager()
+        let source = try XCTUnwrap(manager.selectedWorkspace)
+        let destination = manager.addWorkspace(select: false)
+        let destinationPane = try paneID(in: destination)
+        let sourceAgent = try initialTerminalID(in: source)
+        let destinationAgent = try initialTerminalID(in: destination)
+        try setTerminalKind("codex", surfaceID: sourceAgent, workspace: source)
+        try setTerminalKind("claude-code", surfaceID: destinationAgent, workspace: destination)
+        await drainMainQueue()
+
+        destination.focusPanel(
+            destinationAgent,
+            agentContextProvenance: .explicitFocusCommand
+        )
+        let generationBeforeAttach = destination.agentContextState.generation
+        let focusedBeforeAttach = destination.focusedPanelId
+        let transfer = try XCTUnwrap(source.detachSurface(panelId: sourceAgent))
+
+        XCTAssertEqual(
+            destination.attachDetachedSurface(
+                transfer,
+                inPane: destinationPane,
+                atIndex: 0,
+                focus: false
+            ),
+            sourceAgent
+        )
+        await drainMainQueue()
+
+        XCTAssertEqual(destination.focusedPanelId, focusedBeforeAttach)
+        XCTAssertEqual(destination.agentContextState.activeAgentSurfaceID, destinationAgent)
+        XCTAssertEqual(destination.agentContextState.generation, generationBeforeAttach)
     }
 }

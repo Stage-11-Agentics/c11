@@ -1434,6 +1434,127 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         XCTAssertFalse(attachedTab.hasCustomTitle)
     }
 
+    func testDetachAttachAndRollbackPreserveSurfaceActivityResolverInputs() throws {
+        let source = Workspace()
+        guard let panelId = source.focusedPanelId,
+              let sourcePane = source.paneId(forPanelId: panelId),
+              let sourceTabId = source.surfaceIdFromPanelId(panelId) else {
+            XCTFail("Expected source panel, pane, and tab")
+            return
+        }
+        defer {
+            SurfaceMetadataStore.shared.removeSurface(workspaceId: source.id, surfaceId: panelId)
+        }
+
+        _ = try SurfaceMetadataStore.shared.setMetadata(
+            workspaceId: source.id,
+            surfaceId: panelId,
+            partial: [MetadataKey.terminalType: "codex"],
+            mode: .merge,
+            source: .explicit
+        )
+        _ = SurfaceMetadataStore.shared.setInternal(
+            workspaceId: source.id,
+            surfaceId: panelId,
+            key: MetadataKey.activity,
+            value: SidebarActivityState.working.rawValue,
+            source: .derived
+        )
+        source.setDerivedActivity(.working, forSurface: panelId)
+        XCTAssertEqual(source.bonsplitController.tab(sourceTabId)?.activityState, .running)
+
+        let detached = try XCTUnwrap(source.detachSurface(panelId: panelId))
+        XCTAssertNil(source.derivedActivityBySurface[panelId])
+
+        let destination = Workspace()
+        defer {
+            SurfaceMetadataStore.shared.removeSurface(workspaceId: destination.id, surfaceId: panelId)
+        }
+        let destinationPane = try XCTUnwrap(destination.bonsplitController.allPaneIds.first)
+        XCTAssertEqual(
+            destination.attachDetachedSurface(detached, inPane: destinationPane, focus: false),
+            panelId
+        )
+
+        let destinationTabId = try XCTUnwrap(destination.surfaceIdFromPanelId(panelId))
+        XCTAssertEqual(destination.surfaceTerminalKind(panelId: panelId), "codex")
+        XCTAssertEqual(destination.derivedActivityBySurface[panelId], .working)
+        XCTAssertEqual(destination.bonsplitController.tab(destinationTabId)?.activityState, .running)
+
+        destination.setDerivedActivity(nil, forSurface: panelId)
+        XCTAssertEqual(destination.bonsplitController.tab(destinationTabId)?.activityState, .cold)
+
+        let rollbackTransfer = try XCTUnwrap(destination.detachSurface(panelId: panelId))
+        XCTAssertEqual(
+            source.attachDetachedSurface(rollbackTransfer, inPane: sourcePane, focus: false),
+            panelId
+        )
+
+        let rollbackTabId = try XCTUnwrap(source.surfaceIdFromPanelId(panelId))
+        XCTAssertEqual(source.surfaceTerminalKind(panelId: panelId), "codex")
+        XCTAssertNil(source.derivedActivityBySurface[panelId])
+        XCTAssertEqual(source.bonsplitController.tab(rollbackTabId)?.activityState, .cold)
+    }
+
+    func testRemovingTerminalTypeMetadataClearsColdSurfaceActivityState() throws {
+        let manager = TabManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let panelId = try XCTUnwrap(workspace.focusedPanelId)
+        let tabId = try XCTUnwrap(workspace.surfaceIdFromPanelId(panelId))
+        defer {
+            SurfaceMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: panelId)
+        }
+
+        func seedColdAgentState() throws {
+            _ = try SurfaceMetadataStore.shared.setMetadata(
+                workspaceId: workspace.id,
+                surfaceId: panelId,
+                partial: [MetadataKey.terminalType: "codex"],
+                mode: .merge,
+                source: .explicit
+            )
+            workspace.syncSurfaceTabActivityStateForPanel(panelId)
+            XCTAssertEqual(workspace.bonsplitController.tab(tabId)?.activityState, .cold)
+        }
+
+        try seedColdAgentState()
+        let clearResult = try SurfaceMetadataStore.shared.clearMetadata(
+            workspaceId: workspace.id,
+            surfaceId: panelId,
+            keys: nil,
+            source: .explicit
+        )
+        TerminalController.shared.applyTitleDescriptionSideEffects(
+            workspaceId: workspace.id,
+            surfaceId: panelId,
+            tabManager: manager,
+            applied: clearResult.applied,
+            removedKeys: clearResult.removedKeys,
+            autoExpand: false
+        )
+        XCTAssertTrue(clearResult.removedKeys.contains(MetadataKey.terminalType))
+        XCTAssertNil(workspace.bonsplitController.tab(tabId)?.activityState)
+
+        try seedColdAgentState()
+        let replaceResult = try SurfaceMetadataStore.shared.setMetadata(
+            workspaceId: workspace.id,
+            surfaceId: panelId,
+            partial: [MetadataKey.description: "replacement metadata"],
+            mode: .replace,
+            source: .explicit
+        )
+        TerminalController.shared.applyTitleDescriptionSideEffects(
+            workspaceId: workspace.id,
+            surfaceId: panelId,
+            tabManager: manager,
+            applied: replaceResult.applied,
+            removedKeys: replaceResult.removedKeys,
+            autoExpand: false
+        )
+        XCTAssertTrue(replaceResult.removedKeys.contains(MetadataKey.terminalType))
+        XCTAssertNil(workspace.bonsplitController.tab(tabId)?.activityState)
+    }
+
     func testBrowserSplitWithFocusFalseRecoversFromDelayedStaleSelection() {
         let workspace = Workspace()
         guard let originalFocusedPanelId = workspace.focusedPanelId else {

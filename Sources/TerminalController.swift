@@ -3393,11 +3393,12 @@ class TerminalController {
         surfaceId: UUID,
         tabManager: TabManager,
         applied: [String: Bool],
+        removedKeys: Set<String> = [],
         autoExpand: Bool
     ) {
-        let titleApplied = applied[MetadataKey.title] == true
-        let descriptionApplied = applied[MetadataKey.description] == true
-        let terminalTypeApplied = applied[MetadataKey.terminalType] == true
+        let titleApplied = applied[MetadataKey.title] == true || removedKeys.contains(MetadataKey.title)
+        let descriptionApplied = applied[MetadataKey.description] == true || removedKeys.contains(MetadataKey.description)
+        let terminalTypeApplied = applied[MetadataKey.terminalType] == true || removedKeys.contains(MetadataKey.terminalType)
         guard titleApplied || descriptionApplied || terminalTypeApplied else { return }
         v2MainSync {
             guard let ws = tabManager.tabs.first(where: { $0.id == workspaceId }) else { return }

@@ -1420,6 +1420,7 @@ extension TerminalController {
                 surfaceId: resolved.surfaceId,
                 tabManager: resolved.tabManager,
                 applied: result.applied,
+                removedKeys: result.removedKeys,
                 autoExpand: (params["auto_expand"] as? Bool) ?? true
             )
             return .ok(buildMetadataOkPayload(
@@ -1534,6 +1535,7 @@ extension TerminalController {
                 surfaceId: resolved.surfaceId,
                 tabManager: resolved.tabManager,
                 applied: result.applied,
+                removedKeys: result.removedKeys,
                 autoExpand: false
             )
             return .ok(buildMetadataOkPayload(

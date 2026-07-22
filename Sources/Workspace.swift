@@ -6298,6 +6298,10 @@ final class Workspace: Identifiable, ObservableObject {
         let customTitle: String?
         let customColor: String?
         let manuallyUnread: Bool
+        let terminalType: String?
+        let terminalTypeSource: MetadataSource?
+        let derivedActivity: SidebarActivityState?
+        let derivedActivitySource: MetadataSource?
         let activityState: BonsplitTabActivityState?
     }
 
@@ -9277,6 +9281,27 @@ final class Workspace: Identifiable, ObservableObject {
             manualUnreadPanelIds.remove(detached.panelId)
             manualUnreadMarkedAt.removeValue(forKey: detached.panelId)
         }
+        if let terminalType = detached.terminalType {
+            _ = SurfaceMetadataStore.shared.setInternal(
+                workspaceId: id,
+                surfaceId: detached.panelId,
+                key: MetadataKey.terminalType,
+                value: terminalType,
+                source: detached.terminalTypeSource ?? .heuristic
+            )
+        }
+        if let derivedActivity = detached.derivedActivity {
+            derivedActivityBySurface[detached.panelId] = derivedActivity
+            _ = SurfaceMetadataStore.shared.setInternal(
+                workspaceId: id,
+                surfaceId: detached.panelId,
+                key: MetadataKey.activity,
+                value: derivedActivity.rawValue,
+                source: detached.derivedActivitySource ?? .derived
+            )
+        } else {
+            derivedActivityBySurface.removeValue(forKey: detached.panelId)
+        }
 
         guard let newTabId = bonsplitController.createTab(
             title: TitleFormatting.sidebarLabel(from: detached.title),
@@ -9301,6 +9326,8 @@ final class Workspace: Identifiable, ObservableObject {
             pinnedPanelIds.remove(detached.panelId)
             manualUnreadPanelIds.remove(detached.panelId)
             manualUnreadMarkedAt.removeValue(forKey: detached.panelId)
+            derivedActivityBySurface.removeValue(forKey: detached.panelId)
+            SurfaceMetadataStore.shared.removeSurface(workspaceId: id, surfaceId: detached.panelId)
             panelSubscriptions.removeValue(forKey: detached.panelId)
 #if DEBUG
             dlog(
@@ -11536,6 +11563,18 @@ extension Workspace: BonsplitDelegate {
                 customTitle: panelCustomTitles[panelId],
                 customColor: panelCustomColors[panelId],
                 manuallyUnread: manualUnreadPanelIds.contains(panelId),
+                terminalType: surfaceTerminalKind(panelId: panelId),
+                terminalTypeSource: SurfaceMetadataStore.shared.getSource(
+                    workspaceId: id,
+                    surfaceId: panelId,
+                    key: MetadataKey.terminalType
+                ),
+                derivedActivity: derivedActivityBySurface[panelId],
+                derivedActivitySource: SurfaceMetadataStore.shared.getSource(
+                    workspaceId: id,
+                    surfaceId: panelId,
+                    key: MetadataKey.activity
+                ),
                 activityState: resolvedSurfaceTabActivityState(
                     panelId: panelId,
                     hasExactSurfaceNotification: false
@@ -11573,6 +11612,7 @@ extension Workspace: BonsplitDelegate {
         manualUnreadMarkedAt.removeValue(forKey: panelId)
         panelSubscriptions.removeValue(forKey: panelId)
         panelShellActivityStates.removeValue(forKey: panelId)
+        derivedActivityBySurface.removeValue(forKey: panelId)
         mailboxStdinBuffer.removeSurface(panelId)
         surfaceTTYNames.removeValue(forKey: panelId)
         restoredTerminalScrollbackByPanelId.removeValue(forKey: panelId)
@@ -11755,6 +11795,7 @@ extension Workspace: BonsplitDelegate {
                 manualUnreadPanelIds.remove(panelId)
                 panelSubscriptions.removeValue(forKey: panelId)
                 panelShellActivityStates.removeValue(forKey: panelId)
+                derivedActivityBySurface.removeValue(forKey: panelId)
                 mailboxStdinBuffer.removeSurface(panelId)
                 surfaceTTYNames.removeValue(forKey: panelId)
                 surfaceListeningPorts.removeValue(forKey: panelId)

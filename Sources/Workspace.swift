@@ -9669,6 +9669,9 @@ final class Workspace: Identifiable, ObservableObject {
             return nil
         }
 
+        let previousFocusedPanelId = focusedPanelId
+        let previousHostedView = focusedTerminalPanel?.hostedView
+
         panels[detached.panelId] = detached.panel
         if let terminalPanel = detached.panel as? TerminalPanel {
             terminalPanel.updateWorkspaceId(id)
@@ -9788,7 +9791,11 @@ final class Workspace: Identifiable, ObservableObject {
                 )
             }
         } else {
-            scheduleFocusReconcile()
+            preserveFocusAfterNonFocusSplit(
+                preferredPanelId: previousFocusedPanelId,
+                splitPanelId: detached.panelId,
+                previousHostedView: previousHostedView
+            )
         }
         scheduleTerminalGeometryReconcile()
 
@@ -9895,8 +9902,23 @@ final class Workspace: Identifiable, ObservableObject {
         _ panelId: UUID,
         previousHostedView: GhosttySurfaceScrollView? = nil,
         trigger: FocusPanelTrigger = .standard,
+        agentContextProvenance: AgentContextFocusProvenance = .maintenance
+    ) {
+        focusPanel(
+            panelId,
+            previousHostedView: previousHostedView,
+            trigger: trigger,
+            agentContextProvenance: agentContextProvenance,
+            currentEventType: NSApp?.currentEvent?.type
+        )
+    }
+
+    func focusPanel(
+        _ panelId: UUID,
+        previousHostedView: GhosttySurfaceScrollView? = nil,
+        trigger: FocusPanelTrigger = .standard,
         agentContextProvenance: AgentContextFocusProvenance = .maintenance,
-        currentEventType: NSEvent.EventType? = NSApp?.currentEvent?.type
+        currentEventType: NSEvent.EventType?
     ) {
         markExplicitFocusIntent(on: panelId)
         let resolvedAgentContextProvenance = Self.resolvedAgentContextProvenance(

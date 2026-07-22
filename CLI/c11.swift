@@ -6548,16 +6548,34 @@ struct CMUXCLI {
             environment["C11_WORKSPACE_ID"] ?? environment["CMUX_WORKSPACE_ID"]
         )?.trimmingCharacters(in: .whitespacesAndNewlines),
         !callerWorkspaceRaw.isEmpty,
-        let callerWorkspaceID = try? normalizeWorkspaceHandle(callerWorkspaceRaw, client: client),
         let callerSurface = (
             environment["C11_SURFACE_ID"] ?? environment["CMUX_SURFACE_ID"]
         )?.trimmingCharacters(in: .whitespacesAndNewlines),
-        !callerSurface.isEmpty else {
+        !callerSurface.isEmpty,
+        let callerIdentify = try? client.sendV2(
+            method: "system.identify",
+            params: [
+                "caller": [
+                    "workspace_id": callerWorkspaceRaw.lowercased(),
+                    "surface_id": callerSurface.lowercased(),
+                ]
+            ]
+        ),
+        let callerLocation = callerIdentify["caller"] as? [String: Any],
+        let callerWorkspaceID = callerLocation["workspace_id"] as? String,
+        let callerWindowID = callerLocation["window_id"] as? String else {
             return
         }
 
         if explicitWorkspace {
-            guard callerWorkspaceID == resolvedWorkspaceID else {
+            guard let resolvedWorkspaceID,
+                  let targetIdentify = try? client.sendV2(
+                      method: "system.identify",
+                      params: ["caller": ["workspace_id": resolvedWorkspaceID.lowercased()]]
+                  ),
+                  let targetLocation = targetIdentify["caller"] as? [String: Any],
+                  let targetWorkspaceID = targetLocation["workspace_id"] as? String,
+                  callerWorkspaceID.caseInsensitiveCompare(targetWorkspaceID) == .orderedSame else {
                 return
             }
         }
@@ -6567,19 +6585,9 @@ struct CMUXCLI {
                   let windowPayload = try? client.sendV2(method: "window.list"),
                   let windows = windowPayload["windows"] as? [[String: Any]],
                   let targetWindowID = windows.first(where: {
-                      ($0["id"] as? String) == targetWindowHandle || ($0["ref"] as? String) == targetWindowHandle
+                      ($0["id"] as? String)?.caseInsensitiveCompare(targetWindowHandle) == .orderedSame
+                          || ($0["ref"] as? String)?.caseInsensitiveCompare(targetWindowHandle) == .orderedSame
                   })?["id"] as? String,
-                  let identify = try? client.sendV2(
-                      method: "system.identify",
-                      params: [
-                          "caller": [
-                              "workspace_id": callerWorkspaceID,
-                              "surface_id": callerSurface,
-                          ]
-                      ]
-                  ),
-                  let caller = identify["caller"] as? [String: Any],
-                  let callerWindowID = caller["window_id"] as? String,
                   callerWindowID.caseInsensitiveCompare(targetWindowID) == .orderedSame else {
                 return
             }
@@ -6808,9 +6816,14 @@ struct CMUXCLI {
             let workspaceRaw = workspaceOpt ?? (windowOpt == nil
                 ? environment["C11_WORKSPACE_ID"] ?? environment["CMUX_WORKSPACE_ID"]
                 : nil)
+            let resolvedWindowID = try normalizeWindowHandle(windowOpt, client: client)
             var resolvedWorkspaceID: String?
             if let workspaceRaw {
-                if let workspace = try normalizeWorkspaceHandle(workspaceRaw, client: client) {
+                if let workspace = try normalizeWorkspaceHandle(
+                    workspaceRaw,
+                    client: client,
+                    windowHandle: resolvedWindowID
+                ) {
                     params["workspace_id"] = workspace
                     resolvedWorkspaceID = workspace
                 }
@@ -6818,16 +6831,14 @@ struct CMUXCLI {
             if respectExternalOpenRules {
                 params["respect_external_open_rules"] = true
             }
-            if let windowRaw = windowOpt {
-                if let window = try normalizeWindowHandle(windowRaw, client: client) {
-                    params["window_id"] = window
-                }
+            if let resolvedWindowID {
+                params["window_id"] = resolvedWindowID
             }
             addBrowserCreationAttribution(
                 to: &params,
                 resolvedWorkspaceID: resolvedWorkspaceID,
                 explicitWorkspace: workspaceOpt != nil,
-                explicitWindowID: windowOpt,
+                explicitWindowID: resolvedWindowID,
                 workspaceWide: workspaceWide,
                 client: client
             )
@@ -16865,8 +16876,12 @@ struct CMUXCLI {
           markdown [open] <path>             (open markdown file in formatted viewer panel with live reload)
 
           browser [--surface <id|ref|index> | <surface>] <subcommand> ...
-          browser open [url]                   (create browser split in caller's workspace; if surface supplied, behaves like navigate)
-          browser open-split [url]
+          browser open [url] [--workspace <id|ref|index>] [--window <id|ref|index>] [--workspace-wide]
+                                               (defaults to $C11_WORKSPACE_ID, then legacy $CMUX_WORKSPACE_ID; if surface supplied, behaves like navigate)
+          browser open-split [url] [--workspace <id|ref|index>] [--window <id|ref|index>] [--workspace-wide]
+          browser context|get-context
+          browser link (--agent <surface> | --active-agent)
+          browser unlink
           browser goto|navigate <url> [--snapshot-after]
           browser back|forward|reload [--snapshot-after]
           browser url|get-url
@@ -16880,7 +16895,7 @@ struct CMUXCLI {
           browser select <selector> <value> [--snapshot-after]
           browser scroll [--selector <css>] [--dx <n>] [--dy <n>] [--snapshot-after]
           browser screenshot [--out <path>] [--json]
-          browser get <url|title|text|html|value|attr|count|box|styles> [...]
+          browser get <url|title|context|text|html|value|attr|count|box|styles> [...]
           browser is <visible|enabled|checked> <selector>
           browser find <role|text|label|placeholder|alt|title|testid|first|last|nth> ...
           browser frame <selector|main>

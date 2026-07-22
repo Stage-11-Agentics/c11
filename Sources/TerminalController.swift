@@ -2646,6 +2646,13 @@ class TerminalController {
             mode = .automatic
         }
 
+        // Workspace-wide is an explicit attribution opt-out. It wins over
+        // every caller value, including a malformed or stale environment
+        // variable, while an invalid link_mode itself still fails above.
+        if mode == .workspace {
+            return .success(V2CompanionCreationAttribution(caller: .absent, mode: mode))
+        }
+
         let caller = v2CompanionSurfaceReference(params, key: "caller_surface_id")
         if case .malformed = caller {
             return .failure(.err(

@@ -1677,6 +1677,9 @@ final class BrowserCompanionOverlayHost: NSVisualEffectView {
     }
 
     private func deactivate(restoreResponder: Bool) {
+        let currentWindow = window
+        let overlayOwnedFirstResponderBeforeHide =
+            currentWindow?.firstResponder === self || currentWindow?.firstResponder === revealButton
         for snapshot in accessibilitySnapshots.values {
             snapshot.view?.setAccessibilityHidden(snapshot.wasHidden)
         }
@@ -1688,19 +1691,18 @@ final class BrowserCompanionOverlayHost: NSVisualEffectView {
         shouldAcquireKeyboardFocus = false
         isHidden = true
 
-        guard let window else {
+        guard let window = currentWindow else {
             priorFirstResponder = nil
             return
         }
-        let overlayOwnsFirstResponder =
-            window.firstResponder === self || window.firstResponder === revealButton
         if restoreResponder,
-           overlayOwnsFirstResponder || window.firstResponder == nil,
+           overlayOwnedFirstResponderBeforeHide || window.firstResponder == nil,
            let priorFirstResponder,
            priorFirstResponder.acceptsFirstResponder,
            priorFirstResponder.browserPortalOwningView?.window === window {
             _ = window.makeFirstResponder(priorFirstResponder)
-        } else if overlayOwnsFirstResponder {
+        } else if overlayOwnedFirstResponderBeforeHide,
+                  window.firstResponder === self || window.firstResponder === revealButton {
             _ = window.makeFirstResponder(nil)
         }
         priorFirstResponder = nil

@@ -47,6 +47,11 @@
 		3175B7C8AE075F8D71BFA104 /* CLIAdvisoryConnectivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70B3BF1A1B2C3D4E5F60720 /* CLIAdvisoryConnectivityTests.swift */; };
 		33575F7E4C63569F35E154A9 /* NewWorkspaceTitleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93B19DC55D6C39A2387147C3 /* NewWorkspaceTitleTests.swift */; };
 		352C25FFD890137B5F7A23B3 /* AgentManifestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBA0F437E5CCBA5E90C3EC3F /* AgentManifestTests.swift */; };
+		ACB000000000000000000101 /* AgentCompanionContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACB000000000000000000001 /* AgentCompanionContext.swift */; };
+		ACB000000000000000000102 /* BrowserCompanionPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACB000000000000000000002 /* BrowserCompanionPolicyTests.swift */; };
+		ACB000000000000000000103 /* BrowserCompanionWorkspaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACB000000000000000000003 /* BrowserCompanionWorkspaceTests.swift */; };
+		ACB000000000000000000104 /* BrowserCompanionPortalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACB000000000000000000004 /* BrowserCompanionPortalTests.swift */; };
+		ACB000000000000000000105 /* BrowserCompanionChromeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACB000000000000000000005 /* BrowserCompanionChromeTests.swift */; };
 		365F4BE2806EC0D12A9336BD /* EventEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64628D6D2B44E2D7DCDCB79E /* EventEnvelope.swift */; };
 		38115B4DA9AAE3904F1B7871 /* ConfigCommandCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EBC71594BF2FF8B59D1AE28 /* ConfigCommandCore.swift */; };
 		39AF4F57C52E593EC8CF0680 /* MailboxSurfaceResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D710BBF1A1B2C3D4E5F60718 /* MailboxSurfaceResolverTests.swift */; };
@@ -737,6 +742,11 @@
 		C1F1E00001A1B2C3D4E5F719 /* pi */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/pi; sourceTree = SOURCE_ROOT; };
 		C1F2E00001A1B2C3D4E5F719 /* omp */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/omp; sourceTree = SOURCE_ROOT; };
 		C28AE9F41DE55AB88CAE431D /* AgentManifest.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentManifest.swift; sourceTree = "<group>"; };
+		ACB000000000000000000001 /* AgentCompanionContext.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentCompanionContext.swift; sourceTree = "<group>"; };
+		ACB000000000000000000002 /* BrowserCompanionPolicyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BrowserCompanionPolicyTests.swift; sourceTree = "<group>"; };
+		ACB000000000000000000003 /* BrowserCompanionWorkspaceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BrowserCompanionWorkspaceTests.swift; sourceTree = "<group>"; };
+		ACB000000000000000000004 /* BrowserCompanionPortalTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BrowserCompanionPortalTests.swift; sourceTree = "<group>"; };
+		ACB000000000000000000005 /* BrowserCompanionChromeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BrowserCompanionChromeTests.swift; sourceTree = "<group>"; };
 		C2BBF3CDB766B1FCF30BB765 /* LaunchResumePicker.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LaunchResumePicker.swift; sourceTree = "<group>"; };
 		C585662B5CFF4AFB27E65C1E /* OpencodeResumeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OpencodeResumeTests.swift; path = OpencodeResumeTests.swift; sourceTree = "<group>"; };
 		C5E34AD8B3A4814F5DDD4B2D /* SidebarStalenessSettingsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SidebarStalenessSettingsTests.swift; sourceTree = "<group>"; };
@@ -1175,6 +1185,7 @@
 				51C0D2C1212976BCF837B620 /* HangBacktrace.c */,
 				BE61F2503F50546EC21A9868 /* HangBacktrace.h */,
 				0095C3D72A7722FFA42A7ED1 /* PaneSizePolicy.swift */,
+				ACB000000000000000000001 /* AgentCompanionContext.swift */,
 				8FF3E8B8443DEA778BA817BB /* SurfaceTypeAvailability.swift */,
 				C28AE9F41DE55AB88CAE431D /* AgentManifest.swift */,
 				B782D0384E99BB0E082FBBBF /* ConversationScraper.swift */,
@@ -1282,6 +1293,10 @@
 				A5F1002001A1B2C3D4E5F01A /* SidebarSnapshotTests.swift */,
 				A5F1002001A1B2C3D4E5F01B /* TitlebarSnapshotTests.swift */,
 				A5F1002001A1B2C3D4E5F01C /* BrowserChromeSnapshotTests.swift */,
+				ACB000000000000000000002 /* BrowserCompanionPolicyTests.swift */,
+				ACB000000000000000000003 /* BrowserCompanionWorkspaceTests.swift */,
+				ACB000000000000000000004 /* BrowserCompanionPortalTests.swift */,
+				ACB000000000000000000005 /* BrowserCompanionChromeTests.swift */,
 				F6100001A1B2C3D4E5F60718 /* WorkspaceRemoteConnectionTests.swift */,
 				F7000001A1B2C3D4E5F60718 /* WorkspaceContentViewVisibilityTests.swift */,
 				F8000001A1B2C3D4E5F60718 /* SocketControlPasswordStoreTests.swift */,
@@ -1732,6 +1747,7 @@
 				5C4604660F7CC322D5590BD7 /* AgentDetectorTests.swift in Sources */,
 				E9E24C866C5E61B887F6E726 /* MainThreadHangDetectorTests.swift in Sources */,
 				756290E56A4FC7D6546C1D46 /* PaneSizePolicyTests.swift in Sources */,
+				ACB000000000000000000102 /* BrowserCompanionPolicyTests.swift in Sources */,
 				FE01AA00000000000000B001 /* SendKeyVocabularyTests.swift in Sources */,
 				849745EAE2900598F862D0F9 /* SurfaceTypeAvailabilityTests.swift in Sources */,
 				352C25FFD890137B5F7A23B3 /* AgentManifestTests.swift in Sources */,
@@ -1924,6 +1940,7 @@
 				5AE9C6CE7FCF928F695FE26D /* MainThreadHangMonitor.swift in Sources */,
 				5535B0220F7520ADFB17EC99 /* HangBacktrace.c in Sources */,
 				27AE9B7E020D938C6013B312 /* PaneSizePolicy.swift in Sources */,
+				ACB000000000000000000101 /* AgentCompanionContext.swift in Sources */,
 				B56F0F5D50E43946F0510B03 /* SurfaceTypeAvailability.swift in Sources */,
 				F3561BE21E032B0AB6FC9DFE /* AgentManifest.swift in Sources */,
 				8574E0DF636A7359989C51A4 /* ConversationScraper.swift in Sources */,
@@ -2057,6 +2074,9 @@
 				90204B2AA277D990B450D7E9 /* AgentManifestTests.swift in Sources */,
 				2DAD13E51CF90A021D8893D5 /* SocketSurfaceRefRejectionWiringTests.swift in Sources */,
 				92D7F825153B237CA8984784 /* AgentLaunchStatsTests.swift in Sources */,
+				ACB000000000000000000103 /* BrowserCompanionWorkspaceTests.swift in Sources */,
+				ACB000000000000000000104 /* BrowserCompanionPortalTests.swift in Sources */,
+				ACB000000000000000000105 /* BrowserCompanionChromeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

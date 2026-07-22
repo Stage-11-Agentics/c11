@@ -30,12 +30,13 @@ enum AgentChipResolver {
         let model = metadata[MetadataKey.model] as? String
         let modelLabel = normalizedModelLabel(metadata[MetadataKey.modelLabel])
 
-        let hasTerminalType = rawTerminalType != nil && rawTerminalType != "unknown"
+        let normalizedTerminalType = AgentIdentityPolicy.normalizedKind(rawTerminalType)
+        let hasTerminalType = normalizedTerminalType != nil && normalizedTerminalType != "unknown"
         if !hasTerminalType && model == nil {
             return nil
         }
 
-        let terminalType = rawTerminalType ?? "unknown"
+        let terminalType = normalizedTerminalType ?? "unknown"
         let displayLabel: String? = {
             if let modelLabel { return modelLabel }
             return shortenModel(model)
@@ -117,23 +118,27 @@ enum AgentChipResolver {
     /// M3 ships SF Symbol fallbacks via the "sf:<symbol>" sentinel.
     /// The view layer decides whether the bundled asset exists and falls back.
     static func iconAssetName(forTerminalType terminalType: String) -> String {
-        // Branded agents declare their asset in the manifest. Non-agent
-        // terminal types (shell/unknown) and any unrecognized type fall back
-        // to the conventional "AgentIcons/<type>" name the view layer probes.
-        if let asset = AgentRegistry.shared.manifest(forKind: terminalType)?.iconAsset {
+        // Branded agents resolve through the same identity policy used for
+        // companion links and pane sizing. Non-agent terminal types keep the
+        // existing conventional fallback that makes shell chips intentional.
+        let normalized = AgentIdentityPolicy.normalizedKind(terminalType) ?? terminalType
+        if AgentIdentityPolicy.isAgentKind(normalized),
+           let asset = AgentIdentityPolicy.fallbackManifest(for: normalized)?.iconAsset {
             return asset
         }
-        return "AgentIcons/\(terminalType)"
+        return "AgentIcons/\(normalized)"
     }
 
     /// SF Symbol fallback per spec's icon table. Returned when the bundled asset
     /// is missing at runtime.
     static func sfSymbolFallback(forTerminalType terminalType: String) -> String {
-        if let symbol = AgentRegistry.shared.manifest(forKind: terminalType)?.sfSymbolFallback {
+        let normalized = AgentIdentityPolicy.normalizedKind(terminalType) ?? terminalType
+        if AgentIdentityPolicy.isAgentKind(normalized),
+           let symbol = AgentIdentityPolicy.fallbackManifest(for: normalized)?.sfSymbolFallback {
             return symbol
         }
         // shell is the only non-agent type with a distinct glyph; everything
         // else (unknown, custom, unrecognized) gets the question-mark.
-        return terminalType == "shell" ? "terminal.fill" : "questionmark.square.dashed"
+        return normalized == "shell" ? "terminal.fill" : "questionmark.square.dashed"
     }
 }

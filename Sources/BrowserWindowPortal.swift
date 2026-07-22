@@ -1378,6 +1378,7 @@ final class BrowserCompanionOverlayHost: NSVisualEffectView {
     private var activationKeyCode: UInt16?
     private var hasPendingConfiguration = false
     private var pendingConfiguration: BrowserPortalCompanionConfiguration?
+    private var shouldAcquireKeyboardFocus = false
 
     override var acceptsFirstResponder: Bool { isBlocking }
 
@@ -1450,7 +1451,8 @@ final class BrowserCompanionOverlayHost: NSVisualEffectView {
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
-        if newWindow == nil {
+        if newWindow == nil || (window != nil && newWindow !== window) {
+            configuration = nil
             deactivate(restoreResponder: false)
         }
         super.viewWillMove(toWindow: newWindow)
@@ -1517,11 +1519,18 @@ final class BrowserCompanionOverlayHost: NSVisualEffectView {
         coveredViews: [NSView],
         restoreResponder: Bool
     ) {
-        if (isPointerSequenceActive || activationKeyCode != nil),
-           configuration?.state.blocksWebContent != true {
-            pendingConfiguration = configuration
-            hasPendingConfiguration = true
-            return
+        if isPointerSequenceActive || activationKeyCode != nil {
+            if configuration?.state.blocksWebContent == true {
+                // A newer blocking state supersedes a reveal queued by the
+                // current input sequence. Never let stale nonblocking state
+                // expose WebKit when the matching mouse/key release arrives.
+                pendingConfiguration = nil
+                hasPendingConfiguration = false
+            } else {
+                pendingConfiguration = configuration
+                hasPendingConfiguration = true
+                return
+            }
         }
 
         self.configuration = configuration
@@ -1550,10 +1559,21 @@ final class BrowserCompanionOverlayHost: NSVisualEffectView {
     }
 
     @discardableResult
-    func requestKeyboardFocus(reason: String) -> Bool {
+    func requestKeyboardFocus(reason: String, force: Bool = false) -> Bool {
         guard isBlocking, let window else { return false }
         if window.firstResponder === revealButton || window.firstResponder === self {
             return true
+        }
+        if force {
+            shouldAcquireKeyboardFocus = true
+        }
+        guard shouldAcquireKeyboardFocus else { return false }
+        if let currentResponder = window.firstResponder,
+           !responderBelongsToCoveredView(currentResponder) {
+            // The operator moved to another pane. Layer refreshes must never
+            // pull focus back merely because this browser remains veiled.
+            shouldAcquireKeyboardFocus = false
+            return false
         }
         if window.makeFirstResponder(revealButton) { return true }
         window.makeFirstResponder(nil)
@@ -1645,6 +1665,15 @@ final class BrowserCompanionOverlayHost: NSVisualEffectView {
               coveredViews.contains(where: { owningView === $0 || owningView.isDescendant(of: $0) })
         else { return }
         priorFirstResponder = responder
+        shouldAcquireKeyboardFocus = true
+    }
+
+    private func responderBelongsToCoveredView(_ responder: NSResponder) -> Bool {
+        guard let owningView = responder.browserPortalOwningView else { return false }
+        return accessibilitySnapshots.values.contains { snapshot in
+            guard let coveredView = snapshot.view else { return false }
+            return owningView === coveredView || owningView.isDescendant(of: coveredView)
+        }
     }
 
     private func deactivate(restoreResponder: Bool) {
@@ -1656,18 +1685,22 @@ final class BrowserCompanionOverlayHost: NSVisualEffectView {
         activationKeyCode = nil
         pendingConfiguration = nil
         hasPendingConfiguration = false
+        shouldAcquireKeyboardFocus = false
         isHidden = true
 
         guard let window else {
             priorFirstResponder = nil
             return
         }
+        let overlayOwnsFirstResponder =
+            window.firstResponder === self || window.firstResponder === revealButton
         if restoreResponder,
+           overlayOwnsFirstResponder || window.firstResponder == nil,
            let priorFirstResponder,
            priorFirstResponder.acceptsFirstResponder,
            priorFirstResponder.browserPortalOwningView?.window === window {
             _ = window.makeFirstResponder(priorFirstResponder)
-        } else if window.firstResponder === self || window.firstResponder === revealButton {
+        } else if overlayOwnsFirstResponder {
             _ = window.makeFirstResponder(nil)
         }
         priorFirstResponder = nil
@@ -2203,7 +2236,7 @@ final class WindowBrowserSlotView: NSView {
 
     func setSearchOverlay(_ configuration: BrowserPortalSearchOverlayConfiguration?) {
         if let configuration, companionConfiguration?.state.blocksWebContent == true {
-            closeSearchOverlayBeforeVeil(configuration)
+            _ = closeSearchOverlayBeforeVeil(configuration)
             return
         }
 
@@ -2283,8 +2316,9 @@ final class WindowBrowserSlotView: NSView {
     /// same slot class used by local-inline browser hosting.
     func setCompanion(_ configuration: BrowserPortalCompanionConfiguration?) {
         let beginsBlocking = configuration?.state.blocksWebContent == true
+        var yieldedSearchFocus = false
         if beginsBlocking, let searchOverlayConfiguration {
-            closeSearchOverlayBeforeVeil(searchOverlayConfiguration)
+            yieldedSearchFocus = closeSearchOverlayBeforeVeil(searchOverlayConfiguration)
         }
 
         companionConfiguration = configuration
@@ -2306,12 +2340,21 @@ final class WindowBrowserSlotView: NSView {
             coveredViews: companionCoveredViews(),
             restoreResponder: paneInteractionOverlay?.isHidden != false
         )
+        if yieldedSearchFocus {
+            _ = overlay.requestKeyboardFocus(reason: "searchYieldedForCompanion", force: true)
+        }
         refreshInteractionLayersAndFocus(reason: "companionUpdated")
     }
 
-    private func closeSearchOverlayBeforeVeil(_ configuration: BrowserPortalSearchOverlayConfiguration) {
+    @discardableResult
+    private func closeSearchOverlayBeforeVeil(
+        _ configuration: BrowserPortalSearchOverlayConfiguration
+    ) -> Bool {
+        let yieldedFocus: Bool
         if let window {
-            _ = yieldSearchOverlayFocusIfOwned(by: configuration.panelId, in: window)
+            yieldedFocus = yieldSearchOverlayFocusIfOwned(by: configuration.panelId, in: window)
+        } else {
+            yieldedFocus = false
         }
         searchOverlayConfiguration = nil
         if let overlay = searchOverlayHostingView {
@@ -2325,6 +2368,7 @@ final class WindowBrowserSlotView: NSView {
         }
         searchOverlayHostingView = nil
         configuration.onClose()
+        return yieldedFocus
     }
 
     func searchOverlayPanelId(for responder: NSResponder) -> UUID? {
@@ -3504,15 +3548,20 @@ final class WindowBrowserPortal: NSObject {
         if configuration?.state.blocksWebContent == true,
            let searchOverlay = entry.searchOverlay {
             entry.searchOverlay = nil
-            entry.containerView?.setSearchOverlay(nil)
             searchOverlayToClose = searchOverlay
         } else {
             searchOverlayToClose = nil
         }
         entry.companion = configuration
         entriesByWebViewId[webViewId] = entry
-        searchOverlayToClose?.onClose()
-        entriesByWebViewId[webViewId]?.containerView?.setCompanion(configuration)
+        if let containerView = entriesByWebViewId[webViewId]?.containerView {
+            // Let the slot close/yield its live search overlay so it can carry
+            // a same-pane focus claim into the veil without stealing focus
+            // from unrelated panes.
+            containerView.setCompanion(configuration)
+        } else {
+            searchOverlayToClose?.onClose()
+        }
     }
 
     func updatePaneInteraction(

@@ -160,6 +160,93 @@ final class BrowserCompanionPortalTests: XCTestCase {
         XCTAssertTrue(overlay.isHidden)
     }
 
+    func testVeilRefreshDoesNotStealFirstResponderFromAnotherPane() {
+        let (window, slot, _) = makeWindowSlotAndWebView()
+        defer { window.orderOut(nil) }
+        let outsideResponder = CompanionOutsideResponderView(
+            frame: NSRect(x: 460, y: 30, width: 40, height: 40)
+        )
+        window.contentView?.addSubview(outsideResponder)
+        XCTAssertTrue(window.makeFirstResponder(outsideResponder))
+
+        slot.setCompanion(configuration(for: .veiled(linked: linkedAgent, active: activeAgent)))
+        slot.setPaneTopChromeHeight(18)
+
+        XCTAssertTrue(window.firstResponder === outsideResponder)
+        XCTAssertFalse(companionOverlay(in: slot)?.isHidden ?? true)
+    }
+
+    func testRevealDoesNotRestoreCoveredResponderOverAnotherPane() {
+        let (window, slot, _) = makeWindowSlotAndWebView()
+        defer { window.orderOut(nil) }
+        let coveredResponder = CompanionWKInspectorResponderView(frame: slot.bounds)
+        slot.addSubview(coveredResponder)
+        XCTAssertTrue(window.makeFirstResponder(coveredResponder))
+        slot.setCompanion(configuration(for: .veiled(linked: linkedAgent, active: activeAgent)))
+
+        let outsideResponder = CompanionOutsideResponderView(
+            frame: NSRect(x: 460, y: 30, width: 40, height: 40)
+        )
+        window.contentView?.addSubview(outsideResponder)
+        XCTAssertTrue(window.makeFirstResponder(outsideResponder))
+        slot.setCompanion(configuration(for: .aligned(linked: linkedAgent)))
+
+        XCTAssertTrue(window.firstResponder === outsideResponder)
+    }
+
+    func testNewBlockingStateSupersedesRevealQueuedUntilKeyUp() {
+        let (window, slot, webView) = makeWindowSlotAndWebView()
+        defer { window.orderOut(nil) }
+        slot.setCompanion(
+            configuration(
+                for: .veiled(linked: linkedAgent, active: activeAgent),
+                onReveal: { slot.setCompanion(nil) }
+            )
+        )
+        guard let overlay = companionOverlay(in: slot) else {
+            XCTFail("Expected companion overlay")
+            return
+        }
+
+        overlay.keyDown(with: keyEvent(characters: "\r", keyCode: 36, window: window))
+        slot.setCompanion(configuration(for: .orphaned(link: AgentSurfaceLink(
+            surfaceID: linkedAgent.identity.surfaceID,
+            lastKnownName: linkedAgent.identity.displayName
+        ))))
+        overlay.keyUp(with: keyEvent(type: .keyUp, characters: "\r", keyCode: 36, window: window))
+
+        XCTAssertFalse(overlay.isHidden, "Newer blocking state must cancel queued reveal state")
+        XCTAssertTrue(webView.isAccessibilityHidden())
+    }
+
+    func testReparentDuringHeldRevealDoesNotResurrectStaleVeil() {
+        let (window, slot, webView) = makeWindowSlotAndWebView()
+        defer { window.orderOut(nil) }
+        guard let parent = slot.superview else {
+            XCTFail("Expected slot parent")
+            return
+        }
+        slot.setCompanion(
+            configuration(
+                for: .veiled(linked: linkedAgent, active: activeAgent),
+                onReveal: { slot.setCompanion(nil) }
+            )
+        )
+        guard let overlay = companionOverlay(in: slot) else {
+            XCTFail("Expected companion overlay")
+            return
+        }
+
+        overlay.keyDown(with: keyEvent(characters: "\r", keyCode: 36, window: window))
+        XCTAssertFalse(overlay.isHidden)
+        slot.removeFromSuperview()
+        XCTAssertFalse(webView.isAccessibilityHidden())
+        parent.addSubview(slot)
+
+        XCTAssertTrue(overlay.isHidden, "Detached stale blocking state must not reappear on reparent")
+        XCTAssertFalse(webView.isAccessibilityHidden())
+    }
+
     func testBlockingCompanionClosesSearchBeforeInstallingVeilAndRejectsReopen() {
         let (window, slot, _) = makeWindowSlotAndWebView()
         defer { window.orderOut(nil) }
@@ -366,5 +453,9 @@ final class BrowserCompanionPortalTests: XCTestCase {
 }
 
 private final class CompanionWKInspectorResponderView: NSView {
+    override var acceptsFirstResponder: Bool { true }
+}
+
+private final class CompanionOutsideResponderView: NSView {
     override var acceptsFirstResponder: Bool { true }
 }

@@ -5244,6 +5244,10 @@ final class Workspace: Identifiable, ObservableObject {
         activeAgentSurfaceID: nil,
         generation: 0
     )
+    /// Observable invalidation for companion adapter outputs derived from
+    /// otherwise non-Workspace-published state: reveal grants, MRU ordering,
+    /// nested BrowserPanel links, and terminal-kind metadata.
+    @Published private(set) var companionStateRevision: UInt64 = 0
     private var explicitFocusLatePromotionCandidate: UUID?
     private var companionAgentMRU: [UUID] = []
     private var companionRevealGrants: [UUID: CompanionRevealGrant] = [:]
@@ -6154,30 +6158,39 @@ final class Workspace: Identifiable, ObservableObject {
             )
         )
         companionRevealGrants.removeValue(forKey: browserID)
+        publishCompanionStateChange()
     }
 
     func companionUnlinkBrowser(_ browserID: UUID) throws {
         let browser = try companionBrowser(for: browserID)
         browser.setValidatedLinkedAgent(nil)
         companionRevealGrants.removeValue(forKey: browserID)
+        publishCompanionStateChange()
     }
 
     func companionRevealBrowser(_ browserID: UUID) throws {
         let browser = try companionBrowser(for: browserID)
         guard let link = browser.linkedAgent else {
-            companionRevealGrants.removeValue(forKey: browserID)
+            if companionRevealGrants.removeValue(forKey: browserID) != nil {
+                publishCompanionStateChange()
+            }
             return
         }
-        companionRevealGrants[browserID] = CompanionRevealGrant(
+        let grant = CompanionRevealGrant(
             browserSurfaceID: browserID,
             linkedAgentSurfaceID: link.surfaceID,
             activeAgentSurfaceID: agentContextState.activeAgentSurfaceID,
             contextGeneration: agentContextState.generation
         )
+        guard companionRevealGrants[browserID] != grant else { return }
+        companionRevealGrants[browserID] = grant
+        publishCompanionStateChange()
     }
 
     func companionHideBrowser(_ browserID: UUID) {
-        companionRevealGrants.removeValue(forKey: browserID)
+        if companionRevealGrants.removeValue(forKey: browserID) != nil {
+            publishCompanionStateChange()
+        }
     }
 
     func companionAutomaticLinkBrowser(
@@ -6189,6 +6202,7 @@ final class Workspace: Identifiable, ObservableObject {
         if mode == .workspace {
             browser.setValidatedLinkedAgent(nil)
             companionRevealGrants.removeValue(forKey: browserID)
+            publishCompanionStateChange()
             return .workspace
         }
         guard let callerSurfaceID else { return .noCaller }
@@ -6207,6 +6221,7 @@ final class Workspace: Identifiable, ObservableObject {
             )
         )
         companionRevealGrants.removeValue(forKey: browserID)
+        publishCompanionStateChange()
         return .automatic
     }
 
@@ -6251,6 +6266,7 @@ final class Workspace: Identifiable, ObservableObject {
         browser.restoreLinkedAgent(link)
         companionRevealGrants.removeValue(forKey: browserID)
         refreshCompanionLastKnownNames()
+        publishCompanionStateChange()
     }
 
     /// Descendant bridge. Callers pass the source browser's already-validated
@@ -6260,6 +6276,7 @@ final class Workspace: Identifiable, ObservableObject {
         browser.inheritLinkedAgent(link)
         companionRevealGrants.removeValue(forKey: browserID)
         refreshCompanionLastKnownNames()
+        publishCompanionStateChange()
     }
 
     /// Session-only active-context bridge. Generation/reveals are transient
@@ -6276,18 +6293,22 @@ final class Workspace: Identifiable, ObservableObject {
             touchCompanionAgentMRU(restoredID)
         }
         refreshCompanionLastKnownNames()
+        publishCompanionStateChange()
     }
 
     /// Integration lifecycle seam for workspace deselection/window
     /// deactivation. First-responder movement within one browser must not call
     /// this; ACB-06 owns those outer lifecycle call sites.
     func revokeAgentCompanionReveals() {
+        guard !companionRevealGrants.isEmpty else { return }
         companionRevealGrants.removeAll()
+        publishCompanionStateChange()
     }
 
     func reconcileAgentCompanionStateAfterRestore() {
         reconcileAgentCompanionPanelLifecycle(newPanels: panels)
         refreshCompanionLastKnownNames()
+        publishCompanionStateChange()
     }
 
     private func companionBrowser(for browserID: UUID) throws -> BrowserPanel {
@@ -6347,6 +6368,7 @@ final class Workspace: Identifiable, ObservableObject {
         panelSnapshot: [UUID: any Panel]? = nil
     ) {
         guard AgentCompanionBrowserFeature.isEnabled else { return }
+        var didChange = false
         let panelSnapshot = panelSnapshot ?? panels
         let descriptors = descriptors ?? liveAgentDescriptors(in: panelSnapshot)
         let descriptorsByID = Dictionary(uniqueKeysWithValues: descriptors.map { ($0.identity.surfaceID, $0) })
@@ -6361,12 +6383,25 @@ final class Workspace: Identifiable, ObservableObject {
                     lastKnownName: descriptor.identity.displayName
                 )
             )
+            didChange = true
+        }
+        if didChange {
+            publishCompanionStateChange()
         }
     }
 
     private func touchCompanionAgentMRU(_ surfaceID: UUID) {
+        let previousOrder = companionAgentMRU
         companionAgentMRU.removeAll { $0 == surfaceID }
         companionAgentMRU.insert(surfaceID, at: 0)
+        if companionAgentMRU != previousOrder {
+            publishCompanionStateChange()
+        }
+    }
+
+    private func publishCompanionStateChange() {
+        guard AgentCompanionBrowserFeature.isEnabled else { return }
+        companionStateRevision &+= 1
     }
 
     private func establishAgentContext(_ surfaceID: UUID, revokeExistingReveals: Bool) {
@@ -6382,6 +6417,7 @@ final class Workspace: Identifiable, ObservableObject {
         }
         touchCompanionAgentMRU(surfaceID)
         refreshCompanionLastKnownNames()
+        publishCompanionStateChange()
     }
 
     private func clearAgentContextIfActive(_ surfaceID: UUID) {
@@ -6391,6 +6427,7 @@ final class Workspace: Identifiable, ObservableObject {
             generation: agentContextState.generation &+ 1
         )
         companionRevealGrants.removeAll()
+        publishCompanionStateChange()
     }
 
     private func noteAgentCompanionSelection(
@@ -6398,7 +6435,9 @@ final class Workspace: Identifiable, ObservableObject {
         provenance: AgentContextFocusProvenance
     ) {
         if let previous = lastCompanionFocusedPanelID, previous != panelID {
-            companionRevealGrants.removeValue(forKey: previous)
+            if companionRevealGrants.removeValue(forKey: previous) != nil {
+                publishCompanionStateChange()
+            }
         }
         lastCompanionFocusedPanelID = panelID
 
@@ -6448,6 +6487,10 @@ final class Workspace: Identifiable, ObservableObject {
                focusedPanelId == change.surfaceID {
                 establishAgentContext(change.surfaceID, revokeExistingReveals: false)
             }
+        }
+
+        if oldWasAgent || newIsAgent {
+            publishCompanionStateChange()
         }
     }
 

@@ -1,4 +1,5 @@
 import Bonsplit
+import Combine
 import XCTest
 
 #if canImport(c11_DEV)
@@ -225,6 +226,72 @@ final class BrowserCompanionWorkspaceTests: XCTestCase {
         XCTAssertEqual(workspace.companionPresentation(for: browserB.id).state, .revealed)
         workspace.revokeAgentCompanionReveals()
         XCTAssertEqual(workspace.companionPresentation(for: browserB.id).state, .veiled)
+    }
+
+    func testCompanionOutputChangesPublishWorkspaceInvalidation() async throws {
+        let workspace = Workspace()
+        let pane = try paneID(in: workspace)
+        let activeAgent = try initialTerminalID(in: workspace)
+        let linkedAgent = try XCTUnwrap(
+            workspace.newTerminalSurface(inPane: pane, focus: false)
+        )
+        try setTerminalKind("codex", surfaceID: activeAgent, workspace: workspace)
+        try setTerminalKind("claude-code", surfaceID: linkedAgent.id, workspace: workspace)
+        await drainMainQueue()
+
+        let browser = try XCTUnwrap(workspace.newBrowserSurface(inPane: pane, focus: false))
+        try workspace.linkBrowser(browser.id, toAgent: linkedAgent.id)
+        workspace.focusPanel(activeAgent, agentContextProvenance: .explicitFocusCommand)
+        XCTAssertEqual(workspace.companionPresentation(for: browser.id).state, .veiled)
+        XCTAssertEqual(workspace.liveAgentDescriptors.count, 2)
+
+        let revealInvalidation = expectation(description: "Reveal publishes Workspace invalidation")
+        var revealCancellable: AnyCancellable? = workspace.objectWillChange.sink {
+            revealInvalidation.fulfill()
+        }
+        try workspace.revealBrowser(browser.id)
+        await fulfillment(of: [revealInvalidation], timeout: 1)
+        revealCancellable?.cancel()
+        revealCancellable = nil
+        XCTAssertEqual(workspace.companionPresentation(for: browser.id).state, .revealed)
+
+        let hideInvalidation = expectation(description: "Hide publishes Workspace invalidation")
+        var hideCancellable: AnyCancellable? = workspace.objectWillChange.sink {
+            hideInvalidation.fulfill()
+        }
+        workspace.hideBrowser(browser.id)
+        await fulfillment(of: [hideInvalidation], timeout: 1)
+        hideCancellable?.cancel()
+        hideCancellable = nil
+        XCTAssertEqual(workspace.companionPresentation(for: browser.id).state, .veiled)
+
+        let demotionInvalidation = expectation(
+            description: "Background linked-agent demotion publishes Workspace invalidation"
+        )
+        var demotionCancellable: AnyCancellable? = workspace.objectWillChange.sink {
+            demotionInvalidation.fulfill()
+        }
+        try clearTerminalKind(surfaceID: linkedAgent.id, workspace: workspace)
+        await fulfillment(of: [demotionInvalidation], timeout: 1)
+        await drainMainQueue()
+        demotionCancellable?.cancel()
+        demotionCancellable = nil
+        XCTAssertEqual(workspace.companionPresentation(for: browser.id).state, .orphaned)
+        XCTAssertEqual(workspace.liveAgentDescriptors.map(\.identity.surfaceID), [activeAgent])
+
+        let reclassificationInvalidation = expectation(
+            description: "Background linked-agent reclassification publishes Workspace invalidation"
+        )
+        var reclassificationCancellable: AnyCancellable? = workspace.objectWillChange.sink {
+            reclassificationInvalidation.fulfill()
+        }
+        try setTerminalKind("claude-code", surfaceID: linkedAgent.id, workspace: workspace)
+        await fulfillment(of: [reclassificationInvalidation], timeout: 1)
+        await drainMainQueue()
+        reclassificationCancellable?.cancel()
+        reclassificationCancellable = nil
+        XCTAssertEqual(workspace.companionPresentation(for: browser.id).state, .veiled)
+        XCTAssertEqual(Set(workspace.liveAgentDescriptors.map(\.identity.surfaceID)), [activeAgent, linkedAgent.id])
     }
 
     func testAutomaticLinkResultsAndWireSnapshotUseLiveWorkspaceIdentity() async throws {

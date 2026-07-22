@@ -7496,6 +7496,12 @@ final class Workspace: Identifiable, ObservableObject {
                 values: values,
                 sources: sources
             )
+            if let rawActivity = values[MetadataKey.activity] as? String,
+               let activity = SidebarActivityState(rawValue: rawActivity) {
+                derivedActivityBySurface[panelId] = activity
+            } else {
+                derivedActivityBySurface.removeValue(forKey: panelId)
+            }
         }
     }
 
@@ -11431,6 +11437,12 @@ extension Workspace: BonsplitDelegate {
             let tabs = controller.tabs(inPane: pane)
             guard let idx = tabs.firstIndex(where: { $0.id == tab.id }) else {
                 postCloseSelectTabId.removeValue(forKey: tab.id)
+                return
+            }
+
+            if let selectedTabId = controller.selectedTab(inPane: pane)?.id,
+               selectedTabId != tab.id {
+                postCloseSelectTabId[tab.id] = selectedTabId
                 return
             }
 

@@ -130,10 +130,12 @@ enum PersistedMetadataBridge {
     /// log; the rest of the blob survives. Never throws — snapshot writes
     /// must be side-effect-free with respect to persistence failures.
     ///
-    /// C11-104 — derived keys are excluded by checking the parallel
+    /// C11-104 — recomputable derived keys are excluded by checking the parallel
     /// `sources` sidecar (when provided): a value whose recorded source
     /// is `.derived` is dropped from the persisted blob because it will
-    /// be recomputed on session resume.
+    /// be recomputed on session resume. Surface activity is the exception:
+    /// shell state may not transition after restore, so its last durable truth
+    /// must survive long enough to seed the live projection.
     static func encodeValues(
         _ values: [String: Any],
         surfaceIdForLog: UUID? = nil,
@@ -154,14 +156,14 @@ enum PersistedMetadataBridge {
     /// Convert sidecar entries as returned by
     /// `SurfaceMetadataStore.getMetadata().sources` (`[String: [String: Any]]`
     /// via `SourceRecord.toJSON()`) into persisted form. Derived sources
-    /// are dropped to match the value-side filter.
+    /// are dropped to match the value-side filter, except for activity.
     static func encodeSources(
         _ sources: [String: [String: Any]]
     ) -> [String: PersistedMetadataSource] {
         var result: [String: PersistedMetadataSource] = [:]
         for (key, record) in sources {
             guard let source = record["source"] as? String else { continue }
-            if source == MetadataSource.derived.rawValue { continue }
+            if source == MetadataSource.derived.rawValue, key != MetadataKey.activity { continue }
             let ts = (record["ts"] as? Double) ?? 0.0
             result[key] = PersistedMetadataSource(source: source, ts: ts)
         }
@@ -171,7 +173,7 @@ enum PersistedMetadataBridge {
     private static func isDerivedKey(key: String, sources: [String: [String: Any]]?) -> Bool {
         guard let sources, let record = sources[key],
               let raw = record["source"] as? String else { return false }
-        return raw == MetadataSource.derived.rawValue
+        return raw == MetadataSource.derived.rawValue && key != MetadataKey.activity
     }
 
     // MARK: - Restore-direction bridge (persisted → [String: Any])

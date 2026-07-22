@@ -3386,8 +3386,8 @@ class TerminalController {
 
 
 
-    /// M7 side effect: sync render cache + auto-expand title bar when
-    /// `title` / `description` is written through M2's metadata API.
+    /// Sync render state when title, description, or terminal type changes
+    /// through M2's metadata API.
     func applyTitleDescriptionSideEffects(
         workspaceId: UUID,
         surfaceId: UUID,
@@ -3397,7 +3397,8 @@ class TerminalController {
     ) {
         let titleApplied = applied[MetadataKey.title] == true
         let descriptionApplied = applied[MetadataKey.description] == true
-        guard titleApplied || descriptionApplied else { return }
+        let terminalTypeApplied = applied[MetadataKey.terminalType] == true
+        guard titleApplied || descriptionApplied || terminalTypeApplied else { return }
         v2MainSync {
             guard let ws = tabManager.tabs.first(where: { $0.id == workspaceId }) else { return }
             if titleApplied {
@@ -3405,6 +3406,9 @@ class TerminalController {
             }
             if descriptionApplied && autoExpand {
                 ws.maybeAutoExpandTitleBar(panelId: surfaceId)
+            }
+            if terminalTypeApplied {
+                ws.syncSurfaceTabActivityStateForPanel(surfaceId)
             }
         }
     }

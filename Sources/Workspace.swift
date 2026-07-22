@@ -284,6 +284,7 @@ extension Workspace {
         }
 
         restoreSurfaceMetadataFromSnapshot(panels: snapshot.panels)
+        syncSurfaceTabActivityStates()
 
         // CMUX-11 Phase 3: rehydrate PaneMetadataStore entries from each
         // restored leaf and prune any pane metadata not in the live set.
@@ -5554,6 +5555,27 @@ final class Workspace: Identifiable, ObservableObject {
         .init(backgroundHex: backgroundColor.hexString())
     }
 
+    nonisolated static func resolvedSurfaceTabActivityColors(
+        from backgroundColor: NSColor
+    ) -> BonsplitConfiguration.Appearance.TabActivityColors {
+        if backgroundColor.isLightColor {
+            return .init(
+                runningHex: "#326D9E",
+                idleHex: "#357B61",
+                coldHex: "#7F8289",
+                waitingHex: "#9B7415",
+                waitingInkHex: "#FFFDF8"
+            )
+        }
+        return .init(
+            runningHex: "#79AEE8",
+            idleHex: "#78B59E",
+            coldHex: "#707681",
+            waitingHex: "#D0AA45",
+            waitingInkHex: "#08090B"
+        )
+    }
+
     /// Resolved theme-aware divider presentation for bonsplit. `borderHex` encodes
     /// RGBA so the alpha from `$workspaceColor.mix(...)` survives into bonsplit.
     private struct BonsplitDividerResolution {
@@ -5606,6 +5628,7 @@ final class Workspace: Identifiable, ObservableObject {
                 borderHex: divider.borderHex,
                 activeIndicatorHex: activeIndicatorHex
             ),
+            tabActivityColors: Self.resolvedSurfaceTabActivityColors(from: backgroundColor),
             dividerStyle: .init(thicknessPt: divider.thicknessPt)
         )
         Self.applyChromeScale(tokens, to: &appearance)
@@ -5747,6 +5770,10 @@ final class Workspace: Identifiable, ObservableObject {
 
         let currentAppearance = bonsplitController.configuration.appearance
         let currentChromeColors = currentAppearance.chromeColors
+        let currentActivityColors = currentAppearance.tabActivityColors
+        let nextActivityColors = Self.resolvedSurfaceTabActivityColors(
+            from: NSColor(hex: nextHex) ?? backgroundColor
+        )
         let currentThickness = currentAppearance.dividerStyle.thicknessPt
 
         // No-op guard spans background, divider color, divider thickness, and
@@ -5758,7 +5785,13 @@ final class Workspace: Identifiable, ObservableObject {
         let borderMatches = currentChromeColors.borderHex == nextBorderHex
         let thicknessMatches = currentThickness == nextThicknessPt
         let activeIndicatorMatches = currentChromeColors.activeIndicatorHex == nextActiveIndicatorHex
-        let isNoOp = backgroundMatches && borderMatches && thicknessMatches && activeIndicatorMatches
+        let activityColorsMatch =
+            currentActivityColors.runningHex == nextActivityColors.runningHex &&
+            currentActivityColors.idleHex == nextActivityColors.idleHex &&
+            currentActivityColors.coldHex == nextActivityColors.coldHex &&
+            currentActivityColors.waitingHex == nextActivityColors.waitingHex &&
+            currentActivityColors.waitingInkHex == nextActivityColors.waitingInkHex
+        let isNoOp = backgroundMatches && borderMatches && thicknessMatches && activeIndicatorMatches && activityColorsMatch
 
         if GhosttyApp.shared.backgroundLogEnabled {
             let currentBackgroundHex = currentChromeColors.backgroundHex ?? "nil"
@@ -5779,6 +5812,7 @@ final class Workspace: Identifiable, ObservableObject {
         nextAppearance.chromeColors.backgroundHex = nextHex
         nextAppearance.chromeColors.borderHex = nextBorderHex
         nextAppearance.chromeColors.activeIndicatorHex = nextActiveIndicatorHex
+        nextAppearance.tabActivityColors = nextActivityColors
         nextAppearance.dividerStyle.thicknessPt = nextThicknessPt
 
         var nextConfiguration = bonsplitController.configuration
@@ -5851,10 +5885,8 @@ final class Workspace: Identifiable, ObservableObject {
             autoCloseEmptyPanes: true,
             contentViewLifecycle: .keepAllAlive,
             newTabPosition: .current,
-            // C11-26: left-anchored always-visible close X + two-item
-            // right-click menu (Close Tab, Close Pane). Sidesteps the
-            // right-edge hit-collision bug and matches native macOS
-            // Cocoa tab convention (Finder, Terminal.app, Notes).
+            // C11-184: leading activity state, trailing always-visible close X,
+            // and the two-item right-click menu (Close Tab, Close Pane).
             simplifiedTabContextMenu: true,
             // Hide the Browser / Markdown spawn buttons when the operator has
             // disabled those surface types. `applySurfaceAvailability()` keeps
@@ -6266,6 +6298,7 @@ final class Workspace: Identifiable, ObservableObject {
         let customTitle: String?
         let customColor: String?
         let manuallyUnread: Bool
+        let activityState: BonsplitTabActivityState?
     }
 
     private var detachingTabIds: Set<TabID> = []
@@ -6579,16 +6612,50 @@ final class Workspace: Identifiable, ObservableObject {
         AppDelegate.shared?.notificationStore?.hasUnreadNotification(forTabId: id, surfaceId: panelId) ?? false
     }
 
-    private func syncUnreadBadgeStateForPanel(_ panelId: UUID) {
-        guard let tabId = surfaceIdFromPanelId(panelId) else { return }
-        let shouldShowUnread = Self.shouldShowUnreadIndicator(
-            hasUnreadNotification: hasUnreadNotification(panelId: panelId),
-            isManuallyUnread: manualUnreadPanelIds.contains(panelId)
+    func resolvedSurfaceTabActivityState(
+        panelId: UUID,
+        hasExactSurfaceNotification: Bool? = nil
+    ) -> BonsplitTabActivityState? {
+        SurfaceTabActivityResolver.resolve(
+            hasExactSurfaceNotification: hasExactSurfaceNotification ?? hasUnreadNotification(panelId: panelId),
+            derivedActivity: derivedActivityBySurface[panelId],
+            terminalType: surfaceTerminalKind(panelId: panelId)
         )
-        if let existing = bonsplitController.tab(tabId), existing.showsNotificationBadge == shouldShowUnread {
-            return
+    }
+
+    func syncSurfaceTabActivityStateForPanel(
+        _ panelId: UUID,
+        hasExactSurfaceNotification: Bool? = nil
+    ) {
+        guard let tabId = surfaceIdFromPanelId(panelId),
+              let existing = bonsplitController.tab(tabId) else { return }
+        let hasExact = hasExactSurfaceNotification ?? hasUnreadNotification(panelId: panelId)
+        let activityState = resolvedSurfaceTabActivityState(
+            panelId: panelId,
+            hasExactSurfaceNotification: hasExact
+        )
+        let shouldShowLegacyUnread = manualUnreadPanelIds.contains(panelId)
+            || (hasExact && activityState != .waiting)
+        guard existing.activityState != activityState
+            || existing.showsNotificationBadge != shouldShowLegacyUnread else { return }
+        bonsplitController.updateTab(
+            tabId,
+            showsNotificationBadge: shouldShowLegacyUnread,
+            activityState: .some(activityState)
+        )
+    }
+
+    func syncSurfaceTabActivityStates(exactUnreadSurfaceIds: Set<UUID>? = nil) {
+        for panelId in surfaceIdToPanelId.values {
+            syncSurfaceTabActivityStateForPanel(
+                panelId,
+                hasExactSurfaceNotification: exactUnreadSurfaceIds.map { $0.contains(panelId) }
+            )
         }
-        bonsplitController.updateTab(tabId, showsNotificationBadge: shouldShowUnread)
+    }
+
+    private func syncUnreadBadgeStateForPanel(_ panelId: UUID) {
+        syncSurfaceTabActivityStateForPanel(panelId)
     }
 
     private func normalizePinnedTabs(in paneId: PaneID) {
@@ -6911,12 +6978,22 @@ final class Workspace: Identifiable, ObservableObject {
     /// overwrites it. The enclosing type is `@MainActor`, so this publishes on
     /// the main actor. Cheap and I/O-free.
     func setDerivedActivity(_ state: SidebarActivityState?, forSurface surfaceId: UUID) {
+        let changed: Bool
         if let state {
             if derivedActivityBySurface[surfaceId] != state {
                 derivedActivityBySurface[surfaceId] = state
+                changed = true
+            } else {
+                changed = false
             }
         } else if derivedActivityBySurface[surfaceId] != nil {
             derivedActivityBySurface.removeValue(forKey: surfaceId)
+            changed = true
+        } else {
+            changed = false
+        }
+        if changed {
+            syncSurfaceTabActivityStateForPanel(surfaceId)
         }
     }
 
@@ -9212,10 +9289,12 @@ final class Workspace: Identifiable, ObservableObject {
             iconImageData: detached.iconImageData,
             kind: detached.kind,
             isDirty: detached.panel.isDirty,
+            showsNotificationBadge: detached.manuallyUnread,
             isLoading: detached.isLoading,
             isPinned: detached.isPinned,
             customColorHex: detached.customColor,
             displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: detached.panelId),
+            activityState: detached.activityState,
             inPane: paneId
         ) else {
             panels.removeValue(forKey: detached.panelId)
@@ -9241,7 +9320,6 @@ final class Workspace: Identifiable, ObservableObject {
             _ = bonsplitController.reorderTab(newTabId, toIndex: index)
         }
         syncPinnedStateForTab(newTabId, panelId: detached.panelId)
-        syncUnreadBadgeStateForPanel(detached.panelId)
         normalizePinnedTabs(in: paneId)
 
         if focus {
@@ -11460,7 +11538,11 @@ extension Workspace: BonsplitDelegate {
                 cachedTitle: cachedTitle,
                 customTitle: panelCustomTitles[panelId],
                 customColor: panelCustomColors[panelId],
-                manuallyUnread: manualUnreadPanelIds.contains(panelId)
+                manuallyUnread: manualUnreadPanelIds.contains(panelId),
+                activityState: resolvedSurfaceTabActivityState(
+                    panelId: panelId,
+                    hasExactSurfaceNotification: false
+                )
             )
         } else {
             if let closedBrowserRestoreSnapshot {
@@ -12146,6 +12228,7 @@ extension Workspace: BonsplitDelegate {
             source: .declare
         )
         syncPanelTitleFromMetadata(panelId: surfaceId)
+        syncSurfaceTabActivityStateForPanel(surfaceId)
     }
 
     /// Identity-at-birth stamp for `agent.launch` (`c11 launch-agent`). Unlike
@@ -12192,6 +12275,7 @@ extension Workspace: BonsplitDelegate {
             source: .declare
         )
         syncPanelTitleFromMetadata(panelId: surfaceId)
+        syncSurfaceTabActivityStateForPanel(surfaceId)
     }
 
     func splitTabBar(_ controller: BonsplitController, menuItemsForNewTabKind kind: String, inPane pane: PaneID) -> [BonsplitNewTabMenuItem] {

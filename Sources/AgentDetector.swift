@@ -131,13 +131,24 @@ final class AgentDetector: @unchecked Sendable {
                 continue
             }
             let classification = Self.classify(comm: info.comm, args: info.args)
-            SurfaceMetadataStore.shared.setInternal(
+            let changed = SurfaceMetadataStore.shared.setInternal(
                 workspaceId: key.workspaceId,
                 surfaceId: key.panelId,
                 key: "terminal_type",
                 value: classification,
                 source: .heuristic
             )
+            if changed {
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: key.workspaceId),
+                              let workspace = tabManager.tabs.first(where: { $0.id == key.workspaceId }) else {
+                            return
+                        }
+                        workspace.syncSurfaceTabActivityStateForPanel(key.panelId)
+                    }
+                }
+            }
         }
     }
 

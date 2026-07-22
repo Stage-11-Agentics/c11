@@ -1,7 +1,28 @@
 import Foundation
-#if DEBUG
 import Bonsplit
-#endif
+
+enum SurfaceTabActivityResolver {
+    static func resolve(
+        hasExactSurfaceNotification: Bool,
+        derivedActivity: SidebarActivityState?,
+        terminalType: String?
+    ) -> BonsplitTabActivityState? {
+        if hasExactSurfaceNotification {
+            return .waiting
+        }
+        guard PaneSizePolicy.isAgentKind(terminalType) else {
+            return nil
+        }
+        switch derivedActivity {
+        case .working:
+            return .running
+        case .idle:
+            return .idle
+        case nil:
+            return .cold
+        }
+    }
+}
 
 /// C11-162 (Telemetry truth) — TEL-3/4.
 ///

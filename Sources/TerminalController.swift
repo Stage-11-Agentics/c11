@@ -3386,7 +3386,7 @@ class TerminalController {
 
 
 
-    /// Sync render state when title, description, or terminal type changes
+    /// Sync render state when title, description, terminal type, or activity changes
     /// through M2's metadata API.
     func applyTitleDescriptionSideEffects(
         workspaceId: UUID,
@@ -3399,7 +3399,15 @@ class TerminalController {
         let titleApplied = applied[MetadataKey.title] == true || removedKeys.contains(MetadataKey.title)
         let descriptionApplied = applied[MetadataKey.description] == true || removedKeys.contains(MetadataKey.description)
         let terminalTypeApplied = applied[MetadataKey.terminalType] == true || removedKeys.contains(MetadataKey.terminalType)
-        guard titleApplied || descriptionApplied || terminalTypeApplied else { return }
+        let activityApplied = applied[MetadataKey.activity] == true || removedKeys.contains(MetadataKey.activity)
+        guard titleApplied || descriptionApplied || terminalTypeApplied || activityApplied else { return }
+        let resolvedActivity: SidebarActivityState? = if activityApplied {
+            (SurfaceMetadataStore.shared.getMetadata(workspaceId: workspaceId, surfaceId: surfaceId)
+                .metadata[MetadataKey.activity] as? String)
+                .flatMap(SidebarActivityState.init(rawValue:))
+        } else {
+            nil
+        }
         v2MainSync {
             guard let ws = tabManager.tabs.first(where: { $0.id == workspaceId }) else { return }
             if titleApplied {
@@ -3407,6 +3415,9 @@ class TerminalController {
             }
             if descriptionApplied && autoExpand {
                 ws.maybeAutoExpandTitleBar(panelId: surfaceId)
+            }
+            if activityApplied {
+                ws.setDerivedActivity(resolvedActivity, forSurface: surfaceId)
             }
             if terminalTypeApplied {
                 ws.syncSurfaceTabActivityStateForPanel(surfaceId)

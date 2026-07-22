@@ -1227,7 +1227,7 @@ extension TerminalController {
                 panel as? BrowserPanel
             }
             let tabs: [[String: Any]] = browserPanels.enumerated().map { index, panel in
-                [
+                var item: [String: Any] = [
                     "id": panel.id.uuidString,
                     "ref": v2Ref(kind: .surface, uuid: panel.id),
                     "index": index,
@@ -1237,6 +1237,10 @@ extension TerminalController {
                     "pane_id": v2OrNull(ws.paneId(forPanelId: panel.id)?.id.uuidString),
                     "pane_ref": v2Ref(kind: .pane, uuid: ws.paneId(forPanelId: panel.id)?.id)
                 ]
+                if let context = v2CompanionContextObject(workspace: ws, browserID: panel.id) {
+                    item["context"] = context
+                }
+                return item
             }
             payload = [
                 "workspace_id": ws.id.uuidString,

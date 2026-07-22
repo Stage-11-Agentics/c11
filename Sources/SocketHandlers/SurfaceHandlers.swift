@@ -24,6 +24,12 @@ extension TerminalController {
             return v2Result(id: id, self.v2SurfaceSplit(params: params))
         case "surface.create":
             return v2Result(id: id, self.v2SurfaceCreate(params: params))
+        case "surface.context.get" where AgentCompanionBrowserFeature.isEnabled:
+            return v2Result(id: id, self.v2SurfaceContextGet(params: params))
+        case "surface.context.link" where AgentCompanionBrowserFeature.isEnabled:
+            return v2Result(id: id, self.v2SurfaceContextLink(params: params))
+        case "surface.context.unlink" where AgentCompanionBrowserFeature.isEnabled:
+            return v2Result(id: id, self.v2SurfaceContextUnlink(params: params))
         case "surface.close":
             return v2Result(id: id, self.v2SurfaceClose(params: params))
         case "surface.move":
@@ -103,6 +109,12 @@ extension TerminalController {
                 ]
                 if let browserPanel = panel as? BrowserPanel {
                     item["developer_tools_visible"] = browserPanel.isDeveloperToolsVisible()
+                    if let context = self.v2CompanionContextObject(
+                        workspace: ws,
+                        browserID: browserPanel.id
+                    ) {
+                        item["context"] = context
+                    }
                 }
                 if let markdownPanel = panel as? MarkdownPanel {
                     item["file_path"] = markdownPanel.filePath
@@ -149,6 +161,189 @@ extension TerminalController {
         out["window_id"] = v2OrNull(windowId?.uuidString)
         out["window_ref"] = v2Ref(kind: .window, uuid: windowId)
         return .ok(out)
+    }
+
+    private func v2ResolveCompanionBrowser(
+        params: [String: Any]
+    ) -> Result<(tabManager: TabManager, workspace: Workspace, browserID: UUID), V2CallResult> {
+        let reference = v2CompanionSurfaceReference(params, key: "surface_id")
+        let browserID: UUID
+        switch reference {
+        case .absent, .malformed:
+            return .failure(.err(
+                code: "invalid_params",
+                message: "surface_id must name a browser UUID or surface ref",
+                data: nil
+            ))
+        case .unresolved:
+            return .failure(.err(
+                code: BrowserCompanionLinkError.browserNotFound.rawValue,
+                message: "Browser surface not found",
+                data: nil
+            ))
+        case .resolved(let resolved):
+            browserID = resolved
+        }
+
+        guard let located = AppDelegate.shared?.locateSurface(surfaceId: browserID),
+              let workspace = located.tabManager.tabs.first(where: { $0.id == located.workspaceId }) else {
+            return .failure(.err(
+                code: BrowserCompanionLinkError.browserNotFound.rawValue,
+                message: "Browser surface not found",
+                data: ["surface_id": browserID.uuidString]
+            ))
+        }
+
+        if v2HasNonNullParam(params, "workspace_id") {
+            guard let requestedWorkspaceID = v2UUID(params, "workspace_id") else {
+                return .failure(.err(
+                    code: "invalid_params",
+                    message: "workspace_id must be a UUID or workspace ref",
+                    data: nil
+                ))
+            }
+            guard requestedWorkspaceID == workspace.id else {
+                return .failure(.err(
+                    code: BrowserCompanionLinkError.browserNotFound.rawValue,
+                    message: "Browser surface not found in requested workspace",
+                    data: ["surface_id": browserID.uuidString]
+                ))
+            }
+        }
+
+        guard workspace.panels[browserID] is BrowserPanel else {
+            return .failure(.err(
+                code: BrowserCompanionLinkError.targetNotBrowser.rawValue,
+                message: "Target surface is not a browser",
+                data: ["surface_id": browserID.uuidString]
+            ))
+        }
+        return .success((located.tabManager, workspace, browserID))
+    }
+
+    private func v2SurfaceContextPayload(
+        tabManager: TabManager,
+        workspace: Workspace,
+        browserID: UUID
+    ) -> V2CallResult {
+        guard let context = v2CompanionContextObject(workspace: workspace, browserID: browserID) else {
+            return .err(
+                code: "internal_error",
+                message: "Companion context is unavailable for browser",
+                data: ["surface_id": browserID.uuidString]
+            )
+        }
+        let windowID = v2ResolveWindowId(tabManager: tabManager)
+        return .ok([
+            "window_id": v2OrNull(windowID?.uuidString),
+            "window_ref": v2Ref(kind: .window, uuid: windowID),
+            "workspace_id": workspace.id.uuidString,
+            "workspace_ref": v2Ref(kind: .workspace, uuid: workspace.id),
+            "surface_id": browserID.uuidString,
+            "surface_ref": v2Ref(kind: .surface, uuid: browserID),
+            "context": context
+        ])
+    }
+
+    private func v2SurfaceContextGet(params: [String: Any]) -> V2CallResult {
+        switch v2ResolveCompanionBrowser(params: params) {
+        case .failure(let error):
+            return error
+        case .success(let target):
+            return v2SurfaceContextPayload(
+                tabManager: target.tabManager,
+                workspace: target.workspace,
+                browserID: target.browserID
+            )
+        }
+    }
+
+    private func v2SurfaceContextLink(params: [String: Any]) -> V2CallResult {
+        let target: (tabManager: TabManager, workspace: Workspace, browserID: UUID)
+        switch v2ResolveCompanionBrowser(params: params) {
+        case .failure(let error):
+            return error
+        case .success(let resolved):
+            target = resolved
+        }
+
+        let hasAgentParam = v2HasNonNullParam(params, "agent_surface_id")
+        let hasActiveParam = v2HasNonNullParam(params, "active_agent")
+        let useActiveAgent = v2Bool(params, "active_agent") == true
+        guard hasAgentParam != useActiveAgent,
+              !hasActiveParam || useActiveAgent else {
+            return .err(
+                code: "invalid_params",
+                message: "Provide exactly one of agent_surface_id or active_agent: true",
+                data: nil
+            )
+        }
+
+        let agentID: UUID
+        if useActiveAgent {
+            guard let context = v2CompanionContextObject(
+                workspace: target.workspace,
+                browserID: target.browserID
+            ),
+            let rawActiveID = context["active_agent_surface_id"] as? String,
+            let activeID = UUID(uuidString: rawActiveID) else {
+                return .err(
+                    code: BrowserCompanionLinkError.noActiveAgent.rawValue,
+                    message: "Workspace has no active agent context",
+                    data: nil
+                )
+            }
+            agentID = activeID
+        } else {
+            switch v2CompanionSurfaceReference(params, key: "agent_surface_id") {
+            case .resolved(let resolved):
+                agentID = resolved
+            case .unresolved:
+                return .err(
+                    code: BrowserCompanionLinkError.agentNotFound.rawValue,
+                    message: "Agent surface not found",
+                    data: nil
+                )
+            case .absent, .malformed:
+                return .err(
+                    code: "invalid_params",
+                    message: "agent_surface_id must be a UUID or surface ref",
+                    data: nil
+                )
+            }
+        }
+
+        do {
+            try target.workspace.linkBrowser(target.browserID, toAgent: agentID)
+        } catch {
+            return v2CompanionMutationError(error)
+        }
+        return v2SurfaceContextPayload(
+            tabManager: target.tabManager,
+            workspace: target.workspace,
+            browserID: target.browserID
+        )
+    }
+
+    private func v2SurfaceContextUnlink(params: [String: Any]) -> V2CallResult {
+        let target: (tabManager: TabManager, workspace: Workspace, browserID: UUID)
+        switch v2ResolveCompanionBrowser(params: params) {
+        case .failure(let error):
+            return error
+        case .success(let resolved):
+            target = resolved
+        }
+
+        do {
+            try target.workspace.unlinkBrowser(target.browserID)
+        } catch {
+            return v2CompanionMutationError(error)
+        }
+        return v2SurfaceContextPayload(
+            tabManager: target.tabManager,
+            workspace: target.workspace,
+            browserID: target.browserID
+        )
     }
 
     private func v2SurfaceCurrent(params: [String: Any]) -> V2CallResult {
@@ -386,6 +581,17 @@ extension TerminalController {
                 return err
             }
         }
+        let companionAttribution: V2CompanionCreationAttribution?
+        if panelType == .browser {
+            switch v2CompanionCreationAttribution(params) {
+            case .success(let parsed):
+                companionAttribution = parsed
+            case .failure(let error):
+                return error
+            }
+        } else {
+            companionAttribution = nil
+        }
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to create surface", data: nil)
         guard v2MainSyncWithDeadline({
@@ -433,7 +639,7 @@ extension TerminalController {
             }
 
             let windowId = self.v2ResolveWindowId(tabManager: tabManager)
-            result = .ok([
+            var ok: [String: Any] = [
                 "window_id": self.v2OrNull(windowId?.uuidString),
                 "window_ref": self.v2Ref(kind: .window, uuid: windowId),
                 "workspace_id": ws.id.uuidString,
@@ -443,7 +649,17 @@ extension TerminalController {
                 "surface_id": newPanelId.uuidString,
                 "surface_ref": self.v2Ref(kind: .surface, uuid: newPanelId),
                 "type": panelType.rawValue
-            ])
+            ]
+            if let companionAttribution {
+                for (key, value) in self.v2CompanionCreationFields(
+                    workspace: ws,
+                    browserID: newPanelId,
+                    attribution: companionAttribution
+                ) {
+                    ok[key] = value
+                }
+            }
+            result = .ok(ok)
         }) != nil else {
             return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)
         }

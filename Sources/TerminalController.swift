@@ -2123,6 +2123,12 @@ class TerminalController {
 
             if panel.panelType == .browser, let browserPanel = panel as? BrowserPanel {
                 item["url"] = browserPanel.currentURL?.absoluteString ?? ""
+                if let context = v2CompanionContextObject(
+                    workspace: workspace,
+                    browserID: browserPanel.id
+                ) {
+                    item["context"] = context
+                }
             } else {
                 item["url"] = NSNull()
             }
@@ -2573,6 +2579,171 @@ class TerminalController {
             return uuid
         }
         return v2ResolveHandleRef(trimmed)
+    }
+
+    enum V2CompanionSurfaceReference {
+        case absent
+        case resolved(UUID)
+        case unresolved
+        case malformed
+    }
+
+    struct V2CompanionCreationAttribution {
+        let caller: V2CompanionSurfaceReference
+        let mode: BrowserCompanionLinkMode
+    }
+
+    /// Parse a companion surface identity without conflating malformed input
+    /// with a syntactically valid but stale UUID/ref. Creation treats those two
+    /// cases differently: malformed input is rejected before mutation, while a
+    /// stale caller creates an unlinked browser with `caller_not_found`.
+    func v2CompanionSurfaceReference(_ params: [String: Any], key: String) -> V2CompanionSurfaceReference {
+        guard let raw = params[key], !(raw is NSNull) else { return .absent }
+        guard let string = raw as? String else { return .malformed }
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .malformed }
+
+        if let uuid = UUID(uuidString: trimmed) {
+            return .resolved(uuid)
+        }
+
+        let parts = trimmed.lowercased().split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              parts[0] == "surface" || parts[0] == "tab",
+              !parts[1].isEmpty,
+              parts[1].allSatisfy({ $0.isNumber }) else {
+            return .malformed
+        }
+
+        if let uuid = v2ResolveHandleRef(trimmed) {
+            return .resolved(uuid)
+        }
+        return .unresolved
+    }
+
+    /// The shared parser for all browser-creation handlers. A nil success
+    /// means the feature is disabled and callers must preserve the exact
+    /// pre-feature request/response behavior.
+    func v2CompanionCreationAttribution(
+        _ params: [String: Any]
+    ) -> Result<V2CompanionCreationAttribution?, V2CallResult> {
+        guard AgentCompanionBrowserFeature.isEnabled else { return .success(nil) }
+
+        let mode: BrowserCompanionLinkMode
+        if let raw = params["link_mode"], !(raw is NSNull) {
+            guard let string = raw as? String,
+                  let parsed = BrowserCompanionLinkMode(
+                    rawValue: string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                  ) else {
+                return .failure(.err(
+                    code: "invalid_params",
+                    message: "link_mode must be automatic or workspace",
+                    data: nil
+                ))
+            }
+            mode = parsed
+        } else {
+            mode = .automatic
+        }
+
+        let caller = v2CompanionSurfaceReference(params, key: "caller_surface_id")
+        if case .malformed = caller {
+            return .failure(.err(
+                code: "invalid_params",
+                message: "caller_surface_id must be a UUID or surface ref",
+                data: nil
+            ))
+        }
+        return .success(V2CompanionCreationAttribution(caller: caller, mode: mode))
+    }
+
+    /// One canonical dictionary serializer for every public companion query.
+    /// It deliberately emits explicit nulls and never consults the visual
+    /// surface-ID preference.
+    func v2CompanionContextObject(
+        workspace: Workspace,
+        browserID: UUID
+    ) -> [String: Any]? {
+        guard AgentCompanionBrowserFeature.isEnabled,
+              let snapshot = workspace.companionWireSnapshot(for: browserID) else {
+            return nil
+        }
+        return [
+            "kind": snapshot.kind,
+            "browser_surface_id": snapshot.browserSurfaceID.uuidString,
+            "browser_surface_ref": snapshot.browserSurfaceRef,
+            "browser_name": snapshot.browserName,
+            "linked_agent_surface_id": v2OrNull(snapshot.linkedAgentSurfaceID?.uuidString),
+            "linked_agent_surface_ref": v2OrNull(snapshot.linkedAgentSurfaceRef),
+            "linked_agent_name": v2OrNull(snapshot.linkedAgentName),
+            "link_state": snapshot.linkState.rawValue,
+            "presentation_state": snapshot.presentationState.rawValue,
+            "active_agent_surface_id": v2OrNull(snapshot.activeAgentSurfaceID?.uuidString),
+            "active_agent_surface_ref": v2OrNull(snapshot.activeAgentSurfaceRef),
+            "active_agent_name": v2OrNull(snapshot.activeAgentName)
+        ]
+    }
+
+    /// Apply caller attribution only after routing has already selected the
+    /// workspace and creation has succeeded. Caller provenance can describe a
+    /// link, but can never retarget placement.
+    func v2CompanionCreationFields(
+        workspace: Workspace,
+        browserID: UUID,
+        attribution: V2CompanionCreationAttribution
+    ) -> [String: Any] {
+        let linkResult: BrowserCompanionLinkResult
+        if attribution.mode == .workspace {
+            linkResult = workspace.automaticLinkBrowser(
+                browserID,
+                callerSurfaceID: nil,
+                mode: .workspace
+            )
+        } else {
+            switch attribution.caller {
+            case .absent:
+                linkResult = workspace.automaticLinkBrowser(
+                    browserID,
+                    callerSurfaceID: nil,
+                    mode: .automatic
+                )
+            case .resolved(let callerID):
+                linkResult = workspace.automaticLinkBrowser(
+                    browserID,
+                    callerSurfaceID: callerID,
+                    mode: .automatic
+                )
+            case .unresolved:
+                linkResult = .callerNotFound
+            case .malformed:
+                // Rejected by v2CompanionCreationAttribution before creation.
+                linkResult = .callerNotFound
+            }
+        }
+
+        var fields: [String: Any] = ["link_result": linkResult.rawValue]
+        if let context = v2CompanionContextObject(workspace: workspace, browserID: browserID) {
+            fields["context"] = context
+            fields["linked_agent_surface_id"] = context["linked_agent_surface_id"] ?? NSNull()
+            fields["linked_agent_surface_ref"] = context["linked_agent_surface_ref"] ?? NSNull()
+            fields["linked_agent_name"] = context["linked_agent_name"] ?? NSNull()
+        } else {
+            fields["linked_agent_surface_id"] = NSNull()
+            fields["linked_agent_surface_ref"] = NSNull()
+            fields["linked_agent_name"] = NSNull()
+        }
+        return fields
+    }
+
+    func v2CompanionMutationError(_ error: Error) -> V2CallResult {
+        if let linkError = error as? BrowserCompanionLinkError {
+            return .err(
+                code: linkError.rawValue,
+                message: "Agent companion link validation failed: \(linkError.rawValue)",
+                data: nil
+            )
+        }
+        return .err(code: "internal_error", message: "Agent companion operation failed", data: nil)
     }
     nonisolated func v2Bool(_ params: [String: Any], _ key: String) -> Bool? {
         if let b = params[key] as? Bool { return b }

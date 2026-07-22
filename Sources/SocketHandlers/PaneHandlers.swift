@@ -204,6 +204,17 @@ extension TerminalController {
         }
 
         let force = splitForceFlag(params)
+        let companionAttribution: V2CompanionCreationAttribution?
+        if panelType == .browser {
+            switch v2CompanionCreationAttribution(params) {
+            case .success(let parsed):
+                companionAttribution = parsed
+            case .failure(let error):
+                return error
+            }
+        } else {
+            companionAttribution = nil
+        }
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to create pane", data: nil)
         guard v2MainSyncWithDeadline({
@@ -286,6 +297,15 @@ extension TerminalController {
                 "surface_ref": self.v2Ref(kind: .surface, uuid: createdPanelId),
                 "type": panelType.rawValue
             ]
+            if let companionAttribution {
+                for (key, value) in self.v2CompanionCreationFields(
+                    workspace: ws,
+                    browserID: createdPanelId,
+                    attribution: companionAttribution
+                ) {
+                    ok[key] = value
+                }
+            }
             self.annotateSizeOutcome(&ok, requested: direction, applied: appliedDirection, becameTab: becameTab, warning: warningText)
             result = .ok(ok)
         }) != nil else {

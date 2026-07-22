@@ -667,6 +667,13 @@ extension TerminalController {
         let urlStr = v2String(params, "url")
         let url = urlStr.flatMap { URL(string: $0) }
         let respectExternalOpenRules = v2Bool(params, "respect_external_open_rules") ?? false
+        let companionAttribution: V2CompanionCreationAttribution?
+        switch v2CompanionCreationAttribution(params) {
+        case .success(let parsed):
+            companionAttribution = parsed
+        case .failure(let error):
+            return error
+        }
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to create browser", data: nil)
         v2MainSync {
@@ -735,7 +742,7 @@ extension TerminalController {
 
             let targetPaneUUID = ws.paneId(forPanelId: browserPanelId)?.id
             let windowId = v2ResolveWindowId(tabManager: tabManager)
-            result = .ok([
+            var ok: [String: Any] = [
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId),
                 "workspace_id": ws.id.uuidString,
@@ -752,7 +759,17 @@ extension TerminalController {
                 "target_pane_ref": v2Ref(kind: .pane, uuid: targetPaneUUID),
                 "created_split": createdSplit,
                 "placement_strategy": placementStrategy
-            ])
+            ]
+            if let companionAttribution {
+                for (key, value) in v2CompanionCreationFields(
+                    workspace: ws,
+                    browserID: browserPanelId,
+                    attribution: companionAttribution
+                ) {
+                    ok[key] = value
+                }
+            }
+            result = .ok(ok)
         }
         return result
     }

@@ -2162,7 +2162,11 @@ struct CMUXCLI {
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["pane", "workspace"]))
 
         case "new-pane":
-            let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
+            let workspaceArg = optionValue(commandArgs, name: "--workspace")
+                ?? (windowId == nil
+                    ? ProcessInfo.processInfo.environment["C11_WORKSPACE_ID"]
+                        ?? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
+                    : nil)
             let type = optionValue(commandArgs, name: "--type")
             let direction = optionValue(commandArgs, name: "--direction") ?? "right"
             let url = optionValue(commandArgs, name: "--url")
@@ -2187,6 +2191,16 @@ struct CMUXCLI {
             // for this one call.
             if commandArgs.contains("--allow-undersized") || commandArgs.contains("--force") {
                 params["allow_undersized"] = true
+            }
+            if type?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "browser" {
+                addBrowserCreationAttribution(
+                    to: &params,
+                    resolvedWorkspaceID: wsId,
+                    explicitWorkspace: optionValue(commandArgs, name: "--workspace") != nil,
+                    explicitWindowID: windowId,
+                    workspaceWide: commandArgs.contains("--workspace-wide"),
+                    client: client
+                )
             }
             let payload = try client.sendV2(method: "pane.create", params: params)
             printSizeWarning(payload)
@@ -2302,7 +2316,11 @@ struct CMUXCLI {
             printV2Payload(cfgPayload, jsonOutput: cfgJSONOut, idFormat: idFormat, fallbackText: v2OKSummary(cfgPayload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
 
         case "new-surface":
-            let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
+            let workspaceArg = optionValue(commandArgs, name: "--workspace")
+                ?? (windowId == nil
+                    ? ProcessInfo.processInfo.environment["C11_WORKSPACE_ID"]
+                        ?? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]
+                    : nil)
             let type = optionValue(commandArgs, name: "--type")
             let paneRaw = optionValue(commandArgs, name: "--pane")
             let url = optionValue(commandArgs, name: "--url")
@@ -2317,6 +2335,16 @@ struct CMUXCLI {
             if let url { params["url"] = url }
             if let file { params["file"] = file }
             if noFocus { params["focus"] = false }
+            if type?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "browser" {
+                addBrowserCreationAttribution(
+                    to: &params,
+                    resolvedWorkspaceID: wsId,
+                    explicitWorkspace: optionValue(commandArgs, name: "--workspace") != nil,
+                    explicitWindowID: windowId,
+                    workspaceWide: commandArgs.contains("--workspace-wide"),
+                    client: client
+                )
+            }
             let payload = try client.sendV2(method: "surface.create", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
 
@@ -6502,6 +6530,72 @@ struct CMUXCLI {
         return (result.status, result.stdout, result.stderr)
     }
 
+    /// Add caller provenance only for browser creation. Explicit routing to a
+    /// different workspace/window suppresses attribution; placement continues
+    /// to use the command's existing workspace/surface/pane fields.
+    private func addBrowserCreationAttribution(
+        to params: inout [String: Any],
+        resolvedWorkspaceID: String?,
+        explicitWorkspace: Bool,
+        explicitWindowID: String?,
+        workspaceWide: Bool,
+        client: SocketClient
+    ) {
+        params["link_mode"] = workspaceWide ? "workspace" : "automatic"
+
+        let environment = ProcessInfo.processInfo.environment
+        guard let callerWorkspaceRaw = (
+            environment["C11_WORKSPACE_ID"] ?? environment["CMUX_WORKSPACE_ID"]
+        )?.trimmingCharacters(in: .whitespacesAndNewlines),
+        !callerWorkspaceRaw.isEmpty,
+        let callerWorkspaceID = try? normalizeWorkspaceHandle(callerWorkspaceRaw, client: client),
+        let callerSurface = (
+            environment["C11_SURFACE_ID"] ?? environment["CMUX_SURFACE_ID"]
+        )?.trimmingCharacters(in: .whitespacesAndNewlines),
+        !callerSurface.isEmpty else {
+            return
+        }
+
+        if explicitWorkspace {
+            guard callerWorkspaceID == resolvedWorkspaceID else {
+                return
+            }
+        }
+
+        if let explicitWindowID {
+            guard let targetWindowHandle = try? normalizeWindowHandle(explicitWindowID, client: client),
+                  let windowPayload = try? client.sendV2(method: "window.list"),
+                  let windows = windowPayload["windows"] as? [[String: Any]],
+                  let targetWindowID = windows.first(where: {
+                      ($0["id"] as? String) == targetWindowHandle || ($0["ref"] as? String) == targetWindowHandle
+                  })?["id"] as? String,
+                  let identify = try? client.sendV2(
+                      method: "system.identify",
+                      params: [
+                          "caller": [
+                              "workspace_id": callerWorkspaceID,
+                              "surface_id": callerSurface,
+                          ]
+                      ]
+                  ),
+                  let caller = identify["caller"] as? [String: Any],
+                  let callerWindowID = caller["window_id"] as? String,
+                  callerWindowID.caseInsensitiveCompare(targetWindowID) == .orderedSame else {
+                return
+            }
+            // A same-window target is not an attribution opt-out. Keep routing
+            // anchored to the caller workspace so operator focus cannot move
+            // an agent-created companion into a different selected workspace.
+            if !explicitWorkspace {
+                params["workspace_id"] = callerWorkspaceID
+            }
+        }
+
+        // Forward the raw UUID/ref. The server owns malformed-vs-stale
+        // classification and its deterministic creation outcomes.
+        params["caller_surface_id"] = callerSurface
+    }
+
     private func runBrowserCommand(
         commandArgs: [String],
         client: SocketClient,
@@ -6676,7 +6770,8 @@ struct CMUXCLI {
 
         if subcommand == "open" || subcommand == "open-split" || subcommand == "new" {
             // Parse routing flags before URL assembly so they never leak into the URL string.
-            let (workspaceOpt, argsAfterWorkspace) = parseOption(subArgs, name: "--workspace")
+            let (workspaceWide, argsAfterWorkspaceWide) = parseBoolFlag(subArgs, name: "--workspace-wide")
+            let (workspaceOpt, argsAfterWorkspace) = parseOption(argsAfterWorkspaceWide, name: "--workspace")
             let (windowOpt, urlArgs) = parseOption(argsAfterWorkspace, name: "--window")
             let url = urlArgs.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
             let respectExternalOpenRules: Bool = {
@@ -6709,10 +6804,15 @@ struct CMUXCLI {
             if let sourceSurface = try normalizeSurfaceHandle(surfaceRaw, client: client) {
                 params["surface_id"] = sourceSurface
             }
-            let workspaceRaw = workspaceOpt ?? (windowOpt == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
+            let environment = ProcessInfo.processInfo.environment
+            let workspaceRaw = workspaceOpt ?? (windowOpt == nil
+                ? environment["C11_WORKSPACE_ID"] ?? environment["CMUX_WORKSPACE_ID"]
+                : nil)
+            var resolvedWorkspaceID: String?
             if let workspaceRaw {
                 if let workspace = try normalizeWorkspaceHandle(workspaceRaw, client: client) {
                     params["workspace_id"] = workspace
+                    resolvedWorkspaceID = workspace
                 }
             }
             if respectExternalOpenRules {
@@ -6723,11 +6823,66 @@ struct CMUXCLI {
                     params["window_id"] = window
                 }
             }
+            addBrowserCreationAttribution(
+                to: &params,
+                resolvedWorkspaceID: resolvedWorkspaceID,
+                explicitWorkspace: workspaceOpt != nil,
+                explicitWindowID: windowOpt,
+                workspaceWide: workspaceWide,
+                client: client
+            )
             let payload = try client.sendV2(method: "browser.open_split", params: params)
             let surfaceText = formatHandle(payload, kind: "surface", idFormat: effectiveIDFormat) ?? "unknown"
             let paneText = formatHandle(payload, kind: "pane", idFormat: effectiveIDFormat) ?? "unknown"
             let placement = ((payload["created_split"] as? Bool) == true) ? "split" : "reuse"
             output(payload, fallback: "OK surface=\(surfaceText) pane=\(paneText) placement=\(placement)")
+            return
+        }
+
+        if subcommand == "context" || subcommand == "get-context" {
+            let sid = try requireSurface()
+            let payload = try client.sendV2(
+                method: "surface.context.get",
+                params: ["surface_id": sid]
+            )
+            let context = payload["context"] as? [String: Any]
+            let state = (context?["presentation_state"] as? String) ?? "unknown"
+            output(payload, fallback: "OK state=\(state)")
+            return
+        }
+
+        if subcommand == "link" {
+            let sid = try requireSurface()
+            let (agentRaw, remaining) = parseOption(subArgs, name: "--agent")
+            let useActiveAgent = hasFlag(remaining, name: "--active-agent")
+            guard (agentRaw != nil) != useActiveAgent else {
+                throw CLIError(message: "browser link requires exactly one of --agent <surface> or --active-agent")
+            }
+            var params: [String: Any] = ["surface_id": sid]
+            if useActiveAgent {
+                params["active_agent"] = true
+            } else if let agentRaw {
+                guard let agentID = try normalizeSurfaceHandle(agentRaw, client: client) else {
+                    throw CLIError(message: "Invalid agent surface handle")
+                }
+                params["agent_surface_id"] = agentID
+            }
+            let payload = try client.sendV2(method: "surface.context.link", params: params)
+            let context = payload["context"] as? [String: Any]
+            let linked = (context?["linked_agent_surface_ref"] as? String)
+                ?? (context?["linked_agent_surface_id"] as? String)
+                ?? "unknown"
+            output(payload, fallback: "OK linked_agent=\(linked)")
+            return
+        }
+
+        if subcommand == "unlink" {
+            let sid = try requireSurface()
+            let payload = try client.sendV2(
+                method: "surface.context.unlink",
+                params: ["surface_id": sid]
+            )
+            output(payload, fallback: "OK unlinked")
             return
         }
 
@@ -7186,6 +7341,11 @@ struct CMUXCLI {
             case "title":
                 let payload = try client.sendV2(method: "browser.get.title", params: ["surface_id": sid])
                 output(payload, fallback: (payload["title"] as? String) ?? "")
+            case "context":
+                let payload = try client.sendV2(method: "surface.context.get", params: ["surface_id": sid])
+                let context = payload["context"] as? [String: Any]
+                let state = (context?["presentation_state"] as? String) ?? "unknown"
+                output(payload, fallback: "OK state=\(state)")
             case "text", "html", "value", "count", "box", "styles", "attr":
                 let (selectorOpt, rem1) = parseOption(getArgs, name: "--selector")
                 let selector = selectorOpt ?? rem1.first
@@ -8601,8 +8761,9 @@ struct CMUXCLI {
             Flags:
               --type <terminal|browser|markdown>  Pane type (default: terminal)
               --direction <left|right|up|down>    Split direction (default: right)
-              --workspace <id|ref>                Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>                Target workspace (default: $C11_WORKSPACE_ID, then legacy $CMUX_WORKSPACE_ID)
               --url <url>                         URL for browser panes
+              --workspace-wide                    Create browser pane without an agent link
               --file <path>                       File path for markdown panes
               --title <text>                      Seed the new pane's title metadata atomically with creation
               --cwd <path|inherit>                Working directory for the new terminal. A path
@@ -8684,8 +8845,9 @@ struct CMUXCLI {
             Flags:
               --type <terminal|browser|markdown>  Surface type (default: terminal)
               --pane <id|ref>                     Target pane
-              --workspace <id|ref>                Target workspace (default: $CMUX_WORKSPACE_ID)
+              --workspace <id|ref>                Target workspace (default: $C11_WORKSPACE_ID, then legacy $CMUX_WORKSPACE_ID)
               --url <url>                         URL for browser surfaces
+              --workspace-wide                    Create browser surface without an agent link
               --file <path>                       File path for markdown surfaces
               --no-focus                          Create surface without stealing focus
 
@@ -9595,8 +9757,12 @@ struct CMUXCLI {
             `open`/`open-split`/`new`/`identify` can run without an explicit surface.
 
             Subcommands:
-              open|open-split|new [url] [--workspace <id|ref|index>] [--window <id|ref|index>]
-                open/open-split/new default to $CMUX_WORKSPACE_ID when --workspace is omitted and --window is not set
+              open|open-split|new [url] [--workspace <id|ref|index>] [--window <id|ref|index>] [--workspace-wide]
+                open/open-split/new default to $C11_WORKSPACE_ID (then legacy $CMUX_WORKSPACE_ID) when --workspace is omitted and --window is not set
+                agent callers auto-link in their own workspace; --workspace-wide opts out
+              context|get-context
+              link (--agent <surface> | --active-agent)
+              unlink
               goto|navigate <url> [--snapshot-after]
               back|forward|reload [--snapshot-after]
               url|get-url
@@ -9610,7 +9776,7 @@ struct CMUXCLI {
               select [--selector <css> | <css>] [--value <value> | <value>] [--snapshot-after]
               scroll [--selector <css>] [--dx <n>] [--dy <n>] [--snapshot-after]
               screenshot [--out <path>]
-              get <url|title|text|html|value|attr|count|box|styles> [...]
+              get <url|title|context|text|html|value|attr|count|box|styles> [...]
                 text|html|value|count|box|styles|attr: [--selector <css> | <css>]
                 attr: [--attr <name> | <name>]
                 styles: [--property <name>]
@@ -9646,6 +9812,9 @@ struct CMUXCLI {
 
             Example:
               c11 browser open https://example.com
+              c11 browser open --workspace-wide https://example.com
+              c11 browser link --surface surface:7 --agent surface:3
+              c11 browser unlink --surface surface:7
               c11 browser surface:1 navigate https://google.com
               c11 browser --surface surface:1 snapshot --interactive
             """
@@ -16624,8 +16793,8 @@ struct CMUXCLI {
           list-pane-surfaces [--workspace <id|ref>] [--pane <id|ref>]
           tree [--all] [--workspace <id|ref|index>]
           focus-pane --pane <id|ref> [--workspace <id|ref>]
-          new-pane [--type <terminal|browser|markdown>] [--direction <left|right|up|down>] [--workspace <id|ref>] [--url <url>] [--file <path>] [--title <text>]
-          new-surface [--type <terminal|browser|markdown>] [--pane <id|ref>] [--workspace <id|ref>] [--url <url>] [--file <path>]
+          new-pane [--type <terminal|browser|markdown>] [--direction <left|right|up|down>] [--workspace <id|ref>] [--url <url>] [--workspace-wide] [--file <path>] [--title <text>]
+          new-surface [--type <terminal|browser|markdown>] [--pane <id|ref>] [--workspace <id|ref>] [--url <url>] [--workspace-wide] [--file <path>]
           close-surface [--surface <id|ref>] [--workspace <id|ref>]
           move-surface --surface <id|ref|index> [--pane <id|ref|index>] [--workspace <id|ref|index>] [--window <id|ref|index>] [--before <id|ref|index>] [--after <id|ref|index>] [--index <n>] [--focus <true|false>]
           reorder-surface --surface <id|ref|index> (--index <n> | --before <id|ref|index> | --after <id|ref|index>)

@@ -385,6 +385,74 @@ struct ApplyFailure: Codable, Sendable, Equatable {
     }
 }
 
+/// Localized human-readable companion diagnostics for user-facing apply and
+/// snapshot response boundaries. The structured diagnostic remains the
+/// stable machine contract; callers add this message when presenting it.
+enum CompanionPlanDiagnosticMessage {
+    static func localized(
+        code: CompanionPlanDiagnosticCode,
+        sourcePlanID: String,
+        targetPlanID: String?,
+        detail: String? = nil
+    ) -> String {
+        let target = targetPlanID ?? ""
+        switch code {
+        case .orphanOmitted:
+            if let targetPlanID {
+                return String(
+                    localized: "workspace.companion.diagnostic.orphanOmittedKnownTarget",
+                    defaultValue: "Companion link from '\(sourcePlanID)' to '\(targetPlanID)' was omitted because the target is not a recognized agent terminal."
+                )
+            }
+            return String(
+                localized: "workspace.companion.diagnostic.orphanOmittedMissingTarget",
+                defaultValue: "Companion link from '\(sourcePlanID)' was omitted because its linked agent is not present in the captured workspace."
+            )
+        case .sourceNotBrowser:
+            return String(
+                localized: "workspace.companion.diagnostic.sourceNotBrowser",
+                defaultValue: "Companion link source '\(sourcePlanID)' is not a browser."
+            )
+        case .targetMissing:
+            return String(
+                localized: "workspace.companion.diagnostic.targetMissing",
+                defaultValue: "Companion link target '\(target)' for browser '\(sourcePlanID)' is missing."
+            )
+        case .targetNotTerminal:
+            return String(
+                localized: "workspace.companion.diagnostic.targetNotTerminal",
+                defaultValue: "Companion link target '\(target)' for browser '\(sourcePlanID)' is not a terminal."
+            )
+        case .targetNotAgent:
+            return String(
+                localized: "workspace.companion.diagnostic.targetNotAgent",
+                defaultValue: "Companion link target '\(target)' for browser '\(sourcePlanID)' is not a declared agent."
+            )
+        case .applyFailed:
+            if let detail, !detail.isEmpty {
+                return String(
+                    localized: "workspace.companion.diagnostic.applyFailedWithDetail",
+                    defaultValue: "Could not apply companion link from '\(sourcePlanID)' to '\(target)': \(detail)"
+                )
+            }
+            return String(
+                localized: "workspace.companion.diagnostic.applyFailed",
+                defaultValue: "Could not apply companion link from '\(sourcePlanID)' to '\(target)'."
+            )
+        case .duplicateSurfaceID:
+            return String(
+                localized: "workspace.companion.diagnostic.duplicateSurfaceID",
+                defaultValue: "Blueprint surface ID '\(sourcePlanID)' is duplicated."
+            )
+        case .invalidAgentKind:
+            return String(
+                localized: "workspace.companion.diagnostic.invalidAgentKind",
+                defaultValue: "Blueprint surface '\(sourcePlanID)' declares an invalid agent kind."
+            )
+        }
+    }
+}
+
 struct ApplyResult: Codable, Sendable, Equatable {
     /// Live workspace ref (`workspace:N`) assigned by the v2 ref helper after
     /// creation. Empty string if the plan failed validation before the

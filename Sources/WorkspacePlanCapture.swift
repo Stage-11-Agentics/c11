@@ -162,7 +162,8 @@ enum WorkspacePlanCapture {
                 var linkedAgentSurfacePlanId: String?
                 if kind == .browser,
                    let linkedAgent = companionBridge.linkedAgentForBrowser(panelId) {
-                    if let targetPlanID = planIDByPanelID[linkedAgent.surfaceID],
+                    let targetPlanID = planIDByPanelID[linkedAgent.surfaceID]
+                    if let targetPlanID,
                        workspace.panels[linkedAgent.surfaceID] is TerminalPanel,
                        AgentIdentityPolicy.isAgentKind(
                            companionBridge.declaredAgentKindForTerminal(linkedAgent.surfaceID)
@@ -175,7 +176,7 @@ enum WorkspacePlanCapture {
                             code: .orphanOmitted,
                             severity: .warning,
                             sourcePlanID: planId,
-                            targetPlanID: nil
+                            targetPlanID: targetPlanID
                         ))
                     }
                 }

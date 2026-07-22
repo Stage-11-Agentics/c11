@@ -188,13 +188,18 @@ extension TerminalController {
         return .ok(payload)
     }
 
-    private nonisolated static func companionDiagnosticPayload(
+    nonisolated static func companionDiagnosticPayload(
         _ diagnostic: CompanionPlanDiagnostic
     ) -> [String: Any] {
         var payload: [String: Any] = [
             "code": diagnostic.code.rawValue,
             "severity": diagnostic.severity.rawValue,
-            "source_plan_id": diagnostic.sourcePlanID
+            "source_plan_id": diagnostic.sourcePlanID,
+            "message": CompanionPlanDiagnosticMessage.localized(
+                code: diagnostic.code,
+                sourcePlanID: diagnostic.sourcePlanID,
+                targetPlanID: diagnostic.targetPlanID
+            )
         ]
         if let target = diagnostic.targetPlanID {
             payload["target_plan_id"] = target

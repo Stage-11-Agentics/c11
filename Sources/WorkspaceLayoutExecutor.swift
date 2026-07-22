@@ -211,8 +211,14 @@ enum WorkspaceLayoutExecutor {
             _ code: CompanionPlanDiagnosticCode,
             source: String,
             target: String?,
-            message: String
+            detail: String? = nil
         ) {
+            let message = CompanionPlanDiagnosticMessage.localized(
+                code: code,
+                sourcePlanID: source,
+                targetPlanID: target,
+                detail: detail
+            )
             companionDiagnostics.append(CompanionPlanDiagnostic(
                 code: code,
                 severity: .error,
@@ -233,8 +239,7 @@ enum WorkspaceLayoutExecutor {
                 recordCompanionDiagnostic(
                     .sourceNotBrowser,
                     source: sourceSpec.id,
-                    target: targetPlanID,
-                    message: "companion link source '\(sourceSpec.id)' is not a browser"
+                    target: targetPlanID
                 )
                 continue
             }
@@ -242,8 +247,7 @@ enum WorkspaceLayoutExecutor {
                 recordCompanionDiagnostic(
                     .targetMissing,
                     source: sourceSpec.id,
-                    target: targetPlanID,
-                    message: "companion link target '\(targetPlanID)' is missing"
+                    target: targetPlanID
                 )
                 continue
             }
@@ -251,8 +255,7 @@ enum WorkspaceLayoutExecutor {
                 recordCompanionDiagnostic(
                     .targetNotTerminal,
                     source: sourceSpec.id,
-                    target: targetPlanID,
-                    message: "companion link target '\(targetPlanID)' is not a terminal"
+                    target: targetPlanID
                 )
                 continue
             }
@@ -260,8 +263,7 @@ enum WorkspaceLayoutExecutor {
                 recordCompanionDiagnostic(
                     .targetNotAgent,
                     source: sourceSpec.id,
-                    target: targetPlanID,
-                    message: "companion link target '\(targetPlanID)' is not a declared agent"
+                    target: targetPlanID
                 )
                 continue
             }
@@ -271,8 +273,7 @@ enum WorkspaceLayoutExecutor {
                 recordCompanionDiagnostic(
                     .applyFailed,
                     source: sourceSpec.id,
-                    target: targetPlanID,
-                    message: "companion link '\(sourceSpec.id)' -> '\(targetPlanID)' could not be applied"
+                    target: targetPlanID
                 )
                 continue
             }
@@ -283,7 +284,7 @@ enum WorkspaceLayoutExecutor {
                     .applyFailed,
                     source: sourceSpec.id,
                     target: targetPlanID,
-                    message: "companion link '\(sourceSpec.id)' -> '\(targetPlanID)' failed: \(error)"
+                    detail: String(describing: error)
                 )
             }
         }

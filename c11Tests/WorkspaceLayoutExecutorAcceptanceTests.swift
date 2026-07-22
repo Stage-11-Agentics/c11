@@ -160,7 +160,18 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
                 targetPlanID: "terminal"
             )
         ])
-        XCTAssertTrue(result.failures.contains { $0.code == "companion_link_target_not_agent" })
+        let expectedMessage = CompanionPlanDiagnosticMessage.localized(
+            code: .targetNotAgent,
+            sourcePlanID: "browser",
+            targetPlanID: "terminal"
+        )
+        XCTAssertTrue(expectedMessage.contains("browser"))
+        XCTAssertTrue(expectedMessage.contains("terminal"))
+        XCTAssertTrue(result.warnings.contains(expectedMessage))
+        XCTAssertTrue(result.failures.contains {
+            $0.code == "companion_link_target_not_agent"
+                && $0.message == expectedMessage
+        })
     }
 
     func testTwoPassCaptureRemapsLinkAndOmitsOrphanWithWarning() throws {
@@ -225,6 +236,29 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
                 severity: .warning,
                 sourcePlanID: "s1",
                 targetPlanID: nil
+            )
+        ])
+
+        let declassifiedBridge = WorkspacePlanCompanionCaptureBridge(
+            linkedAgentForBrowser: { id in
+                id == browserID ? AgentSurfaceLink(
+                    surfaceID: agentID,
+                    lastKnownName: "Former Agent"
+                ) : nil
+            },
+            declaredAgentKindForTerminal: { _ in nil }
+        )
+        let declassified = WorkspacePlanCapture.capture(
+            workspace: workspace,
+            companionBridge: declassifiedBridge
+        )
+        XCTAssertNil(declassified.plan.surfaces[0].linkedAgentSurfacePlanId)
+        XCTAssertEqual(declassified.warnings, [
+            CompanionPlanDiagnostic(
+                code: .orphanOmitted,
+                severity: .warning,
+                sourcePlanID: "s1",
+                targetPlanID: "s2"
             )
         ])
 

@@ -169,6 +169,9 @@ struct WorkspaceContentView: View {
         .onChange(of: workspace.manualUnreadPanelIds) { _, _ in
             syncBonsplitNotificationBadges()
         }
+        .onChange(of: workspace.derivedActivityBySurface) { _, _ in
+            syncBonsplitNotificationBadges()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .ghosttyConfigDidReload)) { _ in
             GhosttyConfig.invalidateLoadCache()
             refreshGhosttyAppearanceConfig(reason: "ghosttyConfigDidReload")
@@ -243,17 +246,25 @@ struct WorkspaceContentView: View {
                 let panelId = workspace.panelIdFromSurfaceId(tab.id)
                 let expectedKind = panelId.flatMap { workspace.panelKind(panelId: $0) }
                 let expectedPinned = panelId.map { workspace.isPanelPinned($0) } ?? false
-                let shouldShow = panelId.map { unreadFromNotifications.contains($0) || manualUnread.contains($0) } ?? false
+                let expectedActivity = panelId.flatMap {
+                    workspace.resolvedSurfaceTabActivityState(
+                        panelId: $0,
+                        hasExactSurfaceNotification: unreadFromNotifications.contains($0)
+                    )
+                }
+                let shouldShow = panelId.map { manualUnread.contains($0) } ?? false
                 let kindUpdate: String?? = expectedKind.map { .some($0) }
 
                 if tab.showsNotificationBadge != shouldShow ||
+                    tab.activityState != expectedActivity ||
                     tab.isPinned != expectedPinned ||
                     (expectedKind != nil && tab.kind != expectedKind) {
                     workspace.bonsplitController.updateTab(
                         tab.id,
                         kind: kindUpdate,
                         showsNotificationBadge: shouldShow,
-                        isPinned: expectedPinned
+                        isPinned: expectedPinned,
+                        activityState: .some(expectedActivity)
                     )
                 }
             }

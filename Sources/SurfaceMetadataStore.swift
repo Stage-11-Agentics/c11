@@ -390,6 +390,9 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         /// convention (CMUX-11 Phase 2) so callers get the prior value back
         /// in-hand without a separate round trip.
         var priorValues: [String: Any] = [:]
+        /// Keys removed by clear-all, keyed clear, or replace semantics.
+        /// Consumers use this to invalidate projections whose inputs disappeared.
+        var removedKeys: Set<String> = []
     }
 
     /// Merge or replace a partial metadata object on a surface.
@@ -463,6 +466,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                 }
                 let existing = metadata[workspaceId]?[surfaceId] ?? [:]
                 let existingSrc = sources[workspaceId]?[surfaceId] ?? [:]
+                result.removedKeys = Set(existing.keys).union(existingSrc.keys)
                 metadata[workspaceId]?[surfaceId] = [:]
                 sources[workspaceId]?[surfaceId] = [:]
                 result.metadata = [:]
@@ -489,7 +493,10 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                 }
                 let hadValue = blob.removeValue(forKey: key) != nil
                 let hadSource = sblob.removeValue(forKey: key) != nil
-                if hadValue || hadSource { removedAny = true }
+                if hadValue || hadSource {
+                    removedAny = true
+                    result.removedKeys.insert(key)
+                }
                 result.applied[key] = true
             }
 
@@ -665,6 +672,9 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             // the new partial is a subset; flag accordingly.
             let priorBlob = metadata[workspaceId]?[surfaceId] ?? [:]
             let priorSrc = sources[workspaceId]?[surfaceId] ?? [:]
+            result.removedKeys = Set(priorBlob.keys)
+                .union(priorSrc.keys)
+                .subtracting(partial.keys)
             if !priorBlob.isEmpty || !priorSrc.isEmpty { mutated = true }
         }
 

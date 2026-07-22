@@ -3386,18 +3386,28 @@ class TerminalController {
 
 
 
-    /// M7 side effect: sync render cache + auto-expand title bar when
-    /// `title` / `description` is written through M2's metadata API.
+    /// Sync render state when title, description, terminal type, or activity changes
+    /// through M2's metadata API.
     func applyTitleDescriptionSideEffects(
         workspaceId: UUID,
         surfaceId: UUID,
         tabManager: TabManager,
         applied: [String: Bool],
+        removedKeys: Set<String> = [],
         autoExpand: Bool
     ) {
-        let titleApplied = applied[MetadataKey.title] == true
-        let descriptionApplied = applied[MetadataKey.description] == true
-        guard titleApplied || descriptionApplied else { return }
+        let titleApplied = applied[MetadataKey.title] == true || removedKeys.contains(MetadataKey.title)
+        let descriptionApplied = applied[MetadataKey.description] == true || removedKeys.contains(MetadataKey.description)
+        let terminalTypeApplied = applied[MetadataKey.terminalType] == true || removedKeys.contains(MetadataKey.terminalType)
+        let activityApplied = applied[MetadataKey.activity] == true || removedKeys.contains(MetadataKey.activity)
+        guard titleApplied || descriptionApplied || terminalTypeApplied || activityApplied else { return }
+        let resolvedActivity: SidebarActivityState? = if activityApplied {
+            (SurfaceMetadataStore.shared.getMetadata(workspaceId: workspaceId, surfaceId: surfaceId)
+                .metadata[MetadataKey.activity] as? String)
+                .flatMap(SidebarActivityState.init(rawValue:))
+        } else {
+            nil
+        }
         v2MainSync {
             guard let ws = tabManager.tabs.first(where: { $0.id == workspaceId }) else { return }
             if titleApplied {
@@ -3405,6 +3415,12 @@ class TerminalController {
             }
             if descriptionApplied && autoExpand {
                 ws.maybeAutoExpandTitleBar(panelId: surfaceId)
+            }
+            if activityApplied {
+                ws.setDerivedActivity(resolvedActivity, forSurface: surfaceId)
+            }
+            if terminalTypeApplied {
+                ws.syncSurfaceTabActivityStateForPanel(surfaceId)
             }
         }
     }

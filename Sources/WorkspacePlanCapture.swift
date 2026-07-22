@@ -2,36 +2,114 @@ import Foundation
 import AppKit
 import Bonsplit
 
+/// A deliberately narrow bridge for the ACB-06 integration lane. Persistence
+/// can compile before Workspace/BrowserPanel expose their companion APIs; the
+/// integrator supplies live link and identity reads without changing capture.
+@MainActor
+struct WorkspacePlanCompanionCaptureBridge {
+    var linkedAgentForBrowser: @MainActor (UUID) -> AgentSurfaceLink?
+    var declaredAgentKindForTerminal: @MainActor (UUID) -> String?
+
+    static let none = WorkspacePlanCompanionCaptureBridge(
+        linkedAgentForBrowser: { _ in nil },
+        declaredAgentKindForTerminal: { _ in nil }
+    )
+
+    static func live(workspace: AgentCompanionWorkspaceAccess) -> Self {
+        WorkspacePlanCompanionCaptureBridge(
+            linkedAgentForBrowser: { browserID in
+                switch workspace.companionPresentation(for: browserID) {
+                case .unlinked:
+                    return nil
+                case .linkedNoContext(let linked),
+                     .aligned(let linked),
+                     .veiled(let linked, _),
+                     .revealed(let linked, _):
+                    return AgentSurfaceLink(
+                        surfaceID: linked.identity.surfaceID,
+                        lastKnownName: linked.identity.displayName
+                    )
+                case .orphaned(let link), .orphanedRevealed(let link):
+                    return link
+                }
+            },
+            declaredAgentKindForTerminal: { terminalID in
+                workspace.liveAgentDescriptors.first {
+                    $0.identity.surfaceID == terminalID
+                }?.terminalKind
+            }
+        )
+    }
+}
+
+struct WorkspacePlanCaptureResult: Equatable, Sendable {
+    var plan: WorkspaceApplyPlan
+    var warnings: [CompanionPlanDiagnostic]
+}
+
 /// Shared plan-capture logic used by both `LiveWorkspaceSnapshotSource` (Snapshots)
 /// and `WorkspaceBlueprintExporter` (Blueprints). Walks AppKit / bonsplit state
-/// on the main actor and returns a `WorkspaceApplyPlan` ready for serialization.
+/// on the main actor and returns a plan plus structured capture warnings.
 @MainActor
 enum WorkspacePlanCapture {
-    static func capture(workspace: Workspace) -> WorkspaceApplyPlan {
-        var walker = Walker(workspace: workspace)
-        let layout = walker.walk(workspace.bonsplitController.treeSnapshot())
+    static func capture(
+        workspace: Workspace,
+        companionBridge: WorkspacePlanCompanionCaptureBridge? = nil
+    ) -> WorkspacePlanCaptureResult {
+        let tree = workspace.bonsplitController.treeSnapshot()
+        let resolvedCompanionBridge = companionBridge ?? .live(workspace: workspace)
+        var walker = Walker(
+            workspace: workspace,
+            companionBridge: resolvedCompanionBridge
+        )
+        // Pass 1 reserves every plan-local id in Bonsplit pane/tab order.
+        // Pass 2 may therefore encode browser-before-agent forward links.
+        walker.reservePlanIDs(in: tree)
+        let layout = walker.walk(tree)
         let spec = WorkspaceSpec(
             title: workspace.customTitle,
             customColor: workspace.customColor,
             workingDirectory: workspace.currentDirectory.isEmpty ? nil : workspace.currentDirectory,
             metadata: workspace.metadata.isEmpty ? nil : workspace.metadata
         )
-        return WorkspaceApplyPlan(
-            version: 1,
-            workspace: spec,
-            layout: layout,
-            surfaces: walker.surfaces
+        return WorkspacePlanCaptureResult(
+            plan: WorkspaceApplyPlan(
+                version: 1,
+                workspace: spec,
+                layout: layout,
+                surfaces: walker.surfaces
+            ),
+            warnings: walker.warnings
         )
     }
 
     @MainActor
     private struct Walker {
         let workspace: Workspace
+        let companionBridge: WorkspacePlanCompanionCaptureBridge
         var surfaces: [SurfaceSpec] = []
+        var warnings: [CompanionPlanDiagnostic] = []
+        private var planIDByPanelID: [UUID: String] = [:]
         private var nextIdCounter: Int = 1
 
-        init(workspace: Workspace) {
+        init(workspace: Workspace, companionBridge: WorkspacePlanCompanionCaptureBridge) {
             self.workspace = workspace
+            self.companionBridge = companionBridge
+        }
+
+        mutating func reservePlanIDs(in node: ExternalTreeNode) {
+            switch node {
+            case .pane(let pane):
+                for tab in pane.tabs {
+                    guard let panelID = panelID(forTabIDString: tab.id),
+                          workspace.panels[panelID] != nil,
+                          planIDByPanelID[panelID] == nil else { continue }
+                    planIDByPanelID[panelID] = mintId()
+                }
+            case .split(let split):
+                reservePlanIDs(in: split.first)
+                reservePlanIDs(in: split.second)
+            }
         }
 
         mutating func walk(_ node: ExternalTreeNode) -> LayoutTreeSpec {
@@ -64,10 +142,10 @@ enum WorkspacePlanCapture {
 
             var ids: [String] = []
             var selectedIndex: Int? = nil
-            for (index, tab) in pane.tabs.enumerated() {
+            for tab in pane.tabs {
                 guard let panelId = panelID(forTabIDString: tab.id),
-                      let panel = workspace.panels[panelId] else { continue }
-                let planId = mintId()
+                      let panel = workspace.panels[panelId],
+                      let planId = planIDByPanelID[panelId] else { continue }
                 ids.append(planId)
 
                 let isFirstInPane = ids.count == 1
@@ -81,6 +159,32 @@ enum WorkspacePlanCapture {
                 let paneMetaForSurface = isFirstInPane && !paneLevelMetadata.isEmpty
                     ? paneLevelMetadata
                     : [String: PersistedJSONValue]()
+                var linkedAgentSurfacePlanId: String?
+                if kind == .browser,
+                   let linkedAgent = companionBridge.linkedAgentForBrowser(panelId) {
+                    if let targetPlanID = planIDByPanelID[linkedAgent.surfaceID],
+                       workspace.panels[linkedAgent.surfaceID] is TerminalPanel,
+                       AgentIdentityPolicy.isAgentKind(
+                           companionBridge.declaredAgentKindForTerminal(linkedAgent.surfaceID)
+                       ) {
+                        linkedAgentSurfacePlanId = targetPlanID
+                    } else {
+                        // Never serialize a stale UUID into a portable plan.
+                        // Omit the link and make the data loss machine-visible.
+                        warnings.append(CompanionPlanDiagnostic(
+                            code: .orphanOmitted,
+                            severity: .warning,
+                            sourcePlanID: planId,
+                            targetPlanID: nil
+                        ))
+                    }
+                }
+                let declaredAgentKind = companionBridge
+                    .declaredAgentKindForTerminal(panelId)
+                    .flatMap { kind == .terminal && AgentIdentityPolicy.isAgentKind($0)
+                        ? AgentIdentityPolicy.normalizedKind($0)
+                        : nil
+                    }
                 let surface = SurfaceSpec(
                     id: planId,
                     kind: kind,
@@ -91,12 +195,14 @@ enum WorkspacePlanCapture {
                     url: url(for: panel),
                     filePath: filePath(for: panel),
                     metadata: metadata.isEmpty ? nil : metadata,
-                    paneMetadata: paneMetaForSurface.isEmpty ? nil : paneMetaForSurface
+                    paneMetadata: paneMetaForSurface.isEmpty ? nil : paneMetaForSurface,
+                    linkedAgentSurfacePlanId: linkedAgentSurfacePlanId,
+                    declaredAgentKind: declaredAgentKind
                 )
                 surfaces.append(surface)
 
                 if let selectedTabId = pane.selectedTabId, selectedTabId == tab.id {
-                    selectedIndex = index
+                    selectedIndex = ids.count - 1
                 }
             }
             return LayoutTreeSpec.PaneSpec(

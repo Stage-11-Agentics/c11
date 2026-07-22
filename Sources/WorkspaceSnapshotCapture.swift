@@ -22,6 +22,11 @@ protocol WorkspaceSnapshotSource {
     ) -> WorkspaceSnapshotFile?
 }
 
+struct WorkspaceSnapshotCaptureResult: Sendable {
+    var snapshot: WorkspaceSnapshotFile
+    var warnings: [CompanionPlanDiagnostic]
+}
+
 /// Production capture. Runs on the main actor because AppKit / bonsplit /
 /// the metadata stores expect it. The walk is O(surfaces) + O(panes²) (the
 /// second term from an `allPaneIds` linear scan per tree node, which is
@@ -54,21 +59,36 @@ struct LiveWorkspaceSnapshotSource: WorkspaceSnapshotSource {
         origin: WorkspaceSnapshotFile.Origin,
         clock: () -> Date = { Date() }
     ) -> WorkspaceSnapshotFile? {
+        captureResult(workspaceId: workspaceId, origin: origin, clock: clock)?.snapshot
+    }
+
+    func captureResult(
+        workspaceId: UUID,
+        origin: WorkspaceSnapshotFile.Origin,
+        clock: () -> Date = { Date() },
+        companionBridge: WorkspacePlanCompanionCaptureBridge? = nil
+    ) -> WorkspaceSnapshotCaptureResult? {
         guard let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }) else {
             return nil
         }
-        let plan = WorkspacePlanCapture.capture(workspace: workspace)
+        let capture = WorkspacePlanCapture.capture(
+            workspace: workspace,
+            companionBridge: companionBridge
+        )
         // Single clock read so the ULID time prefix in `snapshotId` and the
         // envelope's `createdAt` can never diverge by a tick.
         let now = clock()
-        return WorkspaceSnapshotFile(
-            version: 1,
-            snapshotId: WorkspaceSnapshotID.generate(now: now),
-            createdAt: now,
-            c11Version: c11Version,
-            origin: origin,
-            surfaceCount: plan.surfaces.count,
-            plan: plan
+        return WorkspaceSnapshotCaptureResult(
+            snapshot: WorkspaceSnapshotFile(
+                version: 1,
+                snapshotId: WorkspaceSnapshotID.generate(now: now),
+                createdAt: now,
+                c11Version: c11Version,
+                origin: origin,
+                surfaceCount: capture.plan.surfaces.count,
+                plan: capture.plan
+            ),
+            warnings: capture.warnings
         )
     }
 

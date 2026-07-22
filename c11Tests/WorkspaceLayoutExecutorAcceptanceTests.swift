@@ -80,6 +80,177 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
         )
     }
 
+    // MARK: - Agent companion persistence/remapping
+
+    func testBrowserBeforeAgentLinkResolvesAfterAllSurfacesMaterialize() throws {
+        let plan = WorkspaceApplyPlan(
+            version: 1,
+            workspace: WorkspaceSpec(title: "browser before agent"),
+            layout: .pane(.init(surfaceIds: ["browser", "agent"])),
+            surfaces: [
+                SurfaceSpec(
+                    id: "browser",
+                    kind: .browser,
+                    url: "https://example.com",
+                    linkedAgentSurfacePlanId: "agent"
+                ),
+                SurfaceSpec(
+                    id: "agent",
+                    kind: .terminal,
+                    declaredAgentKind: "codex"
+                )
+            ]
+        )
+        var applied: [(browser: UUID, agent: UUID)] = []
+        let deps = WorkspaceLayoutExecutorDependencies(
+            tabManager: tabManager,
+            workspaceRefMinter: { "workspace:\($0.uuidString)" },
+            surfaceRefMinter: { "surface:\($0.uuidString)" },
+            paneRefMinter: { "pane:\($0.uuidString)" },
+            applyCompanionLink: { _, browserID, agentID in
+                applied.append((browserID, agentID))
+            }
+        )
+
+        let result = WorkspaceLayoutExecutor.apply(
+            plan,
+            options: ApplyOptions(select: false),
+            dependencies: deps
+        )
+        XCTAssertTrue(result.companionDiagnostics.isEmpty)
+        XCTAssertEqual(applied.count, 1)
+        XCTAssertEqual(applied.first?.browser, parseUUIDSuffix(result.surfaceRefs["browser"]))
+        XCTAssertEqual(applied.first?.agent, parseUUIDSuffix(result.surfaceRefs["agent"]))
+    }
+
+    func testCompanionApplyRejectsUndeclaredAgentWithStructuredDiagnostic() {
+        let plan = WorkspaceApplyPlan(
+            version: 1,
+            workspace: WorkspaceSpec(title: "invalid target"),
+            layout: .pane(.init(surfaceIds: ["browser", "terminal"])),
+            surfaces: [
+                SurfaceSpec(
+                    id: "browser",
+                    kind: .browser,
+                    linkedAgentSurfacePlanId: "terminal"
+                ),
+                SurfaceSpec(id: "terminal", kind: .terminal)
+            ]
+        )
+        var mutationCount = 0
+        let deps = WorkspaceLayoutExecutorDependencies(
+            tabManager: tabManager,
+            workspaceRefMinter: { "workspace:\($0.uuidString)" },
+            surfaceRefMinter: { "surface:\($0.uuidString)" },
+            paneRefMinter: { "pane:\($0.uuidString)" },
+            applyCompanionLink: { _, _, _ in mutationCount += 1 }
+        )
+
+        let result = WorkspaceLayoutExecutor.apply(
+            plan,
+            options: ApplyOptions(select: false),
+            dependencies: deps
+        )
+        XCTAssertEqual(mutationCount, 0)
+        XCTAssertEqual(result.companionDiagnostics, [
+            CompanionPlanDiagnostic(
+                code: .targetNotAgent,
+                severity: .error,
+                sourcePlanID: "browser",
+                targetPlanID: "terminal"
+            )
+        ])
+        XCTAssertTrue(result.failures.contains { $0.code == "companion_link_target_not_agent" })
+    }
+
+    func testTwoPassCaptureRemapsLinkAndOmitsOrphanWithWarning() throws {
+        let seedPlan = WorkspaceApplyPlan(
+            version: 1,
+            workspace: WorkspaceSpec(title: "capture remap"),
+            layout: .pane(.init(surfaceIds: ["browser", "agent"])),
+            surfaces: [
+                SurfaceSpec(id: "browser", kind: .browser, url: "https://example.com"),
+                SurfaceSpec(id: "agent", kind: .terminal)
+            ]
+        )
+        let seed = WorkspaceLayoutExecutor.apply(
+            seedPlan,
+            options: ApplyOptions(select: false),
+            dependencies: WorkspaceLayoutExecutorDependencies(
+                tabManager: tabManager,
+                workspaceRefMinter: { "workspace:\($0.uuidString)" },
+                surfaceRefMinter: { "surface:\($0.uuidString)" },
+                paneRefMinter: { "pane:\($0.uuidString)" }
+            )
+        )
+        let workspace = try XCTUnwrap(resolveWorkspace(from: seed.workspaceRef))
+        let browserID = try XCTUnwrap(parseUUIDSuffix(seed.surfaceRefs["browser"]))
+        let agentID = try XCTUnwrap(parseUUIDSuffix(seed.surfaceRefs["agent"]))
+
+        let captured = WorkspacePlanCapture.capture(
+            workspace: workspace,
+            companionBridge: WorkspacePlanCompanionCaptureBridge(
+                linkedAgentForBrowser: { id in
+                    id == browserID ? AgentSurfaceLink(
+                        surfaceID: agentID,
+                        lastKnownName: "Agent"
+                    ) : nil
+                },
+                declaredAgentKindForTerminal: { id in id == agentID ? "codex" : nil }
+            )
+        )
+        XCTAssertEqual(captured.plan.surfaces.map(\.id), ["s1", "s2"])
+        XCTAssertEqual(captured.plan.surfaces[0].linkedAgentSurfacePlanId, "s2")
+        XCTAssertEqual(captured.plan.surfaces[1].declaredAgentKind, "codex")
+        XCTAssertTrue(captured.warnings.isEmpty)
+
+        let missingAgentID = UUID()
+        let orphanBridge = WorkspacePlanCompanionCaptureBridge(
+            linkedAgentForBrowser: { id in
+                id == browserID ? AgentSurfaceLink(
+                    surfaceID: missingAgentID,
+                    lastKnownName: "Gone"
+                ) : nil
+            },
+            declaredAgentKindForTerminal: { id in id == agentID ? "codex" : nil }
+        )
+        let orphaned = WorkspacePlanCapture.capture(
+            workspace: workspace,
+            companionBridge: orphanBridge
+        )
+        XCTAssertNil(orphaned.plan.surfaces[0].linkedAgentSurfacePlanId)
+        XCTAssertEqual(orphaned.warnings, [
+            CompanionPlanDiagnostic(
+                code: .orphanOmitted,
+                severity: .warning,
+                sourcePlanID: "s1",
+                targetPlanID: nil
+            )
+        ])
+
+        let snapshot = try XCTUnwrap(LiveWorkspaceSnapshotSource(
+            tabManager: tabManager,
+            c11Version: "companion-test+0"
+        ).captureResult(
+            workspaceId: workspace.id,
+            origin: .manual,
+            clock: { Date(timeIntervalSince1970: 1_745_000_000) },
+            companionBridge: orphanBridge
+        ))
+        XCTAssertEqual(snapshot.warnings, orphaned.warnings)
+        XCTAssertNil(snapshot.snapshot.plan.surfaces[0].linkedAgentSurfacePlanId)
+
+        let blueprint = try XCTUnwrap(WorkspaceBlueprintExporter(
+            tabManager: tabManager
+        ).exportWithDiagnostics(
+            workspaceId: workspace.id,
+            name: "Orphan capture",
+            companionBridge: orphanBridge
+        ))
+        XCTAssertEqual(blueprint.warnings, orphaned.warnings)
+        XCTAssertNil(blueprint.file.plan.surfaces[0].linkedAgentSurfacePlanId)
+    }
+
     // MARK: - Phase 0 parity: whitespace-only command (B4)
 
     /// Phase 0 sent `SurfaceSpec.command` to the terminal verbatim as long

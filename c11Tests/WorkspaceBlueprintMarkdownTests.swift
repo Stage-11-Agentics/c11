@@ -20,6 +20,13 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
         return try WorkspaceBlueprintMarkdown.parse(data)
     }
 
+    private func fixture(_ name: String) throws -> Data {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/workspace-blueprints/\(name).md")
+        return try Data(contentsOf: url)
+    }
+
     // MARK: - Round-trips at the value level
 
     func testRoundTripSingleTerminalLeaf() throws {
@@ -60,6 +67,141 @@ final class WorkspaceBlueprintMarkdownTests: XCTestCase {
         )
         let r = try roundTrip(file)
         XCTAssertEqual(r, file)
+    }
+
+    func testExplicitIDsReserveFallbackNamespaceAndAllowBrowserBeforeAgent() throws {
+        let parsed = try WorkspaceBlueprintMarkdown.parse(fixture("browser-before-agent"))
+        XCTAssertEqual(parsed.version, 1)
+        XCTAssertEqual(parsed.plan.version, 1)
+        XCTAssertEqual(parsed.plan.surfaces.map(\.id), ["s2", "s1"])
+
+        let browser = parsed.plan.surfaces[0]
+        let agent = parsed.plan.surfaces[1]
+        XCTAssertEqual(browser.kind, .browser)
+        XCTAssertEqual(browser.linkedAgentSurfacePlanId, "s1")
+        XCTAssertEqual(agent.kind, .terminal)
+        XCTAssertEqual(agent.declaredAgentKind, "codex")
+
+        let emitted = String(
+            data: try WorkspaceBlueprintMarkdown.serialize(parsed),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertTrue(emitted.contains("id: s2"))
+        XCTAssertTrue(emitted.contains("id: s1"))
+        XCTAssertTrue(emitted.contains("linked_agent: s1"))
+        XCTAssertTrue(emitted.contains("agent_kind: codex"))
+        XCTAssertEqual(try WorkspaceBlueprintMarkdown.parse(Data(emitted.utf8)), parsed)
+    }
+
+    func testParseRejectsDuplicateExplicitSurfaceIDWithStableCode() throws {
+        XCTAssertThrowsError(
+            try WorkspaceBlueprintMarkdown.parse(fixture("duplicate-surface-id"))
+        ) { error in
+            guard case WorkspaceBlueprintMarkdown.ParseError.duplicateSurfaceID(let id) = error else {
+                return XCTFail("expected duplicateSurfaceID, got \(error)")
+            }
+            XCTAssertEqual(id, "agent")
+            XCTAssertTrue(String(describing: error).contains("blueprint_duplicate_surface_id"))
+        }
+    }
+
+    func testParseRejectsInvalidAgentKindWithStableCode() throws {
+        XCTAssertThrowsError(
+            try WorkspaceBlueprintMarkdown.parse(fixture("invalid-agent-kind"))
+        ) { error in
+            guard case WorkspaceBlueprintMarkdown.ParseError.invalidAgentKind(
+                let surfaceID,
+                let kind
+            ) = error else {
+                return XCTFail("expected invalidAgentKind, got \(error)")
+            }
+            XCTAssertEqual(surfaceID, "terminal")
+            XCTAssertEqual(kind, "shell")
+            XCTAssertTrue(String(describing: error).contains("blueprint_invalid_agent_kind"))
+        }
+    }
+
+    func testParseRejectsMissingAndNonAgentLinkTargets() {
+        let missing = """
+        ## Layout
+
+        ```yaml
+        layout:
+          - id: browser
+            type: browser
+            linked_agent: absent
+        ```
+        """
+        XCTAssertThrowsError(try WorkspaceBlueprintMarkdown.parse(Data(missing.utf8))) { error in
+            guard case WorkspaceBlueprintMarkdown.ParseError.invalidCompanionLink(
+                let code,
+                let source,
+                let target
+            ) = error else {
+                return XCTFail("expected invalidCompanionLink, got \(error)")
+            }
+            XCTAssertEqual(code, .targetMissing)
+            XCTAssertEqual(source, "browser")
+            XCTAssertEqual(target, "absent")
+        }
+
+        let ordinaryTerminal = """
+        ## Layout
+
+        ```yaml
+        layout:
+          - tabs:
+              - id: browser
+                type: browser
+                linked_agent: shell
+              - id: shell
+                type: terminal
+        ```
+        """
+        XCTAssertThrowsError(
+            try WorkspaceBlueprintMarkdown.parse(Data(ordinaryTerminal.utf8))
+        ) { error in
+            guard case WorkspaceBlueprintMarkdown.ParseError.invalidCompanionLink(
+                let code,
+                _,
+                _
+            ) = error else {
+                return XCTFail("expected invalidCompanionLink, got \(error)")
+            }
+            XCTAssertEqual(code, .targetNotAgent)
+        }
+    }
+
+    func testBlueprintOmitsSessionContextRevealAndGenerationState() throws {
+        let file = WorkspaceBlueprintFile(
+            name: "Portable link",
+            plan: WorkspaceApplyPlan(
+                version: 1,
+                workspace: WorkspaceSpec(title: "Portable link"),
+                layout: .pane(.init(surfaceIds: ["browser", "agent"])),
+                surfaces: [
+                    SurfaceSpec(
+                        id: "browser",
+                        kind: .browser,
+                        linkedAgentSurfacePlanId: "agent"
+                    ),
+                    SurfaceSpec(
+                        id: "agent",
+                        kind: .terminal,
+                        declaredAgentKind: "codex"
+                    )
+                ]
+            )
+        )
+        let markdown = String(
+            data: try WorkspaceBlueprintMarkdown.serialize(file),
+            encoding: .utf8
+        ) ?? ""
+        let json = String(data: try JSONEncoder().encode(file.plan), encoding: .utf8) ?? ""
+        for forbidden in ["activeAgent", "reveal", "generation"] {
+            XCTAssertFalse(markdown.contains(forbidden))
+            XCTAssertFalse(json.contains(forbidden))
+        }
     }
 
     func testRoundTripNestedSplitMatchesSchemaExample() throws {

@@ -426,6 +426,30 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertEqual(decoded.forwardHistoryURLStrings, source.forwardHistoryURLStrings)
     }
 
+    func testSessionBrowserCompanionLinkRoundTripsWithoutChangingSchemaVersion() throws {
+        let linkedID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"))
+        var source = SessionBrowserPanelSnapshot(
+            urlString: "https://example.com/current",
+            profileID: nil,
+            shouldRenderWebView: true,
+            pageZoom: 1,
+            developerToolsVisible: false,
+            backHistoryURLStrings: nil,
+            forwardHistoryURLStrings: nil
+        )
+        source.linkedAgent = AgentSurfaceLink(
+            surfaceID: linkedID,
+            lastKnownName: "Build agent"
+        )
+
+        let decoded = try JSONDecoder().decode(
+            SessionBrowserPanelSnapshot.self,
+            from: JSONEncoder().encode(source)
+        )
+        XCTAssertEqual(decoded.linkedAgent, source.linkedAgent)
+        XCTAssertEqual(SessionSnapshotSchema.currentVersion, 1)
+    }
+
     func testSessionBrowserPanelSnapshotHistoryDecodesWhenKeysAreMissing() throws {
         let json = """
         {
@@ -441,6 +465,37 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertNil(decoded.profileID)
         XCTAssertNil(decoded.backHistoryURLStrings)
         XCTAssertNil(decoded.forwardHistoryURLStrings)
+        XCTAssertNil(decoded.linkedAgent)
+    }
+
+    func testPrefeatureSessionV1FixtureDecodesWithNoCompanionState() throws {
+        let fixture = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/agent-companion/prefeature-session-v1.json")
+        let decoded = try JSONDecoder().decode(
+            AppSessionSnapshot.self,
+            from: Data(contentsOf: fixture)
+        )
+        let workspace = try XCTUnwrap(decoded.windows.first?.tabManager.workspaces.first)
+        let browser = try XCTUnwrap(workspace.panels.first?.browser)
+        XCTAssertEqual(decoded.version, 1)
+        XCTAssertNil(workspace.activeAgentSurfaceId)
+        XCTAssertNil(browser.linkedAgent)
+    }
+
+    func testSessionActiveAgentContextRoundTripsButIsOptional() throws {
+        let activeID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-1111-2222-3333-BBBBBBBBBBBB"))
+        var snapshot = makeSnapshot(version: 1)
+        snapshot.windows[0].tabManager.workspaces[0].activeAgentSurfaceId = activeID
+
+        let decoded = try JSONDecoder().decode(
+            AppSessionSnapshot.self,
+            from: JSONEncoder().encode(snapshot)
+        )
+        XCTAssertEqual(
+            decoded.windows[0].tabManager.workspaces[0].activeAgentSurfaceId,
+            activeID
+        )
     }
 
     func testScrollbackReplayEnvironmentWritesReplayFile() {

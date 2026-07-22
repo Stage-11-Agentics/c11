@@ -75,7 +75,7 @@ Product copy must use **linked**, not **owned**, **locked**, or **restricted**.
 
 ### 3.5 Agent-created context should explain itself
 
-When a recognized agent creates a browser through the c11 CLI/socket, that browser should link to the caller automatically. A manually created browser is workspace-wide and unlinked by default. The resulting `Linked to Maya · surface:3` toolbar pill makes the automatic association visible and gives the operator an immediate path to relink or unlink it.
+When a recognized agent creates a browser through the c11 CLI/socket, that browser should link to the caller automatically. A manually created browser is workspace-wide and unlinked by default. The resulting `Linked to Maya` toolbar pill makes the automatic association visible and gives the operator an immediate path to relink or unlink it. When **Show Surface IDs in Tab Titles** is enabled, the same pill reads `Linked to 3: Maya`.
 
 ## 4. Research synthesis
 
@@ -97,7 +97,7 @@ No located precedent combines stable multiplexer geometry, live agent identity, 
 | **Agent surface** | A live terminal surface whose normalized `terminal_type` satisfies shared `AgentIdentityPolicy`: a canonical registry agent kind or the detected compatibility kind `opencode-run`. Ordinary `shell` and `unknown` terminals are excluded. |
 | **Agent context** | The last explicitly focused agent surface in a workspace. It persists while non-agent surfaces receive focus. |
 | **Companion link** | A browser's optional durable reference to exactly one agent surface. |
-| **Tab identity** | The user-facing pair `Display Name · surface:n`; the current short ref is backed by a durable surface UUID. c11's API continues to call the object a surface even when the UI presents it as a pane tab. |
+| **Tab identity** | A display name whose optional ordinal follows the existing **Show Surface IDs in Tab Titles** setting: `Maya` when off, `3: Maya` when on. The ordinal is the addressable `surface:3` handle. |
 | **Workspace-wide browser** | An unlinked browser. It is always interactive and never context-veiled. |
 | **Context veil** | A light AppKit overlay above web content that makes a mismatch legible and consumes human input. |
 | **Reveal grant** | Ephemeral permission to interact with a linked browser during one particular mismatch. It is never persisted. |
@@ -129,9 +129,10 @@ These are implementation decisions, not open questions:
 16. Browser descendants created by `target=_blank`, popup promotion, duplicate, context-menu open, split, or open-to-side inherit the source browser's durable link unless the operator explicitly chooses workspace-wide creation.
 17. If the active agent surface is declassified to `shell`/`unknown`, clear active context, advance its generation, revoke reveals, and derive its linked browsers as orphaned. Reclassification of the same stable surface resolves those links again.
 18. c11 pane geometry, order, and selected surfaces are invariant. Transient webpage fullscreen and pointer lock are the narrow exception: they must yield when necessary for c11 to present the context veil reliably.
-19. Every companion UI reference to an agent or browser shows both its human name and its c11 tab/surface ID, for example `Prototype Agent · surface:3` and `Checkout Prototype · surface:7`. Names alone are never the only disambiguator.
-20. Live identities use the current short c11 ref. Orphans show the last known name plus a stable short ID derived from the stored UUID, never a potentially reused stale `surface:n` ref. Menus/tooltips offer Copy Full ID.
-21. Accessibility labels speak both name and ID. Renames update the name everywhere without changing the ID, and duplicate names remain distinguishable without opening another inspector.
+19. Every companion UI reference to an agent or browser follows `TabOrdinalDisplaySettings.showSurfaceIdsInTabTitlesKey`. With the setting off, show names only. With it on, use the existing `TitleFormatting.ordinalPrefixed` convention everywhere: `Prototype Agent` / `3: Prototype Agent`, `Checkout Prototype` / `7: Checkout Prototype`.
+20. The preference applies live and consistently to pane tabs, toolbar pills, veils, chooser rows, revealed status, orphan copy, tooltips, command-palette/menu labels, and accessibility speech. Companion UI must not create a second independent ID toggle or a second `Name · surface:n` format.
+21. Machine-facing socket/CLI JSON always returns UUIDs and refs regardless of this visual preference. UI actions also continue resolving by UUID internally; hiding an ID never changes identity or link semantics.
+22. An orphan has no safe live ordinal. With IDs hidden, show its last known name. With IDs enabled, show the last known name plus a collision-safe short prefix of its durable UUID, clearly styled as `orphan 7F2A8C`, never a potentially reused stale `surface:n` ref.
 
 For reveal lifetime, **effective browser focus** means: the browser's workspace is selected in an active c11 window and `workspace.focusedPanelId` resolves to that browser. First-responder movement among the web view and its own c11 browser chrome does not change that fact.
 
@@ -148,6 +149,7 @@ struct AgentSurfaceLink: Codable, Equatable, Sendable {
 struct CompanionSurfaceIdentity: Equatable, Sendable {
     var surfaceID: UUID          // durable authority
     var surfaceRef: String?      // current user-facing `surface:n`, live only
+    var surfaceOrdinal: Int?     // the N rendered by existing title formatting
     var displayName: String
 }
 
@@ -226,21 +228,21 @@ Generation is important. A boolean `isRevealed` can accidentally survive A -> B 
 
 Add a persistent companion control to `BrowserPanelView.addressBar`:
 
-- wide state: agent glyph plus `Linked to Maya · surface:3`;
-- narrow state: glyph plus compact `Maya · s:3`; the complete `Linked browser to Maya, surface 3` accessibility label and tooltip remain;
+- wide state, IDs off/on: agent glyph plus `Linked to Maya` / `Linked to 3: Maya`;
+- narrow state: preserve as much of the formatted identity as fits; accessibility and tooltip use the same preference, speaking the ID only when enabled;
 - unlinked state: `Link browser…` when space permits, otherwise the link glyph;
 - mismatch state: retain the linked agent identity and add a small context-warning indicator.
 
-The browser's own pane-tab identity remains explicit as `Checkout Prototype · surface:7`, and wide toolbar/veil treatments repeat it beside the association. The linked agent and linked browser must never be presented as two bare names whose direction is left to inference.
+The browser's own pane-tab identity remains explicit as `Checkout Prototype` or `7: Checkout Prototype`, and wide toolbar/veil treatments repeat it beside the association. Directional copy (`Linked to`, `is active`) distinguishes the browser, linked agent, and active agent even when IDs are hidden.
 
 Menu contents:
 
-- `Link to Active Agent — Build Agent · surface:5`
+- `Link to Active Agent — Build Agent` / `Link to Active Agent — 5: Build Agent`
 - `Choose Agent…`
-- a checked list of live agents, each rendered `Name · surface:n`
+- a checked list of live agents rendered `Name` or `N: Name` according to the setting
 - `Unlink Browser`
 
-Each linked participant's pane-tab label should use the same precomputed `Name · surface:n` identity string. In constrained width, truncate the name before the fixed ID badge; never collapse to an ambiguous icon-only label. The tooltip and accessibility label retain the complete name and ID. Feed the values into the existing `TabItemView` parameters; do not add a Workspace observation or metadata lookup to that typing-sensitive body.
+Each linked participant's pane-tab label should continue using the existing ordinal-aware title path. In constrained width, follow current tab-title truncation behavior. Feed precomputed values into the existing `TabItemView` parameters; do not add a Workspace observation or metadata lookup to that typing-sensitive body.
 
 Equivalent commands belong in the menu bar and command palette because toolbar items can be compressed or hidden:
 
@@ -254,11 +256,13 @@ Equivalent commands belong in the menu bar and command palette because toolbar i
 
 Suggested copy:
 
-> **Checkout Prototype · surface:7**<br>
-> Linked to Maya · surface:3.<br>
-> Build Agent · surface:5 is active.<br>
+> **Checkout Prototype**<br>
+> Linked to Maya.<br>
+> Build Agent is active.<br>
 > **View anyway**<br>
 > Viewing won't change the link.
+
+With **Show Surface IDs in Tab Titles** enabled, the same veil reads `7: Checkout Prototype`, `Linked to 3: Maya`, and `5: Build Agent is active`.
 
 The veil uses system material so the page remains faintly recognizable. It uses text and iconography in addition to color, respects Reduce Transparency and Increase Contrast, and is visibly pane-local rather than application-modal.
 
@@ -270,7 +274,9 @@ The entire material veil accepts pointer activation, not just the central button
 
 After reveal, replace the central veil with a slim, persistent status treatment inside existing browser chrome:
 
-> Viewing Checkout Prototype · surface:7 — linked to Maya · surface:3 — Build Agent · surface:5 is active    **Hide**
+> Viewing Checkout Prototype — linked to Maya — Build Agent is active    **Hide**
+
+With IDs enabled: `Viewing 7: Checkout Prototype — linked to 3: Maya — 5: Build Agent is active`.
 
 Do not place the status over webpage content or resize the WKWebView viewport. In wide panes it can expand the companion toolbar pill; in narrow panes it can collapse to an icon with an accessibility label and menu. Do not dismiss it on a timer. It is the continuing explanation for why semantically mismatched content is interactive.
 
@@ -392,13 +398,17 @@ Display identity resolution order:
 3. link's persisted `lastKnownName`;
 4. localized `Unknown agent`.
 
-Render identities through one shared formatter/component, not handcrafted strings at each call site:
+Render identities through one shared preference-aware formatter/component, not handcrafted strings at each call site:
 
-- live: `Display Name · surface:n`;
-- orphaned: `Last Known Name · id:7F2A8C`;
-- missing name: `Unknown agent · id:7F2A8C`.
+| State | IDs off (default) | IDs on |
+|---|---|---|
+| Live | `Display Name` | `N: Display Name` |
+| Orphaned | `Last Known Name` | `Last Known Name · orphan 7F2A8C` |
+| Missing name | `Unknown agent` | `Unknown agent · orphan 7F2A8C` |
 
-The short orphan ID is a non-ambiguous prefix of the durable UUID, expanded if necessary to avoid a collision among visible companion identities. Hover/help and context menus expose `Copy Full Surface ID`. Duplicate display names are expected and always disambiguated by the adjacent ID badge.
+For live surfaces, delegate to `TitleFormatting.ordinalPrefixed(...)` so companion chrome stays format-identical to existing tab titles. For orphans, expand the durable UUID prefix if needed to avoid a collision among visible companion identities. Duplicate names remain possible when IDs are off; chooser rows may add non-ID context such as agent kind/model, but actions always resolve by UUID and never by display text. Enabling the setting provides definitive visible disambiguation.
+
+Use the existing `TabOrdinalDisplayObserver` / `@AppStorage` preference seam so all mounted companion UI updates immediately without app restart. The setting affects presentation only and is never persisted inside `AgentSurfaceLink`.
 
 ### 10.3 Focus integration
 
@@ -613,14 +623,14 @@ Expected files and responsibilities:
 
 | File | Change |
 |---|---|
-| `Sources/AgentCompanionContext.swift` | New typed link/context/reveal models, shared `Name · surface:n` identity formatter, and pure presentation policy. |
+| `Sources/AgentCompanionContext.swift` | New typed link/context/reveal models, preference-aware companion identity formatter, and pure presentation policy. |
 | `Sources/Panels/BrowserPanel.swift` | Store optional durable link; validated internal mutation; include link in close/reopen data. |
 | `Sources/Workspace.swift` | Own active context, agent MRU, reveal grants, focus-provenance integration, panel lifecycle reconciliation, mutation validation, cleanup, and snapshot bridging. |
 | `Sources/SurfaceMetadataStore.swift` | Add narrow terminal-kind change notification/publisher; do not make arbitrary metadata an agent-context signal. |
 | `Sources/AgentManifest.swift` or shared resolver | Centralize canonical `isAgentTerminalKind` predicate used by context, chip, and pane sizing. |
 | `Sources/Panels/PanelContentView.swift` | Pass browser companion presentation, agent choices, and actions without adding hot-path tab-row observations. |
-| `Sources/Panels/BrowserPanelView.swift` | Add localized toolbar pill/menu, temporary banner configuration, and portal updates. |
-| `Sources/ContentView.swift` | Feed precomputed name-plus-ID labels to linked participant `TabItemView`s without adding hot-path observations. |
+| `Sources/Panels/BrowserPanelView.swift` | Add localized toolbar pill/menu, temporary banner configuration, portal updates, and live `@AppStorage` consumption of the existing ID setting. |
+| `Sources/TitleFormatting.swift` | Reuse ordinal-prefix formatting and add pure orphan identity formatting if it does not fit cleanly in the companion model. |
 | `Sources/BrowserWindowPortal.swift` | Add AppKit veil host, z-order/rebind behavior, event consumption, first-responder and accessibility handling. |
 | `Sources/SessionPersistence.swift` | Add optional session link/context fields. |
 | `Sources/WorkspaceApplyPlan.swift` | Add an optional plan-local browser-link reference. |
@@ -648,7 +658,7 @@ Each phase should be a discrete reviewable commit or PR boundary. Later phases s
 
 1. Add the typed models and pure presentation reducer.
 2. Encode every state and transition from Sections 6–7 as logic tests.
-3. Add shared live/orphan tab-identity formatting, duplicate-name/collision behavior, and tests.
+3. Add shared preference-aware live/orphan identity formatting, duplicate-name/collision behavior, and tests.
 4. Add stable link validation errors and agent-kind predicate tests.
 5. Add a debug-only state description suitable for tagged-build inspection.
 
@@ -667,7 +677,7 @@ Each phase should be a discrete reviewable commit or PR boundary. Later phases s
 
 ### Phase 2 — Portal veil and browser toolbar
 
-1. Add the toolbar link control, browser identity, name-plus-ID chooser, and linked-participant tab labels.
+1. Add the toolbar link control, browser identity, and chooser, all following the existing live surface-ID preference.
 2. Add the AppKit portal overlay host.
 3. Enforce first-event consumption, first-responder handoff, accessibility inertness, z-order, and rebind behavior.
 4. Make the entire veil activatable and disable page-affecting toolbar controls until reveal.
@@ -681,7 +691,7 @@ Each phase should be a discrete reviewable commit or PR boundary. Later phases s
 1. Add `caller_surface_id` and automatic/workspace link mode to every browser creation route.
 2. Make the CLI forward its surface environment.
 3. Apply source-link inheritance to popup promotion, duplicate, split, context-menu, and open-to-side descendants.
-4. Add browser link/unlink/get commands and full live `presentation_state` query output, with name/ref/UUID identity triples.
+4. Add browser link/unlink/get commands and full live `presentation_state` query output, with name/ref/UUID identity triples independent of the visual preference.
 5. Update help, API reference, deterministic caller outcomes, errors, and socket tests.
 6. Keep V1 event-neutral; verify link state through mutation responses and canonical queries.
 
@@ -727,7 +737,8 @@ Cover at minimum:
 - late recognized `terminal_type` on the selected terminal establishes context;
 - declassifying the active agent clears context, advances generation, and orphans its links;
 - duplicate/renamed labels do not alter identity;
-- live identity formats as `Name · surface:n`; orphan identity uses a collision-safe stable UUID prefix and never a stale ref;
+- live identity formats as `Name` when IDs are off and `N: Name` when on; orphan identity reveals its collision-safe stable UUID prefix only when on and never uses a stale ref;
+- toggling `showSurfaceIdsInTabTitles` updates companion formatting live without changing link/reveal state;
 - link validation rejects cross-workspace, non-browser, non-terminal, and ordinary-shell targets;
 - one agent can own many browser links without any primary-browser selection;
 - no-context behavior is interactive.
@@ -802,14 +813,15 @@ Visual scenarios:
 3. Interact after reveal; focus elsewhere; confirm re-veil.
 4. Relink through visible toolbar while veiled; confirm immediate aligned state.
 5. Multiple agents and multiple browsers, including two browsers linked to one agent.
-6. Two agents with the same display name; confirm every toolbar, veil, tab, chooser row, accessibility label, and query remains unambiguous through IDs.
-7. Rename an agent and browser while linked; confirm names update while IDs and the relationship remain stable.
-8. Browser with devtools, Find-in-page, JavaScript alert, permission prompt, media, pointer lock, and full-screen content.
-9. Split/merge/move/drag, workspace switch, window move, close/reopen, restart, snapshot, and blueprint restore.
-10. Narrow browser pane; confirm adaptive name-plus-ID treatment and readable veil.
-11. Keyboard-only and VoiceOver path; confirm both names and IDs are announced, underlying web content is absent while veiled, and other panes remain reachable.
-12. Light/Dark c11 theme slots, Increase Contrast, Reduce Transparency, and reduced-motion settings.
-13. Agent automation navigates a veiled browser; confirm the veil never flashes away and automation remains functional.
+6. Toggle **Show Surface IDs in Tab Titles** off/on while a veil is visible; confirm every toolbar, veil, tab, chooser row, revealed status, tooltip, and accessibility label removes/adds the ordinal live and uses the existing `N: Title` format.
+7. Two agents with the same display name: with IDs off, confirm non-ID context helps distinguish chooser rows and UUID-backed actions remain correct; with IDs on, confirm ordinals disambiguate every visible identity.
+8. Rename an agent and browser while linked; confirm names update while internal IDs and the relationship remain stable.
+9. Browser with devtools, Find-in-page, JavaScript alert, permission prompt, media, pointer lock, and full-screen content.
+10. Split/merge/move/drag, workspace switch, window move, close/reopen, restart, snapshot, and blueprint restore.
+11. Narrow browser pane; confirm adaptive identity treatment and readable veil in both preference states.
+12. Keyboard-only and VoiceOver path; confirm names are always announced, IDs only when enabled, underlying web content is absent while veiled, and other panes remain reachable.
+13. Light/Dark c11 theme slots, Increase Contrast, Reduce Transparency, and reduced-motion settings.
+14. Agent automation navigates a veiled browser; confirm the veil never flashes away and automation remains functional.
 
 Per repository policy, UI E2E runs through `gh workflow run test-e2e.yml`, not locally. Computer-use validation requires operator confirmation before invoking the expensive tool.
 
@@ -840,13 +852,14 @@ Per repository policy, UI E2E runs through `gh workflow run test-e2e.yml`, not l
 
 ### Identity visibility
 
-- **ID-1:** Every companion UI reference to a live browser, linked agent, or active agent shows `Name · surface:n` together.
-- **ID-2:** The veil names and IDs the browser itself, its linked agent, and the currently active agent in directional copy.
-- **ID-3:** Toolbar pills, pane tabs, chooser rows, revealed status, orphan state, tooltips, accessibility labels, and command/query output use the same identity formatter.
-- **ID-4:** Renaming changes the displayed name everywhere without changing durable identity or the link.
-- **ID-5:** Duplicate names remain unambiguous through the adjacent short ref; no action is selected by display name alone.
-- **ID-6:** Orphans use `Last Known Name · id:<stable-prefix>` and never display a stale short ref that may now identify another surface.
-- **ID-7:** Menus and diagnostics offer the full UUID for copying, while ordinary UI stays readable with the short identity.
+- **ID-1:** With **Show Surface IDs in Tab Titles** off, companion UI shows browser and agent names without surface IDs.
+- **ID-2:** With the setting on, the same locations use existing `N: Title` formatting for every live browser, linked agent, and active agent.
+- **ID-3:** Toggling the setting updates toolbar pills, pane tabs, veils, chooser rows, revealed status, orphan state, tooltips, command/menu labels, and accessibility labels immediately and consistently.
+- **ID-4:** The veil always uses directional copy to name the browser itself, its linked agent, and the active agent; IDs are added to all three only when enabled.
+- **ID-5:** Renaming changes the displayed name everywhere without changing durable identity or the link.
+- **ID-6:** No action resolves by display name. With IDs hidden, duplicate chooser names gain non-ID agent context; enabling IDs supplies definitive visible ordinal disambiguation.
+- **ID-7:** Orphans show the last known name alone when IDs are off and add a collision-safe `orphan <stable-prefix>` only when IDs are on; they never display a stale live ordinal.
+- **ID-8:** Socket/CLI JSON always returns name, ref, and UUID regardless of the UI setting.
 
 ### Creation and API
 
@@ -889,7 +902,8 @@ Per repository policy, UI E2E runs through `gh workflow run test-e2e.yml`, not l
 | Autosave fingerprint omits link | Link appears to persist but is lost after restart | Fingerprint regression test for link-only change. |
 | WebKit auxiliary UI pierces veil | Dialog, inspector, full-screen, or permission UI remains actionable | Explicit scenario matrix; fail rollout gate for unsupported unsafe state. |
 | Link language implies security | Operator assumes automation/credential isolation | Use `linked` and document human-context-only semantics in UI/help. |
-| Names collide or change | Operator links/reveals the wrong tab | Pair every name with a live short ref or orphan stable-ID prefix; never resolve actions by name. |
+| Names collide while IDs are hidden | Operator chooses the wrong similarly named agent | Add non-ID kind/model context in chooser rows, keep actions UUID-backed, and let the existing setting reveal definitive ordinals. |
+| Companion UI ignores the existing ID preference | IDs appear unexpectedly or tab/chrome formats disagree | Reuse `TabOrdinalDisplaySettings`, `TitleFormatting.ordinalPrefixed`, and the live observer path; test both states. |
 | Too much chrome in narrow panes | Browser controls become unusable | Adaptive label/icon treatment and command/menu equivalents. |
 | Revealed status occludes or resizes page | Fixed controls disappear or viewport shifts | Keep status inside existing browser chrome; never overlay/insert into page viewport. |
 | Cross-workspace behavior silently changes meaning | Browser looks workspace-wide without operator action | Preserve the target UUID as an orphan and offer explicit relink/unlink. |
@@ -920,7 +934,7 @@ The feature is complete only when all of the following are true:
 - the AppKit veil blocks human interaction without hiding browser toolbar or altering geometry;
 - the first reveal event is proven not to reach page content;
 - link state is queryable, restorable, and correctly remapped through every persistence family;
-- browser, linked-agent, and active-agent identities consistently expose both name and ID across visual, accessibility, menu, and API surfaces;
+- browser, linked-agent, and active-agent names are always clear; visual, accessibility, and menu IDs follow **Show Surface IDs in Tab Titles** live, while APIs always expose canonical identities;
 - focus-preservation and typing-latency policies hold;
 - all locales, CLI help, API docs, and the c11 skill agree with shipping behavior;
 - the installed skill has been synced and verified;

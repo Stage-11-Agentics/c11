@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 
 #if canImport(c11_DEV)
@@ -231,5 +232,200 @@ final class SurfaceMetadataStoreValidationTests: XCTestCase {
             }
             XCTAssertEqual(writeError.code, "reserved_key_invalid_type")
         }
+    }
+
+    // MARK: - Typed terminal-kind transitions
+
+    func testTerminalKindStreamPublishesMergeAndReplaceRemovalOnlyForEffectiveChanges() throws {
+        let workspace = UUID()
+        let surface = UUID()
+        var changes: [TerminalKindChange] = []
+        let cancellable = store.terminalKindChanges
+            .filter { $0.workspaceID == workspace && $0.surfaceID == surface }
+            .sink { changes.append($0) }
+        defer {
+            cancellable.cancel()
+            store.removeSurface(workspaceId: workspace, surfaceId: surface)
+        }
+
+        _ = try store.setMetadata(
+            workspaceId: workspace,
+            surfaceId: surface,
+            partial: [MetadataKey.terminalType: "codex"],
+            mode: .merge,
+            source: .explicit
+        )
+        _ = try store.setMetadata(
+            workspaceId: workspace,
+            surfaceId: surface,
+            partial: [MetadataKey.terminalType: "codex"],
+            mode: .merge,
+            source: .explicit
+        )
+        let rejected = try store.setMetadata(
+            workspaceId: workspace,
+            surfaceId: surface,
+            partial: [MetadataKey.terminalType: "claude-code"],
+            mode: .merge,
+            source: .heuristic
+        )
+        _ = try store.setMetadata(
+            workspaceId: workspace,
+            surfaceId: surface,
+            partial: [MetadataKey.title: "Terminal"],
+            mode: .replace,
+            source: .explicit
+        )
+
+        XCTAssertEqual(rejected.applied[MetadataKey.terminalType], false)
+        XCTAssertEqual(
+            changes,
+            [
+                TerminalKindChange(
+                    workspaceID: workspace,
+                    surfaceID: surface,
+                    oldKind: nil,
+                    newKind: "codex",
+                    origin: .merge,
+                    source: .explicit
+                ),
+                TerminalKindChange(
+                    workspaceID: workspace,
+                    surfaceID: surface,
+                    oldKind: "codex",
+                    newKind: nil,
+                    origin: .replace,
+                    source: .explicit
+                )
+            ]
+        )
+    }
+
+    func testTerminalKindStreamDistinguishesKeyedAndClearAllOrigins() throws {
+        let workspace = UUID()
+        let surface = UUID()
+        var changes: [TerminalKindChange] = []
+        let cancellable = store.terminalKindChanges
+            .filter { $0.workspaceID == workspace && $0.surfaceID == surface }
+            .sink { changes.append($0) }
+        defer {
+            cancellable.cancel()
+            store.removeSurface(workspaceId: workspace, surfaceId: surface)
+        }
+
+        _ = try store.setMetadata(
+            workspaceId: workspace,
+            surfaceId: surface,
+            partial: [MetadataKey.terminalType: "codex"],
+            mode: .merge,
+            source: .explicit
+        )
+        changes.removeAll()
+        _ = try store.clearMetadata(
+            workspaceId: workspace,
+            surfaceId: surface,
+            keys: [MetadataKey.terminalType],
+            source: .explicit
+        )
+        _ = try store.setMetadata(
+            workspaceId: workspace,
+            surfaceId: surface,
+            partial: [MetadataKey.terminalType: "claude-code"],
+            mode: .merge,
+            source: .explicit
+        )
+        changes.removeAll()
+        _ = try store.clearMetadata(
+            workspaceId: workspace,
+            surfaceId: surface,
+            keys: nil,
+            source: .explicit
+        )
+
+        XCTAssertEqual(changes.count, 1)
+        XCTAssertEqual(changes.first?.oldKind, "claude-code")
+        XCTAssertNil(changes.first?.newKind)
+        XCTAssertEqual(changes.first?.origin, .clearAll)
+
+        _ = try store.setMetadata(
+            workspaceId: workspace,
+            surfaceId: surface,
+            partial: [MetadataKey.terminalType: "codex"],
+            mode: .merge,
+            source: .explicit
+        )
+        changes.removeAll()
+        _ = try store.clearMetadata(
+            workspaceId: workspace,
+            surfaceId: surface,
+            keys: [MetadataKey.terminalType],
+            source: .explicit
+        )
+        XCTAssertEqual(changes.count, 1)
+        XCTAssertEqual(changes.first?.origin, .keyedClear)
+    }
+
+    func testTerminalKindStreamCoversInternalAndRestoreOriginsWithoutNoOpPublication() {
+        let workspace = UUID()
+        let surface = UUID()
+        var changes: [TerminalKindChange] = []
+        let cancellable = store.terminalKindChanges
+            .filter { $0.workspaceID == workspace && $0.surfaceID == surface }
+            .sink { changes.append($0) }
+        defer {
+            cancellable.cancel()
+            store.removeSurface(workspaceId: workspace, surfaceId: surface)
+        }
+
+        XCTAssertTrue(
+            store.setInternal(
+                workspaceId: workspace,
+                surfaceId: surface,
+                key: MetadataKey.terminalType,
+                value: "codex",
+                source: .declare
+            )
+        )
+        XCTAssertTrue(
+            store.setInternal(
+                workspaceId: workspace,
+                surfaceId: surface,
+                key: MetadataKey.terminalType,
+                value: "codex",
+                source: .explicit
+            )
+        )
+        store.restoreFromSnapshot(
+            workspaceId: workspace,
+            surfaceId: surface,
+            values: [MetadataKey.terminalType: "shell"],
+            sources: [
+                MetadataKey.terminalType: SurfaceMetadataStore.SourceRecord(
+                    source: .heuristic,
+                    ts: 42
+                )
+            ]
+        )
+        store.restoreFromSnapshot(
+            workspaceId: workspace,
+            surfaceId: surface,
+            values: [MetadataKey.terminalType: "shell"],
+            sources: [
+                MetadataKey.terminalType: SurfaceMetadataStore.SourceRecord(
+                    source: .heuristic,
+                    ts: 43
+                )
+            ]
+        )
+
+        XCTAssertEqual(changes.count, 2)
+        XCTAssertEqual(changes[0].oldKind, nil)
+        XCTAssertEqual(changes[0].newKind, "codex")
+        XCTAssertEqual(changes[0].origin, .internalWrite)
+        XCTAssertEqual(changes[0].source, .declare)
+        XCTAssertEqual(changes[1].oldKind, "codex")
+        XCTAssertEqual(changes[1].newKind, "shell")
+        XCTAssertEqual(changes[1].origin, .restore)
+        XCTAssertEqual(changes[1].source, .heuristic)
     }
 }

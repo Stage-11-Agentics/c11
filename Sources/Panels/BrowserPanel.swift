@@ -1883,6 +1883,11 @@ final class BrowserPanel: Panel, ObservableObject {
     @Published private(set) var profileID: UUID
     @Published private(set) var historyStore: BrowserHistoryStore
 
+    /// Durable browser-to-agent association. Workspace owns validation for
+    /// live mutations; restore and descendant creation use the explicit
+    /// internal seams below so links exist before presentation is derived.
+    @Published private(set) var linkedAgent: AgentSurfaceLink?
+
     /// The underlying web view
     private(set) var webView: WKWebView
     private var websiteDataStore: WKWebsiteDataStore
@@ -2603,6 +2608,7 @@ final class BrowserPanel: Panel, ObservableObject {
     init(
         id: UUID? = nil,
         workspaceId: UUID,
+        initialLinkedAgent: AgentSurfaceLink? = nil,
         profileID: UUID? = nil,
         initialURL: URL? = nil,
         bypassInsecureHTTPHostOnce: String? = nil,
@@ -2613,6 +2619,7 @@ final class BrowserPanel: Panel, ObservableObject {
     ) {
         self.id = id ?? UUID()
         self.workspaceId = workspaceId
+        self.linkedAgent = initialLinkedAgent
         let requestedProfileID = profileID ?? BrowserProfileStore.shared.effectiveLastUsedProfileID
         let resolvedProfileID = BrowserProfileStore.shared.profileDefinition(id: requestedProfileID) != nil
             ? requestedProfileID
@@ -3024,6 +3031,27 @@ final class BrowserPanel: Panel, ObservableObject {
         }
         applyRemoteProxyConfigurationIfAvailable()
         resumePendingRemoteNavigationIfNeeded()
+    }
+
+    /// Workspace-only live mutation after type/workspace/agent validation.
+    func setValidatedLinkedAgent(_ link: AgentSurfaceLink?) {
+        guard linkedAgent != link else { return }
+        linkedAgent = link
+    }
+
+    /// Persistence bridge: restore may preserve an orphan tombstone before
+    /// its target terminal exists. Validation/reconciliation happens after
+    /// the full workspace graph and terminal metadata have been restored.
+    func restoreLinkedAgent(_ link: AgentSurfaceLink?) {
+        guard linkedAgent != link else { return }
+        linkedAgent = link
+    }
+
+    /// Descendant bridge: source-derived browser creation copies the already
+    /// validated durable link without consulting current operator focus.
+    func inheritLinkedAgent(_ link: AgentSurfaceLink?) {
+        guard linkedAgent != link else { return }
+        linkedAgent = link
     }
 
     @discardableResult

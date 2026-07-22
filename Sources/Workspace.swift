@@ -357,9 +357,9 @@ extension Workspace {
 
         if let focusedPanelId = snapshot.focusedPanelId,
            panels[focusedPanelId] != nil {
-            focusPanel(focusedPanelId)
+            focusPanel(focusedPanelId, agentContextProvenance: .restore)
         } else if let fallbackFocusedPanelId = self.focusedPanelId, panels[fallbackFocusedPanelId] != nil {
-            focusPanel(fallbackFocusedPanelId)
+            focusPanel(fallbackFocusedPanelId, agentContextProvenance: .restore)
         } else {
             scheduleFocusReconcile()
         }
@@ -944,8 +944,10 @@ extension Workspace {
 
         if let selectedPanelId,
            let selectedTabId = surfaceIdFromPanelId(selectedPanelId) {
-            bonsplitController.focusPane(paneId)
-            bonsplitController.selectTab(selectedTabId)
+            withBonsplitSelectionProvenance(.restore) {
+                bonsplitController.focusPane(paneId)
+                bonsplitController.selectTab(selectedTabId)
+            }
         }
     }
 
@@ -5235,6 +5237,19 @@ final class Workspace: Identifiable, ObservableObject {
     /// Mapping from bonsplit TabID to our Panel instances
     @Published private(set) var panels: [UUID: any Panel] = [:]
 
+    /// Workspace-local semantic agent context. It is deliberately independent
+    /// from Bonsplit's focused panel so browser/markdown/shell focus can
+    /// preserve the last explicitly focused recognized agent.
+    @Published private(set) var agentContextState = AgentContextState(
+        activeAgentSurfaceID: nil,
+        generation: 0
+    )
+    private var explicitFocusLatePromotionCandidate: UUID?
+    private var companionAgentMRU: [UUID] = []
+    private var companionRevealGrants: [UUID: CompanionRevealGrant] = [:]
+    private var lastCompanionFocusedPanelID: UUID?
+    private var terminalKindChangesCancellable: AnyCancellable?
+
     /// C11-163 events stream: single create/close chokepoint. Subscribing to
     /// `$panels` and diffing keys catches every surface lifecycle transition
     /// through one path — split, tab, restore, reattach, rollback, bulk
@@ -5983,10 +5998,12 @@ final class Workspace: Identifiable, ObservableObject {
                 }
                 return bonsplitController.allPaneIds.first
             }()
-            if let paneToFocus {
-                bonsplitController.focusPane(paneToFocus)
+            withBonsplitSelectionProvenance(.maintenance) {
+                if let paneToFocus {
+                    bonsplitController.focusPane(paneToFocus)
+                }
+                bonsplitController.selectTab(initialTabId)
             }
-            bonsplitController.selectTab(initialTabId)
         }
 
         // C11-134: breadcrumb this workspace's surface shape (per-type panel
@@ -6026,6 +6043,13 @@ final class Workspace: Identifiable, ObservableObject {
         panelEventsCancellable = $panels
             .sink { [weak self] newPanels in
                 self?.reconcilePanelEvents(newPanels)
+            }
+
+        terminalKindChangesCancellable = SurfaceMetadataStore.shared.terminalKindChanges
+            .filter { [workspaceID = self.id] in $0.workspaceID == workspaceID }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] change in
+                self?.handleTerminalKindChange(change)
             }
     }
 
@@ -6068,7 +6092,366 @@ final class Workspace: Identifiable, ObservableObject {
         for closedId in lastKnownPanelIds.subtracting(newIds) {
             EventEmitter.shared.emitSurfaceClosed(workspace: id, surface: closedId)
         }
+        reconcileAgentCompanionPanelLifecycle(newPanels: newPanels)
         lastKnownPanelIds = newIds
+    }
+
+    // MARK: - Agent-linked companion context
+
+    var companionLiveAgentDescriptors: [AgentDescriptor] {
+        liveAgentDescriptors(in: panels)
+    }
+
+    func companionPresentationValue(for browserID: UUID) -> BrowserCompanionPresentation {
+        guard let browser = panels[browserID] as? BrowserPanel else { return .unlinked }
+        refreshCompanionLastKnownNames()
+        return BrowserCompanionPolicy.presentation(
+            browserSurfaceID: browserID,
+            link: browser.linkedAgent,
+            context: agentContextState,
+            liveAgents: companionLiveAgentDescriptors,
+            revealGrant: companionRevealGrants[browserID]
+        )
+    }
+
+    func companionLinkBrowser(_ browserID: UUID, toAgent agentID: UUID) throws {
+        let browser = try companionBrowser(for: browserID)
+        guard panels[agentID] != nil else {
+            if companionSurfaceExistsOutsideWorkspace(agentID) {
+                throw BrowserCompanionLinkError.linkWorkspaceMismatch
+            }
+            throw BrowserCompanionLinkError.agentNotFound
+        }
+        guard panels[agentID] is TerminalPanel else {
+            throw BrowserCompanionLinkError.targetNotTerminal
+        }
+        guard let descriptor = agentDescriptor(surfaceID: agentID, in: panels) else {
+            throw BrowserCompanionLinkError.agentNotRecognized
+        }
+        browser.setValidatedLinkedAgent(
+            AgentSurfaceLink(
+                surfaceID: agentID,
+                lastKnownName: descriptor.identity.displayName
+            )
+        )
+        companionRevealGrants.removeValue(forKey: browserID)
+    }
+
+    func companionUnlinkBrowser(_ browserID: UUID) throws {
+        let browser = try companionBrowser(for: browserID)
+        browser.setValidatedLinkedAgent(nil)
+        companionRevealGrants.removeValue(forKey: browserID)
+    }
+
+    func companionRevealBrowser(_ browserID: UUID) throws {
+        let browser = try companionBrowser(for: browserID)
+        guard let link = browser.linkedAgent else {
+            companionRevealGrants.removeValue(forKey: browserID)
+            return
+        }
+        companionRevealGrants[browserID] = CompanionRevealGrant(
+            browserSurfaceID: browserID,
+            linkedAgentSurfaceID: link.surfaceID,
+            activeAgentSurfaceID: agentContextState.activeAgentSurfaceID,
+            contextGeneration: agentContextState.generation
+        )
+    }
+
+    func companionHideBrowser(_ browserID: UUID) {
+        companionRevealGrants.removeValue(forKey: browserID)
+    }
+
+    func companionAutomaticLinkBrowser(
+        _ browserID: UUID,
+        callerSurfaceID: UUID?,
+        mode: BrowserCompanionLinkMode
+    ) -> BrowserCompanionLinkResult {
+        guard let browser = panels[browserID] as? BrowserPanel else { return .callerNotFound }
+        if mode == .workspace {
+            browser.setValidatedLinkedAgent(nil)
+            companionRevealGrants.removeValue(forKey: browserID)
+            return .workspace
+        }
+        guard let callerSurfaceID else { return .noCaller }
+        guard panels[callerSurfaceID] != nil else {
+            return companionSurfaceExistsOutsideWorkspace(callerSurfaceID)
+                ? .callerWorkspaceMismatch
+                : .callerNotFound
+        }
+        guard let descriptor = agentDescriptor(surfaceID: callerSurfaceID, in: panels) else {
+            return .callerNotAgent
+        }
+        browser.setValidatedLinkedAgent(
+            AgentSurfaceLink(
+                surfaceID: callerSurfaceID,
+                lastKnownName: descriptor.identity.displayName
+            )
+        )
+        companionRevealGrants.removeValue(forKey: browserID)
+        return .automatic
+    }
+
+    func companionWireSnapshotValue(for browserID: UUID) -> CompanionContextWireSnapshot? {
+        guard let browser = panels[browserID] as? BrowserPanel else { return nil }
+        let presentation = companionPresentationValue(for: browserID)
+        let liveAgents = companionLiveAgentDescriptors
+        let linkedDescriptor = browser.linkedAgent.flatMap { link in
+            liveAgents.first { $0.identity.surfaceID == link.surfaceID }
+        }
+        let activeDescriptor = agentContextState.activeAgentSurfaceID.flatMap { activeID in
+            liveAgents.first { $0.identity.surfaceID == activeID }
+        }
+        let linkState: BrowserCompanionLinkState
+        if browser.linkedAgent == nil {
+            linkState = .unlinked
+        } else if linkedDescriptor != nil {
+            linkState = .resolved
+        } else {
+            linkState = .orphaned
+        }
+        return CompanionContextWireSnapshot(
+            browserSurfaceID: browserID,
+            browserSurfaceRef: TerminalController.shared.surfaceRefOnly(forSurfaceUUID: browserID),
+            browserName: panelTitle(panelId: browserID) ?? browser.displayTitle,
+            linkedAgentSurfaceID: browser.linkedAgent?.surfaceID,
+            linkedAgentSurfaceRef: linkedDescriptor?.identity.surfaceRef,
+            linkedAgentName: linkedDescriptor?.identity.displayName ?? browser.linkedAgent?.lastKnownName,
+            linkState: linkState,
+            presentationState: presentation.state,
+            activeAgentSurfaceID: activeDescriptor?.identity.surfaceID,
+            activeAgentSurfaceRef: activeDescriptor?.identity.surfaceRef,
+            activeAgentName: activeDescriptor?.identity.displayName
+        )
+    }
+
+    /// Session/integration bridge. This accepts an orphan tombstone because
+    /// restoration and cross-workspace moves can materialize a browser before
+    /// its target agent. Normal live mutations must use `linkBrowser`.
+    func restoreCompanionLink(_ link: AgentSurfaceLink?, forBrowser browserID: UUID) throws {
+        let browser = try companionBrowser(for: browserID)
+        browser.restoreLinkedAgent(link)
+        companionRevealGrants.removeValue(forKey: browserID)
+        refreshCompanionLastKnownNames()
+    }
+
+    /// Descendant bridge. Callers pass the source browser's already-validated
+    /// link explicitly; this never consults current operator focus.
+    func inheritCompanionLink(_ link: AgentSurfaceLink?, forBrowser browserID: UUID) throws {
+        let browser = try companionBrowser(for: browserID)
+        browser.inheritLinkedAgent(link)
+        companionRevealGrants.removeValue(forKey: browserID)
+        refreshCompanionLastKnownNames()
+    }
+
+    /// Session-only active-context bridge. Generation/reveals are transient
+    /// and intentionally restart at zero/empty.
+    func restoreAgentCompanionContext(_ surfaceID: UUID?) {
+        let restoredID = surfaceID.flatMap { agentDescriptor(surfaceID: $0, in: panels) != nil ? $0 : nil }
+        agentContextState = AgentContextState(
+            activeAgentSurfaceID: restoredID,
+            generation: 0
+        )
+        explicitFocusLatePromotionCandidate = nil
+        companionRevealGrants.removeAll()
+        if let restoredID {
+            touchCompanionAgentMRU(restoredID)
+        }
+        refreshCompanionLastKnownNames()
+    }
+
+    /// Integration lifecycle seam for workspace deselection/window
+    /// deactivation. First-responder movement within one browser must not call
+    /// this; ACB-06 owns those outer lifecycle call sites.
+    func revokeAgentCompanionReveals() {
+        companionRevealGrants.removeAll()
+    }
+
+    func reconcileAgentCompanionStateAfterRestore() {
+        reconcileAgentCompanionPanelLifecycle(newPanels: panels)
+        refreshCompanionLastKnownNames()
+    }
+
+    private func companionBrowser(for browserID: UUID) throws -> BrowserPanel {
+        guard let panel = panels[browserID] else {
+            throw BrowserCompanionLinkError.browserNotFound
+        }
+        guard let browser = panel as? BrowserPanel else {
+            throw BrowserCompanionLinkError.targetNotBrowser
+        }
+        return browser
+    }
+
+    private func companionSurfaceExistsOutsideWorkspace(_ surfaceID: UUID) -> Bool {
+        if let owningTabManager,
+           owningTabManager.tabs.contains(where: { $0.id != id && $0.panels[surfaceID] != nil }) {
+            return true
+        }
+        if let located = AppDelegate.shared?.locateSurface(surfaceId: surfaceID) {
+            return located.workspaceId != id
+        }
+        return false
+    }
+
+    private func liveAgentDescriptors(in panelSnapshot: [UUID: any Panel]) -> [AgentDescriptor] {
+        let descriptors = panelSnapshot.keys.compactMap { surfaceID in
+            agentDescriptor(surfaceID: surfaceID, in: panelSnapshot)
+        }
+        let mruIndex = Dictionary(uniqueKeysWithValues: companionAgentMRU.enumerated().map { ($1, $0) })
+        return descriptors.sorted { lhs, rhs in
+            let lhsIndex = mruIndex[lhs.identity.surfaceID] ?? Int.max
+            let rhsIndex = mruIndex[rhs.identity.surfaceID] ?? Int.max
+            if lhsIndex != rhsIndex { return lhsIndex < rhsIndex }
+            let nameOrder = lhs.identity.displayName.localizedCaseInsensitiveCompare(rhs.identity.displayName)
+            if nameOrder != .orderedSame { return nameOrder == .orderedAscending }
+            return lhs.identity.surfaceID.uuidString < rhs.identity.surfaceID.uuidString
+        }
+    }
+
+    private func agentDescriptor(
+        surfaceID: UUID,
+        in panelSnapshot: [UUID: any Panel],
+        terminalKindOverride: String? = nil
+    ) -> AgentDescriptor? {
+        guard let panel = panelSnapshot[surfaceID], panel is TerminalPanel else { return nil }
+        let terminalKind = terminalKindOverride ?? surfaceTerminalKind(panelId: surfaceID)
+        return AgentIdentityPolicy.descriptor(
+            surfaceID: surfaceID,
+            surfaceRef: TerminalController.shared.surfaceRefOnly(forSurfaceUUID: surfaceID),
+            surfaceOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: surfaceID),
+            displayName: panelCustomTitles[surfaceID] ?? panelTitles[surfaceID] ?? panel.displayTitle,
+            terminalKind: terminalKind
+        )
+    }
+
+    private func refreshCompanionLastKnownNames(
+        descriptors: [AgentDescriptor]? = nil,
+        panelSnapshot: [UUID: any Panel]? = nil
+    ) {
+        guard AgentCompanionBrowserFeature.isEnabled else { return }
+        let panelSnapshot = panelSnapshot ?? panels
+        let descriptors = descriptors ?? liveAgentDescriptors(in: panelSnapshot)
+        let descriptorsByID = Dictionary(uniqueKeysWithValues: descriptors.map { ($0.identity.surfaceID, $0) })
+        for panel in panelSnapshot.values {
+            guard let browser = panel as? BrowserPanel,
+                  let link = browser.linkedAgent,
+                  let descriptor = descriptorsByID[link.surfaceID],
+                  link.lastKnownName != descriptor.identity.displayName else { continue }
+            browser.setValidatedLinkedAgent(
+                AgentSurfaceLink(
+                    surfaceID: link.surfaceID,
+                    lastKnownName: descriptor.identity.displayName
+                )
+            )
+        }
+    }
+
+    private func touchCompanionAgentMRU(_ surfaceID: UUID) {
+        companionAgentMRU.removeAll { $0 == surfaceID }
+        companionAgentMRU.insert(surfaceID, at: 0)
+    }
+
+    private func establishAgentContext(_ surfaceID: UUID, revokeExistingReveals: Bool) {
+        let changed = agentContextState.activeAgentSurfaceID != surfaceID
+        if changed {
+            agentContextState = AgentContextState(
+                activeAgentSurfaceID: surfaceID,
+                generation: agentContextState.generation &+ 1
+            )
+        }
+        if changed || revokeExistingReveals {
+            companionRevealGrants.removeAll()
+        }
+        touchCompanionAgentMRU(surfaceID)
+        refreshCompanionLastKnownNames()
+    }
+
+    private func clearAgentContextIfActive(_ surfaceID: UUID) {
+        guard agentContextState.activeAgentSurfaceID == surfaceID else { return }
+        agentContextState = AgentContextState(
+            activeAgentSurfaceID: nil,
+            generation: agentContextState.generation &+ 1
+        )
+        companionRevealGrants.removeAll()
+    }
+
+    private func noteAgentCompanionSelection(
+        panelID: UUID,
+        provenance: AgentContextFocusProvenance
+    ) {
+        if let previous = lastCompanionFocusedPanelID, previous != panelID {
+            companionRevealGrants.removeValue(forKey: previous)
+        }
+        lastCompanionFocusedPanelID = panelID
+
+        guard AgentCompanionBrowserFeature.isEnabled else { return }
+        let establishesContext: Bool
+        switch provenance {
+        case .operatorInteraction, .explicitFocusCommand:
+            establishesContext = true
+        case .restore, .maintenance:
+            establishesContext = false
+        }
+        guard establishesContext else { return }
+
+        guard panels[panelID] is TerminalPanel else {
+            explicitFocusLatePromotionCandidate = nil
+            return
+        }
+        explicitFocusLatePromotionCandidate = panelID
+        guard agentDescriptor(surfaceID: panelID, in: panels) != nil else { return }
+        establishAgentContext(panelID, revokeExistingReveals: true)
+    }
+
+    private func handleTerminalKindChange(_ change: TerminalKindChange) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard AgentCompanionBrowserFeature.isEnabled,
+              change.workspaceID == id,
+              panels[change.surfaceID] is TerminalPanel else { return }
+
+        let oldWasAgent = AgentIdentityPolicy.isAgentKind(change.oldKind)
+        let newIsAgent = AgentIdentityPolicy.isAgentKind(change.newKind)
+
+        if oldWasAgent, !newIsAgent {
+            if let oldDescriptor = agentDescriptor(
+                surfaceID: change.surfaceID,
+                in: panels,
+                terminalKindOverride: change.oldKind
+            ) {
+                refreshCompanionLastKnownNames(descriptors: [oldDescriptor])
+            }
+            companionAgentMRU.removeAll { $0 == change.surfaceID }
+            clearAgentContextIfActive(change.surfaceID)
+        }
+
+        if newIsAgent {
+            refreshCompanionLastKnownNames()
+            if explicitFocusLatePromotionCandidate == change.surfaceID,
+               focusedPanelId == change.surfaceID {
+                establishAgentContext(change.surfaceID, revokeExistingReveals: false)
+            }
+        }
+    }
+
+    private func reconcileAgentCompanionPanelLifecycle(newPanels: [UUID: any Panel]) {
+        guard AgentCompanionBrowserFeature.isEnabled else { return }
+        let descriptors = liveAgentDescriptors(in: newPanels)
+        let liveAgentIDs = Set(descriptors.map { $0.identity.surfaceID })
+        companionAgentMRU.removeAll { !liveAgentIDs.contains($0) }
+
+        if let activeID = agentContextState.activeAgentSurfaceID,
+           !liveAgentIDs.contains(activeID) {
+            clearAgentContextIfActive(activeID)
+        }
+        if let candidate = explicitFocusLatePromotionCandidate,
+           newPanels[candidate] == nil || !(newPanels[candidate] is TerminalPanel) {
+            explicitFocusLatePromotionCandidate = nil
+        }
+        if let focused = lastCompanionFocusedPanelID, newPanels[focused] == nil {
+            companionRevealGrants.removeValue(forKey: focused)
+            lastCompanionFocusedPanelID = nil
+        }
+        companionRevealGrants = companionRevealGrants.filter { newPanels[$0.key] is BrowserPanel }
+        refreshCompanionLastKnownNames(descriptors: descriptors, panelSnapshot: newPanels)
     }
 
     /// Creates a per-workspace mailbox dispatcher bound to this workspace's
@@ -6253,8 +6636,10 @@ final class Workspace: Identifiable, ObservableObject {
         let reassertAppKitFocus: Bool
         let focusIntent: PanelFocusIntent?
         let previousTerminalHostedView: GhosttySurfaceScrollView?
+        let agentContextProvenance: AgentContextFocusProvenance
     }
     private var pendingTabSelection: PendingTabSelectionRequest?
+    private var bonsplitSelectionProvenanceStack: [AgentContextFocusProvenance] = []
     private var isReconcilingFocusState = false
     private var focusReconcileScheduled = false
 #if DEBUG
@@ -6678,7 +7063,9 @@ final class Workspace: Identifiable, ObservableObject {
             let currentTabs = bonsplitController.tabs(inPane: paneId)
             guard let currentIndex = currentTabs.firstIndex(where: { $0.id == desiredTab.id }) else { continue }
             if currentIndex != index {
-                _ = bonsplitController.reorderTab(desiredTab.id, toIndex: index)
+                _ = withBonsplitSelectionProvenance(.maintenance) {
+                    bonsplitController.reorderTab(desiredTab.id, toIndex: index)
+                }
             }
         }
     }
@@ -7401,6 +7788,8 @@ final class Workspace: Identifiable, ObservableObject {
                 self.title = trimmed
             }
         }
+
+        refreshCompanionLastKnownNames()
     }
 
     /// Auto-expand the title bar when a description transitions from empty → non-empty,
@@ -8461,10 +8850,12 @@ final class Workspace: Identifiable, ObservableObject {
         // updates can be deferred. Force a deterministic selection + focus path so the new
         // surface becomes interactive immediately (no "frozen until pane switch" state).
         if shouldFocusNewTab {
-            bonsplitController.focusPane(paneId)
-            bonsplitController.selectTab(newTabId)
-            newPanel.focus()
-            applyTabSelection(tabId: newTabId, inPane: paneId)
+            withBonsplitSelectionProvenance {
+                bonsplitController.focusPane(paneId)
+                bonsplitController.selectTab(newTabId)
+                newPanel.focus()
+                applyTabSelection(tabId: newTabId, inPane: paneId)
+            }
         } else {
             preserveFocusAfterNonFocusSplit(
                 preferredPanelId: previousFocusedPanelId,
@@ -8643,10 +9034,12 @@ final class Workspace: Identifiable, ObservableObject {
 
         // Match terminal behavior: enforce deterministic selection + focus.
         if shouldFocusNewTab {
-            bonsplitController.focusPane(paneId)
-            bonsplitController.selectTab(newTabId)
-            browserPanel.focus()
-            applyTabSelection(tabId: newTabId, inPane: paneId)
+            withBonsplitSelectionProvenance {
+                bonsplitController.focusPane(paneId)
+                bonsplitController.selectTab(newTabId)
+                browserPanel.focus()
+                applyTabSelection(tabId: newTabId, inPane: paneId)
+            }
         } else {
             preserveFocusAfterNonFocusSplit(
                 preferredPanelId: previousFocusedPanelId,
@@ -8746,9 +9139,11 @@ final class Workspace: Identifiable, ObservableObject {
 
         surfaceIdToPanelId[newTabId] = markdownPanel.id
         if shouldFocusNewTab {
-            bonsplitController.focusPane(paneId)
-            bonsplitController.selectTab(newTabId)
-            applyTabSelection(tabId: newTabId, inPane: paneId)
+            withBonsplitSelectionProvenance {
+                bonsplitController.focusPane(paneId)
+                bonsplitController.selectTab(newTabId)
+                applyTabSelection(tabId: newTabId, inPane: paneId)
+            }
         } else {
             preserveFocusAfterNonFocusSplit(
                 preferredPanelId: previousFocusedPanelId,
@@ -9147,12 +9542,16 @@ final class Workspace: Identifiable, ObservableObject {
     func moveSurface(panelId: UUID, toPane paneId: PaneID, atIndex index: Int? = nil, focus: Bool = true) -> Bool {
         guard let tabId = surfaceIdFromPanelId(panelId) else { return false }
         guard bonsplitController.allPaneIds.contains(paneId) else { return false }
-        guard bonsplitController.moveTab(tabId, toPane: paneId, atIndex: index) else { return false }
+        guard withBonsplitSelectionProvenance(.maintenance, {
+            bonsplitController.moveTab(tabId, toPane: paneId, atIndex: index)
+        }) else { return false }
 
         if focus {
-            bonsplitController.focusPane(paneId)
-            bonsplitController.selectTab(tabId)
-            focusPanel(panelId)
+            withBonsplitSelectionProvenance(.maintenance) {
+                bonsplitController.focusPane(paneId)
+                bonsplitController.selectTab(tabId)
+            }
+            focusPanel(panelId, agentContextProvenance: .maintenance)
         } else {
             scheduleFocusReconcile()
         }
@@ -9163,7 +9562,9 @@ final class Workspace: Identifiable, ObservableObject {
     @discardableResult
     func reorderSurface(panelId: UUID, toIndex index: Int) -> Bool {
         guard let tabId = surfaceIdFromPanelId(panelId) else { return false }
-        guard bonsplitController.reorderTab(tabId, toIndex: index) else { return false }
+        guard withBonsplitSelectionProvenance(.maintenance, {
+            bonsplitController.reorderTab(tabId, toIndex: index)
+        }) else { return false }
 
         if let paneId = paneId(forPanelId: panelId) {
             applyTabSelection(tabId: tabId, inPane: paneId)
@@ -9353,10 +9754,16 @@ final class Workspace: Identifiable, ObservableObject {
         normalizePinnedTabs(in: paneId)
 
         if focus {
-            bonsplitController.focusPane(paneId)
-            bonsplitController.selectTab(newTabId)
-            detached.panel.focus()
-            applyTabSelection(tabId: newTabId, inPane: paneId)
+            withBonsplitSelectionProvenance(.maintenance) {
+                bonsplitController.focusPane(paneId)
+                bonsplitController.selectTab(newTabId)
+                detached.panel.focus()
+                applyTabSelection(
+                    tabId: newTabId,
+                    inPane: paneId,
+                    agentContextProvenance: .maintenance
+                )
+            }
         } else {
             scheduleFocusReconcile()
         }
@@ -9464,7 +9871,8 @@ final class Workspace: Identifiable, ObservableObject {
     func focusPanel(
         _ panelId: UUID,
         previousHostedView: GhosttySurfaceScrollView? = nil,
-        trigger: FocusPanelTrigger = .standard
+        trigger: FocusPanelTrigger = .standard,
+        agentContextProvenance: AgentContextFocusProvenance = .maintenance
     ) {
         markExplicitFocusIntent(on: panelId)
 #if DEBUG
@@ -9526,7 +9934,9 @@ final class Workspace: Identifiable, ObservableObject {
                 "panel=\(panelId.uuidString.prefix(5)) pane=\(targetPaneId.id.uuidString.prefix(5))"
             )
 #endif
-            bonsplitController.focusPane(targetPaneId)
+            withBonsplitSelectionProvenance(agentContextProvenance) {
+                bonsplitController.focusPane(targetPaneId)
+            }
         }
 
         if !selectionAlreadyConverged {
@@ -9536,7 +9946,9 @@ final class Workspace: Identifiable, ObservableObject {
                 "panel=\(panelId.uuidString.prefix(5)) tab=\(tabId.uuid.uuidString.prefix(5))"
             )
 #endif
-            bonsplitController.selectTab(tabId)
+            withBonsplitSelectionProvenance(agentContextProvenance) {
+                bonsplitController.selectTab(tabId)
+            }
         }
 
         if let targetPaneId {
@@ -9546,7 +9958,8 @@ final class Workspace: Identifiable, ObservableObject {
                 inPane: targetPaneId,
                 reassertAppKitFocus: !shouldSuppressReentrantRefocus,
                 focusIntent: activationIntent,
-                previousTerminalHostedView: previousTerminalHostedView
+                previousTerminalHostedView: previousTerminalHostedView,
+                agentContextProvenance: agentContextProvenance
             )
         }
 
@@ -9603,13 +10016,19 @@ final class Workspace: Identifiable, ObservableObject {
             prev.unfocus()
         }
 
-        bonsplitController.navigateFocus(direction: direction)
+        withBonsplitSelectionProvenance(.operatorInteraction) {
+            bonsplitController.navigateFocus(direction: direction)
+        }
 
         // Always reconcile selection/focus after navigation so AppKit first-responder and
         // bonsplit's focused pane stay aligned, even through split tree mutations.
         if let paneId = bonsplitController.focusedPaneId,
            let tabId = bonsplitController.selectedTab(inPane: paneId)?.id {
-            applyTabSelection(tabId: tabId, inPane: paneId)
+            applyTabSelection(
+                tabId: tabId,
+                inPane: paneId,
+                agentContextProvenance: .operatorInteraction
+            )
         }
     }
 
@@ -9617,21 +10036,33 @@ final class Workspace: Identifiable, ObservableObject {
 
     /// Select the next surface in the currently focused pane
     func selectNextSurface() {
-        bonsplitController.selectNextTab()
+        withBonsplitSelectionProvenance(.operatorInteraction) {
+            bonsplitController.selectNextTab()
+        }
 
         if let paneId = bonsplitController.focusedPaneId,
            let tabId = bonsplitController.selectedTab(inPane: paneId)?.id {
-            applyTabSelection(tabId: tabId, inPane: paneId)
+            applyTabSelection(
+                tabId: tabId,
+                inPane: paneId,
+                agentContextProvenance: .operatorInteraction
+            )
         }
     }
 
     /// Select the previous surface in the currently focused pane
     func selectPreviousSurface() {
-        bonsplitController.selectPreviousTab()
+        withBonsplitSelectionProvenance(.operatorInteraction) {
+            bonsplitController.selectPreviousTab()
+        }
 
         if let paneId = bonsplitController.focusedPaneId,
            let tabId = bonsplitController.selectedTab(inPane: paneId)?.id {
-            applyTabSelection(tabId: tabId, inPane: paneId)
+            applyTabSelection(
+                tabId: tabId,
+                inPane: paneId,
+                agentContextProvenance: .operatorInteraction
+            )
         }
     }
 
@@ -9640,10 +10071,16 @@ final class Workspace: Identifiable, ObservableObject {
         guard let focusedPaneId = bonsplitController.focusedPaneId else { return }
         let tabs = bonsplitController.tabs(inPane: focusedPaneId)
         guard index >= 0 && index < tabs.count else { return }
-        bonsplitController.selectTab(tabs[index].id)
+        withBonsplitSelectionProvenance(.operatorInteraction) {
+            bonsplitController.selectTab(tabs[index].id)
+        }
 
         if let tabId = bonsplitController.selectedTab(inPane: focusedPaneId)?.id {
-            applyTabSelection(tabId: tabId, inPane: focusedPaneId)
+            applyTabSelection(
+                tabId: tabId,
+                inPane: focusedPaneId,
+                agentContextProvenance: .operatorInteraction
+            )
         }
     }
 
@@ -9652,10 +10089,16 @@ final class Workspace: Identifiable, ObservableObject {
         guard let focusedPaneId = bonsplitController.focusedPaneId else { return }
         let tabs = bonsplitController.tabs(inPane: focusedPaneId)
         guard let last = tabs.last else { return }
-        bonsplitController.selectTab(last.id)
+        withBonsplitSelectionProvenance(.operatorInteraction) {
+            bonsplitController.selectTab(last.id)
+        }
 
         if let tabId = bonsplitController.selectedTab(inPane: focusedPaneId)?.id {
-            applyTabSelection(tabId: tabId, inPane: focusedPaneId)
+            applyTabSelection(
+                tabId: tabId,
+                inPane: focusedPaneId,
+                agentContextProvenance: .operatorInteraction
+            )
         }
     }
 
@@ -9997,8 +10440,10 @@ final class Workspace: Identifiable, ObservableObject {
                 guard let selectedTab = bonsplitController.selectedTab(inPane: pane),
                       let mappedPanelId = panelIdFromSurfaceId(selectedTab.id),
                       panels[mappedPanelId] != nil else { continue }
-                bonsplitController.focusPane(pane)
-                bonsplitController.selectTab(selectedTab.id)
+                withBonsplitSelectionProvenance(.maintenance) {
+                    bonsplitController.focusPane(pane)
+                    bonsplitController.selectTab(selectedTab.id)
+                }
                 targetPanelId = mappedPanelId
                 break
             }
@@ -10010,8 +10455,10 @@ final class Workspace: Identifiable, ObservableObject {
                let fallbackPane = bonsplitController.allPaneIds.first(where: { paneId in
                    bonsplitController.tabs(inPane: paneId).contains(where: { $0.id == fallbackTabId })
                }) {
-                bonsplitController.focusPane(fallbackPane)
-                bonsplitController.selectTab(fallbackTabId)
+                withBonsplitSelectionProvenance(.maintenance) {
+                    bonsplitController.focusPane(fallbackPane)
+                    bonsplitController.selectTab(fallbackTabId)
+                }
             }
         }
 
@@ -11072,6 +11519,24 @@ extension Workspace: BonsplitDelegate {
         }
     }
 
+    /// Scope synchronous Bonsplit delegate callbacks with the provenance of
+    /// the programmatic selection that caused them. Direct callbacks with no
+    /// scope are operator interactions; low-level calls inherit maintenance.
+    @discardableResult
+    private func withBonsplitSelectionProvenance<T>(
+        _ provenance: AgentContextFocusProvenance? = nil,
+        _ operation: () -> T
+    ) -> T {
+        let resolved = provenance ?? bonsplitSelectionProvenanceStack.last ?? .maintenance
+        bonsplitSelectionProvenanceStack.append(resolved)
+        defer { bonsplitSelectionProvenanceStack.removeLast() }
+        return operation()
+    }
+
+    private var bonsplitCallbackAgentContextProvenance: AgentContextFocusProvenance {
+        bonsplitSelectionProvenanceStack.last ?? .operatorInteraction
+    }
+
     /// Apply the side-effects of selecting a tab (unfocus others, focus this panel, update state).
     /// bonsplit doesn't always emit didSelectTab for programmatic selection paths (e.g. createTab).
     private func applyTabSelection(
@@ -11079,14 +11544,19 @@ extension Workspace: BonsplitDelegate {
         inPane pane: PaneID,
         reassertAppKitFocus: Bool = true,
         focusIntent: PanelFocusIntent? = nil,
-        previousTerminalHostedView: GhosttySurfaceScrollView? = nil
+        previousTerminalHostedView: GhosttySurfaceScrollView? = nil,
+        agentContextProvenance: AgentContextFocusProvenance? = nil
     ) {
+        let resolvedProvenance = agentContextProvenance
+            ?? bonsplitSelectionProvenanceStack.last
+            ?? .maintenance
         pendingTabSelection = PendingTabSelectionRequest(
             tabId: tabId,
             pane: pane,
             reassertAppKitFocus: reassertAppKitFocus,
             focusIntent: focusIntent,
-            previousTerminalHostedView: previousTerminalHostedView
+            previousTerminalHostedView: previousTerminalHostedView,
+            agentContextProvenance: resolvedProvenance
         )
         guard !isApplyingTabSelection else { return }
         isApplyingTabSelection = true
@@ -11105,7 +11575,8 @@ extension Workspace: BonsplitDelegate {
                 inPane: request.pane,
                 reassertAppKitFocus: request.reassertAppKitFocus,
                 focusIntent: request.focusIntent,
-                previousTerminalHostedView: request.previousTerminalHostedView
+                previousTerminalHostedView: request.previousTerminalHostedView,
+                agentContextProvenance: request.agentContextProvenance
             )
         }
     }
@@ -11115,7 +11586,8 @@ extension Workspace: BonsplitDelegate {
         inPane pane: PaneID,
         reassertAppKitFocus: Bool,
         focusIntent: PanelFocusIntent?,
-        previousTerminalHostedView: GhosttySurfaceScrollView?
+        previousTerminalHostedView: GhosttySurfaceScrollView?,
+        agentContextProvenance: AgentContextFocusProvenance
     ) {
         let previousFocusedPanelId = focusedPanelId
 #if DEBUG
@@ -11130,13 +11602,15 @@ extension Workspace: BonsplitDelegate {
             "reassert=\(reassertAppKitFocus ? 1 : 0)"
         )
 #endif
-        if bonsplitController.allPaneIds.contains(pane) {
-            if bonsplitController.focusedPaneId != pane {
-                bonsplitController.focusPane(pane)
-            }
-            if bonsplitController.tabs(inPane: pane).contains(where: { $0.id == tabId }),
-               bonsplitController.selectedTab(inPane: pane)?.id != tabId {
-                bonsplitController.selectTab(tabId)
+        withBonsplitSelectionProvenance(agentContextProvenance) {
+            if bonsplitController.allPaneIds.contains(pane) {
+                if bonsplitController.focusedPaneId != pane {
+                    bonsplitController.focusPane(pane)
+                }
+                if bonsplitController.tabs(inPane: pane).contains(where: { $0.id == tabId }),
+                   bonsplitController.selectedTab(inPane: pane)?.id != tabId {
+                    bonsplitController.selectTab(tabId)
+                }
             }
         }
 
@@ -11149,8 +11623,10 @@ extension Workspace: BonsplitDelegate {
         } else if bonsplitController.tabs(inPane: pane).contains(where: { $0.id == tabId }) {
             focusedPane = pane
             selectedTabId = tabId
-            bonsplitController.focusPane(focusedPane)
-            bonsplitController.selectTab(selectedTabId)
+            withBonsplitSelectionProvenance(agentContextProvenance) {
+                bonsplitController.focusPane(focusedPane)
+                bonsplitController.selectTab(selectedTabId)
+            }
         } else {
             return
         }
@@ -11173,6 +11649,11 @@ extension Workspace: BonsplitDelegate {
             }
             return
         }
+
+        noteAgentCompanionSelection(
+            panelID: effectiveFocusedPanelId,
+            provenance: agentContextProvenance
+        )
 
         if shouldTreatCurrentEventAsExplicitFocusIntent() {
             markExplicitFocusIntent(on: effectiveFocusedPanelId)
@@ -11514,7 +11995,9 @@ extension Workspace: BonsplitDelegate {
                     // Bring the tab to the front first so the overlay mounts
                     // where the operator is looking.
                     if self.bonsplitController.selectedTab(inPane: pane)?.id != tabId {
-                        self.bonsplitController.selectTab(tabId)
+                        self.withBonsplitSelectionProvenance(.maintenance) {
+                            self.bonsplitController.selectTab(tabId)
+                        }
                     }
 
                     let confirmed = await self.confirmClosePanel(for: tabId)
@@ -11652,9 +12135,15 @@ extension Workspace: BonsplitDelegate {
             let replacement = createReplacementTerminalPanel()
             if let replacementTabId = surfaceIdFromPanelId(replacement.id),
                let replacementPane = bonsplitController.allPaneIds.first {
-                bonsplitController.focusPane(replacementPane)
-                bonsplitController.selectTab(replacementTabId)
-                applyTabSelection(tabId: replacementTabId, inPane: replacementPane)
+                withBonsplitSelectionProvenance(.maintenance) {
+                    bonsplitController.focusPane(replacementPane)
+                    bonsplitController.selectTab(replacementTabId)
+                    applyTabSelection(
+                        tabId: replacementTabId,
+                        inPane: replacementPane,
+                        agentContextProvenance: .maintenance
+                    )
+                }
             }
             scheduleTerminalGeometryReconcile()
             scheduleFocusReconcile()
@@ -11667,13 +12156,23 @@ extension Workspace: BonsplitDelegate {
            bonsplitController.focusedPaneId == pane {
             // Keep selection/focus convergence in the same close transaction to avoid a transient
             // frame where the pane has no selected content.
-            bonsplitController.selectTab(selectTabId)
-            applyTabSelection(tabId: selectTabId, inPane: pane)
+            withBonsplitSelectionProvenance(.maintenance) {
+                bonsplitController.selectTab(selectTabId)
+                applyTabSelection(
+                    tabId: selectTabId,
+                    inPane: pane,
+                    agentContextProvenance: .maintenance
+                )
+            }
         } else if let focusedPane = bonsplitController.focusedPaneId,
                   let focusedTabId = bonsplitController.selectedTab(inPane: focusedPane)?.id {
             // When closing the last tab in a pane, Bonsplit may focus a different pane and skip
             // emitting didSelectTab. Re-apply the focused selection so sidebar state stays in sync.
-            applyTabSelection(tabId: focusedTabId, inPane: focusedPane)
+            applyTabSelection(
+                tabId: focusedTabId,
+                inPane: focusedPane,
+                agentContextProvenance: .maintenance
+            )
         }
 
         if bonsplitController.allPaneIds.contains(pane) {
@@ -11686,7 +12185,11 @@ extension Workspace: BonsplitDelegate {
     }
 
     func splitTabBar(_ controller: BonsplitController, didSelectTab tab: Bonsplit.Tab, inPane pane: PaneID) {
-        applyTabSelection(tabId: tab.id, inPane: pane)
+        applyTabSelection(
+            tabId: tab.id,
+            inPane: pane,
+            agentContextProvenance: bonsplitCallbackAgentContextProvenance
+        )
     }
 
     func splitTabBar(_ controller: BonsplitController, didMoveTab tab: Bonsplit.Tab, fromPane source: PaneID, toPane destination: PaneID) {
@@ -11716,7 +12219,11 @@ extension Workspace: BonsplitDelegate {
             "destSelected=\(selectedBefore) focusedPane=\(focusedPaneBefore) focusedPanel=\(focusedPanelBefore)"
         )
 #endif
-        applyTabSelection(tabId: tab.id, inPane: destination)
+        applyTabSelection(
+            tabId: tab.id,
+            inPane: destination,
+            agentContextProvenance: .maintenance
+        )
 #if DEBUG
         let movedPanelIdAfter = panelIdFromSurfaceId(tab.id)
 #endif
@@ -11751,7 +12258,11 @@ extension Workspace: BonsplitDelegate {
             "Workspace.didFocusPane paneId=\(pane.id.uuidString) tabId=\(tab.id) focusedPane=\(controller.focusedPaneId?.id.uuidString ?? "nil")"
         )
 #endif
-        applyTabSelection(tabId: tab.id, inPane: pane)
+        applyTabSelection(
+            tabId: tab.id,
+            inPane: pane,
+            agentContextProvenance: bonsplitCallbackAgentContextProvenance
+        )
 
         // Apply window background for terminal
         if let panelId = panelIdFromSurfaceId(tab.id),
@@ -11823,7 +12334,11 @@ extension Workspace: BonsplitDelegate {
 
             if let focusedPane = bonsplitController.focusedPaneId,
                let focusedTabId = bonsplitController.selectedTab(inPane: focusedPane)?.id {
-                applyTabSelection(tabId: focusedTabId, inPane: focusedPane)
+                applyTabSelection(
+                    tabId: focusedTabId,
+                    inPane: focusedPane,
+                    agentContextProvenance: .maintenance
+                )
             } else if shouldScheduleFocusReconcile {
                 scheduleFocusReconcile()
             }
@@ -12038,8 +12553,15 @@ extension Workspace: BonsplitDelegate {
         // selection so our focus/unfocus logic runs after this delegate callback returns.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            if self.bonsplitController.focusedPaneId == newPane {
-                self.bonsplitController.selectTab(newTabId)
+            self.withBonsplitSelectionProvenance(.maintenance) {
+                if self.bonsplitController.focusedPaneId == newPane {
+                    self.bonsplitController.selectTab(newTabId)
+                    self.applyTabSelection(
+                        tabId: newTabId,
+                        inPane: newPane,
+                        agentContextProvenance: .maintenance
+                    )
+                }
             }
             self.scheduleTerminalGeometryReconcile()
             self.scheduleFocusReconcile()
@@ -12055,25 +12577,27 @@ extension Workspace: BonsplitDelegate {
         // Without this, clicking a spawn button in a pane that was NOT the focused pane
         // created the surface but left focus on the other pane, so the view never
         // switched to the new tab.
-        bonsplitController.focusPane(pane)
-        switch kind {
-        case "terminal":
-            _ = newTerminalSurface(inPane: pane)
-        case "browser":
-            // Defense in depth: the spawn button is already hidden when the
-            // internal browser is disabled, but no-op safely if the request
-            // reaches us anyway.
-            guard SurfaceTypeAvailability.isEnabled(.browser) else { return }
-            _ = newBrowserSurface(inPane: pane)
-        case "markdown":
-            guard SurfaceTypeAvailability.isEnabled(.markdown) else { return }
-            _ = newMarkdownSurface(inPane: pane)
-        case "agent":
-            launchAgentSurface(inPane: pane)
-        case "newTab":
-            createNewTabOfFocusedKind(inPane: pane)
-        default:
-            _ = newTerminalSurface(inPane: pane)
+        withBonsplitSelectionProvenance(.maintenance) {
+            bonsplitController.focusPane(pane)
+            switch kind {
+            case "terminal":
+                _ = newTerminalSurface(inPane: pane)
+            case "browser":
+                // Defense in depth: the spawn button is already hidden when the
+                // internal browser is disabled, but no-op safely if the request
+                // reaches us anyway.
+                guard SurfaceTypeAvailability.isEnabled(.browser) else { return }
+                _ = newBrowserSurface(inPane: pane)
+            case "markdown":
+                guard SurfaceTypeAvailability.isEnabled(.markdown) else { return }
+                _ = newMarkdownSurface(inPane: pane)
+            case "agent":
+                launchAgentSurface(inPane: pane)
+            case "newTab":
+                createNewTabOfFocusedKind(inPane: pane)
+            default:
+                _ = newTerminalSurface(inPane: pane)
+            }
         }
     }
 

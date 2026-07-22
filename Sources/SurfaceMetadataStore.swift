@@ -1,4 +1,26 @@
+import Combine
 import Foundation
+
+enum TerminalKindChangeOrigin: String, Equatable, Sendable {
+    case merge
+    case replace
+    case keyedClear = "keyed_clear"
+    case clearAll = "clear_all"
+    case internalWrite = "internal"
+    case restore
+}
+
+/// Narrow, typed observation seam for the one metadata key that can change
+/// Workspace agent-context semantics. Values are published only after the
+/// store commits an effective `terminal_type` transition.
+struct TerminalKindChange: Equatable, Sendable {
+    let workspaceID: UUID
+    let surfaceID: UUID
+    let oldKind: String?
+    let newKind: String?
+    let origin: TerminalKindChangeOrigin
+    let source: MetadataSource?
+}
 
 /// Source precedence for metadata writes.
 ///
@@ -149,6 +171,11 @@ final class SurfaceMetadataStore: @unchecked Sendable {
     // MARK: - State
 
     private let queue = DispatchQueue(label: "com.stage11.c11.surface-metadata", qos: .userInitiated)
+    private let terminalKindChangeSubject = PassthroughSubject<TerminalKindChange, Never>()
+
+    var terminalKindChanges: AnyPublisher<TerminalKindChange, Never> {
+        terminalKindChangeSubject.eraseToAnyPublisher()
+    }
 
     /// Per-workspace per-surface blob.
     private var metadata: [UUID: [UUID: [String: Any]]] = [:]
@@ -411,15 +438,31 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         mode: WriteMode,
         source: MetadataSource
     ) throws -> WriteResult {
-        return try queue.sync {
-            try setMetadataLocked(
+        let outcome: (result: WriteResult, terminalKindChange: TerminalKindChange?) = try queue.sync {
+            let oldKind = terminalKindLocked(workspaceId: workspaceId, surfaceId: surfaceId)
+            let result = try setMetadataLocked(
                 workspaceId: workspaceId,
                 surfaceId: surfaceId,
                 partial: partial,
                 mode: mode,
                 source: source
             )
+            let newKind = terminalKindLocked(workspaceId: workspaceId, surfaceId: surfaceId)
+            let origin: TerminalKindChangeOrigin = mode == .replace ? .replace : .merge
+            return (
+                result,
+                terminalKindChange(
+                    workspaceId: workspaceId,
+                    surfaceId: surfaceId,
+                    oldKind: oldKind,
+                    newKind: newKind,
+                    origin: origin,
+                    source: source
+                )
+            )
         }
+        publish(outcome.terminalKindChange)
+        return outcome.result
     }
 
     enum WriteMode: String {
@@ -458,7 +501,8 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         keys: [String]?,
         source: MetadataSource
     ) throws -> WriteResult {
-        return try queue.sync {
+        let outcome: (result: WriteResult, terminalKindChange: TerminalKindChange?) = try queue.sync {
+            let oldKind = terminalKindLocked(workspaceId: workspaceId, surfaceId: surfaceId)
             var result = WriteResult()
             if keys == nil {
                 guard source == .explicit else {
@@ -476,7 +520,17 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                 if !existing.isEmpty || !existingSrc.isEmpty {
                     metadataStoreRevision &+= 1
                 }
-                return result
+                return (
+                    result,
+                    terminalKindChange(
+                        workspaceId: workspaceId,
+                        surfaceId: surfaceId,
+                        oldKind: oldKind,
+                        newKind: nil,
+                        origin: .clearAll,
+                        source: source
+                    )
+                )
             }
 
             var blob = metadata[workspaceId]?[surfaceId] ?? [:]
@@ -505,8 +559,21 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             result.metadata = blob
             result.sources = sblob.mapValues { $0.toJSON() }
             if removedAny { metadataStoreRevision &+= 1 }
-            return result
+            let newKind = terminalKindLocked(workspaceId: workspaceId, surfaceId: surfaceId)
+            return (
+                result,
+                terminalKindChange(
+                    workspaceId: workspaceId,
+                    surfaceId: surfaceId,
+                    oldKind: oldKind,
+                    newKind: newKind,
+                    origin: .keyedClear,
+                    source: source
+                )
+            )
         }
+        publish(outcome.terminalKindChange)
+        return outcome.result
     }
 
     /// Restore metadata + sources for a surface from a session snapshot
@@ -516,23 +583,34 @@ final class SurfaceMetadataStore: @unchecked Sendable {
     /// the newly-initialized surface has already written a `.declare`
     /// value to the same key: the snapshot wins.
     ///
-    /// Silent by design. The store has no observer infrastructure today;
-    /// any consumer wanting post-restore data queries it on demand.
-    /// Adding a notification pipeline is Phase 3 scope.
+    /// Restore remains silent for generic metadata consumers. The narrow
+    /// `terminalKindChanges` stream publishes only when this replacement
+    /// effectively changes `terminal_type`.
     func restoreFromSnapshot(
         workspaceId: UUID,
         surfaceId: UUID,
         values: [String: Any],
         sources: [String: SourceRecord]
     ) {
-        queue.sync {
+        let change: TerminalKindChange? = queue.sync {
+            let oldKind = terminalKindLocked(workspaceId: workspaceId, surfaceId: surfaceId)
             metadata[workspaceId, default: [:]][surfaceId] = values
             self.sources[workspaceId, default: [:]][surfaceId] = sources
             // Bump the revision so a post-restore autosave tick sees the
             // fingerprint differ from the pre-restore state, writing the
             // restored contents back to disk with a fresh createdAt.
             metadataStoreRevision &+= 1
+            let newKind = terminalKindLocked(workspaceId: workspaceId, surfaceId: surfaceId)
+            return terminalKindChange(
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                oldKind: oldKind,
+                newKind: newKind,
+                origin: .restore,
+                source: sources[MetadataKey.terminalType]?.source
+            )
         }
+        publish(change)
     }
 
     /// Remove all metadata for a surface. Called from `pruneSurfaceMetadata`
@@ -579,19 +657,20 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         value: Any,
         source: MetadataSource
     ) -> Bool {
-        return queue.sync {
+        let outcome: (applied: Bool, terminalKindChange: TerminalKindChange?) = queue.sync {
+            let oldKind = terminalKindLocked(workspaceId: workspaceId, surfaceId: surfaceId)
             var blob = metadata[workspaceId]?[surfaceId] ?? [:]
             var sblob = sources[workspaceId]?[surfaceId] ?? [:]
 
             if let cur = sblob[key], source.precedence < cur.source.precedence {
-                return false
+                return (false, nil)
             }
             if SurfaceMetadataStore.validateReservedKey(key, value) != nil {
-                return false
+                return (false, nil)
             }
             // Avoid churn on no-op same-source same-value writes.
             if let existing = blob[key], sameJSONValue(existing, value), sblob[key]?.source == source {
-                return false
+                return (false, nil)
             }
             // C11-163: capture prior before overwrite (amendment E).
             let priorValue = blob[key]
@@ -600,7 +679,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
 
             if let encoded = try? JSONSerialization.data(withJSONObject: blob, options: []),
                encoded.count > SurfaceMetadataStore.payloadCapBytes {
-                return false
+                return (false, nil)
             }
 
             metadata[workspaceId, default: [:]][surfaceId] = blob
@@ -619,8 +698,23 @@ final class SurfaceMetadataStore: @unchecked Sendable {
                     source: source.rawValue
                 )
             }
-            return true
+            let newKind = terminalKindLocked(workspaceId: workspaceId, surfaceId: surfaceId)
+            return (
+                true,
+                key == MetadataKey.terminalType
+                    ? terminalKindChange(
+                        workspaceId: workspaceId,
+                        surfaceId: surfaceId,
+                        oldKind: oldKind,
+                        newKind: newKind,
+                        origin: .internalWrite,
+                        source: source
+                    )
+                    : nil
+            )
         }
+        publish(outcome.terminalKindChange)
+        return outcome.applied
     }
 
     // MARK: - Locked merge helper
@@ -747,6 +841,34 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         let da = try? JSONSerialization.data(withJSONObject: ["v": a], options: [.sortedKeys])
         let db = try? JSONSerialization.data(withJSONObject: ["v": b], options: [.sortedKeys])
         return da == db
+    }
+
+    private func terminalKindLocked(workspaceId: UUID, surfaceId: UUID) -> String? {
+        metadata[workspaceId]?[surfaceId]?[MetadataKey.terminalType] as? String
+    }
+
+    private func terminalKindChange(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        oldKind: String?,
+        newKind: String?,
+        origin: TerminalKindChangeOrigin,
+        source: MetadataSource?
+    ) -> TerminalKindChange? {
+        guard oldKind != newKind else { return nil }
+        return TerminalKindChange(
+            workspaceID: workspaceId,
+            surfaceID: surfaceId,
+            oldKind: oldKind,
+            newKind: newKind,
+            origin: origin,
+            source: source
+        )
+    }
+
+    private func publish(_ change: TerminalKindChange?) {
+        guard let change else { return }
+        terminalKindChangeSubject.send(change)
     }
 }
 

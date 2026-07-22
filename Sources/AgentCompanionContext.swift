@@ -420,7 +420,7 @@ enum AgentCompanionBrowserFeature {
     }
 }
 
-// MARK: - Default-off Workspace adapter
+// MARK: - Feature-gated Workspace adapter
 
 @MainActor
 protocol AgentCompanionWorkspaceAccess: AnyObject {
@@ -443,36 +443,58 @@ private enum DisabledAgentCompanionWorkspaceError: Error {
 }
 
 extension Workspace: AgentCompanionWorkspaceAccess {
-    var liveAgentDescriptors: [AgentDescriptor] { [] }
+    var liveAgentDescriptors: [AgentDescriptor] {
+        guard AgentCompanionBrowserFeature.isEnabled else { return [] }
+        return companionLiveAgentDescriptors
+    }
 
     func companionPresentation(for browserID: UUID) -> BrowserCompanionPresentation {
-        .unlinked
+        guard AgentCompanionBrowserFeature.isEnabled else { return .unlinked }
+        return companionPresentationValue(for: browserID)
     }
 
     func linkBrowser(_ browserID: UUID, toAgent agentID: UUID) throws {
-        throw DisabledAgentCompanionWorkspaceError.featureDisabled
+        guard AgentCompanionBrowserFeature.isEnabled else {
+            throw DisabledAgentCompanionWorkspaceError.featureDisabled
+        }
+        try companionLinkBrowser(browserID, toAgent: agentID)
     }
 
     func unlinkBrowser(_ browserID: UUID) throws {
-        throw DisabledAgentCompanionWorkspaceError.featureDisabled
+        guard AgentCompanionBrowserFeature.isEnabled else {
+            throw DisabledAgentCompanionWorkspaceError.featureDisabled
+        }
+        try companionUnlinkBrowser(browserID)
     }
 
     func revealBrowser(_ browserID: UUID) throws {
-        throw DisabledAgentCompanionWorkspaceError.featureDisabled
+        guard AgentCompanionBrowserFeature.isEnabled else {
+            throw DisabledAgentCompanionWorkspaceError.featureDisabled
+        }
+        try companionRevealBrowser(browserID)
     }
 
-    func hideBrowser(_ browserID: UUID) {}
+    func hideBrowser(_ browserID: UUID) {
+        guard AgentCompanionBrowserFeature.isEnabled else { return }
+        companionHideBrowser(browserID)
+    }
 
     func automaticLinkBrowser(
         _ browserID: UUID,
         callerSurfaceID: UUID?,
         mode: BrowserCompanionLinkMode
     ) -> BrowserCompanionLinkResult {
-        .workspace
+        guard AgentCompanionBrowserFeature.isEnabled else { return .workspace }
+        return companionAutomaticLinkBrowser(
+            browserID,
+            callerSurfaceID: callerSurfaceID,
+            mode: mode
+        )
     }
 
     func companionWireSnapshot(for browserID: UUID) -> CompanionContextWireSnapshot? {
-        nil
+        guard AgentCompanionBrowserFeature.isEnabled else { return nil }
+        return companionWireSnapshotValue(for: browserID)
     }
 }
 

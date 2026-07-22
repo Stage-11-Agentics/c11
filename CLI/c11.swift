@@ -16928,10 +16928,12 @@ struct CMUXCLI {
           help
 
         Environment:
-          CMUX_WORKSPACE_ID   Auto-set in c11 terminals. Used as default --workspace for
+          C11_WORKSPACE_ID    Auto-set in c11 terminals. Preferred default --workspace for
                               ALL commands (send, list-panels, new-split, notify, etc.).
+          CMUX_WORKSPACE_ID   Legacy alias for C11_WORKSPACE_ID; used only when C11_WORKSPACE_ID is absent.
           CMUX_TAB_ID         Optional alias used by `tab-action`/`rename-tab` as default --tab.
-          CMUX_SURFACE_ID     Auto-set in c11 terminals. Used as default --surface.
+          C11_SURFACE_ID      Auto-set in c11 terminals. Preferred default --surface.
+          CMUX_SURFACE_ID     Legacy alias for C11_SURFACE_ID; used only when C11_SURFACE_ID is absent.
           C11_SOCKET          Override the Unix socket path (preferred). Takes precedence over
                               CMUX_SOCKET_PATH and CMUX_SOCKET.
           CMUX_SOCKET_PATH    Legacy alias for C11_SOCKET. Still accepted; loses to C11_SOCKET when both set.

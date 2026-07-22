@@ -710,6 +710,18 @@ def _assert_creation_outcome_matrix(
             len(_surface_rows(client, workspace_id)) == before,
             f"CLI {route} mutated before rejecting an invalid workspace handle",
         )
+        malformed_arguments = _cli_creation_arguments(route, workspace_ref, caller_pane_id)
+        _expect_cli_failure(
+            socket_path,
+            workspace_id,
+            "malformed-caller",
+            "invalid_params:",
+            *malformed_arguments,
+        )
+        _must(
+            len(_surface_rows(client, workspace_id)) == before,
+            f"CLI {route} mutated before rejecting malformed caller provenance",
+        )
 
         for handle in (workspace_id, workspace_ref, workspace_id.lower()):
             payload = _run_cli_json(
@@ -776,10 +788,16 @@ def _assert_creation_outcome_matrix(
         )
 
         cli_outcomes = [
-            ("malformed caller suppression", workspace_id, "malformed-caller", False, "no_caller"),
-            ("stale caller suppression", workspace_id, str(uuid.uuid4()), False, "no_caller"),
+            ("stale caller", workspace_id, str(uuid.uuid4()), False, "caller_not_found"),
             (
-                "different-workspace suppression",
+                "cross-workspace caller",
+                workspace_id,
+                cross_workspace_agent_id,
+                False,
+                "caller_workspace_mismatch",
+            ),
+            (
+                "explicitly different caller workspace suppression",
                 cross_workspace_id,
                 cross_workspace_agent_id,
                 False,

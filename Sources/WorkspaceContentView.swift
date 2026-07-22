@@ -252,10 +252,7 @@ struct WorkspaceContentView: View {
                         hasExactSurfaceNotification: unreadFromNotifications.contains($0)
                     )
                 }
-                let shouldShow = panelId.map {
-                    manualUnread.contains($0)
-                        || (unreadFromNotifications.contains($0) && expectedActivity != .waiting)
-                } ?? false
+                let shouldShow = panelId.map { manualUnread.contains($0) } ?? false
                 let kindUpdate: String?? = expectedKind.map { .some($0) }
 
                 if tab.showsNotificationBadge != shouldShow ||

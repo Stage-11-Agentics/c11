@@ -6635,7 +6635,6 @@ final class Workspace: Identifiable, ObservableObject {
             hasExactSurfaceNotification: hasExact
         )
         let shouldShowLegacyUnread = manualUnreadPanelIds.contains(panelId)
-            || (hasExact && activityState != .waiting)
         guard existing.activityState != activityState
             || existing.showsNotificationBadge != shouldShowLegacyUnread else { return }
         bonsplitController.updateTab(
@@ -6645,12 +6644,9 @@ final class Workspace: Identifiable, ObservableObject {
         )
     }
 
-    func syncSurfaceTabActivityStates(exactUnreadSurfaceIds: Set<UUID>? = nil) {
+    func syncSurfaceTabActivityStates() {
         for panelId in surfaceIdToPanelId.values {
-            syncSurfaceTabActivityStateForPanel(
-                panelId,
-                hasExactSurfaceNotification: exactUnreadSurfaceIds.map { $0.contains(panelId) }
-            )
+            syncSurfaceTabActivityStateForPanel(panelId)
         }
     }
 
@@ -9320,6 +9316,7 @@ final class Workspace: Identifiable, ObservableObject {
             _ = bonsplitController.reorderTab(newTabId, toIndex: index)
         }
         syncPinnedStateForTab(newTabId, panelId: detached.panelId)
+        syncSurfaceTabActivityStateForPanel(detached.panelId)
         normalizePinnedTabs(in: paneId)
 
         if focus {

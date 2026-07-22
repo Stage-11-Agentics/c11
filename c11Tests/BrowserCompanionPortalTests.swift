@@ -121,12 +121,14 @@ final class BrowserCompanionPortalTests: XCTestCase {
         let (window, slot, _) = makeWindowSlotAndWebView()
         defer { window.orderOut(nil) }
         var revealCount = 0
-        slot.setCompanion(
-            configuration(
-                for: .veiled(linked: linkedAgent, active: activeAgent),
-                onReveal: { revealCount += 1 }
-            )
+        let blockingConfiguration = configuration(
+            for: .veiled(linked: linkedAgent, active: activeAgent),
+            onReveal: {
+                revealCount += 1
+                slot.setCompanion(nil)
+            }
         )
+        slot.setCompanion(blockingConfiguration)
         guard let overlay = companionOverlay(in: slot) else {
             XCTFail("Expected companion overlay")
             return
@@ -135,8 +137,27 @@ final class BrowserCompanionPortalTests: XCTestCase {
         overlay.keyDown(with: keyEvent(characters: "a", keyCode: 0, window: window))
         XCTAssertEqual(revealCount, 0)
         overlay.keyDown(with: keyEvent(characters: "\r", keyCode: 36, window: window))
-        overlay.keyDown(with: keyEvent(characters: " ", keyCode: 49, window: window))
+        XCTAssertEqual(revealCount, 1)
+        XCTAssertFalse(
+            overlay.isHidden,
+            "Synchronous keyboard reveal must retain the veil until matching key-up"
+        )
+        overlay.keyUp(with: keyEvent(type: .keyUp, characters: "\r", keyCode: 36, window: window))
+        XCTAssertTrue(overlay.isHidden)
+
+        slot.setCompanion(blockingConfiguration)
+        guard let revealButton = descendantRevealButton(in: overlay) else {
+            XCTFail("Expected focused reveal button")
+            return
+        }
+        revealButton.keyDown(with: keyEvent(characters: " ", keyCode: 49, window: window))
         XCTAssertEqual(revealCount, 2)
+        XCTAssertFalse(
+            overlay.isHidden,
+            "The focused button must route activation through the same key-up hold"
+        )
+        revealButton.keyUp(with: keyEvent(type: .keyUp, characters: " ", keyCode: 49, window: window))
+        XCTAssertTrue(overlay.isHidden)
     }
 
     func testBlockingCompanionClosesSearchBeforeInstallingVeilAndRejectsReopen() {
@@ -285,6 +306,15 @@ final class BrowserCompanionPortalTests: XCTestCase {
         slot.subviews.compactMap { $0 as? BrowserCompanionOverlayHost }.first
     }
 
+    private func descendantRevealButton(in root: NSView) -> NSButton? {
+        var stack = root.subviews
+        while let view = stack.popLast() {
+            if let button = view as? NSButton { return button }
+            stack.append(contentsOf: view.subviews)
+        }
+        return nil
+    }
+
     private func owningView(for responder: NSResponder?) -> NSView? {
         if let editor = responder as? NSTextView,
            editor.isFieldEditor,
@@ -311,9 +341,14 @@ final class BrowserCompanionPortalTests: XCTestCase {
         return event
     }
 
-    private func keyEvent(characters: String, keyCode: UInt16, window: NSWindow) -> NSEvent {
+    private func keyEvent(
+        type: NSEvent.EventType = .keyDown,
+        characters: String,
+        keyCode: UInt16,
+        window: NSWindow
+    ) -> NSEvent {
         guard let event = NSEvent.keyEvent(
-            with: .keyDown,
+            with: type,
             location: .zero,
             modifierFlags: [],
             timestamp: ProcessInfo.processInfo.systemUptime,

@@ -1338,6 +1338,14 @@ private final class BrowserCompanionRevealButton: NSButton {
 
     override var acceptsFirstResponder: Bool { true }
 
+    override func keyDown(with event: NSEvent) {
+        companionHost?.keyDown(with: event)
+    }
+
+    override func keyUp(with event: NSEvent) {
+        companionHost?.keyUp(with: event)
+    }
+
     override func mouseDown(with event: NSEvent) {
         companionHost?.beginPointerSequence()
         defer { companionHost?.endPointerSequence() }
@@ -1367,6 +1375,7 @@ final class BrowserCompanionOverlayHost: NSVisualEffectView {
     private var accessibilitySnapshots: [ObjectIdentifier: BrowserCompanionAccessibilitySnapshot] = [:]
     private weak var priorFirstResponder: NSResponder?
     private var isPointerSequenceActive = false
+    private var activationKeyCode: UInt16?
     private var hasPendingConfiguration = false
     private var pendingConfiguration: BrowserPortalCompanionConfiguration?
 
@@ -1480,6 +1489,8 @@ final class BrowserCompanionOverlayHost: NSVisualEffectView {
         guard isBlocking else { return }
         switch event.keyCode {
         case 36, 49, 76: // Return, Space, keypad Enter
+            guard activationKeyCode == nil else { return }
+            activationKeyCode = event.keyCode
             requestReveal()
         case 48: // Tab: keep traversal inside the AppKit overlay layer.
             if event.modifierFlags.contains(.shift) {
@@ -1494,12 +1505,19 @@ final class BrowserCompanionOverlayHost: NSVisualEffectView {
         }
     }
 
+    override func keyUp(with event: NSEvent) {
+        guard isBlocking || activationKeyCode != nil else { return }
+        guard activationKeyCode == event.keyCode else { return }
+        activationKeyCode = nil
+        finishDeferredRevealInputIfNeeded()
+    }
+
     func apply(
         configuration: BrowserPortalCompanionConfiguration?,
         coveredViews: [NSView],
         restoreResponder: Bool
     ) {
-        if isPointerSequenceActive,
+        if (isPointerSequenceActive || activationKeyCode != nil),
            configuration?.state.blocksWebContent != true {
             pendingConfiguration = configuration
             hasPendingConfiguration = true
@@ -1549,6 +1567,11 @@ final class BrowserCompanionOverlayHost: NSVisualEffectView {
 
     fileprivate func endPointerSequence() {
         isPointerSequenceActive = false
+        finishDeferredRevealInputIfNeeded()
+    }
+
+    private func finishDeferredRevealInputIfNeeded() {
+        guard !isPointerSequenceActive, activationKeyCode == nil else { return }
         guard hasPendingConfiguration else { return }
         let pending = pendingConfiguration
         pendingConfiguration = nil
@@ -1629,6 +1652,10 @@ final class BrowserCompanionOverlayHost: NSVisualEffectView {
             snapshot.view?.setAccessibilityHidden(snapshot.wasHidden)
         }
         accessibilitySnapshots.removeAll()
+        isPointerSequenceActive = false
+        activationKeyCode = nil
+        pendingConfiguration = nil
+        hasPendingConfiguration = false
         isHidden = true
 
         guard let window else {

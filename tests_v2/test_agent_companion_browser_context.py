@@ -32,6 +32,7 @@ EXPECT_ENABLED = os.environ.get("C11_AGENT_COMPANION_EXPECT_ENABLED", "1").strip
     "false",
     "off",
 }
+LSAPPINFO = "/usr/bin/lsappinfo"
 
 CONTEXT_KEYS = {
     "kind",
@@ -127,11 +128,26 @@ def _find_surface_node(value: Any, surface_id: str) -> dict[str, Any] | None:
     return None
 
 
+def _frontmost_application() -> str:
+    process = subprocess.run(
+        [LSAPPINFO, "front"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    _must(
+        process.returncode == 0 and bool(process.stdout.strip()),
+        f"Unable to read frontmost macOS application: {process.stderr!r}",
+    )
+    return process.stdout.strip()
+
+
 def _focus_fingerprint(client: cmux, workspace_id: str) -> str:
     identify = client._call("system.identify") or {}
     window_list = client._call("window.list") or {}
     pane_list = client._call("pane.list", {"workspace_id": workspace_id}) or {}
     compact = {
+        "frontmost_application": _frontmost_application(),
         "focused": identify.get("focused"),
         "windows": [
             {
@@ -217,24 +233,28 @@ def _assert_canonical_queries(
     _must(_context(tab_row) == expected, "browser.tab.list context differs from surface.context.get")
 
 
-def _run_cli_json(
+def _run_cli_process(
     socket_path: str,
-    workspace_id: str,
-    caller_surface_id: str,
+    workspace_id: str | None,
+    caller_surface_id: str | None,
     *arguments: str,
-) -> dict[str, Any]:
+    legacy_workspace_id: str | None = None,
+    legacy_surface_id: str | None = None,
+) -> subprocess.CompletedProcess[str]:
     cli = find_cli_binary()
     environment = dict(os.environ)
-    environment.update(
-        {
-            "C11_SOCKET": socket_path,
-            "C11_WORKSPACE_ID": workspace_id,
-            "C11_SURFACE_ID": caller_surface_id,
-        }
-    )
-    environment.pop("CMUX_WORKSPACE_ID", None)
-    environment.pop("CMUX_SURFACE_ID", None)
-    process = subprocess.run(
+    environment["C11_SOCKET"] = socket_path
+    for key, value in [
+        ("C11_WORKSPACE_ID", workspace_id),
+        ("C11_SURFACE_ID", caller_surface_id),
+        ("CMUX_WORKSPACE_ID", legacy_workspace_id),
+        ("CMUX_SURFACE_ID", legacy_surface_id),
+    ]:
+        if value is None:
+            environment.pop(key, None)
+        else:
+            environment[key] = value
+    return subprocess.run(
         [
             cli,
             "--socket",
@@ -247,6 +267,24 @@ def _run_cli_json(
         check=False,
         env=environment,
     )
+
+
+def _run_cli_json(
+    socket_path: str,
+    workspace_id: str | None,
+    caller_surface_id: str | None,
+    *arguments: str,
+    legacy_workspace_id: str | None = None,
+    legacy_surface_id: str | None = None,
+) -> dict[str, Any]:
+    process = _run_cli_process(
+        socket_path,
+        workspace_id,
+        caller_surface_id,
+        *arguments,
+        legacy_workspace_id=legacy_workspace_id,
+        legacy_surface_id=legacy_surface_id,
+    )
     _must(process.returncode == 0, f"CLI command failed: {process.stderr}\n{process.stdout}")
     json_start = process.stdout.find("{")
     _must(json_start >= 0, f"CLI did not emit JSON: {process.stdout!r}")
@@ -255,11 +293,31 @@ def _run_cli_json(
     return payload
 
 
+def _expect_cli_failure(
+    socket_path: str,
+    workspace_id: str | None,
+    caller_surface_id: str | None,
+    expected_text: str,
+    *arguments: str,
+) -> None:
+    process = _run_cli_process(
+        socket_path,
+        workspace_id,
+        caller_surface_id,
+        *arguments,
+    )
+    output = f"{process.stderr}\n{process.stdout}"
+    _must(process.returncode != 0, f"CLI unexpectedly succeeded: {output}")
+    _must(expected_text in output, f"Expected CLI error containing {expected_text!r}, got: {output}")
+
+
 def _run_cli_browser_open(
     socket_path: str,
-    workspace_id: str,
-    caller_surface_id: str,
+    workspace_id: str | None,
+    caller_surface_id: str | None,
     *arguments: str,
+    legacy_workspace_id: str | None = None,
+    legacy_surface_id: str | None = None,
 ) -> dict[str, Any]:
     return _run_cli_json(
         socket_path,
@@ -269,6 +327,8 @@ def _run_cli_browser_open(
         "open",
         *arguments,
         "about:blank?agent-companion-contract=1",
+        legacy_workspace_id=legacy_workspace_id,
+        legacy_surface_id=legacy_surface_id,
     )
 
 
@@ -390,64 +450,358 @@ def _assert_cli_routing(
     different_window_id = str(created_window.get("window_id") or "")
     _must(bool(different_window_id), f"window.create failed: {created_window}")
     try:
-        different_window = _run_cli_browser_open(
-            socket_path,
-            workspace_id,
-            caller_surface_id,
-            "--window",
-            different_window_id,
+        different_window_workspaces = client._call(
+            "workspace.list",
+            {"window_id": different_window_id},
+        ) or {}
+        target_workspace = next(
+            (
+                row
+                for row in different_window_workspaces.get("workspaces") or []
+                if row.get("selected") is True
+            ),
+            None,
         )
+        if target_workspace is None:
+            target_workspace = next(
+                iter(different_window_workspaces.get("workspaces") or []),
+                None,
+            )
         _must(
-            different_window.get("window_id") == different_window_id,
-            f"CLI changed explicit different-window routing: {different_window}",
+            isinstance(target_workspace, dict),
+            f"New window has no target workspace: {different_window_workspaces}",
         )
+        target_workspace_id = str(target_workspace.get("id") or "")
+        target_workspace_index = target_workspace.get("index")
         _must(
-            different_window.get("link_result") == "no_caller",
-            f"Different window retained caller attribution: {different_window}",
+            bool(target_workspace_id) and isinstance(target_workspace_index, int),
+            f"New-window workspace identity is incomplete: {target_workspace}",
         )
+        target_pane_id = str(_first_terminal(client, target_workspace_id).get("pane_id") or "")
+        _must(bool(target_pane_id), "New-window workspace has no target pane")
+
+        for route in ("browser open", "new-surface", "new-pane"):
+            different_window = _run_cli_json(
+                socket_path,
+                workspace_id,
+                caller_surface_id,
+                *_cli_creation_arguments(
+                    route,
+                    str(target_workspace_index),
+                    target_pane_id,
+                    window_handle=different_window_id,
+                ),
+            )
+            _must(
+                different_window.get("window_id") == different_window_id,
+                f"CLI {route} changed explicit different-window routing: {different_window}",
+            )
+            _must(
+                different_window.get("workspace_id") == target_workspace_id,
+                f"CLI {route} resolved a numeric workspace outside its explicit window: {different_window}",
+            )
+            _must(
+                different_window.get("link_result") == "no_caller",
+                f"CLI {route} retained caller attribution across windows: {different_window}",
+            )
     finally:
         client._call("window.close", {"window_id": different_window_id})
 
 
-def _assert_socket_creation_routes(
-    client: cmux,
+def _socket_creation_request(
+    method: str,
     workspace_id: str,
-    caller_surface_id: str,
     caller_pane_id: str,
-) -> None:
-    surface_created = client._call(
-        "surface.create",
-        {
+    caller_surface_id: str | None,
+    *,
+    workspace_wide: bool = False,
+    invalid_link_mode: bool = False,
+) -> tuple[str, dict[str, Any]]:
+    if method == "browser.open_split":
+        params: dict[str, Any] = {
+            "workspace_id": workspace_id,
+            "url": "about:blank?socket-outcome-matrix=1",
+        }
+    elif method == "surface.create":
+        params = {
             "workspace_id": workspace_id,
             "pane_id": caller_pane_id,
             "type": "browser",
-            "url": "about:blank?socket-surface-create=1",
+            "url": "about:blank?socket-outcome-matrix=1",
             "focus": False,
-            "caller_surface_id": caller_surface_id,
-        },
-    ) or {}
-    _must(surface_created.get("link_result") == "automatic", f"surface.create did not link: {surface_created}")
-    _must(
-        _context(surface_created).get("linked_agent_surface_id") == caller_surface_id,
-        f"surface.create linked the wrong caller: {surface_created}",
-    )
-
-    pane_created = client._call(
-        "pane.create",
-        {
+        }
+    elif method == "pane.create":
+        params = {
             "workspace_id": workspace_id,
             "direction": "down",
             "type": "browser",
-            "url": "about:blank?socket-pane-create=1",
+            "url": "about:blank?socket-outcome-matrix=1",
             "allow_undersized": True,
-            "caller_surface_id": caller_surface_id,
-        },
-    ) or {}
-    _must(pane_created.get("link_result") == "automatic", f"pane.create did not link: {pane_created}")
+        }
+    else:
+        raise cmuxError(f"Unknown socket creation route: {method}")
+
+    if caller_surface_id is not None:
+        params["caller_surface_id"] = caller_surface_id
+    if workspace_wide:
+        params["link_mode"] = "workspace"
+    if invalid_link_mode:
+        params["link_mode"] = "not-a-link-mode"
+    return method, params
+
+
+def _cli_creation_arguments(
+    route: str,
+    workspace_handle: str,
+    caller_pane_id: str,
+    *,
+    workspace_wide: bool = False,
+    window_handle: str | None = None,
+) -> list[str]:
+    prefix = ["--window", window_handle] if window_handle is not None else []
+    wide = ["--workspace-wide"] if workspace_wide else []
+    if route == "browser open":
+        window = ["--window", window_handle] if window_handle is not None else []
+        return [
+            "browser",
+            "open",
+            *window,
+            "--workspace",
+            workspace_handle,
+            *wide,
+            "about:blank?cli-outcome-matrix=1",
+        ]
+    if route == "new-surface":
+        return [
+            *prefix,
+            "new-surface",
+            "--type",
+            "browser",
+            "--workspace",
+            workspace_handle,
+            "--pane",
+            caller_pane_id,
+            "--url",
+            "about:blank?cli-outcome-matrix=1",
+            "--no-focus",
+            *wide,
+        ]
+    if route == "new-pane":
+        return [
+            *prefix,
+            "new-pane",
+            "--type",
+            "browser",
+            "--workspace",
+            workspace_handle,
+            "--direction",
+            "down",
+            "--url",
+            "about:blank?cli-outcome-matrix=1",
+            "--force",
+            *wide,
+        ]
+    raise cmuxError(f"Unknown CLI creation route: {route}")
+
+
+def _assert_creation_payload(
+    client: cmux,
+    label: str,
+    payload: dict[str, Any],
+    expected_result: str,
+    expected_agent_id: str | None,
+) -> None:
+    _must(payload.get("link_result") == expected_result, f"{label} returned wrong outcome: {payload}")
+    context = _context(payload)
     _must(
-        _context(pane_created).get("linked_agent_surface_id") == caller_surface_id,
-        f"pane.create linked the wrong caller: {pane_created}",
+        context.get("linked_agent_surface_id") == expected_agent_id,
+        f"{label} returned wrong linked caller: {context}",
     )
+    surface_id = payload.get("surface_id")
+    _must(isinstance(surface_id, str), f"{label} returned no browser: {payload}")
+    client._call("surface.close", {"surface_id": surface_id})
+
+
+def _assert_creation_outcome_matrix(
+    client: cmux,
+    socket_path: str,
+    workspace_id: str,
+    workspace_ref: str,
+    workspace_index: int,
+    caller_window_id: str,
+    caller_surface_id: str,
+    caller_surface_ref: str,
+    caller_pane_id: str,
+    non_agent_surface_id: str,
+    cross_workspace_id: str,
+    cross_workspace_agent_id: str,
+) -> None:
+    outcomes = [
+        ("automatic", caller_surface_id, False, "automatic", caller_surface_id),
+        ("stale caller", str(uuid.uuid4()), False, "caller_not_found", None),
+        ("cross-workspace caller", cross_workspace_agent_id, False, "caller_workspace_mismatch", None),
+        ("non-agent caller", non_agent_surface_id, False, "caller_not_agent", None),
+        ("omitted caller", None, False, "no_caller", None),
+        ("workspace-wide malformed caller", "malformed-caller", True, "workspace", None),
+    ]
+
+    for method in ("browser.open_split", "surface.create", "pane.create"):
+        before = len(_surface_rows(client, workspace_id))
+        invalid_method, invalid_params = _socket_creation_request(
+            method,
+            workspace_id,
+            caller_pane_id,
+            caller_surface_id,
+            invalid_link_mode=True,
+        )
+        _expect_error(client, invalid_method, invalid_params, "invalid_params")
+        malformed_method, malformed_params = _socket_creation_request(
+            method,
+            workspace_id,
+            caller_pane_id,
+            "malformed-caller",
+        )
+        _expect_error(client, malformed_method, malformed_params, "invalid_params")
+        _must(
+            len(_surface_rows(client, workspace_id)) == before,
+            f"{method} mutated before rejecting invalid provenance",
+        )
+        for case, caller, workspace_wide, expected, linked_agent in outcomes:
+            route_method, params = _socket_creation_request(
+                method,
+                workspace_id,
+                caller_pane_id,
+                caller,
+                workspace_wide=workspace_wide,
+            )
+            payload = client._call(route_method, params) or {}
+            _assert_creation_payload(client, f"{method} / {case}", payload, expected, linked_agent)
+
+        mixed_method, mixed_params = _socket_creation_request(
+            method,
+            workspace_ref,
+            caller_pane_id,
+            caller_surface_ref,
+        )
+        mixed_payload = client._call(mixed_method, mixed_params) or {}
+        _assert_creation_payload(
+            client,
+            f"{method} / mixed workspace-ref and caller-ref handles",
+            mixed_payload,
+            "automatic",
+            caller_surface_id,
+        )
+
+    for route in ("browser open", "new-surface", "new-pane"):
+        before = len(_surface_rows(client, workspace_id))
+        invalid_arguments = _cli_creation_arguments(
+            route,
+            "not-a-workspace-handle",
+            caller_pane_id,
+        )
+        _expect_cli_failure(
+            socket_path,
+            workspace_id,
+            caller_surface_id,
+            "Invalid workspace handle:",
+            *invalid_arguments,
+        )
+        _must(
+            len(_surface_rows(client, workspace_id)) == before,
+            f"CLI {route} mutated before rejecting an invalid workspace handle",
+        )
+
+        for handle in (workspace_id, workspace_ref, workspace_id.lower()):
+            payload = _run_cli_json(
+                socket_path,
+                workspace_id,
+                caller_surface_id,
+                *_cli_creation_arguments(route, handle, caller_pane_id),
+            )
+            _assert_creation_payload(
+                client,
+                f"CLI {route} / same-target handle {handle}",
+                payload,
+                "automatic",
+                caller_surface_id,
+            )
+
+        mixed = _run_cli_json(
+            socket_path,
+            workspace_id,
+            caller_surface_ref,
+            *_cli_creation_arguments(route, workspace_ref, caller_pane_id),
+        )
+        _assert_creation_payload(
+            client,
+            f"CLI {route} / mixed workspace-ref and caller-ref handles",
+            mixed,
+            "automatic",
+            caller_surface_id,
+        )
+
+        precedence = _run_cli_json(
+            socket_path,
+            workspace_id,
+            caller_surface_id,
+            *_cli_creation_arguments(route, workspace_ref, caller_pane_id),
+            legacy_workspace_id=cross_workspace_id,
+            legacy_surface_id=cross_workspace_agent_id,
+        )
+        _assert_creation_payload(
+            client,
+            f"CLI {route} / C11 environment precedence over conflicting CMUX environment",
+            precedence,
+            "automatic",
+            caller_surface_id,
+        )
+
+        indexed = _run_cli_json(
+            socket_path,
+            workspace_id,
+            caller_surface_id,
+            *_cli_creation_arguments(
+                route,
+                str(workspace_index),
+                caller_pane_id,
+                window_handle=caller_window_id,
+            ),
+        )
+        _assert_creation_payload(
+            client,
+            f"CLI {route} / explicit-window index",
+            indexed,
+            "automatic",
+            caller_surface_id,
+        )
+
+        cli_outcomes = [
+            ("malformed caller suppression", workspace_id, "malformed-caller", False, "no_caller"),
+            ("stale caller suppression", workspace_id, str(uuid.uuid4()), False, "no_caller"),
+            (
+                "different-workspace suppression",
+                cross_workspace_id,
+                cross_workspace_agent_id,
+                False,
+                "no_caller",
+            ),
+            ("non-agent caller", workspace_id, non_agent_surface_id, False, "caller_not_agent"),
+            ("omitted caller", None, None, False, "no_caller"),
+            ("workspace-wide malformed caller", workspace_id, "malformed-caller", True, "workspace"),
+        ]
+        for case, caller_workspace, caller, workspace_wide, expected in cli_outcomes:
+            payload = _run_cli_json(
+                socket_path,
+                caller_workspace,
+                caller,
+                *_cli_creation_arguments(
+                    route,
+                    workspace_ref,
+                    caller_pane_id,
+                    workspace_wide=workspace_wide,
+                ),
+            )
+            _assert_creation_payload(client, f"CLI {route} / {case}", payload, expected, None)
 
 
 def _assert_disabled_compatibility(
@@ -583,7 +937,9 @@ def main() -> int:
         workspace_location = _workspace_location(client, workspace_id)
         caller = _first_terminal(client, workspace_id)
         caller_id = str(caller["id"])
+        caller_ref = str(caller.get("ref") or "")
         caller_pane_id = str(caller.get("pane_id") or "")
+        _must(bool(caller_ref), f"Caller ref identity missing: {caller}")
         _must(bool(caller_pane_id), f"Caller pane identity missing: {caller}")
 
         if not EXPECT_ENABLED:
@@ -644,8 +1000,6 @@ def main() -> int:
         _must(isinstance(expected_context.get("linked_agent_name"), str), "Agent name missing")
         _must(isinstance(expected_context.get("linked_agent_surface_ref"), str), "Agent ref missing")
         _assert_canonical_queries(client, workspace_id, browser_id, expected_context)
-        _assert_socket_creation_routes(client, workspace_id, caller_id, caller_pane_id)
-
         before_mutations = _focus_fingerprint(client, workspace_id)
         unlinked = client._call("surface.context.unlink", {"surface_id": browser_id}) or {}
         _must(_context(unlinked).get("link_state") == "unlinked", f"Unlink failed: {unlinked}")
@@ -742,6 +1096,21 @@ def main() -> int:
             "surface.context.link",
             {"surface_id": browser_id, "agent_surface_id": other_caller_id},
             "link_workspace_mismatch",
+        )
+
+        _assert_creation_outcome_matrix(
+            client,
+            SOCKET_PATH,
+            workspace_id,
+            str(workspace_location["ref"]),
+            int(workspace_location["index"]),
+            caller_window_id,
+            caller_id,
+            caller_ref,
+            caller_pane_id,
+            shell_id,
+            other_workspace_id,
+            other_caller_id,
         )
 
         quiet_workspace = client._call("workspace.create", {"focus": False}) or {}

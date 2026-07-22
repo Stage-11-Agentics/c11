@@ -2174,7 +2174,13 @@ struct CMUXCLI {
             let title = optionValue(commandArgs, name: "--title")
             let cwd = optionValue(commandArgs, name: "--cwd")
             var params: [String: Any] = ["direction": direction]
-            let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
+            let resolvedWindowID = try normalizeWindowHandle(windowId, client: client)
+            let wsId = try normalizeWorkspaceHandle(
+                workspaceArg,
+                client: client,
+                windowHandle: resolvedWindowID
+            )
+            if let resolvedWindowID { params["window_id"] = resolvedWindowID }
             if let wsId { params["workspace_id"] = wsId }
             if let type { params["type"] = type }
             if let url { params["url"] = url }
@@ -2197,7 +2203,7 @@ struct CMUXCLI {
                     to: &params,
                     resolvedWorkspaceID: wsId,
                     explicitWorkspace: optionValue(commandArgs, name: "--workspace") != nil,
-                    explicitWindowID: windowId,
+                    explicitWindowID: resolvedWindowID,
                     workspaceWide: commandArgs.contains("--workspace-wide"),
                     client: client
                 )
@@ -2327,7 +2333,13 @@ struct CMUXCLI {
             let file = optionValue(commandArgs, name: "--file")
             let noFocus = commandArgs.contains("--no-focus")
             var params: [String: Any] = [:]
-            let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
+            let resolvedWindowID = try normalizeWindowHandle(windowId, client: client)
+            let wsId = try normalizeWorkspaceHandle(
+                workspaceArg,
+                client: client,
+                windowHandle: resolvedWindowID
+            )
+            if let resolvedWindowID { params["window_id"] = resolvedWindowID }
             if let wsId { params["workspace_id"] = wsId }
             let paneId = try normalizePaneHandle(paneRaw, client: client, workspaceHandle: wsId)
             if let paneId { params["pane_id"] = paneId }
@@ -2340,7 +2352,7 @@ struct CMUXCLI {
                     to: &params,
                     resolvedWorkspaceID: wsId,
                     explicitWorkspace: optionValue(commandArgs, name: "--workspace") != nil,
-                    explicitWindowID: windowId,
+                    explicitWindowID: resolvedWindowID,
                     workspaceWide: commandArgs.contains("--workspace-wide"),
                     client: client
                 )

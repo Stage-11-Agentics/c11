@@ -22,11 +22,37 @@ enum WorkspacePulseState: String, CaseIterable {
     case cold
 }
 
+struct WorkspacePulseAgent: Equatable, Identifiable {
+    let surfaceId: UUID
+    let state: WorkspacePulseState
+    let context: WorkspacePulseAgentContext?
+
+    var id: UUID { surfaceId }
+}
+
 struct WorkspacePulseSummary: Equatable {
     let waitingCount: Int
     let workingCount: Int
     let idleCount: Int
     let coldCount: Int
+    let agents: [WorkspacePulseAgent]
+    let terminalCount: Int
+
+    init(
+        waitingCount: Int,
+        workingCount: Int,
+        idleCount: Int,
+        coldCount: Int,
+        agents: [WorkspacePulseAgent] = [],
+        terminalCount: Int = 0
+    ) {
+        self.waitingCount = waitingCount
+        self.workingCount = workingCount
+        self.idleCount = idleCount
+        self.coldCount = coldCount
+        self.agents = agents
+        self.terminalCount = terminalCount
+    }
 
     var dominant: WorkspacePulseState {
         if waitingCount > 0 { return .waiting }
@@ -41,6 +67,16 @@ struct WorkspacePulseSummary: Equatable {
         case .working: return workingCount
         case .idle: return idleCount
         case .cold: return coldCount
+        }
+    }
+
+    func agentCount(for state: WorkspacePulseState) -> Int {
+        agents.lazy.filter { $0.state == state }.count
+    }
+
+    var relevantAgents: [WorkspacePulseAgent] {
+        WorkspacePulseState.allCases.flatMap { state in
+            agents.filter { $0.state == state }
         }
     }
 }
@@ -76,6 +112,25 @@ enum WorkspacePulseAgentContextProjector {
 }
 
 enum WorkspacePulseProjector {
+    static func project(
+        hasWorkspaceDemand: Bool,
+        agents: [WorkspacePulseAgent],
+        terminalCount: Int
+    ) -> WorkspacePulseSummary {
+        var waiting = agents.filter { $0.state == .waiting }.count
+        if hasWorkspaceDemand && waiting == 0 {
+            waiting = 1
+        }
+        return WorkspacePulseSummary(
+            waitingCount: waiting,
+            workingCount: agents.filter { $0.state == .working }.count,
+            idleCount: agents.filter { $0.state == .idle }.count,
+            coldCount: agents.filter { $0.state == .cold }.count,
+            agents: agents,
+            terminalCount: max(0, terminalCount)
+        )
+    }
+
     /// Rolls exact agent-surface states up with workspace-level operator
     /// demand. A surface-less notification still makes the workspace demand
     /// attention, represented as one waiting item without inventing an agent.

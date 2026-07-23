@@ -146,6 +146,8 @@ extension TerminalController {
             return reportPwdWorker(args)
         case "report_shell_state":
             return reportShellStateWorker(args)
+        case "report_agent_activity":
+            return reportAgentActivityWorker(args)
         case "report_git_branch":
             return reportGitBranchWorker(args)
         case "clear_git_branch":
@@ -351,6 +353,39 @@ extension TerminalController {
                     tabId: target.workspaceId,
                     surfaceId: target.panelId,
                     state: state
+                )
+            }
+        }
+        return "OK"
+    }
+
+    private nonisolated func reportAgentActivityWorker(_ args: String) -> String? {
+        let parsed = Self.parseOptionsStatic(args)
+        guard let rawActivity = parsed.positional.first, !rawActivity.isEmpty else {
+            return "ERROR: Missing agent activity — usage: report_agent_activity <working|idle> [--tab=X] [--panel=Y]"
+        }
+        guard let activity = Self.parseReportedAgentActivity(rawActivity) else {
+            return "ERROR: Invalid agent activity '\(rawActivity)' — expected working or idle"
+        }
+        guard let scope = Self.explicitSocketScope(options: parsed.options) else {
+            return nil
+        }
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                guard let app = AppDelegate.shared else { return }
+                guard let target = TerminalController.resolveShellActivityTarget(
+                    panelId: scope.panelId,
+                    workspaceForPanel: { panel in
+                        app.workspaceContainingPanel(
+                            panelId: panel,
+                            preferredWorkspaceId: scope.workspaceId
+                        )?.workspace.id
+                    }
+                ) else { return }
+                SurfaceLivenessDeriver.onAgentLifecycleChanged(
+                    surfaceId: target.panelId,
+                    workspaceId: target.workspaceId,
+                    activity: activity
                 )
             }
         }
@@ -631,6 +666,9 @@ extension TerminalController {
 
         case "report_shell_state":
             return reportShellState(args)
+
+        case "report_agent_activity":
+            return reportAgentActivity(args)
 
         case "report_pwd":
             return reportPwd(args)

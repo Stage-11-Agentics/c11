@@ -120,6 +120,45 @@ enum SurfaceLivenessDeriver {
         }
     }
 
+    /// Exact agent-loop lifecycle signal. Claude/Codex wrappers and terminal
+    /// completion/input seams use this when they know whether the agent is at
+    /// its prompt or actively handling a turn. This deliberately updates the
+    /// same derived truth as the shell fallback, without pretending the outer
+    /// shell's long-running TUI process is itself useful activity.
+    static func onAgentLifecycleChanged(
+        surfaceId: UUID,
+        workspaceId: UUID,
+        activity: SidebarActivityState
+    ) {
+        queue.async {
+            let prior = currentActivityRaw(workspaceId: workspaceId, surfaceId: surfaceId)
+            applyToStore(
+                derived: activity,
+                workspaceId: workspaceId,
+                surfaceId: surfaceId
+            )
+            let after = currentActivityRaw(workspaceId: workspaceId, surfaceId: surfaceId)
+            if prior != after {
+                emitLivenessTransition(
+                    from: prior,
+                    to: after,
+                    surfaceId: surfaceId,
+                    workspaceId: workspaceId
+                )
+            }
+            let mirrored = after.flatMap { SidebarActivityState(rawValue: $0) }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: workspaceId),
+                          let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }) else {
+                        return
+                    }
+                    workspace.setDerivedActivity(mirrored, forSurface: surfaceId)
+                }
+            }
+        }
+    }
+
     // MARK: - Coarse reconcile (TEL-4/5)
 
     /// Coarse recompute entry point invoked from the AgentDetector 10 s sweep,

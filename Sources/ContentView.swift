@@ -8560,19 +8560,6 @@ struct VerticalTabsSidebar: View {
                                     isActive: isActive,
                                     isMultiSelected: isMultiSelected
                                 )
-                                let agentChip: AgentChip? = {
-                                    guard let focusedId = tab.focusedPanelId else {
-                                        return nil
-                                    }
-                                    let (values, sources) = TerminalController.canonicalMetadataSnapshot(
-                                        workspaceId: tab.id, surfaceId: focusedId
-                                    )
-                                    return AgentChipResolver.resolve(
-                                        focusedSurfaceId: focusedId,
-                                        metadata: values,
-                                        sources: sources
-                                    )
-                                }()
                                 // C11-104 v2: precompute worktree+branch
                                 // chips for the focused surface. Reads the
                                 // resolver output directly from the
@@ -8603,13 +8590,69 @@ struct VerticalTabsSidebar: View {
                                     guard let focusedId = tab.focusedPanelId else { return nil }
                                     return SurfaceMetricsSampler.shared.sample(forSurfaceId: focusedId)
                                 }()
+                                // Workspace Pulse preview: project existing exact
+                                // notification + agent liveness truth once in the
+                                // parent. TabItemView receives an immutable value so
+                                // its typing-hot body does no metadata/store work.
+                                let unreadCount = notificationStore.unreadCount(forTabId: tab.id)
+                                let pulseRoster: (agents: [WorkspacePulseAgent], terminalCount: Int) = {
+                                    var agents: [WorkspacePulseAgent] = []
+                                    var terminalCount = 0
+                                    for panelId in tab.sidebarOrderedPanelIds() {
+                                        let terminalKind = tab.surfaceTerminalKind(panelId: panelId)
+                                        guard PaneSizePolicy.isAgentKind(terminalKind) else {
+                                            if tab.panels[panelId]?.panelType == .terminal {
+                                                terminalCount += 1
+                                            }
+                                            continue
+                                        }
+                                        let resolved = tab.resolvedSurfaceTabActivityState(
+                                            panelId: panelId,
+                                            hasExactSurfaceNotification: notificationStore.hasUnreadNotification(
+                                                forTabId: tab.id,
+                                                surfaceId: panelId
+                                            )
+                                        )
+                                        let pulseState: WorkspacePulseState
+                                        switch resolved {
+                                        case .waiting: pulseState = .waiting
+                                        case .running: pulseState = .working
+                                        case .idle: pulseState = .idle
+                                        case .cold: pulseState = .cold
+                                        case nil: continue
+                                        }
+                                        let titleBarState = tab.surfaceTitleBarState(panelId: panelId)
+                                        let reportedTitle = titleBarState.title?
+                                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                                        let context = WorkspacePulseAgentContextProjector.project(
+                                            title: reportedTitle?.isEmpty == false
+                                                ? titleBarState.title
+                                                : tab.panels[panelId]?.displayTitle,
+                                            subtitle: showsSidebarNotificationMessage
+                                                ? titleBarState.description
+                                                : nil
+                                        )
+                                        agents.append(
+                                            WorkspacePulseAgent(
+                                                surfaceId: panelId,
+                                                state: pulseState,
+                                                context: context
+                                            )
+                                        )
+                                    }
+                                    return (agents, terminalCount)
+                                }()
+                                let workspacePulse = WorkspacePulseProjector.project(
+                                    hasWorkspaceDemand: unreadCount > 0,
+                                    agents: pulseRoster.agents,
+                                    terminalCount: pulseRoster.terminalCount
+                                )
                                 TabItemView(
                                     tabManager: tabManager,
                                     notificationStore: notificationStore,
                                     tab: tab,
                                     index: index,
                                     isActive: isActive,
-                                    agentChip: agentChip,
                                     worktreeChipRows: worktreeChipRows,
                                     surfaceMetricsSample: surfaceMetricsSample,
                                     workspaceShortcutDigit: WorkspaceShortcutMapper.commandDigitForWorkspace(
@@ -8618,16 +8661,8 @@ struct VerticalTabsSidebar: View {
                                     ),
                                     canCloseWorkspace: canCloseWorkspace,
                                     accessibilityWorkspaceCount: workspaceCount,
-                                    unreadCount: notificationStore.unreadCount(forTabId: tab.id),
-                                    latestNotificationText: {
-                                        guard showsSidebarNotificationMessage,
-                                              let notification = notificationStore.latestNotification(forTabId: tab.id) else {
-                                            return nil
-                                        }
-                                        let text = notification.body.isEmpty ? notification.title : notification.body
-                                        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        return trimmed.isEmpty ? nil : trimmed
-                                    }(),
+                                    unreadCount: unreadCount,
+                                    workspacePulse: workspacePulse,
                                     rowSpacing: tabRowSpacing,
                                     setSelectionToTabs: { selection = .tabs },
                                     selectedTabIds: $selectedTabIds,
@@ -11267,14 +11302,13 @@ private struct TabItemView: View, Equatable {
         lhs.tab === rhs.tab &&
         lhs.index == rhs.index &&
         lhs.isActive == rhs.isActive &&
-        lhs.agentChip == rhs.agentChip &&
         lhs.worktreeChipRows == rhs.worktreeChipRows &&
         TabItemView.surfaceMetricsEqual(lhs.surfaceMetricsSample, rhs.surfaceMetricsSample) &&
         lhs.workspaceShortcutDigit == rhs.workspaceShortcutDigit &&
         lhs.canCloseWorkspace == rhs.canCloseWorkspace &&
         lhs.accessibilityWorkspaceCount == rhs.accessibilityWorkspaceCount &&
         lhs.unreadCount == rhs.unreadCount &&
-        lhs.latestNotificationText == rhs.latestNotificationText &&
+        lhs.workspacePulse == rhs.workspacePulse &&
         lhs.rowSpacing == rhs.rowSpacing &&
         lhs.showsModifierShortcutHints == rhs.showsModifierShortcutHints &&
         lhs.themedBackgroundColor?.hexString(includeAlpha: true) == rhs.themedBackgroundColor?.hexString(includeAlpha: true) &&
@@ -11329,7 +11363,6 @@ private struct TabItemView: View, Equatable {
     @ObservedObject var tab: Tab
     let index: Int
     let isActive: Bool
-    let agentChip: AgentChip?
     /// C11-104: precomputed worktree/branch chip rows for the focused
     /// surface. Empty when the setting is disabled or the surface is
     /// not in a git directory. Keeping the projection upstream means
@@ -11343,7 +11376,9 @@ private struct TabItemView: View, Equatable {
     let canCloseWorkspace: Bool
     let accessibilityWorkspaceCount: Int
     let unreadCount: Int
-    let latestNotificationText: String?
+    /// Cheap, value-typed rollup of the workspace's existing notification and
+    /// agent-liveness truth. Precomputed by VerticalTabsSidebar.
+    let workspacePulse: WorkspacePulseSummary
     let rowSpacing: CGFloat
     let setSelectionToTabs: () -> Void
     @Binding var selectedTabIds: Set<UUID>
@@ -11428,34 +11463,8 @@ private struct TabItemView: View, Equatable {
         .semibold
     }
 
-    private var showsLeadingRail: Bool {
-        explicitRailColor != nil
-    }
-
-    // Every workspace row carries a rule-gray hairline so it reads as one
-    // cohesive card against the void. Selection is conveyed by one consistent
-    // signal in every indicator style: the hairline thickens into a white
-    // outline. Custom-colored workspaces keep their color as a rail
-    // (.leftRail) or fill (.solidFill) for identity, but selection itself is
-    // always the white outline.
-    private var activeBorderLineWidth: CGFloat {
-        isActive ? 2.5 : 1
-    }
-
-    private var activeBorderColor: Color {
-        isActive ? BrandColors.whiteSwiftUI : BrandColors.ruleSwiftUI
-    }
-
-    // When a workspace has a custom color and is selected in .solidFill mode,
-    // the fill stays the workspace color (subconsciously reinforcing which
-    // workspace you're in) and emphasis comes from the white outline above
-    // instead of swapping the fill to black.
-    private var hasActiveCustomColorFill: Bool {
-        isActive && activeTabIndicatorStyle == .solidFill && resolvedCustomTabColor != nil
-    }
-
     private var usesInvertedActiveForeground: Bool {
-        isActive && activeTabIndicatorStyle == .solidFill && !hasActiveCustomColorFill
+        false
     }
 
     private var activePrimaryTextColor: Color {
@@ -11468,10 +11477,6 @@ private struct TabItemView: View, Equatable {
         usesInvertedActiveForeground
             ? Color(nsColor: sidebarSelectedWorkspaceForegroundNSColor(opacity: CGFloat(opacity)))
             : .secondary
-    }
-
-    private var activeUnreadBadgeFillColor: Color {
-        cmuxAccentColor()
     }
 
     private var activeProgressTrackColor: Color {
@@ -11555,6 +11560,347 @@ private struct TabItemView: View, Equatable {
         }
     }
 
+    private var workspacePulseColors: BonsplitConfiguration.Appearance.TabActivityColors {
+        Workspace.resolvedSurfaceTabActivityColors(
+            from: colorScheme == .light
+                ? NSColor(calibratedWhite: 0.96, alpha: 1)
+                : NSColor(calibratedWhite: 0.06, alpha: 1)
+        )
+    }
+
+    private func workspacePulseColor(for state: WorkspacePulseState) -> Color {
+        let hex: String?
+        switch state {
+        case .waiting: hex = workspacePulseColors.waitingHex
+        case .working: hex = workspacePulseColors.runningHex
+        case .idle: hex = workspacePulseColors.idleHex
+        case .cold: hex = workspacePulseColors.coldHex
+        }
+        return Color(nsColor: hex.flatMap(NSColor.init(hex:)) ?? .secondaryLabelColor)
+    }
+
+    private var workspacePulseWaitingInk: Color {
+        Color(nsColor: workspacePulseColors.waitingInkHex.flatMap(NSColor.init(hex:)) ?? .textColor)
+    }
+
+    private func workspacePulseLabel(for state: WorkspacePulseState) -> String {
+        switch state {
+        case .waiting:
+            return String(localized: "sidebar.workspacePulse.needsYou", defaultValue: "Needs you")
+        case .working:
+            return SidebarActivityProjector.derivedText(.working)
+        case .idle:
+            return SidebarActivityProjector.derivedText(.idle)
+        case .cold:
+            return String(localized: "sidebar.workspacePulse.cold", defaultValue: "Cold")
+        }
+    }
+
+    @ViewBuilder
+    private func workspacePulseMark(
+        for state: WorkspacePulseState,
+        summaryScale: Bool = false
+    ) -> some View {
+        let color = workspacePulseColor(for: state)
+        switch state {
+        case .waiting:
+            ZStack {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(color)
+                Text(verbatim: "W")
+                    .font(.system(size: summaryScale ? 8 : 7, weight: .black, design: .monospaced))
+                    .foregroundColor(workspacePulseWaitingInk)
+            }
+            .frame(width: summaryScale ? 16 : 14, height: summaryScale ? 16 : 14)
+        case .working:
+            Circle()
+                .trim(from: 0.12, to: 0.88)
+                .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .rotationEffect(.degrees(-42))
+                .frame(width: summaryScale ? 11 : 10, height: summaryScale ? 11 : 10)
+        case .idle:
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(color)
+                .frame(width: summaryScale ? 9 : 8, height: summaryScale ? 9 : 8)
+        case .cold:
+            Circle()
+                .fill(color.opacity(0.82))
+                .frame(width: summaryScale ? 7 : 6, height: summaryScale ? 7 : 6)
+        }
+    }
+
+    private var workspacePulseVisibleAgents: [WorkspacePulseAgent] {
+        Array(workspacePulse.relevantAgents.prefix(2))
+    }
+
+    private var workspacePulseWaitingOverflow: Int {
+        max(
+            0,
+            workspacePulse.agentCount(for: .waiting)
+                - workspacePulseVisibleAgents.filter { $0.state == .waiting }.count
+        )
+    }
+
+    private func openWorkspacePulseAgent(_ agent: WorkspacePulseAgent) {
+        guard agent.state == .waiting else { return }
+        _ = AppDelegate.shared?.openNotification(
+            tabId: tab.id,
+            surfaceId: agent.surfaceId,
+            notificationId: nil
+        )
+    }
+
+    @ViewBuilder
+    private func workspacePulseSummaryRow(
+        _ agent: WorkspacePulseAgent,
+        index: Int
+    ) -> some View {
+        let context = agent.context
+        let content = HStack(spacing: 7) {
+            workspacePulseMark(for: agent.state, summaryScale: true)
+                .frame(width: 16, height: 16)
+
+            Group {
+                if let context {
+                    (
+                        Text(verbatim: context.title).fontWeight(.medium)
+                        + Text(verbatim: context.subtitle.map { " · \($0)" } ?? "")
+                    )
+                } else {
+                    Text(verbatim: workspacePulseLabel(for: agent.state))
+                }
+            }
+            .font(.system(size: chromeTokens.sidebarWorkspaceDetail + 1))
+            .foregroundColor(index == 0 ? Color.primary.opacity(0.86) : Color.secondary.opacity(0.72))
+            .lineLimit(1)
+            .truncationMode(.tail)
+
+            Spacer(minLength: 0)
+        }
+
+        if agent.state == .waiting {
+            Button(action: { openWorkspacePulseAgent(agent) }) {
+                content
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder
+    private var workspacePulseSummaries: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            if workspacePulseVisibleAgents.isEmpty {
+                Text(String(
+                    localized: "sidebar.workspacePulse.terminalsOnly",
+                    defaultValue: "Terminals only · no agent surfaces"
+                ))
+                .font(.system(size: chromeTokens.sidebarWorkspaceMetadata, design: .monospaced))
+                .foregroundColor(.secondary.opacity(0.65))
+                .lineLimit(1)
+            } else {
+                ForEach(Array(workspacePulseVisibleAgents.enumerated()), id: \.element.id) { index, agent in
+                    workspacePulseSummaryRow(agent, index: index)
+                }
+                if workspacePulseWaitingOverflow > 0 {
+                    Text(String(
+                        localized: "sidebar.workspacePulse.moreWaiting",
+                        defaultValue: "… and \(workspacePulseWaitingOverflow) more"
+                    ))
+                    .font(.system(size: chromeTokens.sidebarWorkspaceMetadata, design: .monospaced))
+                    .foregroundColor(.secondary.opacity(0.62))
+                    .padding(.leading, 23)
+                }
+            }
+        }
+        .padding(.top, 9)
+    }
+
+    private var workspacePulseAgentCountText: String {
+        if workspacePulse.agents.count == 1 {
+            return String(
+                localized: "sidebar.workspacePulse.agentCount.one",
+                defaultValue: "1 agent"
+            )
+        }
+        return String(
+            localized: "sidebar.workspacePulse.agentCount.other",
+            defaultValue: "\(workspacePulse.agents.count) agents"
+        )
+    }
+
+    private var workspacePulseTerminalCountText: String {
+        if workspacePulse.terminalCount == 1 {
+            return String(
+                localized: "sidebar.workspacePulse.terminalCount.one",
+                defaultValue: "1 terminal"
+            )
+        }
+        return String(
+            localized: "sidebar.workspacePulse.terminalCount.other",
+            defaultValue: "\(workspacePulse.terminalCount) terminals"
+        )
+    }
+
+    private var workspacePulseFooter: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                Text(verbatim: workspacePulseAgentCountText)
+                Circle()
+                    .fill(Color.secondary.opacity(0.65))
+                    .frame(width: 2, height: 2)
+                Text(verbatim: workspacePulseTerminalCountText)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+
+            HStack(spacing: 7) {
+                ForEach(workspacePulse.agents) { agent in
+                    workspacePulseMark(for: agent.state)
+                        .frame(width: 14, height: 14)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(Text(agent.context?.title ?? workspacePulseLabel(for: agent.state)))
+                        .accessibilityValue(Text(workspacePulseLabel(for: agent.state)))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .frame(height: 14)
+        }
+        .font(.system(size: chromeTokens.sidebarWorkspaceMetadata - 0.5, design: .monospaced))
+        .foregroundColor(.secondary.opacity(0.68))
+        .padding(.top, 8)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(workspacePulseIdentityColor.opacity(0.18))
+                .frame(height: 1)
+        }
+        .padding(.top, 10)
+    }
+
+    private var workspacePulseCompositionRail: some View {
+        GeometryReader { proxy in
+            let populatedStates = WorkspacePulseState.allCases.filter {
+                workspacePulse.agentCount(for: $0) > 0
+            }
+            let gap: CGFloat = 2
+            let totalGaps = gap * CGFloat(max(0, populatedStates.count - 1))
+            let availableWidth = max(0, proxy.size.width - totalGaps)
+            HStack(spacing: gap) {
+                ForEach(populatedStates, id: \.self) { state in
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(workspacePulseColor(for: state))
+                        .frame(
+                            width: availableWidth
+                                * CGFloat(workspacePulse.agentCount(for: state))
+                                / CGFloat(max(1, workspacePulse.agents.count))
+                        )
+                }
+            }
+        }
+        .frame(height: 4)
+        .background(
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(BrandColors.ruleSwiftUI.opacity(workspacePulse.agents.isEmpty ? 0.55 : 0.35))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
+        .padding(.top, 9)
+        .accessibilityHidden(true)
+    }
+
+    private var workspacePulseIdentityColor: Color {
+        if let themedRailColor {
+            return Color(nsColor: themedRailColor)
+        }
+        if let resolvedCustomTabColor {
+            return resolvedCustomTabColor
+        }
+        return Color(nsColor: NSColor(
+            srgbRed: 0.44,
+            green: 0.51,
+            blue: 0.57,
+            alpha: 1
+        ))
+    }
+
+    private var workspacePulseBaseColor: Color {
+        if let themedBackgroundColor {
+            return Color(nsColor: themedBackgroundColor)
+        }
+        if colorScheme == .light {
+            return Color(nsColor: NSColor(
+                srgbRed: 0.96,
+                green: 0.95,
+                blue: 0.93,
+                alpha: 1
+            ))
+        }
+        return Color(nsColor: NSColor(
+            srgbRed: 0.067,
+            green: 0.075,
+            blue: 0.09,
+            alpha: 1
+        ))
+    }
+
+    private var workspacePulseBorderColor: Color {
+        if isActive {
+            return colorScheme == .light
+                ? BrandColors.blackSwiftUI.opacity(0.82)
+                : BrandColors.whiteSwiftUI.opacity(0.9)
+        }
+        if workspacePulse.waitingCount > 0 {
+            return workspacePulseColor(for: .waiting).opacity(0.38)
+        }
+        return workspacePulseIdentityColor.opacity(0.32)
+    }
+
+    private var workspacePulseCardOpacity: Double {
+        1
+    }
+
+    @ViewBuilder
+    private var workspacePulseCardBackground: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(workspacePulseBaseColor)
+            .overlay {
+                RadialGradient(
+                    colors: [
+                        workspacePulseIdentityColor.opacity(colorScheme == .light ? 0.07 : 0.09),
+                        workspacePulseIdentityColor.opacity(0)
+                    ],
+                    center: .topLeading,
+                    startRadius: 0,
+                    endRadius: 180
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .overlay {
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(colorScheme == .light ? 0.22 : 0.025),
+                        Color.clear
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(
+                        workspacePulseBorderColor,
+                        lineWidth: isActive ? 2 : 1
+                    )
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(sidebarFlashFillColor.opacity(sidebarFlashOpacity))
+                    .allowsHitTesting(false)
+            }
+    }
+
     @ViewBuilder
     private var remoteWorkspaceSection: some View {
         if sidebarShowSSH, let remoteWorkspaceSidebarText {
@@ -11574,7 +11920,7 @@ private struct TabItemView: View, Equatable {
                         .lineLimit(1)
                 }
             }
-            .padding(.top, latestNotificationText == nil ? 1 : 2)
+            .padding(.top, 2)
             .safeHelp(remoteStateHelpText)
         }
     }
@@ -11602,8 +11948,6 @@ private struct TabItemView: View, Equatable {
         let accessibilityHintText = String(localized: "sidebar.workspace.accessibilityHint", defaultValue: "Activate to focus this workspace. Drag to reorder, or use Move Up and Move Down actions.")
         let moveUpActionText = String(localized: "sidebar.workspace.moveUpAction", defaultValue: "Move Up")
         let moveDownActionText = String(localized: "sidebar.workspace.moveDownAction", defaultValue: "Move Down")
-        let latestNotificationSubtitle = latestNotificationText
-        let effectiveSubtitle = latestNotificationSubtitle
         let detailVisibility = visibleAuxiliaryDetails
         // C11-104 v2 — branch+directory text-line precomputes retired.
         // The new chip render (precomputed upstream in
@@ -11617,43 +11961,25 @@ private struct TabItemView: View, Equatable {
             return pullRequestDisplays(orderedPanelIds: orderedPanelIds)
         }()
 
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .top, spacing: 6) {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .center, spacing: 7) {
                 Text(tab.title)
-                    .font(.system(size: chromeTokens.sidebarWorkspaceTitle, weight: titleFontWeight))
-                    .foregroundColor(activePrimaryTextColor)
-                    .lineLimit(2)
+                    .font(.system(size: chromeTokens.sidebarWorkspaceTitle + 1.5, weight: titleFontWeight))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
                     .truncationMode(.tail)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
                     .layoutPriority(1)
 
                 Spacer(minLength: 4)
 
                 HStack(spacing: 5) {
                     if tab.isPinned {
-                        Image(systemName: "pin.fill")
-                            .font(.system(size: chromeTokens.sidebarWorkspaceAccessory, weight: .semibold))
-                            .foregroundColor(activeSecondaryColor(0.8))
+                        Image(systemName: "diamond.fill")
+                            .font(.system(size: chromeTokens.sidebarWorkspaceAccessory + 1, weight: .semibold))
+                            .foregroundColor(.secondary.opacity(0.7))
                     }
 
-                    if unreadCount > 0 {
-                        ZStack {
-                            Circle()
-                                .fill(activeUnreadBadgeFillColor)
-                            Text("\(unreadCount)")
-                                .font(.system(size: chromeTokens.sidebarWorkspaceAccessory, weight: .semibold))
-                                // Badge fill is always gold (`activeUnreadBadgeFillColor`).
-                                // Use black on the gold circle whenever the tab is the
-                                // active selection in .solidFill — including custom-color
-                                // workspaces, where the broader text palette stays primary
-                                // but black-on-gold remains the only legible badge choice.
-                                .foregroundColor(isActive && activeTabIndicatorStyle == .solidFill ? BrandColors.blackSwiftUI : .white)
-                        }
-                        .frame(width: 16, height: 16)
-                    }
                 }
-                .padding(.top, 1)
 
                 ZStack(alignment: .trailing) {
                     Button(action: {
@@ -11690,31 +12016,24 @@ private struct TabItemView: View, Equatable {
                     }
                 }
                 .animation(.easeInOut(duration: 0.14), value: showsModifierShortcutHints || alwaysShowShortcutHints)
-                .frame(width: workspaceHintSlotWidth, height: 16, alignment: .trailing)
+                .frame(width: workspaceHintSlotWidth, height: 19, alignment: .trailing)
             }
 
-            if agentChip != nil {
-                HStack(spacing: 4) {
-                    AgentChipBadge(
-                        chip: agentChip,
-                        showsLabel: !isMinimalMode,
-                        foreground: activeSecondaryColor(0.78),
-                        secondary: activeSecondaryColor(0.68)
-                    )
+            workspacePulseSummaries
+
+            workspacePulseFooter
+
+            // C11-25: preserve the focused surface's CPU/RSS reading without
+            // the legacy focused-agent identity badge. Workspace Pulse owns
+            // agent state and identity in this card.
+            if let sample = surfaceMetricsSample {
+                HStack {
                     Spacer(minLength: 0)
-                    // C11-25: per-surface CPU/RSS rendered next to the
-                    // agent chip when a sample is available. Terminal
-                    // PID resolution is a follow-up; terminals show no
-                    // metrics until that lands. Format keeps the row
-                    // narrow: integer percent + integer MB or 1-decimal
-                    // GB. Equality in `==` is rounded for stability.
-                    if let sample = surfaceMetricsSample {
-                        Text(TabItemView.formatSurfaceMetrics(sample))
-                            .font(.system(size: 9, design: .monospaced))
-                            .monospacedDigit()
-                            .foregroundColor(activeSecondaryColor(0.55))
-                            .accessibilityIdentifier("SidebarTabSurfaceMetrics")
-                    }
+                    Text(TabItemView.formatSurfaceMetrics(sample))
+                        .font(.system(size: 9, design: .monospaced))
+                        .monospacedDigit()
+                        .foregroundColor(activeSecondaryColor(0.55))
+                        .accessibilityIdentifier("SidebarTabSurfaceMetrics")
                 }
                 .padding(.top, 1)
             }
@@ -11730,15 +12049,6 @@ private struct TabItemView: View, Equatable {
                     secondary: activeSecondaryColor(0.7)
                 )
                 .padding(.top, 1)
-            }
-
-            if let subtitle = effectiveSubtitle {
-                Text(subtitle)
-                    .font(.system(size: chromeTokens.sidebarWorkspaceDetail))
-                    .foregroundColor(activeSecondaryColor(0.8))
-                    .lineLimit(2)
-                    .truncationMode(.tail)
-                    .multilineTextAlignment(.leading)
             }
 
             remoteWorkspaceSection
@@ -11836,41 +12146,16 @@ private struct TabItemView: View, Equatable {
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
+
+            workspacePulseCompositionRail
         }
         .animation(.easeInOut(duration: 0.2), value: tab.logEntries.count)
         .animation(.easeInOut(duration: 0.2), value: tab.progress != nil)
         .animation(.easeInOut(duration: 0.2), value: tab.metadataBlocks.count)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(backgroundColor)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 6)
-                        .strokeBorder(activeBorderColor, lineWidth: activeBorderLineWidth)
-                }
-                .overlay(alignment: .leading) {
-                    if showsLeadingRail {
-                        Capsule(style: .continuous)
-                            .fill(railColor)
-                            .frame(width: 3)
-                            .padding(.leading, 4)
-                            .padding(.vertical, 5)
-                            .offset(x: -1)
-                    }
-                }
-                .overlay {
-                    // Sidebar flash pulse. Single, gentle accent fill that
-                    // signals "a panel in this workspace was flashed" without
-                    // shouting from the sidebar. Hit testing is disabled so
-                    // the pulse never intercepts clicks/drags.
-                    // CMUX-10: color sourced via FlashAppearance seam, or
-                    // tinted by `--color` when the trigger carried one.
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(sidebarFlashFillColor.opacity(sidebarFlashOpacity))
-                        .allowsHitTesting(false)
-                }
-        )
+        .padding(.horizontal, 13)
+        .padding(.top, 13)
+        .padding(.bottom, 11)
+        .background(workspacePulseCardBackground)
         .onChange(of: sidebarFlashToken) { _, newValue in
             guard newValue != lastObservedSidebarFlashToken else { return }
             lastObservedSidebarFlashToken = newValue
@@ -11889,7 +12174,7 @@ private struct TabItemView: View, Equatable {
             }
         }
         .contentShape(Rectangle())
-        .opacity(isBeingDragged ? 0.6 : 1)
+        .opacity((isBeingDragged ? 0.6 : 1) * workspacePulseCardOpacity)
         .overlay {
             MiddleClickCapture {
                 #if DEBUG
@@ -12218,47 +12503,6 @@ private struct TabItemView: View, Equatable {
             markTabsUnread(targetIds)
         }
         .disabled(!hasReadNotifications(in: targetIds))
-    }
-
-    private var backgroundColor: Color {
-        if let themedBackgroundColor {
-            return Color(nsColor: themedBackgroundColor)
-        }
-
-        switch activeTabIndicatorStyle {
-        case .leftRail:
-            if isMultiSelected { return cmuxAccentColor().opacity(0.25) }
-            return Color.clear
-        case .solidFill:
-            if isActive {
-                if let custom = resolvedCustomTabColor { return custom }
-                return Color(nsColor: sidebarSelectedWorkspaceBackgroundNSColor(for: colorScheme))
-            }
-            if let custom = resolvedCustomTabColor {
-                if isMultiSelected { return custom.opacity(0.35) }
-                return custom.opacity(0.7)
-            }
-            if isMultiSelected { return cmuxAccentColor().opacity(0.25) }
-            return Color.clear
-        }
-    }
-
-    private var railColor: Color {
-        if let themedRailColor {
-            return Color(nsColor: themedRailColor)
-        }
-        return explicitRailColor ?? .clear
-    }
-
-    private var explicitRailColor: Color? {
-        guard activeTabIndicatorStyle == .leftRail else { return nil }
-        // The custom color shows as a rail for identity (whether selected or
-        // not). Selection itself is the white outline (see activeBorderColor),
-        // so there is no gold selection rail for uncolored workspaces.
-        if let custom = resolvedCustomTabColor {
-            return custom.opacity(0.95)
-        }
-        return nil
     }
 
     private var resolvedCustomTabColor: Color? {
@@ -13194,18 +13438,10 @@ private struct SidebarProgressIndicator: View {
     }
 }
 
-/// TEL-4: derived-activity takeover pill. When a workspace's explicit
-/// agent-claimed status is absent or has aged past expiry, the sidebar falls
-/// back to a *derived* pill computed from low-level activity so the row still
-/// tells the truth. Rendered visually distinct from an agent-claimed pill
-/// (outlined capsule + italic + a "sensed" glyph). Observes the decay clock
-/// in this child subview so the takeover flips without invalidating the row.
-/// C11-162 (TEL-4, m1): owns the single-pill takeover decision for a workspace
-/// row's status region. Observes the decay clock here (a child, never in
-/// `TabItemView`'s Equatable body) and renders EITHER the explicit status rows
-/// OR — once the representative explicit status has expired and a derived
-/// activity exists — the derived pill in their place, so the operator sees one
-/// pill, not a grayed tombstone plus a derived pill.
+/// Agent-authored status region. Workspace Pulse now owns derived activity, so
+/// this section renders fresh/stale explicit status rows only. When explicit
+/// status expires and the projector hands off to derived truth, this row goes
+/// quiet instead of duplicating the pulse with a second Idle/Working pill.
 private struct SidebarStatusSection: View {
     @ObservedObject var tab: Tab
     let isActive: Bool
@@ -13245,80 +13481,9 @@ private struct SidebarStatusSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            if takeoverActive {
-                SidebarDerivedActivityPill(tab: tab, isActive: isActive, onFocus: onFocus)
-            } else if !entries.isEmpty {
+            if !takeoverActive, !entries.isEmpty {
                 SidebarMetadataRows(entries: entries, isActive: isActive, onFocus: onFocus)
             }
-        }
-    }
-}
-
-private struct SidebarDerivedActivityPill: View {
-    @ObservedObject var tab: Tab
-    let isActive: Bool
-    let onFocus: () -> Void
-
-    @Environment(\.chromeScaleTokens) private var chromeTokens
-    @ObservedObject private var decayClock = SidebarDecayClock.shared
-    @AppStorage(SidebarStalenessSettings.staleThresholdKey)
-    private var staleThresholdRaw = SidebarStalenessSettings.defaultStaleSeconds
-    @AppStorage(SidebarStalenessSettings.expiryThresholdKey)
-    private var expiryThresholdRaw = SidebarStalenessSettings.defaultExpirySeconds
-
-    /// Most-recently-written explicit status entry, used as the representative
-    /// against which the derived takeover is decided.
-    private var representativeEntry: SidebarStatusEntry? {
-        tab.sidebarStatusEntriesInDisplayOrder().max { $0.timestamp < $1.timestamp }
-    }
-
-    private var pill: SidebarVisiblePill? {
-        let entry = representativeEntry
-        // C11-162 (m4): pass the trimmed value through even when empty, so the
-        // projector's empty-string handling (empty explicit → derived takeover)
-        // works instead of being defeated by substituting the key name.
-        let explicitText: String? = entry.map { e in
-            e.value.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        let age = entry.map { decayClock.now.timeIntervalSince($0.timestamp) }
-        return SidebarActivityProjector.project(
-            explicitText: explicitText,
-            explicitAgeSeconds: age,
-            derived: tab.aggregatedDerivedActivity,
-            staleSeconds: SidebarStalenessSettings.staleSeconds(),
-            expirySeconds: SidebarStalenessSettings.expirySeconds()
-        )
-    }
-
-    private var derivedColor: Color {
-        isActive ? Color.white.opacity(0.7) : .secondary
-    }
-
-    var body: some View {
-        // Only surface this row when the projection is a derived takeover;
-        // a fresh/stale explicit status is already rendered by the metadata
-        // rows above (with their own TEL-2 decay treatment).
-        if let pill, pill.isDerived {
-            HStack(spacing: 4) {
-                Image(systemName: "wave.3.right")
-                    .font(.system(size: chromeTokens.sidebarWorkspaceLogIcon, weight: .medium))
-                Text(pill.text)
-                    .font(.system(size: chromeTokens.sidebarWorkspaceMetadata, weight: .regular).italic())
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer(minLength: 0)
-            }
-            .foregroundColor(derivedColor)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .overlay(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .stroke(derivedColor.opacity(0.5), lineWidth: 0.75)
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .onTapGesture { onFocus() }
-            .safeHelp(String(localized: "sidebar.derivedActivity.tooltip", defaultValue: "Derived activity — no recent agent status"))
         }
     }
 }
@@ -14745,4 +14910,3 @@ extension NSColor {
         return String(format: "#%02X%02X%02X", redByte, greenByte, blueByte)
     }
 }
-

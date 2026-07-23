@@ -56,6 +56,37 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         XCTAssertNil(SurfaceLivenessDeriver.activityState(for: .unknown))
     }
 
+    func testReportedAgentActivityParserAcceptsLifecycleVocabulary() {
+        XCTAssertEqual(TerminalController.parseReportedAgentActivity("working"), .working)
+        XCTAssertEqual(TerminalController.parseReportedAgentActivity("idle"), .idle)
+        XCTAssertNil(TerminalController.parseReportedAgentActivity("mystery"))
+    }
+
+    func testExactAgentLifecycleIdleOverridesOuterShellWorking() {
+        let workspaceId = UUID()
+        let surfaceId = UUID()
+        defer { store.removeSurface(workspaceId: workspaceId, surfaceId: surfaceId) }
+
+        XCTAssertTrue(store.setInternal(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId,
+            key: MetadataKey.activity,
+            value: SidebarActivityState.working.rawValue,
+            source: .derived
+        ))
+
+        SurfaceLivenessDeriver.onAgentLifecycleChanged(
+            surfaceId: surfaceId,
+            workspaceId: workspaceId,
+            activity: .idle
+        )
+
+        XCTAssertTrue(poll {
+            self.activityValue(workspaceId, surfaceId) == SidebarActivityState.idle.rawValue
+        })
+        XCTAssertEqual(activitySource(workspaceId, surfaceId), .derived)
+    }
+
     func testSurfaceTabResolverMapsRecognizedAgentStates() {
         XCTAssertEqual(
             SurfaceTabActivityResolver.resolve(

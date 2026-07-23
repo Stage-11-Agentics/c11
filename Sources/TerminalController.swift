@@ -741,6 +741,19 @@ class TerminalController {
         }
     }
 
+    nonisolated static func parseReportedAgentActivity(
+        _ rawActivity: String
+    ) -> SidebarActivityState? {
+        switch rawActivity.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "working":
+            return .working
+        case "idle":
+            return .idle
+        default:
+            return nil
+        }
+    }
+
     /// Update which window's TabManager receives socket commands.
     /// This is used when the user switches between multiple terminal windows.
     func setActiveTabManager(_ tabManager: TabManager?) {
@@ -1984,6 +1997,7 @@ class TerminalController {
     nonisolated static let socketWorkerV1Commands: Set<String> = [
         "report_pwd",
         "report_shell_state",
+        "report_agent_activity",
         "report_git_branch",
         "clear_git_branch",
         "ports_kick",
@@ -8377,6 +8391,67 @@ class TerminalController {
         return result
     }
 
+    func reportAgentActivity(_ args: String) -> String {
+        let parsed = parseOptions(args)
+        guard let rawActivity = parsed.positional.first, !rawActivity.isEmpty else {
+            return "ERROR: Missing agent activity — usage: report_agent_activity <working|idle> [--tab=X] [--panel=Y]"
+        }
+        guard let activity = Self.parseReportedAgentActivity(rawActivity) else {
+            return "ERROR: Invalid agent activity '\(rawActivity)' — expected working or idle"
+        }
+
+        if let scope = Self.explicitSocketScope(options: parsed.options) {
+            DispatchQueue.main.async {
+                guard let app = AppDelegate.shared else { return }
+                guard let target = Self.resolveShellActivityTarget(
+                    panelId: scope.panelId,
+                    workspaceForPanel: { panel in
+                        app.workspaceContainingPanel(
+                            panelId: panel,
+                            preferredWorkspaceId: scope.workspaceId
+                        )?.workspace.id
+                    }
+                ) else { return }
+                SurfaceLivenessDeriver.onAgentLifecycleChanged(
+                    surfaceId: target.panelId,
+                    workspaceId: target.workspaceId,
+                    activity: activity
+                )
+            }
+            return "OK"
+        }
+
+        guard tabManager != nil else { return "ERROR: TabManager not available" }
+
+        var result = "OK"
+        v2MainSync {
+            guard let tab = resolveTabForReport(args) else {
+                result = parsed.options["tab"] != nil ? "ERROR: Tab not found" : "ERROR: No tab selected"
+                return
+            }
+            let panelArg = parsed.options["panel"] ?? parsed.options["surface"]
+            let surfaceId: UUID
+            if let panelArg {
+                guard let parsedId = UUID(uuidString: panelArg), tab.panels[parsedId] != nil else {
+                    result = "ERROR: Panel not found '\(panelArg)'"
+                    return
+                }
+                surfaceId = parsedId
+            } else if let focused = tab.focusedPanelId {
+                surfaceId = focused
+            } else {
+                result = "ERROR: Missing panel id (no focused surface)"
+                return
+            }
+            SurfaceLivenessDeriver.onAgentLifecycleChanged(
+                surfaceId: surfaceId,
+                workspaceId: tab.id,
+                activity: activity
+            )
+        }
+        return result
+    }
+
     func clearPorts(_ args: String) -> String {
         let parsed = parseOptions(args)
         var result = "OK"
@@ -8420,16 +8495,29 @@ class TerminalController {
 
         if let scope = Self.explicitSocketScope(options: parsed.options) {
             DispatchQueue.main.async {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
-                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
+                // C11-171 (extended to report_tty): resolve the workspace from the
+                // PANEL, never from `--tab`. Shell integration sends the surface
+                // uuid in `--tab` (a legacy alias — see GhosttyTerminalView env
+                // injection), so trusting it makes `tabManagerFor` miss and this
+                // registration silently no-op while still returning "OK". That left
+                // every wrapper-less agent (grok/opencode/kimi/pi/omp) unclassified
+                // and port scanning unregistered for these surfaces. The
+                // shell-activity path already resolves panel→workspace this way.
+                guard let app = AppDelegate.shared,
+                      let located = app.workspaceContainingPanel(
+                          panelId: scope.panelId,
+                          preferredWorkspaceId: scope.workspaceId
+                      ) else {
                     return
                 }
+                let tab = located.workspace
+                let workspaceId = tab.id
                 let validSurfaceIds = Set(tab.panels.keys)
                 tab.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
                 guard validSurfaceIds.contains(scope.panelId) else { return }
                 tab.surfaceTTYNames[scope.panelId] = ttyName
-                PortScanner.shared.registerTTY(workspaceId: scope.workspaceId, panelId: scope.panelId, ttyName: ttyName)
-                AgentDetector.shared.registerTTY(workspaceId: scope.workspaceId, panelId: scope.panelId, ttyName: ttyName)
+                PortScanner.shared.registerTTY(workspaceId: workspaceId, panelId: scope.panelId, ttyName: ttyName)
+                AgentDetector.shared.registerTTY(workspaceId: workspaceId, panelId: scope.panelId, ttyName: ttyName)
                 // C11-25 fix DoD #5: install a Sendable PID provider so
                 // the per-surface CPU/MEM sampler can attribute usage to
                 // the foreground process running on this tty (typically

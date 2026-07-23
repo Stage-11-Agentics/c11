@@ -2977,6 +2977,9 @@ struct CMUXCLI {
                 throw error
             }
 
+        case "codex-hook":
+            try runCodexHook(commandArgs: commandArgs, client: client)
+
         case "set-app-focus":
             guard let value = commandArgs.first else { throw CLIError(message: "set-app-focus requires a value") }
             let response = try sendV1Command("set_app_focus \(value)", client: client)
@@ -15787,6 +15790,32 @@ struct CMUXCLI {
         }
     }
 
+    /// Bundle-private lifecycle bridge used by Resources/bin/codex. Codex's
+    /// interactive process keeps the outer shell in `running` for its entire
+    /// lifetime, so the wrapper seeds the truthful resting state explicitly.
+    /// Turn submission/completion transitions are reported by c11's terminal
+    /// input and notification seams inside the app.
+    private func runCodexHook(commandArgs: [String], client: SocketClient) throws {
+        guard let rawActivity = commandArgs.first?.lowercased(),
+              rawActivity == "working" || rawActivity == "idle" else {
+            throw CLIError(message: "codex-hook requires working or idle")
+        }
+        let environment = ProcessInfo.processInfo.environment
+        guard let workspaceId = environment["CMUX_WORKSPACE_ID"] ?? environment["C11_WORKSPACE_ID"],
+              UUID(uuidString: workspaceId) != nil else {
+            throw CLIError(message: "codex-hook requires a c11 workspace id")
+        }
+        guard let surfaceId = environment["CMUX_SURFACE_ID"] ?? environment["C11_SURFACE_ID"],
+              UUID(uuidString: surfaceId) != nil else {
+            throw CLIError(message: "codex-hook requires a c11 surface id")
+        }
+        let response = try sendV1Command(
+            "report_agent_activity \(rawActivity) --tab=\(workspaceId) --panel=\(surfaceId)",
+            client: client
+        )
+        print(response)
+    }
+
     private func runClaudeHook(
         commandArgs: [String],
         client: SocketClient,
@@ -15831,6 +15860,12 @@ struct CMUXCLI {
                 surfaceArg,
                 workspaceId: workspaceId,
                 client: client
+            )
+            _ = try? reportAgentActivity(
+                client: client,
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                activity: "idle"
             )
             let claudePid: Int? = {
                 guard let raw = ProcessInfo.processInfo.environment["CMUX_CLAUDE_PID"]?
@@ -15918,6 +15953,19 @@ struct CMUXCLI {
                 workspaceId = mappedWorkspace
                 surfaceId = mapped.surfaceId
             }
+            let resolvedLifecycleSurface = try? resolveSurfaceIdForClaudeHook(
+                surfaceId,
+                workspaceId: workspaceId,
+                client: client
+            )
+            if let resolvedLifecycleSurface {
+                _ = try? reportAgentActivity(
+                    client: client,
+                    workspaceId: workspaceId,
+                    surfaceId: resolvedLifecycleSurface,
+                    activity: "idle"
+                )
+            }
 
             // Update session with transcript summary and send completion notification.
             let completion = summarizeClaudeHookStop(
@@ -15960,10 +16008,24 @@ struct CMUXCLI {
         case "prompt-submit":
             telemetry.breadcrumb("claude-hook.prompt-submit")
             var workspaceId = fallbackWorkspaceId
+            var preferredSurface = surfaceArg
             if let sessionId = parsedInput.sessionId,
                let mapped = try? sessionStore.lookup(sessionId: sessionId),
                let mappedWorkspace = try? resolveWorkspaceIdForClaudeHook(mapped.workspaceId, client: client) {
                 workspaceId = mappedWorkspace
+                preferredSurface = mapped.surfaceId
+            }
+            if let resolvedSurface = try? resolveSurfaceIdForClaudeHook(
+                preferredSurface,
+                workspaceId: workspaceId,
+                client: client
+            ) {
+                _ = try? reportAgentActivity(
+                    client: client,
+                    workspaceId: workspaceId,
+                    surfaceId: resolvedSurface,
+                    activity: "working"
+                )
             }
             _ = try sendV1Command("clear_notifications --tab=\(workspaceId)", client: client)
             try setClaudeStatus(
@@ -15998,6 +16060,12 @@ struct CMUXCLI {
                 preferredSurface,
                 workspaceId: workspaceId,
                 client: client
+            )
+            _ = try? reportAgentActivity(
+                client: client,
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                activity: "idle"
             )
 
             let title = "Claude Code"
@@ -16104,11 +16172,13 @@ struct CMUXCLI {
             // (e.g. after permission grant). Runs async so it doesn't block tool execution.
             var workspaceId = fallbackWorkspaceId
             var claudePid: Int? = nil
+            var preferredSurface = surfaceArg
             if let sessionId = parsedInput.sessionId,
                let mapped = try? sessionStore.lookup(sessionId: sessionId),
                let mappedWorkspace = try? resolveWorkspaceIdForClaudeHook(mapped.workspaceId, client: client) {
                 workspaceId = mappedWorkspace
                 claudePid = mapped.pid
+                preferredSurface = mapped.surfaceId
             }
 
             // AskUserQuestion means Claude is about to ask the user something.
@@ -16129,6 +16199,18 @@ struct CMUXCLI {
                     lastSubtitle: "Waiting",
                     lastBody: question
                 )
+                if let resolvedSurface = try? resolveSurfaceIdForClaudeHook(
+                    preferredSurface,
+                    workspaceId: workspaceId,
+                    client: client
+                ) {
+                    _ = try? reportAgentActivity(
+                        client: client,
+                        workspaceId: workspaceId,
+                        surfaceId: resolvedSurface,
+                        activity: "idle"
+                    )
+                }
                 // Don't clear notifications or set status here.
                 // The Notification hook fires right after and will use the saved question.
                 print("OK")
@@ -16136,6 +16218,18 @@ struct CMUXCLI {
             }
 
             _ = try? sendV1Command("clear_notifications --tab=\(workspaceId)", client: client)
+            if let resolvedSurface = try? resolveSurfaceIdForClaudeHook(
+                preferredSurface,
+                workspaceId: workspaceId,
+                client: client
+            ) {
+                _ = try? reportAgentActivity(
+                    client: client,
+                    workspaceId: workspaceId,
+                    surfaceId: resolvedSurface,
+                    activity: "working"
+                )
+            }
 
             let statusValue: String
             if UserDefaults.standard.bool(forKey: "claudeCodeVerboseStatus"),
@@ -16180,6 +16274,18 @@ struct CMUXCLI {
             cmd += " --pid=\(pid)"
         }
         _ = try client.send(command: cmd)
+    }
+
+    private func reportAgentActivity(
+        client: SocketClient,
+        workspaceId: String,
+        surfaceId: String,
+        activity: String
+    ) throws {
+        _ = try sendV1Command(
+            "report_agent_activity \(activity) --tab=\(workspaceId) --panel=\(surfaceId)",
+            client: client
+        )
     }
 
     private func clearClaudeStatus(client: SocketClient, workspaceId: String) throws {

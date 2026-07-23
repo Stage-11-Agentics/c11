@@ -243,15 +243,17 @@ final class AgentDetector: @unchecked Sendable {
             return manifest.kind
         }
 
-        // JS/TS-runtime-wrapped CLIs: comm is the runtime (node/bun/deno) and
-        // the agent identity lives in the args. Two invocation shapes:
+        // Interpreter-wrapped CLIs: comm is the runtime and the agent identity
+        // lives in the args. Covers JS/TS runtimes (node/bun/deno) and Python
+        // (a pipx/venv shebang execs the interpreter, so `kimi` shows up as
+        // comm=`python` with the script path in argv). Two invocation shapes:
         //  - module path (`node …/@anthropic-ai/claude-code/cli.js`) → match a
         //    distinctive args substring.
-        //  - shim/symlink (`bun /Users/x/.bun/bin/omp`, `node /Users/x/.bun/bin/pi`)
+        //  - shim/symlink (`bun /Users/x/.bun/bin/omp`, `python …/bin/kimi`)
         //    → the module path isn't in argv, but the invoked script's basename
         //    is the agent's binary name. (Matching only the *last* path
         //    component avoids false positives from mid-path directory names.)
-        if c == "node" || c == "bun" || c == "deno" {
+        if c == "node" || c == "bun" || c == "deno" || c.hasPrefix("python") {
             for manifest in AgentRegistry.shared.all
             where manifest.detectNodeArgsSubstrings.contains(where: { a.contains($0) }) {
                 return manifest.kind

@@ -12747,9 +12747,8 @@ struct CMUXCLI {
                 : .missing
         } else if input.kind == "opencode", idValid {
             switch opencodeSessionExists(id: input.id, home: home) {
-            case true: transcriptEvidence = .verified
-            case false: transcriptEvidence = .missing
-            case nil: transcriptEvidence = .unavailable
+            case .some(let exists): transcriptEvidence = exists ? .verified : .missing
+            case .none: transcriptEvidence = .unavailable
             }
         } else {
             transcriptEvidence = .unavailable

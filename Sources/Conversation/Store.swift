@@ -751,13 +751,15 @@ extension ConversationStore {
                 .strategy(forKind: active.kind)?
                 .transcriptExists(for: active, filesystem: filesystem)
             switch verification {
-            case true:
-                active.state = .suspended
-                active.diagnosticReason = "crash recovery: transcript verified on disk"
-            case false:
-                active.state = .unknown
-                active.diagnosticReason = "crash recovery: transcript not found"
-            case nil:
+            case .some(let exists):
+                if exists {
+                    active.state = .suspended
+                    active.diagnosticReason = "crash recovery: transcript verified on disk"
+                } else {
+                    active.state = .unknown
+                    active.diagnosticReason = "crash recovery: transcript not found"
+                }
+            case .none:
                 active.state = .unknown
                 active.diagnosticReason = "crash recovery: transcript verification unavailable"
             }

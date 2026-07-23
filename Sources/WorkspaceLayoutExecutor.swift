@@ -15,17 +15,22 @@ struct WorkspaceLayoutExecutorDependencies {
     var workspaceRefMinter: (UUID) -> String
     var surfaceRefMinter: (UUID) -> String
     var paneRefMinter: (UUID) -> String
+    /// ACB-06 supplies the live Workspace/BrowserPanel mutation. Keeping it
+    /// injected lets this persistence lane compile without hotspot edits.
+    var applyCompanionLink: (@MainActor (Workspace, UUID, UUID) throws -> Void)?
 
     init(
         tabManager: TabManager,
         workspaceRefMinter: @escaping (UUID) -> String,
         surfaceRefMinter: @escaping (UUID) -> String,
-        paneRefMinter: @escaping (UUID) -> String
+        paneRefMinter: @escaping (UUID) -> String,
+        applyCompanionLink: (@MainActor (Workspace, UUID, UUID) throws -> Void)? = nil
     ) {
         self.tabManager = tabManager
         self.workspaceRefMinter = workspaceRefMinter
         self.surfaceRefMinter = surfaceRefMinter
         self.paneRefMinter = paneRefMinter
+        self.applyCompanionLink = applyCompanionLink
     }
 }
 
@@ -67,6 +72,7 @@ enum WorkspaceLayoutExecutor {
         var timings: [StepTiming] = []
         var warnings: [String] = []
         var failures: [ApplyFailure] = []
+        var companionDiagnostics: [CompanionPlanDiagnostic] = []
 
         // Step 1 — validate the plan locally before any AppKit state changes.
         let validateClock = StepClock()
@@ -196,6 +202,91 @@ enum WorkspaceLayoutExecutor {
         for failure in dividerFailures {
             walkState.failures.append(failure)
             walkState.warnings.append(failure.message)
+        }
+
+        // Step 6 — resolve browser companion links only after every surface
+        // has been materialized. This is what makes forward references and a
+        // browser-before-agent plan deterministic.
+        func recordCompanionDiagnostic(
+            _ code: CompanionPlanDiagnosticCode,
+            source: String,
+            target: String?,
+            detail: String? = nil
+        ) {
+            let message = CompanionPlanDiagnosticMessage.localized(
+                code: code,
+                sourcePlanID: source,
+                targetPlanID: target,
+                detail: detail
+            )
+            companionDiagnostics.append(CompanionPlanDiagnostic(
+                code: code,
+                severity: .error,
+                sourcePlanID: source,
+                targetPlanID: target
+            ))
+            walkState.warnings.append(message)
+            walkState.failures.append(ApplyFailure(
+                code: code.rawValue,
+                step: "surface[\(source)].companion_link.apply",
+                message: message
+            ))
+        }
+
+        for sourceSpec in plan.surfaces {
+            guard let targetPlanID = sourceSpec.linkedAgentSurfacePlanId else { continue }
+            guard sourceSpec.kind == .browser else {
+                recordCompanionDiagnostic(
+                    .sourceNotBrowser,
+                    source: sourceSpec.id,
+                    target: targetPlanID
+                )
+                continue
+            }
+            guard let targetSpec = surfacesById[targetPlanID] else {
+                recordCompanionDiagnostic(
+                    .targetMissing,
+                    source: sourceSpec.id,
+                    target: targetPlanID
+                )
+                continue
+            }
+            guard targetSpec.kind == .terminal else {
+                recordCompanionDiagnostic(
+                    .targetNotTerminal,
+                    source: sourceSpec.id,
+                    target: targetPlanID
+                )
+                continue
+            }
+            guard AgentIdentityPolicy.isAgentKind(targetSpec.declaredAgentKind) else {
+                recordCompanionDiagnostic(
+                    .targetNotAgent,
+                    source: sourceSpec.id,
+                    target: targetPlanID
+                )
+                continue
+            }
+            guard let sourcePanelID = walkState.planSurfaceIdToPanelId[sourceSpec.id],
+                  let targetPanelID = walkState.planSurfaceIdToPanelId[targetPlanID],
+                  let applyCompanionLink = dependencies.applyCompanionLink else {
+                recordCompanionDiagnostic(
+                    .applyFailed,
+                    source: sourceSpec.id,
+                    target: targetPlanID
+                )
+                continue
+            }
+            do {
+                try applyCompanionLink(workspace, sourcePanelID, targetPanelID)
+            } catch {
+                recordCompanionDiagnostic(
+                    .applyFailed,
+                    source: sourceSpec.id,
+                    target: targetPlanID,
+                    detail: String(describing: error)
+                )
+            }
         }
 
         // Step 7 — terminal initial commands. TerminalPanel.sendText
@@ -349,7 +440,8 @@ enum WorkspaceLayoutExecutor {
             paneRefs: paneRefs,
             timings: timings,
             warnings: warnings,
-            failures: failures
+            failures: failures,
+            companionDiagnostics: companionDiagnostics
         )
     }
 

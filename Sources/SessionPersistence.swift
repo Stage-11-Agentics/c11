@@ -304,6 +304,9 @@ struct SessionBrowserPanelSnapshot: Codable, Sendable {
     var developerToolsVisible: Bool
     var backHistoryURLStrings: [String]?
     var forwardHistoryURLStrings: [String]?
+    /// Durable browser-to-agent association. Optional so pre-companion
+    /// session-v1 snapshots continue to decode unchanged.
+    var linkedAgent: AgentSurfaceLink? = nil
 }
 
 struct SessionMarkdownPanelSnapshot: Codable, Sendable {
@@ -488,6 +491,9 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     /// Operator-authored workspace metadata (e.g. description, icon).
     /// Optional for backward compatibility with pre-metadata snapshots.
     var metadata: [String: String]?
+    /// Session-only active companion context. Blueprints and snapshots do not
+    /// carry this transient focus-derived value.
+    var activeAgentSurfaceId: UUID? = nil
 }
 
 struct SessionTabManagerSnapshot: Codable, Sendable {

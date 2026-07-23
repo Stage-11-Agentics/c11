@@ -6,6 +6,11 @@ import AppKit
 /// Delegates the walk to `WorkspacePlanCapture.capture(workspace:)` — the
 /// same shared helper used by `LiveWorkspaceSnapshotSource` — so Blueprints
 /// and Snapshots always serialise surface state with identical fidelity.
+struct WorkspaceBlueprintExportResult: Sendable {
+    var file: WorkspaceBlueprintFile
+    var warnings: [CompanionPlanDiagnostic]
+}
+
 @MainActor
 struct WorkspaceBlueprintExporter {
     let tabManager: TabManager
@@ -18,15 +23,34 @@ struct WorkspaceBlueprintExporter {
         name: String,
         description: String? = nil
     ) -> WorkspaceBlueprintFile? {
+        exportWithDiagnostics(
+            workspaceId: workspaceId,
+            name: name,
+            description: description
+        )?.file
+    }
+
+    func exportWithDiagnostics(
+        workspaceId: UUID,
+        name: String,
+        description: String? = nil,
+        companionBridge: WorkspacePlanCompanionCaptureBridge? = nil
+    ) -> WorkspaceBlueprintExportResult? {
         guard let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }) else {
             return nil
         }
-        let plan = WorkspacePlanCapture.capture(workspace: workspace)
-        return WorkspaceBlueprintFile(
-            version: 1,
-            name: name,
-            description: description,
-            plan: plan
+        let capture = WorkspacePlanCapture.capture(
+            workspace: workspace,
+            companionBridge: companionBridge
+        )
+        return WorkspaceBlueprintExportResult(
+            file: WorkspaceBlueprintFile(
+                version: 1,
+                name: name,
+                description: description,
+                plan: capture.plan
+            ),
+            warnings: capture.warnings
         )
     }
 }

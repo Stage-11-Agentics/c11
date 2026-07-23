@@ -89,6 +89,11 @@ struct SurfaceSpec: Codable, Sendable, Equatable {
     /// values verbatim. v1 strings-only: non-string values on a `mailbox.*`
     /// key surface as a warning in `ApplyResult` and are dropped.
     var paneMetadata: [String: PersistedJSONValue]?
+    /// Browser-only plan-local link target. Resolved after every surface has
+    /// been materialized so forward references are deterministic.
+    var linkedAgentSurfacePlanId: String?
+    /// Terminal-only declared agent identity used to validate link targets.
+    var declaredAgentKind: String?
 
     init(
         id: String,
@@ -101,6 +106,8 @@ struct SurfaceSpec: Codable, Sendable, Equatable {
         filePath: String? = nil,
         metadata: [String: PersistedJSONValue]? = nil,
         paneMetadata: [String: PersistedJSONValue]? = nil,
+        linkedAgentSurfacePlanId: String? = nil,
+        declaredAgentKind: String? = nil,
         submitCommand: Bool = false
     ) {
         self.id = id
@@ -113,6 +120,8 @@ struct SurfaceSpec: Codable, Sendable, Equatable {
         self.filePath = filePath
         self.metadata = metadata
         self.paneMetadata = paneMetadata
+        self.linkedAgentSurfacePlanId = linkedAgentSurfacePlanId
+        self.declaredAgentKind = declaredAgentKind
         self.submitCommand = submitCommand
     }
 
@@ -126,6 +135,7 @@ struct SurfaceSpec: Codable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case id, kind, title, description, workingDirectory, command, url
         case filePath, metadata, paneMetadata, submitCommand
+        case linkedAgentSurfacePlanId, declaredAgentKind
     }
 
     init(from decoder: Decoder) throws {
@@ -140,6 +150,8 @@ struct SurfaceSpec: Codable, Sendable, Equatable {
         filePath = try c.decodeIfPresent(String.self, forKey: .filePath)
         metadata = try c.decodeIfPresent([String: PersistedJSONValue].self, forKey: .metadata)
         paneMetadata = try c.decodeIfPresent([String: PersistedJSONValue].self, forKey: .paneMetadata)
+        linkedAgentSurfacePlanId = try c.decodeIfPresent(String.self, forKey: .linkedAgentSurfacePlanId)
+        declaredAgentKind = try c.decodeIfPresent(String.self, forKey: .declaredAgentKind)
         submitCommand = try c.decodeIfPresent(Bool.self, forKey: .submitCommand) ?? false
     }
 
@@ -155,6 +167,8 @@ struct SurfaceSpec: Codable, Sendable, Equatable {
         try c.encodeIfPresent(filePath, forKey: .filePath)
         try c.encodeIfPresent(metadata, forKey: .metadata)
         try c.encodeIfPresent(paneMetadata, forKey: .paneMetadata)
+        try c.encodeIfPresent(linkedAgentSurfacePlanId, forKey: .linkedAgentSurfacePlanId)
+        try c.encodeIfPresent(declaredAgentKind, forKey: .declaredAgentKind)
         // Omit when false so pre-existing serialized specs stay byte-identical.
         if submitCommand { try c.encode(submitCommand, forKey: .submitCommand) }
     }
@@ -371,6 +385,74 @@ struct ApplyFailure: Codable, Sendable, Equatable {
     }
 }
 
+/// Localized human-readable companion diagnostics for user-facing apply and
+/// snapshot response boundaries. The structured diagnostic remains the
+/// stable machine contract; callers add this message when presenting it.
+enum CompanionPlanDiagnosticMessage {
+    static func localized(
+        code: CompanionPlanDiagnosticCode,
+        sourcePlanID: String,
+        targetPlanID: String?,
+        detail: String? = nil
+    ) -> String {
+        let target = targetPlanID ?? ""
+        switch code {
+        case .orphanOmitted:
+            if let targetPlanID {
+                return String(
+                    localized: "workspace.companion.diagnostic.orphanOmittedKnownTarget",
+                    defaultValue: "Companion link from '\(sourcePlanID)' to '\(targetPlanID)' was omitted because the target is not a recognized agent terminal."
+                )
+            }
+            return String(
+                localized: "workspace.companion.diagnostic.orphanOmittedMissingTarget",
+                defaultValue: "Companion link from '\(sourcePlanID)' was omitted because its linked agent is not present in the captured workspace."
+            )
+        case .sourceNotBrowser:
+            return String(
+                localized: "workspace.companion.diagnostic.sourceNotBrowser",
+                defaultValue: "Companion link source '\(sourcePlanID)' is not a browser."
+            )
+        case .targetMissing:
+            return String(
+                localized: "workspace.companion.diagnostic.targetMissing",
+                defaultValue: "Companion link target '\(target)' for browser '\(sourcePlanID)' is missing."
+            )
+        case .targetNotTerminal:
+            return String(
+                localized: "workspace.companion.diagnostic.targetNotTerminal",
+                defaultValue: "Companion link target '\(target)' for browser '\(sourcePlanID)' is not a terminal."
+            )
+        case .targetNotAgent:
+            return String(
+                localized: "workspace.companion.diagnostic.targetNotAgent",
+                defaultValue: "Companion link target '\(target)' for browser '\(sourcePlanID)' is not a declared agent."
+            )
+        case .applyFailed:
+            if let detail, !detail.isEmpty {
+                return String(
+                    localized: "workspace.companion.diagnostic.applyFailedWithDetail",
+                    defaultValue: "Could not apply companion link from '\(sourcePlanID)' to '\(target)': \(detail)"
+                )
+            }
+            return String(
+                localized: "workspace.companion.diagnostic.applyFailed",
+                defaultValue: "Could not apply companion link from '\(sourcePlanID)' to '\(target)'."
+            )
+        case .duplicateSurfaceID:
+            return String(
+                localized: "workspace.companion.diagnostic.duplicateSurfaceID",
+                defaultValue: "Blueprint surface ID '\(sourcePlanID)' is duplicated."
+            )
+        case .invalidAgentKind:
+            return String(
+                localized: "workspace.companion.diagnostic.invalidAgentKind",
+                defaultValue: "Blueprint surface '\(sourcePlanID)' declares an invalid agent kind."
+            )
+        }
+    }
+}
+
 struct ApplyResult: Codable, Sendable, Equatable {
     /// Live workspace ref (`workspace:N`) assigned by the v2 ref helper after
     /// creation. Empty string if the plan failed validation before the
@@ -386,6 +468,9 @@ struct ApplyResult: Codable, Sendable, Equatable {
     /// warning has a stable code.
     var warnings: [String]
     var failures: [ApplyFailure]
+    /// Stable structured companion diagnostics. Human-readable mirrors remain
+    /// in `warnings`/`failures` for existing clients.
+    var companionDiagnostics: [CompanionPlanDiagnostic]
 
     init(
         workspaceRef: String = "",
@@ -393,7 +478,8 @@ struct ApplyResult: Codable, Sendable, Equatable {
         paneRefs: [String: String] = [:],
         timings: [StepTiming] = [],
         warnings: [String] = [],
-        failures: [ApplyFailure] = []
+        failures: [ApplyFailure] = [],
+        companionDiagnostics: [CompanionPlanDiagnostic] = []
     ) {
         self.workspaceRef = workspaceRef
         self.surfaceRefs = surfaceRefs
@@ -401,5 +487,38 @@ struct ApplyResult: Codable, Sendable, Equatable {
         self.timings = timings
         self.warnings = warnings
         self.failures = failures
+        self.companionDiagnostics = companionDiagnostics
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case workspaceRef, surfaceRefs, paneRefs, timings, warnings, failures
+        case companionDiagnostics
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        workspaceRef = try c.decode(String.self, forKey: .workspaceRef)
+        surfaceRefs = try c.decode([String: String].self, forKey: .surfaceRefs)
+        paneRefs = try c.decode([String: String].self, forKey: .paneRefs)
+        timings = try c.decode([StepTiming].self, forKey: .timings)
+        warnings = try c.decode([String].self, forKey: .warnings)
+        failures = try c.decode([ApplyFailure].self, forKey: .failures)
+        companionDiagnostics = try c.decodeIfPresent(
+            [CompanionPlanDiagnostic].self,
+            forKey: .companionDiagnostics
+        ) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(workspaceRef, forKey: .workspaceRef)
+        try c.encode(surfaceRefs, forKey: .surfaceRefs)
+        try c.encode(paneRefs, forKey: .paneRefs)
+        try c.encode(timings, forKey: .timings)
+        try c.encode(warnings, forKey: .warnings)
+        try c.encode(failures, forKey: .failures)
+        if !companionDiagnostics.isEmpty {
+            try c.encode(companionDiagnostics, forKey: .companionDiagnostics)
+        }
     }
 }

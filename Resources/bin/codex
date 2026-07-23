@@ -38,6 +38,31 @@
 
 set -uo pipefail
 
+# Codex invokes the configured `notify` command after every completed agent
+# turn, even when its own TUI notification is suppressed because the terminal
+# is focused. Route that exact lifecycle edge back through c11 so the surface
+# becomes an unread "waiting agent" and its underlying activity settles idle.
+# This private callback runs only as a child of the c11-scoped Codex process;
+# it never writes Codex config or changes behavior outside c11.
+if [[ "${1:-}" == "__c11-notify" ]]; then
+    socket="${CMUX_SOCKET_PATH:-${C11_SOCKET_PATH:-}}"
+    workspace_id="${CMUX_WORKSPACE_ID:-${C11_WORKSPACE_ID:-}}"
+    surface_id="${CMUX_SURFACE_ID:-${C11_SURFACE_ID:-}}"
+    self_dir="$(cd "$(dirname "$0")" && pwd)"
+    c11_bin="$self_dir/c11"
+    [[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
+
+    if [[ -n "$socket" && -S "$socket" && -n "$workspace_id" && -n "$surface_id" && -n "$c11_bin" ]]; then
+        CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+            "$c11_bin" --socket "$socket" notify \
+            --title "Codex" \
+            --workspace "$workspace_id" \
+            --surface "$surface_id" \
+            >/dev/null 2>&1 || true
+    fi
+    exit 0
+fi
+
 # Find the real codex binary, skipping our own directory.
 find_real_codex() {
     local self_dir
@@ -121,6 +146,7 @@ fi
 # later target runtime capture is newer than the marker and remains
 # authoritative. This preserves causal ordering without turning a stale socket
 # into launch latency.
+codex_notify_config=""
 if [[ -n "$c11_bin" ]]; then
     boundary_surface="${CMUX_SURFACE_ID:-}"
     if [[ "$boundary_surface" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then
@@ -168,6 +194,18 @@ if [[ -n "$c11_bin" ]]; then
             >/dev/null 2>&1
     ) &
     disown 2>/dev/null || true
+
+    # Runtime-only completion bridge. Prepending the override keeps any
+    # explicit `-c notify=...` supplied by the operator later in argv in
+    # control, while the normal c11 launch path gains a focus-independent
+    # completion signal without touching ~/.codex/config.toml.
+    notify_handler="$self_dir/codex"
+    notify_handler="${notify_handler//\\/\\\\}"
+    notify_handler="${notify_handler//\"/\\\"}"
+    codex_notify_config="notify=[\"${notify_handler}\",\"__c11-notify\"]"
 fi
 
+if [[ -n "$codex_notify_config" ]]; then
+    exec "$REAL_CODEX" -c "$codex_notify_config" "$@"
+fi
 exec "$REAL_CODEX" "$@"

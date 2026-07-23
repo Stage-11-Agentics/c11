@@ -11284,68 +11284,6 @@ enum SidebarWorkspaceShortcutHintMetrics {
     #endif
 }
 
-private struct WorkspacePulseMarksLayout: Layout {
-    let spacing: CGFloat
-
-    func sizeThatFits(
-        proposal: ProposedViewSize,
-        subviews: Subviews,
-        cache: inout ()
-    ) -> CGSize {
-        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
-        let availableWidth = proposal.width ?? sizes.reduce(0) {
-            $0 + $1.width
-        } + spacing * CGFloat(max(0, sizes.count - 1))
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var rowHeight: CGFloat = 0
-        var widestRow: CGFloat = 0
-
-        for size in sizes {
-            if x > 0, x + size.width > availableWidth {
-                widestRow = max(widestRow, x - spacing)
-                y += rowHeight + spacing
-                x = 0
-                rowHeight = 0
-            }
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
-        widestRow = max(widestRow, max(0, x - spacing))
-        return CGSize(
-            width: min(availableWidth, widestRow),
-            height: y + rowHeight
-        )
-    }
-
-    func placeSubviews(
-        in bounds: CGRect,
-        proposal: ProposedViewSize,
-        subviews: Subviews,
-        cache: inout ()
-    ) {
-        var x = bounds.minX
-        var y = bounds.minY
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > bounds.minX, x + size.width > bounds.maxX {
-                x = bounds.minX
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            subview.place(
-                at: CGPoint(x: x, y: y),
-                anchor: .topLeading,
-                proposal: ProposedViewSize(size)
-            )
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
-    }
-}
-
 // PERF: TabItemView is Equatable so SwiftUI skips body re-evaluation when
 // the parent rebuilds with unchanged values. Without this, every TabManager
 // or NotificationStore publish causes ALL tab items to re-evaluate (~18% of
@@ -11808,7 +11746,7 @@ private struct TabItemView: View, Equatable {
     }
 
     private var workspacePulseFooter: some View {
-        HStack(alignment: .top, spacing: 8) {
+        VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
                 Text(verbatim: workspacePulseAgentCountText)
                 Circle()
@@ -11818,9 +11756,7 @@ private struct TabItemView: View, Equatable {
             }
             .fixedSize(horizontal: true, vertical: false)
 
-            Spacer(minLength: 4)
-
-            WorkspacePulseMarksLayout(spacing: 7) {
+            HStack(spacing: 7) {
                 ForEach(workspacePulse.agents) { agent in
                     workspacePulseMark(for: agent.state)
                         .frame(width: 14, height: 14)
@@ -11829,6 +11765,8 @@ private struct TabItemView: View, Equatable {
                         .accessibilityValue(Text(workspacePulseLabel(for: agent.state)))
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .frame(height: 14)
         }
         .font(.system(size: chromeTokens.sidebarWorkspaceMetadata - 0.5, design: .monospaced))
         .foregroundColor(.secondary.opacity(0.68))

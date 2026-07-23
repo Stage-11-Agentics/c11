@@ -88,6 +88,8 @@ struct ClaudeCodeScraper: ConversationScraper {
 struct CodexScraper: ConversationScraper {
     let kind: String = "codex"
     static let defaultMaxCandidates: Int = 16
+    static let maximumBatchCandidates: Int = 512
+    static let qaSessionsRootEnvironmentKey = "C11_QA_CODEX_SESSIONS_ROOT"
     /// Head-read byte cap for cwd recovery. Generous enough to include
     /// `payload.cwd` (which precedes `payload.instructions` in the observed
     /// rollout format) while staying bounded far below any transcript body.
@@ -105,10 +107,37 @@ struct CodexScraper: ConversationScraper {
     }
 
     func sessionsRoot() -> URL? {
+        if let override = Self.qaSessionsRootOverride(
+            environment: ProcessInfo.processInfo.environment
+        ) {
+            return override
+        }
         guard let home = filesystem.homeDirectory else { return nil }
         return home
             .appendingPathComponent(".codex", isDirectory: true)
             .appendingPathComponent("sessions", isDirectory: true)
+    }
+
+    /// Run-scoped session root for tagged/QA validation. Stable interactive
+    /// launches deliberately ignore the override so tests can never redirect
+    /// a production app into fixture data by ambient accident.
+    static func qaSessionsRootOverride(environment: [String: String]) -> URL? {
+        let isTaggedOrQA = [
+            environment["C11_TAG"],
+            environment["CMUX_TAG"],
+            environment["C11_QA_LAUNCH"]
+        ].contains { value in
+            guard let value else { return false }
+            return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        guard isTaggedOrQA,
+              let raw = environment[qaSessionsRootEnvironmentKey]?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else {
+            return nil
+        }
+        return URL(fileURLWithPath: (raw as NSString).expandingTildeInPath,
+                   isDirectory: true).standardizedFileURL
     }
 
     /// Codex stores sessions in subdirectories by year/month/day; walk
@@ -123,11 +152,19 @@ struct CodexScraper: ConversationScraper {
     /// crash-recovery reclassify path — so it avoids up to `maxCandidates`
     /// file opens per codex surface that would only recover a cwd it discards.
     func candidates(cwd: String?, recoverCwd: Bool) -> [ScrapeCandidate] {
+        candidates(cwd: cwd, recoverCwd: recoverCwd, limit: maxCandidates)
+    }
+
+    private func candidates(
+        cwd: String?,
+        recoverCwd: Bool,
+        limit: Int
+    ) -> [ScrapeCandidate] {
         guard let root = sessionsRoot() else { return [] }
         let entries = filesystem.listSessionsRecursivelyByMtime(
             root,
             extensionFilter: "jsonl",
-            max: maxCandidates
+            max: max(0, min(limit, Self.maximumBatchCandidates))
         )
         return entries.compactMap { entry in
             // Codex names sessions `rollout-<ISO8601-with-dashes>-<uuid>.jsonl`
@@ -158,6 +195,16 @@ struct CodexScraper: ConversationScraper {
                 cwd: realCwd
             )
         }
+    }
+
+    /// Codex has one process-wide, date-partitioned rollout store. Enumerate
+    /// it once for the whole live-context batch; never once per surface.
+    func batchCandidates(
+        contexts: [ScrapeCaptureContext],
+        maxCandidates: Int
+    ) -> [ScrapeCandidate] {
+        guard !contexts.isEmpty else { return [] }
+        return candidates(cwd: nil, recoverCwd: true, limit: maxCandidates)
     }
 
     /// Extract ONLY the `cwd` string value from a bounded rollout header.

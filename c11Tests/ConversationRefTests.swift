@@ -69,9 +69,35 @@ final class ConversationRefTests: XCTestCase {
     // MARK: - CaptureSource priority
 
     func testCaptureSourcePriorityOrder() {
+        XCTAssertGreaterThan(CaptureSource.runtimeEnv.priority, CaptureSource.hook.priority)
         XCTAssertGreaterThan(CaptureSource.hook.priority, CaptureSource.scrape.priority)
         XCTAssertGreaterThan(CaptureSource.scrape.priority, CaptureSource.manual.priority)
         XCTAssertGreaterThan(CaptureSource.manual.priority, CaptureSource.wrapperClaim.priority)
+    }
+
+    func testCaptureEvidenceTierSeparatesCausalFromInferred() {
+        XCTAssertEqual(CaptureSource.runtimeEnv.evidenceTier, .causal)
+        XCTAssertEqual(CaptureSource.hook.evidenceTier, .causal)
+        XCTAssertEqual(CaptureSource.scrape.evidenceTier, .inferred)
+        XCTAssertEqual(CaptureSource.manual.evidenceTier, .inferred)
+        XCTAssertEqual(CaptureSource.wrapperClaim.evidenceTier, .placeholder)
+    }
+
+    func testQuarantineAndRuntimeEnvRoundTripAreBackwardCompatibleAdditions() throws {
+        let original = ConversationRef(
+            kind: "codex",
+            id: "aaaa1111-2222-3333-4444-555566667777",
+            capturedVia: .runtimeEnv,
+            state: .unknown,
+            quarantineReason: .conflictingCausalIdentity
+        )
+        let decoded = try JSONDecoder().decode(
+            ConversationRef.self,
+            from: JSONEncoder().encode(original)
+        )
+        XCTAssertEqual(decoded.capturedVia, .runtimeEnv)
+        XCTAssertEqual(decoded.quarantineReason, .conflictingCausalIdentity)
+        XCTAssertTrue(decoded.isQuarantined)
     }
 
     // MARK: - Reconciliation rule
@@ -181,6 +207,25 @@ final class ConversationRefTests: XCTestCase {
         XCTAssertTrue(ConversationStore._testShouldReplace(existing: claim, candidate: manual))
     }
 
+    func testInferredEvidenceNeverDisplacesCausalRegardlessOfTimestamp() {
+        let causal = ConversationRef(
+            kind: "codex",
+            id: "aaaa1111-2222-3333-4444-555566667777",
+            capturedAt: Date(timeIntervalSince1970: 1),
+            capturedVia: .runtimeEnv,
+            state: .alive
+        )
+        let inferred = ConversationRef(
+            kind: "codex",
+            id: "bbbb1111-2222-3333-4444-555566667777",
+            capturedAt: Date(timeIntervalSince1970: 9_999_999),
+            capturedVia: .scrape,
+            state: .alive
+        )
+        XCTAssertFalse(ConversationStore._testShouldReplace(existing: causal, candidate: inferred))
+        XCTAssertTrue(ConversationStore._testShouldReplace(existing: inferred, candidate: causal))
+    }
+
     // MARK: - Store actor end-to-end
 
     func testStoreClaimThenPushReplacesPlaceholder() async {
@@ -226,6 +271,95 @@ final class ConversationRefTests: XCTestCase {
         XCTAssertEqual(active?.id, "aaaa1111-2222-3333-4444-555566667777",
                        "second wrapper-claim must not regress a confirmed scrape id")
         XCTAssertEqual(active?.capturedVia, .scrape)
+    }
+
+    func testExpiredClaimDoesNotMutateStore() async {
+        let store = ConversationStore()
+        let expiresAt = Date().addingTimeInterval(0.02)
+        try? await Task.sleep(nanoseconds: 40_000_000)
+        let result = await store.claim(
+            surfaceId: "S-expired",
+            kind: "codex",
+            cwd: "/tmp/proj",
+            placeholderId: "wrapper-claim:S-expired",
+            expiresAt: expiresAt
+        )
+        XCTAssertEqual(result, .expired)
+        let expiredActive = await store.active(for: "S-expired")
+        XCTAssertNil(expiredActive)
+    }
+
+    func testRuntimeEnvIdempotenceStickinessAndSameSurfaceNewLifecycle() async {
+        let store = ConversationStore()
+        let firstId = "aaaa1111-2222-3333-4444-555566667777"
+        let nextId = "bbbb1111-2222-3333-4444-555566667777"
+        let first = await store.captureRuntimeEnv(
+            surfaceId: "S1", id: firstId, cwd: "/tmp/proj"
+        )
+        XCTAssertEqual(first.outcome, .accepted)
+        let again = await store.captureRuntimeEnv(
+            surfaceId: "S1", id: firstId, cwd: "/tmp/proj"
+        )
+        XCTAssertEqual(again.outcome, .idempotent)
+
+        _ = await store.push(
+            surfaceId: "S1",
+            kind: "codex",
+            id: nextId,
+            source: .scrape,
+            capturedAt: Date().addingTimeInterval(10_000)
+        )
+        let afterInferred = await store.active(for: "S1")
+        XCTAssertEqual(afterInferred?.id, firstId)
+
+        let replacement = await store.captureRuntimeEnv(
+            surfaceId: "S1", id: nextId, cwd: "/tmp/proj"
+        )
+        XCTAssertEqual(replacement.outcome, .accepted)
+        let afterReplacement = await store.active(for: "S1")
+        XCTAssertEqual(afterReplacement?.id, nextId)
+    }
+
+    func testConflictingCausalOwnersQuarantineEverySurface() async {
+        let store = ConversationStore()
+        let id = "aaaa1111-2222-3333-4444-555566667777"
+        _ = await store.captureRuntimeEnv(surfaceId: "S1", id: id, cwd: "/a")
+        let conflict = await store.captureRuntimeEnv(surfaceId: "S2", id: id, cwd: "/b")
+        XCTAssertEqual(conflict.outcome, .quarantinedConflict)
+        let s1 = await store.active(for: "S1")
+        let s2 = await store.active(for: "S2")
+        XCTAssertEqual(s1?.quarantineReason, .conflictingCausalIdentity)
+        XCTAssertEqual(s2?.quarantineReason, .conflictingCausalIdentity)
+    }
+
+    func testCausalOwnerWinsAndQuarantinesInferredDuplicate() async {
+        let store = ConversationStore()
+        let id = "aaaa1111-2222-3333-4444-555566667777"
+        _ = await store.push(
+            surfaceId: "S-inferred", kind: "codex", id: id, source: .scrape
+        )
+        _ = await store.captureRuntimeEnv(surfaceId: "S-causal", id: id, cwd: "/b")
+        let inferred = await store.active(for: "S-inferred")
+        let causal = await store.active(for: "S-causal")
+        XCTAssertEqual(inferred?.quarantineReason, .displacedByCausalOwner)
+        XCTAssertNil(causal?.quarantineReason)
+    }
+
+    func testSeedQuarantinesAllInferredDuplicateOwners() async {
+        let id = "aaaa1111-2222-3333-4444-555566667777"
+        let ref = ConversationRef(
+            kind: "codex", id: id, capturedVia: .scrape, state: .suspended
+        )
+        let store = ConversationStore()
+        let audit = await store.seed(from: [
+            "S1": SurfaceConversations(active: ref),
+            "S2": SurfaceConversations(active: ref)
+        ])
+        XCTAssertEqual(audit.quarantinedSurfaceIds, ["S1", "S2"])
+        let s1 = await store.active(for: "S1")
+        let s2 = await store.active(for: "S2")
+        XCTAssertEqual(s1?.quarantineReason, .duplicateInferredIdentity)
+        XCTAssertEqual(s2?.quarantineReason, .duplicateInferredIdentity)
     }
 
     func testSuspendAllAliveTransitionsState() async {

@@ -1,10 +1,49 @@
 import Foundation
 
+struct ConversationIdentity: Hashable, Sendable {
+    let kind: String
+    let id: String
+}
+
+struct OwnershipAuditResult: Sendable, Equatable {
+    let quarantinedSurfaceIds: [String]
+
+    static let clean = OwnershipAuditResult(quarantinedSurfaceIds: [])
+}
+
+enum ConversationClaimResult: Sendable, Equatable {
+    case accepted(ConversationRef)
+    case expired
+}
+
+struct RuntimeEnvCaptureResult: Sendable, Equatable {
+    enum Outcome: String, Sendable {
+        case accepted
+        case idempotent
+        case quarantinedConflict
+    }
+
+    let outcome: Outcome
+    let ref: ConversationRef
+    let affectedSurfaceIds: [String]
+}
+
+struct AppliedConversationRef: Sendable, Equatable {
+    let surfaceId: String
+    let ref: ConversationRef
+}
+
+struct ScrapeCaptureCommitResult: Sendable, Equatable {
+    let applied: [AppliedConversationRef]
+    let quarantinedSurfaceIds: [String]
+}
+
 /// Lifecycle owner for `ConversationRef`s. Single source of truth in the
 /// app process; held by `Workspace` (per-workspace store).
 ///
-/// Reconciliation rule: latest `capturedAt` wins, with source-priority
-/// tiebreaker (`hook > scrape > manual > wrapperClaim`) on close timestamps.
+/// Reconciliation rule: evidence strength wins first (causal > inferred >
+/// placeholder), then `capturedAt` and source priority resolve same-tier
+/// candidates.
 /// `wrapperClaim` is idempotent and conservative: it only writes if the
 /// existing ref is older AND of equal-or-lower provenance, so an operator
 /// who types `claude` twice in the same surface cannot regress a real id
@@ -67,8 +106,10 @@ extension ConversationStore {
 
     /// Replace the entire store contents in one shot. Called once on
     /// snapshot restore to seed from `SessionPanelSnapshot.surfaceConversations`.
-    func seed(from records: [String: SurfaceConversations]) {
+    @discardableResult
+    func seed(from records: [String: SurfaceConversations]) -> OwnershipAuditResult {
         bySurface = records
+        return auditGlobalOwnership()
     }
 
     // MARK: - Write
@@ -85,6 +126,50 @@ extension ConversationStore {
         capturedAt: Date = Date(),
         diagnosticReason: String? = nil
     ) -> ConversationRef {
+        switch claim(
+            surfaceId: surfaceId,
+            kind: kind,
+            cwd: cwd,
+            placeholderId: placeholderId,
+            capturedAt: capturedAt,
+            diagnosticReason: diagnosticReason,
+            expiresAt: nil
+        ) {
+        case .accepted(let ref):
+            return ref
+        case .expired:
+            // `nil` never expires; retain an exhaustive fallback so the
+            // legacy return shape stays total if the implementation changes.
+            return bySurface[surfaceId]?.active ?? ConversationRef(
+                kind: kind,
+                id: placeholderId,
+                placeholder: true,
+                cwd: cwd,
+                capturedAt: capturedAt,
+                capturedVia: .wrapperClaim,
+                state: .unknown,
+                diagnosticReason: diagnosticReason ?? "wrapper-claim placeholder"
+            )
+        }
+    }
+
+    /// Expiring wrapper claim used by the launch handshake. Expiry is checked
+    /// inside the actor immediately before mutation; a request that timed out
+    /// in the wrapper cannot land later after the real Codex process starts.
+    @discardableResult
+    func claim(
+        surfaceId: String,
+        kind: String,
+        cwd: String?,
+        placeholderId: String,
+        capturedAt: Date = Date(),
+        diagnosticReason: String? = nil,
+        expiresAt: Date?
+    ) -> ConversationClaimResult {
+        if let expiresAt, expiresAt <= Date() {
+            return .expired
+        }
+
         let claim = ConversationRef(
             kind: kind,
             id: placeholderId,
@@ -102,22 +187,22 @@ extension ConversationStore {
             // Hooks/scrapes/manual always win over wrapperClaim regardless
             // of timestamp.
             if existing.capturedVia != .wrapperClaim {
-                return existing
+                return .accepted(existing)
             }
             // Same source: keep the newer timestamp.
             if existing.capturedAt >= capturedAt {
-                return existing
+                return .accepted(existing)
             }
         }
         var snap = bySurface[surfaceId] ?? .empty
         snap.active = claim
         bySurface[surfaceId] = snap
-        return claim
+        return .accepted(claim)
     }
 
-    /// Apply a push (hook or manual). Hooks outrank everything except a
-    /// strictly newer push or scrape. State defaults to `.alive`; callers
-    /// pass `.tombstoned` or other states explicitly when warranted.
+    /// Apply a push (hook or manual). Causal hooks are sticky against inferred
+    /// sources. State defaults to `.alive`; callers pass `.tombstoned` or
+    /// other states explicitly when warranted.
     @discardableResult
     func push(
         surfaceId: String,
@@ -130,6 +215,14 @@ extension ConversationStore {
         diagnosticReason: String? = nil,
         payload: [String: PersistedJSONValue]? = nil
     ) -> ConversationRef {
+        if source == .runtimeEnv {
+            return captureRuntimeEnv(
+                surfaceId: surfaceId,
+                id: id,
+                cwd: cwd,
+                capturedAt: capturedAt
+            ).ref
+        }
         let ref = ConversationRef(
             kind: kind,
             id: id,
@@ -141,7 +234,59 @@ extension ConversationStore {
             diagnosticReason: diagnosticReason,
             payload: payload
         )
-        return reconcile(surfaceId: surfaceId, candidate: ref) ?? ref
+        _ = reconcile(surfaceId: surfaceId, candidate: ref)
+        _ = auditGlobalOwnership()
+        return bySurface[surfaceId]?.active ?? ref
+    }
+
+    /// Apply exact identity read by the target Codex subprocess. This is a
+    /// separate mutation seam because causal lifecycle changes must not be
+    /// subjected to inferred timestamp tiebreaking.
+    @discardableResult
+    func captureRuntimeEnv(
+        surfaceId: String,
+        id: String,
+        cwd: String?,
+        capturedAt: Date = Date()
+    ) -> RuntimeEnvCaptureResult {
+        let existing = bySurface[surfaceId]?.active
+        let isIdempotent = existing?.kind == "codex"
+            && existing?.id == id
+            && existing?.capturedVia == .runtimeEnv
+            && existing?.quarantineReason == nil
+
+        if isIdempotent, let existing {
+            return RuntimeEnvCaptureResult(
+                outcome: .idempotent,
+                ref: existing,
+                affectedSurfaceIds: []
+            )
+        }
+
+        let ref = ConversationRef(
+            kind: "codex",
+            id: id,
+            placeholder: false,
+            cwd: cwd,
+            capturedAt: capturedAt,
+            capturedVia: .runtimeEnv,
+            state: .alive,
+            diagnosticReason: "exact id captured from target runtime environment"
+        )
+        var snap = bySurface[surfaceId] ?? .empty
+        // A new runtime id on this same live surface is a new causal lifecycle
+        // event. Replace the prior active id before the global ownership audit;
+        // the audit will quarantine conflicts rather than timestamp-winning.
+        snap.active = ref
+        bySurface[surfaceId] = snap
+
+        let audit = auditGlobalOwnership()
+        let stored = bySurface[surfaceId]?.active ?? ref
+        return RuntimeEnvCaptureResult(
+            outcome: stored.isQuarantined ? .quarantinedConflict : .accepted,
+            ref: stored,
+            affectedSurfaceIds: audit.quarantinedSurfaceIds
+        )
     }
 
     /// Apply a scrape result. Same reconciliation rule as `push`. This is
@@ -152,7 +297,9 @@ extension ConversationStore {
         surfaceId: String,
         ref: ConversationRef
     ) -> ConversationRef {
-        return reconcile(surfaceId: surfaceId, candidate: ref) ?? ref
+        _ = reconcile(surfaceId: surfaceId, candidate: ref)
+        _ = auditGlobalOwnership()
+        return bySurface[surfaceId]?.active ?? ref
     }
 
     /// Live scrape-capture driver. Runs the pure `ScrapeCapturePipeline`
@@ -167,12 +314,57 @@ extension ConversationStore {
     func runScrapeCapture(
         contexts: [ScrapeCaptureContext],
         pipeline: ScrapeCapturePipeline
-    ) -> [(surfaceId: String, ref: ConversationRef)] {
-        let captured = pipeline.captureRefs(contexts: contexts, existing: bySurface)
-        for (surfaceId, ref) in captured {
-            applyScrape(surfaceId: surfaceId, ref: ref)
+    ) async throws -> ScrapeCaptureCommitResult {
+        let batch = try await pipeline.collectCandidateBatch(contexts: contexts)
+        return applyScrapeBatch(batch, pipeline: pipeline)
+    }
+
+    /// Commit a previously collected batch in one non-suspending actor turn.
+    /// Runtime causal reports that landed while collection was in flight are
+    /// read from current `bySurface` here and cannot be overwritten by a stale
+    /// inferred proposal.
+    @discardableResult
+    func applyScrapeBatch(
+        _ batch: ScrapeCandidateBatch,
+        pipeline: ScrapeCapturePipeline
+    ) -> ScrapeCaptureCommitResult {
+        var working = bySurface
+        let plan = pipeline.reconcileBatch(batch, existing: working)
+        var appliedSurfaceIds = Set<String>()
+
+        for (surfaceId, reason) in plan.quarantineReasonsBySurface {
+            Self.quarantine(
+                surfaceId: surfaceId,
+                reason: reason,
+                records: &working
+            )
         }
-        return captured
+
+        for (surfaceId, ref) in plan.refsBySurface {
+            var conversations = working[surfaceId] ?? .empty
+            if let existing = conversations.active,
+               !Self._testShouldReplace(existing: existing, candidate: ref) {
+                continue
+            }
+            conversations.active = ref
+            working[surfaceId] = conversations
+            appliedSurfaceIds.insert(surfaceId)
+        }
+
+        let audit = Self.auditGlobalOwnership(records: &working)
+        bySurface = working
+        let applied = appliedSurfaceIds.sorted().compactMap { surfaceId in
+            bySurface[surfaceId]?.active.map {
+                AppliedConversationRef(surfaceId: surfaceId, ref: $0)
+            }
+        }
+        let quarantined = Set(audit.quarantinedSurfaceIds)
+            .union(plan.quarantineReasonsBySurface.keys)
+            .sorted()
+        return ScrapeCaptureCommitResult(
+            applied: applied,
+            quarantinedSurfaceIds: quarantined
+        )
     }
 
     /// Mark the surface's active ref as tombstoned. Operator-initiated
@@ -273,6 +465,13 @@ extension ConversationStore {
         bySurface.removeValue(forKey: surfaceId)
     }
 
+    /// Process-wide ownership audit. Called after snapshot seed and every
+    /// exact-id mutation; no observer can see a newly duplicated resumable id.
+    @discardableResult
+    func auditGlobalOwnership() -> OwnershipAuditResult {
+        Self.auditGlobalOwnership(records: &bySurface)
+    }
+
     // MARK: - Reconciliation
 
     /// Apply the reconciliation rule. Returns the chosen winner (`nil` if
@@ -298,10 +497,73 @@ extension ConversationStore {
         return nil
     }
 
-    /// The reconciliation rule. Latest `capturedAt` wins; on close
-    /// timestamps, source priority (`hook > scrape > manual > wrapperClaim`)
-    /// breaks the tie. Wrapper-claim is conservative: never displaces a
-    /// non-wrapperClaim source regardless of timestamp.
+    private static func auditGlobalOwnership(
+        records: inout [String: SurfaceConversations]
+    ) -> OwnershipAuditResult {
+        var grouped: [ConversationIdentity: [(surfaceId: String, ref: ConversationRef)]] = [:]
+        for (surfaceId, conversations) in records {
+            guard let ref = conversations.active,
+                  !ref.placeholder,
+                  !ref.id.isEmpty,
+                  ref.state != .tombstoned,
+                  ref.state != .unsupported else { continue }
+            grouped[ConversationIdentity(kind: ref.kind, id: ref.id), default: []]
+                .append((surfaceId, ref))
+        }
+
+        var affected = Set<String>()
+        for entries in grouped.values where entries.count > 1 {
+            let causal = entries.filter { $0.ref.hasCausalExactEvidence }
+            if causal.count == 1, let causalSurface = causal.first?.surfaceId {
+                for entry in entries where entry.surfaceId != causalSurface {
+                    quarantine(
+                        surfaceId: entry.surfaceId,
+                        reason: .displacedByCausalOwner,
+                        records: &records
+                    )
+                    affected.insert(entry.surfaceId)
+                }
+            } else {
+                let reason: ConversationQuarantineReason = causal.count > 1
+                    ? .conflictingCausalIdentity
+                    : .duplicateInferredIdentity
+                for entry in entries {
+                    quarantine(
+                        surfaceId: entry.surfaceId,
+                        reason: reason,
+                        records: &records
+                    )
+                    affected.insert(entry.surfaceId)
+                }
+            }
+        }
+        return OwnershipAuditResult(quarantinedSurfaceIds: affected.sorted())
+    }
+
+    private static func quarantine(
+        surfaceId: String,
+        reason: ConversationQuarantineReason,
+        records: inout [String: SurfaceConversations]
+    ) {
+        var conversations = records[surfaceId] ?? .empty
+        var ref = conversations.active ?? ConversationRef(
+            kind: "codex",
+            id: "quarantine:\(surfaceId)",
+            placeholder: true,
+            capturedVia: .wrapperClaim,
+            state: .unknown
+        )
+        ref.state = .unknown
+        ref.quarantineReason = reason
+        ref.diagnosticReason = "quarantined:\(reason.rawValue)"
+        conversations.active = ref
+        records[surfaceId] = conversations
+    }
+
+    /// The reconciliation rule. Evidence strength wins first. Within one
+    /// tier, latest `capturedAt` wins; source priority breaks close ties.
+    /// Wrapper-claim remains conservative and never displaces stronger
+    /// evidence regardless of timestamp.
     ///
     /// C11-24 review (M2): single source of truth. The actor calls
     /// through to the nonisolated static so the rule cannot drift between
@@ -321,6 +583,12 @@ extension ConversationStore {
         existing: ConversationRef,
         candidate: ConversationRef
     ) -> Bool {
+        // Evidence strength is sticky across time. A scrape/manual write can
+        // never displace a causal runtime/hook ref, and causal evidence always
+        // replaces an inferred or placeholder ref on the same surface.
+        if candidate.capturedVia.evidenceTier != existing.capturedVia.evidenceTier {
+            return candidate.capturedVia.evidenceTier > existing.capturedVia.evidenceTier
+        }
         // Wrapper-claim never replaces non-wrapperClaim sources.
         if candidate.capturedVia == .wrapperClaim, existing.capturedVia != .wrapperClaim {
             return false

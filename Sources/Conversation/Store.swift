@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 struct ConversationIdentity: Hashable, Sendable {
     let kind: String
@@ -21,9 +22,10 @@ enum ConversationClaimResult: Sendable, Equatable {
 }
 
 /// Durable, c11-owned evidence that the Codex wrapper crossed an interactive
-/// process boundary before attempting the bounded socket claim. A surviving
-/// marker means the claim was not acknowledged; persistence/startup must not
-/// trust an older exact owner on that surface.
+/// process boundary before attempting the bounded socket claim. The marker is
+/// retained even when the live Store acknowledges the claim: until a snapshot
+/// containing the new lifecycle is durable, persistence/startup must not trust
+/// an older exact owner on that surface.
 struct CodexLaunchBoundaryMarker: Sendable, Equatable {
     let surfaceId: String
     let boundaryAt: Date
@@ -31,6 +33,8 @@ struct CodexLaunchBoundaryMarker: Sendable, Equatable {
 }
 
 enum CodexLaunchBoundaryMarkerStore {
+    private static let socketRecordPrefix = "codex-launch-boundary-socket."
+
     static func directoryURL(socketPath: String) -> URL {
         URL(fileURLWithPath: socketPath + ".codex-launch-boundaries", isDirectory: true)
     }
@@ -39,9 +43,17 @@ enum CodexLaunchBoundaryMarkerStore {
     /// and optional expected resume UUID. No transcript content is involved.
     static func load(
         socketPath: String,
-        fileManager: FileManager = .default
+        allowedSurfaceIds: Set<String>? = nil,
+        fileManager: FileManager = .default,
+        currentUserID: uid_t = getuid()
     ) -> [CodexLaunchBoundaryMarker] {
         let directory = directoryURL(socketPath: socketPath)
+        guard isOwnedDirectory(
+            atPath: directory.path,
+            currentUserID: currentUserID
+        ) else {
+            return []
+        }
         guard let urls = try? fileManager.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: [
@@ -55,6 +67,11 @@ enum CodexLaunchBoundaryMarkerStore {
         return urls.compactMap { url in
             let surfaceId = url.lastPathComponent
             guard UUID(uuidString: surfaceId) != nil,
+                  allowedSurfaceIds?.contains(surfaceId) != false,
+                  isOwnedRegularFile(
+                      atPath: url.path,
+                      currentUserID: currentUserID
+                  ),
                   let resourceValues = try? url.resourceValues(forKeys: [
                       .isRegularFileKey,
                       .contentModificationDateKey,
@@ -83,6 +100,128 @@ enum CodexLaunchBoundaryMarkerStore {
                 expectedResumeId: expectedResumeId
             )
         }
+    }
+
+    static func recordedSocketPathURL(
+        bundleIdentifier: String? = Bundle.main.bundleIdentifier,
+        fileManager: FileManager = .default
+    ) -> URL? {
+        guard let bundleIdentifier = bundleIdentifier?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !bundleIdentifier.isEmpty,
+            let stateDirectory = SocketControlSettings.stableSocketDirectoryURL(
+                fileManager: fileManager
+            ) else {
+            return nil
+        }
+        let safeBundle = String(bundleIdentifier.unicodeScalars.map { scalar in
+            let value = scalar.value
+            let allowed = (value >= 48 && value <= 57)
+                || (value >= 65 && value <= 90)
+                || (value >= 97 && value <= 122)
+                || scalar == "."
+                || scalar == "-"
+                || scalar == "_"
+            return allowed ? Character(String(scalar)) : "-"
+        })
+        return stateDirectory.appendingPathComponent(
+            socketRecordPrefix + safeBundle,
+            isDirectory: false
+        )
+    }
+
+    /// Persist the actual listener path after all collision/bind fallbacks.
+    /// This bundle-scoped record lets the next process find markers before its
+    /// own listener has started. It contains a socket path only.
+    static func recordBoundSocketPath(
+        _ socketPath: String,
+        bundleIdentifier: String? = Bundle.main.bundleIdentifier,
+        fileManager: FileManager = .default,
+        recordURL: URL? = nil
+    ) {
+        let trimmed = socketPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("/"),
+              !trimmed.contains("\n"),
+              trimmed.utf8.count <= 1_024,
+              let recordURL = recordURL ?? recordedSocketPathURL(
+                  bundleIdentifier: bundleIdentifier,
+                  fileManager: fileManager
+              ) else {
+            return
+        }
+        try? fileManager.createDirectory(
+            at: recordURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try? Data((trimmed + "\n").utf8).write(to: recordURL, options: .atomic)
+        try? fileManager.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: recordURL.path
+        )
+    }
+
+    /// At normal startup the listener has not bound yet, so
+    /// `activeSocketPath(preferredPath:)` cannot reveal the prior process's
+    /// fallback. Read markers from the preferred path and the prior actual
+    /// bundle-scoped path, if present. A stale record is harmless: only UUID
+    /// marker filenames and allowlisted marker metadata are read.
+    static func loadForStartup(
+        preferredSocketPath: String,
+        allowedSurfaceIds: Set<String>,
+        bundleIdentifier: String? = Bundle.main.bundleIdentifier,
+        fileManager: FileManager = .default,
+        recordURL: URL? = nil,
+        currentUserID: uid_t = getuid()
+    ) -> [CodexLaunchBoundaryMarker] {
+        var socketPaths = [preferredSocketPath]
+        let resolvedRecordURL = recordURL ?? recordedSocketPathURL(
+            bundleIdentifier: bundleIdentifier,
+            fileManager: fileManager
+        )
+        if let resolvedRecordURL,
+           isOwnedRegularFile(
+               atPath: resolvedRecordURL.path,
+               currentUserID: currentUserID
+           ),
+           let raw = try? String(contentsOf: resolvedRecordURL, encoding: .utf8),
+           raw.utf8.count <= 1_025 {
+            let recorded = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if recorded.hasPrefix("/"),
+               !recorded.contains("\n"),
+               recorded.utf8.count <= 1_024,
+               !socketPaths.contains(recorded) {
+                socketPaths.append(recorded)
+            }
+        }
+        return socketPaths.flatMap {
+            load(
+                socketPath: $0,
+                allowedSurfaceIds: allowedSurfaceIds,
+                fileManager: fileManager,
+                currentUserID: currentUserID
+            )
+        }
+    }
+
+    private static func isOwnedDirectory(
+        atPath path: String,
+        currentUserID: uid_t
+    ) -> Bool {
+        var info = stat()
+        guard lstat(path, &info) == 0 else { return false }
+        return info.st_uid == currentUserID
+            && (info.st_mode & mode_t(S_IFMT)) == mode_t(S_IFDIR)
+    }
+
+    private static func isOwnedRegularFile(
+        atPath path: String,
+        currentUserID: uid_t
+    ) -> Bool {
+        var info = stat()
+        guard lstat(path, &info) == 0 else { return false }
+        return info.st_uid == currentUserID
+            && (info.st_mode & mode_t(S_IFMT)) == mode_t(S_IFREG)
     }
 }
 
@@ -211,13 +350,13 @@ extension ConversationStore {
             }
             let placeholder = ConversationRef(
                 kind: "codex",
-                id: "wrapper-claim:\(marker.surfaceId):unacknowledged",
+                id: "wrapper-claim:\(marker.surfaceId):durable-boundary",
                 placeholder: true,
                 cwd: existing?.cwd,
                 capturedAt: marker.boundaryAt,
                 capturedVia: .wrapperClaim,
                 state: .unknown,
-                diagnosticReason: "unacknowledged Codex launch boundary",
+                diagnosticReason: "Codex launch boundary newer than durable owner",
                 payload: payload
             )
             var conversations = bySurface[marker.surfaceId] ?? .empty

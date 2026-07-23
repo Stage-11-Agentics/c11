@@ -135,7 +135,20 @@ def main() -> int:
             claim_line = next((line for line in lines if line.startswith("claim-start")), "")
             expect("--ttl-ms 700" in claim_line and "timeout=0.75" in claim_line, f"claim was not expiry-bounded: {claim_line}", failures)
             expect(f"--expected-resume-id {argv[1]}" in claim_line, f"exact resume intent was not forwarded: {claim_line}", failures)
-            expect(not fixture.boundary_file().exists(), "acknowledged claim left a stale launch-boundary marker", failures)
+            marker = fixture.boundary_file()
+            expect(
+                marker.exists(),
+                "acknowledged in-memory claim removed crash-recovery marker before durable save",
+                failures,
+            )
+            if marker.exists():
+                marker_lines = marker.read_text().splitlines()
+                expect(
+                    len(marker_lines) >= 3
+                    and marker_lines[1] == argv[1],
+                    f"acknowledged resume marker lost exact intent: {marker_lines}",
+                    failures,
+                )
         finally:
             fixture.close()
 

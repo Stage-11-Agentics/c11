@@ -3309,9 +3309,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         let contexts = ScrapeCaptureContext.contexts(from: snapshot)
         let pipeline = ScrapeCapturePipeline(scrapers: .v1(), strategies: .v1)
-        let conversationSocketPath = TerminalController.shared.activeSocketPath(
-            preferredPath: SocketControlSettings.socketPath()
-        )
+        let preferredConversationSocketPath = SocketControlSettings.socketPath()
         let completed = DispatchSemaphore(value: 0)
         let result = LifecycleResultBox<Bool>()
         Task.detached(priority: .userInitiated) {
@@ -3321,8 +3319,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             // collect once per kind, atomically commit, re-audit, apply the
             // selected recovery policy, and audit the final store.
             _ = await WorkspaceSnapshotConversationBridge.seedFromSnapshot(snapshot)
-            let launchBoundaries = CodexLaunchBoundaryMarkerStore.load(
-                socketPath: conversationSocketPath
+            let launchBoundaries = CodexLaunchBoundaryMarkerStore.loadForStartup(
+                preferredSocketPath: preferredConversationSocketPath,
+                allowedSurfaceIds: Set(contexts.map(\.surfaceId))
             )
             _ = await ConversationStore.shared.applyCodexLaunchBoundaries(
                 launchBoundaries
@@ -4193,7 +4192,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         let outcome = BoundedLifecycleWait.run(timeout: timeout) {
             let launchBoundaries = CodexLaunchBoundaryMarkerStore.load(
-                socketPath: conversationSocketPath
+                socketPath: conversationSocketPath,
+                allowedSurfaceIds: Set(contexts.map(\.surfaceId))
             )
             _ = await ConversationStore.shared.applyCodexLaunchBoundaries(
                 launchBoundaries

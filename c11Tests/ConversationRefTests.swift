@@ -540,6 +540,187 @@ final class ConversationRefTests: XCTestCase {
         XCTAssertFalse(active?.placeholder ?? true)
     }
 
+    func testAcknowledgedClaimCrashBeforeSaveUsesRetainedBoundary() async {
+        let idA = "aaaa1111-2222-3333-4444-555566667777"
+        let capturedA = Date(timeIntervalSince1970: 2_000.5)
+        let boundary = Date(timeIntervalSince1970: 2_000.75)
+        let diskStore = ConversationStore()
+        _ = await diskStore.captureRuntimeEnv(
+            surfaceId: "S1",
+            id: idA,
+            cwd: "/tmp/proj",
+            capturedAt: capturedA
+        )
+        let staleDiskSnapshot = await diskStore.snapshot()
+
+        let liveStore = ConversationStore()
+        _ = await liveStore.seed(from: staleDiskSnapshot)
+        let claim = await liveStore.claim(
+            surfaceId: "S1",
+            kind: "codex",
+            cwd: "/tmp/proj",
+            placeholderId: "wrapper-claim:S1:acknowledged",
+            capturedAt: Date(timeIntervalSince1970: 2_000.8),
+            expectedResumeId: nil,
+            expiresAt: nil
+        )
+        guard case .accepted(let livePlaceholder) = claim else {
+            return XCTFail("claim should be acknowledged in the live Store")
+        }
+        XCTAssertTrue(livePlaceholder.placeholder)
+
+        // Simulate a crash before that in-memory placeholder is autosaved:
+        // the next process seeds exact A from disk, then replays the retained
+        // boundary before scrape/verification can authorize A.
+        let restoredStore = ConversationStore()
+        _ = await restoredStore.seed(from: staleDiskSnapshot)
+        let applied = await restoredStore.applyCodexLaunchBoundaries([
+            CodexLaunchBoundaryMarker(
+                surfaceId: "S1",
+                boundaryAt: boundary,
+                expectedResumeId: nil
+            )
+        ])
+        XCTAssertEqual(applied, ["S1"])
+        let restored = await restoredStore.active(for: "S1")
+        XCTAssertTrue(restored?.placeholder == true)
+        XCTAssertEqual(
+            restored?.payload?[ConversationLifecyclePayloadKey.invalidatedConversationID],
+            .string(idA)
+        )
+    }
+
+    func testStartupLoadsOwnBundleStableAndPidFallbackMarkersOnlyForSnapshotSurfaces() async throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("c11-206-startup-sockets-\(UUID().uuidString)")
+        defer { try? fileManager.removeItem(at: root) }
+        try fileManager.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+
+        let prodBundle = "com.stage11.c11"
+        let tagBundle = "com.stage11.c11.debug.c11.206.codex.resume"
+        XCTAssertNotEqual(
+            CodexLaunchBoundaryMarkerStore.recordedSocketPathURL(
+                bundleIdentifier: prodBundle
+            ),
+            CodexLaunchBoundaryMarkerStore.recordedSocketPathURL(
+                bundleIdentifier: tagBundle
+            )
+        )
+
+        let preferred = root.appendingPathComponent("tag.sock").path
+        let fallbackPaths = [
+            root.appendingPathComponent("c11-\(getuid()).sock").path,
+            root.appendingPathComponent("tag-4242.sock").path,
+        ]
+        for (index, fallbackPath) in fallbackPaths.enumerated() {
+            let caseRoot = root.appendingPathComponent("case-\(index)")
+            try fileManager.createDirectory(
+                at: caseRoot,
+                withIntermediateDirectories: true
+            )
+            let prodRecord = caseRoot.appendingPathComponent("prod-record")
+            let tagRecord = caseRoot.appendingPathComponent("tag-record")
+            let prodFallback = caseRoot.appendingPathComponent("prod.sock").path
+            CodexLaunchBoundaryMarkerStore.recordBoundSocketPath(
+                prodFallback,
+                bundleIdentifier: prodBundle,
+                fileManager: fileManager,
+                recordURL: prodRecord
+            )
+            CodexLaunchBoundaryMarkerStore.recordBoundSocketPath(
+                fallbackPath,
+                bundleIdentifier: tagBundle,
+                fileManager: fileManager,
+                recordURL: tagRecord
+            )
+
+            let allowedSurface = UUID().uuidString
+            let foreignSurface = UUID().uuidString
+            let prodSurface = UUID().uuidString
+            let markerDirectory = CodexLaunchBoundaryMarkerStore.directoryURL(
+                socketPath: fallbackPath
+            )
+            let prodMarkerDirectory = CodexLaunchBoundaryMarkerStore.directoryURL(
+                socketPath: prodFallback
+            )
+            try fileManager.createDirectory(
+                at: markerDirectory,
+                withIntermediateDirectories: true
+            )
+            try fileManager.createDirectory(
+                at: prodMarkerDirectory,
+                withIntermediateDirectories: true
+            )
+            let boundary = Date(timeIntervalSince1970: 2_000.75 + Double(index))
+            for surfaceID in [allowedSurface, foreignSurface] {
+                let markerURL = markerDirectory.appendingPathComponent(surfaceID)
+                try "2000\n\nfixture\n".write(
+                    to: markerURL,
+                    atomically: true,
+                    encoding: .utf8
+                )
+                try fileManager.setAttributes(
+                    [.modificationDate: boundary],
+                    ofItemAtPath: markerURL.path
+                )
+            }
+            try "2000\n\nprod\n".write(
+                to: prodMarkerDirectory.appendingPathComponent(prodSurface),
+                atomically: true,
+                encoding: .utf8
+            )
+
+            let loaded = CodexLaunchBoundaryMarkerStore.loadForStartup(
+                preferredSocketPath: preferred,
+                allowedSurfaceIds: [allowedSurface],
+                bundleIdentifier: tagBundle,
+                fileManager: fileManager,
+                recordURL: tagRecord
+            )
+            XCTAssertEqual(
+                loaded,
+                [CodexLaunchBoundaryMarker(
+                    surfaceId: allowedSurface,
+                    boundaryAt: boundary,
+                    expectedResumeId: nil
+                )],
+                "case \(index) must read only its tagged bundle record and snapshot surface"
+            )
+
+            let symlinkRecord = caseRoot.appendingPathComponent("tag-record-link")
+            try fileManager.createSymbolicLink(
+                at: symlinkRecord,
+                withDestinationURL: tagRecord
+            )
+            XCTAssertTrue(
+                CodexLaunchBoundaryMarkerStore.loadForStartup(
+                    preferredSocketPath: preferred,
+                    allowedSurfaceIds: [allowedSurface],
+                    bundleIdentifier: tagBundle,
+                    fileManager: fileManager,
+                    recordURL: symlinkRecord
+                ).isEmpty,
+                "bundle socket record must be an owned regular file, not a symlink"
+            )
+
+            let store = ConversationStore()
+            _ = await store.captureRuntimeEnv(
+                surfaceId: allowedSurface,
+                id: "aaaa1111-2222-3333-4444-55556666777\(index)",
+                cwd: "/tmp/proj",
+                capturedAt: boundary.addingTimeInterval(-0.1)
+            )
+            let applied = await store.applyCodexLaunchBoundaries(loaded)
+            XCTAssertEqual(applied, [allowedSurface])
+            let active = await store.active(for: allowedSurface)
+            XCTAssertTrue(active?.placeholder == true)
+        }
+    }
+
     func testLaunchBoundaryMarkerStoreUsesSubsecondModificationDate() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("c11-206-boundary-\(UUID().uuidString)")

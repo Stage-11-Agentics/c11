@@ -1266,6 +1266,7 @@ class TerminalController {
         }
 
         SocketControlSettings.recordLastSocketPath(activeSocketPath)
+        CodexLaunchBoundaryMarkerStore.recordBoundSocketPath(activeSocketPath)
 
         let generation = withListenerState {
             isRunning = true

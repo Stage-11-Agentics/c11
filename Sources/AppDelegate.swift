@@ -2530,6 +2530,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let env = ProcessInfo.processInfo.environment
         let isRunningUnderXCTest = isRunningUnderXCTest(env)
         let telemetryEnabled = TelemetrySettings.enabledForCurrentLaunch
+        AppPresentationPolicy.apply(isRunningUnderXCTest: isRunningUnderXCTest)
 
         DistributedNotificationCenter.default().addObserver(
             self,
@@ -7639,6 +7640,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let store = TerminalNotificationStore.shared
         menuBarExtraController = MenuBarExtraController(
             notificationStore: store,
+            onShowMainWindow: { [weak self] in
+                self?.showMainWindowFromMenuBar()
+            },
             onShowNotifications: { [weak self] in
                 self?.showNotificationsPopoverFromMenuBar()
             },
@@ -7678,7 +7682,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func syncMenuBarExtraVisibility(defaults: UserDefaults = .standard) {
-        if MenuBarExtraSettings.showsMenuBarExtra(defaults: defaults) {
+        if MenuBarExtraSettings.shouldInstallMenuBarExtra(
+            activationPolicy: NSApp.activationPolicy(),
+            defaults: defaults
+        ) {
             setupMenuBarExtra()
             return
         }
@@ -7785,6 +7792,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func refreshMenuBarExtraForDebug() {
         menuBarExtraController?.refreshForDebugControls()
+    }
+
+    func showMainWindowFromMenuBar() {
+        let context: MainWindowContext? = {
+            if let keyWindow = NSApp.keyWindow,
+               let keyContext = contextForMainTerminalWindow(keyWindow) {
+                return keyContext
+            }
+            if let mainWindow = NSApp.mainWindow,
+               let mainContext = contextForMainTerminalWindow(mainWindow) {
+                return mainContext
+            }
+            if let visibleContext = mainWindowContexts.values.first(where: { context in
+                guard let window = resolvedWindow(for: context) else { return false }
+                return window.isVisible && !window.isMiniaturized
+            }) {
+                return visibleContext
+            }
+            return mainWindowContexts.values.first
+        }()
+
+        let window: NSWindow? = {
+            if let context {
+                if let window = resolvedWindow(for: context) {
+                    return window
+                }
+                discardOrphanedMainWindowContext(context)
+            }
+            let windowId = createMainWindow()
+            return windowForMainWindowId(windowId)
+        }()
+
+        guard let window else {
+            NSSound.beep()
+            return
+        }
+
+        NSApp.unhide(nil)
+        setActiveMainWindow(window)
+        bringToFront(window)
     }
 
     func showNotificationsPopoverFromMenuBar() {
@@ -13126,6 +13173,7 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
     private let menu = NSMenu(title: "c11")
     private let notificationStore: TerminalNotificationStore
+    private let onShowMainWindow: () -> Void
     private let onShowNotifications: () -> Void
     private let onOpenNotification: (TerminalNotification) -> Void
     private let onJumpToLatestUnread: () -> Void
@@ -13137,6 +13185,7 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
 
     private let stateHintItem = NSMenuItem(title: String(localized: "statusMenu.noUnread", defaultValue: "No unread notifications"), action: nil, keyEquivalent: "")
     private let buildHintItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let showMainWindowItem = NSMenuItem(title: String(localized: "statusMenu.showC11", defaultValue: "Show c11"), action: nil, keyEquivalent: "")
     private let notificationListSeparator = NSMenuItem.separator()
     private let notificationSectionSeparator = NSMenuItem.separator()
     private let showNotificationsItem = NSMenuItem(title: String(localized: "statusMenu.showNotifications", defaultValue: "Show Notifications"), action: nil, keyEquivalent: "")
@@ -13152,6 +13201,7 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
 
     init(
         notificationStore: TerminalNotificationStore,
+        onShowMainWindow: @escaping () -> Void,
         onShowNotifications: @escaping () -> Void,
         onOpenNotification: @escaping (TerminalNotification) -> Void,
         onJumpToLatestUnread: @escaping () -> Void,
@@ -13160,6 +13210,7 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         onQuitApp: @escaping () -> Void
     ) {
         self.notificationStore = notificationStore
+        self.onShowMainWindow = onShowMainWindow
         self.onShowNotifications = onShowNotifications
         self.onOpenNotification = onOpenNotification
         self.onJumpToLatestUnread = onJumpToLatestUnread
@@ -13199,6 +13250,12 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
             buildHintItem.isEnabled = false
             menu.addItem(buildHintItem)
         }
+
+        menu.addItem(.separator())
+
+        showMainWindowItem.target = self
+        showMainWindowItem.action = #selector(showMainWindowAction)
+        menu.addItem(showMainWindowItem)
 
         menu.addItem(notificationListSeparator)
         notificationSectionSeparator.isHidden = true
@@ -13359,6 +13416,10 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
     @objc private func openNotificationItemAction(_ sender: NSMenuItem) {
         guard let payload = sender.representedObject as? NotificationMenuItemPayload else { return }
         onOpenNotification(payload.notification)
+    }
+
+    @objc private func showMainWindowAction() {
+        onShowMainWindow()
     }
 
     @objc private func showNotificationsAction() {
@@ -13612,6 +13673,28 @@ enum MenuBarExtraSettings {
             return defaultShowInMenuBar
         }
         return defaults.bool(forKey: showInMenuBarKey)
+    }
+
+    static func shouldInstallMenuBarExtra(
+        activationPolicy: NSApplication.ActivationPolicy,
+        defaults: UserDefaults = .standard
+    ) -> Bool {
+        activationPolicy == .accessory || showsMenuBarExtra(defaults: defaults)
+    }
+}
+
+enum AppPresentationPolicy {
+    static func activationPolicy(isRunningUnderXCTest: Bool) -> NSApplication.ActivationPolicy {
+        isRunningUnderXCTest ? .regular : .accessory
+    }
+
+    static func apply(
+        isRunningUnderXCTest: Bool,
+        application: NSApplication = .shared
+    ) {
+        let targetPolicy = activationPolicy(isRunningUnderXCTest: isRunningUnderXCTest)
+        guard application.activationPolicy() != targetPolicy else { return }
+        application.setActivationPolicy(targetPolicy)
     }
 }
 

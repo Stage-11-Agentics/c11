@@ -16,8 +16,7 @@ struct StatusBarButtonDisplay: Equatable {
     }
 
     /// Two-digit cap matches `MenuBarBadgeLabelFormatter.badgeText(for:)`
-    /// (AppDelegate.swift) and `TerminalNotificationStore.dockBadgeLabel`
-    /// so the bar agrees with the menu-bar and dock surfaces.
+    /// (AppDelegate.swift) so the bar agrees with the menu-bar surface.
     private static func badgeText(for count: Int) -> String? {
         guard count > 0 else { return nil }
         if count > 99 { return "99+" }

@@ -10,6 +10,22 @@ import XCTest
 /// reconciling an explicit agent-claimed status against derived-activity
 /// fallback. C11-162 (Telemetry truth).
 final class SidebarActivityProjectorTests: XCTestCase {
+    func testWorkspacePulseAgentContextUsesTitleThenSubtitle() {
+        XCTAssertEqual(
+            WorkspacePulseAgentContextProjector.project(
+                title: "Review agent",
+                subtitle: "Lineage: primary → review\nChecking the sidebar"
+            ),
+            WorkspacePulseAgentContext(
+                title: "Review agent",
+                subtitle: "Lineage: primary → review Checking the sidebar"
+            )
+        )
+    }
+
+    func testWorkspacePulseAgentContextDoesNotInventMissingIdentity() {
+        XCTAssertNil(WorkspacePulseAgentContextProjector.project(title: "  ", subtitle: nil))
+    }
 
     private let stale: Double = 300
     private let expiry: Double = 900

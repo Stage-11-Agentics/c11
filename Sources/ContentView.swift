@@ -8609,6 +8609,18 @@ struct VerticalTabsSidebar: View {
                                 // its typing-hot body does no metadata/store work.
                                 let unreadCount = notificationStore.unreadCount(forTabId: tab.id)
                                 let latestNotification = notificationStore.latestNotification(forTabId: tab.id)
+                                let waitingAgentContext: WorkspacePulseAgentContext? = {
+                                    guard showsSidebarNotificationMessage,
+                                          unreadCount > 0,
+                                          let surfaceId = latestNotification?.surfaceId else {
+                                        return nil
+                                    }
+                                    let state = tab.surfaceTitleBarState(panelId: surfaceId)
+                                    return WorkspacePulseAgentContextProjector.project(
+                                        title: state.title,
+                                        subtitle: state.description
+                                    )
+                                }()
                                 let workspacePulse = WorkspacePulseProjector.project(
                                     hasWorkspaceDemand: unreadCount > 0,
                                     surfaceStates: tab.sidebarOrderedPanelIds().compactMap { panelId in
@@ -8647,15 +8659,7 @@ struct VerticalTabsSidebar: View {
                                     workspacePulse: workspacePulse,
                                     waitingNotificationId: unreadCount > 0 ? latestNotification?.id : nil,
                                     waitingSurfaceId: unreadCount > 0 ? latestNotification?.surfaceId : nil,
-                                    latestNotificationText: {
-                                        guard showsSidebarNotificationMessage,
-                                              let notification = latestNotification else {
-                                            return nil
-                                        }
-                                        let text = notification.body.isEmpty ? notification.title : notification.body
-                                        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        return trimmed.isEmpty ? nil : trimmed
-                                    }(),
+                                    waitingAgentContext: waitingAgentContext,
                                     rowSpacing: tabRowSpacing,
                                     setSelectionToTabs: { selection = .tabs },
                                     selectedTabIds: $selectedTabIds,
@@ -11305,7 +11309,7 @@ private struct TabItemView: View, Equatable {
         lhs.workspacePulse == rhs.workspacePulse &&
         lhs.waitingNotificationId == rhs.waitingNotificationId &&
         lhs.waitingSurfaceId == rhs.waitingSurfaceId &&
-        lhs.latestNotificationText == rhs.latestNotificationText &&
+        lhs.waitingAgentContext == rhs.waitingAgentContext &&
         lhs.rowSpacing == rhs.rowSpacing &&
         lhs.showsModifierShortcutHints == rhs.showsModifierShortcutHints &&
         lhs.themedBackgroundColor?.hexString(includeAlpha: true) == rhs.themedBackgroundColor?.hexString(includeAlpha: true) &&
@@ -11379,7 +11383,7 @@ private struct TabItemView: View, Equatable {
     let workspacePulse: WorkspacePulseSummary
     let waitingNotificationId: UUID?
     let waitingSurfaceId: UUID?
-    let latestNotificationText: String?
+    let waitingAgentContext: WorkspacePulseAgentContext?
     let rowSpacing: CGFloat
     let setSelectionToTabs: () -> Void
     @Binding var selectedTabIds: Set<UUID>
@@ -11725,8 +11729,11 @@ private struct TabItemView: View, Equatable {
                 .foregroundColor(dominantColor)
 
                 Group {
-                    if let latestNotificationText {
-                        Text(latestNotificationText)
+                    if let waitingAgentContext {
+                        (
+                            Text(waitingAgentContext.title).fontWeight(.semibold)
+                            + Text(waitingAgentContext.subtitle.map { " — \($0)" } ?? "")
+                        )
                             .font(.system(size: chromeTokens.sidebarWorkspaceDetail, design: .monospaced))
                             .foregroundColor(activeSecondaryColor(0.72))
                             .lineLimit(1)
@@ -11848,7 +11855,7 @@ private struct TabItemView: View, Equatable {
                         .lineLimit(1)
                 }
             }
-            .padding(.top, latestNotificationText == nil ? 1 : 2)
+            .padding(.top, waitingAgentContext == nil ? 1 : 2)
             .safeHelp(remoteStateHelpText)
         }
     }
@@ -11967,7 +11974,7 @@ private struct TabItemView: View, Equatable {
 
             workspacePulseRow
 
-            if agentChip != nil {
+            if agentChip != nil, !isMinimalMode {
                 HStack(spacing: 4) {
                     AgentChipBadge(
                         chip: agentChip,
@@ -13431,18 +13438,10 @@ private struct SidebarProgressIndicator: View {
     }
 }
 
-/// TEL-4: derived-activity takeover pill. When a workspace's explicit
-/// agent-claimed status is absent or has aged past expiry, the sidebar falls
-/// back to a *derived* pill computed from low-level activity so the row still
-/// tells the truth. Rendered visually distinct from an agent-claimed pill
-/// (outlined capsule + italic + a "sensed" glyph). Observes the decay clock
-/// in this child subview so the takeover flips without invalidating the row.
-/// C11-162 (TEL-4, m1): owns the single-pill takeover decision for a workspace
-/// row's status region. Observes the decay clock here (a child, never in
-/// `TabItemView`'s Equatable body) and renders EITHER the explicit status rows
-/// OR — once the representative explicit status has expired and a derived
-/// activity exists — the derived pill in their place, so the operator sees one
-/// pill, not a grayed tombstone plus a derived pill.
+/// Agent-authored status region. Workspace Pulse now owns derived activity, so
+/// this section renders fresh/stale explicit status rows only. When explicit
+/// status expires and the projector hands off to derived truth, this row goes
+/// quiet instead of duplicating the pulse with a second Idle/Working pill.
 private struct SidebarStatusSection: View {
     @ObservedObject var tab: Tab
     let isActive: Bool
@@ -13482,80 +13481,9 @@ private struct SidebarStatusSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            if takeoverActive {
-                SidebarDerivedActivityPill(tab: tab, isActive: isActive, onFocus: onFocus)
-            } else if !entries.isEmpty {
+            if !takeoverActive, !entries.isEmpty {
                 SidebarMetadataRows(entries: entries, isActive: isActive, onFocus: onFocus)
             }
-        }
-    }
-}
-
-private struct SidebarDerivedActivityPill: View {
-    @ObservedObject var tab: Tab
-    let isActive: Bool
-    let onFocus: () -> Void
-
-    @Environment(\.chromeScaleTokens) private var chromeTokens
-    @ObservedObject private var decayClock = SidebarDecayClock.shared
-    @AppStorage(SidebarStalenessSettings.staleThresholdKey)
-    private var staleThresholdRaw = SidebarStalenessSettings.defaultStaleSeconds
-    @AppStorage(SidebarStalenessSettings.expiryThresholdKey)
-    private var expiryThresholdRaw = SidebarStalenessSettings.defaultExpirySeconds
-
-    /// Most-recently-written explicit status entry, used as the representative
-    /// against which the derived takeover is decided.
-    private var representativeEntry: SidebarStatusEntry? {
-        tab.sidebarStatusEntriesInDisplayOrder().max { $0.timestamp < $1.timestamp }
-    }
-
-    private var pill: SidebarVisiblePill? {
-        let entry = representativeEntry
-        // C11-162 (m4): pass the trimmed value through even when empty, so the
-        // projector's empty-string handling (empty explicit → derived takeover)
-        // works instead of being defeated by substituting the key name.
-        let explicitText: String? = entry.map { e in
-            e.value.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        let age = entry.map { decayClock.now.timeIntervalSince($0.timestamp) }
-        return SidebarActivityProjector.project(
-            explicitText: explicitText,
-            explicitAgeSeconds: age,
-            derived: tab.aggregatedDerivedActivity,
-            staleSeconds: SidebarStalenessSettings.staleSeconds(),
-            expirySeconds: SidebarStalenessSettings.expirySeconds()
-        )
-    }
-
-    private var derivedColor: Color {
-        isActive ? Color.white.opacity(0.7) : .secondary
-    }
-
-    var body: some View {
-        // Only surface this row when the projection is a derived takeover;
-        // a fresh/stale explicit status is already rendered by the metadata
-        // rows above (with their own TEL-2 decay treatment).
-        if let pill, pill.isDerived {
-            HStack(spacing: 4) {
-                Image(systemName: "wave.3.right")
-                    .font(.system(size: chromeTokens.sidebarWorkspaceLogIcon, weight: .medium))
-                Text(pill.text)
-                    .font(.system(size: chromeTokens.sidebarWorkspaceMetadata, weight: .regular).italic())
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer(minLength: 0)
-            }
-            .foregroundColor(derivedColor)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .overlay(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .stroke(derivedColor.opacity(0.5), lineWidth: 0.75)
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .onTapGesture { onFocus() }
-            .safeHelp(String(localized: "sidebar.derivedActivity.tooltip", defaultValue: "Derived activity — no recent agent status"))
         }
     }
 }

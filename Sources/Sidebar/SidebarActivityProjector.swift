@@ -45,6 +45,36 @@ struct WorkspacePulseSummary: Equatable {
     }
 }
 
+/// Compact identity for the exact agent surface whose unread notification is
+/// driving a workspace into `waiting`. The pulse owns only one detail line, so
+/// normalize title-bar metadata into a stable single-line title + subtitle.
+struct WorkspacePulseAgentContext: Equatable {
+    let title: String
+    let subtitle: String?
+}
+
+enum WorkspacePulseAgentContextProjector {
+    static func project(title: String?, subtitle: String?) -> WorkspacePulseAgentContext? {
+        let title = normalized(title)
+        let subtitle = normalized(subtitle)
+        if let title {
+            return WorkspacePulseAgentContext(title: title, subtitle: subtitle)
+        }
+        if let subtitle {
+            return WorkspacePulseAgentContext(title: subtitle, subtitle: nil)
+        }
+        return nil
+    }
+
+    private static func normalized(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let normalized = value
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+        return normalized.isEmpty ? nil : normalized
+    }
+}
+
 enum WorkspacePulseProjector {
     /// Rolls exact agent-surface states up with workspace-level operator
     /// demand. A surface-less notification still makes the workspace demand

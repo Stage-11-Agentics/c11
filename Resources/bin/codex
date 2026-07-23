@@ -157,6 +157,17 @@ if [[ -n "$c11_bin" ]]; then
     CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
         "$c11_bin" --socket "${CMUX_SOCKET_PATH}" "${claim_args[@]}" \
         >/dev/null 2>&1 || true
+
+    # A newly opened interactive Codex TUI is resting at its prompt. The
+    # outer shell remains "command running" for the TUI's whole lifetime, so
+    # seed the agent-loop truth separately; c11 marks it working on prompt
+    # submission and idle again when Codex emits its completion notification.
+    (
+        CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+            "$c11_bin" --socket "${CMUX_SOCKET_PATH}" codex-hook idle \
+            >/dev/null 2>&1
+    ) &
+    disown 2>/dev/null || true
 fi
 
 exec "$REAL_CODEX" "$@"

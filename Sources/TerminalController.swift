@@ -741,6 +741,19 @@ class TerminalController {
         }
     }
 
+    nonisolated static func parseReportedAgentActivity(
+        _ rawActivity: String
+    ) -> SidebarActivityState? {
+        switch rawActivity.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "working":
+            return .working
+        case "idle":
+            return .idle
+        default:
+            return nil
+        }
+    }
+
     /// Update which window's TabManager receives socket commands.
     /// This is used when the user switches between multiple terminal windows.
     func setActiveTabManager(_ tabManager: TabManager?) {
@@ -1984,6 +1997,7 @@ class TerminalController {
     nonisolated static let socketWorkerV1Commands: Set<String> = [
         "report_pwd",
         "report_shell_state",
+        "report_agent_activity",
         "report_git_branch",
         "clear_git_branch",
         "ports_kick",
@@ -8373,6 +8387,67 @@ class TerminalController {
             }
 
             tabManager.updateSurfaceShellActivity(tabId: tab.id, surfaceId: surfaceId, state: state)
+        }
+        return result
+    }
+
+    func reportAgentActivity(_ args: String) -> String {
+        let parsed = parseOptions(args)
+        guard let rawActivity = parsed.positional.first, !rawActivity.isEmpty else {
+            return "ERROR: Missing agent activity — usage: report_agent_activity <working|idle> [--tab=X] [--panel=Y]"
+        }
+        guard let activity = Self.parseReportedAgentActivity(rawActivity) else {
+            return "ERROR: Invalid agent activity '\(rawActivity)' — expected working or idle"
+        }
+
+        if let scope = Self.explicitSocketScope(options: parsed.options) {
+            DispatchQueue.main.async {
+                guard let app = AppDelegate.shared else { return }
+                guard let target = Self.resolveShellActivityTarget(
+                    panelId: scope.panelId,
+                    workspaceForPanel: { panel in
+                        app.workspaceContainingPanel(
+                            panelId: panel,
+                            preferredWorkspaceId: scope.workspaceId
+                        )?.workspace.id
+                    }
+                ) else { return }
+                SurfaceLivenessDeriver.onAgentLifecycleChanged(
+                    surfaceId: target.panelId,
+                    workspaceId: target.workspaceId,
+                    activity: activity
+                )
+            }
+            return "OK"
+        }
+
+        guard tabManager != nil else { return "ERROR: TabManager not available" }
+
+        var result = "OK"
+        v2MainSync {
+            guard let tab = resolveTabForReport(args) else {
+                result = parsed.options["tab"] != nil ? "ERROR: Tab not found" : "ERROR: No tab selected"
+                return
+            }
+            let panelArg = parsed.options["panel"] ?? parsed.options["surface"]
+            let surfaceId: UUID
+            if let panelArg {
+                guard let parsedId = UUID(uuidString: panelArg), tab.panels[parsedId] != nil else {
+                    result = "ERROR: Panel not found '\(panelArg)'"
+                    return
+                }
+                surfaceId = parsedId
+            } else if let focused = tab.focusedPanelId {
+                surfaceId = focused
+            } else {
+                result = "ERROR: Missing panel id (no focused surface)"
+                return
+            }
+            SurfaceLivenessDeriver.onAgentLifecycleChanged(
+                surfaceId: surfaceId,
+                workspaceId: tab.id,
+                activity: activity
+            )
         }
         return result
     }

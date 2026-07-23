@@ -841,6 +841,19 @@ final class TerminalNotificationStore: ObservableObject {
         let isAppFocused = AppFocusState.isAppFocused()
         let shouldSuppressExternalDelivery = isAppFocused && isFocusedPanel
 
+        // An agent notification is a lifecycle boundary: the turn either
+        // completed or paused for operator input. Waiting still dominates the
+        // card while unread; once the operator opens it, the underlying state
+        // must settle to idle instead of snapping back to the outer shell's
+        // misleading long-running-TUI "working" state.
+        if let surfaceId {
+            SurfaceLivenessDeriver.onAgentLifecycleChanged(
+                surfaceId: surfaceId,
+                workspaceId: tabId,
+                activity: .idle
+            )
+        }
+
         if WorkspaceAutoReorderSettings.isEnabled() {
             AppDelegate.shared?.tabManager?.moveTabToTopForNotification(tabId)
         }

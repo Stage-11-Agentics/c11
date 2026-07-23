@@ -3907,6 +3907,13 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// Inject straight into Ghostty when there is no window; every key in
     /// `TerminalKey` is a control key, so the keycode alone encodes it.
     func sendKey(_ key: TextBoxKeyRouting.TerminalKey) {
+        if case .returnKey = key {
+            SurfaceLivenessDeriver.onAgentLifecycleChanged(
+                surfaceId: id,
+                workspaceId: tabId,
+                activity: .working
+            )
+        }
         if surfaceView.window == nil, let surface {
             sendKeyDirectlyToSurface(keyCode: key.keyCode, surface: surface)
             return
@@ -5456,6 +5463,17 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                 tabId: terminalSurface.tabId,
                 surfaceId: terminalSurface.id
             )
+            let submitFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if !event.isARepeat,
+               (event.keyCode == 36 || event.keyCode == 76),
+               !submitFlags.contains(.command),
+               !hasMarkedText() {
+                SurfaceLivenessDeriver.onAgentLifecycleChanged(
+                    surfaceId: terminalSurface.id,
+                    workspaceId: terminalSurface.tabId,
+                    activity: .working
+                )
+            }
 #if DEBUG
             dismissNotificationMs = (ProcessInfo.processInfo.systemUptime - dismissNotificationStart) * 1000.0
 #endif

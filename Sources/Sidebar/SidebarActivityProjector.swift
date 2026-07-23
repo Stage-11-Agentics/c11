@@ -7,7 +7,7 @@ import Foundation
 /// silent (expires) or was never set, the sidebar falls back to a *derived*
 /// pill so the row still tells the truth about whether the workspace is
 /// doing anything.
-public enum SidebarActivityState: String {
+public enum SidebarActivityState: String, Sendable {
     case working
     case idle
 }

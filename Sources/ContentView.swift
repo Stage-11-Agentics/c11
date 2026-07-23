@@ -8608,6 +8608,7 @@ struct VerticalTabsSidebar: View {
                                 // parent. TabItemView receives an immutable value so
                                 // its typing-hot body does no metadata/store work.
                                 let unreadCount = notificationStore.unreadCount(forTabId: tab.id)
+                                let latestNotification = notificationStore.latestNotification(forTabId: tab.id)
                                 let workspacePulse = WorkspacePulseProjector.project(
                                     hasWorkspaceDemand: unreadCount > 0,
                                     surfaceStates: tab.sidebarOrderedPanelIds().compactMap { panelId in
@@ -8644,9 +8645,11 @@ struct VerticalTabsSidebar: View {
                                     accessibilityWorkspaceCount: workspaceCount,
                                     unreadCount: unreadCount,
                                     workspacePulse: workspacePulse,
+                                    waitingNotificationId: unreadCount > 0 ? latestNotification?.id : nil,
+                                    waitingSurfaceId: unreadCount > 0 ? latestNotification?.surfaceId : nil,
                                     latestNotificationText: {
                                         guard showsSidebarNotificationMessage,
-                                              let notification = notificationStore.latestNotification(forTabId: tab.id) else {
+                                              let notification = latestNotification else {
                                             return nil
                                         }
                                         let text = notification.body.isEmpty ? notification.title : notification.body
@@ -11300,6 +11303,8 @@ private struct TabItemView: View, Equatable {
         lhs.accessibilityWorkspaceCount == rhs.accessibilityWorkspaceCount &&
         lhs.unreadCount == rhs.unreadCount &&
         lhs.workspacePulse == rhs.workspacePulse &&
+        lhs.waitingNotificationId == rhs.waitingNotificationId &&
+        lhs.waitingSurfaceId == rhs.waitingSurfaceId &&
         lhs.latestNotificationText == rhs.latestNotificationText &&
         lhs.rowSpacing == rhs.rowSpacing &&
         lhs.showsModifierShortcutHints == rhs.showsModifierShortcutHints &&
@@ -11372,6 +11377,8 @@ private struct TabItemView: View, Equatable {
     /// Cheap, value-typed rollup of the workspace's existing notification and
     /// agent-liveness truth. Precomputed by VerticalTabsSidebar.
     let workspacePulse: WorkspacePulseSummary
+    let waitingNotificationId: UUID?
+    let waitingSurfaceId: UUID?
     let latestNotificationText: String?
     let rowSpacing: CGFloat
     let setSelectionToTabs: () -> Void
@@ -11683,26 +11690,76 @@ private struct TabItemView: View, Equatable {
         .accessibilityValue(Text("\(workspacePulse.count(for: state))"))
     }
 
+    private var canOpenWaitingNotification: Bool {
+        workspacePulse.dominant == .waiting && waitingNotificationId != nil
+    }
+
+    private func openWaitingNotification() {
+        guard canOpenWaitingNotification else { return }
+        _ = AppDelegate.shared?.openNotification(
+            tabId: tab.id,
+            surfaceId: waitingSurfaceId,
+            notificationId: waitingNotificationId
+        )
+    }
+
+    @ViewBuilder
+    private var workspacePulsePrimaryContent: some View {
+        let dominant = workspacePulse.dominant
+        let dominantColor = workspacePulseColor(for: dominant)
+        HStack(alignment: .center, spacing: 7) {
+            workspacePulseMark
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    if workspacePulse.count(for: dominant) > 0 {
+                        Text("\(workspacePulse.count(for: dominant))")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .monospacedDigit()
+                    }
+                    Text(workspacePulseLabel(for: dominant))
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .textCase(.uppercase)
+                        .lineLimit(1)
+                }
+                .foregroundColor(dominantColor)
+
+                Group {
+                    if let latestNotificationText {
+                        Text(latestNotificationText)
+                            .font(.system(size: chromeTokens.sidebarWorkspaceDetail, design: .monospaced))
+                            .foregroundColor(activeSecondaryColor(0.72))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    } else {
+                        Color.clear
+                    }
+                }
+                .frame(height: 11, alignment: .topLeading)
+            }
+            .frame(minWidth: 0, alignment: .leading)
+        }
+        .contentShape(Rectangle())
+        .layoutPriority(1)
+    }
+
+    @ViewBuilder
+    private var workspacePulsePrimary: some View {
+        if canOpenWaitingNotification {
+            Button(action: openWaitingNotification) {
+                workspacePulsePrimaryContent
+            }
+            .buttonStyle(.plain)
+        } else {
+            workspacePulsePrimaryContent
+        }
+    }
+
     @ViewBuilder
     private var workspacePulseRow: some View {
         let dominant = workspacePulse.dominant
-        let dominantColor = workspacePulseColor(for: dominant)
-        HStack(spacing: 7) {
-            workspacePulseMark
-
-            HStack(spacing: 4) {
-                if workspacePulse.count(for: dominant) > 0 {
-                    Text("\(workspacePulse.count(for: dominant))")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .monospacedDigit()
-                }
-                Text(workspacePulseLabel(for: dominant))
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .textCase(.uppercase)
-                    .lineLimit(1)
-            }
-            .foregroundColor(dominantColor)
-            .layoutPriority(1)
+        HStack(alignment: .center, spacing: 7) {
+            workspacePulsePrimary
 
             Spacer(minLength: 2)
 
@@ -11717,7 +11774,8 @@ private struct TabItemView: View, Equatable {
                 }
             }
         }
-        .padding(.top, 2)
+        .frame(minHeight: 31, alignment: .center)
+        .padding(.top, 1)
         .accessibilityElement(children: .contain)
     }
 
@@ -11818,8 +11876,6 @@ private struct TabItemView: View, Equatable {
         let accessibilityHintText = String(localized: "sidebar.workspace.accessibilityHint", defaultValue: "Activate to focus this workspace. Drag to reorder, or use Move Up and Move Down actions.")
         let moveUpActionText = String(localized: "sidebar.workspace.moveUpAction", defaultValue: "Move Up")
         let moveDownActionText = String(localized: "sidebar.workspace.moveDownAction", defaultValue: "Move Down")
-        let latestNotificationSubtitle = latestNotificationText
-        let effectiveSubtitle = latestNotificationSubtitle
         let detailVisibility = visibleAuxiliaryDetails
         // C11-104 v2 — branch+directory text-line precomputes retired.
         // The new chip render (precomputed upstream in
@@ -11948,15 +12004,6 @@ private struct TabItemView: View, Equatable {
                     secondary: activeSecondaryColor(0.7)
                 )
                 .padding(.top, 1)
-            }
-
-            if let subtitle = effectiveSubtitle {
-                Text(subtitle)
-                    .font(.system(size: chromeTokens.sidebarWorkspaceDetail))
-                    .foregroundColor(activeSecondaryColor(0.8))
-                    .lineLimit(2)
-                    .truncationMode(.tail)
-                    .multilineTextAlignment(.leading)
             }
 
             remoteWorkspaceSection

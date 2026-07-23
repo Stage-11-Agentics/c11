@@ -49,7 +49,11 @@ struct CodexStrategy: ConversationStrategy {
         // Filter the candidates by what we know about the surface.
         let activityFloor = inputs.lastActivityTimestamp
         let claimTime = inputs.wrapperClaim?.capturedAt
-        let cwd = inputs.cwd
+        // Inferred identity needs a real ownership join key. Prefer the live
+        // surface cwd, then the wrapper claim's launch cwd. A missing cwd on
+        // either side is not a wildcard: it cannot authorize assignment.
+        let ownerCwd = normalizedCwd(inputs.cwd)
+            ?? normalizedCwd(inputs.wrapperClaim?.cwd)
         let invalidatedConversationID: String?
         if case .string(let id)? = inputs.wrapperClaim?.payload?[
             ConversationLifecyclePayloadKey.invalidatedConversationID
@@ -63,8 +67,9 @@ struct CodexStrategy: ConversationStrategy {
             if candidate.id == invalidatedConversationID {
                 return false
             }
-            // cwd must match the surface's cwd if both are known.
-            if let cwd, let candCwd = candidate.cwd, cwd != candCwd {
+            guard let ownerCwd,
+                  let candidateCwd = normalizedCwd(candidate.cwd),
+                  ownerCwd == candidateCwd else {
                 return false
             }
             if let claimTime, candidate.mtime < claimTime {
@@ -75,6 +80,12 @@ struct CodexStrategy: ConversationStrategy {
             }
             return isValidConversationUUID(candidate.id)
         }
+    }
+
+    private func normalizedCwd(_ cwd: String?) -> String? {
+        guard let cwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !cwd.isEmpty else { return nil }
+        return URL(fileURLWithPath: cwd).standardizedFileURL.path
     }
 
     func scrapeRef(

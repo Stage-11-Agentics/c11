@@ -881,6 +881,37 @@ final class ConversationRefTests: XCTestCase {
         XCTAssertNil(s2?.quarantineReason)
     }
 
+    func testSeedSameCwdAuditExcludesTombstonedAndUnsupportedCodexRefs() async {
+        let store = ConversationStore()
+        let audit = await store.seed(from: [
+            "S-active": SurfaceConversations(active: ConversationRef(
+                kind: "codex",
+                id: "aaaa1111-2222-3333-4444-555566667777",
+                cwd: "/work/shared",
+                capturedVia: .scrape,
+                state: .suspended
+            )),
+            "S-tombstoned": SurfaceConversations(active: ConversationRef(
+                kind: "codex",
+                id: "bbbb1111-2222-3333-4444-555566667777",
+                cwd: "/work/shared",
+                capturedVia: .scrape,
+                state: .tombstoned
+            )),
+            "S-unsupported": SurfaceConversations(active: ConversationRef(
+                kind: "codex",
+                id: "cccc1111-2222-3333-4444-555566667777",
+                cwd: "/work/shared",
+                capturedVia: .scrape,
+                state: .unsupported
+            )),
+        ])
+
+        XCTAssertTrue(audit.quarantinedSurfaceIds.isEmpty)
+        let active = await store.active(for: "S-active")
+        XCTAssertNil(active?.quarantineReason)
+    }
+
     func testSuspendAllAliveTransitionsState() async {
         let store = ConversationStore()
         await store.push(

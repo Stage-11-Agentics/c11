@@ -232,6 +232,38 @@ def main() -> int:
             failures,
         )
 
+        nonresumable_same_cwd_refs = [
+            {
+                "kind": "codex", "id": str(uuid.uuid4()), "placeholder": False,
+                "state": "suspended", "cwd": "/work/shared",
+                "capturedVia": "scrape",
+            },
+            {
+                "kind": "codex", "id": str(uuid.uuid4()), "placeholder": False,
+                "state": "tombstoned", "cwd": "/work/shared",
+                "capturedVia": "scrape",
+            },
+            {
+                "kind": "codex", "id": str(uuid.uuid4()), "placeholder": False,
+                "state": "unsupported", "cwd": "/work/shared",
+                "capturedVia": "scrape",
+            },
+        ]
+        snapshot(path, nonresumable_same_cwd_refs)
+        nonresumable_same_cwd = run(cli, sessions_root, path, "clean")
+        nonresumable_panels = payload(nonresumable_same_cwd).get("panels") or []
+        expect(
+            nonresumable_same_cwd.returncode != 0
+            and len(nonresumable_panels) == 3
+            and nonresumable_panels[0].get("action")
+                == f"codex resume '{nonresumable_same_cwd_refs[0]['id']}'"
+            and [row.get("skip_code") for row in nonresumable_panels[1:]]
+                == ["state-not-resumable", "state-not-resumable"],
+            "nonresumable Codex refs polluted same-cwd ownership: "
+            f"{nonresumable_panels}",
+            failures,
+        )
+
         causal_same_cwd_refs = [
             {
                 "kind": "codex", "id": str(uuid.uuid4()), "placeholder": False,

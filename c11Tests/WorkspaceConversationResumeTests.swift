@@ -301,6 +301,67 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         )
     }
 
+    func testStartupSameCwdAuditIgnoresNonresumableCodexRefs() async throws {
+        let workspace = Workspace()
+        let activePanelId = UUID()
+        let tombstonedPanelId = UUID()
+        let unsupportedPanelId = UUID()
+
+        func panel(
+            id: UUID,
+            conversationID: String,
+            state: ConversationState
+        ) -> SessionPanelSnapshot {
+            var panel = makePanelSnapshot(id: id, type: .terminal, metadata: nil)
+            panel.surfaceConversations = SurfaceConversations(active: ConversationRef(
+                kind: "codex",
+                id: conversationID,
+                cwd: "/work/shared",
+                capturedVia: .scrape,
+                state: state
+            ))
+            return panel
+        }
+
+        let workspaceSnapshot = makeSnapshot(panels: [
+            panel(
+                id: activePanelId,
+                conversationID: "aaaa1111-2222-3333-4444-555566667777",
+                state: .suspended
+            ),
+            panel(
+                id: tombstonedPanelId,
+                conversationID: "bbbb1111-2222-3333-4444-555566667777",
+                state: .tombstoned
+            ),
+            panel(
+                id: unsupportedPanelId,
+                conversationID: "cccc1111-2222-3333-4444-555566667777",
+                state: .unsupported
+            ),
+        ])
+        let appSnapshot = makeAppSnapshot(workspace: workspaceSnapshot)
+        let audit = await ConversationStore.shared.seed(
+            from: WorkspaceSnapshotConversationBridge.records(from: appSnapshot)
+        )
+
+        XCTAssertTrue(audit.quarantinedSurfaceIds.isEmpty)
+        let plans = workspace.pendingRestartPlans(
+            from: workspaceSnapshot,
+            registry: .v1,
+            startup: .init(epoch: 4, mode: .clean, phase: .ready)
+        )
+        XCTAssertEqual(plans.count, 1)
+        XCTAssertEqual(plans.first?.panelId, activePanelId)
+        guard case .typeCommand(let command, _) = plans.first?.action else {
+            return XCTFail("eligible active ref must remain resumable")
+        }
+        XCTAssertEqual(
+            command,
+            "codex resume 'aaaa1111-2222-3333-4444-555566667777'"
+        )
+    }
+
     func testDirtyCodexPlanningRequiresVerifiedDiagnostic() async throws {
         let workspace = Workspace()
         let verifiedPanel = UUID()

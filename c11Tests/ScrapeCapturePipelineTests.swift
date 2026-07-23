@@ -355,7 +355,7 @@ final class ScrapeCapturePipelineTests: XCTestCase {
         XCTAssertEqual(s2?.quarantineReason, .sameCwdWithoutCausalIdentity)
     }
 
-    func testOneScrapeCandidateCannotBeConsumedByTwoSurfaces() async throws {
+    func testUnknownCwdCandidateCannotBeConsumedByAnySurface() async throws {
         let contexts = [
             ScrapeCaptureContext(surfaceId: "S1", kind: "codex"),
             ScrapeCaptureContext(surfaceId: "S2", kind: "codex")
@@ -371,11 +371,74 @@ final class ScrapeCapturePipelineTests: XCTestCase {
         let result = await store.applyScrapeBatch(batch, pipeline: pipeline)
 
         XCTAssertTrue(result.applied.isEmpty)
-        XCTAssertEqual(result.quarantinedSurfaceIds, ["S1", "S2"])
+        XCTAssertTrue(result.quarantinedSurfaceIds.isEmpty)
         let s1 = await store.active(for: "S1")
         let s2 = await store.active(for: "S2")
-        XCTAssertEqual(s1?.quarantineReason, .ambiguousGlobalAssignment)
-        XCTAssertEqual(s2?.quarantineReason, .ambiguousGlobalAssignment)
+        XCTAssertNil(s1)
+        XCTAssertNil(s2)
+    }
+
+    func testKnownSurfaceRejectsForeignCandidateWithUnknownCwd() {
+        let inputs = ConversationStrategyInputs(
+            surfaceId: "S1",
+            cwd: "/work/project",
+            lastActivityTimestamp: nil,
+            wrapperClaim: nil,
+            push: nil,
+            scrapeCandidates: [
+                candidate(stableUUID(1), mtime: Date(), cwd: nil),
+            ]
+        )
+
+        XCTAssertTrue(CodexStrategy().eligibleCandidates(inputs: inputs).isEmpty)
+        XCTAssertNil(CodexStrategy().capture(inputs: inputs))
+    }
+
+    func testMissingSurfaceCwdRejectsKnownCandidateCwd() {
+        let inputs = ConversationStrategyInputs(
+            surfaceId: "S1",
+            cwd: nil,
+            lastActivityTimestamp: nil,
+            wrapperClaim: nil,
+            push: nil,
+            scrapeCandidates: [
+                candidate(stableUUID(1), mtime: Date(), cwd: "/foreign/project"),
+            ]
+        )
+
+        XCTAssertTrue(CodexStrategy().eligibleCandidates(inputs: inputs).isEmpty)
+        XCTAssertNil(CodexStrategy().capture(inputs: inputs))
+    }
+
+    func testWrapperClaimCwdCanProvideExplicitNormalizedOwnerContext() {
+        let claim = ConversationRef(
+            kind: "codex",
+            id: "wrapper-claim:S1:fixture",
+            placeholder: true,
+            cwd: "/work/shared/../shared",
+            capturedAt: Date(timeIntervalSince1970: 1_000),
+            capturedVia: .wrapperClaim,
+            state: .unknown
+        )
+        let inputs = ConversationStrategyInputs(
+            surfaceId: "S1",
+            cwd: nil,
+            lastActivityTimestamp: nil,
+            wrapperClaim: claim,
+            push: nil,
+            scrapeCandidates: [
+                candidate(
+                    stableUUID(1),
+                    mtime: Date(timeIntervalSince1970: 1_001),
+                    cwd: "/work/shared"
+                ),
+            ]
+        )
+
+        XCTAssertEqual(
+            CodexStrategy().eligibleCandidates(inputs: inputs).map(\.id),
+            [stableUUID(1)]
+        )
     }
 
     func testRuntimeCaptureLandingAfterCollectionWinsAtomicCommit() async throws {

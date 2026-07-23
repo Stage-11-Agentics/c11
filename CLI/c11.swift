@@ -12577,6 +12577,8 @@ struct CMUXCLI {
         let codexCwdIndices = Dictionary(grouping: inputs.indices.compactMap { index -> (String, Int)? in
             let input = inputs[index]
             guard input.kind == "codex",
+                  input.state != "tombstoned",
+                  input.state != "unsupported",
                   let cwd = normalizedStateVerifyCwd(input.cwd) else { return nil }
             return (cwd, index)
         }, by: { $0.0 })

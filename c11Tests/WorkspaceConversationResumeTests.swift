@@ -241,6 +241,66 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         ).isEmpty, "a clean snapshot must not make stale A resumable")
     }
 
+    func testStartupQuarantinesUntypedInferredCodexOwnersInSameCwd() async throws {
+        let workspace = Workspace()
+        let missingTypePanelId = UUID()
+        let emptyTypePanelId = UUID()
+        var missingTypePanel = makePanelSnapshot(
+            id: missingTypePanelId,
+            type: .terminal,
+            metadata: nil
+        )
+        missingTypePanel.surfaceConversations = SurfaceConversations(active: ConversationRef(
+            kind: "codex",
+            id: "aaaa1111-2222-3333-4444-555566667777",
+            cwd: "/work/shared/../shared",
+            capturedVia: .scrape,
+            state: .suspended
+        ))
+        var emptyTypePanel = makePanelSnapshot(
+            id: emptyTypePanelId,
+            type: .terminal,
+            metadata: [SurfaceMetadataKeyName.terminalType: .string("  ")]
+        )
+        emptyTypePanel.surfaceConversations = SurfaceConversations(active: ConversationRef(
+            kind: "codex",
+            id: "bbbb1111-2222-3333-4444-555566667777",
+            cwd: "/work/shared",
+            capturedVia: .scrape,
+            state: .suspended
+        ))
+        let workspaceSnapshot = makeSnapshot(panels: [
+            missingTypePanel,
+            emptyTypePanel,
+        ])
+        let appSnapshot = makeAppSnapshot(workspace: workspaceSnapshot)
+        let scope = ConversationSnapshotCaptureScope(snapshot: appSnapshot)
+
+        XCTAssertTrue(scope.scrapeContexts.isEmpty)
+        let audit = await ConversationStore.shared.seed(
+            from: WorkspaceSnapshotConversationBridge.records(from: appSnapshot)
+        )
+
+        XCTAssertEqual(
+            audit.quarantinedSurfaceIds,
+            [emptyTypePanelId.uuidString, missingTypePanelId.uuidString].sorted()
+        )
+        XCTAssertTrue(workspace.pendingRestartPlans(
+            from: workspaceSnapshot,
+            registry: .v1,
+            startup: .init(epoch: 3, mode: .clean, phase: .ready)
+        ).isEmpty, "startup must dispatch zero same-CWD inferred Codex resumes")
+        let conversations = await ConversationStore.shared.snapshot()
+        XCTAssertEqual(
+            conversations[missingTypePanelId.uuidString]?.active?.quarantineReason,
+            .sameCwdWithoutCausalIdentity
+        )
+        XCTAssertEqual(
+            conversations[emptyTypePanelId.uuidString]?.active?.quarantineReason,
+            .sameCwdWithoutCausalIdentity
+        )
+    }
+
     func testDirtyCodexPlanningRequiresVerifiedDiagnostic() async throws {
         let workspace = Workspace()
         let verifiedPanel = UUID()

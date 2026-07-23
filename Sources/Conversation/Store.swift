@@ -774,7 +774,8 @@ extension ConversationStore {
     }
 
     /// Process-wide ownership audit. Called after snapshot seed and every
-    /// exact-id mutation; no observer can see a newly duplicated resumable id.
+    /// exact-id mutation; no observer can see a newly duplicated resumable id
+    /// or a noncausal Codex owner in a repeated normalized cwd.
     @discardableResult
     func auditGlobalOwnership() -> OwnershipAuditResult {
         Self.auditGlobalOwnership(records: &bySurface)
@@ -845,7 +846,48 @@ extension ConversationStore {
                 }
             }
         }
+
+        // Same cwd is exclusion-only for inferred Codex ownership. Run this
+        // from the Store rather than only from typed scrape contexts: snapshot
+        // seeding intentionally accepts persisted refs from terminal panels
+        // whose terminal_type metadata is missing or empty.
+        let codexCwdGroups = Dictionary(
+            grouping: records.compactMap {
+                (surfaceId, conversations) -> (
+                    cwd: String,
+                    surfaceId: String,
+                    ref: ConversationRef
+                )? in
+                guard let ref = conversations.active,
+                      ref.kind == "codex",
+                      ref.state != .tombstoned,
+                      ref.state != .unsupported,
+                      let cwd = normalizedCodexOwnershipCwd(ref.cwd) else {
+                    return nil
+                }
+                return (cwd, surfaceId, ref)
+            },
+            by: { $0.cwd }
+        )
+        for entries in codexCwdGroups.values where entries.count > 1 {
+            for entry in entries
+                where !entry.ref.isEligibleCausalOwner
+                    && entry.ref.quarantineReason == nil {
+                quarantine(
+                    surfaceId: entry.surfaceId,
+                    reason: .sameCwdWithoutCausalIdentity,
+                    records: &records
+                )
+                affected.insert(entry.surfaceId)
+            }
+        }
         return OwnershipAuditResult(quarantinedSurfaceIds: affected.sorted())
+    }
+
+    private static func normalizedCodexOwnershipCwd(_ cwd: String?) -> String? {
+        guard let cwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !cwd.isEmpty else { return nil }
+        return URL(fileURLWithPath: cwd).standardizedFileURL.path
     }
 
     private static func quarantine(

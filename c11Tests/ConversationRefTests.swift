@@ -829,6 +829,58 @@ final class ConversationRefTests: XCTestCase {
         XCTAssertEqual(s2?.quarantineReason, .duplicateInferredIdentity)
     }
 
+    func testSeedQuarantinesDistinctInferredCodexOwnersInSameNormalizedCwd() async {
+        let store = ConversationStore()
+        let audit = await store.seed(from: [
+            "S1": SurfaceConversations(active: ConversationRef(
+                kind: "codex",
+                id: "aaaa1111-2222-3333-4444-555566667777",
+                cwd: "/work/shared/../shared",
+                capturedVia: .scrape,
+                state: .suspended
+            )),
+            "S2": SurfaceConversations(active: ConversationRef(
+                kind: "codex",
+                id: "bbbb1111-2222-3333-4444-555566667777",
+                cwd: "/work/shared",
+                capturedVia: .manual,
+                state: .suspended
+            )),
+        ])
+
+        XCTAssertEqual(audit.quarantinedSurfaceIds, ["S1", "S2"])
+        let s1 = await store.active(for: "S1")
+        let s2 = await store.active(for: "S2")
+        XCTAssertEqual(s1?.quarantineReason, .sameCwdWithoutCausalIdentity)
+        XCTAssertEqual(s2?.quarantineReason, .sameCwdWithoutCausalIdentity)
+    }
+
+    func testSeedPreservesDistinctCausalCodexOwnersInSameCwd() async {
+        let store = ConversationStore()
+        let audit = await store.seed(from: [
+            "S1": SurfaceConversations(active: ConversationRef(
+                kind: "codex",
+                id: "aaaa1111-2222-3333-4444-555566667777",
+                cwd: "/work/shared",
+                capturedVia: .runtimeEnv,
+                state: .suspended
+            )),
+            "S2": SurfaceConversations(active: ConversationRef(
+                kind: "codex",
+                id: "bbbb1111-2222-3333-4444-555566667777",
+                cwd: "/work/shared",
+                capturedVia: .runtimeEnv,
+                state: .suspended
+            )),
+        ])
+
+        XCTAssertTrue(audit.quarantinedSurfaceIds.isEmpty)
+        let s1 = await store.active(for: "S1")
+        let s2 = await store.active(for: "S2")
+        XCTAssertNil(s1?.quarantineReason)
+        XCTAssertNil(s2?.quarantineReason)
+    }
+
     func testSuspendAllAliveTransitionsState() async {
         let store = ConversationStore()
         await store.push(

@@ -381,10 +381,13 @@ extension Workspace {
         // state, not a full rollback. Removed in 0.46.0 / v1.1 alongside
         // the legacy claude.session_id metadata bridge.
         if ConversationStorePolicy.isDisabled {
-            scheduleAgentRestartLegacy(
-                from: snapshot,
-                registry: .phase1
-            )
+            let startup = ResumeStartupEpochGate.shared.snapshot()
+            if startup.auditComplete, startup.mode != .noResume {
+                scheduleAgentRestartLegacy(
+                    from: snapshot,
+                    registry: .phase1
+                )
+            }
         } else {
             scheduleAgentRestart(
                 from: snapshot,
@@ -471,9 +474,11 @@ extension Workspace {
     /// through the full live workspace restore path.
     func pendingRestartPlans(
         from snapshot: SessionWorkspaceSnapshot,
-        registry: ConversationStrategyRegistry
+        registry: ConversationStrategyRegistry,
+        startup: ResumeStartupEpochGate.Snapshot? = nil
     ) -> [(panelId: UUID, action: ResumeAction)] {
         guard SessionPersistencePolicy.agentRestartOnRestoreEnabled else { return [] }
+        let startup = startup ?? ResumeStartupEpochGate.shared.snapshot()
         var result: [(panelId: UUID, action: ResumeAction)] = []
         // C11-24: bulk-read the actor via the shared sync helper. The
         // previous inline `Task { ... }` deadlocked from `@MainActor`
@@ -491,11 +496,67 @@ extension Workspace {
             guard let strategy = registry.strategy(forKind: ref.kind) else {
                 continue
             }
-            let action = strategy.resume(ref: ref)
-            if case .skip = action { continue }
-            result.append((panelId: panelSnapshot.id, action: action))
+            let strategyAction = strategy.resume(ref: ref)
+            let fallbackCommand: ResumeCommand?
+            if case .typeCommand(let text, let submit) = strategyAction {
+                fallbackCommand = ResumeCommand(text: text, submitWithReturn: submit)
+            } else {
+                fallbackCommand = nil
+            }
+            let decision = ResumeDecisionEngine.decide(ResumeDecisionInput(
+                mode: startup.mode,
+                auditComplete: startup.auditComplete,
+                ownership: Self.resumeOwnership(for: ref),
+                kind: ref.kind,
+                id: ref.id,
+                placeholder: ref.placeholder,
+                state: ResumePersistedState(rawValue: ref.state.rawValue) ?? .unsupported,
+                exactIDValid: strategy.isValidId(ref.id),
+                transcriptEvidence: Self.transcriptEvidence(for: ref, mode: startup.mode),
+                diagnosticReason: ref.diagnosticReason,
+                fallbackCommand: fallbackCommand
+            ))
+            guard case .command(let command) = decision else { continue }
+            result.append((
+                panelId: panelSnapshot.id,
+                action: .typeCommand(
+                    text: command.text,
+                    submitWithReturn: command.submitWithReturn
+                )
+            ))
         }
         return result
+    }
+
+    private nonisolated static func resumeOwnership(
+        for ref: ConversationRef
+    ) -> ResumeOwnershipStatus {
+        if let quarantine = ref.quarantineReason {
+            switch quarantine {
+            case .duplicateInferredIdentity, .conflictingCausalIdentity, .displacedByCausalOwner:
+                return .duplicate
+            case .sameCwdWithoutCausalIdentity, .ambiguousGlobalAssignment:
+                return .ambiguous
+            }
+        }
+        if ref.state == .alive || ref.state == .suspended { return .unique }
+        // Dirty verification can intentionally demote a uniquely audited ref
+        // to unknown when its transcript is absent. Keep ownership and
+        // transcript evidence as separate axes in that case.
+        let diagnostic = ref.diagnosticReason?.lowercased() ?? ""
+        if diagnostic.contains("transcript not found") { return .unique }
+        return .unaudited
+    }
+
+    private nonisolated static func transcriptEvidence(
+        for ref: ConversationRef,
+        mode: ResumeRecoveryMode
+    ) -> ResumeTranscriptEvidence {
+        guard mode == .dirty else { return .notRequired }
+        let diagnostic = ref.diagnosticReason?.lowercased() ?? ""
+        if diagnostic.contains("transcript verified") { return .verified }
+        if diagnostic.contains("transcript not found") { return .missing }
+        return .unavailable
     }
 
     /// Flatten persisted metadata to `[String: String]`, keeping only

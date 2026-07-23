@@ -153,6 +153,76 @@ final class ConversationCrashRecoveryTests: XCTestCase {
         XCTAssertEqual(CodexStrategy().transcriptExists(for: absent, filesystem: fs), false)
     }
 
+    // MARK: - C11-206 completion-aware final store reads
+
+    func testDelayedFinalConversationStoreReadReturnsResolvedRef() async {
+        let store = ConversationStore()
+        await store.push(
+            surfaceId: "S1",
+            kind: "codex",
+            id: uuidA,
+            source: .runtimeEnv,
+            cwd: cwd,
+            state: .alive
+        )
+        let outcome: BoundedLifecycleOutcome<[String: SurfaceConversations]> =
+            BoundedLifecycleWait.run(timeout: 1.0) {
+                try await Task.sleep(nanoseconds: 20_000_000)
+                return await store.snapshot()
+            }
+        guard case .completed(let snapshot) = outcome else {
+            return XCTFail("delayed store read should complete inside budget")
+        }
+        XCTAssertEqual(snapshot["S1"]?.active?.id, uuidA)
+        XCTAssertFalse(snapshot.isEmpty)
+    }
+
+    func testTimedOutFinalConversationStoreReadDoesNotReturnEmptySuccess() async {
+        let store = ConversationStore()
+        await store.push(
+            surfaceId: "S1",
+            kind: "codex",
+            id: uuidA,
+            source: .runtimeEnv,
+            cwd: cwd,
+            state: .alive
+        )
+        let outcome: BoundedLifecycleOutcome<[String: SurfaceConversations]> =
+            BoundedLifecycleWait.run(timeout: 0.005) {
+                try await Task.sleep(nanoseconds: 100_000_000)
+                return await store.snapshot()
+            }
+        guard case .timedOut = outcome else {
+            return XCTFail("late store read must time out rather than return [:]")
+        }
+    }
+
+    func testStartupTimeoutDurablyFailsClosedAcrossThirtyTwoRefs() async {
+        let store = ConversationStore()
+        for index in 0..<32 {
+            await store.push(
+                surfaceId: "S\(index)",
+                kind: "codex",
+                id: String(format: "%08x-2222-3333-4444-555566667777", index),
+                source: .runtimeEnv,
+                cwd: "/work/\(index)",
+                state: .suspended
+            )
+        }
+        let gate = ResumeStartupEpochGate()
+        let token = gate.begin(mode: .clean)
+        XCTAssertTrue(gate.markFailed(token, reason: "startup audit timeout"))
+        await store.markAllUnknown(reason: "startup audit failed: timeout")
+
+        let refs = await store.snapshot().values.compactMap(\.active)
+        XCTAssertEqual(refs.count, 32)
+        XCTAssertTrue(refs.allSatisfy { $0.state == .unknown })
+        XCTAssertTrue(refs.allSatisfy {
+            $0.diagnosticReason == "startup audit failed: timeout"
+        })
+        XCTAssertFalse(gate.snapshot().auditComplete)
+    }
+
     // MARK: - resume: suspended is resumable, unknown/tombstoned skip
 
     func testResumeEmitsTypeCommandForSuspended() {

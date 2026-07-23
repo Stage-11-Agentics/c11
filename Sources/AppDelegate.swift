@@ -52,6 +52,26 @@ func c11Env(_ canonicalKey: String, in environment: [String: String]) -> String?
     return nil
 }
 
+/// Small completion box for bounded detached lifecycle work. The semaphore
+/// orders reads in current call sites; the lock also keeps late timeout-path
+/// writes memory-safe after the caller has returned.
+private final class LifecycleResultBox<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value?
+
+    func set(_ value: Value) {
+        lock.lock()
+        self.value = value
+        lock.unlock()
+    }
+
+    func get() -> Value? {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
 final class MainWindowHostingView<Content: View>: NSHostingView<Content> {
     private let zeroSafeAreaLayoutGuide = NSLayoutGuide()
 
@@ -2273,6 +2293,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var lastBackgroundedAt: Date?
     private var didHandleExplicitOpenIntentAtStartup = false
     private(set) var isTerminatingApp = false
+    private var didPersistCleanShutdownSnapshot = false
     private var didInstallLifecycleSnapshotObservers = false
     private var didDisableSuddenTermination = false
     private var commandPaletteVisibilityByWindowId: [UUID: Bool] = [:]
@@ -2440,6 +2461,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             dlog("shutdown.sentinel prior=dirty launchedAt=\(at.map { String($0.timeIntervalSince1970) } ?? "nil") — crash recovery (deferred to post-seed)")
         case .missing:
             dlog("shutdown.sentinel prior=missing — first launch or sentinel unwritable")
+        case .unreadable:
+            dlog("shutdown.sentinel prior=unreadable — fail-closed dirty recovery")
+        case .invalid:
+            dlog("shutdown.sentinel prior=invalid — fail-closed dirty recovery")
         }
 #endif
         ShutdownSentinel.writeDirty(bundleId: bundleId)
@@ -2961,29 +2986,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // C11-163: drain any queued events before exit so a tailing consumer
         // sees the final transitions of this instance.
         EventEmitter.shared.flush()
-        // C11-24: suspendAllAlive transitions every alive ConversationRef
-        // to .suspended so resume on next launch is gated. Synchronous
-        // bridge into the actor (bounded — store has no I/O).
-        // `Task.detached` so the task does not inherit `@MainActor`
-        // isolation from this method (`AppDelegate` is `@MainActor`);
-        // without it, the body cannot run while main is blocked on
-        // `sema.wait` and the suspend never lands.
-        let suspendDone = DispatchSemaphore(value: 0)
-        Task.detached(priority: .userInitiated) {
-            await ConversationStore.shared.suspendAllAlive()
-            suspendDone.signal()
-        }
-        _ = suspendDone.wait(timeout: .now() + 1.0)
-
-        // saveSessionSnapshot writes the snapshot synchronously. Promote
-        // dirty → clean ONLY after both the suspend pass AND the
-        // snapshot succeed, eliminating the false-clean window of the
-        // original at-start-of-shutdown design.
-        let snapshotOK = saveSessionSnapshot(includeScrollback: true, removeWhenEmpty: false)
-        if snapshotOK {
-            let bundleId = Bundle.main.bundleIdentifier ?? "com.stage11.c11"
-            ShutdownSentinel.promoteToClean(bundleId: bundleId)
-        }
+        let bundleId = Bundle.main.bundleIdentifier ?? "com.stage11.c11"
+        _ = persistCleanShutdownSnapshot(bundleId: bundleId)
 
         stopSessionAutosaveTimer()
         TerminalController.shared.stop()
@@ -3008,7 +3012,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func persistSessionForUpdateRelaunch() {
         isTerminatingApp = true
-        _ = saveSessionSnapshot(includeScrollback: true, removeWhenEmpty: false)
+        let bundleId = Bundle.main.bundleIdentifier ?? "com.stage11.c11"
+        _ = persistCleanShutdownSnapshot(bundleId: bundleId)
     }
 
     // MARK: - C11-131: explicit state save + clean app restart
@@ -3033,7 +3038,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     ///
     /// Returns nil only if the snapshot write fails (e.g. no windows).
     func forceSessionSave(includeScrollback: Bool, outPath: String?) -> SessionSaveResult? {
-        let ok = saveSessionSnapshot(includeScrollback: includeScrollback, removeWhenEmpty: false)
+        guard let conversations = prepareConversationsForPersistence(
+            includeScrollback: includeScrollback,
+            suspendAlive: false
+        ) else {
+            return nil
+        }
+        let ok = saveSessionSnapshot(
+            includeScrollback: includeScrollback,
+            removeWhenEmpty: false,
+            conversationsByPanelId: conversations,
+            forceSynchronousWrite: true
+        )
         guard ok, let canonicalURL = SessionPersistenceStore.defaultSnapshotFileURL() else {
             return nil
         }
@@ -3117,20 +3133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             try? "1\n".write(to: url, atomically: true, encoding: .utf8)
         }
 
-        // Mirror applicationWillTerminate: suspend alive refs so they persist
-        // as .suspended (resume-on-next-launch), then a synchronous snapshot,
-        // then promote the sentinel to clean — only after both succeed.
-        let suspendDone = DispatchSemaphore(value: 0)
-        Task.detached(priority: .userInitiated) {
-            await ConversationStore.shared.suspendAllAlive()
-            suspendDone.signal()
-        }
-        _ = suspendDone.wait(timeout: .now() + 1.0)
-
-        let snapshotOK = saveSessionSnapshot(includeScrollback: true, removeWhenEmpty: false)
-        if snapshotOK {
-            ShutdownSentinel.promoteToClean(bundleId: bundleId)
-        }
+        _ = persistCleanShutdownSnapshot(bundleId: bundleId)
 
         scheduleSelfRelaunchAfterExit()
         stopSessionAutosaveTimer()
@@ -3266,97 +3269,125 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard SessionRestorePolicy.shouldAttemptRestore() else { return }
         let snapshot = SessionPersistenceStore.load()
         startupSessionSnapshot = snapshot
-        // C11-24: seed ConversationStore from the loaded snapshot before
-        // any panel restore runs. Native field wins; legacy
-        // claude.session_id metadata is lifted for one release window
-        // (TODO 0.46.0 / v1.1 in WorkspaceSnapshotConversationBridge).
-        if let snapshot, !ConversationStorePolicy.isDisabled {
-            WorkspaceSnapshotConversationBridge.seedFromSnapshot(snapshot)
-            // C11-164 (RES-2): restore the per-surface activity floor into the
-            // live tracker so post-restore operation (and the restore-time
-            // scrape below, which also reads it via `contexts(from:)`) carries
-            // the same disambiguation floor the pre-crash session had. Keyed by
-            // panel id — the id the store and scrape contexts key on.
-            var activityFloor: [String: Date] = [:]
-            for window in snapshot.windows {
-                for ws in window.tabManager.workspaces {
-                    for panel in ws.panels where panel.type == .terminal {
-                        if let ts = panel.lastActivityAt {
-                            activityFloor[panel.id.uuidString] = ts
-                        }
+
+        // Resolve the one-shot policy before any slow work. Even if seed or
+        // scrape times out, the epoch's mode remains no-resume and the shared
+        // decision engine will never dispatch a command.
+        let noResumeURL = Self.restartNoResumeSentinelURL()
+        let explicitNoResume = noResumeURL.map {
+            FileManager.default.fileExists(atPath: $0.path)
+        } ?? false
+        if explicitNoResume, let noResumeURL {
+            try? FileManager.default.removeItem(at: noResumeURL)
+        }
+        let mode = ShutdownSentinel.resolveRecoveryMode(
+            explicitNoResume: explicitNoResume,
+            priorShutdown: priorShutdownAtLaunch
+        )
+        let epoch = ResumeStartupEpochGate.shared.begin(mode: mode)
+
+        guard let snapshot, !ConversationStorePolicy.isDisabled else {
+            _ = ResumeStartupEpochGate.shared.markReady(epoch)
+            return
+        }
+
+        // Restore the persisted activity floor before the detached scrape
+        // task reads contexts. This is pure in-memory setup on the main actor.
+        var activityFloor: [String: Date] = [:]
+        for window in snapshot.windows {
+            for ws in window.tabManager.workspaces {
+                for panel in ws.panels where panel.type == .terminal {
+                    if let ts = panel.lastActivityAt {
+                        activityFloor[panel.id.uuidString] = ts
                     }
                 }
             }
-            if !activityFloor.isEmpty {
-                SurfaceActivityTracker.shared.seed(from: activityFloor)
-            }
-            // C11-152: live scrape-capture seam. Now that the store is seeded,
-            // run the per-kind scrapers for each restored terminal surface and
-            // resolve real session ids via each strategy's `capture`, applying
-            // scrape-derived refs to the store. This is the missing runtime
-            // call site for the scrape rail — it lights up codex resume (and
-            // future pi/omp). Runs BEFORE the `--no-resume` / dirty-reclassify
-            // branches below so those still win when they apply. `Task.detached`
-            // breaks `@MainActor` isolation so the actor work runs while this
-            // method blocks on the bounded wait (mirrors the seed/reclassify
-            // neighbours).
-            let scrapeContexts = ScrapeCaptureContext.contexts(from: snapshot)
-            if !scrapeContexts.isEmpty {
-                let pipeline = ScrapeCapturePipeline(scrapers: .v1(), strategies: .v1)
-                let sema = DispatchSemaphore(value: 0)
-                Task.detached(priority: .userInitiated) {
-                    await ConversationStore.shared.runScrapeCapture(
-                        contexts: scrapeContexts,
-                        pipeline: pipeline
-                    )
-                    sema.signal()
-                }
-                _ = sema.wait(timeout: .now() + 1.0)
-            }
         }
-        // C11-131: `c11 app restart --no-resume` left a one-shot sentinel.
-        // Honor it by forcing every seeded ref to .unknown so the restore
-        // path types nothing into panes (layout still restores). Consume the
-        // sentinel so it only affects this one launch, and skip the dirty
-        // reclassify below (the sentinel intent wins).
-        var handledNoResume = false
-        if !ConversationStorePolicy.isDisabled,
-           let noResumeURL = Self.restartNoResumeSentinelURL(),
-           FileManager.default.fileExists(atPath: noResumeURL.path) {
-            try? FileManager.default.removeItem(at: noResumeURL)
-            let sema = DispatchSemaphore(value: 0)
-            Task.detached(priority: .userInitiated) {
-                await ConversationStore.shared.markAllUnknown(reason: "app restart --no-resume")
-                sema.signal()
-            }
-            _ = sema.wait(timeout: .now() + 1.0)
-            handledNoResume = true
+        if !activityFloor.isEmpty {
+            SurfaceActivityTracker.shared.seed(from: activityFloor)
         }
-        // C11-131: now that the snapshot has seeded the store, act on the
-        // prior-shutdown decision captured at launch. On a dirty sentinel,
-        // verify each freshly-seeded ref against its on-disk transcript and
-        // reclassify: a verified transcript → .suspended (resume on this
-        // restore), a missing one → .unknown (skip with a clear reason).
-        // This replaces the old blanket markAllUnknown, which forced every
-        // ref to .unknown and made resume skip the crash-recovery case it
-        // exists for. Synchronous bridge so the order is observable to
-        // subsequent restore work on the same dispatch queue (no Task race
-        // against pendingRestartPlans).
-        if case .dirty = priorShutdownAtLaunch, !ConversationStorePolicy.isDisabled, !handledNoResume {
-            // C11-24: `Task.detached` so the spawned task does not
-            // inherit `@MainActor` isolation from this method. Without
-            // it, the body could not run while main is blocked on
-            // `sema.wait` and the dirty-recovery transition would never
-            // fire. (`AppDelegate` is `@MainActor`.) The transcript stats
-            // are bounded local FS calls; the 1s budget matches the bridge.
-            let sema = DispatchSemaphore(value: 0)
-            Task.detached(priority: .userInitiated) {
-                await ConversationStore.shared.reclassifyAfterCrash(
-                    registry: .v1
+
+        let contexts = ScrapeCaptureContext.contexts(from: snapshot)
+        let pipeline = ScrapeCapturePipeline(scrapers: .v1(), strategies: .v1)
+        let completed = DispatchSemaphore(value: 0)
+        let result = LifecycleResultBox<Bool>()
+        Task.detached(priority: .userInitiated) {
+            defer { completed.signal() }
+
+            // One completion chain: seed (which audits seeded duplicates),
+            // collect once per kind, atomically commit, re-audit, apply the
+            // selected recovery policy, and audit the final store.
+            _ = await WorkspaceSnapshotConversationBridge.seedFromSnapshot(snapshot)
+            let batch: ScrapeCandidateBatch
+            do {
+                batch = try await pipeline.collectCandidateBatch(contexts: contexts)
+            } catch {
+                _ = ResumeStartupEpochGate.shared.markFailed(
+                    epoch,
+                    reason: "startup scrape collection failed: \(error)"
                 )
-                sema.signal()
+                await ConversationStore.shared.markAllUnknown(
+                    reason: "startup audit failed: scrape collection error"
+                )
+                result.set(false)
+                return
             }
-            _ = sema.wait(timeout: .now() + 1.0)
+            guard ResumeStartupEpochGate.shared.isPending(epoch) else {
+                await ConversationStore.shared.markAllUnknown(
+                    reason: "startup audit failed: epoch expired before scrape commit"
+                )
+                result.set(false)
+                return
+            }
+            _ = await ConversationStore.shared.applyScrapeBatch(
+                batch,
+                pipeline: pipeline
+            )
+            guard ResumeStartupEpochGate.shared.isPending(epoch) else {
+                await ConversationStore.shared.markAllUnknown(
+                    reason: "startup audit failed: epoch expired during scrape commit"
+                )
+                result.set(false)
+                return
+            }
+            _ = await ConversationStore.shared.auditGlobalOwnership()
+
+            switch mode {
+            case .noResume:
+                await ConversationStore.shared.markAllUnknown(
+                    reason: "app restart --no-resume"
+                )
+            case .dirty:
+                await ConversationStore.shared.reclassifyAfterCrash(registry: .v1)
+            case .clean:
+                break
+            }
+            guard ResumeStartupEpochGate.shared.isPending(epoch) else {
+                await ConversationStore.shared.markAllUnknown(
+                    reason: "startup audit failed: epoch expired during recovery verification"
+                )
+                result.set(false)
+                return
+            }
+            _ = await ConversationStore.shared.auditGlobalOwnership()
+            result.set(true)
+        }
+
+        // Rare startup seam: one bounded wait over a detached task, never an
+        // inherited main-actor Task. Failure is durable for this epoch; a
+        // late task cannot mark it ready or enable Workspace dispatch.
+        if completed.wait(timeout: .now() + 5.0) == .success, result.get() == true {
+            _ = ResumeStartupEpochGate.shared.markReady(epoch)
+        } else {
+            _ = ResumeStartupEpochGate.shared.markFailed(
+                epoch,
+                reason: "startup conversation audit timed out"
+            )
+            Task.detached(priority: .userInitiated) {
+                await ConversationStore.shared.markAllUnknown(
+                    reason: "startup audit failed: timeout"
+                )
+            }
         }
     }
 
@@ -4124,11 +4155,100 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    /// Resolve scrape-primary refs and return one completed store snapshot for
+    /// a persistence boundary. Restart/termination additionally suspend live
+    /// exact refs before the read. Collection errors and timeout return nil;
+    /// callers must not persist/promote a clean snapshot in that case.
+    private func prepareConversationsForPersistence(
+        includeScrollback: Bool,
+        suspendAlive: Bool,
+        timeout: TimeInterval = 5.0
+    ) -> [String: SurfaceConversations]? {
+        guard !ConversationStorePolicy.isDisabled else { return [:] }
+
+        // Capture live surface/cwd/type context on the main actor without a
+        // blocking actor read. This draft is never persisted.
+        guard let draft = buildSessionSnapshot(
+            includeScrollback: includeScrollback,
+            conversationsByPanelId: [:]
+        ) else {
+            return nil
+        }
+        let contexts = ScrapeCaptureContext.contexts(from: draft)
+        let pipeline = ScrapeCapturePipeline(scrapers: .v1(), strategies: .v1)
+        let operationGate = ResumeStartupEpochGate()
+        let token = operationGate.begin(mode: .clean)
+
+        let outcome = BoundedLifecycleWait.run(timeout: timeout) {
+            let batch: ScrapeCandidateBatch
+            batch = try await pipeline.collectCandidateBatch(contexts: contexts)
+            guard operationGate.isPending(token) else {
+                throw CancellationError()
+            }
+            _ = await ConversationStore.shared.applyScrapeBatch(batch, pipeline: pipeline)
+            guard operationGate.isPending(token) else {
+                throw CancellationError()
+            }
+            _ = await ConversationStore.shared.auditGlobalOwnership()
+            if suspendAlive {
+                await ConversationStore.shared.suspendAllAlive()
+            }
+            guard operationGate.isPending(token) else {
+                throw CancellationError()
+            }
+            return await ConversationStore.shared.snapshot()
+        }
+
+        switch outcome {
+        case .completed(let conversations):
+            guard operationGate.markReady(token) else { return nil }
+            return conversations
+        case .failed(let reason):
+            _ = operationGate.markFailed(token, reason: reason)
+            return nil
+        case .timedOut:
+            _ = operationGate.markFailed(token, reason: "conversation persistence preparation timed out")
+            return nil
+        }
+    }
+
+    /// Full clean boundary: resolve, optionally quarantine, suspend, read the
+    /// final actor state, durably write it, then and only then promote clean.
+    @discardableResult
+    private func persistCleanShutdownSnapshot(bundleId: String) -> Bool {
+        if didPersistCleanShutdownSnapshot { return true }
+        guard let conversations = prepareConversationsForPersistence(
+            includeScrollback: true,
+            suspendAlive: true
+        ) else {
+            return false
+        }
+        let durableWriteCompleted = saveSessionSnapshot(
+            includeScrollback: true,
+            removeWhenEmpty: false,
+            conversationsByPanelId: conversations,
+            forceSynchronousWrite: true
+        )
+        guard CleanPersistencePromotionPolicy.allowsPromotion(
+            resolutionCompleted: true,
+            finalStoreReadCompleted: true,
+            durableSnapshotWriteCompleted: durableWriteCompleted
+        ) else {
+            return false
+        }
+        guard ShutdownSentinel.promoteToClean(bundleId: bundleId) else {
+            return false
+        }
+        didPersistCleanShutdownSnapshot = true
+        return true
+    }
+
     @discardableResult
     private func saveSessionSnapshot(
         includeScrollback: Bool,
         removeWhenEmpty: Bool = false,
-        conversationsByPanelId: [String: SurfaceConversations]? = nil
+        conversationsByPanelId: [String: SurfaceConversations]? = nil,
+        forceSynchronousWrite: Bool = false
     ) -> Bool {
         if Self.shouldSkipSessionSaveDuringStartupRestore(
             isApplyingStartupSessionRestore: isApplyingStartupSessionRestore,
@@ -4140,7 +4260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return false
         }
 
-        let writeSynchronously = Self.shouldWriteSessionSnapshotSynchronously(
+        let writeSynchronously = forceSynchronousWrite || Self.shouldWriteSessionSnapshotSynchronously(
             isTerminatingApp: isTerminatingApp,
             includeScrollback: includeScrollback
         )
@@ -4159,7 +4279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             includeScrollback: includeScrollback,
             conversationsByPanelId: conversationsByPanelId
         ) else {
-            persistSessionSnapshot(
+            _ = persistSessionSnapshot(
                 nil,
                 removeWhenEmpty: removeWhenEmpty,
                 persistedGeometryData: nil,
@@ -4178,13 +4298,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 #if DEBUG
         debugLogSessionSaveSnapshot(snapshot, includeScrollback: includeScrollback)
 #endif
-        persistSessionSnapshot(
+        return persistSessionSnapshot(
             snapshot,
             removeWhenEmpty: false,
             persistedGeometryData: persistedGeometryData,
             synchronously: writeSynchronously
         )
-        return true
     }
 
     nonisolated static func shouldPersistSnapshotOnWindowUnregister(isTerminatingApp: Bool) -> Bool {
@@ -4403,10 +4522,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         removeWhenEmpty: Bool,
         persistedGeometryData: Data?,
         synchronously: Bool
-    ) {
-        guard snapshot != nil || removeWhenEmpty || persistedGeometryData != nil else { return }
+    ) -> Bool {
+        guard snapshot != nil || removeWhenEmpty || persistedGeometryData != nil else { return false }
 
-        let writeBlock = {
+        let writeBlock = { () -> Bool in
             if let persistedGeometryData {
                 UserDefaults.standard.set(
                     persistedGeometryData,
@@ -4414,16 +4533,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 )
             }
             if let snapshot {
-                _ = SessionPersistenceStore.save(snapshot)
+                return SessionPersistenceStore.save(snapshot)
             } else if removeWhenEmpty {
                 SessionPersistenceStore.removeSnapshot()
             }
+            return true
         }
 
         if synchronously {
-            writeBlock()
+            return writeBlock()
         } else {
-            sessionPersistenceQueue.async(execute: writeBlock)
+            sessionPersistenceQueue.async { _ = writeBlock() }
+            return true
         }
     }
 

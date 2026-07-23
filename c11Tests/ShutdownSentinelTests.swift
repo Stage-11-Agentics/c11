@@ -93,4 +93,87 @@ final class ShutdownSentinelTests: XCTestCase {
         let url = ShutdownSentinel.dirtyURL(bundleId: "../../etc/passwd", directory: tempDir)!
         XCTAssertFalse(url.path.contains(".."), "bundle id must be sanitised: \(url.path)")
     }
+
+    // MARK: - C11-206 recovery-mode matrix
+
+    func testRecoveryModeMapsOnlyValidCleanToClean() {
+        XCTAssertEqual(
+            ShutdownSentinel.resolveRecoveryMode(
+                explicitNoResume: false,
+                priorShutdown: .clean(at: Date(timeIntervalSince1970: 1))
+            ),
+            .clean
+        )
+        for prior in [
+            ShutdownSentinel.PriorShutdown.dirty(launchedAt: nil),
+            .missing,
+            .unreadable,
+            .invalid,
+        ] {
+            XCTAssertEqual(
+                ShutdownSentinel.resolveRecoveryMode(
+                    explicitNoResume: false,
+                    priorShutdown: prior
+                ),
+                .dirty
+            )
+        }
+    }
+
+    func testNoResumeOverridesEverySentinelState() {
+        for prior in [
+            ShutdownSentinel.PriorShutdown.clean(at: Date()),
+            .dirty(launchedAt: Date()),
+            .missing,
+            .unreadable,
+            .invalid,
+        ] {
+            XCTAssertEqual(
+                ShutdownSentinel.resolveRecoveryMode(
+                    explicitNoResume: true,
+                    priorShutdown: prior
+                ),
+                .noResume
+            )
+        }
+    }
+
+    func testValidCleanWinsIntentionalBothMarkerWindow() throws {
+        let clean = try XCTUnwrap(ShutdownSentinel.cleanURL(bundleId: "com.test", directory: tempDir))
+        let dirty = try XCTUnwrap(ShutdownSentinel.dirtyURL(bundleId: "com.test", directory: tempDir))
+        try "2000\n".write(to: clean, atomically: true, encoding: .utf8)
+        try "1000\n".write(to: dirty, atomically: true, encoding: .utf8)
+        XCTAssertEqual(
+            ShutdownSentinel.readPriorShutdown(bundleId: "com.test", directory: tempDir),
+            .clean(at: Date(timeIntervalSince1970: 2000))
+        )
+    }
+
+    func testInvalidCleanCannotMaskValidDirtyMarker() throws {
+        let clean = try XCTUnwrap(ShutdownSentinel.cleanURL(bundleId: "com.test", directory: tempDir))
+        let dirty = try XCTUnwrap(ShutdownSentinel.dirtyURL(bundleId: "com.test", directory: tempDir))
+        try "corrupt\n".write(to: clean, atomically: true, encoding: .utf8)
+        try "1000\n".write(to: dirty, atomically: true, encoding: .utf8)
+        XCTAssertEqual(
+            ShutdownSentinel.readPriorShutdown(bundleId: "com.test", directory: tempDir),
+            .dirty(launchedAt: Date(timeIntervalSince1970: 1000))
+        )
+    }
+
+    func testInvalidAndUnreadableMarkersFailClosed() throws {
+        let clean = try XCTUnwrap(ShutdownSentinel.cleanURL(bundleId: "com.test", directory: tempDir))
+        try "corrupt\n".write(to: clean, atomically: true, encoding: .utf8)
+        XCTAssertEqual(
+            ShutdownSentinel.readPriorShutdown(bundleId: "com.test", directory: tempDir),
+            .invalid
+        )
+        XCTAssertEqual(
+            ShutdownSentinel.readPriorShutdown(
+                bundleId: "com.test",
+                directory: tempDir,
+                readData: { _ in throw CocoaError(.fileReadNoPermission) }
+            ),
+            .unreadable
+        )
+    }
 }

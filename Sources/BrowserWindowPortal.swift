@@ -1,5 +1,6 @@
 import AppKit
 import Bonsplit
+import Combine
 import ObjectiveC
 import SwiftUI
 import WebKit
@@ -1322,6 +1323,392 @@ struct BrowserPortalPaneInteractionConfiguration {
     let runtime: PaneInteractionRuntime
 }
 
+private final class BrowserCompanionAccessibilitySnapshot {
+    weak var view: NSView?
+    let wasHidden: Bool
+
+    init(view: NSView, wasHidden: Bool) {
+        self.view = view
+        self.wasHidden = wasHidden
+    }
+}
+
+private final class BrowserCompanionRevealButton: NSButton {
+    weak var companionHost: BrowserCompanionOverlayHost?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func keyDown(with event: NSEvent) {
+        companionHost?.keyDown(with: event)
+    }
+
+    override func keyUp(with event: NSEvent) {
+        companionHost?.keyUp(with: event)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        companionHost?.beginPointerSequence()
+        defer { companionHost?.endPointerSequence() }
+        super.mouseDown(with: event)
+    }
+}
+
+/// AppKit-owned inertness boundary for companion-linked browser content.
+///
+/// The host remains a real hit target while blocked, owns keyboard focus, and
+/// accessibility-hides the page plus any attached WebKit inspector roots. A
+/// reveal requested by mouse-down keeps the host installed through the matching
+/// mouse-up so that release cannot fall through to the newly revealed page.
+final class BrowserCompanionOverlayHost: NSVisualEffectView {
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let detailLabel = NSTextField(wrappingLabelWithString: "")
+    private let revealButton = BrowserCompanionRevealButton(
+        title: String(
+            localized: "agentCompanion.portal.viewAnyway",
+            defaultValue: "View anyway"
+        ),
+        target: nil,
+        action: nil
+    )
+
+    private var configuration: BrowserPortalCompanionConfiguration?
+    private var accessibilitySnapshots: [ObjectIdentifier: BrowserCompanionAccessibilitySnapshot] = [:]
+    private weak var priorFirstResponder: NSResponder?
+    private var isPointerSequenceActive = false
+    private var activationKeyCode: UInt16?
+    private var hasPendingConfiguration = false
+    private var pendingConfiguration: BrowserPortalCompanionConfiguration?
+    private var shouldAcquireKeyboardFocus = false
+
+    override var acceptsFirstResponder: Bool { isBlocking }
+
+    var isBlocking: Bool {
+        configuration?.state.blocksWebContent == true && !isHidden
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        material = .hudWindow
+        blendingMode = .withinWindow
+        state = .active
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.72).cgColor
+        autoresizingMask = [.width, .height]
+        isHidden = true
+
+        titleLabel.alignment = .center
+        titleLabel.font = .systemFont(ofSize: 17, weight: .semibold)
+        titleLabel.maximumNumberOfLines = 2
+        titleLabel.lineBreakMode = .byWordWrapping
+        detailLabel.alignment = .center
+        detailLabel.font = .systemFont(ofSize: 13)
+        detailLabel.textColor = .secondaryLabelColor
+        detailLabel.maximumNumberOfLines = 3
+        detailLabel.lineBreakMode = .byWordWrapping
+        revealButton.bezelStyle = .rounded
+        revealButton.controlSize = .large
+        revealButton.target = self
+        revealButton.action = #selector(revealButtonPressed(_:))
+        revealButton.companionHost = self
+
+        let stack = NSStackView(views: [titleLabel, detailLabel, revealButton])
+        stack.orientation = .vertical
+        stack.alignment = .centerX
+        stack.spacing = 10
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 24),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -24),
+            detailLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 440),
+        ])
+
+        setAccessibilityRole(.group)
+        setAccessibilityLabel(
+            String(
+                localized: "agentCompanion.portal.accessibilityLabel",
+                defaultValue: "Agent companion browser privacy veil"
+            )
+        )
+        revealButton.setAccessibilityLabel(
+            String(
+                localized: "agentCompanion.portal.viewAnyway",
+                defaultValue: "View anyway"
+            )
+        )
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard isBlocking else { return nil }
+        return super.hitTest(point) ?? self
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil || (window != nil && newWindow !== window) {
+            configuration = nil
+            deactivate(restoreResponder: false)
+        }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil, configuration?.state.blocksWebContent == true else { return }
+        isHidden = false
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard isBlocking else { return }
+        beginPointerSequence()
+        requestReveal()
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard isPointerSequenceActive || isBlocking else { return }
+        endPointerSequence()
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        // The veil is an inertness boundary. Context clicks never reach WebKit.
+    }
+
+    override func otherMouseDown(with event: NSEvent) {
+        // Auxiliary-button navigation must not reach the covered page.
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        // Scrolling is consumed while the page is veiled.
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard isBlocking else { return }
+        switch event.keyCode {
+        case 36, 49, 76: // Return, Space, keypad Enter
+            guard activationKeyCode == nil else { return }
+            activationKeyCode = event.keyCode
+            requestReveal()
+        case 48: // Tab: keep traversal inside the AppKit overlay layer.
+            if event.modifierFlags.contains(.shift) {
+                window?.selectPreviousKeyView(nil)
+            } else {
+                window?.selectNextKeyView(nil)
+            }
+        default:
+            // Deliberately consume all other keys; forwarding to super can route
+            // them back into a WKContentView through the responder chain.
+            break
+        }
+    }
+
+    override func keyUp(with event: NSEvent) {
+        guard isBlocking || activationKeyCode != nil else { return }
+        guard activationKeyCode == event.keyCode else { return }
+        activationKeyCode = nil
+        finishDeferredRevealInputIfNeeded()
+    }
+
+    func apply(
+        configuration: BrowserPortalCompanionConfiguration?,
+        coveredViews: [NSView],
+        restoreResponder: Bool
+    ) {
+        if isPointerSequenceActive || activationKeyCode != nil {
+            if configuration?.state.blocksWebContent == true {
+                // A newer blocking state supersedes a reveal queued by the
+                // current input sequence. Never let stale nonblocking state
+                // expose WebKit when the matching mouse/key release arrives.
+                pendingConfiguration = nil
+                hasPendingConfiguration = false
+            } else {
+                pendingConfiguration = configuration
+                hasPendingConfiguration = true
+                return
+            }
+        }
+
+        self.configuration = configuration
+        guard configuration?.state.blocksWebContent == true else {
+            deactivate(restoreResponder: restoreResponder)
+            return
+        }
+
+        configureContent(for: configuration!.state.presentation)
+        isHidden = false
+        cacheAndHideAccessibility(for: coveredViews)
+        if let window {
+            capturePriorFirstResponderIfNeeded(in: window, coveredViews: coveredViews)
+        }
+    }
+
+    func updateCoveredViews(_ coveredViews: [NSView]) {
+        guard isBlocking else { return }
+        cacheAndHideAccessibility(for: coveredViews)
+    }
+
+    func restoreAccessibility(for view: NSView) {
+        let viewId = ObjectIdentifier(view)
+        guard let snapshot = accessibilitySnapshots.removeValue(forKey: viewId) else { return }
+        snapshot.view?.setAccessibilityHidden(snapshot.wasHidden)
+    }
+
+    @discardableResult
+    func requestKeyboardFocus(reason: String, force: Bool = false) -> Bool {
+        guard isBlocking, let window else { return false }
+        if window.firstResponder === revealButton || window.firstResponder === self {
+            return true
+        }
+        if force {
+            shouldAcquireKeyboardFocus = true
+        }
+        guard shouldAcquireKeyboardFocus else { return false }
+        if let currentResponder = window.firstResponder,
+           !responderBelongsToCoveredView(currentResponder) {
+            // The operator moved to another pane. Layer refreshes must never
+            // pull focus back merely because this browser remains veiled.
+            shouldAcquireKeyboardFocus = false
+            return false
+        }
+        if window.makeFirstResponder(revealButton) { return true }
+        window.makeFirstResponder(nil)
+        return window.makeFirstResponder(revealButton) || window.makeFirstResponder(self)
+    }
+
+    fileprivate func beginPointerSequence() {
+        guard isBlocking else { return }
+        isPointerSequenceActive = true
+    }
+
+    fileprivate func endPointerSequence() {
+        isPointerSequenceActive = false
+        finishDeferredRevealInputIfNeeded()
+    }
+
+    private func finishDeferredRevealInputIfNeeded() {
+        guard !isPointerSequenceActive, activationKeyCode == nil else { return }
+        guard hasPendingConfiguration else { return }
+        let pending = pendingConfiguration
+        pendingConfiguration = nil
+        hasPendingConfiguration = false
+        apply(configuration: pending, coveredViews: [], restoreResponder: true)
+    }
+
+    @objc private func revealButtonPressed(_ sender: Any?) {
+        requestReveal()
+    }
+
+    private func requestReveal() {
+        guard let configuration, configuration.state.blocksWebContent else { return }
+        configuration.onReveal()
+    }
+
+    private func configureContent(for presentation: BrowserCompanionPresentation) {
+        switch presentation {
+        case .veiled(let linked, let active):
+            titleLabel.stringValue = String(
+                localized: "agentCompanion.portal.linkedTitle",
+                defaultValue: "This page belongs to \(linked.identity.displayName)"
+            )
+            detailLabel.stringValue = String(
+                localized: "agentCompanion.portal.activeDetail",
+                defaultValue: "\(active.identity.displayName) is active. Reveal this page only if you intend to cross agent contexts."
+            )
+        case .orphaned(let link):
+            let name = link.lastKnownName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            titleLabel.stringValue = String(
+                localized: "agentCompanion.portal.orphanedTitle",
+                defaultValue: "This page belongs to an unavailable agent"
+            )
+            detailLabel.stringValue = name.flatMap { $0.isEmpty ? nil : $0 }.map {
+                String(
+                    localized: "agentCompanion.portal.orphanedDetail",
+                    defaultValue: "The linked agent \($0) is no longer available."
+                )
+            } ?? String(
+                localized: "agentCompanion.portal.orphanedDetailUnknown",
+                defaultValue: "The linked agent is no longer available."
+            )
+        default:
+            titleLabel.stringValue = String(
+                localized: "agentCompanion.portal.genericTitle",
+                defaultValue: "This companion page is private"
+            )
+            detailLabel.stringValue = ""
+        }
+    }
+
+    private func cacheAndHideAccessibility(for views: [NSView]) {
+        for view in views {
+            let viewId = ObjectIdentifier(view)
+            if accessibilitySnapshots[viewId] == nil {
+                accessibilitySnapshots[viewId] = BrowserCompanionAccessibilitySnapshot(
+                    view: view,
+                    wasHidden: view.isAccessibilityHidden()
+                )
+            }
+            view.setAccessibilityHidden(true)
+        }
+    }
+
+    private func capturePriorFirstResponderIfNeeded(in window: NSWindow, coveredViews: [NSView]) {
+        guard priorFirstResponder == nil,
+              let responder = window.firstResponder,
+              responder !== self,
+              responder !== revealButton,
+              let owningView = responder.browserPortalOwningView,
+              coveredViews.contains(where: { owningView === $0 || owningView.isDescendant(of: $0) })
+        else { return }
+        priorFirstResponder = responder
+        shouldAcquireKeyboardFocus = true
+    }
+
+    private func responderBelongsToCoveredView(_ responder: NSResponder) -> Bool {
+        guard let owningView = responder.browserPortalOwningView else { return false }
+        return accessibilitySnapshots.values.contains { snapshot in
+            guard let coveredView = snapshot.view else { return false }
+            return owningView === coveredView || owningView.isDescendant(of: coveredView)
+        }
+    }
+
+    private func deactivate(restoreResponder: Bool) {
+        let currentWindow = window
+        let overlayOwnedFirstResponderBeforeHide =
+            currentWindow?.firstResponder === self || currentWindow?.firstResponder === revealButton
+        for snapshot in accessibilitySnapshots.values {
+            snapshot.view?.setAccessibilityHidden(snapshot.wasHidden)
+        }
+        accessibilitySnapshots.removeAll()
+        isPointerSequenceActive = false
+        activationKeyCode = nil
+        pendingConfiguration = nil
+        hasPendingConfiguration = false
+        shouldAcquireKeyboardFocus = false
+        isHidden = true
+
+        guard let window = currentWindow else {
+            priorFirstResponder = nil
+            return
+        }
+        if restoreResponder,
+           overlayOwnedFirstResponderBeforeHide || window.firstResponder == nil,
+           let priorFirstResponder,
+           priorFirstResponder.acceptsFirstResponder,
+           priorFirstResponder.browserPortalOwningView?.window === window {
+            _ = window.makeFirstResponder(priorFirstResponder)
+        } else if overlayOwnedFirstResponderBeforeHide,
+                  window.firstResponder === self || window.firstResponder === revealButton {
+            _ = window.makeFirstResponder(nil)
+        }
+        priorFirstResponder = nil
+    }
+}
+
 struct BrowserPaneDropContext: Equatable {
     let workspaceId: UUID
     let panelId: UUID
@@ -1695,7 +2082,11 @@ final class WindowBrowserSlotView: NSView {
     private let paneDropTargetView = BrowserPaneDropTargetView(frame: .zero)
     private let dropZoneOverlayView = BrowserDropZoneOverlayView(frame: .zero)
     private var searchOverlayHostingView: NSHostingView<BrowserSearchOverlay>?
+    private var searchOverlayConfiguration: BrowserPortalSearchOverlayConfiguration?
+    private var companionOverlayHost: BrowserCompanionOverlayHost?
+    private var companionConfiguration: BrowserPortalCompanionConfiguration?
     private var paneInteractionOverlay: PaneInteractionOverlayHost?
+    private var paneInteractionActivityCancellable: AnyCancellable?
     private weak var hostedWebView: WKWebView?
     private var hostedWebViewConstraints: [NSLayoutConstraint] = []
     private var forwardedDropZone: DropZone?
@@ -1716,6 +2107,7 @@ final class WindowBrowserSlotView: NSView {
     private var lastHostedInspectorLayoutBoundsSize: NSSize?
 
     override func willRemoveSubview(_ subview: NSView) {
+        companionOverlayHost?.restoreAccessibility(for: subview)
         super.willRemoveSubview(subview)
         onHierarchyChanged?(self)
     }
@@ -1767,6 +2159,19 @@ final class WindowBrowserSlotView: NSView {
         super.viewDidMoveToSuperview()
         attachDropZoneOverlayIfNeeded()
         applyResolvedDropZoneOverlay()
+        companionOverlayHost?.updateCoveredViews(companionCoveredViews())
+        refreshInteractionLayersAndFocus(reason: "slotMovedToSuperview")
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil, let companionConfiguration else { return }
+        companionOverlayHost?.apply(
+            configuration: companionConfiguration,
+            coveredViews: companionCoveredViews(),
+            restoreResponder: paneInteractionOverlay?.isHidden != false
+        )
+        refreshInteractionLayersAndFocus(reason: "slotMovedToWindow")
     }
 
     func recordPreferredHostedInspectorWidth(_ width: CGFloat, containerBounds: NSRect) {
@@ -1832,6 +2237,12 @@ final class WindowBrowserSlotView: NSView {
     }
 
     func setSearchOverlay(_ configuration: BrowserPortalSearchOverlayConfiguration?) {
+        if let configuration, companionConfiguration?.state.blocksWebContent == true {
+            _ = closeSearchOverlayBeforeVeil(configuration)
+            return
+        }
+
+        searchOverlayConfiguration = configuration
         guard let configuration else {
             logSearchOverlayEvent("remove", panelId: nil)
             if let overlay = searchOverlayHostingView {
@@ -1844,6 +2255,7 @@ final class WindowBrowserSlotView: NSView {
             }
             searchOverlayHostingView?.removeFromSuperview()
             searchOverlayHostingView = nil
+            refreshInteractionLayersAndFocus(reason: "searchRemoved")
             return
         }
 
@@ -1878,6 +2290,7 @@ final class WindowBrowserSlotView: NSView {
                     overlay.trailingAnchor.constraint(equalTo: trailingAnchor),
                 ])
             }
+            refreshInteractionLayersAndFocus(reason: "searchUpdated")
             return
         }
 
@@ -1898,6 +2311,66 @@ final class WindowBrowserSlotView: NSView {
         ])
         searchOverlayHostingView = overlay
         logSearchOverlayEvent("create", panelId: configuration.panelId)
+        refreshInteractionLayersAndFocus(reason: "searchCreated")
+    }
+
+    /// Apply the companion privacy state to either a window-portal slot or the
+    /// same slot class used by local-inline browser hosting.
+    func setCompanion(_ configuration: BrowserPortalCompanionConfiguration?) {
+        let beginsBlocking = configuration?.state.blocksWebContent == true
+        var yieldedSearchFocus = false
+        if beginsBlocking, let searchOverlayConfiguration {
+            yieldedSearchFocus = closeSearchOverlayBeforeVeil(searchOverlayConfiguration)
+        }
+
+        companionConfiguration = configuration
+        guard beginsBlocking || companionOverlayHost != nil else { return }
+        let overlay: BrowserCompanionOverlayHost
+        if let existing = companionOverlayHost {
+            overlay = existing
+        } else {
+            let created = BrowserCompanionOverlayHost(frame: bounds)
+            created.autoresizingMask = [.width, .height]
+            addSubview(created, positioned: .above, relativeTo: nil)
+            companionOverlayHost = created
+            overlay = created
+        }
+
+        overlay.frame = bounds
+        overlay.apply(
+            configuration: configuration,
+            coveredViews: companionCoveredViews(),
+            restoreResponder: paneInteractionOverlay?.isHidden != false
+        )
+        if yieldedSearchFocus {
+            _ = overlay.requestKeyboardFocus(reason: "searchYieldedForCompanion", force: true)
+        }
+        refreshInteractionLayersAndFocus(reason: "companionUpdated")
+    }
+
+    @discardableResult
+    private func closeSearchOverlayBeforeVeil(
+        _ configuration: BrowserPortalSearchOverlayConfiguration
+    ) -> Bool {
+        let yieldedFocus: Bool
+        if let window {
+            yieldedFocus = yieldSearchOverlayFocusIfOwned(by: configuration.panelId, in: window)
+        } else {
+            yieldedFocus = false
+        }
+        searchOverlayConfiguration = nil
+        if let overlay = searchOverlayHostingView {
+            objc_setAssociatedObject(
+                overlay,
+                &cmuxBrowserSearchOverlayPanelIdAssociationKey,
+                nil,
+                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+            )
+            overlay.removeFromSuperview()
+        }
+        searchOverlayHostingView = nil
+        configuration.onClose()
+        return yieldedFocus
     }
 
     func searchOverlayPanelId(for responder: NSResponder) -> UUID? {
@@ -1916,8 +2389,10 @@ final class WindowBrowserSlotView: NSView {
     /// the webView above the modal card.
     func setPaneInteraction(_ configuration: BrowserPortalPaneInteractionConfiguration?) {
         guard let configuration else {
+            paneInteractionActivityCancellable = nil
             paneInteractionOverlay?.removeFromSuperview()
             paneInteractionOverlay = nil
+            refreshInteractionLayersAndFocus(reason: "paneInteractionRemoved")
             return
         }
 
@@ -1930,7 +2405,7 @@ final class WindowBrowserSlotView: NSView {
                 // would otherwise cover the modal card.
                 addSubview(existing, positioned: .above, relativeTo: nil)
                 existing.frame = bounds
-                _ = existing.requestKeyboardFocus(reason: "browserPortal.reraise")
+                refreshInteractionLayersAndFocus(reason: "paneInteractionReraise")
                 return
             }
             existing.removeFromSuperview()
@@ -1945,7 +2420,14 @@ final class WindowBrowserSlotView: NSView {
         overlay.autoresizingMask = [.width, .height]
         addSubview(overlay, positioned: .above, relativeTo: nil)
         paneInteractionOverlay = overlay
-        _ = overlay.requestKeyboardFocus(reason: "browserPortal.create")
+        paneInteractionActivityCancellable = configuration.runtime.$active
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                DispatchQueue.main.async { [weak self] in
+                    self?.refreshInteractionLayersAndFocus(reason: "paneInteractionActivity")
+                }
+            }
+        refreshInteractionLayersAndFocus(reason: "paneInteractionCreated")
     }
 
     @discardableResult
@@ -1990,6 +2472,8 @@ final class WindowBrowserSlotView: NSView {
         guard needsFrameHosting else {
             needsLayout = true
             layoutSubtreeIfNeeded()
+            companionOverlayHost?.updateCoveredViews(companionCoveredViews())
+            refreshInteractionLayersAndFocus(reason: "hostedWebViewStable")
             return
         }
 
@@ -2006,6 +2490,8 @@ final class WindowBrowserSlotView: NSView {
         }
         needsLayout = true
         layoutSubtreeIfNeeded()
+        companionOverlayHost?.updateCoveredViews(companionCoveredViews())
+        refreshInteractionLayersAndFocus(reason: "hostedWebViewPinned")
     }
 
     private static func frameDiffersFromBounds(_ frame: NSRect, bounds: NSRect, epsilon: CGFloat = 0.5) -> Bool {
@@ -2036,8 +2522,11 @@ final class WindowBrowserSlotView: NSView {
     override func didAddSubview(_ subview: NSView) {
         super.didAddSubview(subview)
         onHierarchyChanged?(self)
+        if subview !== companionOverlayHost {
+            companionOverlayHost?.updateCoveredViews(companionCoveredViews())
+        }
         guard subview !== paneDropTargetView else { return }
-        bringInteractionLayersToFrontIfNeeded()
+        refreshInteractionLayersAndFocus(reason: "subviewAdded")
     }
 
     private var activeDropZone: DropZone? {
@@ -2058,7 +2547,7 @@ final class WindowBrowserSlotView: NSView {
     private func applyResolvedDropZoneOverlay() {
         let resolvedZone = activeDropZone
         if resolvedZone != nil, (bounds.width <= 2 || bounds.height <= 2) {
-            bringInteractionLayersToFrontIfNeeded()
+            refreshInteractionLayersAndFocus(reason: "dropZoneTiny")
             return
         }
 
@@ -2068,14 +2557,14 @@ final class WindowBrowserSlotView: NSView {
 
         guard let zone = resolvedZone else {
             guard !dropZoneOverlayView.isHidden else {
-                bringInteractionLayersToFrontIfNeeded()
+                refreshInteractionLayersAndFocus(reason: "dropZoneAlreadyHidden")
                 return
             }
 
             dropZoneOverlayAnimationGeneration &+= 1
             let animationGeneration = dropZoneOverlayAnimationGeneration
             dropZoneOverlayView.layer?.removeAllAnimations()
-            bringInteractionLayersToFrontIfNeeded()
+            refreshInteractionLayersAndFocus(reason: "dropZoneHiding")
 
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.14
@@ -2097,7 +2586,7 @@ final class WindowBrowserSlotView: NSView {
         let zoneChanged = previousZone != zone
 
         if !dropZoneOverlayView.isHidden && !needsFrameUpdate && !zoneChanged {
-            bringInteractionLayersToFrontIfNeeded()
+            refreshInteractionLayersAndFocus(reason: "dropZoneStable")
             return
         }
 
@@ -2108,7 +2597,7 @@ final class WindowBrowserSlotView: NSView {
             applyDropZoneOverlayFrame(targetFrame)
             dropZoneOverlayView.alphaValue = 0
             dropZoneOverlayView.isHidden = false
-            bringInteractionLayersToFrontIfNeeded()
+            refreshInteractionLayersAndFocus(reason: "dropZoneRevealing")
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.18
                 context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -2117,7 +2606,7 @@ final class WindowBrowserSlotView: NSView {
             return
         }
 
-        bringInteractionLayersToFrontIfNeeded()
+        refreshInteractionLayersAndFocus(reason: "dropZoneUpdated")
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.18
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -2131,11 +2620,14 @@ final class WindowBrowserSlotView: NSView {
     }
 
     private func interactionLayerPriority(of view: NSView) -> Int {
-        if view === paneDropTargetView { return 1 }
+        if view === searchOverlayHostingView { return 1 }
+        if view === companionOverlayHost { return 2 }
+        if view === paneDropTargetView { return 3 }
+        if view === paneInteractionOverlay { return 4 }
         return 0
     }
 
-    private func bringInteractionLayersToFrontIfNeeded() {
+    private func refreshInteractionLayersAndFocus(reason: String) {
         guard !isRefreshingInteractionLayers else { return }
         isRefreshingInteractionLayers = true
         defer { isRefreshingInteractionLayers = false }
@@ -2159,6 +2651,27 @@ final class WindowBrowserSlotView: NSView {
             if lhsPriority == rhsPriority { return .orderedSame }
             return lhsPriority < rhsPriority ? .orderedAscending : .orderedDescending
         }, context: context)
+
+        if let paneInteractionOverlay, !paneInteractionOverlay.isHidden {
+            _ = paneInteractionOverlay.requestKeyboardFocus(reason: "browserPortal.\(reason)")
+        } else {
+            _ = companionOverlayHost?.requestKeyboardFocus(reason: reason)
+        }
+    }
+
+    private func companionCoveredViews() -> [NSView] {
+        subviews.filter { view in
+            if view === hostedWebView { return true }
+            guard interactionLayerPriority(of: view) == 0 else { return false }
+            var stack = [view]
+            while let candidate = stack.popLast() {
+                if String(describing: type(of: candidate)).contains("WK") {
+                    return true
+                }
+                stack.append(contentsOf: candidate.subviews)
+            }
+            return false
+        }
     }
 
     private func applyDropZoneOverlayFrame(_ frame: CGRect) {
@@ -2217,6 +2730,7 @@ final class WindowBrowserPortal: NSObject {
         var dropZone: DropZone?
         var paneDropContext: BrowserPaneDropContext?
         var searchOverlay: BrowserPortalSearchOverlayConfiguration?
+        var companion: BrowserPortalCompanionConfiguration?
         var paneInteraction: BrowserPortalPaneInteractionConfiguration?
         var workspaceFrameStyle: PortalWorkspaceFrameStyle?
         var paneTopChromeHeight: CGFloat
@@ -2728,6 +3242,7 @@ final class WindowBrowserPortal: NSObject {
         if let existing = entry.containerView {
             existing.setPaneDropContext(entry.paneDropContext)
             existing.setSearchOverlay(entry.searchOverlay)
+            existing.setCompanion(entry.companion)
             existing.setPaneInteraction(entry.paneInteraction)
             existing.setPaneTopChromeHeight(entry.paneTopChromeHeight)
             return existing
@@ -2735,6 +3250,7 @@ final class WindowBrowserPortal: NSObject {
         let created = WindowBrowserSlotView(frame: .zero)
         created.setPaneDropContext(entry.paneDropContext)
         created.setSearchOverlay(entry.searchOverlay)
+        created.setCompanion(entry.companion)
         created.setPaneInteraction(entry.paneInteraction)
         created.setPaneTopChromeHeight(entry.paneTopChromeHeight)
 #if DEBUG
@@ -2954,6 +3470,7 @@ final class WindowBrowserPortal: NSObject {
             "hadContainerSuperview=\(hadContainerSuperview) hadWebSuperview=\(hadWebSuperview)"
         )
 #endif
+        entry.containerView?.setCompanion(nil)
         entry.webView?.browserPortalNotifyHidden(reason: "detach")
         entry.webView?.removeFromSuperview()
         entry.containerView?.removeFromSuperview()
@@ -3022,6 +3539,31 @@ final class WindowBrowserPortal: NSObject {
         entry.searchOverlay = configuration
         entriesByWebViewId[webViewId] = entry
         entry.containerView?.setSearchOverlay(configuration)
+    }
+
+    func updateCompanion(
+        forWebViewId webViewId: ObjectIdentifier,
+        configuration: BrowserPortalCompanionConfiguration?
+    ) {
+        guard var entry = entriesByWebViewId[webViewId] else { return }
+        let searchOverlayToClose: BrowserPortalSearchOverlayConfiguration?
+        if configuration?.state.blocksWebContent == true,
+           let searchOverlay = entry.searchOverlay {
+            entry.searchOverlay = nil
+            searchOverlayToClose = searchOverlay
+        } else {
+            searchOverlayToClose = nil
+        }
+        entry.companion = configuration
+        entriesByWebViewId[webViewId] = entry
+        if let containerView = entriesByWebViewId[webViewId]?.containerView {
+            // Let the slot close/yield its live search overlay so it can carry
+            // a same-pane focus claim into the veil without stealing focus
+            // from unrelated panes.
+            containerView.setCompanion(configuration)
+        } else {
+            searchOverlayToClose?.onClose()
+        }
     }
 
     func updatePaneInteraction(
@@ -3109,6 +3651,7 @@ final class WindowBrowserPortal: NSObject {
                 dropZone: nil,
                 paneDropContext: nil,
                 searchOverlay: nil,
+                companion: nil,
                 paneInteraction: nil,
                 workspaceFrameStyle: nil,
                 paneTopChromeHeight: 0,
@@ -3147,6 +3690,7 @@ final class WindowBrowserPortal: NSObject {
             dropZone: previousEntry?.dropZone,
             paneDropContext: previousEntry?.paneDropContext,
             searchOverlay: previousEntry?.searchOverlay,
+            companion: previousEntry?.companion,
             paneInteraction: previousEntry?.paneInteraction,
             workspaceFrameStyle: previousEntry?.workspaceFrameStyle,
             paneTopChromeHeight: previousEntry?.paneTopChromeHeight ?? 0,
@@ -3379,6 +3923,7 @@ final class WindowBrowserPortal: NSObject {
         func hideContainerView(reason: String) {
             containerView.setPaneTopChromeHeight(0)
             containerView.setSearchOverlay(nil)
+            containerView.setCompanion(nil)
             containerView.setPaneDropContext(nil)
             containerView.setPortalDragDropZone(nil)
             containerView.setDropZoneOverlay(zone: nil)
@@ -3783,6 +4328,7 @@ final class WindowBrowserPortal: NSObject {
         }
         containerView.setPaneTopChromeHeight(shouldHide ? 0 : entry.paneTopChromeHeight)
         containerView.setSearchOverlay(shouldHide ? nil : entry.searchOverlay)
+        containerView.setCompanion(shouldHide ? nil : entry.companion)
         // Re-raise the pane-interaction overlay above the WKWebView the portal just
         // re-added during this sync pass. The overlay host observes the runtime
         // itself — we only need to ensure it stays on top of the z-order.
@@ -4119,6 +4665,16 @@ enum BrowserWindowPortalRegistry {
         guard let windowId = webViewToWindowId[webViewId],
               let portal = portalsByWindowId[windowId] else { return }
         portal.updateSearchOverlay(forWebViewId: webViewId, configuration: configuration)
+    }
+
+    static func updateCompanion(
+        for webView: WKWebView,
+        configuration: BrowserPortalCompanionConfiguration?
+    ) {
+        let webViewId = ObjectIdentifier(webView)
+        guard let windowId = webViewToWindowId[webViewId],
+              let portal = portalsByWindowId[windowId] else { return }
+        portal.updateCompanion(forWebViewId: webViewId, configuration: configuration)
     }
 
     static func updatePaneInteraction(

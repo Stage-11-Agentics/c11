@@ -86,4 +86,45 @@ final class AgentDetectorTests: XCTestCase {
             AgentDetector.classify(comm: "node", args: "node /Users/me/pi/app/server.js"),
             "unknown")
     }
+
+    // MARK: - Python-shebang shims
+
+    /// kimi installs as a pipx/venv console script whose shebang points at the
+    /// venv python, so the kernel execs the interpreter: comm=`python` with the
+    /// script path in argv. The Python interpreter branch + `/kimi` substring
+    /// (and the basename rail) classify it — previously it fell through to
+    /// `unknown` because only node/bun/deno were treated as interpreters.
+    func testClassifyPythonShimKimiReturnsKimi() {
+        XCTAssertEqual(
+            AgentDetector.classify(comm: "python", args: "python /Users/atin/.local/bin/kimi"),
+            "kimi")
+    }
+
+    /// Versioned interpreter comm (`python3.13`, a venv symlink) still counts as
+    /// a Python runtime via the `python` prefix match.
+    func testClassifyVersionedPythonShimKimiReturnsKimi() {
+        XCTAssertEqual(
+            AgentDetector.classify(
+                comm: "python3.13",
+                args: "python3.13 /Users/atin/.local/pipx/venvs/kimi-cli/bin/kimi"),
+            "kimi")
+    }
+
+    /// An unrelated Python process must not be misclassified as an agent.
+    func testClassifyUnrelatedPythonProcessReturnsUnknown() {
+        XCTAssertEqual(
+            AgentDetector.classify(comm: "python", args: "python /Users/me/project/manage.py runserver"),
+            "unknown")
+    }
+
+    // MARK: - Native binary comms for wrapper-less agents
+
+    /// grok / opencode ship as native binaries (no runtime wrapper), so the
+    /// foreground comm is the agent name itself and the direct comm table
+    /// classifies them. These are the agents whose detection depended on the
+    /// TTY reaching AgentDetector (fixed in the report_tty workspace resolution).
+    func testClassifyNativeGrokAndOpencode() {
+        XCTAssertEqual(AgentDetector.classify(comm: "grok", args: "grok --always-approve"), "grok")
+        XCTAssertEqual(AgentDetector.classify(comm: "opencode", args: "opencode"), "opencode")
+    }
 }

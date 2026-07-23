@@ -8495,16 +8495,29 @@ class TerminalController {
 
         if let scope = Self.explicitSocketScope(options: parsed.options) {
             DispatchQueue.main.async {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
-                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
+                // C11-171 (extended to report_tty): resolve the workspace from the
+                // PANEL, never from `--tab`. Shell integration sends the surface
+                // uuid in `--tab` (a legacy alias — see GhosttyTerminalView env
+                // injection), so trusting it makes `tabManagerFor` miss and this
+                // registration silently no-op while still returning "OK". That left
+                // every wrapper-less agent (grok/opencode/kimi/pi/omp) unclassified
+                // and port scanning unregistered for these surfaces. The
+                // shell-activity path already resolves panel→workspace this way.
+                guard let app = AppDelegate.shared,
+                      let located = app.workspaceContainingPanel(
+                          panelId: scope.panelId,
+                          preferredWorkspaceId: scope.workspaceId
+                      ) else {
                     return
                 }
+                let tab = located.workspace
+                let workspaceId = tab.id
                 let validSurfaceIds = Set(tab.panels.keys)
                 tab.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
                 guard validSurfaceIds.contains(scope.panelId) else { return }
                 tab.surfaceTTYNames[scope.panelId] = ttyName
-                PortScanner.shared.registerTTY(workspaceId: scope.workspaceId, panelId: scope.panelId, ttyName: ttyName)
-                AgentDetector.shared.registerTTY(workspaceId: scope.workspaceId, panelId: scope.panelId, ttyName: ttyName)
+                PortScanner.shared.registerTTY(workspaceId: workspaceId, panelId: scope.panelId, ttyName: ttyName)
+                AgentDetector.shared.registerTTY(workspaceId: workspaceId, panelId: scope.panelId, ttyName: ttyName)
                 // C11-25 fix DoD #5: install a Sendable PID provider so
                 // the per-surface CPU/MEM sampler can attribute usage to
                 // the foreground process running on this tty (typically

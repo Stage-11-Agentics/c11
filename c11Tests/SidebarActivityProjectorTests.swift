@@ -88,4 +88,56 @@ final class SidebarActivityProjectorTests: XCTestCase {
         )
         XCTAssertEqual(pill?.isDerived, true)
     }
+
+    // MARK: - Workspace Pulse rollup
+
+    func testWorkspacePulsePreservesCountsAndUsesDemandPrecedence() {
+        let summary = WorkspacePulseProjector.project(
+            hasWorkspaceDemand: true,
+            surfaceStates: [.waiting, .working, .working, .idle, .cold]
+        )
+
+        XCTAssertEqual(summary.dominant, .waiting)
+        XCTAssertEqual(summary.waitingCount, 1)
+        XCTAssertEqual(summary.workingCount, 2)
+        XCTAssertEqual(summary.idleCount, 1)
+        XCTAssertEqual(summary.coldCount, 1)
+    }
+
+    func testWorkspacePulseRepresentsSurfaceLessDemandWithoutInventingAgentCounts() {
+        let summary = WorkspacePulseProjector.project(
+            hasWorkspaceDemand: true,
+            surfaceStates: [.working, .idle]
+        )
+
+        XCTAssertEqual(summary.dominant, .waiting)
+        XCTAssertEqual(summary.waitingCount, 1)
+        XCTAssertEqual(summary.workingCount, 1)
+        XCTAssertEqual(summary.idleCount, 1)
+        XCTAssertEqual(summary.coldCount, 0)
+    }
+
+    func testWorkspacePulseFallsThroughWorkingIdleAndCold() {
+        XCTAssertEqual(
+            WorkspacePulseProjector.project(
+                hasWorkspaceDemand: false,
+                surfaceStates: [.working, .idle, .cold]
+            ).dominant,
+            .working
+        )
+        XCTAssertEqual(
+            WorkspacePulseProjector.project(
+                hasWorkspaceDemand: false,
+                surfaceStates: [.idle, .cold]
+            ).dominant,
+            .idle
+        )
+        XCTAssertEqual(
+            WorkspacePulseProjector.project(
+                hasWorkspaceDemand: false,
+                surfaceStates: []
+            ).dominant,
+            .cold
+        )
+    }
 }

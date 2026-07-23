@@ -12,6 +12,60 @@ public enum SidebarActivityState: String {
     case idle
 }
 
+/// Visual rollup states for a workspace sidebar card. This is deliberately a
+/// presentation projection over the existing per-surface liveness and
+/// notification truth; it is not a new metadata or persistence state.
+enum WorkspacePulseState: String, CaseIterable {
+    case waiting
+    case working
+    case idle
+    case cold
+}
+
+struct WorkspacePulseSummary: Equatable {
+    let waitingCount: Int
+    let workingCount: Int
+    let idleCount: Int
+    let coldCount: Int
+
+    var dominant: WorkspacePulseState {
+        if waitingCount > 0 { return .waiting }
+        if workingCount > 0 { return .working }
+        if idleCount > 0 { return .idle }
+        return .cold
+    }
+
+    func count(for state: WorkspacePulseState) -> Int {
+        switch state {
+        case .waiting: return waitingCount
+        case .working: return workingCount
+        case .idle: return idleCount
+        case .cold: return coldCount
+        }
+    }
+}
+
+enum WorkspacePulseProjector {
+    /// Rolls exact agent-surface states up with workspace-level operator
+    /// demand. A surface-less notification still makes the workspace demand
+    /// attention, represented as one waiting item without inventing an agent.
+    static func project(
+        hasWorkspaceDemand: Bool,
+        surfaceStates: [WorkspacePulseState]
+    ) -> WorkspacePulseSummary {
+        var waiting = surfaceStates.filter { $0 == .waiting }.count
+        if hasWorkspaceDemand && waiting == 0 {
+            waiting = 1
+        }
+        return WorkspacePulseSummary(
+            waitingCount: waiting,
+            workingCount: surfaceStates.filter { $0 == .working }.count,
+            idleCount: surfaceStates.filter { $0 == .idle }.count,
+            coldCount: surfaceStates.filter { $0 == .cold }.count
+        )
+    }
+}
+
 /// The single pill the sidebar status region should render for a row, after
 /// reconciling an (optional) explicit agent-reported status against the
 /// (optional) derived activity fallback.

@@ -8560,19 +8560,6 @@ struct VerticalTabsSidebar: View {
                                     isActive: isActive,
                                     isMultiSelected: isMultiSelected
                                 )
-                                let agentChip: AgentChip? = {
-                                    guard let focusedId = tab.focusedPanelId else {
-                                        return nil
-                                    }
-                                    let (values, sources) = TerminalController.canonicalMetadataSnapshot(
-                                        workspaceId: tab.id, surfaceId: focusedId
-                                    )
-                                    return AgentChipResolver.resolve(
-                                        focusedSurfaceId: focusedId,
-                                        metadata: values,
-                                        sources: sources
-                                    )
-                                }()
                                 // C11-104 v2: precompute worktree+branch
                                 // chips for the focused surface. Reads the
                                 // resolver output directly from the
@@ -8646,7 +8633,6 @@ struct VerticalTabsSidebar: View {
                                     tab: tab,
                                     index: index,
                                     isActive: isActive,
-                                    agentChip: agentChip,
                                     worktreeChipRows: worktreeChipRows,
                                     surfaceMetricsSample: surfaceMetricsSample,
                                     workspaceShortcutDigit: WorkspaceShortcutMapper.commandDigitForWorkspace(
@@ -11299,7 +11285,6 @@ private struct TabItemView: View, Equatable {
         lhs.tab === rhs.tab &&
         lhs.index == rhs.index &&
         lhs.isActive == rhs.isActive &&
-        lhs.agentChip == rhs.agentChip &&
         lhs.worktreeChipRows == rhs.worktreeChipRows &&
         TabItemView.surfaceMetricsEqual(lhs.surfaceMetricsSample, rhs.surfaceMetricsSample) &&
         lhs.workspaceShortcutDigit == rhs.workspaceShortcutDigit &&
@@ -11364,7 +11349,6 @@ private struct TabItemView: View, Equatable {
     @ObservedObject var tab: Tab
     let index: Int
     let isActive: Bool
-    let agentChip: AgentChip?
     /// C11-104: precomputed worktree/branch chip rows for the focused
     /// surface. Empty when the setting is disabled or the surface is
     /// not in a git directory. Keeping the projection upstream means
@@ -11974,28 +11958,17 @@ private struct TabItemView: View, Equatable {
 
             workspacePulseRow
 
-            if agentChip != nil, !isMinimalMode {
-                HStack(spacing: 4) {
-                    AgentChipBadge(
-                        chip: agentChip,
-                        showsLabel: !isMinimalMode,
-                        foreground: activeSecondaryColor(0.78),
-                        secondary: activeSecondaryColor(0.68)
-                    )
+            // C11-25: preserve the focused surface's CPU/RSS reading without
+            // the legacy focused-agent identity badge. Workspace Pulse owns
+            // agent state and identity in this card.
+            if let sample = surfaceMetricsSample {
+                HStack {
                     Spacer(minLength: 0)
-                    // C11-25: per-surface CPU/RSS rendered next to the
-                    // agent chip when a sample is available. Terminal
-                    // PID resolution is a follow-up; terminals show no
-                    // metrics until that lands. Format keeps the row
-                    // narrow: integer percent + integer MB or 1-decimal
-                    // GB. Equality in `==` is rounded for stability.
-                    if let sample = surfaceMetricsSample {
-                        Text(TabItemView.formatSurfaceMetrics(sample))
-                            .font(.system(size: 9, design: .monospaced))
-                            .monospacedDigit()
-                            .foregroundColor(activeSecondaryColor(0.55))
-                            .accessibilityIdentifier("SidebarTabSurfaceMetrics")
-                    }
+                    Text(TabItemView.formatSurfaceMetrics(sample))
+                        .font(.system(size: 9, design: .monospaced))
+                        .monospacedDigit()
+                        .foregroundColor(activeSecondaryColor(0.55))
+                        .accessibilityIdentifier("SidebarTabSurfaceMetrics")
                 }
                 .padding(.top, 1)
             }

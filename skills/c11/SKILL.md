@@ -20,7 +20,9 @@ Refs accept UUIDs, short refs, or indexes: `workspace:1`, `pane:2`, `surface:3`,
 
 ## Boot fast, orient lazily
 
-c11 stamps your launch identity itself: the sidebar chip (agent type from process detection, plus the pinned model) and a placeholder **"Awaiting first task"** title are set the moment you launch, with no action from you. There is nothing you must run just to be identified — don't spend the operator's time on a mechanical identity ritual.
+**Codex: capture your exact thread before other orientation work.** From one of your own tool subprocesses, run `c11 conversation capture-runtime` with no arguments. It reads `CODEX_THREAD_ID`, the agreeing `C11_SURFACE_ID` / `CMUX_SURFACE_ID` aliases, and the subprocess's actual cwd itself. Never expand, copy, relay, or add those values as flags; an orchestrator cannot truthfully capture a child agent's runtime identity on its behalf.
+
+c11 stamps your sidebar identity itself: the agent-type/model chip and a placeholder **"Awaiting first task"** title are set the moment you launch. Apart from Codex's conversation capture above, there is no mechanical identity ritual to spend the operator's time on.
 
 **You'll usually load this skill because a task arrived** that touches the workspace (a split, a status report, a browser check). When that happens, orient in place and keep moving — at minimal effort, no per-command deliberation:
 

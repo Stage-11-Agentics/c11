@@ -15,7 +15,8 @@ Surface ──hosts──▶ Conversation ──interpreted-by──▶ Conversa
 ## CLI verbs
 
 ```
-c11 conversation claim --kind <k> [--cwd <path>] [--id <id>]
+c11 conversation capture-runtime
+c11 conversation claim --kind <k> [--cwd <path>] [--id <id>] [--ttl-ms <n>]
 c11 conversation push --kind <k> --id <id> --source <hook|scrape|manual>
                       [--state <alive|suspended|tombstoned|unknown|ended>]
                       [--cwd <path>] [--reason <text>]
@@ -28,8 +29,9 @@ c11 conversation clear [--surface <id>]
 
 | Verb | Use |
 |------|-----|
-| `claim` | Wrapper-claim: mint a placeholder ref. Idempotent and conservative — never displaces a real id captured by hook/scrape. |
-| `push` | Hook or operator push of the real id. Source priority: `hook > scrape > manual > wrapperClaim`. |
+| `capture-runtime` | Codex-only exact capture. Run from the target agent's own tool subprocess with no arguments; reads `CODEX_THREAD_ID`, agreeing c11 surface aliases, and actual cwd from that process. |
+| `claim` | Wrapper-claim: mint a placeholder ref. Idempotent and conservative — never displaces a real id captured by a stronger source. |
+| `push` | Hook or operator push of the real id. Source priority within evidence tiers: `runtimeEnv > hook > scrape > manual > wrapperClaim`. |
 | `tombstone` | Mark the surface's active ref as tombstoned. Operator-initiated; not auto-resumable. |
 | `list` | List captured conversations (process-wide; v1 has no per-workspace partitioning). Filter with `--surface`. `--json` for structured output. |
 | `get` | Inspect the active ref + `can_resume` + `diagnostic_reason` for a surface. The debugging entry point. |
@@ -38,6 +40,10 @@ c11 conversation clear [--surface <id>]
 **Surface resolution.** Every verb resolves `--surface` from `CMUX_SURFACE_ID` if unset. **No focused-surface fallback** (the silent-misroute footgun the architecture exists to avoid). If the env var is missing and no flag was given, the command errors out with `missing_surface`.
 
 **`--payload`** accepts inline JSON or `@<path>` to read JSON from a file (mirrors the `HOOKS_FILE` ergonomics in `Resources/bin/claude` so hook authors writing bash do not have to shell-quote JSON).
+
+**Codex runtime capture has no identity flags.** `capture-runtime` rejects every argument, alias disagreement, malformed/missing environment identity, stale/non-terminal/non-live surfaces, and surfaces not owned by the addressed c11 socket instance. This is cooperative causal evidence from the target process, not an adversarial authentication boundary. Orchestrators must instruct each Codex agent to run the command itself; they must not expand or relay a child thread ID.
+
+**State verification requires a recovery mode.** Use `c11 state verify --mode clean|dirty|no-resume [snapshot-path]`. The mode is explicit because a snapshot path cannot reveal the app's sentinel/relaunch policy. Clean evaluates persisted exact ownership; dirty additionally requires bounded on-disk transcript evidence (including exact Codex lookup across the 512 newest rollout metadata entries); no-resume always reports a policy skip.
 
 ## Lifecycle states
 
@@ -53,19 +59,20 @@ c11 conversation clear [--surface <id>]
 
 | Source | When written |
 |--------|--------------|
-| `hook` | Push from a TUI lifecycle hook (e.g. Claude Code SessionStart). Highest priority. |
+| `hook` | Push from a TUI lifecycle hook (e.g. Claude Code SessionStart). Causal evidence. |
+| `runtimeEnv` | Exact identity read by the target agent's own tool subprocess. Codex uses `CODEX_THREAD_ID`; causal and sticky against inferred wrapper/scrape observations. |
 | `scrape` | Pull from on-disk session storage (`~/.claude/projects/<cwd-slug>/`, `~/.codex/sessions/`, `~/.pi/agent/sessions/<cwd-slug>/`, `~/.omp/agent/sessions/<cwd-slug>/`). Resolves a placeholder to a real id at restore. |
 | `manual` | Explicit operator action (`c11 conversation push --source manual`). |
-| `wrapperClaim` | Background claim from a TUI wrapper at launch. Lowest priority — never displaces a non-wrapperClaim source. |
+| `wrapperClaim` | Expiry-bounded synchronous Codex launch claim (legacy wrappers may still use best-effort claims). Lowest priority — never displaces a non-wrapperClaim source. |
 
-Reconciliation rule: latest `capturedAt` wins; on close timestamps, source priority breaks the tie. Wrapper-claims are conservative: they never displace a non-wrapperClaim source regardless of timestamp.
+Reconciliation first respects evidence strength: causal `runtimeEnv`/hook identity cannot be displaced by inferred scrape/manual observations or wrapper placeholders. Conflicting causal ownership is quarantined rather than timestamp-won. Within an evidence tier, timestamp and source priority reconcile updates. Wrapper-claims never displace a non-wrapperClaim source.
 
 ## Strategies
 
 | Kind | Resume tier | Capture | Resume action |
 |------|-------------|---------|---------------|
 | `claude-code` | Strong (push-id deterministic) | SessionStart hook → `c11 conversation push`. Pull-scrape `~/.claude/projects/<cwd-slug>/` is the fallback when the hook was missed. | `claude --dangerously-skip-permissions --resume <id>` (id shell-quoted) |
-| `codex` | Exact, ambiguity-aware | Wrapper-claim placeholder → `CodexScraper` resolves the real id from `~/.codex/sessions/` at restore, filtered by **real cwd** (recovered from the rollout header, see below) + claim-time + activity floors. | `codex resume <id>` (specific id; never `--last`) |
+| `codex` | Exact, causal | Wrapper creates an expiry-bounded placeholder before launch. The running target executes `capture-runtime`, which records its exact `CODEX_THREAD_ID`. `CodexScraper` remains a conservative crash fallback when causal capture was missed. | `codex resume <id>` (specific id; never `--last`) |
 | `pi` | Exact, ambiguity-aware | Wrapper-claim placeholder → `PiScraper` resolves the real id from the cwd slug dir, claim-time + activity floors narrowing past stale sessions. | `pi --session '<id>'` (specific id) |
 | `omp` | Exact, ambiguity-aware | Wrapper-claim placeholder → `OmpScraper` resolves the real id from the cwd slug dir, claim-time + activity floors. | `omp --resume='<id>'` (specific id) |
 | `opencode` | Push (plugin rail) | Plugin-emitted push of the real id. No scraper in the pull registry. | `cd '<dir>' && opencode -s <id>` — `.skip` for placeholders |
@@ -92,7 +99,7 @@ The contract: after a crash, **every conversation either resumes exactly per its
 Codex stores sessions flat (`~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`), not under a per-cwd directory, so the filename can't say which pane a session belongs to. `CodexScraper` therefore does a **bounded, allowlisted** read of each candidate's first JSONL line and extracts only `payload.cwd` (byte-capped; no transcript content read or logged, per the scrape privacy contract). The strategy then keeps only candidates whose recovered cwd matches the surface's cwd:
 
 - **Distinct-cwd codex panes** each match only their own session → each resumes cleanly.
-- **Two codex panes in the same cwd** (genuinely indistinguishable) → `state = .unknown`, `diagnostic_reason = "ambiguous: N candidates; chose newest"`, `resume()` returns `.skip("ambiguous")`. Neither pane resumes the other's session; clear with `c11 conversation clear --surface <id>` to force a fresh launch. This is the correct, honest behaviour — the ambiguity policy the store was built for.
+- **Two codex panes in the same cwd without causal capture** are genuinely indistinguishable to the scraper. Every inferred owner is quarantined and `resume()` skips rather than timestamp-picking. Distinct `runtimeEnv` refs remain independently resumable even when their cwd is identical. Clear an ambiguous ref with `c11 conversation clear --surface <id>` to force a fresh launch.
 
 The per-surface **activity floor** (`SurfaceActivityTracker`, persisted in the snapshot) gives the codex/pi/omp filters a lower `mtime` bound that survives a restart, so stale sessions in a shared cwd are excluded rather than widening the candidate set into spurious ambiguity.
 
@@ -101,7 +108,9 @@ The per-surface **activity floor** (`SurfaceActivityTracker`, persisted in the s
 ```bash
 # Pseudo-shape; real wrappers stay bash. See Resources/bin/{claude,codex,pi,omp}.
 1. Detect c11 environment (CMUX_SURFACE_ID + live socket). Pass through if absent.
-2. c11 conversation claim --kind <my-kind> --cwd "$PWD" >/dev/null 2>&1 &
+2. For Codex, synchronously run `conversation claim ... --ttl-ms <short-bound>`.
+   The server checks the absolute expiry at the store mutation boundary.
+   Continue only after an acknowledged commit or an expired/failed no-op.
 3. (For TUIs with hooks: inject the necessary flags so hooks fire `c11 conversation push`.)
 4. exec "$REAL_TUI" "$@"
 ```
@@ -112,6 +121,8 @@ Constraints (CLAUDE.md "unopinionated about the terminal"):
 2. **No persistent writes** to tenant config (`~/.claude/settings.json`, `~/.codex/*`, dotfiles, …).
 3. Capture only the minimum needed for resume.
 4. Best-effort: failures never block TUI launch.
+
+Codex `SessionStart` hook injection is intentionally not used. Outside managed environments Codex requires trusted hook configuration, and bypassing trust would weaken the pass-through safety contract. The runtime-environment command plus the bounded wrapper fallback provides the capture rail without writing tenant config or making launch depend on hook trust.
 
 ## Diagnostic recipes
 
@@ -136,7 +147,7 @@ c11 conversation list --json | jq -r '.conversations[]
 # honest skips read `unknown` + "…transcript not found" / "ambiguous: N candidates".
 
 # Dry-run the resume decision for a saved snapshot without launching (test oracle)
-c11 state verify
+c11 state verify --mode dirty
 ```
 
 ## Landed (Truth & Stability cycle, C11-131 + C11-151..154 + C11-164)

@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+"""Behavioral parity checks for explicit state-verify recovery modes."""
+
+from __future__ import annotations
+
+import glob
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+import uuid
+from pathlib import Path
+
+
+def resolve_c11_cli() -> str:
+    explicit = os.environ.get("C11_CLI_BIN") or os.environ.get("CMUX_CLI_BIN")
+    if explicit and os.path.isfile(explicit) and os.access(explicit, os.X_OK):
+        return explicit
+    candidates = glob.glob(os.path.expanduser(
+        "~/Library/Developer/Xcode/DerivedData/*/Build/Products/Debug/c11"
+    ))
+    candidates = [path for path in candidates if os.access(path, os.X_OK)]
+    if candidates:
+        return max(candidates, key=os.path.getmtime)
+    found = shutil.which("c11")
+    if found:
+        return found
+    raise RuntimeError("Unable to find c11 CLI binary; set C11_CLI_BIN")
+
+
+def snapshot(path: Path, refs: list[dict]) -> None:
+    panels = []
+    for index, ref in enumerate(refs):
+        panels.append({
+            "id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"surface-{index}")),
+            "type": "terminal",
+            "surface_conversations": {"active": ref, "history": []},
+        })
+    path.write_text(json.dumps({
+        "windows": [{"tabManager": {"workspaces": [{"panels": panels}]}}],
+    }), encoding="utf-8")
+
+
+def run(
+    cli: str,
+    sessions_root: Path,
+    path: Path,
+    mode: str | None,
+    *,
+    qa_gate: bool = True,
+) -> subprocess.CompletedProcess:
+    args = [cli, "--json", "state", "verify"]
+    if mode is not None:
+        args += ["--mode", mode]
+    args.append(str(path))
+    env = os.environ.copy()
+    for key in ("C11_TAG", "CMUX_TAG", "C11_QA_LAUNCH"):
+        env.pop(key, None)
+    env.update({
+        "C11_QA_CODEX_SESSIONS_ROOT": str(sessions_root),
+        "CMUX_CLI_SENTRY_DISABLED": "1",
+    })
+    if qa_gate:
+        env["C11_TAG"] = "c11-206-state-verify-test"
+    return subprocess.run(args, env=env, capture_output=True, text=True, timeout=5, check=False)
+
+
+def expect(condition: bool, message: str, failures: list[str]) -> None:
+    if not condition:
+        failures.append(message)
+
+
+def payload(proc: subprocess.CompletedProcess) -> dict:
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return {}
+
+
+def main() -> int:
+    failures: list[str] = []
+    try:
+        cli = resolve_c11_cli()
+    except RuntimeError as exc:
+        print(f"FAIL: {exc}")
+        return 1
+
+    with tempfile.TemporaryDirectory(prefix="c11-state-verify-modes-") as raw_tmp:
+        tmp = Path(raw_tmp)
+        sessions_root = tmp / "sessions"
+        sessions_root.mkdir()
+        path = tmp / "snapshot.json"
+        codex_id = str(uuid.uuid4())
+        exact_ref = {
+            "kind": "codex", "id": codex_id, "placeholder": False,
+            "state": "suspended", "cwd": "/work/project",
+            "capturedVia": "runtimeEnv",
+        }
+        snapshot(path, [exact_ref])
+
+        omitted = run(cli, sessions_root, path, None)
+        expect(omitted.returncode != 0 and "requires --mode" in omitted.stderr, f"missing mode was accepted: {omitted.stderr}", failures)
+
+        clean = run(cli, sessions_root, path, "clean")
+        clean_payload = payload(clean)
+        expect(clean.returncode == 0 and clean_payload.get("mode") == "clean", f"clean mode failed: {clean.stderr} {clean.stdout}", failures)
+        clean_panel = (clean_payload.get("panels") or [{}])[0]
+        expect(clean_panel.get("action") == f"codex resume '{codex_id}'", f"clean mode did not emit exact command: {clean_panel}", failures)
+
+        dirty_missing = run(cli, sessions_root, path, "dirty")
+        missing_panel = (payload(dirty_missing).get("panels") or [{}])[0]
+        expect(dirty_missing.returncode != 0 and missing_panel.get("skip_code") == "transcript-missing", f"dirty missing transcript did not skip: {missing_panel}", failures)
+
+        rollout = sessions_root / "2026" / "07" / "22"
+        rollout.mkdir(parents=True)
+        target = rollout / f"rollout-2026-07-22T00-00-00-{codex_id}.jsonl"
+        target.touch()
+        os.utime(target, (1_000, 1_000))
+        # Prove exact verification is not the assignment rail's old top-16:
+        # the target is the 21st-newest metadata entry and must still resolve.
+        decoys: list[Path] = []
+        for index in range(20):
+            decoy = rollout / f"rollout-newer-{index}-{uuid.uuid4()}.jsonl"
+            decoy.touch()
+            os.utime(decoy, (2_000 + index, 2_000 + index))
+            decoys.append(decoy)
+        override_without_gate = run(cli, sessions_root, path, "dirty", qa_gate=False)
+        override_without_gate_panel = (payload(override_without_gate).get("panels") or [{}])[0]
+        expect(
+            override_without_gate.returncode != 0
+            and override_without_gate_panel.get("skip_code") == "transcript-missing",
+            f"untagged CLI honored the QA Codex sessions override: {override_without_gate_panel}",
+            failures,
+        )
+        dirty_present = run(cli, sessions_root, path, "dirty")
+        present_panel = (payload(dirty_present).get("panels") or [{}])[0]
+        expect(dirty_present.returncode == 0 and present_panel.get("action") == f"codex resume '{codex_id}'", f"dirty exact transcript did not resume: {present_panel}", failures)
+
+        no_resume = run(cli, sessions_root, path, "no-resume")
+        no_resume_payload = payload(no_resume)
+        no_resume_panel = (no_resume_payload.get("panels") or [{}])[0]
+        expect(no_resume.returncode != 0 and no_resume_payload.get("mode") == "no-resume" and no_resume_panel.get("skip_code") == "policy-no-resume", f"no-resume policy failed: {no_resume_panel}", failures)
+
+        # The app and CLI both cap exact metadata discovery at 512 newest
+        # entries. Push the target to rank 513 and prove the bound fails closed.
+        for index in range(20, 512):
+            decoy = rollout / f"rollout-newer-{index}-{uuid.uuid4()}.jsonl"
+            decoy.touch()
+            os.utime(decoy, (2_000 + index, 2_000 + index))
+        dirty_beyond_bound = run(cli, sessions_root, path, "dirty")
+        bounded_panel = (payload(dirty_beyond_bound).get("panels") or [{}])[0]
+        expect(dirty_beyond_bound.returncode != 0 and bounded_panel.get("skip_code") == "transcript-missing", f"Codex exact lookup exceeded its 512-entry bound: {bounded_panel}", failures)
+
+        snapshot(path, [exact_ref, exact_ref])
+        duplicate = run(cli, sessions_root, path, "clean")
+        duplicate_panels = payload(duplicate).get("panels") or []
+        expect(duplicate.returncode != 0 and len(duplicate_panels) == 2 and all(row.get("skip_code") == "duplicate-ownership" for row in duplicate_panels), f"duplicate exact ownership was not quarantined: {duplicate_panels}", failures)
+
+        inferred_duplicate = dict(exact_ref)
+        inferred_duplicate["capturedVia"] = "scrape"
+        snapshot(path, [exact_ref, inferred_duplicate])
+        causal_wins = run(cli, sessions_root, path, "clean")
+        causal_wins_panels = payload(causal_wins).get("panels") or []
+        expect(
+            causal_wins.returncode != 0
+            and len(causal_wins_panels) == 2
+            and causal_wins_panels[0].get("action") == f"codex resume '{codex_id}'"
+            and causal_wins_panels[1].get("skip_code") == "duplicate-ownership",
+            f"sole causal duplicate owner did not displace inferred owner: {causal_wins_panels}",
+            failures,
+        )
+
+        scrape_refs = [
+            {
+                "kind": "codex", "id": str(uuid.uuid4()), "placeholder": False,
+                "state": "suspended", "cwd": "/work/shared/../shared",
+                "captured_via": "scrape",
+            },
+            {
+                "kind": "codex", "id": str(uuid.uuid4()), "placeholder": False,
+                "state": "suspended", "cwd": "/work/shared",
+                "capturedVia": "scrape",
+            },
+        ]
+        snapshot(path, scrape_refs)
+        inferred_same_cwd = run(cli, sessions_root, path, "clean")
+        inferred_same_cwd_panels = payload(inferred_same_cwd).get("panels") or []
+        expect(
+            inferred_same_cwd.returncode != 0
+            and len(inferred_same_cwd_panels) == 2
+            and all(row.get("skip_code") == "ambiguous-ownership" for row in inferred_same_cwd_panels),
+            f"noncausal same-cwd Codex owners were not all ambiguous: {inferred_same_cwd_panels}",
+            failures,
+        )
+
+        causal_same_cwd_refs = [
+            {
+                "kind": "codex", "id": str(uuid.uuid4()), "placeholder": False,
+                "state": "suspended", "cwd": "/work/shared",
+                "capturedVia": "runtimeEnv",
+            },
+            {
+                "kind": "codex", "id": str(uuid.uuid4()), "placeholder": False,
+                "state": "suspended", "cwd": "/work/shared",
+                "captured_via": "runtimeEnv",
+            },
+        ]
+        snapshot(path, causal_same_cwd_refs)
+        causal_same_cwd = run(cli, sessions_root, path, "clean")
+        causal_same_cwd_panels = payload(causal_same_cwd).get("panels") or []
+        expect(
+            causal_same_cwd.returncode == 0
+            and len(causal_same_cwd_panels) == 2
+            and all(row.get("would_resume") is True for row in causal_same_cwd_panels),
+            f"distinct causal same-cwd Codex owners were not eligible: {causal_same_cwd_panels}",
+            failures,
+        )
+
+    if failures:
+        print("FAIL: state verify recovery modes")
+        for failure in failures:
+            print(f"- {failure}")
+        return 1
+    print("PASS: state verify requires an explicit mode and shares exact Codex decisions")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

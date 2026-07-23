@@ -12,6 +12,8 @@ extension TerminalController {
     /// Byte-identical routing and wire responses to the original processV2Command cases.
     func v2DispatchConversation(_ method: String, id: Any?, params: [String: Any]) -> String {
         switch method {
+        case "conversation.capture_runtime":
+            return v2Result(id: id, self.v2ConversationCaptureRuntime(params: params))
         case "conversation.claim":
             return v2Result(id: id, self.v2ConversationClaim(params: params))
         case "conversation.push":
@@ -27,6 +29,52 @@ extension TerminalController {
         default:
             return v2Error(id: id, code: "method_not_found", message: "Unknown method")
         }
+    }
+
+    /// Accept an exact Codex conversation id reported by a tool subprocess
+    /// running inside the target Codex session. Kind and provenance are fixed
+    /// by this dedicated method; callers cannot relabel the report.
+    private func v2ConversationCaptureRuntime(params: [String: Any]) -> V2CallResult {
+        if ConversationStorePolicy.isDisabled {
+            return .ok(["disabled": true, "kill_switch": "CMUX_DISABLE_CONVERSATION_STORE"])
+        }
+        guard let id = v2String(params, "id"), !id.isEmpty else {
+            return .err(code: "invalid_id", message: "id required", data: nil)
+        }
+        guard let strategy = ConversationStrategyRegistry.v1.strategy(forKind: "codex"),
+              strategy.isValidId(id) else {
+            return .err(
+                code: "invalid_id_grammar",
+                message: "id does not match the codex strategy's grammar",
+                data: ["kind": "codex"]
+            )
+        }
+        let surfaceResult = v2ResolveLiveTerminalSurfaceForRuntimeCapture(params: params)
+        guard case .success(let surfaceId) = surfaceResult else {
+            if case .failure(let err) = surfaceResult { return err }
+            return .err(code: "internal_error", message: "surface resolution", data: nil)
+        }
+        let cwd = v2String(params, "cwd")
+        let result = conversationStoreSync { store in
+            await store.captureRuntimeEnv(
+                surfaceId: surfaceId.uuidString,
+                id: id,
+                cwd: cwd
+            )
+        }
+        guard let result else {
+            return .err(code: "internal_error", message: "store timeout", data: nil)
+        }
+        SurfaceActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
+        return .ok([
+            "surface_id": surfaceId.uuidString,
+            "kind": result.ref.kind,
+            "id": result.ref.id,
+            "captured_via": result.ref.capturedVia.rawValue,
+            "state": result.ref.state.rawValue,
+            "outcome": result.outcome.rawValue,
+            "affected_surface_ids": result.affectedSurfaceIds
+        ])
     }
 
     private func v2ConversationClaim(params: [String: Any]) -> V2CallResult {
@@ -45,20 +93,69 @@ extension TerminalController {
         let placeholder = v2String(params, "placeholder_id")
             ?? "wrapper-claim:\(surfaceId.uuidString):\(Int(Date().timeIntervalSince1970))"
 
-        let result = conversationStoreSync { store in
-            await store.claim(
-                surfaceId: surfaceId.uuidString,
-                kind: kind,
-                cwd: cwd,
-                placeholderId: placeholder
-            )
+        let expiresAt: Date?
+        if params["expires_at_epoch_ms"] != nil {
+            guard let epochMilliseconds = v2Int(params, "expires_at_epoch_ms"),
+                  epochMilliseconds > 0 else {
+                return .err(
+                    code: "invalid_expiry",
+                    message: "expires_at_epoch_ms must be a positive integer",
+                    data: nil
+                )
+            }
+            let seconds = Double(epochMilliseconds) / 1_000
+            guard seconds.isFinite, seconds <= 253_402_300_799 else {
+                return .err(
+                    code: "invalid_expiry",
+                    message: "expires_at_epoch_ms is outside the supported date range",
+                    data: nil
+                )
+            }
+            expiresAt = Date(timeIntervalSince1970: seconds)
+        } else {
+            expiresAt = nil
         }
-        // Bump the surface activity timestamp; the wrapper-claim establishes
-        // the lower bound used by the Codex scrape filter.
+
+        let ref: ConversationRef
+        if let expiresAt {
+            let result = conversationStoreSync { store in
+                await store.claim(
+                    surfaceId: surfaceId.uuidString,
+                    kind: kind,
+                    cwd: cwd,
+                    placeholderId: placeholder,
+                    expiresAt: expiresAt
+                )
+            }
+            guard let result else {
+                return .err(code: "internal_error", message: "store timeout", data: nil)
+            }
+            switch result {
+            case .accepted(let accepted):
+                ref = accepted
+            case .expired:
+                return .err(
+                    code: "request_expired",
+                    message: "claim expired before the store mutation boundary",
+                    data: nil
+                )
+            }
+        } else {
+            guard let legacyRef = conversationStoreSync({ store in
+                await store.claim(
+                    surfaceId: surfaceId.uuidString,
+                    kind: kind,
+                    cwd: cwd,
+                    placeholderId: placeholder
+                )
+            }) else {
+                return .err(code: "internal_error", message: "store timeout", data: nil)
+            }
+            ref = legacyRef
+        }
+        // Only an acknowledged claim bumps the activity floor. An expired
+        // request is a complete no-op, including side-channel mutations.
         SurfaceActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
-        guard let ref = result else {
-            return .err(code: "internal_error", message: "store timeout", data: nil)
-        }
         return .ok([
             "surface_id": surfaceId.uuidString,
             "kind": ref.kind,

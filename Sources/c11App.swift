@@ -4416,11 +4416,9 @@ struct SettingsView: View {
     @AppStorage(NotificationSoundSettings.customFilePathKey)
     private var notificationSoundCustomFilePath = NotificationSoundSettings.defaultCustomFilePath
     @AppStorage(NotificationSoundSettings.customCommandKey) private var notificationCustomCommand = NotificationSoundSettings.defaultCustomCommand
-    @AppStorage(NotificationBadgeSettings.dockBadgeEnabledKey) private var notificationDockBadgeEnabled = NotificationBadgeSettings.defaultDockBadgeEnabled
     @AppStorage(NotificationPaneRingSettings.enabledKey) private var notificationPaneRingEnabled = NotificationPaneRingSettings.defaultEnabled
     @AppStorage(NotificationPaneFlashSettings.enabledKey) private var notificationPaneFlashEnabled = NotificationPaneFlashSettings.defaultEnabled
     @AppStorage(NotificationFlashDurationSettings.storageKey) private var notificationFlashDurationMs: Int = NotificationFlashDurationSettings.defaultMs
-    @AppStorage(MenuBarExtraSettings.showInMenuBarKey) private var showMenuBarExtra = MenuBarExtraSettings.defaultShowInMenuBar
     @AppStorage(QuitWarningSettings.warnBeforeQuitKey) private var warnBeforeQuitShortcut = QuitWarningSettings.defaultWarnBeforeQuit
     @AppStorage(CommandPaletteRenameSelectionSettings.selectAllOnFocusKey)
     private var commandPaletteRenameSelectAllOnFocus = CommandPaletteRenameSelectionSettings.defaultSelectAllOnFocus
@@ -5959,31 +5957,6 @@ struct SettingsView: View {
         SettingsSectionHeader(title: String(localized: "settings.section.systemSignals", defaultValue: "System Signals"))
         SettingsCard {
             SettingsCardRow(
-                String(localized: "settings.app.dockBadge", defaultValue: "Dock Badge"),
-                subtitle: String(localized: "settings.app.dockBadge.subtitle", defaultValue: "Show unread count on app icon (Dock and Cmd+Tab).")
-            ) {
-                Toggle("", isOn: $notificationDockBadgeEnabled)
-                    .labelsHidden()
-                    .controlSize(.small)
-            }
-
-            SettingsCardDivider()
-
-            SettingsCardRow(
-                String(localized: "settings.app.showInMenuBar", defaultValue: "Show in Menu Bar"),
-                subtitle: String(localized: "settings.app.showInMenuBar.subtitle", defaultValue: "Keep c11 in the menu bar for unread notifications and quick actions.")
-            ) {
-                Toggle("", isOn: $showMenuBarExtra)
-                    .labelsHidden()
-                    .controlSize(.small)
-                    .accessibilityLabel(
-                        String(localized: "settings.app.showInMenuBar", defaultValue: "Show in Menu Bar")
-                    )
-            }
-
-            SettingsCardDivider()
-
-            SettingsCardRow(
                 String(localized: "settings.notifications.desktop.title", defaultValue: "Desktop Notifications"),
                 subtitle: notificationPermissionSubtitle
             ) {
@@ -6535,10 +6508,8 @@ struct SettingsView: View {
         showNotificationCustomSoundErrorAlert = false
         notificationCustomSoundErrorAlertMessage = ""
         notificationCustomCommand = NotificationSoundSettings.defaultCustomCommand
-        notificationDockBadgeEnabled = NotificationBadgeSettings.defaultDockBadgeEnabled
         notificationPaneRingEnabled = NotificationPaneRingSettings.defaultEnabled
         notificationPaneFlashEnabled = NotificationPaneFlashSettings.defaultEnabled
-        showMenuBarExtra = MenuBarExtraSettings.defaultShowInMenuBar
         warnBeforeQuitShortcut = QuitWarningSettings.defaultWarnBeforeQuit
         commandPaletteRenameSelectAllOnFocus = CommandPaletteRenameSelectionSettings.defaultSelectAllOnFocus
         commandPaletteSearchAllSurfaces = CommandPaletteSwitcherSearchSettings.defaultSearchAllSurfaces

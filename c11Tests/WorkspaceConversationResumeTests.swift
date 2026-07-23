@@ -324,12 +324,12 @@ final class WorkspaceConversationResumeTests: XCTestCase {
             source: .hook,
             state: .alive
         )
-        await ConversationStore.shared.push(
+        let wrapperPlaceholder = "wrapper-claim:\(surfaceB):fixture"
+        _ = await ConversationStore.shared.claim(
             surfaceId: surfaceB,
             kind: "codex",
-            id: codexSessionId,
-            source: .wrapperClaim,
-            state: .unknown
+            cwd: nil,
+            placeholderId: wrapperPlaceholder
         )
 
         // Call the helper from a `@MainActor` context (the same context
@@ -344,8 +344,9 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         XCTAssertEqual(captured[surfaceA]?.active?.id, claudeSessionId)
         XCTAssertEqual(captured[surfaceA]?.active?.kind, "claude-code")
         XCTAssertEqual(captured[surfaceA]?.active?.state, .alive)
-        XCTAssertEqual(captured[surfaceB]?.active?.id, codexSessionId)
+        XCTAssertEqual(captured[surfaceB]?.active?.id, wrapperPlaceholder)
         XCTAssertEqual(captured[surfaceB]?.active?.kind, "codex")
+        XCTAssertEqual(captured[surfaceB]?.active?.placeholder, true)
     }
 
     /// Sanity check the empty-store contract.

@@ -268,7 +268,7 @@ extension TerminalController {
             payload = nil
         }
 
-        let ref = conversationStoreSync { store in
+        let storeResult: ConversationRef?? = conversationStoreSync { store in
             await store.push(
                 surfaceId: surfaceId.uuidString,
                 kind: kind,
@@ -280,10 +280,17 @@ extension TerminalController {
                 payload: payload
             )
         }
-        SurfaceActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
-        guard let ref else {
+        guard case .some(let maybeRef) = storeResult else {
             return .err(code: "internal_error", message: "store timeout", data: nil)
         }
+        guard let ref = maybeRef else {
+            return .err(
+                code: "invalid_source",
+                message: "source must be one of hook, scrape, manual",
+                data: nil
+            )
+        }
+        SurfaceActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         return .ok([
             "surface_id": surfaceId.uuidString,
             "kind": ref.kind,

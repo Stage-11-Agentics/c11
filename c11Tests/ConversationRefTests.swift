@@ -237,7 +237,7 @@ final class ConversationRefTests: XCTestCase {
             cwd: cwd,
             placeholderId: "wrapper-claim:S1:1"
         )
-        let pushed = await store.push(
+        let pushedResult = await store.push(
             surfaceId: "S1",
             kind: "codex",
             id: "aaaa1111-2222-3333-4444-555566667777",
@@ -245,9 +245,30 @@ final class ConversationRefTests: XCTestCase {
             cwd: cwd,
             state: .alive
         )
+        guard let pushed = pushedResult else {
+            return XCTFail("scrape is an allowed generic push source")
+        }
         let active = await store.active(for: "S1")
         XCTAssertEqual(active?.id, pushed.id)
         XCTAssertFalse(active?.placeholder ?? true)
+    }
+
+    func testStorePushRejectsReservedSourcesWithoutMutation() async {
+        for source in [CaptureSource.runtimeEnv, .wrapperClaim] {
+            let store = ConversationStore()
+            let result = await store.push(
+                surfaceId: "S-reserved",
+                kind: "codex",
+                id: "aaaa1111-2222-3333-4444-555566667777",
+                source: source,
+                state: .alive
+            )
+            XCTAssertNil(result)
+            let active = await store.active(for: "S-reserved")
+            let snapshot = await store.snapshot()
+            XCTAssertNil(active)
+            XCTAssertTrue(snapshot.isEmpty)
+        }
     }
 
     func testPlainLaunchClaimInvalidatesPriorExactLifecycle() async {

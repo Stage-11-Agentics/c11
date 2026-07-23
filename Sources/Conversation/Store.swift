@@ -241,9 +241,13 @@ extension ConversationStore {
         return .accepted(claim)
     }
 
-    /// Apply a push (hook or manual). Causal hooks are sticky against inferred
-    /// sources. State defaults to `.alive`; callers pass `.tombstoned` or
-    /// other states explicitly when warranted.
+    /// Apply a generic hook, scrape, or manual push. Runtime-environment
+    /// capture and wrapper claims are reserved to their dedicated mutation
+    /// seams and return `nil` without touching the store.
+    ///
+    /// Causal hooks are sticky against inferred sources. State defaults to
+    /// `.alive`; callers pass `.tombstoned` or other states explicitly when
+    /// warranted.
     @discardableResult
     func push(
         surfaceId: String,
@@ -255,11 +259,10 @@ extension ConversationStore {
         state: ConversationState = .alive,
         diagnosticReason: String? = nil,
         payload: [String: PersistedJSONValue]? = nil
-    ) -> ConversationRef {
-        precondition(
-            source != .runtimeEnv,
-            "runtimeEnv is reserved for ConversationStore.captureRuntimeEnv"
-        )
+    ) -> ConversationRef? {
+        guard source == .hook || source == .scrape || source == .manual else {
+            return nil
+        }
         let ref = ConversationRef(
             kind: kind,
             id: id,

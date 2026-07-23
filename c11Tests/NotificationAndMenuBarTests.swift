@@ -59,7 +59,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
         XCTAssertTrue(NotificationPaneFlashSettings.isEnabled(defaults: defaults))
     }
 
-    func testMenuBarExtraPreferenceDefaultsToVisible() {
+    func testMenuBarExtraPreferenceDefaultsToHidden() {
         let suiteName = "MenuBarExtraVisibilityTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             XCTFail("Failed to create isolated UserDefaults suite")
@@ -69,7 +69,7 @@ final class NotificationAndMenuBarTests: XCTestCase {
             defaults.removePersistentDomain(forName: suiteName)
         }
 
-        XCTAssertTrue(MenuBarExtraSettings.showsMenuBarExtra(defaults: defaults))
+        XCTAssertFalse(MenuBarExtraSettings.showsMenuBarExtra(defaults: defaults))
 
         defaults.set(false, forKey: MenuBarExtraSettings.showInMenuBarKey)
         XCTAssertFalse(MenuBarExtraSettings.showsMenuBarExtra(defaults: defaults))
@@ -103,8 +103,11 @@ final class NotificationAndMenuBarTests: XCTestCase {
         )
     }
 
-    func testNormalLaunchUsesAccessoryActivationPolicy() {
-        XCTAssertEqual(AppPresentationPolicy.activationPolicy(isRunningUnderXCTest: false), .accessory)
+    func testLaunchAlwaysUsesRegularActivationPolicy() {
+        // c11 is a regular Dock app in every launch mode. A `.accessory` policy
+        // removed the Dock icon and the menu bar and starved the Ghostty
+        // renderer (blank terminals when not frontmost); it must never be used.
+        XCTAssertEqual(AppPresentationPolicy.activationPolicy(isRunningUnderXCTest: false), .regular)
         XCTAssertEqual(AppPresentationPolicy.activationPolicy(isRunningUnderXCTest: true), .regular)
     }
 

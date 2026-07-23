@@ -13666,7 +13666,10 @@ enum MenuBarBuildHintFormatter {
 
 enum MenuBarExtraSettings {
     static let showInMenuBarKey = "showMenuBarExtra"
-    static let defaultShowInMenuBar = true
+    // The menu-bar status item (the small c11 glyph in the top-right menu bar)
+    // is off by default; opt in via Settings. It is not the app's primary
+    // surface — c11 is a regular Dock app — so it should not appear unbidden.
+    static let defaultShowInMenuBar = false
 
     static func showsMenuBarExtra(defaults: UserDefaults = .standard) -> Bool {
         if defaults.object(forKey: showInMenuBarKey) == nil {
@@ -13684,8 +13687,15 @@ enum MenuBarExtraSettings {
 }
 
 enum AppPresentationPolicy {
+    // c11 is a regular app: it keeps its Dock icon, the application menu bar
+    // (File/Edit/…), and — critically — the active-app render wakeups the
+    // Ghostty terminal surfaces rely on. A prior `.accessory` policy blanked
+    // every terminal/agent surface whenever the app wasn't frontmost and
+    // stripped the menu bar; do not demote to `.accessory` to hide the Dock
+    // icon. Menu-bar-icon opt-out lives in `MenuBarExtraSettings`, independent
+    // of activation policy.
     static func activationPolicy(isRunningUnderXCTest: Bool) -> NSApplication.ActivationPolicy {
-        isRunningUnderXCTest ? .regular : .accessory
+        .regular
     }
 
     static func apply(

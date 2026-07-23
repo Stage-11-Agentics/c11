@@ -92,6 +92,16 @@ extension TerminalController {
         let cwd = v2String(params, "cwd")
         let placeholder = v2String(params, "placeholder_id")
             ?? "wrapper-claim:\(surfaceId.uuidString):\(Int(Date().timeIntervalSince1970))"
+        let expectedResumeId = v2String(params, "expected_resume_id")
+        if let expectedResumeId {
+            guard kind == "codex", UUID(uuidString: expectedResumeId) != nil else {
+                return .err(
+                    code: "invalid_expected_resume_id",
+                    message: "expected_resume_id is supported only for codex UUIDs",
+                    data: nil
+                )
+            }
+        }
 
         let expiresAt: Date?
         if params["expires_at_epoch_ms"] != nil {
@@ -124,6 +134,7 @@ extension TerminalController {
                     kind: kind,
                     cwd: cwd,
                     placeholderId: placeholder,
+                    expectedResumeId: expectedResumeId,
                     expiresAt: expiresAt
                 )
             }
@@ -146,7 +157,8 @@ extension TerminalController {
                     surfaceId: surfaceId.uuidString,
                     kind: kind,
                     cwd: cwd,
-                    placeholderId: placeholder
+                    placeholderId: placeholder,
+                    expectedResumeId: expectedResumeId
                 )
             }) else {
                 return .err(code: "internal_error", message: "store timeout", data: nil)

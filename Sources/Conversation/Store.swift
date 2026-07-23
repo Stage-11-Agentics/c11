@@ -5,6 +5,10 @@ struct ConversationIdentity: Hashable, Sendable {
     let id: String
 }
 
+enum ConversationLifecyclePayloadKey {
+    static let invalidatedConversationID = "invalidated_conversation_id"
+}
+
 struct OwnershipAuditResult: Sendable, Equatable {
     let quarantinedSurfaceIds: [String]
 
@@ -44,10 +48,10 @@ struct ScrapeCaptureCommitResult: Sendable, Equatable {
 /// Reconciliation rule: evidence strength wins first (causal > inferred >
 /// placeholder), then `capturedAt` and source priority resolve same-tier
 /// candidates.
-/// `wrapperClaim` is idempotent and conservative: it only writes if the
-/// existing ref is older AND of equal-or-lower provenance, so an operator
-/// who types `claude` twice in the same surface cannot regress a real id
-/// back to a placeholder.
+/// `wrapperClaim` is an atomic interactive-process boundary. Plain launches
+/// invalidate prior exact ownership; an explicit expected resume id preserves
+/// the existing ref only on an exact match. The target process's later causal
+/// report remains authoritative.
 ///
 /// Concurrency: the store is a Swift `actor`. All sync socket handlers
 /// reach it via `Task { await … }` adapters (see CLI/c11.swift).
@@ -114,9 +118,9 @@ extension ConversationStore {
 
     // MARK: - Write
 
-    /// Apply a wrapper-claim. Conservative: only writes if the existing
-    /// ref is older AND of equal-or-lower provenance. Hooks and scrapes
-    /// always win regardless of timestamp.
+    /// Apply an interactive-process boundary. Plain/mismatched launches
+    /// invalidate prior exact ownership; exact resume intent may preserve the
+    /// same id while the target process starts.
     @discardableResult
     func claim(
         surfaceId: String,
@@ -124,7 +128,8 @@ extension ConversationStore {
         cwd: String?,
         placeholderId: String,
         capturedAt: Date = Date(),
-        diagnosticReason: String? = nil
+        diagnosticReason: String? = nil,
+        expectedResumeId: String? = nil
     ) -> ConversationRef {
         switch claim(
             surfaceId: surfaceId,
@@ -133,6 +138,7 @@ extension ConversationStore {
             placeholderId: placeholderId,
             capturedAt: capturedAt,
             diagnosticReason: diagnosticReason,
+            expectedResumeId: expectedResumeId,
             expiresAt: nil
         ) {
         case .accepted(let ref):
@@ -164,10 +170,41 @@ extension ConversationStore {
         placeholderId: String,
         capturedAt: Date = Date(),
         diagnosticReason: String? = nil,
+        expectedResumeId: String? = nil,
         expiresAt: Date?
     ) -> ConversationClaimResult {
         if let expiresAt, expiresAt <= Date() {
             return .expired
+        }
+
+        let existing = bySurface[surfaceId]?.active
+
+        // An exact `codex resume <uuid>` argv is lifecycle intent, not new
+        // causal identity. Preserve only an exact match. Plain launches and
+        // mismatched manual resumes atomically replace the old lifecycle with
+        // a placeholder until runtimeEnv or safe scrape evidence identifies it.
+        if let expectedResumeId,
+           let existing,
+           existing.kind == kind,
+           !existing.placeholder,
+           existing.id == expectedResumeId {
+            return .accepted(existing)
+        }
+
+        var payload: [String: PersistedJSONValue]? = nil
+        if let existing,
+           existing.kind == kind,
+           !existing.placeholder,
+           !existing.id.isEmpty {
+            payload = [
+                ConversationLifecyclePayloadKey.invalidatedConversationID: .string(existing.id)
+            ]
+        } else if case .string(let invalidatedId)? = existing?.payload?[
+            ConversationLifecyclePayloadKey.invalidatedConversationID
+        ] {
+            payload = [
+                ConversationLifecyclePayloadKey.invalidatedConversationID: .string(invalidatedId)
+            ]
         }
 
         let claim = ConversationRef(
@@ -178,18 +215,13 @@ extension ConversationStore {
             capturedAt: capturedAt,
             capturedVia: .wrapperClaim,
             state: .unknown,
-            diagnosticReason: diagnosticReason ?? "wrapper-claim placeholder"
+            diagnosticReason: diagnosticReason ?? "wrapper-claim placeholder",
+            payload: payload
         )
 
-        let existing = bySurface[surfaceId]?.active
-        if let existing {
-            // Idempotent: a second wrapper-claim cannot regress a real id.
-            // Hooks/scrapes/manual always win over wrapperClaim regardless
-            // of timestamp.
-            if existing.capturedVia != .wrapperClaim {
-                return .accepted(existing)
-            }
-            // Same source: keep the newer timestamp.
+        if let existing, existing.capturedVia == .wrapperClaim {
+            // Duplicate delivery of the same launch boundary is idempotent;
+            // a later boundary refreshes the placeholder/activity floor.
             if existing.capturedAt >= capturedAt {
                 return .accepted(existing)
             }

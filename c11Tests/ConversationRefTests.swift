@@ -250,16 +250,14 @@ final class ConversationRefTests: XCTestCase {
         XCTAssertFalse(active?.placeholder ?? true)
     }
 
-    func testStoreSecondClaimDoesNotRegressRealId() async {
+    func testPlainLaunchClaimInvalidatesPriorExactLifecycle() async {
         let store = ConversationStore()
         let cwd = "/tmp/proj"
-        await store.push(
+        _ = await store.captureRuntimeEnv(
             surfaceId: "S1",
-            kind: "codex",
             id: "aaaa1111-2222-3333-4444-555566667777",
-            source: .scrape,
             cwd: cwd,
-            state: .alive
+            capturedAt: Date().addingTimeInterval(60)
         )
         await store.claim(
             surfaceId: "S1",
@@ -268,9 +266,78 @@ final class ConversationRefTests: XCTestCase {
             placeholderId: "wrapper-claim:S1:reissue"
         )
         let active = await store.active(for: "S1")
-        XCTAssertEqual(active?.id, "aaaa1111-2222-3333-4444-555566667777",
-                       "second wrapper-claim must not regress a confirmed scrape id")
-        XCTAssertEqual(active?.capturedVia, .scrape)
+        XCTAssertTrue(active?.placeholder == true)
+        XCTAssertEqual(active?.capturedVia, .wrapperClaim)
+        XCTAssertEqual(
+            active?.payload?[ConversationLifecyclePayloadKey.invalidatedConversationID],
+            .string("aaaa1111-2222-3333-4444-555566667777")
+        )
+
+        let latePriorRollout = ScrapeCandidate(
+            id: "aaaa1111-2222-3333-4444-555566667777",
+            filePath: "/tmp/late-a.jsonl",
+            mtime: Date().addingTimeInterval(60),
+            size: 1,
+            cwd: cwd
+        )
+        let eligible = CodexStrategy().eligibleCandidates(inputs: ConversationStrategyInputs(
+            surfaceId: "S1",
+            cwd: cwd,
+            lastActivityTimestamp: nil,
+            wrapperClaim: active,
+            push: nil,
+            scrapeCandidates: [latePriorRollout]
+        ))
+        XCTAssertTrue(eligible.isEmpty, "late writes from lifecycle A cannot re-own B")
+
+        let decision = ResumeDecisionEngine.decide(ResumeDecisionInput(
+            mode: .clean,
+            auditComplete: true,
+            ownership: .unique,
+            kind: active?.kind ?? "codex",
+            id: active?.id ?? "",
+            placeholder: active?.placeholder ?? true,
+            state: .unknown,
+            exactIDValid: false,
+            transcriptEvidence: .notRequired,
+            diagnosticReason: active?.diagnosticReason,
+            fallbackCommand: nil
+        ))
+        guard case .skip(let code, _) = decision else {
+            return XCTFail("unreported lifecycle B must not resume lifecycle A")
+        }
+        XCTAssertEqual(code, .placeholder)
+    }
+
+    func testExactResumeIntentPreservesOnlyMatchingPriorIdentity() async {
+        let store = ConversationStore()
+        let idA = "aaaa1111-2222-3333-4444-555566667777"
+        let idB = "bbbb1111-2222-3333-4444-555566667777"
+        _ = await store.captureRuntimeEnv(surfaceId: "S1", id: idA, cwd: "/tmp/proj")
+
+        _ = await store.claim(
+            surfaceId: "S1", kind: "codex", cwd: "/tmp/proj",
+            placeholderId: "wrapper-claim:matching",
+            expectedResumeId: idA,
+            expiresAt: nil
+        )
+        let matching = await store.active(for: "S1")
+        XCTAssertEqual(matching?.id, idA)
+        XCTAssertFalse(matching?.placeholder ?? true)
+
+        _ = await store.claim(
+            surfaceId: "S1", kind: "codex", cwd: "/tmp/proj",
+            placeholderId: "wrapper-claim:mismatch",
+            capturedAt: Date().addingTimeInterval(1),
+            expectedResumeId: idB,
+            expiresAt: nil
+        )
+        let mismatched = await store.active(for: "S1")
+        XCTAssertTrue(mismatched?.placeholder == true)
+        XCTAssertEqual(
+            mismatched?.payload?[ConversationLifecyclePayloadKey.invalidatedConversationID],
+            .string(idA)
+        )
     }
 
     func testExpiredClaimDoesNotMutateStore() async {

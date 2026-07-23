@@ -153,6 +153,37 @@ final class ConversationCrashRecoveryTests: XCTestCase {
         XCTAssertEqual(CodexStrategy().transcriptExists(for: absent, filesystem: fs), false)
     }
 
+    func testCodexExactTranscriptExistsBeyondNewestFiveHundredTwelve() {
+        let fs = MockFS()
+        let codexRoot = fs.home!
+            .appendingPathComponent(".codex", isDirectory: true)
+            .appendingPathComponent("sessions", isDirectory: true)
+        var entries: [ConversationFilesystemEntry] = []
+        for index in 0..<513 {
+            let id = String(format: "%08x-2222-4333-8444-555566667777", index)
+            let name = "rollout-newer-\(id).jsonl"
+            entries.append(ConversationFilesystemEntry(
+                url: codexRoot.appendingPathComponent(name),
+                fileName: name,
+                mtime: Date(timeIntervalSince1970: Double(10_000 - index)),
+                size: 1
+            ))
+        }
+        let targetName = "rollout-old-\(uuidA).jsonl"
+        entries.append(ConversationFilesystemEntry(
+            url: codexRoot.appendingPathComponent(targetName),
+            fileName: targetName,
+            mtime: .distantPast,
+            size: 1
+        ))
+        fs.recursiveEntries[codexRoot] = entries
+        let target = ConversationRef(
+            kind: "codex", id: uuidA, cwd: cwd,
+            capturedVia: .runtimeEnv, state: .suspended
+        )
+        XCTAssertEqual(CodexStrategy().transcriptExists(for: target, filesystem: fs), true)
+    }
+
     // MARK: - C11-206 completion-aware final store reads
 
     func testDelayedFinalConversationStoreReadReturnsResolvedRef() async {

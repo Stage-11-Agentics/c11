@@ -127,6 +127,7 @@ def main() -> int:
             expect("claim-committed" in lines and "real-start" in lines and lines.index("claim-committed") < lines.index("real-start"), f"claim was not committed before exec: {lines}", failures)
             claim_line = next((line for line in lines if line.startswith("claim-start")), "")
             expect("--ttl-ms 700" in claim_line and "timeout=0.75" in claim_line, f"claim was not expiry-bounded: {claim_line}", failures)
+            expect(f"--expected-resume-id {argv[1]}" in claim_line, f"exact resume intent was not forwarded: {claim_line}", failures)
         finally:
             fixture.close()
 
@@ -134,6 +135,8 @@ def main() -> int:
         try:
             proc = fixture.run(["--search", "prompt"], FAKE_CLAIM_MODE="fail")
             expect(proc.returncode == 0 and fixture.argv_lines() == ["--search", "prompt"], f"claim failure blocked or changed Codex: {proc.stderr}", failures)
+            plain_claim = next((line for line in fixture.event_lines() if line.startswith("claim-start")), "")
+            expect("--expected-resume-id" not in plain_claim, f"plain launch forged resume intent: {plain_claim}", failures)
             proc = fixture.run([], FAKE_REAL_MODE="exit42")
             expect(proc.returncode == 42, f"real Codex exit status was not preserved: {proc.returncode}", failures)
         finally:

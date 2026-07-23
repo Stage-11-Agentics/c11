@@ -289,6 +289,14 @@ protocol ConversationFilesystem: Sendable {
         max: Int
     ) -> [ConversationFilesystemEntry]
 
+    /// Exact filename-suffix membership over the complete recursive store.
+    /// Exact crash verification must not inherit candidate recency caps.
+    func containsSessionRecursively(
+        _ root: URL,
+        extensionFilter: String,
+        trailingID: String
+    ) -> Bool
+
     /// Stat-only existence check for a single path. Used by crash-recovery
     /// transcript verification (`ClaudeCodeStrategy.transcriptExists`).
     /// Never opens the file — honors the scrape privacy contract.
@@ -310,6 +318,19 @@ protocol ConversationFilesystem: Sendable {
 }
 
 extension ConversationFilesystem {
+    func containsSessionRecursively(
+        _ root: URL,
+        extensionFilter: String,
+        trailingID: String
+    ) -> Bool {
+        let suffix = "\(trailingID).\(extensionFilter)"
+        return listSessionsRecursivelyByMtime(
+            root,
+            extensionFilter: extensionFilter,
+            max: Int.max
+        ).contains { $0.fileName.hasSuffix(suffix) }
+    }
+
     /// Default: no content read. Keeps stat-only mocks source-compatible and
     /// means a filesystem that opts out of head reads degrades to the prior
     /// no-cwd-recovery behaviour (candidate `cwd == nil`), never worse.
@@ -341,6 +362,29 @@ struct DefaultConversationFilesystem: ConversationFilesystem {
 
     func fileExists(atPath path: String) -> Bool {
         FileManager.default.fileExists(atPath: path)
+    }
+
+    func containsSessionRecursively(
+        _ root: URL,
+        extensionFilter: String,
+        trailingID: String
+    ) -> Bool {
+        let fm = FileManager.default
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: root.path, isDirectory: &isDir),
+              isDir.boolValue else { return false }
+        let suffix = "\(trailingID).\(extensionFilter)"
+        guard let enumerator = fm.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return false }
+        for case let url as URL in enumerator where url.lastPathComponent.hasSuffix(suffix) {
+            if (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+                return true
+            }
+        }
+        return false
     }
 
     /// Bounded head read: opens the file, reads at most `maxBytes`, and

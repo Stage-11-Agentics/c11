@@ -178,6 +178,26 @@ def main() -> int:
             expiry = claim.get("expires_at_epoch_ms")
             expect(isinstance(expiry, int) and claim_start_ms < expiry <= int(time.time() * 1000) + 700, f"claim did not carry an absolute bounded expiry: {claim}", failures)
 
+            expected_resume_id = str(uuid.uuid4())
+            proc = run(
+                cli,
+                socket_path,
+                ["conversation", "claim", "--kind", "codex", "--expected-resume-id", expected_resume_id],
+                env,
+                tmp,
+            )
+            expected_claim = state.requests[-1].get("params", {})
+            expect(proc.returncode == 0 and expected_claim.get("expected_resume_id") == expected_resume_id, f"expected resume intent missing: {expected_claim}", failures)
+
+            invalid_expected = run(
+                cli,
+                socket_path,
+                ["conversation", "claim", "--kind", "codex", "--expected-resume-id", "not-a-uuid"],
+                env,
+                tmp,
+            )
+            expect(invalid_expected.returncode != 0 and "must be a UUID" in invalid_expected.stderr, f"invalid expected resume id accepted: {invalid_expected.stderr}", failures)
+
             bad_ttl = run(cli, socket_path, ["conversation", "claim", "--kind", "codex", "--ttl-ms", "0"], env, tmp)
             expect(bad_ttl.returncode != 0 and "positive integer" in bad_ttl.stderr, f"zero ttl accepted: {bad_ttl.stderr}", failures)
         finally:

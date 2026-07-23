@@ -50,8 +50,19 @@ struct CodexStrategy: ConversationStrategy {
         let activityFloor = inputs.lastActivityTimestamp
         let claimTime = inputs.wrapperClaim?.capturedAt
         let cwd = inputs.cwd
+        let invalidatedConversationID: String?
+        if case .string(let id)? = inputs.wrapperClaim?.payload?[
+            ConversationLifecyclePayloadKey.invalidatedConversationID
+        ] {
+            invalidatedConversationID = id
+        } else {
+            invalidatedConversationID = nil
+        }
 
         return inputs.scrapeCandidates.filter { candidate in
+            if candidate.id == invalidatedConversationID {
+                return false
+            }
             // cwd must match the surface's cwd if both are known.
             if let cwd, let candCwd = candidate.cwd, cwd != candCwd {
                 return false
@@ -114,24 +125,21 @@ struct CodexStrategy: ConversationStrategy {
     /// for `ref.id` still exist on disk? Without this, `reclassifyAfterCrash`
     /// forces the ref to `.unknown` (the protocol default returns nil) and codex
     /// resume skips after a crash. Codex filenames are date-nested with an
-    /// unknown timestamp, so an exact-path stat isn't constructable; reuse the
-    /// `CodexScraper` (which extracts the trailing UUID) and check membership.
+    /// unknown timestamp, so an exact-path stat isn't constructable; scan
+    /// filename metadata for the exact trailing UUID without a recency cap.
     /// Never opens transcript bytes.
     func transcriptExists(
         for ref: ConversationRef,
         filesystem: ConversationFilesystem
     ) -> Bool? {
         guard isValidConversationUUID(ref.id) else { return false }
-        // Id-membership only — skip the per-candidate cwd head reads (G3), which
-        // this check discards anyway.
-        // Verification is exact-id membership, not candidate assignment. Use
-        // the bounded many-tab cap rather than the legacy newest-16 default so
-        // an older still-live ref remains verifiable at realistic scale.
-        return CodexScraper(
-            filesystem: filesystem,
-            maxCandidates: CodexScraper.maximumBatchCandidates
+        guard let root = CodexScraper(filesystem: filesystem).sessionsRoot() else {
+            return false
+        }
+        return filesystem.containsSessionRecursively(
+            root,
+            extensionFilter: "jsonl",
+            trailingID: ref.id
         )
-            .candidates(cwd: nil, recoverCwd: false)
-            .contains { $0.id == ref.id }
     }
 }

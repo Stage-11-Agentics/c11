@@ -1,6 +1,7 @@
 import Foundation
 import CryptoKit
 import Darwin
+import SQLite3
 #if canImport(LocalAuthentication)
 import LocalAuthentication
 #endif
@@ -11953,7 +11954,8 @@ struct CMUXCLI {
 
         Subcommands:
           capture-runtime
-          claim --kind <k> [--cwd <path>] [--id <id>] [--ttl-ms <n>]
+          claim --kind <k> [--cwd <path>] [--id <id>]
+                [--expected-resume-id <uuid>] [--ttl-ms <n>]
           push --kind <k> --id <id> --source <hook|scrape|manual>
                [--state <alive|suspended|tombstoned|unknown|ended>]
                [--cwd <path>] [--reason <text>]
@@ -12087,6 +12089,12 @@ struct CMUXCLI {
         ]
         if let cwd = optionValue(subArgs, name: "--cwd") { params["cwd"] = cwd }
         if let id = optionValue(subArgs, name: "--id") { params["placeholder_id"] = id }
+        if let expectedResumeId = optionValue(subArgs, name: "--expected-resume-id") {
+            guard UUID(uuidString: expectedResumeId) != nil else {
+                throw CLIError(message: "--expected-resume-id must be a UUID")
+            }
+            params["expected_resume_id"] = expectedResumeId
+        }
         if subArgs.contains("--ttl-ms") {
             guard let rawTTL = optionValue(subArgs, name: "--ttl-ms"),
                   let ttlMilliseconds = Int64(rawTTL), ttlMilliseconds > 0 else {
@@ -12582,28 +12590,82 @@ struct CMUXCLI {
         )
         guard let enumerator = FileManager.default.enumerator(
             at: root,
-            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+            includingPropertiesForKeys: [.isRegularFileKey],
             options: [.skipsHiddenFiles]
         ) else { return false }
-        var entries: [(url: URL, mtime: Date)] = []
         for case let url as URL in enumerator {
             let name = url.lastPathComponent
             guard name.hasSuffix(".jsonl"),
                   let values = try? url.resourceValues(forKeys: [
-                    .contentModificationDateKey, .isRegularFileKey
+                    .isRegularFileKey
                   ]),
                   values.isRegularFile == true else { continue }
-            entries.append((url, values.contentModificationDate ?? .distantPast))
-        }
-        // Match CodexScraper's metadata-only, newest-first bounded discovery.
-        // The shared 512 cap is intentionally larger than assignment's normal
-        // top-16 window while still bounding large or adversarial trees.
-        entries.sort { $0.mtime > $1.mtime }
-        for entry in entries.prefix(512) {
-            let stem = String(entry.url.lastPathComponent.dropLast(".jsonl".count))
+            let stem = String(name.dropLast(".jsonl".count))
             if String(stem.suffix(36)) == id { return true }
         }
         return false
+    }
+
+    private func opencodeDatabasePath(
+        home: String,
+        environment: [String: String]
+    ) -> String {
+        let taggedOrQA = ["C11_TAG", "CMUX_TAG", "C11_QA_LAUNCH"].contains { key in
+            guard let value = environment[key] else { return false }
+            return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        if taggedOrQA,
+           let override = environment["C11_QA_OPENCODE_DB_PATH"]?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+           !override.isEmpty {
+            return (override as NSString).expandingTildeInPath
+        }
+        return "\(home)/.local/share/opencode/opencode.db"
+    }
+
+    /// Read-only, stat-equivalent exact session check. Queries `session.id`
+    /// only; message/part transcript tables are never touched.
+    private func opencodeSessionExists(id: String, home: String) -> Bool? {
+        let path = opencodeDatabasePath(
+            home: home,
+            environment: ProcessInfo.processInfo.environment
+        )
+        guard FileManager.default.fileExists(atPath: path) else { return nil }
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(
+            path,
+            &database,
+            SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX,
+            nil
+        ) == SQLITE_OK, let database else {
+            sqlite3_close(database)
+            return nil
+        }
+        defer { sqlite3_close(database) }
+        sqlite3_busy_timeout(database, 2_000)
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(
+            database,
+            "SELECT 1 FROM session WHERE id = ? LIMIT 1",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK, let statement else {
+            sqlite3_finalize(statement)
+            return nil
+        }
+        defer { sqlite3_finalize(statement) }
+        return id.withCString { idCString -> Bool? in
+            guard sqlite3_bind_text(statement, 1, idCString, -1, nil) == SQLITE_OK else {
+                return nil
+            }
+            switch sqlite3_step(statement) {
+            case SQLITE_ROW: return true
+            case SQLITE_DONE: return false
+            default: return nil
+            }
+        }
     }
 
     private func verifyDecision(
@@ -12633,6 +12695,12 @@ struct CMUXCLI {
             let slug = claudeProjectSlug(cwd)
             let path = "\(home)/.claude/projects/\(slug)/\(input.id).jsonl"
             transcriptEvidence = FileManager.default.fileExists(atPath: path) ? .verified : .missing
+        } else if input.kind == "opencode", idValid {
+            switch opencodeSessionExists(id: input.id, home: home) {
+            case true: transcriptEvidence = .verified
+            case false: transcriptEvidence = .missing
+            case nil: transcriptEvidence = .unavailable
+            }
         } else {
             transcriptEvidence = .unavailable
         }

@@ -7,6 +7,7 @@ import glob
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import tempfile
 import uuid
@@ -49,6 +50,7 @@ def run(
     mode: str | None,
     *,
     qa_gate: bool = True,
+    opencode_db: Path | None = None,
 ) -> subprocess.CompletedProcess:
     args = [cli, "--json", "state", "verify"]
     if mode is not None:
@@ -63,6 +65,8 @@ def run(
     })
     if qa_gate:
         env["C11_TAG"] = "c11-206-state-verify-test"
+    if opencode_db is not None:
+        env["C11_QA_OPENCODE_DB_PATH"] = str(opencode_db)
     return subprocess.run(args, env=env, capture_output=True, text=True, timeout=5, check=False)
 
 
@@ -142,15 +146,15 @@ def main() -> int:
         no_resume_panel = (no_resume_payload.get("panels") or [{}])[0]
         expect(no_resume.returncode != 0 and no_resume_payload.get("mode") == "no-resume" and no_resume_panel.get("skip_code") == "policy-no-resume", f"no-resume policy failed: {no_resume_panel}", failures)
 
-        # The app and CLI both cap exact metadata discovery at 512 newest
-        # entries. Push the target to rank 513 and prove the bound fails closed.
+        # Exact verification is not candidate discovery. Push the target past
+        # 512 newer entries and prove exact filename membership still succeeds.
         for index in range(20, 512):
             decoy = rollout / f"rollout-newer-{index}-{uuid.uuid4()}.jsonl"
             decoy.touch()
             os.utime(decoy, (2_000 + index, 2_000 + index))
         dirty_beyond_bound = run(cli, sessions_root, path, "dirty")
         bounded_panel = (payload(dirty_beyond_bound).get("panels") or [{}])[0]
-        expect(dirty_beyond_bound.returncode != 0 and bounded_panel.get("skip_code") == "transcript-missing", f"Codex exact lookup exceeded its 512-entry bound: {bounded_panel}", failures)
+        expect(dirty_beyond_bound.returncode == 0 and bounded_panel.get("action") == f"codex resume '{codex_id}'", f"Codex exact lookup inherited the 512 candidate bound: {bounded_panel}", failures)
 
         snapshot(path, [exact_ref, exact_ref])
         duplicate = run(cli, sessions_root, path, "clean")
@@ -214,6 +218,28 @@ def main() -> int:
             and len(causal_same_cwd_panels) == 2
             and all(row.get("would_resume") is True for row in causal_same_cwd_panels),
             f"distinct causal same-cwd Codex owners were not eligible: {causal_same_cwd_panels}",
+            failures,
+        )
+
+        opencode_db = tmp / "opencode.db"
+        opencode_id = "ses_" + ("A" * 26)
+        with sqlite3.connect(opencode_db) as database:
+            database.execute("CREATE TABLE session (id TEXT PRIMARY KEY)")
+            database.execute("INSERT INTO session (id) VALUES (?)", (opencode_id,))
+        snapshot(path, [{
+            "kind": "opencode", "id": opencode_id, "placeholder": False,
+            "state": "suspended", "cwd": "/work/opencode",
+            "capturedVia": "hook",
+        }])
+        opencode_dirty = run(
+            cli, sessions_root, path, "dirty", opencode_db=opencode_db
+        )
+        opencode_panel = (payload(opencode_dirty).get("panels") or [{}])[0]
+        expect(
+            opencode_dirty.returncode == 0
+            and opencode_panel.get("transcript_evidence") == "verified"
+            and opencode_panel.get("action") == f"cd '/work/opencode' && opencode -s '{opencode_id}'",
+            f"dirty OpenCode SQLite verification diverged from app behavior: {opencode_panel}",
             failures,
         )
 

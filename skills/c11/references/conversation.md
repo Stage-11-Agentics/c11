@@ -16,7 +16,7 @@ Surface ──hosts──▶ Conversation ──interpreted-by──▶ Conversa
 
 ```
 c11 conversation capture-runtime
-c11 conversation claim --kind <k> [--cwd <path>] [--id <id>] [--ttl-ms <n>]
+c11 conversation claim --kind <k> [--cwd <path>] [--id <id>] [--expected-resume-id <uuid>] [--ttl-ms <n>]
 c11 conversation push --kind <k> --id <id> --source <hook|scrape|manual>
                       [--state <alive|suspended|tombstoned|unknown|ended>]
                       [--cwd <path>] [--reason <text>]
@@ -43,7 +43,7 @@ c11 conversation clear [--surface <id>]
 
 **Codex runtime capture has no identity flags.** `capture-runtime` rejects every argument, alias disagreement, malformed/missing environment identity, stale/non-terminal/non-live surfaces, and surfaces not owned by the addressed c11 socket instance. This is cooperative causal evidence from the target process, not an adversarial authentication boundary. Orchestrators must instruct each Codex agent to run the command itself; they must not expand or relay a child thread ID.
 
-**State verification requires a recovery mode.** Use `c11 state verify --mode clean|dirty|no-resume [snapshot-path]`. The mode is explicit because a snapshot path cannot reveal the app's sentinel/relaunch policy. Clean evaluates persisted exact ownership; dirty additionally requires bounded on-disk transcript evidence (including exact Codex lookup across the 512 newest rollout metadata entries); no-resume always reports a policy skip.
+**State verification requires a recovery mode.** Use `c11 state verify --mode clean|dirty|no-resume [snapshot-path]`. The mode is explicit because a snapshot path cannot reveal the app's sentinel/relaunch policy. Clean evaluates persisted exact ownership; dirty additionally requires on-disk transcript evidence (including direct exact Codex lookup without a recency window); no-resume always reports a policy skip.
 
 ## Lifecycle states
 
@@ -114,6 +114,15 @@ The per-surface **activity floor** (`SurfaceActivityTracker`, persisted in the s
 3. (For TUIs with hooks: inject the necessary flags so hooks fire `c11 conversation push`.)
 4. exec "$REAL_TUI" "$@"
 ```
+
+`--expected-resume-id <uuid>` is wrapper-internal lifecycle intent, not a
+causal identity report. The wrapper supplies it only for an explicit
+`codex resume <uuid>` invocation. An exact match preserves that surface's
+existing exact ref while the target resumes; a plain launch, `--last`, or a
+different UUID atomically invalidates the prior ref to a placeholder until the
+new target runs `conversation capture-runtime` (or a safe fallback scrape
+resolves it). Operators and orchestrators should not use this option as a
+substitute for target-process runtime capture.
 
 Constraints (CLAUDE.md "unopinionated about the terminal"):
 

@@ -440,6 +440,36 @@ final class ScrapeCapturePipelineTests: XCTestCase {
         XCTAssertEqual(overridden?.path, "/tmp/sessions")
     }
 
+    func testSnapshotCaptureScopeAuthorizesEveryTerminalButScrapesOnlyTypedAgents() {
+        let typed = UUID()
+        let missingType = UUID()
+        let emptyType = UUID()
+        let browser = UUID()
+        let snapshot = makeSnapshot(panels: [
+            makeTerminalPanel(
+                id: typed,
+                directory: "/tmp/typed",
+                metadata: [SurfaceMetadataKeyName.terminalType: .string("codex")]
+            ),
+            makeTerminalPanel(id: missingType, directory: nil, metadata: nil),
+            makeTerminalPanel(
+                id: emptyType,
+                directory: nil,
+                metadata: [SurfaceMetadataKeyName.terminalType: .string("   ")]
+            ),
+            makeBrowserPanel(id: browser),
+        ])
+
+        let scope = ConversationSnapshotCaptureScope(snapshot: snapshot)
+
+        XCTAssertEqual(scope.scrapeContexts.map(\.surfaceId), [typed.uuidString])
+        XCTAssertEqual(
+            scope.markerSurfaceIds,
+            [typed.uuidString, missingType.uuidString, emptyType.uuidString]
+        )
+        XCTAssertFalse(scope.markerSurfaceIds.contains(browser.uuidString))
+    }
+
     // MARK: - Snapshot builders
 
     private func makeTerminalPanel(

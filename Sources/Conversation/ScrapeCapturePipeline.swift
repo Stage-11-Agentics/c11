@@ -68,6 +68,31 @@ struct ScrapeCaptureContext: Sendable, Equatable {
     }
 }
 
+/// The two snapshot-derived scopes used at a conversation lifecycle boundary.
+///
+/// Scraping remains limited to terminal panels that declare an agent kind.
+/// Launch-boundary markers are different: they protect persisted ownership,
+/// so every terminal panel UUID is eligible even when `terminal_type` metadata
+/// is missing or empty.
+struct ConversationSnapshotCaptureScope: Sendable, Equatable {
+    let scrapeContexts: [ScrapeCaptureContext]
+    let markerSurfaceIds: Set<String>
+
+    init(snapshot: AppSessionSnapshot) {
+        scrapeContexts = ScrapeCaptureContext.contexts(from: snapshot)
+
+        var terminalSurfaceIds = Set<String>()
+        for window in snapshot.windows {
+            for workspace in window.tabManager.workspaces {
+                for panel in workspace.panels where panel.type == .terminal {
+                    terminalSurfaceIds.insert(panel.id.uuidString)
+                }
+            }
+        }
+        markerSurfaceIds = terminalSurfaceIds
+    }
+}
+
 struct ScrapeCandidateBatch: Sendable, Equatable {
     let contexts: [ScrapeCaptureContext]
     let candidatesByKind: [String: [ScrapeCandidate]]

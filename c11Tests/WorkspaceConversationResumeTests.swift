@@ -159,6 +159,88 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         ).isEmpty)
     }
 
+    func testStartupBoundaryInvalidatesStaleCodexWithoutTerminalType() async throws {
+        let workspace = Workspace()
+        let panelId = UUID()
+        let boundary = Date(timeIntervalSince1970: 2_000.75)
+        var panel = makePanelSnapshot(id: panelId, type: .terminal, metadata: nil)
+        panel.surfaceConversations = SurfaceConversations(active: ConversationRef(
+            kind: "codex",
+            id: codexSessionId,
+            placeholder: false,
+            cwd: "/tmp/project",
+            capturedAt: boundary.addingTimeInterval(-0.25),
+            capturedVia: .runtimeEnv,
+            state: .suspended
+        ))
+        let workspaceSnapshot = makeSnapshot(panels: [panel])
+        let appSnapshot = makeAppSnapshot(workspace: workspaceSnapshot)
+        let scope = ConversationSnapshotCaptureScope(snapshot: appSnapshot)
+
+        XCTAssertTrue(scope.scrapeContexts.isEmpty)
+        XCTAssertEqual(scope.markerSurfaceIds, [panelId.uuidString])
+        _ = await WorkspaceSnapshotConversationBridge.seedFromSnapshot(appSnapshot)
+        let applied = await ConversationStore.shared.applyCodexLaunchBoundaries([
+            CodexLaunchBoundaryMarker(
+                surfaceId: panelId.uuidString,
+                boundaryAt: boundary,
+                expectedResumeId: nil
+            ),
+        ])
+
+        XCTAssertEqual(applied, [panelId.uuidString])
+        let active = await ConversationStore.shared.active(for: panelId.uuidString)
+        XCTAssertTrue(active?.placeholder == true)
+        XCTAssertTrue(workspace.pendingRestartPlans(
+            from: workspaceSnapshot,
+            registry: .v1,
+            startup: .init(epoch: 1, mode: .clean, phase: .ready)
+        ).isEmpty, "startup must dispatch zero stale-A resume actions")
+    }
+
+    func testCleanPersistenceBoundaryInvalidatesStaleCodexWithEmptyTerminalType() async throws {
+        let workspace = Workspace()
+        let panelId = UUID()
+        let boundary = Date(timeIntervalSince1970: 3_000.75)
+        var panel = makePanelSnapshot(
+            id: panelId,
+            type: .terminal,
+            metadata: [SurfaceMetadataKeyName.terminalType: .string("  ")]
+        )
+        panel.surfaceConversations = SurfaceConversations(active: ConversationRef(
+            kind: "codex",
+            id: codexSessionId,
+            placeholder: false,
+            cwd: "/tmp/project",
+            capturedAt: boundary.addingTimeInterval(-0.25),
+            capturedVia: .runtimeEnv,
+            state: .alive
+        ))
+        let workspaceSnapshot = makeSnapshot(panels: [panel])
+        let draft = makeAppSnapshot(workspace: workspaceSnapshot)
+        let scope = ConversationSnapshotCaptureScope(snapshot: draft)
+
+        XCTAssertTrue(scope.scrapeContexts.isEmpty)
+        XCTAssertEqual(scope.markerSurfaceIds, [panelId.uuidString])
+        _ = await WorkspaceSnapshotConversationBridge.seedFromSnapshot(draft)
+        _ = await ConversationStore.shared.applyCodexLaunchBoundaries([
+            CodexLaunchBoundaryMarker(
+                surfaceId: panelId.uuidString,
+                boundaryAt: boundary,
+                expectedResumeId: nil
+            ),
+        ])
+        await ConversationStore.shared.suspendAllAlive()
+
+        let conversations = await ConversationStore.shared.snapshot()
+        XCTAssertTrue(conversations[panelId.uuidString]?.active?.placeholder == true)
+        XCTAssertTrue(workspace.pendingRestartPlans(
+            from: workspaceSnapshot,
+            registry: .v1,
+            startup: .init(epoch: 2, mode: .clean, phase: .ready)
+        ).isEmpty, "a clean snapshot must not make stale A resumable")
+    }
+
     func testDirtyCodexPlanningRequiresVerifiedDiagnostic() async throws {
         let workspace = Workspace()
         let verifiedPanel = UUID()
@@ -340,6 +422,28 @@ final class WorkspaceConversationResumeTests: XCTestCase {
             progress: nil,
             gitBranch: nil,
             metadata: nil
+        )
+    }
+
+    private func makeAppSnapshot(workspace: SessionWorkspaceSnapshot) -> AppSessionSnapshot {
+        AppSessionSnapshot(
+            version: SessionSnapshotSchema.currentVersion,
+            createdAt: Date().timeIntervalSince1970,
+            windows: [
+                SessionWindowSnapshot(
+                    frame: nil,
+                    display: nil,
+                    tabManager: SessionTabManagerSnapshot(
+                        selectedWorkspaceIndex: 0,
+                        workspaces: [workspace]
+                    ),
+                    sidebar: SessionSidebarSnapshot(
+                        isVisible: true,
+                        selection: .tabs,
+                        width: 240
+                    )
+                ),
+            ]
         )
     }
 

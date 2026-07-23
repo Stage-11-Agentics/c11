@@ -3307,7 +3307,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             SurfaceActivityTracker.shared.seed(from: activityFloor)
         }
 
-        let contexts = ScrapeCaptureContext.contexts(from: snapshot)
+        let captureScope = ConversationSnapshotCaptureScope(snapshot: snapshot)
+        let contexts = captureScope.scrapeContexts
         let pipeline = ScrapeCapturePipeline(scrapers: .v1(), strategies: .v1)
         let preferredConversationSocketPath = SocketControlSettings.socketPath()
         let completed = DispatchSemaphore(value: 0)
@@ -3321,7 +3322,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             _ = await WorkspaceSnapshotConversationBridge.seedFromSnapshot(snapshot)
             let launchBoundaries = CodexLaunchBoundaryMarkerStore.loadForStartup(
                 preferredSocketPath: preferredConversationSocketPath,
-                allowedSurfaceIds: Set(contexts.map(\.surfaceId))
+                allowedSurfaceIds: captureScope.markerSurfaceIds
             )
             _ = await ConversationStore.shared.applyCodexLaunchBoundaries(
                 launchBoundaries
@@ -4182,7 +4183,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         ) else {
             return nil
         }
-        let contexts = ScrapeCaptureContext.contexts(from: draft)
+        let captureScope = ConversationSnapshotCaptureScope(snapshot: draft)
+        let contexts = captureScope.scrapeContexts
         let pipeline = ScrapeCapturePipeline(scrapers: .v1(), strategies: .v1)
         let conversationSocketPath = TerminalController.shared.activeSocketPath(
             preferredPath: SocketControlSettings.socketPath()
@@ -4193,7 +4195,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let outcome = BoundedLifecycleWait.run(timeout: timeout) {
             let launchBoundaries = CodexLaunchBoundaryMarkerStore.load(
                 socketPath: conversationSocketPath,
-                allowedSurfaceIds: Set(contexts.map(\.surfaceId))
+                allowedSurfaceIds: captureScope.markerSurfaceIds
             )
             _ = await ConversationStore.shared.applyCodexLaunchBoundaries(
                 launchBoundaries

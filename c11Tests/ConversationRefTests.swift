@@ -437,6 +437,144 @@ final class ConversationRefTests: XCTestCase {
         XCTAssertNil(expiredActive)
     }
 
+    func testUnacknowledgedLaunchBoundaryInvalidatesPriorOwnerThroughPersistence() async throws {
+        let store = ConversationStore()
+        let idA = "aaaa1111-2222-3333-4444-555566667777"
+        let idB = "bbbb1111-2222-3333-4444-555566667777"
+        let boundary = Date(timeIntervalSince1970: 2_000.75)
+        _ = await store.captureRuntimeEnv(
+            surfaceId: "S1",
+            id: idA,
+            cwd: "/tmp/proj",
+            capturedAt: Date(timeIntervalSince1970: 2_000.5)
+        )
+
+        let expiredClaim = await store.claim(
+            surfaceId: "S1",
+            kind: "codex",
+            cwd: "/tmp/proj",
+            placeholderId: "wrapper-claim:S1:expired",
+            capturedAt: boundary,
+            expectedResumeId: nil,
+            expiresAt: Date(timeIntervalSince1970: 2_000)
+        )
+        XCTAssertEqual(expiredClaim, .expired)
+
+        let applied = await store.applyCodexLaunchBoundaries([
+            CodexLaunchBoundaryMarker(
+                surfaceId: "S1",
+                boundaryAt: boundary,
+                expectedResumeId: nil
+            )
+        ])
+        XCTAssertEqual(applied, ["S1"])
+
+        let persisted = try JSONEncoder().encode(await store.snapshot())
+        let restored = try JSONDecoder().decode(
+            [String: SurfaceConversations].self,
+            from: persisted
+        )
+        let active = try XCTUnwrap(restored["S1"]?.active)
+        XCTAssertTrue(active.placeholder)
+        XCTAssertEqual(active.capturedVia, .wrapperClaim)
+        XCTAssertEqual(
+            active.payload?[ConversationLifecyclePayloadKey.invalidatedConversationID],
+            .string(idA)
+        )
+
+        let decision = ResumeDecisionEngine.decide(ResumeDecisionInput(
+            mode: .clean,
+            auditComplete: true,
+            ownership: Workspace.resumeOwnership(for: active),
+            kind: active.kind,
+            id: active.id,
+            placeholder: active.placeholder,
+            state: .unknown,
+            exactIDValid: false,
+            transcriptEvidence: .notRequired,
+            diagnosticReason: active.diagnosticReason
+        ))
+        guard case .skip(let code, _) = decision else {
+            return XCTFail("unreported lifecycle B must not resume prior lifecycle A")
+        }
+        XCTAssertEqual(code, .placeholder)
+
+        _ = await store.captureRuntimeEnv(
+            surfaceId: "S1",
+            id: idB,
+            cwd: "/tmp/proj",
+            capturedAt: Date(timeIntervalSince1970: 2_000.9)
+        )
+        let lateApply = await store.applyCodexLaunchBoundaries([
+            CodexLaunchBoundaryMarker(
+                surfaceId: "S1",
+                boundaryAt: boundary,
+                expectedResumeId: nil
+            )
+        ])
+        XCTAssertTrue(lateApply.isEmpty)
+        let finalActive = await store.active(for: "S1")
+        XCTAssertEqual(finalActive?.id, idB)
+    }
+
+    func testUnacknowledgedExactResumeBoundaryPreservesMatchingOwner() async {
+        let store = ConversationStore()
+        let idA = "aaaa1111-2222-3333-4444-555566667777"
+        _ = await store.captureRuntimeEnv(
+            surfaceId: "S1",
+            id: idA,
+            cwd: "/tmp/proj",
+            capturedAt: Date(timeIntervalSince1970: 2_000.5)
+        )
+
+        let applied = await store.applyCodexLaunchBoundaries([
+            CodexLaunchBoundaryMarker(
+                surfaceId: "S1",
+                boundaryAt: Date(timeIntervalSince1970: 2_000.75),
+                expectedResumeId: idA
+            )
+        ])
+        XCTAssertTrue(applied.isEmpty)
+        let active = await store.active(for: "S1")
+        XCTAssertEqual(active?.id, idA)
+        XCTAssertFalse(active?.placeholder ?? true)
+    }
+
+    func testLaunchBoundaryMarkerStoreUsesSubsecondModificationDate() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-206-boundary-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let socketPath = root.appendingPathComponent("c11.sock").path
+        let directory = CodexLaunchBoundaryMarkerStore.directoryURL(
+            socketPath: socketPath
+        )
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        let surfaceID = "c040ef8d-58a5-4c29-bebd-29f3d44ed203"
+        let expectedID = "aaaa1111-2222-3333-4444-555566667777"
+        let markerURL = directory.appendingPathComponent(surfaceID)
+        try "2000\n\(expectedID)\nsurface:pid:token\n".write(
+            to: markerURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 2_000.75)],
+            ofItemAtPath: markerURL.path
+        )
+
+        XCTAssertEqual(
+            CodexLaunchBoundaryMarkerStore.load(socketPath: socketPath),
+            [CodexLaunchBoundaryMarker(
+                surfaceId: surfaceID,
+                boundaryAt: Date(timeIntervalSince1970: 2_000.75),
+                expectedResumeId: expectedID
+            )]
+        )
+    }
+
     func testRuntimeEnvIdempotenceStickinessAndSameSurfaceNewLifecycle() async {
         let store = ConversationStore()
         let firstId = "aaaa1111-2222-3333-4444-555566667777"

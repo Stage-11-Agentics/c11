@@ -20,6 +20,72 @@ enum ConversationClaimResult: Sendable, Equatable {
     case expired
 }
 
+/// Durable, c11-owned evidence that the Codex wrapper crossed an interactive
+/// process boundary before attempting the bounded socket claim. A surviving
+/// marker means the claim was not acknowledged; persistence/startup must not
+/// trust an older exact owner on that surface.
+struct CodexLaunchBoundaryMarker: Sendable, Equatable {
+    let surfaceId: String
+    let boundaryAt: Date
+    let expectedResumeId: String?
+}
+
+enum CodexLaunchBoundaryMarkerStore {
+    static func directoryURL(socketPath: String) -> URL {
+        URL(fileURLWithPath: socketPath + ".codex-launch-boundaries", isDirectory: true)
+    }
+
+    /// Read only c11-owned marker metadata: surface UUID, boundary timestamp,
+    /// and optional expected resume UUID. No transcript content is involved.
+    static func load(
+        socketPath: String,
+        fileManager: FileManager = .default
+    ) -> [CodexLaunchBoundaryMarker] {
+        let directory = directoryURL(socketPath: socketPath)
+        guard let urls = try? fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [
+                .isRegularFileKey,
+                .contentModificationDateKey,
+            ],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+        return urls.compactMap { url in
+            let surfaceId = url.lastPathComponent
+            guard UUID(uuidString: surfaceId) != nil,
+                  let resourceValues = try? url.resourceValues(forKeys: [
+                      .isRegularFileKey,
+                      .contentModificationDateKey,
+                  ]),
+                  resourceValues.isRegularFile == true,
+                  let text = try? String(contentsOf: url, encoding: .utf8) else {
+                return nil
+            }
+            let lines = text.components(separatedBy: .newlines)
+            guard let rawEpoch = lines.first,
+                  let epochSeconds = TimeInterval(rawEpoch) else {
+                return nil
+            }
+            let rawExpected = lines.count > 1 ? String(lines[1]) : ""
+            let expectedResumeId = UUID(uuidString: rawExpected) != nil
+                ? rawExpected
+                : nil
+            return CodexLaunchBoundaryMarker(
+                surfaceId: surfaceId,
+                // The wrapper's portable `date +%s` payload is a readable
+                // fallback only. APFS records the atomic marker write with
+                // subsecond precision, which is required to order an exact
+                // capture at second N + .1 before a launch at N + .9.
+                boundaryAt: resourceValues.contentModificationDate
+                    ?? Date(timeIntervalSince1970: epochSeconds),
+                expectedResumeId: expectedResumeId
+            )
+        }
+    }
+}
+
 struct RuntimeEnvCaptureResult: Sendable, Equatable {
     enum Outcome: String, Sendable {
         case accepted
@@ -104,6 +170,63 @@ extension ConversationStore {
 
     func snapshot() -> [String: SurfaceConversations] {
         bySurface
+    }
+
+    /// Fail-close any unacknowledged Codex launch boundary before scrape,
+    /// suspension, or persistence can trust an owner from the prior process.
+    ///
+    /// A newer target runtime capture wins by timestamp. An exact explicit
+    /// resume intent may preserve the same prior id. Plain or mismatched
+    /// intent replaces every older owner with a real placeholder, matching
+    /// the acknowledged `claim` path without permitting a late claim to
+    /// regress the target that already started.
+    @discardableResult
+    func applyCodexLaunchBoundaries(
+        _ markers: [CodexLaunchBoundaryMarker]
+    ) -> [String] {
+        var applied: [String] = []
+        for marker in markers.sorted(by: {
+            if $0.boundaryAt == $1.boundaryAt {
+                return $0.surfaceId < $1.surfaceId
+            }
+            return $0.boundaryAt < $1.boundaryAt
+        }) {
+            let existing = bySurface[marker.surfaceId]?.active
+            if let existing, existing.capturedAt >= marker.boundaryAt {
+                continue
+            }
+            if let expectedResumeId = marker.expectedResumeId,
+               let existing,
+               existing.kind == "codex",
+               !existing.placeholder,
+               existing.id == expectedResumeId {
+                continue
+            }
+
+            var payload: [String: PersistedJSONValue]? = nil
+            if let existing, !existing.placeholder, !existing.id.isEmpty {
+                payload = [
+                    ConversationLifecyclePayloadKey.invalidatedConversationID: .string(existing.id)
+                ]
+            }
+            let placeholder = ConversationRef(
+                kind: "codex",
+                id: "wrapper-claim:\(marker.surfaceId):unacknowledged",
+                placeholder: true,
+                cwd: existing?.cwd,
+                capturedAt: marker.boundaryAt,
+                capturedVia: .wrapperClaim,
+                state: .unknown,
+                diagnosticReason: "unacknowledged Codex launch boundary",
+                payload: payload
+            )
+            var conversations = bySurface[marker.surfaceId] ?? .empty
+            conversations.active = placeholder
+            bySurface[marker.surfaceId] = conversations
+            applied.append(marker.surfaceId)
+        }
+        _ = auditGlobalOwnership()
+        return applied
     }
 
     // MARK: - Bulk seed (used by snapshot restore)

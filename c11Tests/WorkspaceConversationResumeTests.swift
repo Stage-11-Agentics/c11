@@ -251,6 +251,51 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         XCTAssertEqual(unavailableCode, .transcriptUnverified)
     }
 
+    func testPlaceholderAndOrdinaryUnknownReachSharedTypedLifecycleSkips() {
+        let placeholder = ConversationRef(
+            kind: "codex",
+            id: "wrapper-claim:S1:test",
+            placeholder: true,
+            capturedVia: .wrapperClaim,
+            state: .unknown,
+            diagnosticReason: "wrapper-claim placeholder"
+        )
+        let unknown = ConversationRef(
+            kind: "codex",
+            id: codexSessionId,
+            capturedVia: .manual,
+            state: .unknown,
+            diagnosticReason: "ordinary unknown lifecycle"
+        )
+
+        XCTAssertEqual(Workspace.resumeOwnership(for: placeholder), .unique)
+        XCTAssertEqual(Workspace.resumeOwnership(for: unknown), .unique)
+
+        func decision(for ref: ConversationRef) -> ResumeDecision {
+            ResumeDecisionEngine.decide(ResumeDecisionInput(
+                mode: .clean,
+                auditComplete: true,
+                ownership: Workspace.resumeOwnership(for: ref),
+                kind: ref.kind,
+                id: ref.id,
+                placeholder: ref.placeholder,
+                state: ResumePersistedState(rawValue: ref.state.rawValue) ?? .unsupported,
+                exactIDValid: CodexStrategy().isValidId(ref.id),
+                transcriptEvidence: .notRequired,
+                diagnosticReason: ref.diagnosticReason
+            ))
+        }
+
+        guard case .skip(let placeholderCode, _) = decision(for: placeholder) else {
+            return XCTFail("placeholder must skip")
+        }
+        XCTAssertEqual(placeholderCode, .placeholder)
+        guard case .skip(let unknownCode, _) = decision(for: unknown) else {
+            return XCTFail("ordinary unknown lifecycle must skip")
+        }
+        XCTAssertEqual(unknownCode, .stateNotResumable)
+    }
+
     // MARK: - Helpers (mirror the deleted WorkspaceRestartCommandsTests
     // helpers so this file is self-contained).
 

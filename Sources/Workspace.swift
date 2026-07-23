@@ -539,16 +539,12 @@ extension Workspace {
                 return .ambiguous
             }
         }
-        if ref.state == .alive || ref.state == .suspended { return .unique }
-        // Dirty verification can intentionally demote a uniquely audited ref
-        // to unknown when its transcript is absent. Keep ownership and
-        // transcript evidence as separate axes in that case.
-        let diagnostic = ref.diagnosticReason?.lowercased() ?? ""
-        if diagnostic.contains("transcript not found")
-            || diagnostic.contains("transcript verification unavailable") {
-            return .unique
-        }
-        return .unaudited
+        // Startup audit completion is a separate ResumeDecisionInput axis.
+        // Once complete, an unquarantined singleton is uniquely owned
+        // regardless of placeholder/lifecycle state; the shared decision
+        // engine must reach those later gates so app and CLI emit the same
+        // typed placeholder or state-not-resumable skip.
+        return .unique
     }
 
     nonisolated static func transcriptEvidence(

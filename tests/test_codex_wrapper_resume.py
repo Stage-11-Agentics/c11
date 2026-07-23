@@ -106,6 +106,13 @@ exit 0
     def argv_lines(self) -> list[str]:
         return self.argv.read_text().splitlines() if self.argv.exists() else []
 
+    def boundary_file(self) -> Path:
+        return Path(
+            str(self.socket_path)
+            + ".codex-launch-boundaries/"
+            + self.env()["CMUX_SURFACE_ID"]
+        )
+
 
 def expect(condition: bool, message: str, failures: list[str]) -> None:
     if not condition:
@@ -128,6 +135,7 @@ def main() -> int:
             claim_line = next((line for line in lines if line.startswith("claim-start")), "")
             expect("--ttl-ms 700" in claim_line and "timeout=0.75" in claim_line, f"claim was not expiry-bounded: {claim_line}", failures)
             expect(f"--expected-resume-id {argv[1]}" in claim_line, f"exact resume intent was not forwarded: {claim_line}", failures)
+            expect(not fixture.boundary_file().exists(), "acknowledged claim left a stale launch-boundary marker", failures)
         finally:
             fixture.close()
 
@@ -137,6 +145,20 @@ def main() -> int:
             expect(proc.returncode == 0 and fixture.argv_lines() == ["--search", "prompt"], f"claim failure blocked or changed Codex: {proc.stderr}", failures)
             plain_claim = next((line for line in fixture.event_lines() if line.startswith("claim-start")), "")
             expect("--expected-resume-id" not in plain_claim, f"plain launch forged resume intent: {plain_claim}", failures)
+            marker = fixture.boundary_file()
+            expect(marker.exists(), "failed claim did not leave a fail-closed launch-boundary marker", failures)
+            if marker.exists():
+                marker_lines = marker.read_text().splitlines()
+                expect(
+                    len(marker_lines) >= 3
+                    and marker_lines[0].isdigit()
+                    and marker_lines[1] == ""
+                    and marker_lines[2].startswith(
+                        fixture.env()["CMUX_SURFACE_ID"] + ":"
+                    ),
+                    f"invalid boundary marker: {marker_lines}",
+                    failures,
+                )
             proc = fixture.run([], FAKE_REAL_MODE="exit42")
             expect(proc.returncode == 42, f"real Codex exit status was not preserved: {proc.returncode}", failures)
         finally:
@@ -151,6 +173,7 @@ def main() -> int:
             expect(proc.returncode == 0 and elapsed < 2.0, f"expired claim blocked launch for {elapsed:.2f}s", failures)
             expect("claim-expired-no-mutation" in lines and "claim-committed" not in lines, f"expired claim mutated: {lines}", failures)
             expect(lines.index("claim-expired-no-mutation") < lines.index("real-start"), f"Codex exec raced expiry acknowledgement: {lines}", failures)
+            expect(fixture.boundary_file().exists(), "expired claim did not leave a fail-closed launch-boundary marker", failures)
         finally:
             fixture.close()
 
@@ -178,6 +201,7 @@ def main() -> int:
             proc = fixture.run(argv)
             expect(proc.returncode == 0 and fixture.argv_lines() == argv, f"missing-socket passthrough failed: {proc.stderr}", failures)
             expect(not any(line.startswith("claim-start") for line in fixture.event_lines()), f"missing socket attempted claim: {fixture.event_lines()}", failures)
+            expect(not fixture.boundary_file().exists(), "unavailable-socket passthrough wrote a marker outside the live-socket gate", failures)
         finally:
             fixture.close()
 

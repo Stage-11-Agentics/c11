@@ -59,11 +59,14 @@ def run(
     env = os.environ.copy()
     for key in (
         "C11_TAG", "CMUX_TAG", "C11_QA_LAUNCH",
-        "C11_QA_OPENCODE_DB_PATH",
+        "C11_QA_CLAUDE_PROJECTS_ROOT", "C11_QA_OPENCODE_DB_PATH",
     ):
         env.pop(key, None)
     env.update({
         "C11_QA_CODEX_SESSIONS_ROOT": str(sessions_root),
+        "C11_QA_CLAUDE_PROJECTS_ROOT": str(
+            sessions_root.parent / "claude-projects"
+        ),
         "CMUX_CLI_SENTRY_DISABLED": "1",
     })
     if qa_gate:
@@ -115,6 +118,34 @@ def main() -> int:
         clean_panel = (clean_payload.get("panels") or [{}])[0]
         expect(clean_panel.get("action") == f"codex resume '{codex_id}'", f"clean mode did not emit exact command: {clean_panel}", failures)
 
+        snapshot(path, [{
+            "kind": "codex", "id": "wrapper-claim:test", "placeholder": True,
+            "state": "unknown", "cwd": "/work/project",
+            "capturedVia": "wrapperClaim",
+        }])
+        placeholder = run(cli, sessions_root, path, "clean")
+        placeholder_panel = (payload(placeholder).get("panels") or [{}])[0]
+        expect(
+            placeholder.returncode != 0
+            and placeholder_panel.get("skip_code") == "placeholder",
+            f"clean placeholder did not match app typed skip: {placeholder_panel}",
+            failures,
+        )
+
+        unknown_ref = dict(exact_ref)
+        unknown_ref["state"] = "unknown"
+        unknown_ref["capturedVia"] = "manual"
+        snapshot(path, [unknown_ref])
+        unknown = run(cli, sessions_root, path, "clean")
+        unknown_panel = (payload(unknown).get("panels") or [{}])[0]
+        expect(
+            unknown.returncode != 0
+            and unknown_panel.get("skip_code") == "state-not-resumable",
+            f"clean unknown lifecycle did not match app typed skip: {unknown_panel}",
+            failures,
+        )
+
+        snapshot(path, [exact_ref])
         dirty_missing = run(cli, sessions_root, path, "dirty")
         missing_panel = (payload(dirty_missing).get("panels") or [{}])[0]
         expect(dirty_missing.returncode != 0 and missing_panel.get("skip_code") == "transcript-missing", f"dirty missing transcript did not skip: {missing_panel}", failures)
@@ -221,6 +252,48 @@ def main() -> int:
             and len(causal_same_cwd_panels) == 2
             and all(row.get("would_resume") is True for row in causal_same_cwd_panels),
             f"distinct causal same-cwd Codex owners were not eligible: {causal_same_cwd_panels}",
+            failures,
+        )
+
+        claude_id = str(uuid.uuid4())
+        claude_cwd = (
+            "/Users/atin/Projects/Gregorovich/projects/singularist_salon"
+        )
+        claude_slug = (
+            "-Users-atin-Projects-Gregorovich-projects-singularist-salon"
+        )
+        claude_projects_root = tmp / "claude-projects"
+        claude_transcript = (
+            claude_projects_root / claude_slug / f"{claude_id}.jsonl"
+        )
+        claude_transcript.parent.mkdir(parents=True)
+        claude_transcript.touch()
+        snapshot(path, [{
+            "kind": "claude-code", "id": claude_id, "placeholder": False,
+            "state": "suspended", "cwd": claude_cwd,
+            "capturedVia": "hook",
+        }])
+        claude_override_without_gate = run(
+            cli, sessions_root, path, "dirty", qa_gate=False
+        )
+        claude_ungated_panel = (
+            payload(claude_override_without_gate).get("panels") or [{}]
+        )[0]
+        expect(
+            claude_override_without_gate.returncode != 0
+            and claude_ungated_panel.get("skip_code") == "transcript-missing",
+            "untagged CLI honored the QA Claude projects override: "
+            f"{claude_ungated_panel}",
+            failures,
+        )
+        claude_dirty = run(cli, sessions_root, path, "dirty")
+        claude_panel = (payload(claude_dirty).get("panels") or [{}])[0]
+        expect(
+            claude_dirty.returncode == 0
+            and claude_panel.get("transcript_evidence") == "verified"
+            and claude_panel.get("action")
+                == f"claude --dangerously-skip-permissions --resume {claude_id}",
+            f"dirty Claude underscore cwd slug diverged from app behavior: {claude_panel}",
             failures,
         )
 

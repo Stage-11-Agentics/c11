@@ -12352,11 +12352,44 @@ struct CMUXCLI {
         return appSupport + "/c11/session-com.stage11.c11.json"
     }
 
-    /// Claude Code's per-project transcript directory slug: every `/` and `.`
-    /// in the absolute cwd becomes `-`. Mirrors `ClaudeCodeStrategy.projectSlug`
-    /// (the CLI is a separate build target and cannot import it).
+    /// Claude Code's per-project transcript directory slug: every character
+    /// that is not an ASCII letter or digit becomes `-`. Mirrors
+    /// `ClaudeCodeStrategy.projectSlug` (the CLI is a separate build target
+    /// and cannot import it).
     private func claudeProjectSlug(_ cwd: String) -> String {
-        return String(cwd.map { ($0 == "/" || $0 == ".") ? "-" : $0 })
+        var out = ""
+        out.unicodeScalars.reserveCapacity(cwd.unicodeScalars.count)
+        for scalar in cwd.unicodeScalars {
+            let value = scalar.value
+            let isASCIIAlphanumeric =
+                (value >= 48 && value <= 57)
+                || (value >= 65 && value <= 90)
+                || (value >= 97 && value <= 122)
+            out.unicodeScalars.append(isASCIIAlphanumeric ? scalar : "-")
+        }
+        return out
+    }
+
+    private func claudeProjectsRoot(
+        home: String,
+        environment: [String: String]
+    ) -> URL {
+        let taggedOrQA = ["C11_TAG", "CMUX_TAG", "C11_QA_LAUNCH"].contains { key in
+            guard let value = environment[key] else { return false }
+            return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        if taggedOrQA,
+           let rawOverride = environment["C11_QA_CLAUDE_PROJECTS_ROOT"]?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+           !rawOverride.isEmpty {
+            return URL(
+                fileURLWithPath: (rawOverride as NSString).expandingTildeInPath,
+                isDirectory: true
+            ).standardizedFileURL
+        }
+        return URL(fileURLWithPath: home)
+            .appendingPathComponent(".claude", isDirectory: true)
+            .appendingPathComponent("projects", isDirectory: true)
     }
 
     private func isUUIDv4(_ id: String) -> Bool {
@@ -12700,8 +12733,16 @@ struct CMUXCLI {
         } else if input.kind == "claude-code", idValid,
                   let cwd = input.cwd, !cwd.isEmpty {
             let slug = claudeProjectSlug(cwd)
-            let path = "\(home)/.claude/projects/\(slug)/\(input.id).jsonl"
-            transcriptEvidence = FileManager.default.fileExists(atPath: path) ? .verified : .missing
+            let path = claudeProjectsRoot(
+                home: home,
+                environment: ProcessInfo.processInfo.environment
+            )
+                .appendingPathComponent(slug, isDirectory: true)
+                .appendingPathComponent("\(input.id).jsonl", isDirectory: false)
+                .path
+            transcriptEvidence = FileManager.default.fileExists(atPath: path)
+                ? .verified
+                : .missing
         } else if input.kind == "opencode", idValid {
             switch opencodeSessionExists(id: input.id, home: home) {
             case true: transcriptEvidence = .verified

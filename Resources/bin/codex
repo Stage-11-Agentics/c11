@@ -109,17 +109,36 @@ if [[ "${1:-}" == "resume" && "${2:-}" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-F
 fi
 
 # (1) Mark the surface as terminal_type=codex (sidebar chip / role hint).
-# (2) Atomically mark the interactive process boundary. A plain launch or a
+# (2) Durably mark the interactive process boundary in c11-owned runtime
+#     storage before the bounded socket claim. A plain launch or a
 #     resume-id mismatch replaces any prior exact ref with a placeholder so a
 #     missed runtime report cannot resume the process that just ended. Exact
 #     matching resume intent preserves the ref while the resumed target starts.
 #
 # Agent metadata is advisory and remains asynchronous. The placeholder claim
-# is deliberately synchronous and bounded: Codex cannot create a rollout
-# until c11 has either acknowledged the claim or rejected it at the store's
-# expiry boundary. This preserves causal ordering without turning a stale
-# socket into launch latency.
+# is deliberately synchronous and bounded. If it is not acknowledged, the
+# marker survives so startup/persistence can invalidate the prior owner; a
+# later target runtime capture is newer than the marker and remains
+# authoritative. This preserves causal ordering without turning a stale socket
+# into launch latency.
 if [[ -n "$c11_bin" ]]; then
+    boundary_file=""
+    boundary_contents=""
+    boundary_surface="${CMUX_SURFACE_ID:-}"
+    if [[ "$boundary_surface" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then
+        boundary_dir="${CMUX_SOCKET_PATH}.codex-launch-boundaries"
+        boundary_tmp="${boundary_dir}/.${boundary_surface}.$$"
+        boundary_token="${boundary_surface}:$$:${RANDOM}"
+        boundary_contents="$(printf '%s\n%s\n%s' "$(date +%s)" "$EXPECTED_RESUME_ID" "$boundary_token")"
+        if (umask 077 && mkdir -p -- "$boundary_dir" && {
+            printf '%s\n' "$boundary_contents" > "$boundary_tmp"
+        } && mv -f -- "$boundary_tmp" "${boundary_dir}/${boundary_surface}"); then
+            boundary_file="${boundary_dir}/${boundary_surface}"
+        else
+            rm -f -- "$boundary_tmp" 2>/dev/null || true
+        fi
+    fi
+
     (
         CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
             "$c11_bin" --socket "${CMUX_SOCKET_PATH}" set-agent --type codex \
@@ -131,9 +150,19 @@ if [[ -n "$c11_bin" ]]; then
     if [[ -n "$EXPECTED_RESUME_ID" ]]; then
         claim_args+=(--expected-resume-id "$EXPECTED_RESUME_ID")
     fi
-    CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+    if CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
         "$c11_bin" --socket "${CMUX_SOCKET_PATH}" "${claim_args[@]}" \
-        >/dev/null 2>&1 || true
+        >/dev/null 2>&1; then
+        if [[ -n "$boundary_file" ]]; then
+            # Remove only the marker this invocation wrote. A newer launch on
+            # the same surface may already have replaced it while this bounded
+            # claim was in flight; that newer lifecycle boundary must survive.
+            current_boundary="$(<"$boundary_file")"
+            if [[ "$current_boundary" == "$boundary_contents" ]]; then
+                rm -f -- "$boundary_file" 2>/dev/null || true
+            fi
+        fi
+    fi
 fi
 
 exec "$REAL_CODEX" "$@"

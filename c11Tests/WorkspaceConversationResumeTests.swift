@@ -63,8 +63,9 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         let workspace = Workspace()
         let panelId = UUID()
         let surfaceId = panelId.uuidString
-        // Manually write an ambiguous ref (state=unknown) — same shape as
-        // the strategy would emit when there's >1 candidate.
+        // Keep lifecycle state resumable so the typed quarantine reason is
+        // the fact that blocks planning. Diagnostic prose must not own this
+        // safety decision.
         let ref = ConversationRef(
             kind: "codex",
             id: codexSessionId,
@@ -72,8 +73,9 @@ final class WorkspaceConversationResumeTests: XCTestCase {
             cwd: "/work/proj",
             capturedAt: Date(),
             capturedVia: .scrape,
-            state: .unknown,
-            diagnosticReason: "ambiguous: 2 candidates; chose newest"
+            state: .suspended,
+            quarantineReason: .ambiguousGlobalAssignment,
+            diagnosticReason: "opaque operator note"
         )
         await ConversationStore.shared.applyScrape(surfaceId: surfaceId, ref: ref)
         let snapshot = makeSnapshot(panels: [
@@ -110,6 +112,391 @@ final class WorkspaceConversationResumeTests: XCTestCase {
             registry: ConversationStrategyRegistry.v1
         )
         XCTAssertTrue(plans.isEmpty)
+    }
+
+    func testCodexCleanPlanningUsesSharedExactDecision() async throws {
+        let workspace = Workspace()
+        let panelId = UUID()
+        _ = await ConversationStore.shared.captureRuntimeEnv(
+            surfaceId: panelId.uuidString,
+            id: codexSessionId,
+            cwd: nil
+        )
+        let plans = workspace.pendingRestartPlans(
+            from: makeSnapshot(panels: [makePanelSnapshot(id: panelId, type: .terminal)]),
+            registry: .v1,
+            startup: .init(epoch: 1, mode: .clean, phase: .ready)
+        )
+        XCTAssertEqual(plans.count, 1)
+        XCTAssertEqual(plans.first?.panelId, panelId)
+        guard case .typeCommand(let text, let submitWithReturn) = plans.first?.action else {
+            return XCTFail("expected exact Codex resume command")
+        }
+        XCTAssertEqual(text, "codex resume '\(codexSessionId)'")
+        XCTAssertTrue(submitWithReturn)
+    }
+
+    func testNoResumeAndFailedAuditYieldZeroPlans() async throws {
+        let workspace = Workspace()
+        let panelId = UUID()
+        _ = await ConversationStore.shared.captureRuntimeEnv(
+            surfaceId: panelId.uuidString,
+            id: codexSessionId,
+            cwd: nil
+        )
+        await ConversationStore.shared.suspendAllAlive()
+        let snapshot = makeSnapshot(panels: [makePanelSnapshot(id: panelId, type: .terminal)])
+
+        XCTAssertTrue(workspace.pendingRestartPlans(
+            from: snapshot,
+            registry: .v1,
+            startup: .init(epoch: 1, mode: .noResume, phase: .ready)
+        ).isEmpty)
+        XCTAssertTrue(workspace.pendingRestartPlans(
+            from: snapshot,
+            registry: .v1,
+            startup: .init(epoch: 2, mode: .clean, phase: .failed(reason: "timeout"))
+        ).isEmpty)
+    }
+
+    func testStartupBoundaryInvalidatesStaleCodexWithoutTerminalType() async throws {
+        let workspace = Workspace()
+        let panelId = UUID()
+        let boundary = Date(timeIntervalSince1970: 2_000.75)
+        var panel = makePanelSnapshot(id: panelId, type: .terminal, metadata: nil)
+        panel.surfaceConversations = SurfaceConversations(active: ConversationRef(
+            kind: "codex",
+            id: codexSessionId,
+            placeholder: false,
+            cwd: "/tmp/project",
+            capturedAt: boundary.addingTimeInterval(-0.25),
+            capturedVia: .runtimeEnv,
+            state: .suspended
+        ))
+        let workspaceSnapshot = makeSnapshot(panels: [panel])
+        let appSnapshot = makeAppSnapshot(workspace: workspaceSnapshot)
+        let scope = ConversationSnapshotCaptureScope(snapshot: appSnapshot)
+
+        XCTAssertTrue(scope.scrapeContexts.isEmpty)
+        XCTAssertEqual(scope.markerSurfaceIds, [panelId.uuidString])
+        _ = await WorkspaceSnapshotConversationBridge.seedFromSnapshot(appSnapshot)
+        let applied = await ConversationStore.shared.applyCodexLaunchBoundaries([
+            CodexLaunchBoundaryMarker(
+                surfaceId: panelId.uuidString,
+                boundaryAt: boundary,
+                expectedResumeId: nil
+            ),
+        ])
+
+        XCTAssertEqual(applied, [panelId.uuidString])
+        let active = await ConversationStore.shared.active(for: panelId.uuidString)
+        XCTAssertTrue(active?.placeholder == true)
+        XCTAssertTrue(workspace.pendingRestartPlans(
+            from: workspaceSnapshot,
+            registry: .v1,
+            startup: .init(epoch: 1, mode: .clean, phase: .ready)
+        ).isEmpty, "startup must dispatch zero stale-A resume actions")
+    }
+
+    func testCleanPersistenceBoundaryInvalidatesStaleCodexWithEmptyTerminalType() async throws {
+        let workspace = Workspace()
+        let panelId = UUID()
+        let boundary = Date(timeIntervalSince1970: 3_000.75)
+        var panel = makePanelSnapshot(
+            id: panelId,
+            type: .terminal,
+            metadata: [SurfaceMetadataKeyName.terminalType: .string("  ")]
+        )
+        panel.surfaceConversations = SurfaceConversations(active: ConversationRef(
+            kind: "codex",
+            id: codexSessionId,
+            placeholder: false,
+            cwd: "/tmp/project",
+            capturedAt: boundary.addingTimeInterval(-0.25),
+            capturedVia: .runtimeEnv,
+            state: .alive
+        ))
+        let workspaceSnapshot = makeSnapshot(panels: [panel])
+        let draft = makeAppSnapshot(workspace: workspaceSnapshot)
+        let scope = ConversationSnapshotCaptureScope(snapshot: draft)
+
+        XCTAssertTrue(scope.scrapeContexts.isEmpty)
+        XCTAssertEqual(scope.markerSurfaceIds, [panelId.uuidString])
+        _ = await WorkspaceSnapshotConversationBridge.seedFromSnapshot(draft)
+        _ = await ConversationStore.shared.applyCodexLaunchBoundaries([
+            CodexLaunchBoundaryMarker(
+                surfaceId: panelId.uuidString,
+                boundaryAt: boundary,
+                expectedResumeId: nil
+            ),
+        ])
+        await ConversationStore.shared.suspendAllAlive()
+
+        let conversations = await ConversationStore.shared.snapshot()
+        XCTAssertTrue(conversations[panelId.uuidString]?.active?.placeholder == true)
+        XCTAssertTrue(workspace.pendingRestartPlans(
+            from: workspaceSnapshot,
+            registry: .v1,
+            startup: .init(epoch: 2, mode: .clean, phase: .ready)
+        ).isEmpty, "a clean snapshot must not make stale A resumable")
+    }
+
+    func testStartupQuarantinesUntypedInferredCodexOwnersInSameCwd() async throws {
+        let workspace = Workspace()
+        let missingTypePanelId = UUID()
+        let emptyTypePanelId = UUID()
+        var missingTypePanel = makePanelSnapshot(
+            id: missingTypePanelId,
+            type: .terminal,
+            metadata: nil
+        )
+        missingTypePanel.surfaceConversations = SurfaceConversations(active: ConversationRef(
+            kind: "codex",
+            id: "aaaa1111-2222-3333-4444-555566667777",
+            cwd: "/work/shared/../shared",
+            capturedVia: .scrape,
+            state: .suspended
+        ))
+        var emptyTypePanel = makePanelSnapshot(
+            id: emptyTypePanelId,
+            type: .terminal,
+            metadata: [SurfaceMetadataKeyName.terminalType: .string("  ")]
+        )
+        emptyTypePanel.surfaceConversations = SurfaceConversations(active: ConversationRef(
+            kind: "codex",
+            id: "bbbb1111-2222-3333-4444-555566667777",
+            cwd: "/work/shared",
+            capturedVia: .scrape,
+            state: .suspended
+        ))
+        let workspaceSnapshot = makeSnapshot(panels: [
+            missingTypePanel,
+            emptyTypePanel,
+        ])
+        let appSnapshot = makeAppSnapshot(workspace: workspaceSnapshot)
+        let scope = ConversationSnapshotCaptureScope(snapshot: appSnapshot)
+
+        XCTAssertTrue(scope.scrapeContexts.isEmpty)
+        let audit = await ConversationStore.shared.seed(
+            from: WorkspaceSnapshotConversationBridge.records(from: appSnapshot)
+        )
+
+        XCTAssertEqual(
+            audit.quarantinedSurfaceIds,
+            [emptyTypePanelId.uuidString, missingTypePanelId.uuidString].sorted()
+        )
+        XCTAssertTrue(workspace.pendingRestartPlans(
+            from: workspaceSnapshot,
+            registry: .v1,
+            startup: .init(epoch: 3, mode: .clean, phase: .ready)
+        ).isEmpty, "startup must dispatch zero same-CWD inferred Codex resumes")
+        let conversations = await ConversationStore.shared.snapshot()
+        XCTAssertEqual(
+            conversations[missingTypePanelId.uuidString]?.active?.quarantineReason,
+            .sameCwdWithoutCausalIdentity
+        )
+        XCTAssertEqual(
+            conversations[emptyTypePanelId.uuidString]?.active?.quarantineReason,
+            .sameCwdWithoutCausalIdentity
+        )
+    }
+
+    func testStartupSameCwdAuditIgnoresNonresumableCodexRefs() async throws {
+        let workspace = Workspace()
+        let activePanelId = UUID()
+        let tombstonedPanelId = UUID()
+        let unsupportedPanelId = UUID()
+
+        func panel(
+            id: UUID,
+            conversationID: String,
+            state: ConversationState
+        ) -> SessionPanelSnapshot {
+            var panel = makePanelSnapshot(id: id, type: .terminal, metadata: nil)
+            panel.surfaceConversations = SurfaceConversations(active: ConversationRef(
+                kind: "codex",
+                id: conversationID,
+                cwd: "/work/shared",
+                capturedVia: .scrape,
+                state: state
+            ))
+            return panel
+        }
+
+        let workspaceSnapshot = makeSnapshot(panels: [
+            panel(
+                id: activePanelId,
+                conversationID: "aaaa1111-2222-3333-4444-555566667777",
+                state: .suspended
+            ),
+            panel(
+                id: tombstonedPanelId,
+                conversationID: "bbbb1111-2222-3333-4444-555566667777",
+                state: .tombstoned
+            ),
+            panel(
+                id: unsupportedPanelId,
+                conversationID: "cccc1111-2222-3333-4444-555566667777",
+                state: .unsupported
+            ),
+        ])
+        let appSnapshot = makeAppSnapshot(workspace: workspaceSnapshot)
+        let audit = await ConversationStore.shared.seed(
+            from: WorkspaceSnapshotConversationBridge.records(from: appSnapshot)
+        )
+
+        XCTAssertTrue(audit.quarantinedSurfaceIds.isEmpty)
+        let plans = workspace.pendingRestartPlans(
+            from: workspaceSnapshot,
+            registry: .v1,
+            startup: .init(epoch: 4, mode: .clean, phase: .ready)
+        )
+        XCTAssertEqual(plans.count, 1)
+        XCTAssertEqual(plans.first?.panelId, activePanelId)
+        guard case .typeCommand(let command, _) = plans.first?.action else {
+            return XCTFail("eligible active ref must remain resumable")
+        }
+        XCTAssertEqual(
+            command,
+            "codex resume 'aaaa1111-2222-3333-4444-555566667777'"
+        )
+    }
+
+    func testDirtyCodexPlanningRequiresVerifiedDiagnostic() async throws {
+        let workspace = Workspace()
+        let verifiedPanel = UUID()
+        let missingPanel = UUID()
+        await ConversationStore.shared.push(
+            surfaceId: verifiedPanel.uuidString,
+            kind: "codex",
+            id: codexSessionId,
+            source: .manual,
+            state: .suspended,
+            diagnosticReason: "crash recovery: transcript verified on disk"
+        )
+        await ConversationStore.shared.push(
+            surfaceId: missingPanel.uuidString,
+            kind: "codex",
+            id: "eee11111-2222-3333-4444-555566667777",
+            source: .manual,
+            state: .unknown,
+            diagnosticReason: "crash recovery: transcript not found"
+        )
+        let plans = workspace.pendingRestartPlans(
+            from: makeSnapshot(panels: [
+                makePanelSnapshot(id: verifiedPanel, type: .terminal),
+                makePanelSnapshot(id: missingPanel, type: .terminal),
+            ]),
+            registry: .v1,
+            startup: .init(epoch: 1, mode: .dirty, phase: .ready)
+        )
+        XCTAssertEqual(plans.map(\.panelId), [verifiedPanel])
+    }
+
+    func testDirtyOpenCodeMissingAndUnavailableRemainUniquelyAuditedTypedSkips() {
+        let missing = ConversationRef(
+            kind: "opencode",
+            id: "ses_0fda89a49ffeLHwJXtrxnn4X6g",
+            cwd: "/work/opencode",
+            capturedVia: .hook,
+            state: .unknown,
+            diagnosticReason: "crash recovery: transcript not found"
+        )
+        let unavailable = ConversationRef(
+            kind: "opencode",
+            id: "ses_0f5b10b09ffeb2G3Y53oze86wV",
+            cwd: "/work/opencode",
+            capturedVia: .hook,
+            state: .unknown,
+            diagnosticReason: "crash recovery: transcript verification unavailable"
+        )
+
+        XCTAssertEqual(Workspace.resumeOwnership(for: missing), .unique)
+        XCTAssertEqual(Workspace.transcriptEvidence(for: missing, mode: .dirty), .missing)
+        XCTAssertEqual(Workspace.resumeOwnership(for: unavailable), .unique)
+        XCTAssertEqual(
+            Workspace.transcriptEvidence(for: unavailable, mode: .dirty),
+            .unavailable
+        )
+
+        let missingDecision = ResumeDecisionEngine.decide(ResumeDecisionInput(
+            mode: .dirty,
+            auditComplete: true,
+            ownership: Workspace.resumeOwnership(for: missing),
+            kind: missing.kind,
+            id: missing.id,
+            placeholder: missing.placeholder,
+            state: .unknown,
+            exactIDValid: true,
+            transcriptEvidence: Workspace.transcriptEvidence(for: missing, mode: .dirty),
+            diagnosticReason: missing.diagnosticReason
+        ))
+        let unavailableDecision = ResumeDecisionEngine.decide(ResumeDecisionInput(
+            mode: .dirty,
+            auditComplete: true,
+            ownership: Workspace.resumeOwnership(for: unavailable),
+            kind: unavailable.kind,
+            id: unavailable.id,
+            placeholder: unavailable.placeholder,
+            state: .unknown,
+            exactIDValid: true,
+            transcriptEvidence: Workspace.transcriptEvidence(for: unavailable, mode: .dirty),
+            diagnosticReason: unavailable.diagnosticReason
+        ))
+
+        guard case .skip(let missingCode, _) = missingDecision else {
+            return XCTFail("missing OpenCode row must skip")
+        }
+        XCTAssertEqual(missingCode, .transcriptMissing)
+        guard case .skip(let unavailableCode, _) = unavailableDecision else {
+            return XCTFail("unavailable OpenCode DB must skip")
+        }
+        XCTAssertEqual(unavailableCode, .transcriptUnverified)
+    }
+
+    func testPlaceholderAndOrdinaryUnknownReachSharedTypedLifecycleSkips() {
+        let placeholder = ConversationRef(
+            kind: "codex",
+            id: "wrapper-claim:S1:test",
+            placeholder: true,
+            capturedVia: .wrapperClaim,
+            state: .unknown,
+            diagnosticReason: "wrapper-claim placeholder"
+        )
+        let unknown = ConversationRef(
+            kind: "codex",
+            id: codexSessionId,
+            capturedVia: .manual,
+            state: .unknown,
+            diagnosticReason: "ordinary unknown lifecycle"
+        )
+
+        XCTAssertEqual(Workspace.resumeOwnership(for: placeholder), .unique)
+        XCTAssertEqual(Workspace.resumeOwnership(for: unknown), .unique)
+
+        func decision(for ref: ConversationRef) -> ResumeDecision {
+            ResumeDecisionEngine.decide(ResumeDecisionInput(
+                mode: .clean,
+                auditComplete: true,
+                ownership: Workspace.resumeOwnership(for: ref),
+                kind: ref.kind,
+                id: ref.id,
+                placeholder: ref.placeholder,
+                state: ResumePersistedState(rawValue: ref.state.rawValue) ?? .unsupported,
+                exactIDValid: CodexStrategy().isValidId(ref.id),
+                transcriptEvidence: .notRequired,
+                diagnosticReason: ref.diagnosticReason
+            ))
+        }
+
+        guard case .skip(let placeholderCode, _) = decision(for: placeholder) else {
+            return XCTFail("placeholder must skip")
+        }
+        XCTAssertEqual(placeholderCode, .placeholder)
+        guard case .skip(let unknownCode, _) = decision(for: unknown) else {
+            return XCTFail("ordinary unknown lifecycle must skip")
+        }
+        XCTAssertEqual(unknownCode, .stateNotResumable)
     }
 
     // MARK: - Helpers (mirror the deleted WorkspaceRestartCommandsTests
@@ -159,6 +546,28 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         )
     }
 
+    private func makeAppSnapshot(workspace: SessionWorkspaceSnapshot) -> AppSessionSnapshot {
+        AppSessionSnapshot(
+            version: SessionSnapshotSchema.currentVersion,
+            createdAt: Date().timeIntervalSince1970,
+            windows: [
+                SessionWindowSnapshot(
+                    frame: nil,
+                    display: nil,
+                    tabManager: SessionTabManagerSnapshot(
+                        selectedWorkspaceIndex: 0,
+                        workspaces: [workspace]
+                    ),
+                    sidebar: SessionSidebarSnapshot(
+                        isVisible: true,
+                        selection: .tabs,
+                        width: 240
+                    )
+                ),
+            ]
+        )
+    }
+
     // MARK: - readConversationsByPanelIdSync (regression: sync-bridge deadlock)
 
     /// Regression for the snapshot-capture deadlock. `Workspace` is
@@ -185,12 +594,12 @@ final class WorkspaceConversationResumeTests: XCTestCase {
             source: .hook,
             state: .alive
         )
-        await ConversationStore.shared.push(
+        let wrapperPlaceholder = "wrapper-claim:\(surfaceB):fixture"
+        _ = await ConversationStore.shared.claim(
             surfaceId: surfaceB,
             kind: "codex",
-            id: codexSessionId,
-            source: .wrapperClaim,
-            state: .unknown
+            cwd: nil,
+            placeholderId: wrapperPlaceholder
         )
 
         // Call the helper from a `@MainActor` context (the same context
@@ -205,8 +614,9 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         XCTAssertEqual(captured[surfaceA]?.active?.id, claudeSessionId)
         XCTAssertEqual(captured[surfaceA]?.active?.kind, "claude-code")
         XCTAssertEqual(captured[surfaceA]?.active?.state, .alive)
-        XCTAssertEqual(captured[surfaceB]?.active?.id, codexSessionId)
+        XCTAssertEqual(captured[surfaceB]?.active?.id, wrapperPlaceholder)
         XCTAssertEqual(captured[surfaceB]?.active?.kind, "codex")
+        XCTAssertEqual(captured[surfaceB]?.active?.placeholder, true)
     }
 
     /// Sanity check the empty-store contract.

@@ -67,6 +67,61 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertEqual(visibleFrame.y, 25, accuracy: 0.001)
     }
 
+    func testDelayedDurableSnapshotWriteCompletesBeforeCleanPromotionEligibility() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-delayed-durable-write-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let snapshotURL = tempDir.appendingPathComponent("session.json")
+        let snapshot = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
+
+        XCTAssertFalse(CleanPersistencePromotionPolicy.allowsPromotion(
+            resolutionCompleted: true,
+            finalStoreReadCompleted: true,
+            durableSnapshotWriteCompleted: false
+        ))
+        let outcome: BoundedLifecycleOutcome<Bool> = BoundedLifecycleWait.run(timeout: 1.0) {
+            try await Task.sleep(nanoseconds: 20_000_000)
+            return SessionPersistenceStore.save(snapshot, fileURL: snapshotURL)
+        }
+        guard case .completed(let persisted) = outcome else {
+            return XCTFail("delayed durable write should finish within budget")
+        }
+        XCTAssertTrue(persisted)
+        XCTAssertNotNil(SessionPersistenceStore.load(fileURL: snapshotURL))
+        XCTAssertTrue(CleanPersistencePromotionPolicy.allowsPromotion(
+            resolutionCompleted: true,
+            finalStoreReadCompleted: true,
+            durableSnapshotWriteCompleted: persisted
+        ))
+    }
+
+    func testTimedOutDurableSnapshotWriteIsNotCleanPromotionEligible() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-timeout-durable-write-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let snapshotURL = tempDir.appendingPathComponent("session.json")
+        let snapshot = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
+
+        let outcome: BoundedLifecycleOutcome<Bool> = BoundedLifecycleWait.run(timeout: 0.005) {
+            try await Task.sleep(nanoseconds: 100_000_000)
+            return SessionPersistenceStore.save(snapshot, fileURL: snapshotURL)
+        }
+        guard case .timedOut = outcome else {
+            return XCTFail("late durable write must report timeout")
+        }
+        XCTAssertFalse(CleanPersistencePromotionPolicy.allowsPromotion(
+            resolutionCompleted: true,
+            finalStoreReadCompleted: true,
+            durableSnapshotWriteCompleted: false
+        ))
+        // Let the detached fixture operation finish before removing its temp
+        // directory. Its late file is intentionally irrelevant: the caller
+        // already observed timeout and therefore never promotes clean.
+        Thread.sleep(forTimeInterval: 0.15)
+    }
+
     func testSaveAndLoadRoundTripPreservesWorkspaceCustomColor() {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("cmux-session-tests-\(UUID().uuidString)", isDirectory: true)

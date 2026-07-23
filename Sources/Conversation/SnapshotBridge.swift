@@ -26,10 +26,25 @@ enum WorkspaceSnapshotConversationBridge {
     /// every panel; honors the new field first; falls back to the legacy
     /// reserved-metadata read for one release window.
     ///
-    /// Calls into the actor synchronously via a 1 s bounded semaphore.
-    /// Called from the main-actor restore path (TabManager →
-    /// AppDelegate); the wait is acceptable on this rare seam.
-    static func seedFromSnapshot(_ snapshot: AppSessionSnapshot) {
+    /// Completion-aware async seed. App startup calls this from its detached
+    /// epoch task and does not begin restore planning until the task finishes.
+    /// There is intentionally no timeout-to-empty fallback here.
+    @discardableResult
+    static func seedFromSnapshot(
+        _ snapshot: AppSessionSnapshot,
+        store: ConversationStore = .shared
+    ) async -> Bool {
+        let seedMap = records(from: snapshot)
+        _ = await store.seed(from: seedMap)
+#if DEBUG
+        print("conversation.bridge.seed entries=\(seedMap.count)")
+#endif
+        return true
+    }
+
+    /// Pure snapshot extraction used by delayed-barrier tests and by the
+    /// async seed adapter above.
+    static func records(from snapshot: AppSessionSnapshot) -> [String: SurfaceConversations] {
         var liftedCount = 0
         var nativeCount = 0
         var seedMap: [String: SurfaceConversations] = [:]
@@ -54,26 +69,9 @@ enum WorkspaceSnapshotConversationBridge {
                 }
             }
         }
-        guard !seedMap.isEmpty else {
-            #if DEBUG
-            print("conversation.bridge.seed entries=0 native=0 lifted=0")
-            #endif
-            return
-        }
-        // C11-24: `Task.detached` so the spawned task does not inherit
-        // the caller's `@MainActor` isolation. Without it, the task body
-        // cannot run while main is blocked on `sema.wait` and the seed
-        // never lands. (`prepareStartupSessionSnapshotIfNeeded` calls
-        // this from `AppDelegate`, which is `@MainActor`.)
-        let sema = DispatchSemaphore(value: 0)
-        Task.detached(priority: .userInitiated) { [seedMap] in
-            await ConversationStore.shared.seed(from: seedMap)
-            sema.signal()
-        }
-        _ = sema.wait(timeout: .now() + 1.0)
-        #if DEBUG
-        print("conversation.bridge.seed entries=\(seedMap.count) native=\(nativeCount) lifted=\(liftedCount)")
-        #endif
+        _ = nativeCount
+        _ = liftedCount
+        return seedMap
     }
 
     /// Synchronous helper for tests. Returns the synthesized ref iff the

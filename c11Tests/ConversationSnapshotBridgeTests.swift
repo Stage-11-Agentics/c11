@@ -171,6 +171,49 @@ final class ConversationSnapshotBridgeTests: XCTestCase {
         XCTAssertEqual(decoded.surfaceConversations?.history.count, 0)
     }
 
+    func testRuntimeIdentityAndQuarantineRoundTripThroughSnapshotCodable() throws {
+        let original = SessionPanelSnapshot(
+            id: UUID(),
+            type: .terminal,
+            title: "Codex",
+            customTitle: nil,
+            directory: "/work/shared",
+            isPinned: false,
+            isManuallyUnread: false,
+            gitBranch: nil,
+            listeningPorts: [],
+            ttyName: nil,
+            terminal: SessionTerminalPanelSnapshot(
+                workingDirectory: "/work/shared",
+                scrollback: nil
+            ),
+            browser: nil,
+            markdown: nil,
+            metadata: nil,
+            metadataSources: nil,
+            surfaceConversations: SurfaceConversations(
+                active: ConversationRef(
+                    kind: "codex",
+                    id: "ddd11111-2222-4333-8444-555566667777",
+                    cwd: "/work/shared",
+                    capturedVia: .runtimeEnv,
+                    state: .unknown,
+                    quarantineReason: .conflictingCausalIdentity,
+                    diagnosticReason: "quarantined:conflicting_causal_identity"
+                ),
+                history: []
+            )
+        )
+
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: data)
+        XCTAssertEqual(decoded.surfaceConversations?.active?.capturedVia, .runtimeEnv)
+        XCTAssertEqual(
+            decoded.surfaceConversations?.active?.quarantineReason,
+            .conflictingCausalIdentity
+        )
+    }
+
     func testKillSwitchEnvVarHonored() {
         unsetenv("CMUX_DISABLE_CONVERSATION_STORE")
         XCTAssertFalse(ConversationStorePolicy.isDisabled)

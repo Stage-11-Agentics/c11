@@ -253,6 +253,38 @@ final class OpencodeStrategyResumeTests: XCTestCase {
         XCTAssertEqual(OpencodeStrategy(sessionLookup: { _ in StubLookup(result: false) }).transcriptExists(for: r, filesystem: fs), false)
         XCTAssertNil(OpencodeStrategy(sessionLookup: { _ in StubLookup(result: nil) }).transcriptExists(for: r, filesystem: fs))
     }
+
+    func testCrashReclassificationPreservesVerifiedMissingUnavailable() async {
+        let cases: [(Bool?, ConversationState, String)] = [
+            (true, .suspended, "crash recovery: transcript verified on disk"),
+            (false, .unknown, "crash recovery: transcript not found"),
+            (nil, .unknown, "crash recovery: transcript verification unavailable"),
+        ]
+
+        for (index, testCase) in cases.enumerated() {
+            let store = ConversationStore()
+            await store.push(
+                surfaceId: "S\(index)",
+                kind: "opencode",
+                id: id,
+                source: .hook,
+                cwd: cwd,
+                state: .alive
+            )
+            let registry = ConversationStrategyRegistry(strategies: [
+                OpencodeStrategy(sessionLookup: { _ in
+                    StubLookup(result: testCase.0)
+                })
+            ])
+            await store.reclassifyAfterCrash(
+                registry: registry,
+                filesystem: DefaultConversationFilesystem()
+            )
+            let active = await store.active(for: "S\(index)")
+            XCTAssertEqual(active?.state, testCase.1)
+            XCTAssertEqual(active?.diagnosticReason, testCase.2)
+        }
+    }
 }
 
 // MARK: - Scraper (real temp SQLite DB)

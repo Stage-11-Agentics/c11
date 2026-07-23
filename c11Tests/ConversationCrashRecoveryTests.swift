@@ -153,6 +153,98 @@ final class ConversationCrashRecoveryTests: XCTestCase {
         XCTAssertEqual(CodexStrategy().transcriptExists(for: absent, filesystem: fs), false)
     }
 
+    func testCodexExactTranscriptExistsBeyondNewestFiveHundredTwelve() {
+        let fs = MockFS()
+        let codexRoot = fs.home!
+            .appendingPathComponent(".codex", isDirectory: true)
+            .appendingPathComponent("sessions", isDirectory: true)
+        var entries: [ConversationFilesystemEntry] = []
+        for index in 0..<513 {
+            let id = String(format: "%08x-2222-4333-8444-555566667777", index)
+            let name = "rollout-newer-\(id).jsonl"
+            entries.append(ConversationFilesystemEntry(
+                url: codexRoot.appendingPathComponent(name),
+                fileName: name,
+                mtime: Date(timeIntervalSince1970: Double(10_000 - index)),
+                size: 1
+            ))
+        }
+        let targetName = "rollout-old-\(uuidA).jsonl"
+        entries.append(ConversationFilesystemEntry(
+            url: codexRoot.appendingPathComponent(targetName),
+            fileName: targetName,
+            mtime: .distantPast,
+            size: 1
+        ))
+        fs.recursiveEntries[codexRoot] = entries
+        let target = ConversationRef(
+            kind: "codex", id: uuidA, cwd: cwd,
+            capturedVia: .runtimeEnv, state: .suspended
+        )
+        XCTAssertEqual(CodexStrategy().transcriptExists(for: target, filesystem: fs), true)
+    }
+
+    // MARK: - C11-206 completion-aware final store reads
+
+    func testDelayedFinalConversationStoreReadReturnsResolvedRef() async {
+        let store = ConversationStore()
+        _ = await store.captureRuntimeEnv(
+            surfaceId: "S1",
+            id: uuidA,
+            cwd: cwd
+        )
+        let outcome: BoundedLifecycleOutcome<[String: SurfaceConversations]> =
+            BoundedLifecycleWait.run(timeout: 1.0) {
+                try await Task.sleep(nanoseconds: 20_000_000)
+                return await store.snapshot()
+            }
+        guard case .completed(let snapshot) = outcome else {
+            return XCTFail("delayed store read should complete inside budget")
+        }
+        XCTAssertEqual(snapshot["S1"]?.active?.id, uuidA)
+        XCTAssertFalse(snapshot.isEmpty)
+    }
+
+    func testTimedOutFinalConversationStoreReadDoesNotReturnEmptySuccess() async {
+        let store = ConversationStore()
+        _ = await store.captureRuntimeEnv(
+            surfaceId: "S1",
+            id: uuidA,
+            cwd: cwd
+        )
+        let outcome: BoundedLifecycleOutcome<[String: SurfaceConversations]> =
+            BoundedLifecycleWait.run(timeout: 0.005) {
+                try await Task.sleep(nanoseconds: 100_000_000)
+                return await store.snapshot()
+            }
+        guard case .timedOut = outcome else {
+            return XCTFail("late store read must time out rather than return [:]")
+        }
+    }
+
+    func testStartupTimeoutDurablyFailsClosedAcrossThirtyTwoRefs() async {
+        let store = ConversationStore()
+        for index in 0..<32 {
+            _ = await store.captureRuntimeEnv(
+                surfaceId: "S\(index)",
+                id: String(format: "%08x-2222-3333-4444-555566667777", index),
+                cwd: "/work/\(index)"
+            )
+        }
+        let gate = ResumeStartupEpochGate()
+        let token = gate.begin(mode: .clean)
+        XCTAssertTrue(gate.markFailed(token, reason: "startup audit timeout"))
+        await store.markAllUnknown(reason: "startup audit failed: timeout")
+
+        let refs = await store.snapshot().values.compactMap(\.active)
+        XCTAssertEqual(refs.count, 32)
+        XCTAssertTrue(refs.allSatisfy { $0.state == .unknown })
+        XCTAssertTrue(refs.allSatisfy {
+            $0.diagnosticReason == "startup audit failed: timeout"
+        })
+        XCTAssertFalse(gate.snapshot().auditComplete)
+    }
+
     // MARK: - resume: suspended is resumable, unknown/tombstoned skip
 
     func testResumeEmitsTypeCommandForSuspended() {

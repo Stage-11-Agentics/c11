@@ -1266,6 +1266,7 @@ class TerminalController {
         }
 
         SocketControlSettings.recordLastSocketPath(activeSocketPath)
+        CodexLaunchBoundaryMarkerStore.recordBoundSocketPath(activeSocketPath)
 
         let generation = withListenerState {
             isRunning = true
@@ -3602,6 +3603,54 @@ class TerminalController {
                 code: "missing_surface",
                 message: "surface_id required (no focused-fallback for conversation commands)",
                 data: nil
+            ))
+        }
+        return .success(surfaceId)
+    }
+
+    /// Resolve the exact runtime-capture target against this app instance's
+    /// live model. Unlike general conversation commands this accepts only a
+    /// literal UUID from the target subprocess environment: no handle refs,
+    /// focused fallback, stale snapshot ids, or non-terminal panels.
+    func v2ResolveLiveTerminalSurfaceForRuntimeCapture(
+        params: [String: Any]
+    ) -> Result<UUID, V2CallResult> {
+        guard let rawSurfaceId = v2String(params, "surface_id"), !rawSurfaceId.isEmpty else {
+            return .failure(.err(
+                code: "missing_surface",
+                message: "surface_id required for runtime capture",
+                data: nil
+            ))
+        }
+        guard let surfaceId = UUID(uuidString: rawSurfaceId) else {
+            return .failure(.err(
+                code: "invalid_surface",
+                message: "runtime capture surface_id must be a UUID",
+                data: nil
+            ))
+        }
+        guard let app = AppDelegate.shared,
+              let located = app.locateSurface(surfaceId: surfaceId),
+              let workspace = located.tabManager.tabs.first(where: { $0.id == located.workspaceId }),
+              let panel = workspace.panels[surfaceId] else {
+            return .failure(.err(
+                code: "stale_surface",
+                message: "surface_id is not present in this c11 instance",
+                data: ["surface_id": surfaceId.uuidString]
+            ))
+        }
+        guard let terminalPanel = panel as? TerminalPanel else {
+            return .failure(.err(
+                code: "surface_not_terminal",
+                message: "runtime capture requires a terminal surface",
+                data: ["surface_id": surfaceId.uuidString]
+            ))
+        }
+        guard terminalPanel.surface.surface != nil else {
+            return .failure(.err(
+                code: "surface_not_live",
+                message: "terminal surface is not live",
+                data: ["surface_id": surfaceId.uuidString]
             ))
         }
         return .success(surfaceId)

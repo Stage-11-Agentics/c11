@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 import Bonsplit
 
@@ -20,8 +21,7 @@ import Bonsplit
 /// 3. Every `SurfaceSpec.metadata` / `SurfaceSpec.paneMetadata` entry in the
 ///    fixture round-trips through `SurfaceMetadataStore` / `PaneMetadataStore`.
 ///
-/// Per `CLAUDE.md`, tests are never run locally by the impl agent; this file
-/// is committed and exercised only in CI.
+/// Runs in the no-host `c11LogicTests` process both locally and in CI.
 @MainActor
 final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
 
@@ -41,6 +41,10 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        // The logic-test runner has no host application, but constructing a
+        // TabManager reaches Ghostty setup that reads NSApp. Create AppKit's
+        // process singleton without launching or hosting the c11 application.
+        _ = NSApplication.shared
         tabManager = TabManager()
     }
 

@@ -30,8 +30,8 @@ c11 conversation clear [--surface <id>]
 | Verb | Use |
 |------|-----|
 | `capture-runtime` | Codex-only exact capture. Run from the target agent's own tool subprocess with no arguments; reads `CODEX_THREAD_ID`, agreeing c11 surface aliases, and actual cwd from that process. |
-| `claim` | Wrapper-claim: mint a placeholder ref. Idempotent and conservative — never displaces a real id captured by a stronger source. |
-| `push` | Hook or operator push of the real id. Source priority within evidence tiers: `runtimeEnv > hook > scrape > manual > wrapperClaim`. |
+| `claim` | Wrapper launch boundary. Conservative for non-Codex kinds; Codex plain/mismatch invalidates its prior exact lifecycle while a matching internal expected-resume id preserves it. |
+| `push` | Hook or operator push of the real id. Accepts only `hook`, `scrape`, or `manual`; runtime environment capture and wrapper claims use their dedicated verbs. |
 | `tombstone` | Mark the surface's active ref as tombstoned. Operator-initiated; not auto-resumable. |
 | `list` | List captured conversations (process-wide; v1 has no per-workspace partitioning). Filter with `--surface`. `--json` for structured output. |
 | `get` | Inspect the active ref + `can_resume` + `diagnostic_reason` for a surface. The debugging entry point. |
@@ -63,9 +63,9 @@ c11 conversation clear [--surface <id>]
 | `runtimeEnv` | Exact identity read by the target agent's own tool subprocess. Codex uses `CODEX_THREAD_ID`; causal and sticky against inferred wrapper/scrape observations. |
 | `scrape` | Pull from on-disk session storage (`~/.claude/projects/<cwd-slug>/`, `~/.codex/sessions/`, `~/.pi/agent/sessions/<cwd-slug>/`, `~/.omp/agent/sessions/<cwd-slug>/`). Resolves a placeholder to a real id at restore. |
 | `manual` | Explicit operator action (`c11 conversation push --source manual`). |
-| `wrapperClaim` | Expiry-bounded synchronous Codex launch claim (legacy wrappers may still use best-effort claims). Lowest priority — never displaces a non-wrapperClaim source. |
+| `wrapperClaim` | Internal claim provenance written only by `conversation claim` (never generic push). Expiry-bounded for Codex; legacy wrappers may still use best-effort claims. |
 
-Reconciliation first respects evidence strength: causal `runtimeEnv`/hook identity cannot be displaced by inferred scrape/manual observations or wrapper placeholders. Conflicting causal ownership is quarantined rather than timestamp-won. Within an evidence tier, timestamp and source priority reconcile updates. Wrapper-claims never displace a non-wrapperClaim source.
+Reconciliation first respects evidence strength: causal `runtimeEnv`/hook identity cannot be displaced by inferred scrape/manual observations. Conflicting causal ownership is quarantined rather than timestamp-won. Within an evidence tier, timestamp and source priority reconcile updates. For non-Codex kinds, wrapper claims retain the legacy conservative rule and never displace a non-wrapper source (so a delayed Claude claim cannot overwrite its SessionStart hook). Codex has one deliberate interactive-process-boundary exception: a plain launch or mismatched explicit resume atomically replaces its prior exact ref with a placeholder until causal runtime capture; only an exact matching `codex resume <uuid>` intent preserves that ref.
 
 ## Strategies
 

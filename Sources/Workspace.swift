@@ -528,7 +528,7 @@ extension Workspace {
         return result
     }
 
-    private nonisolated static func resumeOwnership(
+    nonisolated static func resumeOwnership(
         for ref: ConversationRef
     ) -> ResumeOwnershipStatus {
         if let quarantine = ref.quarantineReason {
@@ -544,11 +544,14 @@ extension Workspace {
         // to unknown when its transcript is absent. Keep ownership and
         // transcript evidence as separate axes in that case.
         let diagnostic = ref.diagnosticReason?.lowercased() ?? ""
-        if diagnostic.contains("transcript not found") { return .unique }
+        if diagnostic.contains("transcript not found")
+            || diagnostic.contains("transcript verification unavailable") {
+            return .unique
+        }
         return .unaudited
     }
 
-    private nonisolated static func transcriptEvidence(
+    nonisolated static func transcriptEvidence(
         for ref: ConversationRef,
         mode: ResumeRecoveryMode
     ) -> ResumeTranscriptEvidence {

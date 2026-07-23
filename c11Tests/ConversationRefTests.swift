@@ -340,6 +340,66 @@ final class ConversationRefTests: XCTestCase {
         )
     }
 
+    func testDelayedClaudeWrapperClaimCannotOverwriteHookIdentity() async {
+        let store = ConversationStore()
+        let hookID = "aaaa1111-2222-3333-4444-555566667777"
+        await store.push(
+            surfaceId: "S-claude",
+            kind: "claude-code",
+            id: hookID,
+            source: .hook,
+            cwd: "/tmp/proj",
+            capturedAt: Date(timeIntervalSince1970: 1),
+            state: .alive
+        )
+
+        _ = await store.claim(
+            surfaceId: "S-claude",
+            kind: "claude-code",
+            cwd: "/tmp/proj",
+            placeholderId: "wrapper-claim:S-claude:late",
+            capturedAt: Date(timeIntervalSince1970: 10_000),
+            expiresAt: nil
+        )
+
+        let active = await store.active(for: "S-claude")
+        XCTAssertEqual(active?.id, hookID)
+        XCTAssertEqual(active?.capturedVia, .hook)
+        XCTAssertFalse(active?.placeholder ?? true)
+    }
+
+    func testSocketGenericPushRejectsReservedSourcesWithoutStoreMutation() async throws {
+        for (index, reservedSource) in ["runtimeEnv", "wrapperClaim"].enumerated() {
+            let surfaceID = UUID()
+            await ConversationStore.shared.clear(surfaceId: surfaceID.uuidString)
+
+            let response = await TerminalController.shared.v2DispatchConversation(
+                "conversation.push",
+                id: 206 + index,
+                params: [
+                    "surface_id": surfaceID.uuidString,
+                    "kind": "codex",
+                    "id": "aaaa1111-2222-3333-4444-555566667777",
+                    "source": reservedSource,
+                ]
+            )
+            let object = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any]
+            )
+            let error = try XCTUnwrap(object["error"] as? [String: Any])
+            XCTAssertEqual(object["ok"] as? Bool, false)
+            XCTAssertEqual(error["code"] as? String, "invalid_source")
+            let message = error["message"] as? String
+            if reservedSource == "runtimeEnv" {
+                XCTAssertTrue(message?.contains("conversation.capture_runtime") == true)
+            } else {
+                XCTAssertTrue(message?.contains("conversation.claim") == true)
+            }
+            let active = await ConversationStore.shared.active(for: surfaceID.uuidString)
+            XCTAssertNil(active)
+        }
+    }
+
     func testExpiredClaimDoesNotMutateStore() async {
         let store = ConversationStore()
         let expiresAt = Date().addingTimeInterval(0.02)

@@ -118,9 +118,10 @@ extension ConversationStore {
 
     // MARK: - Write
 
-    /// Apply an interactive-process boundary. Plain/mismatched launches
-    /// invalidate prior exact ownership; exact resume intent may preserve the
-    /// same id while the target process starts.
+    /// Apply a wrapper launch boundary. Codex plain/mismatched launches
+    /// invalidate prior exact ownership; exact Codex resume intent may
+    /// preserve the same id while the target process starts. Other kinds keep
+    /// the conservative wrapper rule: a claim never displaces exact evidence.
     @discardableResult
     func claim(
         surfaceId: String,
@@ -179,32 +180,40 @@ extension ConversationStore {
 
         let existing = bySurface[surfaceId]?.active
 
-        // An exact `codex resume <uuid>` argv is lifecycle intent, not new
-        // causal identity. Preserve only an exact match. Plain launches and
-        // mismatched manual resumes atomically replace the old lifecycle with
-        // a placeholder until runtimeEnv or safe scrape evidence identifies it.
-        if let expectedResumeId,
-           let existing,
-           existing.kind == kind,
-           !existing.placeholder,
-           existing.id == expectedResumeId {
-            return .accepted(existing)
-        }
-
         var payload: [String: PersistedJSONValue]? = nil
-        if let existing,
-           existing.kind == kind,
-           !existing.placeholder,
-           !existing.id.isEmpty {
-            payload = [
-                ConversationLifecyclePayloadKey.invalidatedConversationID: .string(existing.id)
-            ]
-        } else if case .string(let invalidatedId)? = existing?.payload?[
-            ConversationLifecyclePayloadKey.invalidatedConversationID
-        ] {
-            payload = [
-                ConversationLifecyclePayloadKey.invalidatedConversationID: .string(invalidatedId)
-            ]
+        if kind == "codex" {
+            // An exact `codex resume <uuid>` argv is lifecycle intent, not new
+            // causal identity. Preserve only an exact match. Plain launches
+            // and mismatched manual resumes atomically replace the old
+            // lifecycle with a placeholder until runtimeEnv or safe scrape
+            // evidence identifies it.
+            if let expectedResumeId,
+               let existing,
+               existing.kind == kind,
+               !existing.placeholder,
+               existing.id == expectedResumeId {
+                return .accepted(existing)
+            }
+
+            if let existing,
+               existing.kind == kind,
+               !existing.placeholder,
+               !existing.id.isEmpty {
+                payload = [
+                    ConversationLifecyclePayloadKey.invalidatedConversationID: .string(existing.id)
+                ]
+            } else if case .string(let invalidatedId)? = existing?.payload?[
+                ConversationLifecyclePayloadKey.invalidatedConversationID
+            ] {
+                payload = [
+                    ConversationLifecyclePayloadKey.invalidatedConversationID: .string(invalidatedId)
+                ]
+            }
+        } else if let existing, existing.capturedVia != .wrapperClaim {
+            // Claude's wrapper claim is intentionally backgrounded; its
+            // SessionStart hook can win the race and land first. Retain all
+            // exact non-wrapper evidence so a delayed claim cannot regress it.
+            return .accepted(existing)
         }
 
         let claim = ConversationRef(
@@ -247,14 +256,10 @@ extension ConversationStore {
         diagnosticReason: String? = nil,
         payload: [String: PersistedJSONValue]? = nil
     ) -> ConversationRef {
-        if source == .runtimeEnv {
-            return captureRuntimeEnv(
-                surfaceId: surfaceId,
-                id: id,
-                cwd: cwd,
-                capturedAt: capturedAt
-            ).ref
-        }
+        precondition(
+            source != .runtimeEnv,
+            "runtimeEnv is reserved for ConversationStore.captureRuntimeEnv"
+        )
         let ref = ConversationRef(
             kind: kind,
             id: id,
@@ -454,8 +459,10 @@ extension ConversationStore {
     /// - strategy confirms the transcript on disk → `.suspended`
     ///   ("crash recovery: transcript verified on disk"), so the resume
     ///   strategy will type `claude … --resume <id>` on next restore.
-    /// - strategy reports missing / has no verification → `.unknown`
+    /// - strategy reports missing → `.unknown`
     ///   ("crash recovery: transcript not found").
+    /// - strategy cannot verify → `.unknown`
+    ///   ("crash recovery: transcript verification unavailable").
     ///
     /// Refs already `.unknown`, `.tombstoned`, or `.unsupported` are left
     /// untouched. This preserves the `/exit`-no-resume contract (a SessionEnd
@@ -475,15 +482,19 @@ extension ConversationStore {
         for (key, var snap) in bySurface {
             guard var active = snap.active else { continue }
             guard active.state == .alive || active.state == .suspended else { continue }
-            let verified = registry
+            let verification = registry
                 .strategy(forKind: active.kind)?
-                .transcriptExists(for: active, filesystem: filesystem) ?? false
-            if verified {
+                .transcriptExists(for: active, filesystem: filesystem)
+            switch verification {
+            case true:
                 active.state = .suspended
                 active.diagnosticReason = "crash recovery: transcript verified on disk"
-            } else {
+            case false:
                 active.state = .unknown
                 active.diagnosticReason = "crash recovery: transcript not found"
+            case nil:
+                active.state = .unknown
+                active.diagnosticReason = "crash recovery: transcript verification unavailable"
             }
             active.capturedAt = at
             snap.active = active

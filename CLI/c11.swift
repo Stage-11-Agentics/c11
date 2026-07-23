@@ -9535,14 +9535,15 @@ struct CMUXCLI {
             Subcommands:
               claim --kind <k> [--cwd <path>] [--id <id>]
                 Wrapper-claim: mint a placeholder ref. Idempotent and
-                conservative — never displaces a real id captured by
-                hook/scrape.
+                conservative for non-Codex kinds. A Codex plain/mismatched
+                launch invalidates its prior exact lifecycle; matching
+                --expected-resume-id preserves it.
               push --kind <k> --id <id> --source <hook|scrape|manual>
                    [--state <alive|suspended|tombstoned|unknown|ended>]
                    [--cwd <path>] [--reason <text>]
                    [--payload <json> | --payload @<path>]
-                Hook or operator push of the real id. Source priority:
-                hook > scrape > manual > wrapperClaim.
+                Hook or operator push of the real id. Generic push accepts
+                only hook, scrape, or manual provenance.
                 --payload accepts inline JSON or @<path> (mirrors HOOKS_FILE
                 ergonomics in Resources/bin/claude).
               tombstone --kind <k> --id <id> [--reason <text>]
@@ -12130,6 +12131,12 @@ struct CMUXCLI {
         guard let source = optionValue(subArgs, name: "--source"),
               !source.isEmpty else {
             throw CLIError(message: "push requires --source <hook|scrape|manual>")
+        }
+        let allowedSources: Set<String> = ["hook", "scrape", "manual"]
+        guard allowedSources.contains(source) else {
+            throw CLIError(
+                message: "--source must be one of: \(allowedSources.sorted().joined(separator: ", ")); runtimeEnv is reserved for conversation capture-runtime"
+            )
         }
         let surface = try resolveConversationSurface(subArgs)
         var params: [String: Any] = [

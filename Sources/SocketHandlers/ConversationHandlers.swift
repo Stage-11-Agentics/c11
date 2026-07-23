@@ -189,9 +189,10 @@ extension TerminalController {
             return .err(code: "invalid_id", message: "id required", data: nil)
         }
         guard let sourceStr = v2String(params, "source"),
-              let source = CaptureSource(rawValue: sourceStr) else {
+              let source = CaptureSource(rawValue: sourceStr),
+              source == .hook || source == .scrape || source == .manual else {
             return .err(code: "invalid_source",
-                        message: "source must be one of hook, scrape, manual, wrapperClaim",
+                        message: "source must be one of hook, scrape, manual; runtimeEnv is reserved for conversation.capture_runtime and wrapperClaim for conversation.claim",
                         data: nil)
         }
         // Validate id grammar against the strategy if registered.

@@ -57,7 +57,10 @@ def run(
         args += ["--mode", mode]
     args.append(str(path))
     env = os.environ.copy()
-    for key in ("C11_TAG", "CMUX_TAG", "C11_QA_LAUNCH"):
+    for key in (
+        "C11_TAG", "CMUX_TAG", "C11_QA_LAUNCH",
+        "C11_QA_OPENCODE_DB_PATH",
+    ):
         env.pop(key, None)
     env.update({
         "C11_QA_CODEX_SESSIONS_ROOT": str(sessions_root),
@@ -240,6 +243,39 @@ def main() -> int:
             and opencode_panel.get("transcript_evidence") == "verified"
             and opencode_panel.get("action") == f"cd '/work/opencode' && opencode -s '{opencode_id}'",
             f"dirty OpenCode SQLite verification diverged from app behavior: {opencode_panel}",
+            failures,
+        )
+
+        opencode_missing_id = "ses_" + ("B" * 26)
+        snapshot(path, [{
+            "kind": "opencode", "id": opencode_missing_id, "placeholder": False,
+            "state": "suspended", "cwd": "/work/opencode",
+            "capturedVia": "hook",
+        }])
+        opencode_missing = run(
+            cli, sessions_root, path, "dirty", opencode_db=opencode_db
+        )
+        opencode_missing_panel = (payload(opencode_missing).get("panels") or [{}])[0]
+        expect(
+            opencode_missing.returncode != 0
+            and opencode_missing_panel.get("transcript_evidence") == "missing"
+            and opencode_missing_panel.get("skip_code") == "transcript-missing",
+            f"dirty OpenCode missing-row decision diverged from app behavior: {opencode_missing_panel}",
+            failures,
+        )
+
+        unavailable_db = tmp / "missing-opencode.db"
+        opencode_unavailable = run(
+            cli, sessions_root, path, "dirty", opencode_db=unavailable_db
+        )
+        opencode_unavailable_panel = (
+            payload(opencode_unavailable).get("panels") or [{}]
+        )[0]
+        expect(
+            opencode_unavailable.returncode != 0
+            and opencode_unavailable_panel.get("transcript_evidence") == "unavailable"
+            and opencode_unavailable_panel.get("skip_code") == "transcript-unverified",
+            f"dirty OpenCode unavailable-DB decision diverged from app behavior: {opencode_unavailable_panel}",
             failures,
         )
 

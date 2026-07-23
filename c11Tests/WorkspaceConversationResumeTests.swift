@@ -117,12 +117,10 @@ final class WorkspaceConversationResumeTests: XCTestCase {
     func testCodexCleanPlanningUsesSharedExactDecision() async throws {
         let workspace = Workspace()
         let panelId = UUID()
-        await ConversationStore.shared.push(
+        _ = await ConversationStore.shared.captureRuntimeEnv(
             surfaceId: panelId.uuidString,
-            kind: "codex",
             id: codexSessionId,
-            source: .runtimeEnv,
-            state: .alive
+            cwd: nil
         )
         let plans = workspace.pendingRestartPlans(
             from: makeSnapshot(panels: [makePanelSnapshot(id: panelId, type: .terminal)]),
@@ -141,13 +139,12 @@ final class WorkspaceConversationResumeTests: XCTestCase {
     func testNoResumeAndFailedAuditYieldZeroPlans() async throws {
         let workspace = Workspace()
         let panelId = UUID()
-        await ConversationStore.shared.push(
+        _ = await ConversationStore.shared.captureRuntimeEnv(
             surfaceId: panelId.uuidString,
-            kind: "codex",
             id: codexSessionId,
-            source: .runtimeEnv,
-            state: .suspended
+            cwd: nil
         )
+        await ConversationStore.shared.suspendAllAlive()
         let snapshot = makeSnapshot(panels: [makePanelSnapshot(id: panelId, type: .terminal)])
 
         XCTAssertTrue(workspace.pendingRestartPlans(
@@ -191,6 +188,67 @@ final class WorkspaceConversationResumeTests: XCTestCase {
             startup: .init(epoch: 1, mode: .dirty, phase: .ready)
         )
         XCTAssertEqual(plans.map(\.panelId), [verifiedPanel])
+    }
+
+    func testDirtyOpenCodeMissingAndUnavailableRemainUniquelyAuditedTypedSkips() {
+        let missing = ConversationRef(
+            kind: "opencode",
+            id: "ses_0fda89a49ffeLHwJXtrxnn4X6g",
+            cwd: "/work/opencode",
+            capturedVia: .hook,
+            state: .unknown,
+            diagnosticReason: "crash recovery: transcript not found"
+        )
+        let unavailable = ConversationRef(
+            kind: "opencode",
+            id: "ses_0f5b10b09ffeb2G3Y53oze86wV",
+            cwd: "/work/opencode",
+            capturedVia: .hook,
+            state: .unknown,
+            diagnosticReason: "crash recovery: transcript verification unavailable"
+        )
+
+        XCTAssertEqual(Workspace.resumeOwnership(for: missing), .unique)
+        XCTAssertEqual(Workspace.transcriptEvidence(for: missing, mode: .dirty), .missing)
+        XCTAssertEqual(Workspace.resumeOwnership(for: unavailable), .unique)
+        XCTAssertEqual(
+            Workspace.transcriptEvidence(for: unavailable, mode: .dirty),
+            .unavailable
+        )
+
+        let missingDecision = ResumeDecisionEngine.decide(ResumeDecisionInput(
+            mode: .dirty,
+            auditComplete: true,
+            ownership: Workspace.resumeOwnership(for: missing),
+            kind: missing.kind,
+            id: missing.id,
+            placeholder: missing.placeholder,
+            state: .unknown,
+            exactIDValid: true,
+            transcriptEvidence: Workspace.transcriptEvidence(for: missing, mode: .dirty),
+            diagnosticReason: missing.diagnosticReason
+        ))
+        let unavailableDecision = ResumeDecisionEngine.decide(ResumeDecisionInput(
+            mode: .dirty,
+            auditComplete: true,
+            ownership: Workspace.resumeOwnership(for: unavailable),
+            kind: unavailable.kind,
+            id: unavailable.id,
+            placeholder: unavailable.placeholder,
+            state: .unknown,
+            exactIDValid: true,
+            transcriptEvidence: Workspace.transcriptEvidence(for: unavailable, mode: .dirty),
+            diagnosticReason: unavailable.diagnosticReason
+        ))
+
+        guard case .skip(let missingCode, _) = missingDecision else {
+            return XCTFail("missing OpenCode row must skip")
+        }
+        XCTAssertEqual(missingCode, .transcriptMissing)
+        guard case .skip(let unavailableCode, _) = unavailableDecision else {
+            return XCTFail("unavailable OpenCode DB must skip")
+        }
+        XCTAssertEqual(unavailableCode, .transcriptUnverified)
     }
 
     // MARK: - Helpers (mirror the deleted WorkspaceRestartCommandsTests

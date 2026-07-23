@@ -188,13 +188,10 @@ final class ConversationCrashRecoveryTests: XCTestCase {
 
     func testDelayedFinalConversationStoreReadReturnsResolvedRef() async {
         let store = ConversationStore()
-        await store.push(
+        _ = await store.captureRuntimeEnv(
             surfaceId: "S1",
-            kind: "codex",
             id: uuidA,
-            source: .runtimeEnv,
-            cwd: cwd,
-            state: .alive
+            cwd: cwd
         )
         let outcome: BoundedLifecycleOutcome<[String: SurfaceConversations]> =
             BoundedLifecycleWait.run(timeout: 1.0) {
@@ -210,13 +207,10 @@ final class ConversationCrashRecoveryTests: XCTestCase {
 
     func testTimedOutFinalConversationStoreReadDoesNotReturnEmptySuccess() async {
         let store = ConversationStore()
-        await store.push(
+        _ = await store.captureRuntimeEnv(
             surfaceId: "S1",
-            kind: "codex",
             id: uuidA,
-            source: .runtimeEnv,
-            cwd: cwd,
-            state: .alive
+            cwd: cwd
         )
         let outcome: BoundedLifecycleOutcome<[String: SurfaceConversations]> =
             BoundedLifecycleWait.run(timeout: 0.005) {
@@ -231,13 +225,10 @@ final class ConversationCrashRecoveryTests: XCTestCase {
     func testStartupTimeoutDurablyFailsClosedAcrossThirtyTwoRefs() async {
         let store = ConversationStore()
         for index in 0..<32 {
-            await store.push(
+            _ = await store.captureRuntimeEnv(
                 surfaceId: "S\(index)",
-                kind: "codex",
                 id: String(format: "%08x-2222-3333-4444-555566667777", index),
-                source: .runtimeEnv,
-                cwd: "/work/\(index)",
-                state: .suspended
+                cwd: "/work/\(index)"
             )
         }
         let gate = ResumeStartupEpochGate()

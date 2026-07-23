@@ -165,6 +165,33 @@ def main() -> int:
                 proc = run(cli, socket_path, ["conversation", "capture-runtime", *override], env, tmp)
                 expect(proc.returncode != 0 and "accepts no arguments" in proc.stderr, f"runtime override was accepted ({override}): {proc.stderr}", failures)
 
+            for reserved_source in ("runtimeEnv", "wrapperClaim"):
+                before = len(state.requests)
+                forged = run(
+                    cli,
+                    socket_path,
+                    [
+                        "conversation", "push",
+                        "--kind", "codex",
+                        "--id", caller_thread_id,
+                        "--source", reserved_source,
+                        "--surface", caller_surface,
+                    ],
+                    env,
+                    tmp,
+                )
+                expect(
+                    forged.returncode != 0
+                    and "--source must be one of" in forged.stderr,
+                    f"generic push accepted reserved {reserved_source} provenance: {forged.stderr}",
+                    failures,
+                )
+                expect(
+                    len(state.requests) == before,
+                    f"rejected generic {reserved_source} push reached the socket",
+                    failures,
+                )
+
             claim_start_ms = int(time.time() * 1000)
             proc = run(
                 cli,

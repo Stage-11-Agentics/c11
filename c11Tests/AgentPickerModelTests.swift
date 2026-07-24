@@ -329,7 +329,7 @@ final class AgentPickerModelTests: XCTestCase {
 
     // MARK: 8. Not-installed
 
-    func testNotInstalledRowStillPinsButPlainLaunchNoops() {
+    func testNotInstalledRowStillPinsButPlainLaunchRefuses() {
         let configs = sampleConfigs()
         // codex (c4, index 3) is not installed.
         var m = AgentPickerModel(
@@ -338,14 +338,14 @@ final class AgentPickerModelTests: XCTestCase {
             env: env(installed: { $0 != "codex" })
         )
         XCTAssertFalse(m.content.shortlist[3].isInstalled)
-        // Digit launch of the not-installed row → no-op.
-        XCTAssertEqual(m.handleKey(.digit(4)), .none)
+        // Digit launch of the not-installed row → explicit refusal.
+        XCTAssertEqual(m.handleKey(.digit(4)), .notInstalled(configs[3]))
         // ⌥⏎ still pins it.
         _ = m.handleKey(.down); _ = m.handleKey(.down); _ = m.handleKey(.down); _ = m.handleKey(.down) // idx 3
         XCTAssertEqual(m.selectedIndex, 3)
         XCTAssertEqual(m.handleKey(.enter, option: true), .pin(configs[3]))
-        // A plain ⏎ on it is a no-op (installed check).
-        XCTAssertEqual(m.handleKey(.enter), .none)
+        // A plain ⏎ on it returns the same explicit refusal.
+        XCTAssertEqual(m.handleKey(.enter), .notInstalled(configs[3]))
     }
 
     // MARK: 9. Stats headline passthrough
@@ -371,11 +371,12 @@ final class AgentPickerModelTests: XCTestCase {
         )
         for _ in 0..<6 { _ = m.handleKey(.down) } // recent row (index 5)
         XCTAssertEqual(m.selectedIndex, 5)
+        XCTAssertEqual(m.recentClickAction(), .launch(configs[3]))
         // ⌥⏎ on the recent row PINS (was: silently launched).
         XCTAssertEqual(m.handleKey(.enter, option: true), .pin(configs[3]))
     }
 
-    func testEnterOnNotInstalledRecentRowNoops() {
+    func testNotInstalledRecentRowRefusesKeyboardAndPointerLaunch() {
         let configs = sampleConfigs()
         let recent = RecentAgentConfig(configId: "c4", harness: "codex", model: "gpt-5.2")
         var m = AgentPickerModel(
@@ -384,7 +385,8 @@ final class AgentPickerModelTests: XCTestCase {
             env: env(installed: { $0 != "codex" }) // codex not installed
         )
         for _ in 0..<6 { _ = m.handleKey(.down) }
-        XCTAssertEqual(m.handleKey(.enter), .none)                 // plain ⏎ no-ops (was: launched)
+        XCTAssertEqual(m.handleKey(.enter), .notInstalled(configs[3]))
+        XCTAssertEqual(m.recentClickAction(), .notInstalled(configs[3]))
         XCTAssertEqual(m.handleKey(.enter, option: true), .pin(configs[3])) // ⌥⏎ still pins
     }
 
@@ -396,7 +398,7 @@ final class AgentPickerModelTests: XCTestCase {
             env: env(installed: { $0 != "claude-code" }) // default's harness not installed
         )
         XCTAssertEqual(m.selectedIndex, -1)
-        XCTAssertEqual(m.handleKey(.enter), .none) // was .launch(default) before the fix
+        XCTAssertEqual(m.handleKey(.enter), .notInstalled(configs[0]))
     }
 
     func testRelativeTimeBucketTopsClamp() {

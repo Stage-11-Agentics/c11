@@ -48,7 +48,7 @@ final class AgentPickerController: ObservableObject {
     /// Open the stats view (C11-182 seam).
     var onStats: () -> Void = {}
     /// Surface the "not installed" hint for a plain launch of a dim row (§5.6).
-    var onNotInstalledHint: (AgentPickerRow) -> Void = { _ in }
+    var onNotInstalledHint: (SavedAgentConfig) -> Void = { _ in }
     /// Dismiss the popover (set by the presenter).
     var onClose: () -> Void = {}
     /// Rebuild the model from fresh store state (after a pin/toggle mutates disk),
@@ -70,15 +70,13 @@ final class AgentPickerController: ObservableObject {
     /// when the harness is not installed).
     func clickRow(_ row: AgentPickerRow, option: Bool) {
         if option { pin(row.config); return }
-        guard row.isInstalled else { onNotInstalledHint(row); return }
-        onLaunch(row.config); onClose()
+        dispatch(row.isInstalled ? .launch(row.config) : .notInstalled(row.config))
     }
 
     func clickPinGlyph(_ row: AgentPickerRow) { pin(row.config) }
 
     func clickRecent() {
-        guard let cfg = model.recentConfig else { return }
-        onLaunch(cfg); onClose()
+        dispatch(model.recentClickAction())
     }
 
     func toggleFollowRecent() {
@@ -93,6 +91,7 @@ final class AgentPickerController: ObservableObject {
         switch action {
         case .launch(let c): onLaunch(c); onClose()
         case .pin(let c): pin(c)                     // stays open, ● moves (prototype)
+        case .notInstalled(let c): onNotInstalledHint(c)
         case .toggleFollowRecent: toggleFollowRecent()
         case .viewAll: onViewAll(); onClose()
         case .stats: onStats(); onClose()
@@ -330,6 +329,12 @@ private struct RecentRowView: View {
                     Text(row.relativeTime)
                         .font(.system(size: 9.5, design: .monospaced))
                         .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.45))
+                    if !row.isInstalled {
+                        Text(String(localized: "agentPicker.notInstalled", defaultValue: "NOT INSTALLED"))
+                            .font(.system(size: 8.5, design: .monospaced))
+                            .tracking(0.5)
+                            .foregroundStyle(BrandColors.dimSwiftUI)
+                    }
                 }
                 SubLine(row.subLine, brightenProvider: false)
             }
@@ -348,7 +353,7 @@ private struct RecentRowView: View {
         .padding(.trailing, 12)
         .padding(.vertical, 8)
         .opacity(row.isInstalled ? 1 : 0.42)
-        .background(isFocused ? BrandColors.goldFaintSwiftUI : (hovering ? BrandColors.whiteSwiftUI.opacity(0.03) : Color.clear))
+        .background(isFocused ? BrandColors.goldFaintSwiftUI : (hovering && row.isInstalled ? BrandColors.whiteSwiftUI.opacity(0.03) : Color.clear))
         .overlay(alignment: .leading) {
             if isFocused { Rectangle().fill(BrandColors.goldSwiftUI).frame(width: 2) }
         }

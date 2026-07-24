@@ -113,8 +113,10 @@ enum PickerAction: Equatable {
     case stats
     /// Dismiss the popover.
     case close
-    /// No-op (e.g. a number key past the shortlist, or a plain launch of a
-    /// not-installed harness — the caller may surface the shell-error hint).
+    /// A launch was requested for a harness that is not installed. The caller
+    /// keeps the picker open and surfaces the refusal.
+    case notInstalled(SavedAgentConfig)
+    /// No-op (for example, a number key past the shortlist).
     case none
 }
 
@@ -258,11 +260,23 @@ struct AgentPickerModel {
         }
     }
 
-    /// Launch iff installed; a plain launch of a not-installed harness is a no-op
-    /// the caller may turn into the "not installed" hint. Pin paths bypass this.
+    /// Pointer activation for the recent row follows the same installed guard as
+    /// keyboard activation.
+    func recentClickAction() -> PickerAction {
+        guard let recentConfig else { return .none }
+        return launchOrNotInstalled(recentConfig)
+    }
+
+    /// Launch iff installed; a plain launch of a not-installed harness returns an
+    /// explicit refusal so every input path can surface the same feedback. Pin
+    /// paths bypass this.
     private func launchOrNoop(_ cfg: SavedAgentConfig) -> PickerAction {
+        launchOrNotInstalled(cfg)
+    }
+
+    private func launchOrNotInstalled(_ cfg: SavedAgentConfig) -> PickerAction {
         if content.shortlist.first(where: { $0.config.id == cfg.id })?.isInstalled == false {
-            return .none
+            return .notInstalled(cfg)
         }
         return .launch(cfg)
     }

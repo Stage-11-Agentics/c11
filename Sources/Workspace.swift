@@ -12450,7 +12450,7 @@ extension Workspace: BonsplitDelegate {
         controller.onStats = {
             AppDelegate.shared?.openAgentConfigEditor(focus: .stats, origin: .popover)
         }
-        controller.onNotInstalledHint = { _ in }
+        controller.onNotInstalledHint = { _ in NSSound.beep() }
 
         AgentPickerPresenter.shared.present(controller: controller, in: window, at: screenPoint)
     }

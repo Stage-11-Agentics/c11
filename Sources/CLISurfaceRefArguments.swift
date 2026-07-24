@@ -151,12 +151,16 @@ public enum CLISurfaceRefArguments {
     }
 
     /// Consume `--workspace`, `--tab`, and `--surface` from a `tab-action`
-    /// command line without the generic option parser's last-value-wins
-    /// behavior. Distinct repeated values — whether on one flag or split
-    /// across the `--tab`/`--surface` aliases — are ambiguous destructive
-    /// targets and reject before any socket resolution or dispatch. Repeating
-    /// the same trimmed value is harmless and remains accepted.
-    public static func parseTabActionTargets(_ args: [String]) -> TabActionTargetParseResult {
+    /// command line or one of its compatibility wrappers without the generic
+    /// option parser's last-value-wins behavior. Distinct repeated values —
+    /// whether on one flag or split across the `--tab`/`--surface` aliases —
+    /// are ambiguous destructive targets and reject before any socket
+    /// resolution or dispatch. Repeating the same trimmed value is harmless
+    /// and remains accepted.
+    public static func parseTabActionTargets(
+        _ args: [String],
+        commandName: String = "tab-action"
+    ) -> TabActionTargetParseResult {
         let targetFlags: Set<String> = ["--workspace", "--tab", "--surface"]
         var namedWorkspaces: [String] = []
         var namedTargets: [String] = []
@@ -179,15 +183,15 @@ public enum CLISurfaceRefArguments {
             }
 
             guard index + 1 < args.count else {
-                return .reject("tab-action: flag '\(raw)' requires a value")
+                return .reject("\(commandName): flag '\(raw)' requires a value")
             }
             let value = args[index + 1]
             guard !value.hasPrefix("--") else {
-                return .reject("tab-action: flag '\(raw)' requires a value, got another flag '\(value)'")
+                return .reject("\(commandName): flag '\(raw)' requires a value, got another flag '\(value)'")
             }
             let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else {
-                return .reject("tab-action: flag '\(raw)' requires a non-empty value")
+                return .reject("\(commandName): flag '\(raw)' requires a non-empty value")
             }
 
             if raw == "--workspace" {
@@ -201,13 +205,13 @@ public enum CLISurfaceRefArguments {
         let distinctWorkspaces = distinctTrimmedValues(namedWorkspaces)
         if distinctWorkspaces.count > 1 {
             let listed = distinctWorkspaces.sorted().joined(separator: ", ")
-            return .reject("tab-action: more than one workspace named (\(listed)). Name exactly one workspace.")
+            return .reject("\(commandName): more than one workspace named (\(listed)). Name exactly one workspace.")
         }
 
         let distinctTargets = distinctTrimmedValues(namedTargets)
         if distinctTargets.count > 1 {
             let listed = distinctTargets.sorted().joined(separator: ", ")
-            return .reject("tab-action: more than one tab or surface named (\(listed)). Name exactly one target.")
+            return .reject("\(commandName): more than one tab or surface named (\(listed)). Name exactly one target.")
         }
 
         return .plan(TabActionTargetPlan(

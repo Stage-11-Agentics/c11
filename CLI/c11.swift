@@ -5359,10 +5359,22 @@ struct CMUXCLI {
         idFormat: CLIIDFormat,
         windowOverride: String?
     ) throws {
-        let (workspaceOpt, rem0) = parseOption(commandArgs, name: "--workspace")
-        let (tabOpt, rem1) = parseOption(rem0, name: "--tab")
-        let (surfaceOpt, rem2) = parseOption(rem1, name: "--surface")
-        let (titleOpt, rem3) = parseOption(rem2, name: "--title")
+        // `rename-tab` is a compatibility wrapper over `tab-action rename`.
+        // Parse its target flags through the same conflict-aware seam before
+        // forwarding so distinct repeated/cross-alias targets cannot collapse
+        // to the generic option parser's last value.
+        let targetPlan: CLISurfaceRefArguments.TabActionTargetPlan
+        switch CLISurfaceRefArguments.parseTabActionTargets(
+            commandArgs,
+            commandName: "rename-tab"
+        ) {
+        case .plan(let plan):
+            targetPlan = plan
+        case .reject(let message):
+            throw CLIError(message: message)
+        }
+
+        let (titleOpt, rem3) = parseOption(targetPlan.remaining, name: "--title")
 
         if rem3.contains("--action") {
             throw CLIError(message: "rename-tab does not accept --action (it always performs rename)")
@@ -5383,13 +5395,14 @@ struct CMUXCLI {
         }
 
         var forwarded: [String] = ["--action", "rename", "--title", title]
-        if let workspaceOpt {
-            forwarded += ["--workspace", workspaceOpt]
+        if let workspace = targetPlan.workspace {
+            forwarded += ["--workspace", workspace]
         }
-        if let tabOpt {
-            forwarded += ["--tab", tabOpt]
-        } else if let surfaceOpt {
-            forwarded += ["--surface", surfaceOpt]
+        if let target = targetPlan.target {
+            // `runTabAction` deliberately accepts both tab and surface refs
+            // through either alias, so one canonical forwarding flag keeps the
+            // wrapper from reintroducing alias precedence.
+            forwarded += ["--tab", target]
         }
 
         try runTabAction(

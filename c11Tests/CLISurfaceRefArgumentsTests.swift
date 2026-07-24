@@ -257,6 +257,61 @@ final class CLISurfaceRefArgumentsTests: XCTestCase {
         XCTAssertTrue(tabTargetRejection(["--workspace", " "])?.contains("non-empty") == true)
     }
 
+    func testRenameTabCompatibilityWrapperRejectsConflictingTargets() {
+        let cases = [
+            ["--tab", "surface:1", "--tab", "surface:2", "new title"],
+            ["--tab", "surface:1", "--surface", "surface:2", "new title"],
+        ]
+
+        for args in cases {
+            let result = CLISurfaceRefArguments.parseTabActionTargets(
+                args,
+                commandName: "rename-tab"
+            )
+            guard case .reject(let message) = result else {
+                return XCTFail("rename-tab must reject conflicting targets: \(args)")
+            }
+            XCTAssertTrue(message.hasPrefix("rename-tab:"))
+            XCTAssertTrue(message.contains("more than one tab or surface"))
+        }
+    }
+
+    func testRenameTabCompatibilityWrapperRejectsConflictingWorkspaces() {
+        let result = CLISurfaceRefArguments.parseTabActionTargets(
+            [
+                "--workspace", "workspace:1",
+                "--workspace", "workspace:2",
+                "--tab", "surface:3",
+                "new title",
+            ],
+            commandName: "rename-tab"
+        )
+        guard case .reject(let message) = result else {
+            return XCTFail("rename-tab must reject conflicting workspaces")
+        }
+        XCTAssertTrue(message.hasPrefix("rename-tab:"))
+        XCTAssertTrue(message.contains("more than one workspace"))
+    }
+
+    func testRenameTabCompatibilityWrapperAcceptsExactDuplicates() {
+        let result = CLISurfaceRefArguments.parseTabActionTargets(
+            [
+                "--workspace", "workspace:1",
+                "--workspace", "workspace:1",
+                "--tab", "surface:3",
+                "--surface", "surface:3",
+                "new title",
+            ],
+            commandName: "rename-tab"
+        )
+        guard case .plan(let parsed) = result else {
+            return XCTFail("rename-tab must accept exact duplicate target values")
+        }
+        XCTAssertEqual(parsed.workspace, "workspace:1")
+        XCTAssertEqual(parsed.target, "surface:3")
+        XCTAssertEqual(parsed.remaining, ["new title"])
+    }
+
     // MARK: - tab-action positional safety
 
     func testEveryNonRenameTabActionRejectsEveryLeftoverPositionalShape() {

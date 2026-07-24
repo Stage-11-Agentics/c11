@@ -894,9 +894,8 @@ struct CreateWorkspaceSheet: View {
 // MARK: - Gold CTA button style
 
 /// The standard c11 gold button (solid gold fill, void-black content) sized
-/// up as a sheet's primary call to action. Module-internal so other sheets
-/// (e.g. the agent-config editor, C11-182) reuse the exact gold-CTA idiom.
-struct GoldCTAButtonStyle: ButtonStyle {
+/// up as the sheet's primary call to action.
+private struct GoldCTAButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {

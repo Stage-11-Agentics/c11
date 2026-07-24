@@ -7734,62 +7734,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         openPreferencesWindow(debugSource: "appDelegate")
     }
 
-    /// A pending open request for the agent-config editor, set by
-    /// `openAgentConfigEditor` and drained by the Settings section on appear.
-    /// Covers the cold-first-mount race where the open notification would fire
-    /// before any observer exists.
-    @MainActor private(set) var pendingAgentConfigEditorFocus: (focus: AgentConfigEditorFocus, origin: AgentConfigEditorOrigin)?
-
-    /// Read-and-clear the pending editor focus (nil if none).
-    @MainActor
-    func consumePendingAgentConfigEditorFocus() -> (focus: AgentConfigEditorFocus, origin: AgentConfigEditorOrigin)? {
-        defer { pendingAgentConfigEditorFocus = nil }
-        return pendingAgentConfigEditorFocus
-    }
-
-    /// C11-182 seam: open the Settings Saved Configs editor sheet, focused on a
-    /// config / a new config / the stats view. Navigates Settings to the Agents
-    /// page, then posts the open-sheet notification the section observes (the
-    /// warm-mount fast path) while also stashing the request for the section to
-    /// drain on appear (the cold-mount path). The single call the C11-181
-    /// A-button popover's "View all" / "Launch stats" makes; `origin: .popover`
-    /// lets the sheet order the Settings window out on close so the popover
-    /// returns as the one visible surface.
-    @MainActor
-    func openAgentConfigEditor(focus: AgentConfigEditorFocus, origin: AgentConfigEditorOrigin = .popover) {
-        pendingAgentConfigEditorFocus = (focus, origin)
-        Self.presentPreferencesWindow(navigationTarget: .agents)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-            AgentConfigEditorRequest.postOpen(focus: focus, origin: origin)
-        }
-    }
-
-    /// The outcome of a "Save & Launch" attempt, so the editor can give inline
-    /// feedback instead of silently no-op'ing (design C11-182 MINOR-5 resolution).
-    enum SavedConfigLaunchResult {
-        case launched
-        case noWorkspace
-        /// The recipe couldn't launch: an empty resolved command, or an
-        /// unresolvable/unknown harness. `launchAgentSurface` declined it.
-        case cannotLaunch
-    }
-
-    /// C11-182 seam: launch a chosen saved config as a new agent surface in the
-    /// current workspace ("Save & Launch"). Never silently no-ops — the caller
-    /// keeps the sheet open and shows feedback for `.noWorkspace` (nothing to
-    /// launch into) and `.cannotLaunch` (the launch path declined the recipe).
-    /// `launchAgentSurface` resolves with the correct project overlay and reports
-    /// whether it launched, so there is no duplicate resolution here.
-    @MainActor
-    func launchSavedAgentConfig(_ saved: SavedAgentConfig) -> SavedConfigLaunchResult {
-        guard let workspace = tabManager?.selectedWorkspace,
-              let pane = workspace.bonsplitController.focusedPaneId else {
-            return .noWorkspace
-        }
-        return workspace.launchAgentSurface(inPane: pane, explicitConfig: saved, source: .configEditor)
-            ? .launched : .cannotLaunch
-    }
-
     func refreshMenuBarExtraForDebug() {
         menuBarExtraController?.refreshForDebugControls()
     }

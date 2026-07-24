@@ -6,6 +6,34 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.60.0] - 2026-07-24
+
+Headline: **Agent activity is legible at a glance.** Surface tabs show each agent's state and workspace cards roll their agents into a compact pulse, so active, waiting, and idle work reads without opening every pane. This release also adds a typed `c11 launch-agent` command with a saved launch-configuration library on the CLI, global terminal font controls, exact Codex conversation restore at scale, and a fix for a high-surface-count autosave stall.
+
+### Added
+
+- **Saved launch configurations describe the whole agent launch.** A reusable recipe can combine harness, model, effort, provider/router, a three-mode system prompt, and a launch prompt; config-first composition resolves the effective launch and records local usage stats. Manage the library through `c11 config` and the `config.*` socket family. ([#350](https://github.com/Stage-11-Agentics/c11/pull/350), [#351](https://github.com/Stage-11-Agentics/c11/pull/351), [#352](https://github.com/Stage-11-Agentics/c11/pull/352), [#353](https://github.com/Stage-11-Agentics/c11/pull/353), [#354](https://github.com/Stage-11-Agentics/c11/pull/354)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **`c11 launch-agent` is a first-class typed launch command.** Agents and scripts can launch a chosen harness through the same `agent.launch` path used by c11 instead of composing terminal input themselves. ([#346](https://github.com/Stage-11-Agentics/c11/pull/346)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **Agent state is visible where you scan.** Surface tabs show each agent's state, and workspace cards roll their agents into a compact pulse so active, waiting, and idle work is legible without opening every pane. Wrapper-less agent processes are detected too. ([#360](https://github.com/Stage-11-Agentics/c11/pull/360), [#366](https://github.com/Stage-11-Agentics/c11/pull/366)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **One font-size control can tune every terminal.** Use the Pane menu, command palette, or the default ⌃⌘+ / ⌃⌘− / ⌃⌘0 shortcuts to increase, decrease, or reset terminal text globally. ([#368](https://github.com/Stage-11-Agentics/c11/pull/368)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **Surface IDs appear in tab titles** so a visible tab can be addressed by voice or message without first querying the workspace tree. ([#345](https://github.com/Stage-11-Agentics/c11/pull/345)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **Blueprint terminal leaves can opt into immediate submission** with `submit: true`, allowing a restored or scripted terminal to send its initial input rather than only typing it. ([#359](https://github.com/Stage-11-Agentics/c11/pull/359)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **A maintainer computer-use skill now ships with c11.** The installable `c11-computer-use` skill defines tagged-build, screenshot, focus, and human-readability validation for the real macOS UI. ([#369](https://github.com/Stage-11-Agentics/c11/pull/369)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+### Changed
+
+- **Creating a workspace is faster and clearer.** The New Workspace sheet has a gold Create action, a double-click hint, and Return-to-submit; clicking the spawn button now focuses the new surface even when its pane was not focused. ([#343](https://github.com/Stage-11-Agentics/c11/pull/343), [#344](https://github.com/Stage-11-Agentics/c11/pull/344)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **c11 remains a regular Dock app, with its menu-bar item hidden by default.** It stays visible in the Dock and app switcher while avoiding a redundant menu-bar icon unless you enable it. ([#367](https://github.com/Stage-11-Agentics/c11/pull/367)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+### Fixed
+
+- **Session autosave no longer stalls the main thread at high surface counts.** Large fleets can persist without the save path freezing the app as it walks terminal state. ([#358](https://github.com/Stage-11-Agentics/c11/pull/358)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **Mass session restore resumes the exact Codex conversations.** Restoring many Codex surfaces no longer cross-wires or loses their conversation identity. ([#364](https://github.com/Stage-11-Agentics/c11/pull/364)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+### Thanks to 1 contributor!
+
+- [@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [0.59.0] - 2026-07-14
 
 Headline: **`c11 send` actually submits.** Sending a message to an agent in a background workspace — the normal fleet case, where only one workspace is on screen — used to type the text and silently drop the Return, so the message sat unsent in the composer while `send` reported OK. A briefed-looking agent that never received anything was the single biggest source of friction in multi-agent runs. That path is fixed four ways, and `send` now tells you what actually happened (`submitted` / `queued` / `delivered`) instead of only "bytes accepted."

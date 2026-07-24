@@ -284,6 +284,7 @@ extension Workspace {
         }
 
         restoreSurfaceMetadataFromSnapshot(panels: snapshot.panels)
+        syncSurfaceTabActivityStates()
 
         // CMUX-11 Phase 3: rehydrate PaneMetadataStore entries from each
         // restored leaf and prune any pane metadata not in the live set.
@@ -380,10 +381,13 @@ extension Workspace {
         // state, not a full rollback. Removed in 0.46.0 / v1.1 alongside
         // the legacy claude.session_id metadata bridge.
         if ConversationStorePolicy.isDisabled {
-            scheduleAgentRestartLegacy(
-                from: snapshot,
-                registry: .phase1
-            )
+            let startup = ResumeStartupEpochGate.shared.snapshot()
+            if startup.auditComplete, startup.mode != .noResume {
+                scheduleAgentRestartLegacy(
+                    from: snapshot,
+                    registry: .phase1
+                )
+            }
         } else {
             scheduleAgentRestart(
                 from: snapshot,
@@ -470,9 +474,11 @@ extension Workspace {
     /// through the full live workspace restore path.
     func pendingRestartPlans(
         from snapshot: SessionWorkspaceSnapshot,
-        registry: ConversationStrategyRegistry
+        registry: ConversationStrategyRegistry,
+        startup: ResumeStartupEpochGate.Snapshot? = nil
     ) -> [(panelId: UUID, action: ResumeAction)] {
         guard SessionPersistencePolicy.agentRestartOnRestoreEnabled else { return [] }
+        let startup = startup ?? ResumeStartupEpochGate.shared.snapshot()
         var result: [(panelId: UUID, action: ResumeAction)] = []
         // C11-24: bulk-read the actor via the shared sync helper. The
         // previous inline `Task { ... }` deadlocked from `@MainActor`
@@ -490,11 +496,66 @@ extension Workspace {
             guard let strategy = registry.strategy(forKind: ref.kind) else {
                 continue
             }
-            let action = strategy.resume(ref: ref)
-            if case .skip = action { continue }
-            result.append((panelId: panelSnapshot.id, action: action))
+            let strategyAction = strategy.resume(ref: ref)
+            let fallbackCommand: ResumeCommand?
+            if case .typeCommand(let text, let submit) = strategyAction {
+                fallbackCommand = ResumeCommand(text: text, submitWithReturn: submit)
+            } else {
+                fallbackCommand = nil
+            }
+            let decision = ResumeDecisionEngine.decide(ResumeDecisionInput(
+                mode: startup.mode,
+                auditComplete: startup.auditComplete,
+                ownership: Self.resumeOwnership(for: ref),
+                kind: ref.kind,
+                id: ref.id,
+                placeholder: ref.placeholder,
+                state: ResumePersistedState(rawValue: ref.state.rawValue) ?? .unsupported,
+                exactIDValid: strategy.isValidId(ref.id),
+                transcriptEvidence: Self.transcriptEvidence(for: ref, mode: startup.mode),
+                diagnosticReason: ref.diagnosticReason,
+                fallbackCommand: fallbackCommand
+            ))
+            guard case .command(let command) = decision else { continue }
+            result.append((
+                panelId: panelSnapshot.id,
+                action: .typeCommand(
+                    text: command.text,
+                    submitWithReturn: command.submitWithReturn
+                )
+            ))
         }
         return result
+    }
+
+    nonisolated static func resumeOwnership(
+        for ref: ConversationRef
+    ) -> ResumeOwnershipStatus {
+        if let quarantine = ref.quarantineReason {
+            switch quarantine {
+            case .duplicateInferredIdentity, .conflictingCausalIdentity, .displacedByCausalOwner:
+                return .duplicate
+            case .sameCwdWithoutCausalIdentity, .ambiguousGlobalAssignment:
+                return .ambiguous
+            }
+        }
+        // Startup audit completion is a separate ResumeDecisionInput axis.
+        // Once complete, an unquarantined singleton is uniquely owned
+        // regardless of placeholder/lifecycle state; the shared decision
+        // engine must reach those later gates so app and CLI emit the same
+        // typed placeholder or state-not-resumable skip.
+        return .unique
+    }
+
+    nonisolated static func transcriptEvidence(
+        for ref: ConversationRef,
+        mode: ResumeRecoveryMode
+    ) -> ResumeTranscriptEvidence {
+        guard mode == .dirty else { return .notRequired }
+        let diagnostic = ref.diagnosticReason?.lowercased() ?? ""
+        if diagnostic.contains("transcript verified") { return .verified }
+        if diagnostic.contains("transcript not found") { return .missing }
+        return .unavailable
     }
 
     /// Flatten persisted metadata to `[String: String]`, keeping only
@@ -5212,6 +5273,12 @@ final class Workspace: Identifiable, ObservableObject {
     /// `chromeScaleObserver`.
     private var surfaceAvailabilityObserver: SurfaceAvailabilityObserver?
 
+    /// Keeps the Bonsplit "N: " tab-ordinal prefix in sync with the persisted
+    /// "Show surface IDs in tab titles" toggle for any writer (Settings UI,
+    /// `defaults write`). Same composed-NSObject KVO pattern as
+    /// `chromeScaleObserver`.
+    private var tabOrdinalDisplayObserver: TabOrdinalDisplayObserver?
+
     /// Operator-authored workspace metadata (e.g. "description", "icon").
     /// Workspace-scoped; not to be confused with surface-scoped
     /// `SurfaceMetadataStore`. Persisted across restart via
@@ -5500,13 +5567,12 @@ final class Workspace: Identifiable, ObservableObject {
 
     private static func currentSplitButtonTooltips() -> BonsplitConfiguration.SplitButtonTooltips {
         BonsplitConfiguration.SplitButtonTooltips(
-            newAgent: {
-                let template = String(
-                    localized: "workspace.tooltip.newAgent",
-                    defaultValue: "Launch Agent (%@)"
-                )
-                return String(format: template, locale: Locale.current, DefaultAgentConfigStore.shared.current.defaultAgent.displayName)
-            }(),
+            // §5.3 v1: the A-button tooltip carries the resolved default config's
+            // name · model · effort (C11-179), read from the saved-config library
+            // and resolved through the overlay for the display axes.
+            newAgent: DefaultAgentResolver.resolvedDefaultTooltip(
+                userDefault: DefaultAgentConfigStore.shared.current
+            ),
             newTerminal: KeyboardShortcutSettings.Action.newSurface.tooltip(
                 String(localized: "workspace.tooltip.newTerminal", defaultValue: "New Terminal")
             ),
@@ -5547,6 +5613,27 @@ final class Workspace: Identifiable, ObservableObject {
         from backgroundColor: NSColor
     ) -> BonsplitConfiguration.Appearance.ChromeColors {
         .init(backgroundHex: backgroundColor.hexString())
+    }
+
+    nonisolated static func resolvedSurfaceTabActivityColors(
+        from backgroundColor: NSColor
+    ) -> BonsplitConfiguration.Appearance.TabActivityColors {
+        if backgroundColor.isLightColor {
+            return .init(
+                runningHex: "#326D9E",
+                idleHex: "#357B61",
+                coldHex: "#7F8289",
+                waitingHex: "#9B7415",
+                waitingInkHex: "#FFFDF8"
+            )
+        }
+        return .init(
+            runningHex: "#79AEE8",
+            idleHex: "#78B59E",
+            coldHex: "#707681",
+            waitingHex: "#D0AA45",
+            waitingInkHex: "#08090B"
+        )
     }
 
     /// Resolved theme-aware divider presentation for bonsplit. `borderHex` encodes
@@ -5601,6 +5688,7 @@ final class Workspace: Identifiable, ObservableObject {
                 borderHex: divider.borderHex,
                 activeIndicatorHex: activeIndicatorHex
             ),
+            tabActivityColors: Self.resolvedSurfaceTabActivityColors(from: backgroundColor),
             dividerStyle: .init(thicknessPt: divider.thicknessPt)
         )
         Self.applyChromeScale(tokens, to: &appearance)
@@ -5686,6 +5774,18 @@ final class Workspace: Identifiable, ObservableObject {
         bonsplitController.configuration = next
     }
 
+    /// Live-update path for the "Show surface IDs in tab titles" toggle.
+    /// Flips `Appearance.showTabOrdinals`; tabs already carry their
+    /// `displayOrdinal`, so the prefix appears/disappears in a single
+    /// configuration reassignment with no title re-push.
+    func applyTabOrdinalDisplay() {
+        let showIds = TabOrdinalDisplaySettings.showsSurfaceIds()
+        var next = bonsplitController.configuration
+        guard next.appearance.showTabOrdinals != showIds else { return }
+        next.appearance.showTabOrdinals = showIds
+        bonsplitController.configuration = next
+    }
+
     func applyGhosttyChrome(from config: GhosttyConfig, reason: String = "unspecified") {
         applyGhosttyChrome(
             backgroundColor: config.backgroundColor,
@@ -5730,6 +5830,10 @@ final class Workspace: Identifiable, ObservableObject {
 
         let currentAppearance = bonsplitController.configuration.appearance
         let currentChromeColors = currentAppearance.chromeColors
+        let currentActivityColors = currentAppearance.tabActivityColors
+        let nextActivityColors = Self.resolvedSurfaceTabActivityColors(
+            from: NSColor(hex: nextHex) ?? backgroundColor
+        )
         let currentThickness = currentAppearance.dividerStyle.thicknessPt
 
         // No-op guard spans background, divider color, divider thickness, and
@@ -5741,7 +5845,13 @@ final class Workspace: Identifiable, ObservableObject {
         let borderMatches = currentChromeColors.borderHex == nextBorderHex
         let thicknessMatches = currentThickness == nextThicknessPt
         let activeIndicatorMatches = currentChromeColors.activeIndicatorHex == nextActiveIndicatorHex
-        let isNoOp = backgroundMatches && borderMatches && thicknessMatches && activeIndicatorMatches
+        let activityColorsMatch =
+            currentActivityColors.runningHex == nextActivityColors.runningHex &&
+            currentActivityColors.idleHex == nextActivityColors.idleHex &&
+            currentActivityColors.coldHex == nextActivityColors.coldHex &&
+            currentActivityColors.waitingHex == nextActivityColors.waitingHex &&
+            currentActivityColors.waitingInkHex == nextActivityColors.waitingInkHex
+        let isNoOp = backgroundMatches && borderMatches && thicknessMatches && activeIndicatorMatches && activityColorsMatch
 
         if GhosttyApp.shared.backgroundLogEnabled {
             let currentBackgroundHex = currentChromeColors.backgroundHex ?? "nil"
@@ -5762,6 +5872,7 @@ final class Workspace: Identifiable, ObservableObject {
         nextAppearance.chromeColors.backgroundHex = nextHex
         nextAppearance.chromeColors.borderHex = nextBorderHex
         nextAppearance.chromeColors.activeIndicatorHex = nextActiveIndicatorHex
+        nextAppearance.tabActivityColors = nextActivityColors
         nextAppearance.dividerStyle.thicknessPt = nextThicknessPt
 
         var nextConfiguration = bonsplitController.configuration
@@ -5819,6 +5930,7 @@ final class Workspace: Identifiable, ObservableObject {
         )
         // C11-41: tab bar chrome state was removed; always show the full tab bar.
         appearance.showsTabBar = true
+        appearance.showTabOrdinals = TabOrdinalDisplaySettings.showsSurfaceIds()
         let config = BonsplitConfiguration(
             allowSplits: true,
             allowCloseTabs: true,
@@ -5833,10 +5945,8 @@ final class Workspace: Identifiable, ObservableObject {
             autoCloseEmptyPanes: true,
             contentViewLifecycle: .keepAllAlive,
             newTabPosition: .current,
-            // C11-26: left-anchored always-visible close X + two-item
-            // right-click menu (Close Tab, Close Pane). Sidesteps the
-            // right-edge hit-collision bug and matches native macOS
-            // Cocoa tab convention (Finder, Terminal.app, Notes).
+            // C11-184: leading activity state, trailing always-visible close X,
+            // and the two-item right-click menu (Close Tab, Close Pane).
             simplifiedTabContextMenu: true,
             // Hide the Browser / Markdown spawn buttons when the operator has
             // disabled those surface types. `applySurfaceAvailability()` keeps
@@ -5865,6 +5975,11 @@ final class Workspace: Identifiable, ObservableObject {
             self?.applySurfaceAvailability()
         }
 
+        // React to the "Show surface IDs in tab titles" toggle live.
+        self.tabOrdinalDisplayObserver = TabOrdinalDisplayObserver { [weak self] in
+            self?.applyTabOrdinalDisplay()
+        }
+
         // Remove the default "Welcome" tab that bonsplit creates
         let welcomeTabIds = bonsplitController.allTabIds
 
@@ -5889,7 +6004,8 @@ final class Workspace: Identifiable, ObservableObject {
             icon: "terminal.fill",
             kind: SurfaceKind.terminal,
             isDirty: false,
-            isPinned: false
+            isPinned: false,
+            displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: terminalPanel.id)
         ) {
             surfaceIdToPanelId[tabId] = terminalPanel.id
             initialTabId = tabId
@@ -6242,6 +6358,11 @@ final class Workspace: Identifiable, ObservableObject {
         let customTitle: String?
         let customColor: String?
         let manuallyUnread: Bool
+        let terminalType: String?
+        let terminalTypeSource: MetadataSource?
+        let derivedActivity: SidebarActivityState?
+        let derivedActivitySource: MetadataSource?
+        let activityState: BonsplitTabActivityState?
     }
 
     private var detachingTabIds: Set<TabID> = []
@@ -6555,16 +6676,46 @@ final class Workspace: Identifiable, ObservableObject {
         AppDelegate.shared?.notificationStore?.hasUnreadNotification(forTabId: id, surfaceId: panelId) ?? false
     }
 
-    private func syncUnreadBadgeStateForPanel(_ panelId: UUID) {
-        guard let tabId = surfaceIdFromPanelId(panelId) else { return }
-        let shouldShowUnread = Self.shouldShowUnreadIndicator(
-            hasUnreadNotification: hasUnreadNotification(panelId: panelId),
-            isManuallyUnread: manualUnreadPanelIds.contains(panelId)
+    func resolvedSurfaceTabActivityState(
+        panelId: UUID,
+        hasExactSurfaceNotification: Bool? = nil
+    ) -> BonsplitTabActivityState? {
+        SurfaceTabActivityResolver.resolve(
+            hasExactSurfaceNotification: hasExactSurfaceNotification ?? hasUnreadNotification(panelId: panelId),
+            derivedActivity: derivedActivityBySurface[panelId],
+            terminalType: surfaceTerminalKind(panelId: panelId)
         )
-        if let existing = bonsplitController.tab(tabId), existing.showsNotificationBadge == shouldShowUnread {
-            return
+    }
+
+    func syncSurfaceTabActivityStateForPanel(
+        _ panelId: UUID,
+        hasExactSurfaceNotification: Bool? = nil
+    ) {
+        guard let tabId = surfaceIdFromPanelId(panelId),
+              let existing = bonsplitController.tab(tabId) else { return }
+        let hasExact = hasExactSurfaceNotification ?? hasUnreadNotification(panelId: panelId)
+        let activityState = resolvedSurfaceTabActivityState(
+            panelId: panelId,
+            hasExactSurfaceNotification: hasExact
+        )
+        let shouldShowLegacyUnread = manualUnreadPanelIds.contains(panelId)
+        guard existing.activityState != activityState
+            || existing.showsNotificationBadge != shouldShowLegacyUnread else { return }
+        bonsplitController.updateTab(
+            tabId,
+            showsNotificationBadge: shouldShowLegacyUnread,
+            activityState: .some(activityState)
+        )
+    }
+
+    func syncSurfaceTabActivityStates() {
+        for panelId in surfaceIdToPanelId.values {
+            syncSurfaceTabActivityStateForPanel(panelId)
         }
-        bonsplitController.updateTab(tabId, showsNotificationBadge: shouldShowUnread)
+    }
+
+    private func syncUnreadBadgeStateForPanel(_ panelId: UUID) {
+        syncSurfaceTabActivityStateForPanel(panelId)
     }
 
     private func normalizePinnedTabs(in paneId: PaneID) {
@@ -6887,12 +7038,22 @@ final class Workspace: Identifiable, ObservableObject {
     /// overwrites it. The enclosing type is `@MainActor`, so this publishes on
     /// the main actor. Cheap and I/O-free.
     func setDerivedActivity(_ state: SidebarActivityState?, forSurface surfaceId: UUID) {
+        let changed: Bool
         if let state {
             if derivedActivityBySurface[surfaceId] != state {
                 derivedActivityBySurface[surfaceId] = state
+                changed = true
+            } else {
+                changed = false
             }
         } else if derivedActivityBySurface[surfaceId] != nil {
             derivedActivityBySurface.removeValue(forKey: surfaceId)
+            changed = true
+        } else {
+            changed = false
+        }
+        if changed {
+            syncSurfaceTabActivityStateForPanel(surfaceId)
         }
     }
 
@@ -7322,7 +7483,8 @@ final class Workspace: Identifiable, ObservableObject {
             titleSource: Self.extractSource(snapshot.sources[MetadataKey.title]),
             descriptionSource: Self.extractSource(snapshot.sources[MetadataKey.description]),
             visible: titleBarVisible,
-            collapsed: titleBarCollapsed[panelId] ?? true
+            collapsed: titleBarCollapsed[panelId] ?? true,
+            ordinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: panelId)
         )
     }
 
@@ -7394,6 +7556,12 @@ final class Workspace: Identifiable, ObservableObject {
                 values: values,
                 sources: sources
             )
+            if let rawActivity = values[MetadataKey.activity] as? String,
+               let activity = SidebarActivityState(rawValue: rawActivity) {
+                derivedActivityBySurface[panelId] = activity
+            } else {
+                derivedActivityBySurface.removeValue(forKey: panelId)
+            }
         }
     }
 
@@ -8243,7 +8411,8 @@ final class Workspace: Identifiable, ObservableObject {
             icon: newPanel.displayIcon,
             kind: SurfaceKind.terminal,
             isDirty: newPanel.isDirty,
-            isPinned: false
+            isPinned: false,
+            displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: newPanel.id)
         )
         surfaceIdToPanelId[newTab.id] = newPanel.id
         let previousFocusedPanelId = focusedPanelId
@@ -8334,6 +8503,7 @@ final class Workspace: Identifiable, ObservableObject {
             kind: SurfaceKind.terminal,
             isDirty: newPanel.isDirty,
             isPinned: false,
+            displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: newPanel.id),
             inPane: paneId
         ) else {
             panels.removeValue(forKey: newPanel.id)
@@ -8426,7 +8596,8 @@ final class Workspace: Identifiable, ObservableObject {
             kind: SurfaceKind.browser,
             isDirty: browserPanel.isDirty,
             isLoading: browserPanel.isLoading,
-            isPinned: false
+            isPinned: false,
+            displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: browserPanel.id)
         )
         surfaceIdToPanelId[newTab.id] = browserPanel.id
         let previousFocusedPanelId = focusedPanelId
@@ -8513,6 +8684,7 @@ final class Workspace: Identifiable, ObservableObject {
             isDirty: browserPanel.isDirty,
             isLoading: browserPanel.isLoading,
             isPinned: false,
+            displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: browserPanel.id),
             inPane: paneId
         ) else {
             panels.removeValue(forKey: browserPanel.id)
@@ -8568,7 +8740,8 @@ final class Workspace: Identifiable, ObservableObject {
             kind: SurfaceKind.markdown,
             isDirty: markdownPanel.isDirty,
             isLoading: false,
-            isPinned: false
+            isPinned: false,
+            displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: markdownPanel.id)
         )
         surfaceIdToPanelId[newTab.id] = markdownPanel.id
         let previousFocusedPanelId = focusedPanelId
@@ -8623,6 +8796,7 @@ final class Workspace: Identifiable, ObservableObject {
             isDirty: markdownPanel.isDirty,
             isLoading: false,
             isPinned: false,
+            displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: markdownPanel.id),
             inPane: paneId
         ) else {
             panels.removeValue(forKey: markdownPanel.id)
@@ -9173,6 +9347,27 @@ final class Workspace: Identifiable, ObservableObject {
             manualUnreadPanelIds.remove(detached.panelId)
             manualUnreadMarkedAt.removeValue(forKey: detached.panelId)
         }
+        if let terminalType = detached.terminalType {
+            _ = SurfaceMetadataStore.shared.setInternal(
+                workspaceId: id,
+                surfaceId: detached.panelId,
+                key: MetadataKey.terminalType,
+                value: terminalType,
+                source: detached.terminalTypeSource ?? .heuristic
+            )
+        }
+        if let derivedActivity = detached.derivedActivity {
+            derivedActivityBySurface[detached.panelId] = derivedActivity
+            _ = SurfaceMetadataStore.shared.setInternal(
+                workspaceId: id,
+                surfaceId: detached.panelId,
+                key: MetadataKey.activity,
+                value: derivedActivity.rawValue,
+                source: detached.derivedActivitySource ?? .derived
+            )
+        } else {
+            derivedActivityBySurface.removeValue(forKey: detached.panelId)
+        }
 
         guard let newTabId = bonsplitController.createTab(
             title: TitleFormatting.sidebarLabel(from: detached.title),
@@ -9181,9 +9376,12 @@ final class Workspace: Identifiable, ObservableObject {
             iconImageData: detached.iconImageData,
             kind: detached.kind,
             isDirty: detached.panel.isDirty,
+            showsNotificationBadge: detached.manuallyUnread,
             isLoading: detached.isLoading,
             isPinned: detached.isPinned,
             customColorHex: detached.customColor,
+            displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: detached.panelId),
+            activityState: detached.activityState,
             inPane: paneId
         ) else {
             panels.removeValue(forKey: detached.panelId)
@@ -9194,6 +9392,8 @@ final class Workspace: Identifiable, ObservableObject {
             pinnedPanelIds.remove(detached.panelId)
             manualUnreadPanelIds.remove(detached.panelId)
             manualUnreadMarkedAt.removeValue(forKey: detached.panelId)
+            derivedActivityBySurface.removeValue(forKey: detached.panelId)
+            SurfaceMetadataStore.shared.removeSurface(workspaceId: id, surfaceId: detached.panelId)
             panelSubscriptions.removeValue(forKey: detached.panelId)
 #if DEBUG
             dlog(
@@ -9209,7 +9409,7 @@ final class Workspace: Identifiable, ObservableObject {
             _ = bonsplitController.reorderTab(newTabId, toIndex: index)
         }
         syncPinnedStateForTab(newTabId, panelId: detached.panelId)
-        syncUnreadBadgeStateForPanel(detached.panelId)
+        syncSurfaceTabActivityStateForPanel(detached.panelId)
         normalizePinnedTabs(in: paneId)
 
         if focus {
@@ -9818,7 +10018,8 @@ final class Workspace: Identifiable, ObservableObject {
             icon: newPanel.displayIcon,
             kind: SurfaceKind.terminal,
             isDirty: newPanel.isDirty,
-            isPinned: false
+            isPinned: false,
+            displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: newPanel.id)
         ) {
             surfaceIdToPanelId[newTabId] = newPanel.id
         }
@@ -11299,6 +11500,12 @@ extension Workspace: BonsplitDelegate {
                 return
             }
 
+            if let selectedTabId = controller.selectedTab(inPane: pane)?.id,
+               selectedTabId != tab.id {
+                postCloseSelectTabId[tab.id] = selectedTabId
+                return
+            }
+
             let target: TabID? = {
                 if idx + 1 < tabs.count { return tabs[idx + 1].id }
                 if idx > 0 { return tabs[idx - 1].id }
@@ -11427,7 +11634,23 @@ extension Workspace: BonsplitDelegate {
                 cachedTitle: cachedTitle,
                 customTitle: panelCustomTitles[panelId],
                 customColor: panelCustomColors[panelId],
-                manuallyUnread: manualUnreadPanelIds.contains(panelId)
+                manuallyUnread: manualUnreadPanelIds.contains(panelId),
+                terminalType: surfaceTerminalKind(panelId: panelId),
+                terminalTypeSource: SurfaceMetadataStore.shared.getSource(
+                    workspaceId: id,
+                    surfaceId: panelId,
+                    key: MetadataKey.terminalType
+                ),
+                derivedActivity: derivedActivityBySurface[panelId],
+                derivedActivitySource: SurfaceMetadataStore.shared.getSource(
+                    workspaceId: id,
+                    surfaceId: panelId,
+                    key: MetadataKey.activity
+                ),
+                activityState: resolvedSurfaceTabActivityState(
+                    panelId: panelId,
+                    hasExactSurfaceNotification: false
+                )
             )
         } else {
             if let closedBrowserRestoreSnapshot {
@@ -11461,6 +11684,7 @@ extension Workspace: BonsplitDelegate {
         manualUnreadMarkedAt.removeValue(forKey: panelId)
         panelSubscriptions.removeValue(forKey: panelId)
         panelShellActivityStates.removeValue(forKey: panelId)
+        derivedActivityBySurface.removeValue(forKey: panelId)
         mailboxStdinBuffer.removeSurface(panelId)
         surfaceTTYNames.removeValue(forKey: panelId)
         restoredTerminalScrollbackByPanelId.removeValue(forKey: panelId)
@@ -11643,6 +11867,7 @@ extension Workspace: BonsplitDelegate {
                 manualUnreadPanelIds.remove(panelId)
                 panelSubscriptions.removeValue(forKey: panelId)
                 panelShellActivityStates.removeValue(forKey: panelId)
+                derivedActivityBySurface.removeValue(forKey: panelId)
                 mailboxStdinBuffer.removeSurface(panelId)
                 surfaceTTYNames.removeValue(forKey: panelId)
                 surfaceListeningPorts.removeValue(forKey: panelId)
@@ -11851,6 +12076,7 @@ extension Workspace: BonsplitDelegate {
             kind: SurfaceKind.terminal,
             isDirty: newPanel.isDirty,
             isPinned: false,
+            displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: newPanel.id),
             inPane: newPane
         ) else {
             panels.removeValue(forKey: newPanel.id)
@@ -11881,6 +12107,15 @@ extension Workspace: BonsplitDelegate {
     }
 
     func splitTabBar(_ controller: BonsplitController, didRequestNewTab kind: String, inPane pane: PaneID) {
+        // An explicit tab-bar spawn click ("A"/terminal/browser/markdown/"+") is an
+        // unambiguous "open a new surface here and let me use it" gesture, so the new
+        // surface must take focus immediately. Focus the clicked pane first — mirroring
+        // how tapping a tab focuses its pane — so the surface creators (which default
+        // `focus` to `focusedPaneId == pane`) reliably focus + select what they create.
+        // Without this, clicking a spawn button in a pane that was NOT the focused pane
+        // created the surface but left focus on the other pane, so the view never
+        // switched to the new tab.
+        bonsplitController.focusPane(pane)
         switch kind {
         case "terminal":
             _ = newTerminalSurface(inPane: pane)
@@ -11909,33 +12144,167 @@ extension Workspace: BonsplitDelegate {
     /// `explicitAgent` lets the caller override the configured default —
     /// used by the right-click menu's "launch this one now" affordance and
     /// the `c11 default-agent launch --agent <type>` socket command.
-    func launchAgentSurface(inPane pane: PaneID, explicitAgent: AgentType? = nil) {
+    /// - Parameter source: launch-stats provenance (C11-178). Defaults to
+    ///   `.aButton` (the real UI spawn button); the CLI `default-agent launch`
+    ///   new-surface path passes `.launchAgent` so button-clicks and CLI launches
+    ///   are honestly distinguished in the stats rail.
+    /// Launch an agent surface. Returns `true` when a launch was actually
+    /// performed; `false` when it declined (empty resolved command, surface
+    /// creation failed, or an `explicitConfig` whose recipe couldn't be
+    /// resolved) — the "Save & Launch" caller surfaces that as feedback rather
+    /// than a silent no-op.
+    @discardableResult
+    func launchAgentSurface(inPane pane: PaneID, explicitAgent: AgentType? = nil, explicitConfig: SavedAgentConfig? = nil, source: AgentLaunchSource = .aButton) -> Bool {
         let userDefault = DefaultAgentConfigStore.shared.current
         let projectConfig = DefaultAgentProjectConfig.find(from: resolverCwdForAgentLaunch())
-        let resolved = DefaultAgentResolver.resolve(
-            explicitAgent: explicitAgent,
-            userDefault: userDefault,
-            projectConfig: projectConfig
-        )
-        guard !resolved.launch.command.isEmpty else { return }
+
+        // A plain left-click (no explicit agent) launches the saved-config
+        // library's `effectiveDefault()` through the overlay resolver (C11-179).
+        // An explicit agent (right-click "launch this kind" / socket) stays on
+        // the raw-harness path. A custom-harness overlay the resolver can't
+        // materialize falls back to the raw-harness default (design §5.6).
+        let agent: AgentType
+        let launch: ResolvedAgentLaunch
+        let resolvedModel: String
+        let resolvedEffort: String
+        let resolvedSystemPromptMode: String?
+        let savedConfigId: String?
+
+        // A caller-chosen config (Settings "Save & Launch", C11-182) launches
+        // exactly that recipe. Otherwise a plain left-click consults the
+        // saved-config library's `effectiveDefault()`; an explicit agent keeps
+        // `nil` here and takes the raw-harness path below.
+        let overlaySaved: SavedAgentConfig?
+        if let explicitConfig {
+            overlaySaved = explicitConfig
+        } else if explicitAgent == nil {
+            overlaySaved = AgentConfigLibraryStore.shared.effectiveDefault()
+        } else {
+            overlaySaved = nil
+        }
+        if let saved = overlaySaved,
+           let overlay = DefaultAgentResolver.resolveOverlay(
+               savedConfig: saved,
+               userDefault: userDefault,
+               projectConfig: projectConfig
+           ) {
+            agent = overlay.agent
+            launch = overlay.launch
+            resolvedModel = overlay.mergedConfig.model.trimmingCharacters(in: .whitespacesAndNewlines)
+            resolvedEffort = overlay.mergedConfig.effort.trimmingCharacters(in: .whitespacesAndNewlines)
+            resolvedSystemPromptMode = overlay.mergedConfig.systemPrompt?.mode.rawValue
+            savedConfigId = saved.id.isEmpty ? nil : saved.id
+        } else if explicitConfig != nil {
+            // A caller asked to launch a specific recipe that the resolver could
+            // not materialize (unknown harness in a hand-edited agent-configs.json).
+            // Decline rather than silently launching the default agent instead.
+            return false
+        } else {
+            let resolved = DefaultAgentResolver.resolve(
+                explicitAgent: explicitAgent,
+                userDefault: userDefault,
+                projectConfig: projectConfig
+            )
+            agent = resolved.agent
+            launch = resolved.launch
+            let cfg = projectConfig?.agents[agent] ?? userDefault.config(for: agent)
+            resolvedModel = cfg.model.trimmingCharacters(in: .whitespacesAndNewlines)
+            resolvedEffort = cfg.effort.trimmingCharacters(in: .whitespacesAndNewlines)
+            resolvedSystemPromptMode = cfg.systemPrompt?.mode.rawValue
+            savedConfigId = nil
+        }
+
+        guard !launch.command.isEmpty else { return false }
         guard let panel = newTerminalSurface(
             inPane: pane,
-            startupEnvironment: resolved.launch.envOverrides
-        ) else { return }
+            startupEnvironment: launch.envOverrides
+        ) else { return false }
         // By default no orientation prompt is baked (see `c11OrientPrompt`),
         // so the agent boots straight to ready with no dead-time. c11 stamps
         // the identity the sidebar needs itself — no agent round-trip: the
-        // type comes from `AgentDetector`, and we stamp the pinned model plus
-        // a placeholder title here. An operator who configured a launch prompt
-        // still gets it delivered below (baked positional for claude-code,
-        // post-ready sendText for other TUIs is a follow-up).
-        stampLaunchIdentity(
-            surfaceId: panel.id,
-            agent: resolved.agent,
-            userDefault: userDefault,
-            projectConfig: projectConfig
+        // type comes from `AgentDetector`, and we stamp the overlay-resolved
+        // model plus a placeholder title here. An operator who configured a
+        // launch prompt still gets it delivered below (baked positional for
+        // claude-code, post-ready sendText for other TUIs is a follow-up).
+        stampLaunchIdentity(surfaceId: panel.id, resolvedModel: resolvedModel)
+        panel.sendText(launch.command + "\n")
+        // C11-178 rail-1: record the launch off the critical path, now with the
+        // overlay-resolved axes + `config_id` + system-prompt mode (C11-179).
+        recordAgentLaunchStats(
+            harness: agent.rawValue,
+            model: resolvedModel,
+            effort: resolvedEffort,
+            systemPromptMode: resolvedSystemPromptMode,
+            configId: savedConfigId,
+            source: source
         )
-        panel.sendText(resolved.launch.command + "\n")
+        // C11-179 (R2): keep the follow-recent pointer that `effectiveDefault()`
+        // reads — `recent` in `agent-configs.json` — live for A-button-lineage
+        // launches. (The stats rail's own `recent` in `agent-launch-stats.json`
+        // is durable-telemetry only and is NEVER read for resolution, so the two
+        // homes cannot cause a follow-recent divergence.) Off-main, best-effort.
+        recordOverlayRecent(
+            harness: agent.rawValue,
+            model: resolvedModel,
+            effort: resolvedEffort,
+            configId: savedConfigId
+        )
+        // The tooltip carries the resolved default (§5.3 v1); in follow-recent
+        // mode this launch changes what the next left-click launches, so refresh
+        // this workspace's A-button tooltip. Cheap: `refreshSplitButtonTooltips`
+        // diffs and no-ops when unchanged.
+        refreshSplitButtonTooltips()
+        return true
+    }
+
+    /// C11-178/179: emit a rail-1 launch-stats record for an A-button-lineage
+    /// launch, carrying the overlay-resolved axes. Dispatched to a utility queue
+    /// so no disk touches the launch path. `nil` store (state dir unavailable)
+    /// is a silent no-op.
+    private func recordAgentLaunchStats(
+        harness: String,
+        model: String,
+        effort: String,
+        systemPromptMode: String?,
+        configId: String?,
+        source: AgentLaunchSource
+    ) {
+        guard let store = AgentLaunchStatsStore.shared else { return }
+        let resolved = ResolvedLaunch(
+            harness: harness,
+            model: model,
+            effort: effort,
+            systemPromptMode: systemPromptMode,
+            configId: configId
+        )
+        DispatchQueue.global(qos: .utility).async {
+            store.recordLaunch(resolved, source: source)
+        }
+    }
+
+    /// C11-179 (R2): persist the observed launch as `recent` in
+    /// `agent-configs.json` (the single home `effectiveDefault()`'s follow-recent
+    /// branch reads). Off-main, best-effort — a telemetry hiccup never fails a
+    /// launch. Empty `harness` is a no-op guard.
+    private func recordOverlayRecent(
+        harness: String,
+        model: String,
+        effort: String,
+        configId: String?
+    ) {
+        guard !harness.isEmpty else { return }
+        let recent = RecentAgentConfig(
+            configId: configId,
+            harness: harness,
+            model: model.isEmpty ? nil : model,
+            effort: effort.isEmpty ? nil : effort,
+            observedAt: Date(),
+            source: "launch",
+            fieldSources: ["model": "launch", "effort": "launch"]
+        )
+        DispatchQueue.global(qos: .utility).async {
+            try? AgentConfigLibraryStore.shared.recordRecent(recent)
+        }
     }
 
     /// Populate a freshly launched agent surface with the identity the sidebar
@@ -11946,9 +12315,7 @@ extension Workspace: BonsplitDelegate {
     /// stamped here — `AgentDetector` owns it authoritatively.
     private func stampLaunchIdentity(
         surfaceId: UUID,
-        agent: AgentType,
-        userDefault: DefaultAgentConfig,
-        projectConfig: DefaultAgentConfig?
+        resolvedModel: String
     ) {
         var partial: [String: Any] = [
             MetadataKey.title: String(
@@ -11956,10 +12323,10 @@ extension Workspace: BonsplitDelegate {
                 defaultValue: "Awaiting first task"
             )
         ]
-        // Mirror the resolver's per-agent config pick so the chip shows the
-        // model c11 launched with. Reads config only; no mutation.
-        let cfg = projectConfig?.agents[agent] ?? userDefault.config(for: agent)
-        let model = cfg.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        // `resolvedModel` is the overlay-resolved model the launch actually used
+        // (C11-179), so the chip shows what c11 launched with — including a
+        // saved-config override, not just the harness base pin.
+        let model = resolvedModel.trimmingCharacters(in: .whitespacesAndNewlines)
         if !model.isEmpty {
             partial[MetadataKey.model] = model
         }
@@ -11971,6 +12338,54 @@ extension Workspace: BonsplitDelegate {
             source: .declare
         )
         syncPanelTitleFromMetadata(panelId: surfaceId)
+        syncSurfaceTabActivityStateForPanel(surfaceId)
+    }
+
+    /// Identity-at-birth stamp for `agent.launch` (`c11 launch-agent`). Unlike
+    /// `stampLaunchIdentity` (A button), the caller *explicitly requested* this
+    /// agent kind, so `terminal_type` is stamped as a declaration too — the
+    /// same tier `c11 set-agent` writes, so a later explicit declaration still
+    /// cleanly wins, and `AgentDetector`'s heuristic tier never fights it.
+    /// Models that don't fit the canonical kebab grammar (e.g. `gpt-5.2`,
+    /// `provider/model`) land on the non-canonical `model_label` display hint
+    /// instead so the chip still shows them.
+    func stampAgentLaunchIdentity(
+        surfaceId: UUID,
+        kind: String,
+        model: String,
+        task: String?,
+        title: String?
+    ) {
+        var partial: [String: Any] = [
+            MetadataKey.terminalType: kind,
+            MetadataKey.title: title?.isEmpty == false
+                ? title!
+                : String(
+                    localized: "agent.launch.placeholderTitle",
+                    defaultValue: "Awaiting first task"
+                )
+        ]
+        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedModel.isEmpty {
+            if trimmedModel.range(of: "^[a-z][a-z0-9-]*$", options: .regularExpression) != nil,
+               trimmedModel.count <= 64 {
+                partial[MetadataKey.model] = trimmedModel
+            } else {
+                partial[MetadataKey.modelLabel] = String(trimmedModel.prefix(16))
+            }
+        }
+        if let task = task?.trimmingCharacters(in: .whitespacesAndNewlines), !task.isEmpty {
+            partial[MetadataKey.task] = String(task.prefix(128))
+        }
+        _ = try? SurfaceMetadataStore.shared.setMetadata(
+            workspaceId: id,
+            surfaceId: surfaceId,
+            partial: partial,
+            mode: .merge,
+            source: .declare
+        )
+        syncPanelTitleFromMetadata(panelId: surfaceId)
+        syncSurfaceTabActivityStateForPanel(surfaceId)
     }
 
     func splitTabBar(_ controller: BonsplitController, menuItemsForNewTabKind kind: String, inPane pane: PaneID) -> [BonsplitNewTabMenuItem] {

@@ -80,6 +80,29 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
         try roundTrip(spec)
     }
 
+    func testSurfaceSpecCompanionFieldsRoundTrip() throws {
+        let browser = SurfaceSpec(
+            id: "browser",
+            kind: .browser,
+            linkedAgentSurfacePlanId: "agent"
+        )
+        let agent = SurfaceSpec(
+            id: "agent",
+            kind: .terminal,
+            declaredAgentKind: "codex"
+        )
+        try roundTrip(browser)
+        try roundTrip(agent)
+    }
+
+    func testSurfaceSpecDecodesPrefeatureShapeWithoutCompanionFields() throws {
+        let legacyJSON = #"{"id":"t","kind":"terminal"}"#
+        let decoded = try decode(SurfaceSpec.self, from: Data(legacyJSON.utf8))
+        XCTAssertNil(decoded.linkedAgentSurfacePlanId)
+        XCTAssertNil(decoded.declaredAgentKind)
+        XCTAssertFalse(decoded.submitCommand)
+    }
+
     func testSurfaceSpecMarkdownRoundTrips() throws {
         let spec = SurfaceSpec(
             id: "notes",
@@ -112,6 +135,38 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
             .array([.string("build.*"), .string("deploy.*")])
         )
         XCTAssertEqual(decoded.paneMetadata?["mailbox.retention_days"], .number(14))
+    }
+
+    // MARK: - SurfaceSpec.submitCommand (opt-in, back-compat)
+
+    func testSurfaceSpecSubmitCommandRoundTrips() throws {
+        let spec = SurfaceSpec(
+            id: "launcher",
+            kind: .terminal,
+            command: "python3 /path/position.py --watch",
+            submitCommand: true
+        )
+        let decoded = try decode(SurfaceSpec.self, from: try encode(spec))
+        XCTAssertTrue(decoded.submitCommand)
+        XCTAssertEqual(decoded, spec)
+    }
+
+    /// An older plan/snapshot serialized before `submitCommand` existed has no
+    /// such key. Swift's *synthesized* decoder would throw `keyNotFound`; the
+    /// custom `init(from:)` must instead default it to `false`.
+    func testSurfaceSpecDecodesMissingSubmitCommandAsFalse() throws {
+        let legacyJSON = #"{"id":"t","kind":"terminal","command":"ls"}"#
+        let decoded = try decode(SurfaceSpec.self, from: Data(legacyJSON.utf8))
+        XCTAssertFalse(decoded.submitCommand)
+        XCTAssertEqual(decoded.command, "ls")
+    }
+
+    /// When `submitCommand` is `false` the encoder omits the key entirely, so
+    /// serialized output for every pre-existing spec stays byte-identical.
+    func testSurfaceSpecOmitsSubmitCommandWhenFalse() throws {
+        let spec = SurfaceSpec(id: "t", kind: .terminal, command: "ls")
+        let json = String(data: try encode(spec), encoding: .utf8) ?? ""
+        XCTAssertFalse(json.contains("submitCommand"), "false must not serialize; got \(json)")
     }
 
     // MARK: - LayoutTreeSpec
@@ -251,9 +306,23 @@ final class WorkspaceApplyPlanCodableTests: XCTestCase {
                     step: "metadata.pane[main].write",
                     message: "mailbox.retention_days must be a string in v1"
                 )
+            ],
+            companionDiagnostics: [
+                CompanionPlanDiagnostic(
+                    code: .targetMissing,
+                    severity: .error,
+                    sourcePlanID: "browser",
+                    targetPlanID: "agent"
+                )
             ]
         )
         try roundTrip(result)
+    }
+
+    func testApplyResultDecodesLegacyShapeWithEmptyCompanionDiagnostics() throws {
+        let legacyJSON = #"{"workspaceRef":"workspace:1","surfaceRefs":{},"paneRefs":{},"timings":[],"warnings":[],"failures":[]}"#
+        let decoded = try decode(ApplyResult.self, from: Data(legacyJSON.utf8))
+        XCTAssertTrue(decoded.companionDiagnostics.isEmpty)
     }
 
     // MARK: - Validation (review cycle 1 R6: I4a/I4b/I4d)

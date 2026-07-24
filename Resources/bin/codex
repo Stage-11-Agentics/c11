@@ -5,14 +5,10 @@
 # this wrapper:
 #   1. declares the surface as terminal_type=codex (sidebar chip / role
 #      hint), and
-#   2. wrapper-claims a placeholder ConversationRef so c11's conversation
-#      store has *something* to attach to before codex creates its
-#      session file. The Codex strategy's pull-scrape on next workspace
-#      open then matches the surface's cwd + post-claim mtime to resolve
-#      the real session id from `~/.codex/sessions/*.jsonl`. If two
-#      panes share the same cwd, the strategy returns state=unknown +
-#      a sidebar advisory rather than auto-resuming the wrong one
-#      (the staging-QA bug this primitive exists to fix).
+#   2. synchronously wrapper-claims a short-lived placeholder
+#      ConversationRef before codex starts. A running Codex agent then calls
+#      `c11 conversation capture-runtime` from its own tool subprocess to
+#      replace that fallback with the exact `CODEX_THREAD_ID`.
 #
 # Outside c11 (or when the socket is unreachable), it passes through to
 # the real codex binary unchanged.
@@ -27,19 +23,45 @@
 # exactly this case: two restored codex panes both resumed the global
 # most-recent session.
 #
-# c11 0.44.0+ replaces that pattern with the conversation store:
-# the wrapper claims a placeholder; the c11 ConversationStore + Codex
-# strategy resolve the real id at restore time using cwd + mtime +
-# the surface's lastActivityTimestamp; the workspace-restore path
-# types `codex resume <id>` (specific id, NOT --last). Ambiguous
-# multi-candidate cases skip auto-resume and surface a sidebar advisory
-# instead.
+# c11 0.44.0+ replaces that pattern with the conversation store. The
+# wrapper synchronously claims a short-lived placeholder before Codex can
+# create a rollout. The running agent then reports its exact, causal
+# `CODEX_THREAD_ID` via `c11 conversation capture-runtime`; restore types
+# `codex resume <id>` (specific id, NOT --last). The on-disk scraper remains
+# a conservative crash fallback when causal capture was missed. Inferred
+# same-cwd ownership is quarantined and skips auto-resume rather than choosing
+# by timestamp; independently captured causal refs in the same cwd are safe.
 #
 # See `Resources/bin/claude` for the reference implementation of the
 # session-resume wrapper pattern and the four constraints all wrappers
 # must honour.
 
 set -uo pipefail
+
+# Codex invokes the configured `notify` command after every completed agent
+# turn, even when its own TUI notification is suppressed because the terminal
+# is focused. Route that exact lifecycle edge back through c11 so the surface
+# becomes an unread "waiting agent" and its underlying activity settles idle.
+# This private callback runs only as a child of the c11-scoped Codex process;
+# it never writes Codex config or changes behavior outside c11.
+if [[ "${1:-}" == "__c11-notify" ]]; then
+    socket="${CMUX_SOCKET_PATH:-${C11_SOCKET_PATH:-}}"
+    workspace_id="${CMUX_WORKSPACE_ID:-${C11_WORKSPACE_ID:-}}"
+    surface_id="${CMUX_SURFACE_ID:-${C11_SURFACE_ID:-}}"
+    self_dir="$(cd "$(dirname "$0")" && pwd)"
+    c11_bin="$self_dir/c11"
+    [[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
+
+    if [[ -n "$socket" && -S "$socket" && -n "$workspace_id" && -n "$surface_id" && -n "$c11_bin" ]]; then
+        CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+            "$c11_bin" --socket "$socket" notify \
+            --title "Codex" \
+            --workspace "$workspace_id" \
+            --surface "$surface_id" \
+            >/dev/null 2>&1 || true
+    fi
+    exit 0
+fi
 
 # Find the real codex binary, skipping our own directory.
 find_real_codex() {
@@ -103,17 +125,45 @@ self_dir="$(cd "$(dirname "$0")" && pwd)"
 c11_bin="$self_dir/c11"
 [[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
 
+# Treat strict `codex resume <uuid>` argv as lifecycle intent only. Plain
+# launches and `resume --last` intentionally carry no expected id, so the
+# store invalidates any exact identity left by the previous process.
+EXPECTED_RESUME_ID=""
+if [[ "${1:-}" == "resume" && "${2:-}" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then
+    EXPECTED_RESUME_ID="$2"
+fi
+
 # (1) Mark the surface as terminal_type=codex (sidebar chip / role hint).
-# (2) Wrapper-claim a placeholder ConversationRef so the conversation
-#     store has *something* to attach to. Idempotent: a second invocation
-#     in the same surface cannot regress a real id back to a placeholder
-#     (ConversationStore.claim is conservative — never displaces a non-
-#     wrapperClaim source).
+# (2) Durably mark the interactive process boundary in c11-owned runtime
+#     storage before the bounded socket claim. A plain launch or a
+#     resume-id mismatch replaces any prior exact ref with a placeholder so a
+#     missed runtime report cannot resume the process that just ended. Exact
+#     matching resume intent preserves the ref while the resumed target starts.
 #
-# Both run in the background so codex startup latency is unaffected;
-# `disown` so a stale write can't keep the wrapper process alive after
-# `exec` (moot since exec replaces this process anyway, but defensive).
+# Agent metadata is advisory and remains asynchronous. The placeholder claim
+# is deliberately synchronous and bounded. If it is not acknowledged, the
+# marker survives so startup/persistence can invalidate the prior owner; a
+# later target runtime capture is newer than the marker and remains
+# authoritative. This preserves causal ordering without turning a stale socket
+# into launch latency.
+codex_notify_config=""
 if [[ -n "$c11_bin" ]]; then
+    boundary_surface="${CMUX_SURFACE_ID:-}"
+    if [[ "$boundary_surface" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then
+        boundary_dir="${CMUX_SOCKET_PATH}.codex-launch-boundaries"
+        boundary_tmp="${boundary_dir}/.${boundary_surface}.$$"
+        boundary_token="${boundary_surface}:$$:${RANDOM}"
+        if (umask 077 && mkdir -p -- "$boundary_dir" && {
+            printf '%s\n%s\n%s\n' \
+                "$(date +%s)" "$EXPECTED_RESUME_ID" "$boundary_token" \
+                > "$boundary_tmp"
+        } && mv -f -- "$boundary_tmp" "${boundary_dir}/${boundary_surface}"); then
+            :
+        else
+            rm -f -- "$boundary_tmp" 2>/dev/null || true
+        fi
+    fi
+
     (
         CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
             "$c11_bin" --socket "${CMUX_SOCKET_PATH}" set-agent --type codex \
@@ -121,13 +171,41 @@ if [[ -n "$c11_bin" ]]; then
     ) &
     disown 2>/dev/null || true
 
+    claim_args=(conversation claim --kind codex --cwd "$PWD" --ttl-ms 700)
+    if [[ -n "$EXPECTED_RESUME_ID" ]]; then
+        claim_args+=(--expected-resume-id "$EXPECTED_RESUME_ID")
+    fi
+    # The claim mutates only the live in-memory Store. Retain the marker even
+    # after acknowledgement so a crash before the next durable snapshot still
+    # invalidates the prior on-disk owner. Once a placeholder or newer runtime
+    # identity is durable, replay is harmless; the next launch atomically
+    # overwrites this surface's marker.
+    CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+        "$c11_bin" --socket "${CMUX_SOCKET_PATH}" "${claim_args[@]}" \
+        >/dev/null 2>&1 || true
+
+    # A newly opened interactive Codex TUI is resting at its prompt. The
+    # outer shell remains "command running" for the TUI's whole lifetime, so
+    # seed the agent-loop truth separately; c11 marks it working on prompt
+    # submission and idle again when Codex emits its completion notification.
     (
         CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
-            "$c11_bin" --socket "${CMUX_SOCKET_PATH}" \
-            conversation claim --kind codex --cwd "$PWD" \
+            "$c11_bin" --socket "${CMUX_SOCKET_PATH}" codex-hook idle \
             >/dev/null 2>&1
     ) &
     disown 2>/dev/null || true
+
+    # Runtime-only completion bridge. Prepending the override keeps any
+    # explicit `-c notify=...` supplied by the operator later in argv in
+    # control, while the normal c11 launch path gains a focus-independent
+    # completion signal without touching ~/.codex/config.toml.
+    notify_handler="$self_dir/codex"
+    notify_handler="${notify_handler//\\/\\\\}"
+    notify_handler="${notify_handler//\"/\\\"}"
+    codex_notify_config="notify=[\"${notify_handler}\",\"__c11-notify\"]"
 fi
 
+if [[ -n "$codex_notify_config" ]]; then
+    exec "$REAL_CODEX" -c "$codex_notify_config" "$@"
+fi
 exec "$REAL_CODEX" "$@"

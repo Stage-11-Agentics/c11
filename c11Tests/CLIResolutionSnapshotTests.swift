@@ -8,6 +8,8 @@ import XCTest
 
 final class CLIResolutionSnapshotTests: XCTestCase {
 
+    private let codexID = "ddd11111-2222-3333-4444-555566667777"
+
     private func makeInputs(
         env: [String: String],
         commands: [String: String?] = [:],
@@ -229,5 +231,221 @@ final class CLIResolutionSnapshotTests: XCTestCase {
         // exhausts the path without crashing on the empty entries.
         let result = defaultCommandLookup("__c11_doctor_does_not_exist__", environment: env)
         XCTAssertNil(result)
+    }
+
+    // MARK: - C11-206 shared resume decisions
+
+    private func resumeInput(
+        mode: ResumeRecoveryMode,
+        auditComplete: Bool = true,
+        ownership: ResumeOwnershipStatus = .unique,
+        placeholder: Bool = false,
+        state: ResumePersistedState = .suspended,
+        idValid: Bool = true,
+        transcript: ResumeTranscriptEvidence = .verified
+    ) -> ResumeDecisionInput {
+        ResumeDecisionInput(
+            mode: mode,
+            auditComplete: auditComplete,
+            ownership: ownership,
+            kind: "codex",
+            id: codexID,
+            placeholder: placeholder,
+            state: state,
+            exactIDValid: idValid,
+            transcriptEvidence: transcript
+        )
+    }
+
+    func testCodexCleanDecisionEmitsExactResumeCommand() {
+        XCTAssertEqual(
+            ResumeDecisionEngine.decide(resumeInput(mode: .clean, transcript: .notRequired)),
+            .command(ResumeCommand(text: "codex resume '\(codexID)'"))
+        )
+    }
+
+    func testCodexDirtyDecisionRequiresVerifiedTranscript() {
+        XCTAssertEqual(
+            ResumeDecisionEngine.decide(resumeInput(mode: .dirty, transcript: .verified)),
+            .command(ResumeCommand(text: "codex resume '\(codexID)'"))
+        )
+        guard case .skip(let code, _) = ResumeDecisionEngine.decide(
+            resumeInput(mode: .dirty, transcript: .missing)
+        ) else {
+            return XCTFail("missing dirty transcript must skip")
+        }
+        XCTAssertEqual(code, .transcriptMissing)
+    }
+
+    func testNoResumeOverridesIncompleteAudit() {
+        guard case .skip(let code, _) = ResumeDecisionEngine.decide(
+            resumeInput(mode: .noResume, auditComplete: false, ownership: .unaudited)
+        ) else {
+            return XCTFail("no-resume must always skip")
+        }
+        XCTAssertEqual(code, .policyNoResume)
+    }
+
+    func testIncompleteAuditAndUnsafeIdentityAreTypedSkips() {
+        guard case .skip(let unaudited, _) = ResumeDecisionEngine.decide(
+            resumeInput(mode: .clean, auditComplete: false)
+        ) else {
+            return XCTFail("incomplete startup audit must skip")
+        }
+        XCTAssertEqual(unaudited, .startupUnaudited)
+
+        guard case .skip(let duplicate, _) = ResumeDecisionEngine.decide(
+            resumeInput(mode: .clean, ownership: .duplicate)
+        ) else {
+            return XCTFail("duplicate ownership must skip")
+        }
+        XCTAssertEqual(duplicate, .duplicateOwnership)
+
+        guard case .skip(let placeholder, _) = ResumeDecisionEngine.decide(
+            resumeInput(mode: .clean, placeholder: true)
+        ) else {
+            return XCTFail("placeholder must skip")
+        }
+        XCTAssertEqual(placeholder, .placeholder)
+    }
+
+    func testStartupEpochFailureCannotBeReopenedByLateCompletion() {
+        let gate = ResumeStartupEpochGate()
+        let token = gate.begin(mode: .dirty)
+        XCTAssertTrue(gate.markFailed(token, reason: "timeout"))
+        XCTAssertFalse(gate.markReady(token), "late completion must not enable failed epoch")
+        XCTAssertEqual(gate.snapshot().phase, .failed(reason: "timeout"))
+        XCTAssertFalse(gate.snapshot().auditComplete)
+    }
+
+    func testOlderStartupEpochCannotMutateCurrentEpoch() {
+        let gate = ResumeStartupEpochGate()
+        let first = gate.begin(mode: .clean)
+        let second = gate.begin(mode: .noResume)
+        XCTAssertFalse(gate.markReady(first))
+        XCTAssertTrue(gate.markReady(second))
+        XCTAssertEqual(gate.snapshot().mode, .noResume)
+        XCTAssertTrue(gate.snapshot().auditComplete)
+    }
+
+    func testFailedStartupEpochSuppressesThirtyTwoResumeDispatches() {
+        let gate = ResumeStartupEpochGate()
+        let token = gate.begin(mode: .clean)
+        XCTAssertTrue(gate.markFailed(token, reason: "delayed ownership audit timed out"))
+        let startup = gate.snapshot()
+
+        let decisions = (0..<32).map { index in
+            let id = String(format: "%08x-2222-3333-4444-555566667777", index)
+            return ResumeDecisionEngine.decide(ResumeDecisionInput(
+                mode: startup.mode,
+                auditComplete: startup.auditComplete,
+                ownership: .unique,
+                kind: "codex",
+                id: id,
+                placeholder: false,
+                state: .suspended,
+                exactIDValid: true,
+                transcriptEvidence: .notRequired
+            ))
+        }
+        XCTAssertTrue(decisions.allSatisfy {
+            if case .skip(code: .startupUnaudited, reason: _) = $0 { return true }
+            return false
+        })
+        XCTAssertEqual(
+            startup.phase,
+            .failed(reason: "delayed ownership audit timed out")
+        )
+    }
+
+    func testDelayedFinalStoreReadReturnsCompletedValueNotEmptyFallback() {
+        let outcome: BoundedLifecycleOutcome<[String: String]> = BoundedLifecycleWait.run(
+            timeout: 1.0
+        ) {
+            try await Task.sleep(nanoseconds: 20_000_000)
+            return ["surface-1": "newly-resolved-exact-id"]
+        }
+        guard case .completed(let rows) = outcome else {
+            return XCTFail("delayed read within budget must complete")
+        }
+        XCTAssertEqual(rows, ["surface-1": "newly-resolved-exact-id"])
+    }
+
+    func testTimedOutFinalStoreReadCannotBecomeEmptySuccess() {
+        let outcome: BoundedLifecycleOutcome<[String: String]> = BoundedLifecycleWait.run(
+            timeout: 0.005
+        ) {
+            try await Task.sleep(nanoseconds: 100_000_000)
+            return ["surface-1": "late-value"]
+        }
+        guard case .timedOut = outcome else {
+            return XCTFail("late store read must report timeout, not an empty map")
+        }
+        XCTAssertFalse(CleanPersistencePromotionPolicy.allowsPromotion(
+            resolutionCompleted: true,
+            finalStoreReadCompleted: false,
+            durableSnapshotWriteCompleted: true
+        ))
+    }
+
+    func testDelayedDurableWriteMustCompleteBeforeCleanPromotion() {
+        XCTAssertFalse(CleanPersistencePromotionPolicy.allowsPromotion(
+            resolutionCompleted: true,
+            finalStoreReadCompleted: true,
+            durableSnapshotWriteCompleted: false
+        ))
+
+        let outcome: BoundedLifecycleOutcome<Bool> = BoundedLifecycleWait.run(timeout: 1.0) {
+            try await Task.sleep(nanoseconds: 20_000_000)
+            return true
+        }
+        guard case .completed(let durable) = outcome else {
+            return XCTFail("durable write should complete inside budget")
+        }
+        XCTAssertTrue(CleanPersistencePromotionPolicy.allowsPromotion(
+            resolutionCompleted: true,
+            finalStoreReadCompleted: true,
+            durableSnapshotWriteCompleted: durable
+        ))
+    }
+
+    func testFailedOrTimedOutDurableWriteNeverPromotesClean() {
+        for tuple in [
+            (resolution: false, read: true, write: true),
+            (resolution: true, read: false, write: true),
+            (resolution: true, read: true, write: false),
+        ] {
+            XCTAssertFalse(CleanPersistencePromotionPolicy.allowsPromotion(
+                resolutionCompleted: tuple.resolution,
+                finalStoreReadCompleted: tuple.read,
+                durableSnapshotWriteCompleted: tuple.write
+            ))
+        }
+    }
+
+    func testAppRecoveryModeResolverFailsClosedAndNoResumeOverrides() {
+        let states: [(ShutdownSentinel.PriorShutdown, ResumeRecoveryMode)] = [
+            (.clean(at: Date(timeIntervalSince1970: 1)), .clean),
+            (.dirty(launchedAt: nil), .dirty),
+            (.missing, .dirty),
+            (.unreadable, .dirty),
+            (.invalid, .dirty),
+        ]
+        for (prior, expected) in states {
+            XCTAssertEqual(
+                ShutdownSentinel.resolveRecoveryMode(
+                    explicitNoResume: false,
+                    priorShutdown: prior
+                ),
+                expected
+            )
+            XCTAssertEqual(
+                ShutdownSentinel.resolveRecoveryMode(
+                    explicitNoResume: true,
+                    priorShutdown: prior
+                ),
+                .noResume
+            )
+        }
     }
 }

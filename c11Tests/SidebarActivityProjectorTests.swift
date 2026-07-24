@@ -10,6 +10,22 @@ import XCTest
 /// reconciling an explicit agent-claimed status against derived-activity
 /// fallback. C11-162 (Telemetry truth).
 final class SidebarActivityProjectorTests: XCTestCase {
+    func testWorkspacePulseAgentContextUsesTitleThenSubtitle() {
+        XCTAssertEqual(
+            WorkspacePulseAgentContextProjector.project(
+                title: "Review agent",
+                subtitle: "Lineage: primary → review\nChecking the sidebar"
+            ),
+            WorkspacePulseAgentContext(
+                title: "Review agent",
+                subtitle: "Lineage: primary → review Checking the sidebar"
+            )
+        )
+    }
+
+    func testWorkspacePulseAgentContextDoesNotInventMissingIdentity() {
+        XCTAssertNil(WorkspacePulseAgentContextProjector.project(title: "  ", subtitle: nil))
+    }
 
     private let stale: Double = 300
     private let expiry: Double = 900
@@ -87,5 +103,102 @@ final class SidebarActivityProjectorTests: XCTestCase {
             staleSeconds: stale, expirySeconds: expiry
         )
         XCTAssertEqual(pill?.isDerived, true)
+    }
+
+    // MARK: - Workspace Pulse rollup
+
+    func testWorkspacePulsePreservesCountsAndUsesDemandPrecedence() {
+        let summary = WorkspacePulseProjector.project(
+            hasWorkspaceDemand: true,
+            surfaceStates: [.waiting, .working, .working, .idle, .cold]
+        )
+
+        XCTAssertEqual(summary.dominant, .waiting)
+        XCTAssertEqual(summary.waitingCount, 1)
+        XCTAssertEqual(summary.workingCount, 2)
+        XCTAssertEqual(summary.idleCount, 1)
+        XCTAssertEqual(summary.coldCount, 1)
+    }
+
+    func testWorkspacePulseRepresentsSurfaceLessDemandWithoutInventingAgentCounts() {
+        let summary = WorkspacePulseProjector.project(
+            hasWorkspaceDemand: true,
+            surfaceStates: [.working, .idle]
+        )
+
+        XCTAssertEqual(summary.dominant, .waiting)
+        XCTAssertEqual(summary.waitingCount, 1)
+        XCTAssertEqual(summary.workingCount, 1)
+        XCTAssertEqual(summary.idleCount, 1)
+        XCTAssertEqual(summary.coldCount, 0)
+    }
+
+    func testWorkspacePulseCarriesRosterTerminalCountAndPrecedenceOrder() {
+        let idleId = UUID()
+        let waitingId = UUID()
+        let workingId = UUID()
+        let summary = WorkspacePulseProjector.project(
+            hasWorkspaceDemand: true,
+            agents: [
+                WorkspacePulseAgent(
+                    surfaceId: idleId,
+                    state: .idle,
+                    context: WorkspacePulseAgentContext(title: "Docs", subtitle: "ready")
+                ),
+                WorkspacePulseAgent(
+                    surfaceId: waitingId,
+                    state: .waiting,
+                    context: WorkspacePulseAgentContext(title: "Release gate", subtitle: "review requested")
+                ),
+                WorkspacePulseAgent(
+                    surfaceId: workingId,
+                    state: .working,
+                    context: WorkspacePulseAgentContext(title: "Build", subtitle: "verifying push")
+                ),
+            ],
+            terminalCount: 3
+        )
+
+        XCTAssertEqual(summary.agents.count, 3)
+        XCTAssertEqual(summary.terminalCount, 3)
+        XCTAssertEqual(summary.agentCount(for: .waiting), 1)
+        XCTAssertEqual(summary.relevantAgents.map(\.surfaceId), [waitingId, workingId, idleId])
+    }
+
+    func testWorkspacePulseWorkspaceDemandDoesNotCreateRosterAgent() {
+        let summary = WorkspacePulseProjector.project(
+            hasWorkspaceDemand: true,
+            agents: [],
+            terminalCount: 2
+        )
+
+        XCTAssertEqual(summary.dominant, .waiting)
+        XCTAssertEqual(summary.waitingCount, 1)
+        XCTAssertTrue(summary.agents.isEmpty)
+        XCTAssertEqual(summary.terminalCount, 2)
+    }
+
+    func testWorkspacePulseFallsThroughWorkingIdleAndCold() {
+        XCTAssertEqual(
+            WorkspacePulseProjector.project(
+                hasWorkspaceDemand: false,
+                surfaceStates: [.working, .idle, .cold]
+            ).dominant,
+            .working
+        )
+        XCTAssertEqual(
+            WorkspacePulseProjector.project(
+                hasWorkspaceDemand: false,
+                surfaceStates: [.idle, .cold]
+            ).dominant,
+            .idle
+        )
+        XCTAssertEqual(
+            WorkspacePulseProjector.project(
+                hasWorkspaceDemand: false,
+                surfaceStates: []
+            ).dominant,
+            .cold
+        )
     }
 }

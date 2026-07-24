@@ -1,4 +1,6 @@
 import XCTest
+import AppKit
+import Bonsplit
 
 #if canImport(c11_DEV)
 @testable import c11_DEV
@@ -52,6 +54,138 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         XCTAssertEqual(SurfaceLivenessDeriver.activityState(for: .commandRunning), .working)
         XCTAssertEqual(SurfaceLivenessDeriver.activityState(for: .promptIdle), .idle)
         XCTAssertNil(SurfaceLivenessDeriver.activityState(for: .unknown))
+    }
+
+    func testReportedAgentActivityParserAcceptsLifecycleVocabulary() {
+        XCTAssertEqual(TerminalController.parseReportedAgentActivity("working"), .working)
+        XCTAssertEqual(TerminalController.parseReportedAgentActivity("idle"), .idle)
+        XCTAssertNil(TerminalController.parseReportedAgentActivity("mystery"))
+    }
+
+    func testExactAgentLifecycleIdleOverridesOuterShellWorking() {
+        let workspaceId = UUID()
+        let surfaceId = UUID()
+        defer { store.removeSurface(workspaceId: workspaceId, surfaceId: surfaceId) }
+
+        XCTAssertTrue(store.setInternal(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId,
+            key: MetadataKey.activity,
+            value: SidebarActivityState.working.rawValue,
+            source: .derived
+        ))
+
+        SurfaceLivenessDeriver.onAgentLifecycleChanged(
+            surfaceId: surfaceId,
+            workspaceId: workspaceId,
+            activity: .idle
+        )
+
+        XCTAssertTrue(poll {
+            self.activityValue(workspaceId, surfaceId) == SidebarActivityState.idle.rawValue
+        })
+        XCTAssertEqual(activitySource(workspaceId, surfaceId), .derived)
+    }
+
+    func testSurfaceTabResolverMapsRecognizedAgentStates() {
+        XCTAssertEqual(
+            SurfaceTabActivityResolver.resolve(
+                hasExactSurfaceNotification: false,
+                derivedActivity: .working,
+                terminalType: "codex"
+            ),
+            .running
+        )
+        XCTAssertEqual(
+            SurfaceTabActivityResolver.resolve(
+                hasExactSurfaceNotification: false,
+                derivedActivity: .idle,
+                terminalType: "claude-code"
+            ),
+            .idle
+        )
+        XCTAssertEqual(
+            SurfaceTabActivityResolver.resolve(
+                hasExactSurfaceNotification: false,
+                derivedActivity: nil,
+                terminalType: "opencode-run"
+            ),
+            .cold
+        )
+    }
+
+    func testSurfaceTabResolverGivesExactDemandPrecedence() {
+        for activity in [SidebarActivityState.working, .idle, nil] {
+            XCTAssertEqual(
+                SurfaceTabActivityResolver.resolve(
+                    hasExactSurfaceNotification: true,
+                    derivedActivity: activity,
+                    terminalType: "codex"
+                ),
+                .waiting
+            )
+        }
+    }
+
+    func testSurfaceTabResolverDoesNotManufactureWaitingFromWorkspaceOrManualUnread() {
+        XCTAssertEqual(
+            SurfaceTabActivityResolver.resolve(
+                hasExactSurfaceNotification: false,
+                derivedActivity: .idle,
+                terminalType: "codex"
+            ),
+            .idle
+        )
+        XCTAssertEqual(
+            SurfaceTabActivityResolver.resolve(
+                hasExactSurfaceNotification: false,
+                derivedActivity: nil,
+                terminalType: "codex"
+            ),
+            .cold
+        )
+    }
+
+    func testSurfaceTabResolverOmitsNonAgentActivity() {
+        XCTAssertNil(SurfaceTabActivityResolver.resolve(
+            hasExactSurfaceNotification: false,
+            derivedActivity: .working,
+            terminalType: "terminal"
+        ))
+        XCTAssertNil(SurfaceTabActivityResolver.resolve(
+            hasExactSurfaceNotification: false,
+            derivedActivity: .idle,
+            terminalType: nil
+        ))
+    }
+
+    func testHarnessIdentityDoesNotChangeResolvedState() {
+        for terminalType in ["codex", "claude-code", "opencode", "omp", "pi"] {
+            XCTAssertEqual(
+                SurfaceTabActivityResolver.resolve(
+                    hasExactSurfaceNotification: false,
+                    derivedActivity: .working,
+                    terminalType: terminalType
+                ),
+                .running
+            )
+        }
+    }
+
+    func testSurfaceTabActivityColorsMatchDarkAndLightContract() {
+        let dark = Workspace.resolvedSurfaceTabActivityColors(from: NSColor(hex: "#101114")!)
+        XCTAssertEqual(dark.runningHex, "#79AEE8")
+        XCTAssertEqual(dark.idleHex, "#78B59E")
+        XCTAssertEqual(dark.coldHex, "#707681")
+        XCTAssertEqual(dark.waitingHex, "#D0AA45")
+        XCTAssertEqual(dark.waitingInkHex, "#08090B")
+
+        let light = Workspace.resolvedSurfaceTabActivityColors(from: NSColor(hex: "#F5F3EF")!)
+        XCTAssertEqual(light.runningHex, "#326D9E")
+        XCTAssertEqual(light.idleHex, "#357B61")
+        XCTAssertEqual(light.coldHex, "#7F8289")
+        XCTAssertEqual(light.waitingHex, "#9B7415")
+        XCTAssertEqual(light.waitingInkHex, "#FFFDF8")
     }
 
     // MARK: - Realtime transitions write the derived truth

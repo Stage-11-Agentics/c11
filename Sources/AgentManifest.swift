@@ -54,6 +54,10 @@ struct AgentManifest: Sendable, Equatable, Identifiable {
     /// How a snapshot/crash restart resumes this agent.
     let resume: ResumeSpec
 
+    /// Launch-time composition facts (model/effort flag syntax, prompt
+    /// delivery) consumed by `launch-agent` and `DefaultAgentResolver`.
+    let launch: AgentLaunchTemplate
+
     /// Whether `kind` is a recognized `terminal_type`
     /// (`SurfaceMetadataKeys.canonicalTerminalTypes`). `custom` is not.
     let isCanonicalTerminalType: Bool
@@ -87,6 +91,114 @@ struct AgentManifest: Sendable, Equatable, Identifiable {
             return "\(resumeCmd)\n"
         }
     }
+}
+
+/// How a launch-time value (a model id, an effort tier) renders onto an
+/// agent's command line. Data, not code: `launch-agent`, the resolver, and any
+/// future launch surface consult this instead of growing per-agent switches.
+enum AgentLaunchArgStyle: Sendable, Equatable {
+    /// `.flag("--model")` → `--model <value>`.
+    case flag(String)
+    /// `.configKV("model_reasoning_effort")` → `-c model_reasoning_effort=<value>`
+    /// (codex's config-override syntax).
+    case configKV(String)
+
+    /// Substring whose presence in the operator's configured command means the
+    /// value is already hardcoded there — c11 must not inject it twice.
+    var detectToken: String {
+        switch self {
+        case .flag(let name): return name
+        case .configKV(let key): return key
+        }
+    }
+
+    /// Render the argument for `value`, shell-quoting only when the value
+    /// needs it so the common case stays byte-identical to the historical
+    /// `--model opus` form.
+    func render(_ value: String) -> String {
+        let quoted = DefaultAgentResolver.shellQuoteIfNeeded(value)
+        switch self {
+        case .flag(let name): return "\(name) \(quoted)"
+        case .configKV(let key): return "-c \(key)=\(quoted)"
+        }
+    }
+}
+
+// `SystemPromptSetting` (the operator's three-mode system-prompt choice) is
+// defined in `AgentConfigLibraryStore.swift` — the single canonical home, a
+// member of both the app and CLI targets so the config store resolves it
+// without importing app-only AgentManifest. The launch/sysprompt axis
+// (`AgentSystemPromptArg` below) and the config-overlay store share that one
+// definition. (C11-176/C11-177 wave-1 reconciliation: both tickets landed the
+// same design §1.4 primitive; the duplicate that lived here was removed.)
+
+/// How a system-prompt override renders onto an agent's command line. Unlike
+/// model/effort (one flag each), the system-prompt axis has two delivery flags —
+/// append (adds to the harness default) and replace (supplants it) — so it is
+/// its own arg style rather than an `AgentLaunchArgStyle`. `nil` on a template
+/// means the axis is disabled for that harness (v1: only claude-code declares
+/// it), the same gating pattern `effortArg == nil` uses.
+struct AgentSystemPromptArg: Sendable, Equatable {
+    /// Flag that appends to the harness default (claude `--append-system-prompt`),
+    /// or `nil` when the CLI has no append form.
+    let appendFlag: String?
+    /// Flag that replaces the harness default (claude `--system-prompt`), or
+    /// `nil` when the CLI has no replace form. An empty value is allowed — the
+    /// blank-slate launch.
+    let replaceFlag: String?
+
+    /// The flag to render for a given mode, or `nil` when the mode is
+    /// `.inherit` or the CLI has no form for it.
+    func flag(for mode: SystemPromptSetting.Mode) -> String? {
+        switch mode {
+        case .inherit: return nil
+        case .append: return appendFlag
+        case .replace: return replaceFlag
+        }
+    }
+
+    /// Substrings whose presence in the operator's configured command means a
+    /// system prompt is already pinned there — c11 must not inject one on top.
+    /// Both flags count: an operator who hardcoded either form owns the axis.
+    var detectTokens: [String] {
+        [appendFlag, replaceFlag].compactMap { $0 }
+    }
+}
+
+/// How an initial prompt reaches the agent at launch.
+enum AgentPromptDelivery: Sendable, Equatable {
+    /// Appended to the launch argv as a single-quoted positional argument —
+    /// one shot, no ready-state race (claude, codex, grok, pi, omp, and
+    /// opencode's `run` form).
+    case positional
+    /// Appended as `<flag> '<prompt>'` for TUIs whose initial prompt only
+    /// rides a named flag.
+    case flag(String)
+    /// Typed into the TUI after a fixed post-launch delay. Best-effort and
+    /// racy by nature; used only for agents with no argv delivery.
+    case postBoot
+}
+
+/// The per-kind launch facts `launch-agent` composes from: how model and
+/// effort flags render, which effort values are legal, and how a prompt is
+/// delivered. Seeded per built-in manifest; custom kinds decode the same
+/// shape from `~/.config/c11/agents/<kind>.json` (`UserAgentLaunchTemplate`).
+struct AgentLaunchTemplate: Sendable, Equatable {
+    /// Model-flag syntax, or `nil` when the CLI has no model flag c11 knows —
+    /// a `--model` request for such a kind errors instead of guessing.
+    let modelArg: AgentLaunchArgStyle?
+    /// Effort-flag syntax (claude `--effort`, codex reasoning-effort config
+    /// key, pi/omp `--thinking`), or `nil` when the CLI has no effort axis.
+    let effortArg: AgentLaunchArgStyle?
+    /// Non-empty → `--effort` values are validated early with a friendly
+    /// error; empty → passed through and the agent CLI enforces.
+    let effortValues: [String]
+    let promptDelivery: AgentPromptDelivery
+    /// System-prompt flag syntax (append/replace), or `nil` when the CLI has no
+    /// system-prompt axis c11 knows — a non-inherit system-prompt request for
+    /// such a kind errors instead of guessing. v1 seeds this for claude-code
+    /// only; every other built-in is `nil` (same gating shape as `effortArg`).
+    let systemPromptArg: AgentSystemPromptArg?
 }
 
 /// How a captured session is resumed on restart. Mirrors today's
@@ -142,6 +254,19 @@ struct AgentRegistry: Sendable {
                 command: "claude --dangerously-skip-permissions --resume",
                 projectDirKey: SurfaceMetadataKeyName.claudeSessionProjectDir
             ),
+            launch: AgentLaunchTemplate(
+                modelArg: .flag("--model"),
+                effortArg: .flag("--effort"),
+                effortValues: ["low", "medium", "high", "xhigh", "max"],
+                promptDelivery: .positional,
+                // The only harness with a system-prompt axis in v1: append adds
+                // to the c11/Claude default, replace supplants it (empty text =
+                // the Gregorovich blank slate).
+                systemPromptArg: AgentSystemPromptArg(
+                    appendFlag: "--append-system-prompt",
+                    replaceFlag: "--system-prompt"
+                )
+            ),
             isCanonicalTerminalType: true,
             hasConversationStrategy: true
         ),
@@ -156,6 +281,15 @@ struct AgentRegistry: Sendable {
             iconAsset: "AgentIcons/codex",
             sfSymbolFallback: "chevron.left.forwardslash.chevron.right",
             resume: .fixed("codex resume --last\n"),
+            launch: AgentLaunchTemplate(
+                modelArg: .flag("--model"),
+            // Codex has no --effort flag; reasoning effort rides the
+            // config-override syntax. Values pass through (codex enforces).
+                effortArg: .configKV("model_reasoning_effort"),
+                effortValues: [],
+                promptDelivery: .positional,
+                systemPromptArg: nil
+            ),
             isCanonicalTerminalType: true,
             hasConversationStrategy: true
         ),
@@ -170,6 +304,13 @@ struct AgentRegistry: Sendable {
             iconAsset: "AgentIcons/grok",
             sfSymbolFallback: "bolt.fill",
             resume: .fixed("grok --always-approve --resume\n"),
+            launch: AgentLaunchTemplate(
+                modelArg: .flag("--model"),
+                effortArg: nil,
+                effortValues: [],
+                promptDelivery: .positional,
+                systemPromptArg: nil
+            ),
             isCanonicalTerminalType: true,
             hasConversationStrategy: true
         ),
@@ -184,6 +325,14 @@ struct AgentRegistry: Sendable {
             iconAsset: "AgentIcons/kimi",
             sfSymbolFallback: "moon.stars",
             resume: .fixed("kimi\n"),
+            launch: AgentLaunchTemplate(
+                modelArg: .flag("--model"),
+            // kimi's --thinking is boolean, not tiered — no effort axis.
+                effortArg: nil,
+                effortValues: [],
+                promptDelivery: .postBoot,
+                systemPromptArg: nil
+            ),
             isCanonicalTerminalType: true,
             hasConversationStrategy: true
         ),
@@ -198,6 +347,16 @@ struct AgentRegistry: Sendable {
             iconAsset: "AgentIcons/opencode",
             sfSymbolFallback: "curlybraces",
             resume: .fixed("opencode run --dangerously-skip-permissions\n"),
+            launch: AgentLaunchTemplate(
+                modelArg: .flag("--model"),
+                effortArg: nil,
+                effortValues: [],
+            // Positional because the factory command is the `opencode run`
+            // form, whose message is positional. An operator who rebases
+            // the command onto the bare TUI owns the delivery consequences.
+                promptDelivery: .positional,
+                systemPromptArg: nil
+            ),
             isCanonicalTerminalType: true,
             hasConversationStrategy: true
         ),
@@ -213,6 +372,13 @@ struct AgentRegistry: Sendable {
             sfSymbolFallback: "paperplane.fill",
             // No phase1 row today → fresh launch via the normal path.
             resume: .none,
+            launch: AgentLaunchTemplate(
+                modelArg: .flag("--model"),
+                effortArg: nil,
+                effortValues: [],
+                promptDelivery: .postBoot,
+                systemPromptArg: nil
+            ),
             isCanonicalTerminalType: true,
             hasConversationStrategy: true
         ),
@@ -236,6 +402,13 @@ struct AgentRegistry: Sendable {
             // `~/.pi/agent/sessions/` id and type `pi --session '<id>'` even
             // when the cwd holds several sessions.
             resume: .fixed("pi -c\n"),
+            launch: AgentLaunchTemplate(
+                modelArg: .flag("--model"),
+                effortArg: .flag("--thinking"),
+                effortValues: ["off", "minimal", "low", "medium", "high", "xhigh"],
+                promptDelivery: .positional,
+                systemPromptArg: nil
+            ),
             isCanonicalTerminalType: true,
             hasConversationStrategy: true
         ),
@@ -257,6 +430,13 @@ struct AgentRegistry: Sendable {
             // `/resume` only), so `resume` stays `.none` while the strategy owns
             // exact resume — same split as the codex row.
             resume: .none,
+            launch: AgentLaunchTemplate(
+                modelArg: .flag("--model"),
+                effortArg: .flag("--thinking"),
+                effortValues: ["off", "minimal", "low", "medium", "high", "xhigh"],
+                promptDelivery: .positional,
+                systemPromptArg: nil
+            ),
             isCanonicalTerminalType: true,
             hasConversationStrategy: true
         ),
@@ -271,6 +451,13 @@ struct AgentRegistry: Sendable {
             iconAsset: nil,
             sfSymbolFallback: nil,
             resume: .none,
+            launch: AgentLaunchTemplate(
+                modelArg: nil,
+                effortArg: nil,
+                effortValues: [],
+                promptDelivery: .postBoot,
+                systemPromptArg: nil
+            ),
             isCanonicalTerminalType: false,
             hasConversationStrategy: false
         )
@@ -288,3 +475,73 @@ struct AgentRegistry: Sendable {
 /// operator who wants a launch prompt can still set one per-agent in
 /// Default Agent settings.
 let c11OrientPrompt = ""
+
+/// Launch template for a kebab-case custom agent kind, decoded from
+/// `~/.config/c11/agents/<kind>.json`. This file is the launch-template
+/// subset of the planned runtime agent manifest (docs/agent-registry-design.md
+/// §7); when full runtime manifests land they subsume it. Only `command` is
+/// required:
+///
+/// ```json
+/// { "command": "aider --yes-always",
+///   "modelFlag": "--model",
+///   "effortFlag": null,
+///   "effortValues": [],
+///   "promptDelivery": "post-boot",
+///   "env": { "AIDER_ANALYTICS": "false" } }
+/// ```
+///
+/// `promptDelivery` accepts `"positional"`, `"post-boot"`, or a flag name
+/// (any string starting with `-`), e.g. `"--prompt"`.
+struct UserAgentLaunchTemplate: Codable, Equatable {
+    var command: String
+    var modelFlag: String?
+    var effortFlag: String?
+    var effortValues: [String]?
+    var promptDelivery: String?
+    var env: [String: String]?
+
+    /// The composed launch-template view over the decoded fields.
+    var template: AgentLaunchTemplate {
+        AgentLaunchTemplate(
+            modelArg: modelFlag.flatMap { $0.isEmpty ? nil : .flag($0) },
+            effortArg: effortFlag.flatMap { $0.isEmpty ? nil : .flag($0) },
+            effortValues: effortValues ?? [],
+            promptDelivery: {
+                switch promptDelivery {
+                case .some("positional"): return .positional
+                case .some(let s) where s.hasPrefix("-"): return .flag(s)
+                default: return .postBoot
+                }
+            }(),
+            // Custom kinds have no system-prompt axis in v1 (the axis is
+            // claude-code-only; other harnesses land in v2).
+            systemPromptArg: nil
+        )
+    }
+
+    /// Kind grammar shared with the sidebar's `terminal_type` metadata key:
+    /// lowercase kebab, ≤ 32 chars.
+    static func isValidKind(_ kind: String) -> Bool {
+        guard !kind.isEmpty, kind.count <= 32 else { return false }
+        return kind.range(of: "^[a-z][a-z0-9-]*$", options: .regularExpression) != nil
+    }
+
+    static func templateURL(kind: String) -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/c11/agents", isDirectory: true)
+            .appendingPathComponent("\(kind).json")
+    }
+
+    /// Load the template for a custom kind, or `nil` when no file exists or
+    /// it fails to decode. Callers treat `nil` as "unknown agent type".
+    static func load(kind: String) -> UserAgentLaunchTemplate? {
+        guard isValidKind(kind) else { return nil }
+        let url = templateURL(kind: kind)
+        guard let data = try? Data(contentsOf: url),
+              let decoded = try? JSONDecoder().decode(UserAgentLaunchTemplate.self, from: data),
+              !decoded.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        return decoded
+    }
+}

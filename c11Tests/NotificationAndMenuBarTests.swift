@@ -14,7 +14,7 @@ import UserNotifications
 #endif
 
 @MainActor
-final class NotificationDockBadgeTests: XCTestCase {
+final class NotificationAndMenuBarTests: XCTestCase {
     private final class NotificationSettingsAlertSpy: NSAlert {
         private(set) var beginSheetModalCallCount = 0
         private(set) var runModalCallCount = 0
@@ -40,54 +40,6 @@ final class NotificationDockBadgeTests: XCTestCase {
         super.tearDown()
     }
 
-    func testDockBadgeLabelEnabledAndCounted() {
-        XCTAssertEqual(TerminalNotificationStore.dockBadgeLabel(unreadCount: 1, isEnabled: true), "1")
-        XCTAssertEqual(TerminalNotificationStore.dockBadgeLabel(unreadCount: 42, isEnabled: true), "42")
-        XCTAssertEqual(TerminalNotificationStore.dockBadgeLabel(unreadCount: 100, isEnabled: true), "99+")
-    }
-
-    func testDockBadgeLabelHiddenWhenDisabledOrZero() {
-        XCTAssertNil(TerminalNotificationStore.dockBadgeLabel(unreadCount: 0, isEnabled: true))
-        XCTAssertNil(TerminalNotificationStore.dockBadgeLabel(unreadCount: 5, isEnabled: false))
-    }
-
-    func testDockBadgeLabelShowsRunTagEvenWithoutUnread() {
-        XCTAssertEqual(
-            TerminalNotificationStore.dockBadgeLabel(unreadCount: 0, isEnabled: true, runTag: "verify-tag"),
-            "verify-tag"
-        )
-    }
-
-    func testDockBadgeLabelCombinesRunTagAndUnreadCount() {
-        XCTAssertEqual(
-            TerminalNotificationStore.dockBadgeLabel(unreadCount: 7, isEnabled: true, runTag: "verify"),
-            "verify:7"
-        )
-        XCTAssertEqual(
-            TerminalNotificationStore.dockBadgeLabel(unreadCount: 120, isEnabled: true, runTag: "verify"),
-            "verify:99+"
-        )
-    }
-
-    func testNotificationBadgePreferenceDefaultsToEnabled() {
-        let suiteName = "NotificationDockBadgeTests.\(UUID().uuidString)"
-        guard let defaults = UserDefaults(suiteName: suiteName) else {
-            XCTFail("Failed to create isolated UserDefaults suite")
-            return
-        }
-        defer {
-            defaults.removePersistentDomain(forName: suiteName)
-        }
-
-        XCTAssertTrue(NotificationBadgeSettings.isDockBadgeEnabled(defaults: defaults))
-
-        defaults.set(false, forKey: NotificationBadgeSettings.dockBadgeEnabledKey)
-        XCTAssertFalse(NotificationBadgeSettings.isDockBadgeEnabled(defaults: defaults))
-
-        defaults.set(true, forKey: NotificationBadgeSettings.dockBadgeEnabledKey)
-        XCTAssertTrue(NotificationBadgeSettings.isDockBadgeEnabled(defaults: defaults))
-    }
-
     func testNotificationPaneFlashPreferenceDefaultsToEnabled() {
         let suiteName = "NotificationPaneFlashSettingsTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
@@ -107,7 +59,7 @@ final class NotificationDockBadgeTests: XCTestCase {
         XCTAssertTrue(NotificationPaneFlashSettings.isEnabled(defaults: defaults))
     }
 
-    func testMenuBarExtraPreferenceDefaultsToVisible() {
+    func testMenuBarExtraPreferenceDefaultsToHidden() {
         let suiteName = "MenuBarExtraVisibilityTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             XCTFail("Failed to create isolated UserDefaults suite")
@@ -117,7 +69,7 @@ final class NotificationDockBadgeTests: XCTestCase {
             defaults.removePersistentDomain(forName: suiteName)
         }
 
-        XCTAssertTrue(MenuBarExtraSettings.showsMenuBarExtra(defaults: defaults))
+        XCTAssertFalse(MenuBarExtraSettings.showsMenuBarExtra(defaults: defaults))
 
         defaults.set(false, forKey: MenuBarExtraSettings.showInMenuBarKey)
         XCTAssertFalse(MenuBarExtraSettings.showsMenuBarExtra(defaults: defaults))
@@ -126,8 +78,41 @@ final class NotificationDockBadgeTests: XCTestCase {
         XCTAssertTrue(MenuBarExtraSettings.showsMenuBarExtra(defaults: defaults))
     }
 
+    func testAccessoryPolicyAlwaysKeepsMenuBarExtraReachable() {
+        let suiteName = "MenuBarExtraAccessoryPolicyTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            XCTFail("Failed to create isolated UserDefaults suite")
+            return
+        }
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        defaults.set(false, forKey: MenuBarExtraSettings.showInMenuBarKey)
+        XCTAssertTrue(
+            MenuBarExtraSettings.shouldInstallMenuBarExtra(
+                activationPolicy: .accessory,
+                defaults: defaults
+            )
+        )
+        XCTAssertFalse(
+            MenuBarExtraSettings.shouldInstallMenuBarExtra(
+                activationPolicy: .regular,
+                defaults: defaults
+            )
+        )
+    }
+
+    func testLaunchAlwaysUsesRegularActivationPolicy() {
+        // c11 is a regular Dock app in every launch mode. A `.accessory` policy
+        // removed the Dock icon and the menu bar and starved the Ghostty
+        // renderer (blank terminals when not frontmost); it must never be used.
+        XCTAssertEqual(AppPresentationPolicy.activationPolicy(isRunningUnderXCTest: false), .regular)
+        XCTAssertEqual(AppPresentationPolicy.activationPolicy(isRunningUnderXCTest: true), .regular)
+    }
+
     func testNotificationSoundUsesSystemSoundForDefaultAndNamedSounds() {
-        let suiteName = "NotificationDockBadgeTests.\(UUID().uuidString)"
+        let suiteName = "NotificationAndMenuBarTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             XCTFail("Failed to create isolated UserDefaults suite")
             return
@@ -144,7 +129,7 @@ final class NotificationDockBadgeTests: XCTestCase {
     }
 
     func testNotificationSoundDisablesSystemSoundForNoneAndCustomFile() {
-        let suiteName = "NotificationDockBadgeTests.\(UUID().uuidString)"
+        let suiteName = "NotificationAndMenuBarTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             XCTFail("Failed to create isolated UserDefaults suite")
             return
@@ -163,7 +148,7 @@ final class NotificationDockBadgeTests: XCTestCase {
     }
 
     func testNotificationCustomFileURLExpandsTildePath() {
-        let suiteName = "NotificationDockBadgeTests.\(UUID().uuidString)"
+        let suiteName = "NotificationAndMenuBarTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             XCTFail("Failed to create isolated UserDefaults suite")
             return
@@ -179,7 +164,7 @@ final class NotificationDockBadgeTests: XCTestCase {
     }
 
     func testNotificationCustomFileSelectionMustBeExplicit() {
-        let suiteName = "NotificationDockBadgeTests.\(UUID().uuidString)"
+        let suiteName = "NotificationAndMenuBarTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             XCTFail("Failed to create isolated UserDefaults suite")
             return
@@ -201,7 +186,7 @@ final class NotificationDockBadgeTests: XCTestCase {
     }
 
     func testNotificationCustomStagingPreservesSourceFileWithCmuxPrefix() {
-        let suiteName = "NotificationDockBadgeTests.\(UUID().uuidString)"
+        let suiteName = "NotificationAndMenuBarTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             XCTFail("Failed to create isolated UserDefaults suite")
             return
@@ -290,7 +275,7 @@ final class NotificationDockBadgeTests: XCTestCase {
     }
 
     func testNotificationCustomPreparationKeepsActiveSourceMetadataSidecar() {
-        let suiteName = "NotificationDockBadgeTests.\(UUID().uuidString)"
+        let suiteName = "NotificationAndMenuBarTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             XCTFail("Failed to create isolated UserDefaults suite")
             return
@@ -349,7 +334,7 @@ final class NotificationDockBadgeTests: XCTestCase {
     }
 
     func testNotificationCustomSoundReturnsNilWhenPreparationFails() {
-        let suiteName = "NotificationDockBadgeTests.\(UUID().uuidString)"
+        let suiteName = "NotificationAndMenuBarTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             XCTFail("Failed to create isolated UserDefaults suite")
             return
@@ -397,29 +382,6 @@ final class NotificationDockBadgeTests: XCTestCase {
                 return
             }
         }
-    }
-
-    func testDockBadgeEnabledByDefaultAndLabelIsNonNilWhenUnreadCountIsPositive() {
-        // Verifies the end-to-end dock badge path: the default preference is
-        // enabled, and dockBadgeLabel returns a non-nil label when there are
-        // unread notifications. This path only functions at runtime when
-        // notification authorization includes .badge — the authorization
-        // options fix (Pick 3) enables the Dock to honor the badgeLabel
-        // assignment that refreshDockBadge() makes.
-        let suiteName = "DockBadgeAuthorizationPickThreeTests.\(UUID().uuidString)"
-        guard let defaults = UserDefaults(suiteName: suiteName) else {
-            XCTFail("Failed to create isolated UserDefaults suite")
-            return
-        }
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        XCTAssertTrue(NotificationBadgeSettings.isDockBadgeEnabled(defaults: defaults))
-        let label = TerminalNotificationStore.dockBadgeLabel(
-            unreadCount: 3,
-            isEnabled: NotificationBadgeSettings.isDockBadgeEnabled(defaults: defaults)
-        )
-        XCTAssertNotNil(label, "Dock badge label must be non-nil when badge is enabled and unread count is positive")
-        XCTAssertEqual(label, "3")
     }
 
     func testNotificationAuthorizationStateMappingCoversKnownUNAuthorizationStatuses() {

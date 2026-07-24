@@ -2551,6 +2551,45 @@ final class TerminalSurfaceRegistry {
     }
 }
 
+/// Global (all-terminals) font-size control.
+///
+/// Fans a *relative* Ghostty font-size binding action out to every live
+/// terminal surface. Ghostty's `increase_font_size` / `decrease_font_size`
+/// step from each surface's own current size, so terminals that were zoomed
+/// independently stay relatively offset — the whole board moves together
+/// without collapsing to a single shared size. This is distinct from the
+/// per-surface Cmd +/-/0 path, which only touches the focused surface.
+enum GlobalTerminalFontSize {
+    enum Direction {
+        case increase
+        case decrease
+        case reset
+
+        /// Ghostty binding-action string. The `:1` steps by one point.
+        var bindingAction: String {
+            switch self {
+            case .increase: return "increase_font_size:1"
+            case .decrease: return "decrease_font_size:1"
+            case .reset: return "reset_font_size"
+            }
+        }
+    }
+
+    /// Apply `direction` to every live terminal surface. Returns the count of
+    /// surfaces that accepted the action. Must be called on the main thread
+    /// (it drives Ghostty surfaces).
+    @discardableResult
+    static func apply(_ direction: Direction) -> Int {
+        let action = direction.bindingAction
+        var applied = 0
+        for surface in TerminalSurfaceRegistry.shared.allSurfaces()
+        where surface.performBindingAction(action) {
+            applied += 1
+        }
+        return applied
+    }
+}
+
 // MARK: - Terminal Surface (owns the ghostty_surface_t lifecycle)
 
 final class TerminalSurface: Identifiable, ObservableObject {
@@ -2664,6 +2703,18 @@ final class TerminalSurface: Identifiable, ObservableObject {
         var bytes = Data()
         for chunk in pendingTextQueue { bytes.append(chunk) }
         return String(data: bytes, encoding: .utf8) ?? ""
+    }
+
+    /// Test-only accessor mirroring `pendingInitialInputForTests`: reports
+    /// whether a submit (synthetic Return) is armed to fire when the pending
+    /// text flushes on surface attach. The layout-executor harness uses it to
+    /// distinguish a blueprint's `submit: true` leaf (routed through
+    /// `sendSubmitFormText`, which sets this on a not-yet-attached surface)
+    /// from the default type-but-don't-submit path (`sendText`, which does
+    /// not). Same `@MainActor` rationale as the accessor above.
+    @MainActor
+    var pendingSubmitOnFlushForTests: Bool {
+        pendingSubmitOnFlush
     }
 #endif
     private enum PortalLifecycleState: String {
@@ -3353,6 +3404,14 @@ final class TerminalSurface: Identifiable, ObservableObject {
         // CMUX_TAB_ID to resolve to a surface (accepts `tab:<n>` or `surface:<n>`).
         setManagedEnvironmentValue("CMUX_PANEL_ID", id.uuidString)
         setManagedEnvironmentValue("CMUX_TAB_ID", id.uuidString)
+        // The integer N of this surface's `surface:N` handle — the number the
+        // tab bar displays when "Show surface IDs in tab titles" is on. C11_-only
+        // (no CMUX twin), like C11_SOCKET_PATH. Address yourself as
+        // `surface:$C11_SURFACE_NUM`; a bare integer is a positional index.
+        let surfaceNum = MainActor.assumeIsolated {
+            TerminalController.shared.surfaceOrdinal(forSurfaceUUID: id)
+        }
+        setManagedEnvironmentValue("C11_SURFACE_NUM", String(surfaceNum))
         // Inject the *actually-bound* socket path (not the recomputed resolution
         // path) so a build that fell back to a safe alternate path (C11-155) still
         // hands its children the correct socket. Set the canonical C11_ key too.
@@ -3876,9 +3935,45 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
     /// Named-key wrapper used by `TextBoxInputContainer` when routing
     /// decides a keystroke belongs to the terminal (Rule 5/9) or when
-    /// submitting via bracket-paste (`TextBoxSubmit`).
+    /// submitting via bracket-paste (`TextBoxSubmit`), and by the socket
+    /// `send` submit path.
+    ///
+    /// C11-173: `sendSyntheticKey` needs `view.window` to fabricate an
+    /// `NSEvent`, and a pane in a *background workspace* is portal-detached —
+    /// its view has no window. That made every socket-driven submit into a
+    /// background agent a silent no-op: the text landed, the Return did not,
+    /// and the message sat in the composer forever while `send` reported OK.
+    /// Inject straight into Ghostty when there is no window; every key in
+    /// `TerminalKey` is a control key, so the keycode alone encodes it.
     func sendKey(_ key: TextBoxKeyRouting.TerminalKey) {
+        if case .returnKey = key {
+            SurfaceLivenessDeriver.onAgentLifecycleChanged(
+                surfaceId: id,
+                workspaceId: tabId,
+                activity: .working
+            )
+        }
+        if surfaceView.window == nil, let surface {
+            sendKeyDirectlyToSurface(keyCode: key.keyCode, surface: surface)
+            return
+        }
         sendSyntheticKey(characters: key.characters, keyCode: key.keyCode)
+    }
+
+    /// Window-independent key injection: hand Ghostty the key event directly
+    /// rather than routing a synthesized `NSEvent` through AppKit. Ghostty owns
+    /// the keycode → PTY-bytes translation, so this produces the same bytes a
+    /// real keypress would.
+    private func sendKeyDirectlyToSurface(keyCode: UInt16, surface: ghostty_surface_t) {
+        var event = ghostty_input_key_s()
+        event.action = GHOSTTY_ACTION_PRESS
+        event.keycode = UInt32(keyCode)
+        event.mods = GHOSTTY_MODS_NONE
+        event.consumed_mods = GHOSTTY_MODS_NONE
+        event.unshifted_codepoint = 0
+        event.composing = false
+        event.text = nil
+        _ = ghostty_surface_key(surface, event)
     }
 
     /// Pass-through for a fully-formed NSEvent (Rule 2 `forwardControl`).
@@ -5407,6 +5502,17 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                 tabId: terminalSurface.tabId,
                 surfaceId: terminalSurface.id
             )
+            let submitFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if !event.isARepeat,
+               (event.keyCode == 36 || event.keyCode == 76),
+               !submitFlags.contains(.command),
+               !hasMarkedText() {
+                SurfaceLivenessDeriver.onAgentLifecycleChanged(
+                    surfaceId: terminalSurface.id,
+                    workspaceId: terminalSurface.tabId,
+                    activity: .working
+                )
+            }
 #if DEBUG
             dismissNotificationMs = (ProcessInfo.processInfo.systemUptime - dismissNotificationStart) * 1000.0
 #endif

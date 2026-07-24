@@ -361,6 +361,32 @@ final class WorkspaceSnapshotCaptureTests: XCTestCase {
         ))
     }
 
+    func testCompanionWarningPayloadIncludesLocalizedActionableMessage() throws {
+        let diagnostic = CompanionPlanDiagnostic(
+            code: .orphanOmitted,
+            severity: .warning,
+            sourcePlanID: "browser",
+            targetPlanID: "agent"
+        )
+        let payload = TerminalController.companionDiagnosticPayload(diagnostic)
+
+        XCTAssertEqual(payload["code"] as? String, "companion_link_orphan_omitted")
+        XCTAssertEqual(payload["severity"] as? String, "warning")
+        XCTAssertEqual(payload["source_plan_id"] as? String, "browser")
+        XCTAssertEqual(payload["target_plan_id"] as? String, "agent")
+        let message = try XCTUnwrap(payload["message"] as? String)
+        XCTAssertEqual(
+            message,
+            CompanionPlanDiagnosticMessage.localized(
+                code: .orphanOmitted,
+                sourcePlanID: "browser",
+                targetPlanID: "agent"
+            )
+        )
+        XCTAssertTrue(message.contains("browser"))
+        XCTAssertTrue(message.contains("agent"))
+    }
+
     // MARK: - Capture → Write → Read → Convert loop
 
     func testCaptureWriteReadConvertRoundTrip() throws {

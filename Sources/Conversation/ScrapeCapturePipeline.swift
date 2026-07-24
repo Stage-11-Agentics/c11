@@ -68,6 +68,45 @@ struct ScrapeCaptureContext: Sendable, Equatable {
     }
 }
 
+/// The two snapshot-derived scopes used at a conversation lifecycle boundary.
+///
+/// Scraping remains limited to terminal panels that declare an agent kind.
+/// Launch-boundary markers are different: they protect persisted ownership,
+/// so every terminal panel UUID is eligible even when `terminal_type` metadata
+/// is missing or empty.
+struct ConversationSnapshotCaptureScope: Sendable, Equatable {
+    let scrapeContexts: [ScrapeCaptureContext]
+    let markerSurfaceIds: Set<String>
+
+    init(snapshot: AppSessionSnapshot) {
+        scrapeContexts = ScrapeCaptureContext.contexts(from: snapshot)
+
+        var terminalSurfaceIds = Set<String>()
+        for window in snapshot.windows {
+            for workspace in window.tabManager.workspaces {
+                for panel in workspace.panels where panel.type == .terminal {
+                    terminalSurfaceIds.insert(panel.id.uuidString)
+                }
+            }
+        }
+        markerSurfaceIds = terminalSurfaceIds
+    }
+}
+
+struct ScrapeCandidateBatch: Sendable, Equatable {
+    let contexts: [ScrapeCaptureContext]
+    let candidatesByKind: [String: [ScrapeCandidate]]
+}
+
+struct ScrapeCandidateBatchCollectionError: Error, Sendable, Equatable {
+    let failuresByKind: [String: ScrapeCollectionFailure]
+}
+
+struct ScrapeReconciliationPlan: Sendable, Equatable {
+    let refsBySurface: [String: ConversationRef]
+    let quarantineReasonsBySurface: [String: ConversationQuarantineReason]
+}
+
 /// The live scrape-capture pipeline — the connective tissue between the
 /// pull rail (`ConversationScraper`) and the per-kind `ConversationStrategy`.
 ///
@@ -81,6 +120,9 @@ struct ScrapeCaptureContext: Sendable, Equatable {
 /// invoking the injected scrapers (whose filesystem is itself injected). The
 /// actor-isolated apply step lives on `ConversationStore.runScrapeCapture`.
 struct ScrapeCapturePipeline: Sendable {
+    static let candidateHeadroomMultiplier = 4
+    static let defaultCandidateFloor = 16
+
     let scrapers: ConversationScraperRegistry
     let strategies: ConversationStrategyRegistry
 
@@ -90,6 +132,248 @@ struct ScrapeCapturePipeline: Sendable {
     ) {
         self.scrapers = scrapers
         self.strategies = strategies
+    }
+
+    static func candidateBudget(kind: String, liveContextCount: Int) -> Int {
+        guard liveContextCount > 0 else { return 0 }
+        let cap = CodexScraper.maximumBatchCandidates
+        let (scaled, overflow) = liveContextCount.multipliedReportingOverflow(
+            by: candidateHeadroomMultiplier
+        )
+        let requested = overflow ? cap : max(defaultCandidateFloor, scaled)
+        return min(cap, requested)
+    }
+
+    /// Collect every kind once on a detached task. No `ConversationStore`
+    /// actor state is captured here; a runtime-env report may therefore land
+    /// while filesystem enumeration is in flight, and the later actor commit
+    /// reconciles against the then-current store.
+    func collectCandidateBatch(
+        contexts: [ScrapeCaptureContext]
+    ) async throws -> ScrapeCandidateBatch {
+        try Task.checkCancellation()
+        let result = await Task.detached(priority: .utility) { [self, contexts] in
+            Result { try collectCandidateBatchSynchronously(contexts: contexts) }
+        }.value
+        try Task.checkCancellation()
+        return try result.get()
+    }
+
+    /// Package-visible deterministic collector for logic tests. Production
+    /// must call the async wrapper above so scraper I/O never runs on the
+    /// conversation-store actor.
+    func collectCandidateBatchSynchronously(
+        contexts: [ScrapeCaptureContext]
+    ) throws -> ScrapeCandidateBatch {
+        let grouped = Dictionary(grouping: contexts, by: \.kind)
+        var candidatesByKind: [String: [ScrapeCandidate]] = [:]
+        var failuresByKind: [String: ScrapeCollectionFailure] = [:]
+        for kind in grouped.keys.sorted() {
+            guard let kindContexts = grouped[kind],
+                  let scraper = scrapers.scraper(forKind: kind) else { continue }
+            let budget = Self.candidateBudget(
+                kind: kind,
+                liveContextCount: kindContexts.count
+            )
+            switch scraper.collectBatchCandidates(
+                contexts: kindContexts,
+                maxCandidates: budget
+            ) {
+            case .success(let candidates):
+                candidatesByKind[kind] = candidates
+            case .failure(let failure):
+                failuresByKind[kind] = failure
+            }
+        }
+        if !failuresByKind.isEmpty {
+            throw ScrapeCandidateBatchCollectionError(
+                failuresByKind: failuresByKind
+            )
+        }
+        return ScrapeCandidateBatch(
+            contexts: contexts,
+            candidatesByKind: candidatesByKind
+        )
+    }
+
+    /// Pure global assignment. Cwd and timestamps only remove impossible
+    /// edges; they never choose between multiple same-cwd Codex surfaces.
+    func reconcileBatch(
+        _ batch: ScrapeCandidateBatch,
+        existing: [String: SurfaceConversations]
+    ) -> ScrapeReconciliationPlan {
+        var refsBySurface: [String: ConversationRef] = [:]
+        var quarantineReasons: [String: ConversationQuarantineReason] = [:]
+        let contextsByKind = Dictionary(grouping: batch.contexts, by: \.kind)
+
+        for kind in contextsByKind.keys.sorted() {
+            guard let contexts = contextsByKind[kind] else { continue }
+            let candidates = batch.candidatesByKind[kind] ?? []
+            if kind == "codex" {
+                reconcileCodex(
+                    contexts: contexts,
+                    candidates: candidates,
+                    existing: existing,
+                    refsBySurface: &refsBySurface,
+                    quarantineReasons: &quarantineReasons
+                )
+                continue
+            }
+
+            // Preserve existing kind-specific behavior while consuming a
+            // scrape identity at most once across the batch.
+            guard let strategy = strategies.strategy(forKind: kind) else { continue }
+            var consumed = Set<ConversationIdentity>()
+            for context in contexts {
+                let active = existing[context.surfaceId]?.active
+                let inputs = ConversationStrategyInputs(
+                    surfaceId: context.surfaceId,
+                    cwd: context.cwd,
+                    lastActivityTimestamp: context.lastActivityTimestamp,
+                    wrapperClaim: active?.capturedVia == .wrapperClaim ? active : nil,
+                    push: (active != nil && active?.capturedVia != .wrapperClaim) ? active : nil,
+                    scrapeCandidates: candidates
+                )
+                guard let ref = strategy.capture(inputs: inputs),
+                      ref.capturedVia == .scrape else { continue }
+                let identity = ConversationIdentity(kind: ref.kind, id: ref.id)
+                if consumed.insert(identity).inserted {
+                    refsBySurface[context.surfaceId] = ref
+                } else {
+                    quarantineReasons[context.surfaceId] = .duplicateInferredIdentity
+                }
+            }
+        }
+
+        return ScrapeReconciliationPlan(
+            refsBySurface: refsBySurface,
+            quarantineReasonsBySurface: quarantineReasons
+        )
+    }
+
+    private func reconcileCodex(
+        contexts: [ScrapeCaptureContext],
+        candidates: [ScrapeCandidate],
+        existing: [String: SurfaceConversations],
+        refsBySurface: inout [String: ConversationRef],
+        quarantineReasons: inout [String: ConversationQuarantineReason]
+    ) {
+        let strategy = CodexStrategy()
+        let contextsBySurface = Dictionary(
+            uniqueKeysWithValues: contexts.map { ($0.surfaceId, $0) }
+        )
+        let causalSurfaces = Set(contexts.compactMap { context -> String? in
+            existing[context.surfaceId]?.active?.isEligibleCausalOwner == true
+                ? context.surfaceId
+                : nil
+        })
+        let reservedIds = Set(causalSurfaces.compactMap {
+            existing[$0]?.active.map { ConversationIdentity(kind: $0.kind, id: $0.id) }
+        })
+
+        // Same cwd is an exclusion-only signal. Every non-causal surface in a
+        // repeated cwd set is quarantined even if mtimes appear to form a
+        // unique matching.
+        let cwdGroups = Dictionary(grouping: contexts.compactMap { context -> (String, String)? in
+            guard let cwd = normalizedCwd(context.cwd) else { return nil }
+            return (cwd, context.surfaceId)
+        }, by: { $0.0 })
+        for group in cwdGroups.values where group.count > 1 {
+            for (_, surfaceId) in group where !causalSurfaces.contains(surfaceId) {
+                quarantineReasons[surfaceId] = .sameCwdWithoutCausalIdentity
+            }
+        }
+
+        var unresolved = Set(contexts.map(\.surfaceId))
+            .subtracting(causalSurfaces)
+            .subtracting(quarantineReasons.keys)
+        var availableByIdentity: [ConversationIdentity: ScrapeCandidate] = [:]
+        for candidate in candidates {
+            let identity = ConversationIdentity(kind: "codex", id: candidate.id)
+            guard !reservedIds.contains(identity) else { continue }
+            if let existingCandidate = availableByIdentity[identity] {
+                if candidate.mtime > existingCandidate.mtime
+                    || (candidate.mtime == existingCandidate.mtime
+                        && candidate.filePath < existingCandidate.filePath) {
+                    availableByIdentity[identity] = candidate
+                }
+            } else {
+                availableByIdentity[identity] = candidate
+            }
+        }
+
+        var consumed = Set<ConversationIdentity>()
+        while !unresolved.isEmpty {
+            var edges: [String: [ConversationIdentity]] = [:]
+            var owners: [ConversationIdentity: Set<String>] = [:]
+            for surfaceId in unresolved.sorted() {
+                guard let context = contextsBySurface[surfaceId] else { continue }
+                let active = existing[surfaceId]?.active
+                let inputs = ConversationStrategyInputs(
+                    surfaceId: surfaceId,
+                    cwd: context.cwd,
+                    lastActivityTimestamp: context.lastActivityTimestamp,
+                    wrapperClaim: active?.capturedVia == .wrapperClaim ? active : nil,
+                    push: nil,
+                    scrapeCandidates: availableByIdentity.compactMap { identity, candidate in
+                        consumed.contains(identity) ? nil : candidate
+                    }
+                )
+                let eligible = strategy.eligibleCandidates(inputs: inputs)
+                    .map { ConversationIdentity(kind: "codex", id: $0.id) }
+                    .filter { !consumed.contains($0) }
+                edges[surfaceId] = eligible
+                for identity in eligible {
+                    owners[identity, default: []].insert(surfaceId)
+                }
+            }
+
+            let uniquePairs = edges.compactMap { surfaceId, identities
+                -> (String, ConversationIdentity)? in
+                guard identities.count == 1,
+                      let identity = identities.first,
+                      owners[identity]?.count == 1 else { return nil }
+                return (surfaceId, identity)
+            }
+            guard !uniquePairs.isEmpty else { break }
+
+            for (surfaceId, identity) in uniquePairs.sorted(by: { $0.0 < $1.0 }) {
+                guard let context = contextsBySurface[surfaceId],
+                      let candidate = availableByIdentity[identity] else { continue }
+                refsBySurface[surfaceId] = strategy.scrapeRef(
+                    candidate: candidate,
+                    fallbackCwd: context.cwd
+                )
+                consumed.insert(identity)
+                unresolved.remove(surfaceId)
+            }
+        }
+
+        // A non-empty edge set that cannot be uniquely consumed is honest
+        // ambiguity. Zero candidates leave the existing placeholder untouched.
+        for surfaceId in unresolved {
+            guard let context = contextsBySurface[surfaceId] else { continue }
+            let active = existing[surfaceId]?.active
+            let inputs = ConversationStrategyInputs(
+                surfaceId: surfaceId,
+                cwd: context.cwd,
+                lastActivityTimestamp: context.lastActivityTimestamp,
+                wrapperClaim: active?.capturedVia == .wrapperClaim ? active : nil,
+                push: nil,
+                scrapeCandidates: availableByIdentity.compactMap { identity, candidate in
+                    consumed.contains(identity) ? nil : candidate
+                }
+            )
+            if !strategy.eligibleCandidates(inputs: inputs).isEmpty {
+                quarantineReasons[surfaceId] = .ambiguousGlobalAssignment
+            }
+        }
+    }
+
+    private func normalizedCwd(_ cwd: String?) -> String? {
+        guard let cwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !cwd.isEmpty else { return nil }
+        return URL(fileURLWithPath: cwd).standardizedFileURL.path
     }
 
     /// For each context, run its kind's scraper, hand the candidates (plus the
@@ -106,34 +390,11 @@ struct ScrapeCapturePipeline: Sendable {
         contexts: [ScrapeCaptureContext],
         existing: [String: SurfaceConversations]
     ) -> [(surfaceId: String, ref: ConversationRef)] {
-        var result: [(surfaceId: String, ref: ConversationRef)] = []
-        for context in contexts {
-            guard let scraper = scrapers.scraper(forKind: context.kind) else { continue }
-            guard let strategy = strategies.strategy(forKind: context.kind) else { continue }
-
-            let candidates = scraper.candidates(cwd: context.cwd)
-
-            // Route the existing active ref into the right input slot so the
-            // strategy's filters (claim-time floor, push-wins) behave exactly
-            // as they do on the live path.
-            let active = existing[context.surfaceId]?.active
-            let wrapperClaim = active?.capturedVia == .wrapperClaim ? active : nil
-            let push = (active != nil && active?.capturedVia != .wrapperClaim) ? active : nil
-
-            let inputs = ConversationStrategyInputs(
-                surfaceId: context.surfaceId,
-                cwd: context.cwd,
-                lastActivityTimestamp: context.lastActivityTimestamp,
-                wrapperClaim: wrapperClaim,
-                push: push,
-                scrapeCandidates: candidates
-            )
-
-            guard let ref = strategy.capture(inputs: inputs) else { continue }
-            // Only apply genuinely scrape-derived refs (see doc comment).
-            guard ref.capturedVia == .scrape else { continue }
-            result.append((surfaceId: context.surfaceId, ref: ref))
+        guard let batch = try? collectCandidateBatchSynchronously(contexts: contexts) else {
+            return []
         }
-        return result
+        return reconcileBatch(batch, existing: existing).refsBySurface
+            .sorted { $0.key < $1.key }
+            .map { (surfaceId: $0.key, ref: $0.value) }
     }
 }

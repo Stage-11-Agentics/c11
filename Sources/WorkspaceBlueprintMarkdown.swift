@@ -49,6 +49,9 @@ import Foundation
 /// - `frontmatter.description` ↔ `WorkspaceBlueprintFile.description`.
 /// - `frontmatter.custom_color` ↔ `WorkspaceSpec.customColor`.
 /// - The layout tree is encoded under `## Layout` in a fenced YAML block.
+/// - Every surface emits an explicit, plan-local `id:`. IDs must be unique.
+///   Explicit IDs are reserved before generated `sN` fallbacks, so authored
+///   forward links cannot be stolen by an earlier anonymous surface.
 ///   `WorkspaceSpec.workingDirectory` and `WorkspaceSpec.metadata`,
 ///   `SurfaceSpec.description`, `SurfaceSpec.metadata`, and
 ///   `SurfaceSpec.paneMetadata` are silently dropped on serialise; their
@@ -68,6 +71,13 @@ enum WorkspaceBlueprintMarkdown {
         case wrongChildCount(Int)
         case missingType
         case unsupportedSurfaceKind(String)
+        case duplicateSurfaceID(String)
+        case invalidAgentKind(surfaceID: String, kind: String)
+        case invalidCompanionLink(
+            code: CompanionPlanDiagnosticCode,
+            sourceID: String,
+            targetID: String?
+        )
 
         var description: String {
             switch self {
@@ -116,6 +126,22 @@ enum WorkspaceBlueprintMarkdown {
                     localized: "blueprint.markdown.error.unsupportedSurfaceKind",
                     defaultValue: "blueprint markdown: unsupported surface kind '\(raw)' (expected terminal/browser/markdown)"
                 )
+            case .duplicateSurfaceID(let id):
+                return String(
+                    localized: "blueprint.markdown.error.duplicateSurfaceID",
+                    defaultValue: "blueprint markdown: duplicate surface id '\(id)' [\(CompanionPlanDiagnosticCode.duplicateSurfaceID.rawValue)]"
+                )
+            case .invalidAgentKind(let surfaceID, let kind):
+                return String(
+                    localized: "blueprint.markdown.error.invalidAgentKind",
+                    defaultValue: "blueprint markdown: invalid agent_kind '\(kind)' on surface '\(surfaceID)' [\(CompanionPlanDiagnosticCode.invalidAgentKind.rawValue)]"
+                )
+            case .invalidCompanionLink(let code, let sourceID, let targetID):
+                let target = targetID.map { " -> '\($0)'" } ?? ""
+                return String(
+                    localized: "blueprint.markdown.error.invalidCompanionLink",
+                    defaultValue: "blueprint markdown: invalid companion link '\(sourceID)'\(target) [\(code.rawValue)]"
+                )
             }
         }
     }
@@ -134,9 +160,12 @@ enum WorkspaceBlueprintMarkdown {
         guard let rootNode = layoutList.first else {
             throw ParseError.yamlParseFailed("`layout:` is missing or empty")
         }
-        var idGen = SurfaceIDGenerator()
+        var explicitIDs = Set<String>()
+        try reserveExplicitSurfaceIDs(in: rootNode, reserved: &explicitIDs)
+        var idGen = SurfaceIDGenerator(reservedIDs: explicitIDs)
         var surfaces: [SurfaceSpec] = []
         let layout = try buildLayoutTree(from: rootNode, surfaces: &surfaces, idGen: &idGen)
+        try validateCompanionFields(in: surfaces)
 
         let workspaceTitle = frontKV["workspace_title"] ?? frontKV["title"]
         let customColor = frontKV["custom_color"]
@@ -288,10 +317,47 @@ enum WorkspaceBlueprintMarkdown {
 
     private struct SurfaceIDGenerator {
         var counter: Int = 1
+        var reservedIDs: Set<String>
+
         mutating func mint() -> String {
-            defer { counter += 1 }
-            return "s\(counter)"
+            while reservedIDs.contains("s\(counter)") {
+                counter += 1
+            }
+            let id = "s\(counter)"
+            counter += 1
+            reservedIDs.insert(id)
+            return id
         }
+    }
+
+    private static func reserveExplicitSurfaceIDs(
+        in node: YAML.Value,
+        reserved: inout Set<String>
+    ) throws {
+        let keys = Set((node.asMapping ?? []).map { $0.0 })
+        if keys.contains("direction") || keys.contains("children") {
+            for child in node.lookup("children")?.asList ?? [] {
+                try reserveExplicitSurfaceIDs(in: child, reserved: &reserved)
+            }
+            return
+        }
+        if keys.contains("tabs") {
+            for tab in node.lookup("tabs")?.asList ?? [] {
+                try reserveExplicitSurfaceIDs(in: tab, reserved: &reserved)
+            }
+            return
+        }
+        guard let id = nullIfEmpty(node.lookup("id")?.asScalar) else { return }
+        guard reserved.insert(id).inserted else {
+            throw ParseError.duplicateSurfaceID(id)
+        }
+    }
+
+    private static func surfaceID(
+        from node: YAML.Value,
+        generator: inout SurfaceIDGenerator
+    ) -> String {
+        nullIfEmpty(node.lookup("id")?.asScalar) ?? generator.mint()
     }
 
     private static func buildLayoutTree(
@@ -330,7 +396,7 @@ enum WorkspaceBlueprintMarkdown {
             let tabs = node.lookup("tabs")?.asList ?? []
             var ids: [String] = []
             for tab in tabs {
-                let id = idGen.mint()
+                let id = surfaceID(from: tab, generator: &idGen)
                 ids.append(id)
                 surfaces.append(try buildSurfaceSpec(id: id, from: tab))
             }
@@ -342,7 +408,7 @@ enum WorkspaceBlueprintMarkdown {
         }
 
         // Single-tab leaf: has `type:` directly.
-        let id = idGen.mint()
+        let id = surfaceID(from: node, generator: &idGen)
         surfaces.append(try buildSurfaceSpec(id: id, from: node))
         return .pane(LayoutTreeSpec.PaneSpec(surfaceIds: [id], selectedIndex: nil))
     }
@@ -359,6 +425,11 @@ enum WorkspaceBlueprintMarkdown {
         let url = node.lookup("url")?.asScalar
         let file = node.lookup("file")?.asScalar
         let command = node.lookup("command")?.asScalar
+        let declaredAgentKind = nullIfEmpty(node.lookup("agent_kind")?.asScalar)
+        let linkedAgentSurfacePlanId = nullIfEmpty(node.lookup("linked_agent")?.asScalar)
+        // Opt-in `submit:` — only the exact scalar `true` (case-insensitive)
+        // enables execution; anything else, including absence, stays false.
+        let submit = node.lookup("submit")?.asScalar?.lowercased() == "true"
         return SurfaceSpec(
             id: id,
             kind: kind,
@@ -369,8 +440,50 @@ enum WorkspaceBlueprintMarkdown {
             url: nullIfEmpty(url),
             filePath: nullIfEmpty(file),
             metadata: nil,
-            paneMetadata: nil
+            paneMetadata: nil,
+            linkedAgentSurfacePlanId: linkedAgentSurfacePlanId,
+            declaredAgentKind: declaredAgentKind,
+            submitCommand: submit
         )
+    }
+
+    private static func validateCompanionFields(in surfaces: [SurfaceSpec]) throws {
+        let byID = Dictionary(uniqueKeysWithValues: surfaces.map { ($0.id, $0) })
+        for surface in surfaces {
+            if let declaredKind = surface.declaredAgentKind,
+               surface.kind != .terminal || !AgentIdentityPolicy.isAgentKind(declaredKind) {
+                throw ParseError.invalidAgentKind(surfaceID: surface.id, kind: declaredKind)
+            }
+            guard let targetID = surface.linkedAgentSurfacePlanId else { continue }
+            guard surface.kind == .browser else {
+                throw ParseError.invalidCompanionLink(
+                    code: .sourceNotBrowser,
+                    sourceID: surface.id,
+                    targetID: targetID
+                )
+            }
+            guard let target = byID[targetID] else {
+                throw ParseError.invalidCompanionLink(
+                    code: .targetMissing,
+                    sourceID: surface.id,
+                    targetID: targetID
+                )
+            }
+            guard target.kind == .terminal else {
+                throw ParseError.invalidCompanionLink(
+                    code: .targetNotTerminal,
+                    sourceID: surface.id,
+                    targetID: targetID
+                )
+            }
+            guard AgentIdentityPolicy.isAgentKind(target.declaredAgentKind) else {
+                throw ParseError.invalidCompanionLink(
+                    code: .targetNotAgent,
+                    sourceID: surface.id,
+                    targetID: targetID
+                )
+            }
+        }
     }
 
     private static func parseSplitRatio(_ raw: String) throws -> Double {
@@ -466,7 +579,14 @@ enum WorkspaceBlueprintMarkdown {
         restPad: String
     ) -> String {
         var out = ""
-        out += "\(firstLinePad)type: \(surface.kind.rawValue)\n"
+        out += "\(firstLinePad)id: \(quoteIfNeeded(surface.id))\n"
+        out += "\(restPad)type: \(surface.kind.rawValue)\n"
+        if let agentKind = surface.declaredAgentKind {
+            out += "\(restPad)agent_kind: \(quoteIfNeeded(agentKind))\n"
+        }
+        if let linkedAgent = surface.linkedAgentSurfacePlanId {
+            out += "\(restPad)linked_agent: \(quoteIfNeeded(linkedAgent))\n"
+        }
         if let title = surface.title {
             out += "\(restPad)title: \(quoteIfNeeded(title))\n"
         }
@@ -481,6 +601,11 @@ enum WorkspaceBlueprintMarkdown {
         }
         if let command = surface.command {
             out += "\(restPad)command: \(quoteIfNeeded(command))\n"
+        }
+        // Opt-in flag: emit only when set so default blueprints round-trip
+        // unchanged and stay free of noise.
+        if surface.submitCommand {
+            out += "\(restPad)submit: true\n"
         }
         return out
     }

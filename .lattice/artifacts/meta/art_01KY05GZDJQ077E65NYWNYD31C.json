@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-20T16:25:10Z",
+  "created_by": "agent:config-primitive-designer",
+  "custom_fields": {},
+  "id": "art_01KY05GZDJQ077E65NYWNYD31C",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KY05GZDJQ077E65NYWNYD31C.md",
+    "size_bytes": 37
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Design doc",
+  "token_usage": null,
+  "type": "note"
+}

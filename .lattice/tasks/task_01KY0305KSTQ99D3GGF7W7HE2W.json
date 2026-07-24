@@ -1,0 +1,32 @@
+{
+  "assigned_to": "agent:token-cost-arch",
+  "branch_links": [],
+  "comment_count": 2,
+  "complexity": "medium",
+  "created_at": "2026-07-20T15:41:02Z",
+  "created_by": "agent:token-cost-arch",
+  "custom_fields": {},
+  "description": "Architect c11 as the source of truth for model token cost. Deliverable: design doc (docs/token-cost-awareness-design.md) covering placement, data model (all-models pricing + per-provider OpenRouter endpoints economics), 24h poller with persistence and stale-serve, and query surface (CLI/socket/events) for operator + Sekhem Prime v2 deck consumption. Commissioned by Sekhem Prime orchestrator; architecture only until operator review.",
+  "done_at": null,
+  "evidence_refs": [],
+  "id": "task_01KY0305KSTQ99D3GGF7W7HE2W",
+  "last_event_id": "ev_01KY04FP639QYYEHC7GN17N0AR",
+  "last_status_changed_at": "2026-07-20T15:41:02Z",
+  "linked_files": [],
+  "needs_human": null,
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-174",
+  "status": "in_progress",
+  "tags": [
+    "architecture",
+    "token-cost",
+    "openrouter"
+  ],
+  "title": "Token-cost awareness: model pricing catalog + 24h OpenRouter poller + query surface (architecture)",
+  "type": "spike",
+  "updated_at": "2026-07-20T16:07:00Z",
+  "urgency": null
+}

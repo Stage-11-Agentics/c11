@@ -1,7 +1,28 @@
 import Foundation
-#if DEBUG
 import Bonsplit
-#endif
+
+enum SurfaceTabActivityResolver {
+    static func resolve(
+        hasExactSurfaceNotification: Bool,
+        derivedActivity: SidebarActivityState?,
+        terminalType: String?
+    ) -> BonsplitTabActivityState? {
+        if hasExactSurfaceNotification {
+            return .waiting
+        }
+        guard PaneSizePolicy.isAgentKind(terminalType) else {
+            return nil
+        }
+        switch derivedActivity {
+        case .working:
+            return .running
+        case .idle:
+            return .idle
+        case nil:
+            return .cold
+        }
+    }
+}
 
 /// C11-162 (Telemetry truth) — TEL-3/4.
 ///
@@ -93,6 +114,45 @@ enum SurfaceLivenessDeriver {
             let mirrored = after.flatMap { SidebarActivityState(rawValue: $0) }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
+                    workspace.setDerivedActivity(mirrored, forSurface: surfaceId)
+                }
+            }
+        }
+    }
+
+    /// Exact agent-loop lifecycle signal. Claude/Codex wrappers and terminal
+    /// completion/input seams use this when they know whether the agent is at
+    /// its prompt or actively handling a turn. This deliberately updates the
+    /// same derived truth as the shell fallback, without pretending the outer
+    /// shell's long-running TUI process is itself useful activity.
+    static func onAgentLifecycleChanged(
+        surfaceId: UUID,
+        workspaceId: UUID,
+        activity: SidebarActivityState
+    ) {
+        queue.async {
+            let prior = currentActivityRaw(workspaceId: workspaceId, surfaceId: surfaceId)
+            applyToStore(
+                derived: activity,
+                workspaceId: workspaceId,
+                surfaceId: surfaceId
+            )
+            let after = currentActivityRaw(workspaceId: workspaceId, surfaceId: surfaceId)
+            if prior != after {
+                emitLivenessTransition(
+                    from: prior,
+                    to: after,
+                    surfaceId: surfaceId,
+                    workspaceId: workspaceId
+                )
+            }
+            let mirrored = after.flatMap { SidebarActivityState(rawValue: $0) }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: workspaceId),
+                          let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }) else {
+                        return
+                    }
                     workspace.setDerivedActivity(mirrored, forSurface: surfaceId)
                 }
             }

@@ -137,11 +137,13 @@ final class MetadataDerivedPrecedenceTests: XCTestCase {
             "task": "lat-412",
             "worktree": "c11-104-sidebar-chips",
             "branch": "feat/c11-104-sidebar-chips",
+            "activity": "working",
         ]
         let sources: [String: [String: Any]] = [
             "task":     ["source": "declare",  "ts": 1.0],
             "worktree": ["source": "derived",  "ts": 2.0],
             "branch":   ["source": "derived",  "ts": 3.0],
+            "activity": ["source": "derived",  "ts": 4.0],
         ]
         let bridged = PersistedMetadataBridge.encodeValues(
             metadata,
@@ -151,11 +153,13 @@ final class MetadataDerivedPrecedenceTests: XCTestCase {
         XCTAssertNotNil(bridged["task"], "non-derived keys must persist")
         XCTAssertNil(bridged["worktree"], "derived `worktree` must NOT persist")
         XCTAssertNil(bridged["branch"], "derived `branch` must NOT persist")
+        XCTAssertNotNil(bridged["activity"], "derived `activity` must persist for restore-time projection")
 
         let bridgedSources = PersistedMetadataBridge.encodeSources(sources)
         XCTAssertNotNil(bridgedSources["task"])
         XCTAssertNil(bridgedSources["worktree"])
         XCTAssertNil(bridgedSources["branch"])
+        XCTAssertNotNil(bridgedSources["activity"])
     }
 
     func testEncodeValuesWithoutSourcesPreservesEverything() {

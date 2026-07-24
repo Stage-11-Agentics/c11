@@ -22,6 +22,15 @@ enum ShutdownSentinel {
         case clean(at: Date)
         case dirty(launchedAt: Date?)
         case missing
+        case unreadable
+        case invalid
+    }
+
+    private enum MarkerState {
+        case missing
+        case valid(Date)
+        case unreadable
+        case invalid
     }
 
     /// Default sentinel directory: `~/.c11/runtime/`. Created on first
@@ -62,22 +71,36 @@ enum ShutdownSentinel {
     static func readPriorShutdown(
         bundleId: String,
         directory: URL? = nil,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        readData: (URL) throws -> Data = { try Data(contentsOf: $0) }
     ) -> PriorShutdown {
         guard let cleanURL = cleanURL(bundleId: bundleId, directory: directory),
               let dirtyURL = dirtyURL(bundleId: bundleId, directory: directory) else {
             return .missing
         }
-        // Clean wins if present.
-        if fileManager.fileExists(atPath: cleanURL.path) {
-            let stamp = readTimestamp(from: cleanURL, fileManager: fileManager)
-            return .clean(at: stamp ?? Date.distantPast)
-        }
-        if fileManager.fileExists(atPath: dirtyURL.path) {
-            let stamp = readTimestamp(from: dirtyURL, fileManager: fileManager)
-            return .dirty(launchedAt: stamp)
-        }
+        let clean = readMarker(cleanURL, fileManager: fileManager, readData: readData)
+        let dirty = readMarker(dirtyURL, fileManager: fileManager, readData: readData)
+
+        // A valid clean marker wins the intentional two-marker promotion
+        // window. Invalid or unreadable clean data cannot mask dirty.
+        if case .valid(let at) = clean { return .clean(at: at) }
+        if case .valid(let at) = dirty { return .dirty(launchedAt: at) }
+        if case .unreadable = clean { return .unreadable }
+        if case .unreadable = dirty { return .unreadable }
+        if case .invalid = clean { return .invalid }
+        if case .invalid = dirty { return .invalid }
         return .missing
+    }
+
+    /// Only a valid readable clean marker authorizes clean restore. Explicit
+    /// no-resume policy wins, and every uncertain state fails closed dirty.
+    static func resolveRecoveryMode(
+        explicitNoResume: Bool,
+        priorShutdown: PriorShutdown
+    ) -> ResumeRecoveryMode {
+        if explicitNoResume { return .noResume }
+        if case .clean = priorShutdown { return .clean }
+        return .dirty
     }
 
     /// Write the dirty sentinel at app launch. Best-effort: a missing
@@ -150,20 +173,36 @@ enum ShutdownSentinel {
     private static func sanitiseBundleId(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return "unknown" }
-        return trimmed.replacingOccurrences(
+        let component = trimmed.replacingOccurrences(
             of: "[^A-Za-z0-9._-]",
+            with: "_",
+            options: .regularExpression
+        )
+        // Preserve normal reverse-DNS dots while removing every path-
+        // traversal-shaped run. The value is used as one filename component,
+        // so no `..` sequence may survive sanitisation.
+        return component.replacingOccurrences(
+            of: "\\.{2,}",
             with: "_",
             options: .regularExpression
         )
     }
 
-    private static func readTimestamp(from url: URL, fileManager: FileManager) -> Date? {
-        guard let data = fileManager.contents(atPath: url.path),
-              let text = String(data: data, encoding: .utf8) else {
-            return nil
+    private static func readMarker(
+        _ url: URL,
+        fileManager: FileManager,
+        readData: (URL) throws -> Data
+    ) -> MarkerState {
+        guard fileManager.fileExists(atPath: url.path) else { return .missing }
+        let data: Data
+        do {
+            data = try readData(url)
+        } catch {
+            return .unreadable
         }
+        guard let text = String(data: data, encoding: .utf8) else { return .invalid }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let interval = TimeInterval(trimmed) else { return nil }
-        return Date(timeIntervalSince1970: interval)
+        guard let interval = TimeInterval(trimmed), interval.isFinite else { return .invalid }
+        return .valid(Date(timeIntervalSince1970: interval))
     }
 }

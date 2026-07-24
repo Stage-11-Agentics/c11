@@ -39,7 +39,7 @@ Mechanics, schemas, and templates: `references/intake.md`.
 
 ## Phase 1 — Dispatch (Orchestrator)
 
-The dispatch loop, run on the `/loop` skill — never shell `watch`/`sleep` loops, which die on compaction and are invisible to the harness. Each tick: refresh state → surface escalations (every tick while unresolved) → press-ahead audit (spawn dependents when a dependency reaches review, not merge) → auto-merge if enabled (gated on *verified* git/PR state, never reported state) → close finished surfaces → spawn next available delegators → schedule the next wake.
+The dispatch loop, run on the `/loop` skill — never shell `watch`/`sleep` loops, which die on compaction and are invisible to the harness. Each tick: refresh state → surface escalations (every tick while unresolved) → press-ahead audit (spawn dependents when a dependency reaches review, not merge) → auto-merge if enabled (gated on *verified* git/PR state AND fresh, this-cycle, PASS review evidence — the review gate fails open; see references/orchestrator.md "A fired review is not a finished review" — never reported state) → close finished surfaces → spawn next available delegators → schedule the next wake.
 
 Delegators run one of three modes, chosen per ticket at Phase 0:
 
@@ -48,6 +48,8 @@ Delegators run one of three modes, chosen per ticket at Phase 0:
 - **Sub-agent-full** — separate planner/impl/fix tabs; escalation for large or high-risk tickets only.
 
 The Orchestrator's inviolable norm: **it dispatches; it does not implement.** All operational depth — the identity block, boot templates, worktree discipline, review fallbacks, verified-state rules, merge machinery, captains, recovery — lives in `references/orchestrator.md`.
+
+A general principle for briefs and boot prompts: where a step's success has a concrete observable, name it — what the artifact should look like when it worked, not only the command to run. An expected observable is what lets the executor notice the environment disagreeing with the plan; beyond that, trust their intelligence. (2026-07-11: a "verify rc.3 in manifest.json" line caught a mislabeled staging build that exit-0 would have shipped.)
 
 ## Phase 2 — Terminal validation (Result Validator)
 

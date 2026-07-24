@@ -1,6 +1,7 @@
 import Foundation
 import CryptoKit
 import Darwin
+import SQLite3
 #if canImport(LocalAuthentication)
 import LocalAuthentication
 #endif
@@ -164,7 +165,7 @@ private final class CLISocketSentryTelemetry {
         self.command = command.lowercased()
         self.subcommand = commandArgs.first?.lowercased() ?? "help"
         self.socketPath = socketPath
-        self.envSocketPath = processEnv["C11_SOCKET"] ?? processEnv["CMUX_SOCKET_PATH"] ?? processEnv["CMUX_SOCKET"]
+        self.envSocketPath = processEnv["C11_SOCKET"] ?? processEnv["C11_SOCKET_PATH"] ?? processEnv["CMUX_SOCKET_PATH"] ?? processEnv["CMUX_SOCKET"]
         self.workspaceId = processEnv["CMUX_WORKSPACE_ID"]
         self.surfaceId = processEnv["CMUX_SURFACE_ID"]
         self.disabledByEnv =
@@ -259,7 +260,7 @@ private final class CLISocketSentryTelemetry {
         if CLISocketPathResolver.isImplicitDefaultPath(socketPath),
            (envSocketPath?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
            !taggedSockets.isEmpty {
-            context["possible_root_cause"] = "C11_SOCKET/CMUX_SOCKET_PATH/CMUX_SOCKET missing while tagged sockets exist"
+            context["possible_root_cause"] = "C11_SOCKET/C11_SOCKET_PATH/CMUX_SOCKET_PATH/CMUX_SOCKET missing while tagged sockets exist"
         }
 
         return context
@@ -1466,7 +1467,7 @@ struct CMUXCLI {
     }
 
     private static func defaultSocketPath(environment: [String: String]) -> String {
-        for key in ["C11_SOCKET", "CMUX_SOCKET_PATH", "CMUX_SOCKET"] {
+        for key in ["C11_SOCKET", "C11_SOCKET_PATH", "CMUX_SOCKET_PATH", "CMUX_SOCKET"] {
             if let explicit = normalizedEnvValue(environment[key]) {
                 return explicit
             }
@@ -1516,7 +1517,7 @@ struct CMUXCLI {
     func run() throws {
         let processEnv = ProcessInfo.processInfo.environment
         let envSocketPath: String? = {
-            for key in ["C11_SOCKET", "CMUX_SOCKET_PATH", "CMUX_SOCKET"] {
+            for key in ["C11_SOCKET", "C11_SOCKET_PATH", "CMUX_SOCKET_PATH", "CMUX_SOCKET"] {
                 guard let raw = processEnv[key] else { continue }
                 let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty {
@@ -1710,6 +1711,16 @@ struct CMUXCLI {
         // before the socket connect, like `state verify`.
         if command == "events" {
             try runEventsCommand(commandArgs: commandArgs, jsonOutput: jsonOutput)
+            return
+        }
+
+        // C11-180: `c11 config` reads/mutations operate on the state-root files
+        // directly (app-down capable) — handle them before the socket connect
+        // like `state verify` / `events`. Only `config launch` needs the running
+        // app (it spawns a surface) and falls through to the post-connect switch.
+        if command == "config",
+           (commandArgs.first?.lowercased() ?? "") != "launch" {
+            try runConfigCommand(commandArgs: commandArgs, jsonOutput: jsonOutput)
             return
         }
 
@@ -2182,6 +2193,115 @@ struct CMUXCLI {
             printSizeWarning(payload)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
 
+        case "launch-agent":
+            // Typed-agent launch: one command that owns per-agent invocation
+            // quirks, identity-at-birth, and machine-readable refs. Thin
+            // client over `agent.launch` (docs/launch-agent-reference.md).
+            guard let agentKind = optionValue(commandArgs, name: "--type") else {
+                throw CLIError(message: "launch-agent requires --type <kind> (built-in: claude-code, codex, grok, kimi, opencode, github-copilot, pi, omp; or a kebab-case custom kind with ~/.config/c11/agents/<kind>.json)")
+            }
+            let launchNewWorkspace = commandArgs.contains("--new-workspace")
+            let launchPaneRaw = optionValue(commandArgs, name: "--pane")
+            let launchWorkspaceRaw = optionValue(commandArgs, name: "--workspace")
+            if launchNewWorkspace && (launchPaneRaw != nil || launchWorkspaceRaw != nil) {
+                throw CLIError(message: "launch-agent: --new-workspace is mutually exclusive with --pane/--workspace")
+            }
+            let launchPromptInline = optionValue(commandArgs, name: "--prompt")
+            let launchPromptFile = optionValue(commandArgs, name: "--prompt-file")
+            if launchPromptInline != nil && launchPromptFile != nil {
+                throw CLIError(message: "launch-agent: --prompt and --prompt-file are mutually exclusive")
+            }
+            var launchPrompt = launchPromptInline
+            if let launchPromptFile {
+                let path = resolvePath(launchPromptFile)
+                guard let contents = try? String(contentsOfFile: path, encoding: .utf8),
+                      !contents.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw CLIError(message: "launch-agent: failed to read --prompt-file: \(path)")
+                }
+                launchPrompt = contents
+            }
+            // Repeatable --env KEY=VALUE.
+            var launchEnv: [String: Any] = [:]
+            var launchEnvIdx = 0
+            while launchEnvIdx < commandArgs.count {
+                if commandArgs[launchEnvIdx] == "--env", launchEnvIdx + 1 < commandArgs.count {
+                    let entry = commandArgs[launchEnvIdx + 1]
+                    guard let eq = entry.firstIndex(of: "="), eq != entry.startIndex else {
+                        throw CLIError(message: "launch-agent: --env expects KEY=VALUE (got: \(entry))")
+                    }
+                    launchEnv[String(entry[..<eq])] = String(entry[entry.index(after: eq)...])
+                    launchEnvIdx += 2
+                } else {
+                    launchEnvIdx += 1
+                }
+            }
+            // System-prompt axis: --system-prompt-mode gates the axis; the text
+            // rides --system-prompt (inline) or --system-prompt-file (path),
+            // mutually exclusive like --prompt. Empty text is allowed (blank
+            // slate on replace), so --system-prompt-file does not reject an
+            // empty file the way --prompt-file rejects an empty prompt.
+            let sysPromptModeRaw = optionValue(commandArgs, name: "--system-prompt-mode")
+            let sysPromptInline = optionValue(commandArgs, name: "--system-prompt")
+            let sysPromptFile = optionValue(commandArgs, name: "--system-prompt-file")
+            if sysPromptInline != nil && sysPromptFile != nil {
+                throw CLIError(message: "launch-agent: --system-prompt and --system-prompt-file are mutually exclusive")
+            }
+            var sysPromptText = sysPromptInline
+            if let sysPromptFile {
+                let path = resolvePath(sysPromptFile)
+                guard let contents = try? String(contentsOfFile: path, encoding: .utf8) else {
+                    throw CLIError(message: "launch-agent: failed to read --system-prompt-file: \(path)")
+                }
+                sysPromptText = contents
+            }
+
+            var params: [String: Any] = ["type": agentKind]
+            if let v = optionValue(commandArgs, name: "--model") { params["model"] = v }
+            if let v = optionValue(commandArgs, name: "--effort") { params["effort"] = v }
+            if let sysPromptModeRaw {
+                let mode = sysPromptModeRaw.lowercased()
+                guard ["inherit", "append", "replace"].contains(mode) else {
+                    throw CLIError(message: "launch-agent: --system-prompt-mode must be inherit|append|replace (got: \(sysPromptModeRaw))")
+                }
+                params["system_prompt_mode"] = mode
+                if let sysPromptText { params["system_prompt"] = sysPromptText }
+            } else if sysPromptText != nil {
+                throw CLIError(message: "launch-agent: --system-prompt/--system-prompt-file requires --system-prompt-mode append|replace")
+            }
+            if let v = optionValue(commandArgs, name: "--task") { params["task"] = v }
+            if let v = optionValue(commandArgs, name: "--title") { params["title"] = v }
+            if let launchPrompt { params["prompt"] = launchPrompt }
+            if let v = optionValue(commandArgs, name: "--cwd") { params["cwd"] = resolvePath(v) }
+            if !launchEnv.isEmpty { params["env"] = launchEnv }
+            if launchNewWorkspace {
+                params["new_workspace"] = true
+            } else {
+                let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
+                let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
+                if let wsId { params["workspace_id"] = wsId }
+                let paneId = try normalizePaneHandle(launchPaneRaw, client: client, workspaceHandle: wsId)
+                if let paneId { params["pane_id"] = paneId }
+            }
+            if commandArgs.contains("--no-focus") { params["focus"] = false }
+            let launchPayload = try client.sendV2(method: "agent.launch", params: params)
+            // Accept --json in trailing position too (the documented form);
+            // the global parser only consumes it before the subcommand.
+            let launchJSONOut = jsonOutput || commandArgs.contains("--json")
+            printV2Payload(launchPayload, jsonOutput: launchJSONOut, idFormat: idFormat, fallbackText: v2OKSummary(launchPayload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
+
+        case "config":
+            // Only `config launch` reaches here — the app-down subcommands
+            // returned before the socket connect. Thin client over the
+            // `config.launch` socket method (design §6).
+            let cfgSub = commandArgs.first?.lowercased() ?? ""
+            guard cfgSub == "launch" else {
+                throw CLIError(message: "config: '\(cfgSub)' should have been handled app-down; this is a bug")
+            }
+            let (cfgParams, cfgJSON) = try buildConfigLaunchParams(subArgs: Array(commandArgs.dropFirst()))
+            let cfgPayload = try client.sendV2(method: "config.launch", params: cfgParams)
+            let cfgJSONOut = jsonOutput || cfgJSON
+            printV2Payload(cfgPayload, jsonOutput: cfgJSONOut, idFormat: idFormat, fallbackText: v2OKSummary(cfgPayload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
+
         case "new-surface":
             let workspaceArg = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
             let type = optionValue(commandArgs, name: "--type")
@@ -2474,17 +2594,19 @@ struct CMUXCLI {
             }
 
         case "send":
-            let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
-            let (sfArg, rem1) = parseOption(rem0, name: "--surface")
+            let (wsArgRaw, rem0) = parseOption(commandArgs, name: "--workspace")
+            let (sfArgRaw, rem1) = parseOption(rem0, name: "--surface")
             let (noSubmit, rem2) = parseBoolFlag(rem1, name: "--no-submit")
-            let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
-            let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
+            let wsArg = try requireNonEmptyHandle(wsArgRaw, flag: "--workspace", command: "send")
+            let sfArg = try requireNonEmptyHandle(sfArgRaw, flag: "--surface", command: "send")
+            let envSurface = nonEmptyEnv("CMUX_SURFACE_ID")
+            let workspaceArg = wsArg ?? (windowId == nil ? nonEmptyEnv("CMUX_WORKSPACE_ID") : nil)
+            let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? envSurface : nil)
             // Require explicit surface targeting. Shell-integrated callers inside a c11
             // surface have CMUX_SURFACE_ID set automatically. External callers must pass
             // --surface. The windowId path is excluded: --window without --surface still
             // routes to ws.focusedPanelId, which is the ambient misdirection we're removing.
-            guard sfArg != nil
-                || ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] != nil else {
+            guard sfArg != nil || envSurface != nil else {
                 throw CLIError(message: "send requires --surface <id|ref> (or run inside a c11 surface so CMUX_SURFACE_ID is set)")
             }
             let rawText = rem2.dropFirst(rem2.first == "--" ? 1 : 0).joined(separator: " ")
@@ -2496,17 +2618,24 @@ struct CMUXCLI {
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)
             if let sfId { params["surface_id"] = sfId }
             let payload = try client.sendV2(method: "surface.send_text", params: params)
-            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
+            printV2Payload(
+                payload,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat,
+                fallbackText: sendTextSummary(payload, idFormat: idFormat)
+            )
 
         case "send-key":
-            let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
-            let (sfArg, rem1) = parseOption(rem0, name: "--surface")
-            let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
-            let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
+            let (wsArgRaw, rem0) = parseOption(commandArgs, name: "--workspace")
+            let (sfArgRaw, rem1) = parseOption(rem0, name: "--surface")
+            let wsArg = try requireNonEmptyHandle(wsArgRaw, flag: "--workspace", command: "send-key")
+            let sfArg = try requireNonEmptyHandle(sfArgRaw, flag: "--surface", command: "send-key")
+            let envSurface = nonEmptyEnv("CMUX_SURFACE_ID")
+            let workspaceArg = wsArg ?? (windowId == nil ? nonEmptyEnv("CMUX_WORKSPACE_ID") : nil)
+            let surfaceArg = sfArg ?? (wsArg == nil && windowId == nil ? envSurface : nil)
             // Require explicit surface targeting (same policy as send).
             // windowId alone is excluded for the same reason: it still routes to focusedPanelId.
-            guard sfArg != nil
-                || ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] != nil else {
+            guard sfArg != nil || envSurface != nil else {
                 throw CLIError(message: "send-key requires --surface <id|ref> (or run inside a c11 surface so CMUX_SURFACE_ID is set)")
             }
             let keyArgs = rem1.first == "--" ? Array(rem1.dropFirst()) : rem1
@@ -2520,11 +2649,12 @@ struct CMUXCLI {
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
 
         case "send-panel":
-            let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
-            let (panelArg, rem1) = parseOption(rem0, name: "--panel")
+            let (wsArgRaw, rem0) = parseOption(commandArgs, name: "--workspace")
+            let (panelArgRaw, rem1) = parseOption(rem0, name: "--panel")
             let (noSubmit, rem2) = parseBoolFlag(rem1, name: "--no-submit")
-            let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
-            guard let panelArg else {
+            let wsArg = try requireNonEmptyHandle(wsArgRaw, flag: "--workspace", command: "send-panel")
+            let workspaceArg = wsArg ?? (windowId == nil ? nonEmptyEnv("CMUX_WORKSPACE_ID") : nil)
+            guard let panelArg = try requireNonEmptyHandle(panelArgRaw, flag: "--panel", command: "send-panel") else {
                 throw CLIError(message: "send-panel requires --panel")
             }
             let rawText = rem2.dropFirst(rem2.first == "--" ? 1 : 0).joined(separator: " ")
@@ -2536,13 +2666,19 @@ struct CMUXCLI {
             let sfId = try normalizeSurfaceHandle(panelArg, client: client, workspaceHandle: wsId)
             if let sfId { params["surface_id"] = sfId }
             let payload = try client.sendV2(method: "surface.send_text", params: params)
-            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
+            printV2Payload(
+                payload,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat,
+                fallbackText: sendTextSummary(payload, idFormat: idFormat)
+            )
 
         case "send-key-panel":
-            let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
-            let (panelArg, rem1) = parseOption(rem0, name: "--panel")
-            let workspaceArg = wsArg ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
-            guard let panelArg else {
+            let (wsArgRaw, rem0) = parseOption(commandArgs, name: "--workspace")
+            let (panelArgRaw, rem1) = parseOption(rem0, name: "--panel")
+            let wsArg = try requireNonEmptyHandle(wsArgRaw, flag: "--workspace", command: "send-key-panel")
+            let workspaceArg = wsArg ?? (windowId == nil ? nonEmptyEnv("CMUX_WORKSPACE_ID") : nil)
+            guard let panelArg = try requireNonEmptyHandle(panelArgRaw, flag: "--panel", command: "send-key-panel") else {
                 throw CLIError(message: "send-key-panel requires --panel")
             }
             let skpArgs = rem1.first == "--" ? Array(rem1.dropFirst()) : rem1
@@ -2840,6 +2976,9 @@ struct CMUXCLI {
                 cliTelemetry.captureError(stage: "claude_hook_dispatch", error: error)
                 throw error
             }
+
+        case "codex-hook":
+            try runCodexHook(commandArgs: commandArgs, client: client)
 
         case "set-app-focus":
             guard let value = commandArgs.first else { throw CLIError(message: "set-app-focus requires a value") }
@@ -4569,6 +4708,39 @@ struct CMUXCLI {
         throw CLIError(message: "Pane index not found")
     }
 
+    /// C11-173: an explicitly-passed but empty ref — `--surface "$REF"` where the
+    /// shell lookup produced nothing — must be an error, not a fallback. Empty
+    /// used to trim to nil, the CLI then omitted `surface_id`, and the server
+    /// fell back to the focused pane of the workspace it defaulted from the
+    /// *caller's* environment: the caller's own input box. Silent, and aimed at
+    /// the wrong target.
+    private func requireNonEmptyHandle(_ raw: String?, flag: String, command: String) throws -> String? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw CLIError(message: "\(command): \(flag) was empty. Pass an id, ref (e.g. surface:2), or index.")
+        }
+        return trimmed
+    }
+
+    /// C11-173: a bare `OK` used to mean only "bytes accepted by the socket".
+    /// Say so when the target had no PTY yet and the payload is waiting to flush
+    /// on attach — that is the one case where the send has *not* reached anyone.
+    private func sendTextSummary(_ payload: [String: Any], idFormat: CLIIDFormat) -> String {
+        let base = v2OKSummary(payload, idFormat: idFormat)
+        let queued = (payload["queued"] as? Bool) ?? false
+        guard queued else { return base }
+        return base + " queued=1 (surface not attached yet; payload flushes on attach)"
+    }
+
+    /// An exported-but-empty env var is not a target. Treat it as unset so the
+    /// "requires --surface" guard fires instead of silently defaulting.
+    private func nonEmptyEnv(_ name: String) -> String? {
+        guard let value = ProcessInfo.processInfo.environment[name] else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     private func normalizeSurfaceHandle(
         _ raw: String?,
         client: SocketClient,
@@ -5346,6 +5518,9 @@ struct CMUXCLI {
         } else {
             let surfaceStr = (payload["surface_id"] as? String) ?? surfaceId
             var lines: [String] = ["surface=\(surfaceStr)"]
+            if let ref = payload["surface_ref"] as? String {
+                lines.append("ref=\(ref)")
+            }
             if let title = payload["title"] as? String {
                 let src = (payload["title_source"] as? String) ?? "?"
                 lines.append("title=\(title)   [\(src)]")
@@ -8455,6 +8630,55 @@ struct CMUXCLI {
               c11 new-pane --cwd /Users/me/project
               c11 new-pane --allow-undersized
             """
+        case "launch-agent":
+            return """
+            Usage: c11 launch-agent --type <kind> [flags]
+
+            Launch a typed coding agent into a new surface (or a fresh workspace):
+            correct per-agent invocation, model/effort flags, identity stamped at
+            birth (env + sidebar metadata + tab title), machine-readable refs back.
+            Canonical reference: docs/launch-agent-reference.md.
+
+            Flags:
+              --type <kind>            Required. Built-in: claude-code, codex, grok,
+                                       kimi, opencode, github-copilot, pi, omp — or a
+                                       kebab-case custom kind backed by
+                                       ~/.config/c11/agents/<kind>.json
+              --model <id>             Model to pin (rendered per the kind's template)
+              --effort <tier>          Effort/thinking tier (errors if the kind has none)
+              --system-prompt-mode <m> inherit | append | replace. append/replace
+                                       inject the kind's system-prompt flag (errors
+                                       if the kind has no system-prompt axis;
+                                       claude-code only in v1)
+              --system-prompt <text>   System-prompt text (append adds to the
+                                       default; replace supplants it; empty +
+                                       replace = blank slate)
+              --system-prompt-file <p> Read the system-prompt text from a file
+                                       (mutually exclusive with --system-prompt;
+                                       an empty file is allowed = blank slate)
+              --task <id>              Task identifier for sidebar telemetry
+              --pane <id|ref>          Target pane (default: focused pane)
+              --workspace <id|ref>     Target workspace (default: $C11_WORKSPACE_ID)
+              --new-workspace          Launch into a fresh workspace instead
+              --cwd <path>             Working directory for the agent
+              --prompt <text>          Initial prompt (one-shot argv where supported)
+              --prompt-file <path>     Read the initial prompt from a file
+              --title <text>           Tab title (default: launch placeholder)
+              --env KEY=VALUE          Extra spawn env (repeatable)
+              --json                   Print the machine-readable result object
+
+            Launches never steal focus or selection (socket focus policy) —
+            the new surface is created in the background.
+
+            Examples:
+              c11 launch-agent --type claude-code --model opus --effort high
+              c11 launch-agent --type codex --model gpt-5.2 --new-workspace --json
+              c11 launch-agent --type opencode --prompt-file /tmp/brief.md --pane pane:2
+              c11 launch-agent --type claude-code --system-prompt-mode append \\
+                --system-prompt 'Prefer terse answers.'
+              c11 launch-agent --type claude-code --system-prompt-mode replace \\
+                --system-prompt ''      # Gregorovich blank slate
+            """
         case "new-surface":
             return """
             Usage: c11 new-surface [flags]
@@ -9314,14 +9538,15 @@ struct CMUXCLI {
             Subcommands:
               claim --kind <k> [--cwd <path>] [--id <id>]
                 Wrapper-claim: mint a placeholder ref. Idempotent and
-                conservative — never displaces a real id captured by
-                hook/scrape.
+                conservative for non-Codex kinds. A Codex plain/mismatched
+                launch invalidates its prior exact lifecycle; matching
+                --expected-resume-id preserves it.
               push --kind <k> --id <id> --source <hook|scrape|manual>
                    [--state <alive|suspended|tombstoned|unknown|ended>]
                    [--cwd <path>] [--reason <text>]
                    [--payload <json> | --payload @<path>]
-                Hook or operator push of the real id. Source priority:
-                hook > scrape > manual > wrapperClaim.
+                Hook or operator push of the real id. Generic push accepts
+                only hook, scrape, or manual provenance.
                 --payload accepts inline JSON or @<path> (mirrors HOOKS_FILE
                 ergonomics in Resources/bin/claude).
               tombstone --kind <k> --id <id> [--reason <text>]
@@ -11690,7 +11915,7 @@ struct CMUXCLI {
         }
     }
 
-    /// `c11 conversation <claim|push|tombstone|list|get|clear>` — wraps the
+    /// `c11 conversation <capture-runtime|claim|push|tombstone|list|get|clear>` — wraps the
     /// `conversation.*` v2 socket methods.
     ///
     /// Per the C11-24 plan: every verb resolves `--surface` from
@@ -11706,6 +11931,8 @@ struct CMUXCLI {
         let subArgs = Array(commandArgs.dropFirst())
 
         switch subcommand {
+        case "capture-runtime":
+            try runConversationCaptureRuntime(subArgs: subArgs, client: client, jsonOutput: jsonOutput)
         case "claim":
             try runConversationClaim(subArgs: subArgs, client: client, jsonOutput: jsonOutput)
         case "push":
@@ -11730,7 +11957,9 @@ struct CMUXCLI {
         Usage: c11 conversation <subcommand> [flags]
 
         Subcommands:
+          capture-runtime
           claim --kind <k> [--cwd <path>] [--id <id>]
+                [--expected-resume-id <uuid>] [--ttl-ms <n>]
           push --kind <k> --id <id> --source <hook|scrape|manual>
                [--state <alive|suspended|tombstoned|unknown|ended>]
                [--cwd <path>] [--reason <text>]
@@ -11744,6 +11973,67 @@ struct CMUXCLI {
         fallback; commands error out if the env var is missing and no flag
         was given.
         """
+    }
+
+    /// Resolve the target process's c11 surface identity. This command is a
+    /// cooperative causal-report rail: the target Codex process invokes it
+    /// from its own tool subprocess, so identities must come from that
+    /// subprocess's environment rather than caller-supplied arguments.
+    private func resolveRuntimeConversationSurface(environment: [String: String]) throws -> String {
+        let canonical = environment["C11_SURFACE_ID"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let compat = environment["CMUX_SURFACE_ID"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let canonicalValue = canonical.flatMap { $0.isEmpty ? nil : $0 }
+        let compatValue = compat.flatMap { $0.isEmpty ? nil : $0 }
+
+        if let canonicalValue, let compatValue, canonicalValue != compatValue {
+            throw CLIError(message: "surface_env_mismatch: C11_SURFACE_ID and CMUX_SURFACE_ID disagree")
+        }
+        guard let surface = canonicalValue ?? compatValue else {
+            throw CLIError(message: "missing_surface: C11_SURFACE_ID or CMUX_SURFACE_ID required")
+        }
+        guard UUID(uuidString: surface) != nil else {
+            throw CLIError(message: "invalid_surface: runtime surface environment must contain a UUID")
+        }
+        return surface
+    }
+
+    private func runConversationCaptureRuntime(
+        subArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool
+    ) throws {
+        guard subArgs.isEmpty else {
+            throw CLIError(message: "capture-runtime accepts no arguments; identity, surface, and cwd come from the target subprocess")
+        }
+        let environment = ProcessInfo.processInfo.environment
+        guard let rawThreadId = environment["CODEX_THREAD_ID"] else {
+            throw CLIError(message: "missing_runtime_id: CODEX_THREAD_ID required")
+        }
+        let threadId = rawThreadId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !threadId.isEmpty else {
+            throw CLIError(message: "missing_runtime_id: CODEX_THREAD_ID required")
+        }
+        guard UUID(uuidString: threadId) != nil else {
+            throw CLIError(message: "invalid_runtime_id: CODEX_THREAD_ID must be a UUID")
+        }
+        let surface = try resolveRuntimeConversationSurface(environment: environment)
+        let cwd = FileManager.default.currentDirectoryPath
+        let response = try client.sendV2(
+            method: "conversation.capture_runtime",
+            params: [
+                "surface_id": surface,
+                "id": threadId,
+                "cwd": cwd
+            ],
+            deadline: .custom(0.75)
+        )
+        if jsonOutput {
+            print(jsonString(response))
+        } else {
+            print("OK conversation.capture-runtime kind=codex surface=\(surface)")
+        }
     }
 
     /// Resolve `--surface` strictly — env-var or flag, no focused fallback.
@@ -11803,6 +12093,23 @@ struct CMUXCLI {
         ]
         if let cwd = optionValue(subArgs, name: "--cwd") { params["cwd"] = cwd }
         if let id = optionValue(subArgs, name: "--id") { params["placeholder_id"] = id }
+        if let expectedResumeId = optionValue(subArgs, name: "--expected-resume-id") {
+            guard UUID(uuidString: expectedResumeId) != nil else {
+                throw CLIError(message: "--expected-resume-id must be a UUID")
+            }
+            params["expected_resume_id"] = expectedResumeId
+        }
+        if subArgs.contains("--ttl-ms") {
+            guard let rawTTL = optionValue(subArgs, name: "--ttl-ms"),
+                  let ttlMilliseconds = Int64(rawTTL), ttlMilliseconds > 0 else {
+                throw CLIError(message: "--ttl-ms requires a positive integer")
+            }
+            let nowMilliseconds = Int64((Date().timeIntervalSince1970 * 1_000).rounded(.down))
+            guard ttlMilliseconds <= Int64.max - nowMilliseconds else {
+                throw CLIError(message: "--ttl-ms is too large")
+            }
+            params["expires_at_epoch_ms"] = nowMilliseconds + ttlMilliseconds
+        }
         let payload = try client.sendV2(method: "conversation.claim", params: params)
         if jsonOutput {
             print(jsonString(payload))
@@ -11827,6 +12134,12 @@ struct CMUXCLI {
         guard let source = optionValue(subArgs, name: "--source"),
               !source.isEmpty else {
             throw CLIError(message: "push requires --source <hook|scrape|manual>")
+        }
+        let allowedSources: Set<String> = ["hook", "scrape", "manual"]
+        guard allowedSources.contains(source) else {
+            throw CLIError(
+                message: "--source must be one of: \(allowedSources.sorted().joined(separator: ", ")); runtimeEnv is reserved for conversation capture-runtime"
+            )
         }
         let surface = try resolveConversationSurface(subArgs)
         var params: [String: Any] = [
@@ -11974,7 +12287,8 @@ struct CMUXCLI {
           save [--out <path>] [--scrollback]   Force a synchronous full-app
                                                session snapshot now. Prints the
                                                snapshot path + counts.
-          verify [<path>]                      Read-only resume-decision dry run.
+          verify --mode <clean|dirty|no-resume> [<path>]
+                                               Read-only resume-decision dry run.
                                                Per terminal panel: kind, id,
                                                persisted state, transcript check,
                                                and whether it would resume.
@@ -12041,11 +12355,44 @@ struct CMUXCLI {
         return appSupport + "/c11/session-com.stage11.c11.json"
     }
 
-    /// Claude Code's per-project transcript directory slug: every `/` and `.`
-    /// in the absolute cwd becomes `-`. Mirrors `ClaudeCodeStrategy.projectSlug`
-    /// (the CLI is a separate build target and cannot import it).
+    /// Claude Code's per-project transcript directory slug: every character
+    /// that is not an ASCII letter or digit becomes `-`. Mirrors
+    /// `ClaudeCodeStrategy.projectSlug` (the CLI is a separate build target
+    /// and cannot import it).
     private func claudeProjectSlug(_ cwd: String) -> String {
-        return String(cwd.map { ($0 == "/" || $0 == ".") ? "-" : $0 })
+        var out = ""
+        out.unicodeScalars.reserveCapacity(cwd.unicodeScalars.count)
+        for scalar in cwd.unicodeScalars {
+            let value = scalar.value
+            let isASCIIAlphanumeric =
+                (value >= 48 && value <= 57)
+                || (value >= 65 && value <= 90)
+                || (value >= 97 && value <= 122)
+            out.unicodeScalars.append(isASCIIAlphanumeric ? scalar : "-")
+        }
+        return out
+    }
+
+    private func claudeProjectsRoot(
+        home: String,
+        environment: [String: String]
+    ) -> URL {
+        let taggedOrQA = ["C11_TAG", "CMUX_TAG", "C11_QA_LAUNCH"].contains { key in
+            guard let value = environment[key] else { return false }
+            return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        if taggedOrQA,
+           let rawOverride = environment["C11_QA_CLAUDE_PROJECTS_ROOT"]?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+           !rawOverride.isEmpty {
+            return URL(
+                fileURLWithPath: (rawOverride as NSString).expandingTildeInPath,
+                isDirectory: true
+            ).standardizedFileURL
+        }
+        return URL(fileURLWithPath: home)
+            .appendingPathComponent(".claude", isDirectory: true)
+            .appendingPathComponent("projects", isDirectory: true)
     }
 
     private func isUUIDv4(_ id: String) -> Bool {
@@ -12061,18 +12408,50 @@ struct CMUXCLI {
         let id: String
         let state: String
         let cwd: String?
-        let transcriptPresent: Bool?
+        let ownership: ResumeOwnershipStatus
+        let transcriptEvidence: ResumeTranscriptEvidence
         let wouldResume: Bool
         let action: String
+        let skipCode: String?
     }
 
-    /// Read-only resume-decision dry run. Parses a snapshot and, per terminal
-    /// panel with a captured conversation, reproduces what the crash-recovery
-    /// path would decide: resumable iff the persisted state is alive/suspended,
-    /// the id is valid, and (for claude-code) the transcript exists on disk.
-    /// Mirrors `ConversationStore.reclassifyAfterCrash` + `ClaudeCodeStrategy`.
+    private struct StateVerifyRefInput {
+        let kind: String
+        let id: String
+        let state: String
+        let cwd: String?
+        let placeholder: Bool
+        let capturedVia: String?
+        let quarantineReason: String?
+        let diagnosticReason: String?
+    }
+
+    /// Read-only resume-decision dry run. The recovery mode is mandatory and
+    /// explicit: an arbitrary snapshot path cannot truthfully tell us whether
+    /// the app selected clean, dirty, or no-resume recovery. Each row is fed
+    /// through the same compiled `ResumeDecisionEngine` the app uses.
     private func runStateVerify(subArgs: [String], jsonOutput: Bool) throws {
-        let path = subArgs.first(where: { !$0.hasPrefix("-") }) ?? defaultStateSnapshotPath()
+        guard let rawMode = optionValue(subArgs, name: "--mode"),
+              let mode = ResumeRecoveryMode(rawValue: rawMode.lowercased()) else {
+            throw CLIError(message: "state verify requires --mode <clean|dirty|no-resume>")
+        }
+        var positional: [String] = []
+        var index = 0
+        while index < subArgs.count {
+            if subArgs[index] == "--mode" {
+                index += 2
+                continue
+            }
+            if subArgs[index].hasPrefix("-") {
+                throw CLIError(message: "state verify: unknown option \(subArgs[index])")
+            }
+            positional.append(subArgs[index])
+            index += 1
+        }
+        guard positional.count <= 1 else {
+            throw CLIError(message: "state verify accepts at most one snapshot path")
+        }
+        let path = positional.first ?? defaultStateSnapshotPath()
         guard let data = FileManager.default.contents(atPath: path) else {
             throw CLIError(message: "state verify: snapshot not found at \(path)")
         }
@@ -12081,7 +12460,7 @@ struct CMUXCLI {
             throw CLIError(message: "state verify: \(path) is not a valid session snapshot")
         }
         let home = NSHomeDirectory()
-        var panels: [StateVerifyPanel] = []
+        var inputs: [StateVerifyRefInput] = []
         for window in windows {
             let tm = window["tabManager"] as? [String: Any]
             let workspaces = tm?["workspaces"] as? [[String: Any]] ?? []
@@ -12095,11 +12474,27 @@ struct CMUXCLI {
                     let id = active["id"] as? String ?? "?"
                     let state = active["state"] as? String ?? "?"
                     let cwd = active["cwd"] as? String
-                    panels.append(verifyDecision(
-                        kind: kind, id: id, state: state, cwd: cwd, home: home
+                    inputs.append(StateVerifyRefInput(
+                        kind: kind,
+                        id: id,
+                        state: state,
+                        cwd: cwd,
+                        placeholder: active["placeholder"] as? Bool ?? false,
+                        capturedVia: (active["captured_via"] ?? active["capturedVia"]) as? String,
+                        quarantineReason: (active["quarantine_reason"] ?? active["quarantineReason"]) as? String,
+                        diagnosticReason: (active["diagnostic_reason"] ?? active["diagnosticReason"]) as? String
                     ))
                 }
             }
+        }
+        let ownership = verifyOwnership(inputs: inputs)
+        let panels = inputs.enumerated().map { index, input in
+            return verifyDecision(
+                input: input,
+                ownership: ownership[index],
+                mode: mode,
+                home: home
+            )
         }
         let refPanels = panels.count
         let resumable = panels.filter { $0.wouldResume }.count
@@ -12108,29 +12503,32 @@ struct CMUXCLI {
         if jsonOutput {
             let payload: [String: Any] = [
                 "snapshot_path": path,
+                "mode": mode.rawValue,
                 "ref_panels": refPanels,
                 "would_resume": resumable,
                 "all_resume": allResume,
                 "panels": panels.map { p -> [String: Any] in
                     var d: [String: Any] = [
                         "kind": p.kind, "id": p.id, "state": p.state,
+                        "ownership": p.ownership.rawValue,
+                        "transcript_evidence": p.transcriptEvidence.rawValue,
                         "would_resume": p.wouldResume, "action": p.action
                     ]
                     if let cwd = p.cwd { d["cwd"] = cwd }
-                    if let t = p.transcriptPresent { d["transcript_present"] = t }
+                    if let skipCode = p.skipCode { d["skip_code"] = skipCode }
                     return d
                 }
             ]
             print(jsonString(payload))
         } else {
             print("state verify: \(path)")
+            print("  mode=\(mode.rawValue)")
             if panels.isEmpty {
                 print("  (no terminal panels with captured conversations)")
             }
             for p in panels {
                 let mark = p.wouldResume ? "RESUME" : "skip"
-                let t = p.transcriptPresent.map { $0 ? " transcript=present" : " transcript=missing" } ?? ""
-                print("  [\(mark)] kind=\(p.kind) id=\(p.id) state=\(p.state)\(t) — \(p.action)")
+                print("  [\(mark)] kind=\(p.kind) id=\(p.id) state=\(p.state) ownership=\(p.ownership.rawValue) transcript=\(p.transcriptEvidence.rawValue) — \(p.action)")
             }
             print("  \(resumable)/\(refPanels) ref-bearing panels would resume")
         }
@@ -12139,83 +12537,268 @@ struct CMUXCLI {
         exit(allResume ? 0 : 1)
     }
 
-    private func verifyDecision(
-        kind: String, id: String, state: String, cwd: String?, home: String
-    ) -> StateVerifyPanel {
-        // States that are never auto-resumable (preserves the /exit-no-resume
-        // contract and unsupported-kind retention).
-        guard state == "alive" || state == "suspended" else {
-            return StateVerifyPanel(
-                kind: kind, id: id, state: state, cwd: cwd,
-                transcriptPresent: nil, wouldResume: false,
-                action: "skip: state=\(state) not auto-resumable"
-            )
-        }
-        // opencode (C11-151): exact-session resume re-attaches the
-        // interactive TUI with `cd '<cwd>' && opencode -s '<id>'`. Mirrors
-        // `OpencodeStrategy.resume`, which resumes any alive/suspended ref
-        // with a valid base62 id regardless of transcript (the SQLite
-        // transcript check is crash-recovery-only, applied by the app's
-        // `transcriptExists` before this state is reached). The session id
-        // is base62-validated, so single-quoting is injection-safe.
-        if kind == "opencode" {
-            guard isValidOpencodeSessionId(id) else {
-                return StateVerifyPanel(
-                    kind: kind, id: id, state: state, cwd: cwd,
-                    transcriptPresent: nil, wouldResume: false,
-                    action: "skip: invalid id grammar"
-                )
+    /// Mirror the app's two ownership audits without mutating the snapshot:
+    /// exact-id conflicts are resolved by evidence tier, then repeated-cwd
+    /// Codex refs quarantine only owners without eligible causal evidence.
+    private func verifyOwnership(
+        inputs: [StateVerifyRefInput]
+    ) -> [ResumeOwnershipStatus] {
+        var ownership = inputs.map { input -> ResumeOwnershipStatus in
+            switch input.quarantineReason {
+            case "ambiguous_global_assignment", "same_cwd_without_causal_identity":
+                return .ambiguous
+            case .some(_):
+                return .duplicate
+            case .none:
+                return .unique
             }
-            var command = "opencode -s '\(id)'"
-            if let cwd, !cwd.isEmpty, isValidOpencodeSessionProjectDir(cwd) {
+        }
+
+        let exactIdentityIndices = Dictionary(grouping: inputs.indices.filter { index in
+            let input = inputs[index]
+            return !input.placeholder
+                && !input.id.isEmpty
+                && input.state != "tombstoned"
+                && input.state != "unsupported"
+        }) { index in
+            let input = inputs[index]
+            return "\(input.kind)\u{0}\(input.id)"
+        }
+        for indices in exactIdentityIndices.values where indices.count > 1 {
+            let causal = indices.filter { isCausalCapture(inputs[$0]) }
+            if causal.count == 1, let causalOwner = causal.first {
+                for index in indices where index != causalOwner && ownership[index] == .unique {
+                    ownership[index] = .duplicate
+                }
+            } else {
+                for index in indices where ownership[index] == .unique {
+                    ownership[index] = .duplicate
+                }
+            }
+        }
+
+        let codexCwdIndices = Dictionary(grouping: inputs.indices.compactMap { index -> (String, Int)? in
+            let input = inputs[index]
+            guard input.kind == "codex",
+                  input.state != "tombstoned",
+                  input.state != "unsupported",
+                  let cwd = normalizedStateVerifyCwd(input.cwd) else { return nil }
+            return (cwd, index)
+        }, by: { $0.0 })
+        for group in codexCwdIndices.values where group.count > 1 {
+            for (_, index) in group {
+                let input = inputs[index]
+                let eligibleCausalOwner = isCausalCapture(input)
+                    && input.quarantineReason == nil
+                if !eligibleCausalOwner && ownership[index] == .unique {
+                    ownership[index] = .ambiguous
+                }
+            }
+        }
+        return ownership
+    }
+
+    private func isCausalCapture(_ input: StateVerifyRefInput) -> Bool {
+        guard !input.placeholder else { return false }
+        return input.capturedVia == "hook" || input.capturedVia == "runtimeEnv"
+    }
+
+    private func normalizedStateVerifyCwd(_ cwd: String?) -> String? {
+        guard let cwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !cwd.isEmpty else { return nil }
+        return URL(fileURLWithPath: cwd).standardizedFileURL.path
+    }
+
+    private func codexSessionsRoot(home: String, environment: [String: String]) -> URL {
+        let taggedOrQA = ["C11_TAG", "CMUX_TAG", "C11_QA_LAUNCH"].contains { key in
+            guard let value = environment[key] else { return false }
+            return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        if taggedOrQA,
+           let rawOverride = environment["C11_QA_CODEX_SESSIONS_ROOT"]?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+           !rawOverride.isEmpty {
+            return URL(
+                fileURLWithPath: (rawOverride as NSString).expandingTildeInPath,
+                isDirectory: true
+            ).standardizedFileURL
+        }
+        return URL(fileURLWithPath: home)
+            .appendingPathComponent(".codex", isDirectory: true)
+            .appendingPathComponent("sessions", isDirectory: true)
+    }
+
+    private func codexTranscriptExists(id: String, home: String) -> Bool {
+        let root = codexSessionsRoot(
+            home: home,
+            environment: ProcessInfo.processInfo.environment
+        )
+        guard let enumerator = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return false }
+        for case let url as URL in enumerator {
+            let name = url.lastPathComponent
+            guard name.hasSuffix(".jsonl"),
+                  let values = try? url.resourceValues(forKeys: [
+                    .isRegularFileKey
+                  ]),
+                  values.isRegularFile == true else { continue }
+            let stem = String(name.dropLast(".jsonl".count))
+            if String(stem.suffix(36)) == id { return true }
+        }
+        return false
+    }
+
+    private func opencodeDatabasePath(
+        home: String,
+        environment: [String: String]
+    ) -> String {
+        let taggedOrQA = ["C11_TAG", "CMUX_TAG", "C11_QA_LAUNCH"].contains { key in
+            guard let value = environment[key] else { return false }
+            return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        if taggedOrQA,
+           let override = environment["C11_QA_OPENCODE_DB_PATH"]?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+           !override.isEmpty {
+            return (override as NSString).expandingTildeInPath
+        }
+        return "\(home)/.local/share/opencode/opencode.db"
+    }
+
+    /// Read-only, stat-equivalent exact session check. Queries `session.id`
+    /// only; message/part transcript tables are never touched.
+    private func opencodeSessionExists(id: String, home: String) -> Bool? {
+        let path = opencodeDatabasePath(
+            home: home,
+            environment: ProcessInfo.processInfo.environment
+        )
+        guard FileManager.default.fileExists(atPath: path) else { return nil }
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(
+            path,
+            &database,
+            SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX,
+            nil
+        ) == SQLITE_OK, let database else {
+            sqlite3_close(database)
+            return nil
+        }
+        defer { sqlite3_close(database) }
+        sqlite3_busy_timeout(database, 2_000)
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(
+            database,
+            "SELECT 1 FROM session WHERE id = ? LIMIT 1",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK, let statement else {
+            sqlite3_finalize(statement)
+            return nil
+        }
+        defer { sqlite3_finalize(statement) }
+        return id.withCString { idCString -> Bool? in
+            guard sqlite3_bind_text(statement, 1, idCString, -1, nil) == SQLITE_OK else {
+                return nil
+            }
+            switch sqlite3_step(statement) {
+            case SQLITE_ROW: return true
+            case SQLITE_DONE: return false
+            default: return nil
+            }
+        }
+    }
+
+    private func verifyDecision(
+        input: StateVerifyRefInput,
+        ownership: ResumeOwnershipStatus,
+        mode: ResumeRecoveryMode,
+        home: String
+    ) -> StateVerifyPanel {
+        let persistedState = ResumePersistedState(rawValue: input.state) ?? .unknown
+        let idValid: Bool
+        switch input.kind {
+        case "codex", "claude-code":
+            idValid = isUUIDv4(input.id)
+        case "opencode":
+            idValid = isValidOpencodeSessionId(input.id)
+        default:
+            idValid = false
+        }
+
+        let transcriptEvidence: ResumeTranscriptEvidence
+        if mode != .dirty {
+            transcriptEvidence = .notRequired
+        } else if input.kind == "codex", idValid {
+            transcriptEvidence = codexTranscriptExists(id: input.id, home: home) ? .verified : .missing
+        } else if input.kind == "claude-code", idValid,
+                  let cwd = input.cwd, !cwd.isEmpty {
+            let slug = claudeProjectSlug(cwd)
+            let path = claudeProjectsRoot(
+                home: home,
+                environment: ProcessInfo.processInfo.environment
+            )
+                .appendingPathComponent(slug, isDirectory: true)
+                .appendingPathComponent("\(input.id).jsonl", isDirectory: false)
+                .path
+            transcriptEvidence = FileManager.default.fileExists(atPath: path)
+                ? .verified
+                : .missing
+        } else if input.kind == "opencode", idValid {
+            switch opencodeSessionExists(id: input.id, home: home) {
+            case .some(let exists): transcriptEvidence = exists ? .verified : .missing
+            case .none: transcriptEvidence = .unavailable
+            }
+        } else {
+            transcriptEvidence = .unavailable
+        }
+
+        let fallback: ResumeCommand?
+        if input.kind == "claude-code", idValid {
+            fallback = ResumeCommand(
+                text: "claude --dangerously-skip-permissions --resume \(input.id)"
+            )
+        } else if input.kind == "opencode", idValid {
+            var command = "opencode -s '\(input.id)'"
+            if let cwd = input.cwd, !cwd.isEmpty, isValidOpencodeSessionProjectDir(cwd) {
                 command = "cd '\(cwd)' && \(command)"
             }
+            fallback = ResumeCommand(text: command)
+        } else {
+            fallback = nil
+        }
+
+        let decision = ResumeDecisionEngine.decide(ResumeDecisionInput(
+            mode: mode,
+            auditComplete: true,
+            ownership: ownership,
+            kind: input.kind,
+            id: input.id,
+            placeholder: input.placeholder,
+            state: persistedState,
+            exactIDValid: idValid,
+            transcriptEvidence: transcriptEvidence,
+            diagnosticReason: input.diagnosticReason,
+            fallbackCommand: fallback
+        ))
+        switch decision {
+        case .command(let command):
             return StateVerifyPanel(
-                kind: kind, id: id, state: state, cwd: cwd,
-                transcriptPresent: nil, wouldResume: true,
-                action: command
+                kind: input.kind, id: input.id, state: input.state, cwd: input.cwd,
+                ownership: ownership, transcriptEvidence: transcriptEvidence,
+                wouldResume: true, action: command.text, skipCode: nil
+            )
+        case .skip(let code, let reason):
+            return StateVerifyPanel(
+                kind: input.kind, id: input.id, state: input.state, cwd: input.cwd,
+                ownership: ownership, transcriptEvidence: transcriptEvidence,
+                wouldResume: false, action: "skip: \(reason)", skipCode: code.rawValue
             )
         }
-        // Only claude-code keeps an on-disk file transcript; that is the kind
-        // the crash-recovery fix verifies via the filesystem. Other kinds
-        // demote to unknown on a crash (no transcript), so they would not
-        // auto-resume after a crash.
-        guard kind == "claude-code" else {
-            return StateVerifyPanel(
-                kind: kind, id: id, state: state, cwd: cwd,
-                transcriptPresent: nil, wouldResume: false,
-                action: "skip: no transcript verification for kind '\(kind)'"
-            )
-        }
-        guard isUUIDv4(id) else {
-            return StateVerifyPanel(
-                kind: kind, id: id, state: state, cwd: cwd,
-                transcriptPresent: nil, wouldResume: false,
-                action: "skip: invalid id grammar"
-            )
-        }
-        guard let cwd, !cwd.isEmpty else {
-            return StateVerifyPanel(
-                kind: kind, id: id, state: state, cwd: cwd,
-                transcriptPresent: nil, wouldResume: false,
-                action: "skip: no cwd to locate transcript"
-            )
-        }
-        let slug = claudeProjectSlug(cwd)
-        let transcript = "\(home)/.claude/projects/\(slug)/\(id).jsonl"
-        let present = FileManager.default.fileExists(atPath: transcript)
-        if present {
-            return StateVerifyPanel(
-                kind: kind, id: id, state: state, cwd: cwd,
-                transcriptPresent: true, wouldResume: true,
-                action: "claude --dangerously-skip-permissions --resume \(id)"
-            )
-        }
-        return StateVerifyPanel(
-            kind: kind, id: id, state: state, cwd: cwd,
-            transcriptPresent: false, wouldResume: false,
-            action: "skip: transcript not found"
-        )
     }
 
     // MARK: - C11-131: app restart
@@ -14201,7 +14784,7 @@ struct CMUXCLI {
 
     private func claudeTeamsResolvedSocketPath(processEnvironment: [String: String]) -> String {
         let envSocketPath: String? = {
-            for key in ["C11_SOCKET", "CMUX_SOCKET_PATH", "CMUX_SOCKET"] {
+            for key in ["C11_SOCKET", "C11_SOCKET_PATH", "CMUX_SOCKET_PATH", "CMUX_SOCKET"] {
                 guard let raw = processEnvironment[key] else { continue }
                 let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty {
@@ -15207,6 +15790,32 @@ struct CMUXCLI {
         }
     }
 
+    /// Bundle-private lifecycle bridge used by Resources/bin/codex. Codex's
+    /// interactive process keeps the outer shell in `running` for its entire
+    /// lifetime, so the wrapper seeds the truthful resting state explicitly.
+    /// Turn submission/completion transitions are reported by c11's terminal
+    /// input and notification seams inside the app.
+    private func runCodexHook(commandArgs: [String], client: SocketClient) throws {
+        guard let rawActivity = commandArgs.first?.lowercased(),
+              rawActivity == "working" || rawActivity == "idle" else {
+            throw CLIError(message: "codex-hook requires working or idle")
+        }
+        let environment = ProcessInfo.processInfo.environment
+        guard let workspaceId = environment["CMUX_WORKSPACE_ID"] ?? environment["C11_WORKSPACE_ID"],
+              UUID(uuidString: workspaceId) != nil else {
+            throw CLIError(message: "codex-hook requires a c11 workspace id")
+        }
+        guard let surfaceId = environment["CMUX_SURFACE_ID"] ?? environment["C11_SURFACE_ID"],
+              UUID(uuidString: surfaceId) != nil else {
+            throw CLIError(message: "codex-hook requires a c11 surface id")
+        }
+        let response = try sendV1Command(
+            "report_agent_activity \(rawActivity) --tab=\(workspaceId) --panel=\(surfaceId)",
+            client: client
+        )
+        print(response)
+    }
+
     private func runClaudeHook(
         commandArgs: [String],
         client: SocketClient,
@@ -15251,6 +15860,12 @@ struct CMUXCLI {
                 surfaceArg,
                 workspaceId: workspaceId,
                 client: client
+            )
+            _ = try? reportAgentActivity(
+                client: client,
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                activity: "idle"
             )
             let claudePid: Int? = {
                 guard let raw = ProcessInfo.processInfo.environment["CMUX_CLAUDE_PID"]?
@@ -15338,6 +15953,19 @@ struct CMUXCLI {
                 workspaceId = mappedWorkspace
                 surfaceId = mapped.surfaceId
             }
+            let resolvedLifecycleSurface = try? resolveSurfaceIdForClaudeHook(
+                surfaceId,
+                workspaceId: workspaceId,
+                client: client
+            )
+            if let resolvedLifecycleSurface {
+                _ = try? reportAgentActivity(
+                    client: client,
+                    workspaceId: workspaceId,
+                    surfaceId: resolvedLifecycleSurface,
+                    activity: "idle"
+                )
+            }
 
             // Update session with transcript summary and send completion notification.
             let completion = summarizeClaudeHookStop(
@@ -15380,10 +16008,24 @@ struct CMUXCLI {
         case "prompt-submit":
             telemetry.breadcrumb("claude-hook.prompt-submit")
             var workspaceId = fallbackWorkspaceId
+            var preferredSurface = surfaceArg
             if let sessionId = parsedInput.sessionId,
                let mapped = try? sessionStore.lookup(sessionId: sessionId),
                let mappedWorkspace = try? resolveWorkspaceIdForClaudeHook(mapped.workspaceId, client: client) {
                 workspaceId = mappedWorkspace
+                preferredSurface = mapped.surfaceId
+            }
+            if let resolvedSurface = try? resolveSurfaceIdForClaudeHook(
+                preferredSurface,
+                workspaceId: workspaceId,
+                client: client
+            ) {
+                _ = try? reportAgentActivity(
+                    client: client,
+                    workspaceId: workspaceId,
+                    surfaceId: resolvedSurface,
+                    activity: "working"
+                )
             }
             _ = try sendV1Command("clear_notifications --tab=\(workspaceId)", client: client)
             try setClaudeStatus(
@@ -15418,6 +16060,12 @@ struct CMUXCLI {
                 preferredSurface,
                 workspaceId: workspaceId,
                 client: client
+            )
+            _ = try? reportAgentActivity(
+                client: client,
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                activity: "idle"
             )
 
             let title = "Claude Code"
@@ -15524,11 +16172,13 @@ struct CMUXCLI {
             // (e.g. after permission grant). Runs async so it doesn't block tool execution.
             var workspaceId = fallbackWorkspaceId
             var claudePid: Int? = nil
+            var preferredSurface = surfaceArg
             if let sessionId = parsedInput.sessionId,
                let mapped = try? sessionStore.lookup(sessionId: sessionId),
                let mappedWorkspace = try? resolveWorkspaceIdForClaudeHook(mapped.workspaceId, client: client) {
                 workspaceId = mappedWorkspace
                 claudePid = mapped.pid
+                preferredSurface = mapped.surfaceId
             }
 
             // AskUserQuestion means Claude is about to ask the user something.
@@ -15549,6 +16199,18 @@ struct CMUXCLI {
                     lastSubtitle: "Waiting",
                     lastBody: question
                 )
+                if let resolvedSurface = try? resolveSurfaceIdForClaudeHook(
+                    preferredSurface,
+                    workspaceId: workspaceId,
+                    client: client
+                ) {
+                    _ = try? reportAgentActivity(
+                        client: client,
+                        workspaceId: workspaceId,
+                        surfaceId: resolvedSurface,
+                        activity: "idle"
+                    )
+                }
                 // Don't clear notifications or set status here.
                 // The Notification hook fires right after and will use the saved question.
                 print("OK")
@@ -15556,6 +16218,18 @@ struct CMUXCLI {
             }
 
             _ = try? sendV1Command("clear_notifications --tab=\(workspaceId)", client: client)
+            if let resolvedSurface = try? resolveSurfaceIdForClaudeHook(
+                preferredSurface,
+                workspaceId: workspaceId,
+                client: client
+            ) {
+                _ = try? reportAgentActivity(
+                    client: client,
+                    workspaceId: workspaceId,
+                    surfaceId: resolvedSurface,
+                    activity: "working"
+                )
+            }
 
             let statusValue: String
             if UserDefaults.standard.bool(forKey: "claudeCodeVerboseStatus"),
@@ -15600,6 +16274,18 @@ struct CMUXCLI {
             cmd += " --pid=\(pid)"
         }
         _ = try client.send(command: cmd)
+    }
+
+    private func reportAgentActivity(
+        client: SocketClient,
+        workspaceId: String,
+        surfaceId: String,
+        activity: String
+    ) throws {
+        _ = try sendV1Command(
+            "report_agent_activity \(activity) --tab=\(workspaceId) --panel=\(surfaceId)",
+            client: client
+        )
     }
 
     private func clearClaudeStatus(client: SocketClient, workspaceId: String) throws {
@@ -16440,6 +17126,7 @@ struct CMUXCLI {
           claude-hook <session-start|stop|notification> [--workspace <id|ref>] [--surface <id|ref>]
           set-agent --type <terminal_type> [--model <id>] [--task <id>] [--role <id>] [--surface <id|ref>] [--workspace <id|ref>]
           default-agent {get | set <type> | launch [--in-surface <id|ref> | --pane <id>] [--agent <type>] [--cwd <path>] [--prompt <text> | --prompt-file <path>]}
+          launch-agent --type <kind> [--model <id>] [--effort <tier>] [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] [--task <id>] [--pane <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--title <text>] [--env K=V ...] [--json]
           set-metadata (--json '{...}' | --key <K> --value <V> [--type string|number|bool|json]) [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>] [--mode merge|replace] [--source <src>]
           get-metadata [--key <K> ...] [--sources] [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
           clear-metadata [--key <K> ...] [--source <src>] [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]

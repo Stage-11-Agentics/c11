@@ -36,6 +36,37 @@ public enum TitleFormatting {
         return String(hardCut) + "\u{2026}"
     }
 
+    /// Compose the "N: title" surface-ordinal prefix used when the
+    /// "Show surface IDs in tab titles" setting is on. Must stay format-identical
+    /// to bonsplit's `TabItem.displayedTitle(showOrdinals:)` so the surface title
+    /// bar and the tab strip render the same string.
+    public static func ordinalPrefixed(ordinal: Int?, title: String, show: Bool) -> String {
+        guard show, let ordinal else { return title }
+        return "\(ordinal): \(title)"
+    }
+
+    /// Return the shortest uppercase, hyphen-free UUID prefix that is unique
+    /// among the visible stable identities. Orphan labels use this instead of
+    /// a stale `surface:N` ref, whose ordinal may already have been reused.
+    public static func collisionSafeUUIDPrefix(
+        for id: UUID,
+        among visibleIDs: [UUID],
+        minimumLength: Int = 6
+    ) -> String {
+        let target = compactUUID(id)
+        let candidates = Set(visibleIDs + [id]).map(compactUUID)
+        let start = min(max(1, minimumLength), target.count)
+
+        for length in start...target.count {
+            let prefix = String(target.prefix(length))
+            let collisions = candidates.lazy.filter { $0.hasPrefix(prefix) }.count
+            if collisions == 1 {
+                return prefix
+            }
+        }
+        return target
+    }
+
     private static func collapseInternalWhitespace(_ s: String) -> String {
         var result = ""
         var inWhitespace = false
@@ -51,5 +82,9 @@ public enum TitleFormatting {
             }
         }
         return result
+    }
+
+    private static func compactUUID(_ id: UUID) -> String {
+        id.uuidString.replacingOccurrences(of: "-", with: "").uppercased()
     }
 }

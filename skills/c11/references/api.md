@@ -27,6 +27,8 @@ Commands accept UUIDs, short refs, or indexes:
 window:1   workspace:1   pane:2   surface:3   tab:1
 ```
 
+**Operator-spoken tab numbers are surface refs.** With the "Show Surface IDs in Tab Titles" setting on (Settings → Surfaces), every tab renders as `N: title` where N is its `surface:N` ordinal. When the operator says "send this to 292", target `surface:292` — never a bare `292`: to the CLI a bare integer is a *positional index* (the Nth surface in list order), which is a different surface. Your own number is `$C11_SURFACE_NUM`.
+
 **`--workspace` AND `--surface` must be used together** when targeting a remote surface. Either flag alone fails or targets the wrong thing.
 
 ```bash
@@ -49,6 +51,7 @@ Auto-exported into every c11 surface child process.
 |-----|---------|
 | `C11_WORKSPACE_ID` | Auto-set in c11 terminals; default for `--workspace` |
 | `C11_SURFACE_ID` | Auto-set; default for `--surface` |
+| `C11_SURFACE_NUM` | Integer N of this surface's `surface:N` ref — the number shown in the tab bar when surface-ID display is on. Address yourself as `surface:$C11_SURFACE_NUM` |
 | `C11_TAB_ID` | Optional alias for tab commands |
 | `C11_SOCKET_PATH` | Override socket path (auto-discovers tagged/debug sockets) |
 | `C11_SOCKET_PASSWORD` | Socket auth password (if set in Settings) |
@@ -76,6 +79,33 @@ c11 version                          # Version string
 
 The `caller` block in `c11 identify` always reflects the pane invoking the command; the `focused` block reflects whatever the user (or last `focus-pane`) is looking at. They are frequently different.
 
+### There is no `c11 list` (silent-empty footgun)
+
+Enumeration is **scoped** — there is no bare `list`. `c11 list` exits non-zero with `Error: Unknown
+command: list` and dumps the usage banner.
+
+```bash
+# WRONG — not a command; prints usage to stderr and exits non-zero
+c11 list
+c11 list --json | grep "ACE-387"        # ← greps the ERROR TEXT, matches nothing, LOOKS like "no results"
+
+# RIGHT — pick the scope you actually want
+c11 tree --all                          # every window: workspaces → panes → surfaces, with titles
+c11 tree --all --json                   # same, structured (parse this when scripting)
+c11 list-workspaces                     # workspaces only
+c11 list-panes                          # panes in the current workspace
+c11 list-pane-surfaces                  # surfaces in the current pane
+
+# "Is any agent working on X?" — sweep every surface title in the whole app
+c11 tree --all | grep -i "ACE-387"
+```
+
+The danger isn't the typo, it's the **failure shape**: a failed c11 command still writes to the pipe,
+so `c11 list | grep <x>` returns empty and reads exactly like a clean "nothing found." An agent can
+confidently report "nobody is working on that" on the strength of a command that never ran. If an
+enumeration comes back empty and the answer matters, **run the command bare first** and confirm it
+actually produced a tree.
+
 ## Workspaces, panes, surfaces
 
 ```bash
@@ -85,6 +115,40 @@ c11 new-workspace [--cwd <path>] [--command <text>] [--title <text>] [--layout <
 c11 new-split <left|right|up|down> [--cwd <path|inherit>]   # Split any pane; the new pane is always a terminal
 c11 new-pane [--type <terminal|browser|markdown>] [--direction <dir>] [--url <url>] [--cwd <path|inherit>]
 c11 new-surface [--type <terminal|browser|markdown>] [--pane <id|ref>] [--workspace <id|ref>]
+c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
+    [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] \
+    [--task <id>] [--pane <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] \
+    [--prompt <text> | --prompt-file <path>] [--title <text>] [--env K=V ...] [--json]
+    # Launch a typed agent (claude-code|codex|grok|kimi|opencode|github-copilot|pi|omp,
+    # or a custom kind with ~/.config/c11/agents/<kind>.json) into a new surface or a
+    # fresh workspace. One command owns the per-agent invocation quirks, model/effort
+    # flag syntax, identity-at-birth (env + metadata + title), and prompt delivery;
+    # --json returns the new refs. Canonical reference: docs/launch-agent-reference.md.
+    # --system-prompt-mode append|replace injects the kind's system-prompt flag
+    # (claude-code only in v1; replace + empty text = blank slate). errors
+    # system_prompt_unsupported for a kind with no system-prompt axis.
+
+# Saved agent configs (the model picker's CLI, design §6)
+c11 config list [--json]                          # saved configs + default(mode) + most-recent
+c11 config recent [--json]                        # observed most-recent, with per-field source
+c11 config stats [--window today|all|<N>d] [--by model|harness|provider] [--json]
+c11 config save <name> --harness <k> [--model <id>] [--effort <tier>] \
+    [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] \
+    [--command <c>] [--initial-prompt <p>] [--env K=V ...] [--json]
+c11 config edit <name|id> [ …same field flags… ]  # supply only what changes; empty string clears to inherit
+c11 config rm <name|id>
+c11 config reorder <name|id> --to <index>
+c11 config default <name|id> | --follow-recent | --pin-current [<name>]
+c11 config launch <name|id> [--pane <id|ref> | --workspace <id|ref> | --new-workspace] \
+    [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--json]
+    # A saved config is a full launch recipe (harness + model/effort/system-prompt +
+    # advanced command/initial-prompt/env). `list/recent/stats/save/edit/rm/reorder/
+    # default` read & write the state-root files DIRECTLY — they work with the app down.
+    # `config launch` is the one command that needs the running app (it spawns a
+    # surface); it's a thin client over agent.launch, honoring the config's full recipe
+    # and reusing its error codes (unknown_agent_type, invalid_effort, …).
+    # `default --pin-current` snapshots the most-recent launch into a new saved config
+    # and pins it (optional name overrides the auto label). `--window <N>d` = last N days.
 
 # Navigate
 c11 select-workspace --workspace <id|ref>
@@ -165,9 +229,16 @@ c11 send "echo hello"                # Types text AND submits (default behavior)
 c11 send --no-submit "cd /tmp/"      # Types text only, no Return — for partial-line construction
 c11 send-key down                    # Send a keypress directly (no text) — drives TUI menus
 c11 send --workspace workspace:2 --surface surface:3 "ls"
+c11 send --surface surface:3 -- "$(cat brief.md)"   # Multi-line brief: one paste, one turn
 ```
 
-**`c11 send` types the text and submits.** The synthetic Return is dispatched as a distinct key event after the typed text settles, so paste-detecting TUIs (codex, Claude Code) reliably register it as a submit rather than swallowing it into the paste. The receiving TUI sees one user turn. Pass `--no-submit` to type into the prompt without executing — typically to build a partial line across multiple sends, or to stage text before the operator hits Enter manually.
+**`c11 send` delivers the payload as a paste, then submits it with a separate Return.** The Return is a real key event dispatched after the target has ingested the paste, so paste-detecting TUIs (Claude Code, codex) register a submit rather than swallowing it. This holds whether or not the target's workspace is the one on screen — a send into a background agent lands exactly like one into the focused pane.
+
+**Interior newlines are content; a trailing newline means "and press Enter".** A multi-line brief arrives whole and becomes *one* turn — you don't need to stage it in a file and send a pointer. `send --no-submit "cmd\n"` still runs `cmd`, because the trailing newline is the Enter.
+
+**Targeting is strict.** An empty or unresolvable ref (`--surface ""`, a stale `surface:99`) is an error — `send` never falls back to whatever pane happens to be focused. For `send` / `send-key`, a surface ref is a global handle: `--surface` alone reaches a pane in any workspace of the window. (Other commands, `read-screen` included, still resolve a surface within the caller's workspace, so pass `--workspace` alongside it there.)
+
+Naming only a workspace (`send --workspace workspace:3 "ls"`, no `--surface`) still targets that workspace's focused pane — you named a target, just a coarser one.
 
 **`c11 send-key <key>` dispatches a single keypress** to the surface's PTY, encoded for the terminal's current mode (so arrow keys drive arrow-select menus like codex's hooks-trust prompt). Vocabulary:
 
@@ -215,6 +286,8 @@ c11 set-description --from-file /tmp/desc.md
 ```
 
 `c11 rename-tab` is an alias for `c11 set-title` on the target surface. The sidebar tab label is a truncated projection of the title.
+
+`c11 get-titlebar-state` prints the surface's `ref=surface:N` alongside title/description — the same N the tab bar displays when surface-ID display is on. The "N: " prefix is rendered by the app, not stored: titles never contain it, and `set-title` must not add one.
 
 ## Sidebar reporting
 

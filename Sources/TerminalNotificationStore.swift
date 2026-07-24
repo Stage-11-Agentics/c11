@@ -515,18 +515,6 @@ enum NotificationSoundSettings {
     }
 }
 
-enum NotificationBadgeSettings {
-    static let dockBadgeEnabledKey = "notificationDockBadgeEnabled"
-    static let defaultDockBadgeEnabled = true
-
-    static func isDockBadgeEnabled(defaults: UserDefaults = .standard) -> Bool {
-        if defaults.object(forKey: dockBadgeEnabledKey) == nil {
-            return defaultDockBadgeEnabled
-        }
-        return defaults.bool(forKey: dockBadgeEnabledKey)
-    }
-}
-
 enum NotificationPaneRingSettings {
     static let enabledKey = "notificationPaneRingEnabled"
     static let defaultEnabled = true
@@ -568,25 +556,6 @@ enum NotificationFlashDurationSettings {
 
     private static func clamp(_ ms: Int) -> Int {
         return min(maxMs, max(minMs, ms))
-    }
-}
-
-enum TaggedRunBadgeSettings {
-    static let environmentKey = "C11_TAG"
-    private static let maxTagLength = 10
-
-    static func normalizedTag(from env: [String: String] = ProcessInfo.processInfo.environment) -> String? {
-        normalizedTag(c11Env(environmentKey, in: env))
-    }
-
-    static func normalizedTag(_ rawTag: String?) -> String? {
-        guard var tag = rawTag?.trimmingCharacters(in: .whitespacesAndNewlines), !tag.isEmpty else {
-            return nil
-        }
-        if tag.count > maxTagLength {
-            tag = String(tag.prefix(maxTagLength))
-        }
-        return tag
     }
 }
 
@@ -690,7 +659,6 @@ final class TerminalNotificationStore: ObservableObject {
             // rebuild so waiting-agent edges can be detected (amendment H).
             let previousUnreadByTab = indexes.unreadCountByTabId
             indexes = Self.buildIndexes(for: notifications)
-            refreshDockBadge()
             emitWaitingEdges(previous: previousUnreadByTab, current: indexes.unreadCountByTabId)
         }
     }
@@ -700,7 +668,6 @@ final class TerminalNotificationStore: ObservableObject {
     private var hasRequestedAutomaticAuthorization = false
     private var hasDeferredAuthorizationRequest = false
     private var hasPromptedForSettings = false
-    private var userDefaultsObserver: NSObjectProtocol?
     private let settingsPromptWindowRetryDelay: TimeInterval = 0.5
     private let settingsPromptWindowRetryLimit = 20
     private var notificationSettingsWindowProvider: () -> NSWindow? = {
@@ -747,40 +714,7 @@ final class TerminalNotificationStore: ObservableObject {
 
     private init() {
         indexes = Self.buildIndexes(for: notifications)
-        userDefaultsObserver = NotificationCenter.default.addObserver(
-            forName: UserDefaults.didChangeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.refreshDockBadge()
-        }
-        refreshDockBadge()
         refreshAuthorizationStatus()
-    }
-
-    deinit {
-        if let userDefaultsObserver {
-            NotificationCenter.default.removeObserver(userDefaultsObserver)
-        }
-    }
-
-    static func dockBadgeLabel(unreadCount: Int, isEnabled: Bool, runTag: String? = nil) -> String? {
-        let unreadLabel: String? = {
-            guard isEnabled, unreadCount > 0 else { return nil }
-            if unreadCount > 99 {
-                return "99+"
-            }
-            return String(unreadCount)
-        }()
-
-        if let tag = TaggedRunBadgeSettings.normalizedTag(runTag) {
-            if let unreadLabel {
-                return "\(tag):\(unreadLabel)"
-            }
-            return tag
-        }
-
-        return unreadLabel
     }
 
     var unreadCount: Int {
@@ -906,6 +840,19 @@ final class TerminalNotificationStore: ObservableObject {
         let isFocusedPanel = isActiveTab && isFocusedSurface
         let isAppFocused = AppFocusState.isAppFocused()
         let shouldSuppressExternalDelivery = isAppFocused && isFocusedPanel
+
+        // An agent notification is a lifecycle boundary: the turn either
+        // completed or paused for operator input. Waiting still dominates the
+        // card while unread; once the operator opens it, the underlying state
+        // must settle to idle instead of snapping back to the outer shell's
+        // misleading long-running-TUI "working" state.
+        if let surfaceId {
+            SurfaceLivenessDeriver.onAgentLifecycleChanged(
+                surfaceId: surfaceId,
+                workspaceId: tabId,
+                activity: .idle
+            )
+        }
 
         if WorkspaceAutoReorderSettings.isEnabled() {
             AppDelegate.shared?.tabManager?.moveTabToTopForNotification(tabId)
@@ -1161,7 +1108,7 @@ final class TerminalNotificationStore: ObservableObject {
         logAuthorization(
             "request starting origin=\(origin.rawValue) automatic=\(isAutomaticRequest) hasRequestedAutomatic=\(hasRequestedAutomaticAuthorization)"
         )
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
             DispatchQueue.main.async {
                 if granted {
                     self.authorizationState = .authorized
@@ -1321,12 +1268,4 @@ final class TerminalNotificationStore: ObservableObject {
     }
 #endif
 
-    private func refreshDockBadge() {
-        let label = Self.dockBadgeLabel(
-            unreadCount: unreadCount,
-            isEnabled: NotificationBadgeSettings.isDockBadgeEnabled(),
-            runTag: TaggedRunBadgeSettings.normalizedTag()
-        )
-        NSApp?.dockTile.badgeLabel = label
-    }
 }

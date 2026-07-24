@@ -67,6 +67,61 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertEqual(visibleFrame.y, 25, accuracy: 0.001)
     }
 
+    func testDelayedDurableSnapshotWriteCompletesBeforeCleanPromotionEligibility() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-delayed-durable-write-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let snapshotURL = tempDir.appendingPathComponent("session.json")
+        let snapshot = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
+
+        XCTAssertFalse(CleanPersistencePromotionPolicy.allowsPromotion(
+            resolutionCompleted: true,
+            finalStoreReadCompleted: true,
+            durableSnapshotWriteCompleted: false
+        ))
+        let outcome: BoundedLifecycleOutcome<Bool> = BoundedLifecycleWait.run(timeout: 1.0) {
+            try await Task.sleep(nanoseconds: 20_000_000)
+            return SessionPersistenceStore.save(snapshot, fileURL: snapshotURL)
+        }
+        guard case .completed(let persisted) = outcome else {
+            return XCTFail("delayed durable write should finish within budget")
+        }
+        XCTAssertTrue(persisted)
+        XCTAssertNotNil(SessionPersistenceStore.load(fileURL: snapshotURL))
+        XCTAssertTrue(CleanPersistencePromotionPolicy.allowsPromotion(
+            resolutionCompleted: true,
+            finalStoreReadCompleted: true,
+            durableSnapshotWriteCompleted: persisted
+        ))
+    }
+
+    func testTimedOutDurableSnapshotWriteIsNotCleanPromotionEligible() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("c11-timeout-durable-write-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let snapshotURL = tempDir.appendingPathComponent("session.json")
+        let snapshot = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
+
+        let outcome: BoundedLifecycleOutcome<Bool> = BoundedLifecycleWait.run(timeout: 0.005) {
+            try await Task.sleep(nanoseconds: 100_000_000)
+            return SessionPersistenceStore.save(snapshot, fileURL: snapshotURL)
+        }
+        guard case .timedOut = outcome else {
+            return XCTFail("late durable write must report timeout")
+        }
+        XCTAssertFalse(CleanPersistencePromotionPolicy.allowsPromotion(
+            resolutionCompleted: true,
+            finalStoreReadCompleted: true,
+            durableSnapshotWriteCompleted: false
+        ))
+        // Let the detached fixture operation finish before removing its temp
+        // directory. Its late file is intentionally irrelevant: the caller
+        // already observed timeout and therefore never promotes clean.
+        Thread.sleep(forTimeInterval: 0.15)
+    }
+
     func testSaveAndLoadRoundTripPreservesWorkspaceCustomColor() {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("cmux-session-tests-\(UUID().uuidString)", isDirectory: true)
@@ -426,6 +481,30 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertEqual(decoded.forwardHistoryURLStrings, source.forwardHistoryURLStrings)
     }
 
+    func testSessionBrowserCompanionLinkRoundTripsWithoutChangingSchemaVersion() throws {
+        let linkedID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"))
+        var source = SessionBrowserPanelSnapshot(
+            urlString: "https://example.com/current",
+            profileID: nil,
+            shouldRenderWebView: true,
+            pageZoom: 1,
+            developerToolsVisible: false,
+            backHistoryURLStrings: nil,
+            forwardHistoryURLStrings: nil
+        )
+        source.linkedAgent = AgentSurfaceLink(
+            surfaceID: linkedID,
+            lastKnownName: "Build agent"
+        )
+
+        let decoded = try JSONDecoder().decode(
+            SessionBrowserPanelSnapshot.self,
+            from: JSONEncoder().encode(source)
+        )
+        XCTAssertEqual(decoded.linkedAgent, source.linkedAgent)
+        XCTAssertEqual(SessionSnapshotSchema.currentVersion, 1)
+    }
+
     func testSessionBrowserPanelSnapshotHistoryDecodesWhenKeysAreMissing() throws {
         let json = """
         {
@@ -441,6 +520,37 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertNil(decoded.profileID)
         XCTAssertNil(decoded.backHistoryURLStrings)
         XCTAssertNil(decoded.forwardHistoryURLStrings)
+        XCTAssertNil(decoded.linkedAgent)
+    }
+
+    func testPrefeatureSessionV1FixtureDecodesWithNoCompanionState() throws {
+        let fixture = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/agent-companion/prefeature-session-v1.json")
+        let decoded = try JSONDecoder().decode(
+            AppSessionSnapshot.self,
+            from: Data(contentsOf: fixture)
+        )
+        let workspace = try XCTUnwrap(decoded.windows.first?.tabManager.workspaces.first)
+        let browser = try XCTUnwrap(workspace.panels.first?.browser)
+        XCTAssertEqual(decoded.version, 1)
+        XCTAssertNil(workspace.activeAgentSurfaceId)
+        XCTAssertNil(browser.linkedAgent)
+    }
+
+    func testSessionActiveAgentContextRoundTripsButIsOptional() throws {
+        let activeID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-1111-2222-3333-BBBBBBBBBBBB"))
+        var snapshot = makeSnapshot(version: 1)
+        snapshot.windows[0].tabManager.workspaces[0].activeAgentSurfaceId = activeID
+
+        let decoded = try JSONDecoder().decode(
+            AppSessionSnapshot.self,
+            from: JSONEncoder().encode(snapshot)
+        )
+        XCTAssertEqual(
+            decoded.windows[0].tabManager.workspaces[0].activeAgentSurfaceId,
+            activeID
+        )
     }
 
     func testScrollbackReplayEnvironmentWritesReplayFile() {

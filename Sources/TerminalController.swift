@@ -741,6 +741,19 @@ class TerminalController {
         }
     }
 
+    nonisolated static func parseReportedAgentActivity(
+        _ rawActivity: String
+    ) -> SidebarActivityState? {
+        switch rawActivity.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "working":
+            return .working
+        case "idle":
+            return .idle
+        default:
+            return nil
+        }
+    }
+
     /// Update which window's TabManager receives socket commands.
     /// This is used when the user switches between multiple terminal windows.
     func setActiveTabManager(_ tabManager: TabManager?) {
@@ -1266,6 +1279,7 @@ class TerminalController {
         }
 
         SocketControlSettings.recordLastSocketPath(activeSocketPath)
+        CodexLaunchBoundaryMarkerStore.recordBoundSocketPath(activeSocketPath)
 
         let generation = withListenerState {
             isRunning = true
@@ -1958,6 +1972,17 @@ class TerminalController {
         // for bounded slices via `Task { @MainActor }`.
         "pane.confirm",
         "feedback.submit",
+        // C11-180: `config.*` reads + mutations are pure state-root file I/O with
+        // no AppKit touch → off-main per the socket threading policy. `config.launch`
+        // is deliberately ABSENT (it creates a surface → main actor).
+        "config.list",
+        "config.recent",
+        "config.stats",
+        "config.save",
+        "config.edit",
+        "config.rm",
+        "config.reorder",
+        "config.default",
     ]
 
     // C11-4: v1 telemetry commands the worker is allowed to handle off-main.
@@ -1972,6 +1997,7 @@ class TerminalController {
     nonisolated static let socketWorkerV1Commands: Set<String> = [
         "report_pwd",
         "report_shell_state",
+        "report_agent_activity",
         "report_git_branch",
         "clear_git_branch",
         "ports_kick",
@@ -2396,6 +2422,15 @@ class TerminalController {
     /// built per tab and must stay cheap. `@MainActor` like the ref maps.
     func surfaceRefOnly(forSurfaceUUID surfaceId: UUID) -> String {
         v2EnsureHandleRef(kind: .surface, uuid: surfaceId)
+    }
+
+    /// The integer N of a surface's `surface:N` handle, minting the ref if the
+    /// surface doesn't have one yet. Called at tab creation so every surface is
+    /// numbered the moment it exists (the tab-bar ordinal display and
+    /// `C11_SURFACE_NUM` both depend on eager minting).
+    func surfaceOrdinal(forSurfaceUUID surfaceId: UUID) -> Int {
+        let ref = v2EnsureHandleRef(kind: .surface, uuid: surfaceId)
+        return Int(ref.dropFirst("surface:".count)) ?? 0
     }
 
     /// UI-facing handle lookup for the Surface Details panel.
@@ -2994,17 +3029,64 @@ class TerminalController {
         guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
             return .err(.err(code: "not_found", message: "Workspace not found", data: nil))
         }
-        let resolvedSurfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
+
+        // C11-173: an explicit surface_id that fails to resolve must be an error,
+        // never a fallback. The old `v2UUID(...) ?? ws.focusedPanelId` meant an
+        // empty string or a stale ref (`surface:999`) silently injected the
+        // payload into whatever pane happened to be focused — usually the
+        // caller's own. Only an *absent* surface_id may fall back to the focused
+        // pane of the workspace the caller named (that is the `--workspace`-only
+        // targeting form, still supported).
+        //
+        // The empty case reuses SocketSurfaceRefValidator's classification and
+        // `empty_ref` code (C11-165 COR-1) so clients see one rejection contract
+        // across every write, `send` included.
+        let surfaceRefState = SocketSurfaceRefValidator.classify(params["surface_id"])
+        let resolvedSurfaceId: UUID?
+        let surfaceIdProvided: Bool
+        switch surfaceRefState {
+        case .empty:
+            return .err(.err(
+                code: SocketSurfaceRefValidator.emptyRefCode,
+                message: "surface ref 'surface_id' was provided but empty — pass a concrete id (no focused-surface fallback)",
+                data: nil
+            ))
+        case .present(let handle):
+            guard let uuid = v2UUID(params, "surface_id") else {
+                return .err(.err(
+                    code: "not_found",
+                    message: "Unknown surface: \(handle)",
+                    data: ["surface_id": handle]
+                ))
+            }
+            surfaceIdProvided = true
+            resolvedSurfaceId = uuid
+        case .absent:
+            surfaceIdProvided = false
+            resolvedSurfaceId = ws.focusedPanelId
+        }
         guard let surfaceId = resolvedSurfaceId else {
             return .err(.err(code: "not_found", message: "No focused surface", data: nil))
         }
-        guard let terminalPanel = ws.terminalPanel(for: surfaceId) else {
+
+        // An explicit surface ref is a global handle. A caller inside workspace 1
+        // sending to a pane in workspace 3 passes its own C11_WORKSPACE_ID as the
+        // workspace default, so honour the surface it actually named and target
+        // that surface's owning workspace.
+        var targetWorkspace = ws
+        if surfaceIdProvided,
+           targetWorkspace.terminalPanel(for: surfaceId) == nil,
+           let owner = tabManager.tabs.first(where: { $0.panels[surfaceId] != nil }) {
+            targetWorkspace = owner
+        }
+
+        guard let terminalPanel = targetWorkspace.terminalPanel(for: surfaceId) else {
             return .err(.err(code: "invalid_params", message: "Surface is not a terminal", data: ["surface_id": surfaceId.uuidString]))
         }
         let windowId = v2ResolveWindowId(tabManager: tabManager)
         let envelope: [String: Any] = [
-            "workspace_id": ws.id.uuidString,
-            "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
+            "workspace_id": targetWorkspace.id.uuidString,
+            "workspace_ref": v2Ref(kind: .workspace, uuid: targetWorkspace.id),
             "surface_id": surfaceId.uuidString,
             "surface_ref": v2Ref(kind: .surface, uuid: surfaceId),
             "window_id": v2OrNull(windowId?.uuidString),
@@ -3013,7 +3095,7 @@ class TerminalController {
         return .ok(SurfaceSendPhaseAResolved(
             terminalPanel: terminalPanel,
             initialSurface: terminalPanel.surface.surface,
-            workspaceIdString: ws.id.uuidString,
+            workspaceIdString: targetWorkspace.id.uuidString,
             surfaceIdString: surfaceId.uuidString,
             responseEnvelope: envelope
         ))
@@ -3319,18 +3401,28 @@ class TerminalController {
 
 
 
-    /// M7 side effect: sync render cache + auto-expand title bar when
-    /// `title` / `description` is written through M2's metadata API.
+    /// Sync render state when title, description, terminal type, or activity changes
+    /// through M2's metadata API.
     func applyTitleDescriptionSideEffects(
         workspaceId: UUID,
         surfaceId: UUID,
         tabManager: TabManager,
         applied: [String: Bool],
+        removedKeys: Set<String> = [],
         autoExpand: Bool
     ) {
-        let titleApplied = applied[MetadataKey.title] == true
-        let descriptionApplied = applied[MetadataKey.description] == true
-        guard titleApplied || descriptionApplied else { return }
+        let titleApplied = applied[MetadataKey.title] == true || removedKeys.contains(MetadataKey.title)
+        let descriptionApplied = applied[MetadataKey.description] == true || removedKeys.contains(MetadataKey.description)
+        let terminalTypeApplied = applied[MetadataKey.terminalType] == true || removedKeys.contains(MetadataKey.terminalType)
+        let activityApplied = applied[MetadataKey.activity] == true || removedKeys.contains(MetadataKey.activity)
+        guard titleApplied || descriptionApplied || terminalTypeApplied || activityApplied else { return }
+        let resolvedActivity: SidebarActivityState? = if activityApplied {
+            (SurfaceMetadataStore.shared.getMetadata(workspaceId: workspaceId, surfaceId: surfaceId)
+                .metadata[MetadataKey.activity] as? String)
+                .flatMap(SidebarActivityState.init(rawValue:))
+        } else {
+            nil
+        }
         v2MainSync {
             guard let ws = tabManager.tabs.first(where: { $0.id == workspaceId }) else { return }
             if titleApplied {
@@ -3338,6 +3430,12 @@ class TerminalController {
             }
             if descriptionApplied && autoExpand {
                 ws.maybeAutoExpandTitleBar(panelId: surfaceId)
+            }
+            if activityApplied {
+                ws.setDerivedActivity(resolvedActivity, forSurface: surfaceId)
+            }
+            if terminalTypeApplied {
+                ws.syncSurfaceTabActivityStateForPanel(surfaceId)
             }
         }
     }
@@ -3519,6 +3617,54 @@ class TerminalController {
                 code: "missing_surface",
                 message: "surface_id required (no focused-fallback for conversation commands)",
                 data: nil
+            ))
+        }
+        return .success(surfaceId)
+    }
+
+    /// Resolve the exact runtime-capture target against this app instance's
+    /// live model. Unlike general conversation commands this accepts only a
+    /// literal UUID from the target subprocess environment: no handle refs,
+    /// focused fallback, stale snapshot ids, or non-terminal panels.
+    func v2ResolveLiveTerminalSurfaceForRuntimeCapture(
+        params: [String: Any]
+    ) -> Result<UUID, V2CallResult> {
+        guard let rawSurfaceId = v2String(params, "surface_id"), !rawSurfaceId.isEmpty else {
+            return .failure(.err(
+                code: "missing_surface",
+                message: "surface_id required for runtime capture",
+                data: nil
+            ))
+        }
+        guard let surfaceId = UUID(uuidString: rawSurfaceId) else {
+            return .failure(.err(
+                code: "invalid_surface",
+                message: "runtime capture surface_id must be a UUID",
+                data: nil
+            ))
+        }
+        guard let app = AppDelegate.shared,
+              let located = app.locateSurface(surfaceId: surfaceId),
+              let workspace = located.tabManager.tabs.first(where: { $0.id == located.workspaceId }),
+              let panel = workspace.panels[surfaceId] else {
+            return .failure(.err(
+                code: "stale_surface",
+                message: "surface_id is not present in this c11 instance",
+                data: ["surface_id": surfaceId.uuidString]
+            ))
+        }
+        guard let terminalPanel = panel as? TerminalPanel else {
+            return .failure(.err(
+                code: "surface_not_terminal",
+                message: "runtime capture requires a terminal surface",
+                data: ["surface_id": surfaceId.uuidString]
+            ))
+        }
+        guard terminalPanel.surface.surface != nil else {
+            return .failure(.err(
+                code: "surface_not_live",
+                message: "terminal surface is not live",
+                data: ["surface_id": surfaceId.uuidString]
             ))
         }
         return .success(surfaceId)
@@ -6182,6 +6328,93 @@ class TerminalController {
         return chunks
     }
 
+    /// C11-173: whether a `send` payload should be delivered as a real paste
+    /// (`ghostty_surface_text`, which frames it in bracketed-paste markers when
+    /// the app has that mode on) instead of as a burst of synthetic key events.
+    ///
+    /// Key-event delivery turns every embedded newline into a Return, so a
+    /// multi-line payload sent to an agent TUI either fragments into one turn
+    /// per line or trips the TUI's timing-based paste heuristic and swallows the
+    /// submit. Neither is a delivered message. A paste is framed: the TUI knows
+    /// exactly where the payload ends, embedded newlines stay literal, and the
+    /// Return that follows is unambiguously a submit.
+    ///
+    /// Payloads carrying control bytes are keystroke sequences (escape codes,
+    /// completion, an interrupt), not prose — those keep the key-event path.
+    /// This is not a preference: Ghostty's paste encoder *replaces* control
+    /// bytes with spaces (`input/paste.zig` mirrors xterm's strip list — NUL,
+    /// ESC, DEL, and the tty control chars including 0x03 VINTR and 0x04 VEOF),
+    /// so pasting `c11 send $'\x03'` would type a space instead of interrupting
+    /// the target. Any C0 byte other than the newlines therefore goes out as a
+    /// key event, exactly as it did before.
+    nonisolated static func socketTextIsPasteDeliverable(_ text: String) -> Bool {
+        for scalar in text.unicodeScalars {
+            switch scalar.value {
+            case 0x0A, 0x0D:
+                continue // newlines are payload content on the paste path
+            case 0x00...0x1F, 0x7F:
+                return false
+            default:
+                continue
+            }
+        }
+        return true
+    }
+
+    /// Strip the trailing newlines a caller tacked on to mean "and submit".
+    /// The submit is a real Return key event now, so a trailing newline inside
+    /// the payload would only add a blank line to the composer.
+    nonisolated static func trimmingTrailingNewlines(_ text: String) -> String {
+        var body = text
+        while let last = body.unicodeScalars.last, last.value == 0x0A || last.value == 0x0D {
+            body.unicodeScalars.removeLast()
+        }
+        return body
+    }
+
+    /// Write a socket `send` payload into a live surface and, when asked,
+    /// submit it. See `socketTextIsPasteDeliverable` for why prose goes through
+    /// the paste path and keystroke sequences do not.
+    ///
+    /// Newline rule: *interior* newlines are content — on the paste path they
+    /// stay literal, so a multi-line brief arrives whole; on the key path they
+    /// are the Returns the caller spelled out. A *trailing* newline means "and
+    /// press Enter", which is what a caller writing `send --no-submit 'cmd\n'`
+    /// has always meant. It is stripped from the body on *both* paths and
+    /// reissued as the single submit Return, so neither `submit` nor a trailing
+    /// newline can produce two.
+    ///
+    /// Returns whether a submit Return was dispatched, so the caller can report
+    /// what happened rather than what was asked for.
+    @MainActor
+    @discardableResult
+    func deliverSocketSendText(
+        _ text: String,
+        submit: Bool,
+        terminalSurface: TerminalSurface,
+        surface: ghostty_surface_t
+    ) -> Bool {
+        let body = Self.trimmingTrailingNewlines(text)
+        let wantsReturn = submit || body != text
+
+        if !body.isEmpty {
+            if Self.socketTextIsPasteDeliverable(body) {
+                terminalSurface.sendText(body)
+            } else {
+                sendSocketText(body, surface: surface)
+            }
+        }
+
+        if wantsReturn {
+            // The Return must land *after* the target has finished ingesting the
+            // paste — a Return inside the paste-processing window is silently
+            // dropped by Claude Code and codex. Same paste-settle delay the
+            // interactive text box uses.
+            terminalSurface.scheduleSubmitReturnAfterPasteDelay()
+        }
+        return wantsReturn
+    }
+
     private nonisolated static func isSocketControlScalar(_ scalar: UnicodeScalar) -> Bool {
         switch scalar.value {
         case 0x0A, 0x0D, 0x09, 0x1B, 0x7F:
@@ -6250,9 +6483,21 @@ class TerminalController {
     struct NamedKeyEvent: Equatable {
         let keycode: UInt32
         let mods: ghostty_input_mods_e
+        /// C11-173: the text a real keypress would carry. Ghostty's legacy
+        /// encoder emits *printable* keys from the event's UTF-8 text, not from
+        /// the keycode — so a keycode-only `space` encoded to zero bytes and
+        /// `send-key space` was a silent no-op. Control keys (enter, arrows,
+        /// ctrl-*) encode from the keycode alone and carry no text.
+        let text: String?
+
+        init(keycode: UInt32, mods: ghostty_input_mods_e, text: String? = nil) {
+            self.keycode = keycode
+            self.mods = mods
+            self.text = text
+        }
 
         static func == (lhs: NamedKeyEvent, rhs: NamedKeyEvent) -> Bool {
-            lhs.keycode == rhs.keycode && lhs.mods.rawValue == rhs.mods.rawValue
+            lhs.keycode == rhs.keycode && lhs.mods.rawValue == rhs.mods.rawValue && lhs.text == rhs.text
         }
     }
 
@@ -6262,6 +6507,9 @@ class TerminalController {
     static func namedKeyEvent(for keyName: String) -> NamedKeyEvent? {
         func ev(_ keycode: Int, _ mods: ghostty_input_mods_e = GHOSTTY_MODS_NONE) -> NamedKeyEvent {
             NamedKeyEvent(keycode: UInt32(keycode), mods: mods)
+        }
+        func printable(_ keycode: Int, _ text: String) -> NamedKeyEvent {
+            NamedKeyEvent(keycode: UInt32(keycode), mods: GHOSTTY_MODS_NONE, text: text)
         }
         let name = keyName.lowercased()
         switch name {
@@ -6276,7 +6524,7 @@ class TerminalController {
         case "escape", "esc": return ev(kVK_Escape)
         case "backspace", "bs": return ev(kVK_Delete)
         case "delete", "del", "forward-delete": return ev(kVK_ForwardDelete)
-        case "space": return ev(kVK_Space)
+        case "space": return printable(kVK_Space, " ")
         // Arrow keys
         case "up", "arrow-up", "arrowup": return ev(kVK_UpArrow)
         case "down", "arrow-down", "arrowdown": return ev(kVK_DownArrow)
@@ -6313,7 +6561,7 @@ class TerminalController {
 
     func sendNamedKey(_ surface: ghostty_surface_t, keyName: String) -> Bool {
         guard let event = Self.namedKeyEvent(for: keyName) else { return false }
-        sendKeyEvent(surface: surface, keycode: event.keycode, mods: event.mods)
+        sendKeyEvent(surface: surface, keycode: event.keycode, mods: event.mods, text: event.text)
         return true
     }
 
@@ -8143,6 +8391,67 @@ class TerminalController {
         return result
     }
 
+    func reportAgentActivity(_ args: String) -> String {
+        let parsed = parseOptions(args)
+        guard let rawActivity = parsed.positional.first, !rawActivity.isEmpty else {
+            return "ERROR: Missing agent activity — usage: report_agent_activity <working|idle> [--tab=X] [--panel=Y]"
+        }
+        guard let activity = Self.parseReportedAgentActivity(rawActivity) else {
+            return "ERROR: Invalid agent activity '\(rawActivity)' — expected working or idle"
+        }
+
+        if let scope = Self.explicitSocketScope(options: parsed.options) {
+            DispatchQueue.main.async {
+                guard let app = AppDelegate.shared else { return }
+                guard let target = Self.resolveShellActivityTarget(
+                    panelId: scope.panelId,
+                    workspaceForPanel: { panel in
+                        app.workspaceContainingPanel(
+                            panelId: panel,
+                            preferredWorkspaceId: scope.workspaceId
+                        )?.workspace.id
+                    }
+                ) else { return }
+                SurfaceLivenessDeriver.onAgentLifecycleChanged(
+                    surfaceId: target.panelId,
+                    workspaceId: target.workspaceId,
+                    activity: activity
+                )
+            }
+            return "OK"
+        }
+
+        guard tabManager != nil else { return "ERROR: TabManager not available" }
+
+        var result = "OK"
+        v2MainSync {
+            guard let tab = resolveTabForReport(args) else {
+                result = parsed.options["tab"] != nil ? "ERROR: Tab not found" : "ERROR: No tab selected"
+                return
+            }
+            let panelArg = parsed.options["panel"] ?? parsed.options["surface"]
+            let surfaceId: UUID
+            if let panelArg {
+                guard let parsedId = UUID(uuidString: panelArg), tab.panels[parsedId] != nil else {
+                    result = "ERROR: Panel not found '\(panelArg)'"
+                    return
+                }
+                surfaceId = parsedId
+            } else if let focused = tab.focusedPanelId {
+                surfaceId = focused
+            } else {
+                result = "ERROR: Missing panel id (no focused surface)"
+                return
+            }
+            SurfaceLivenessDeriver.onAgentLifecycleChanged(
+                surfaceId: surfaceId,
+                workspaceId: tab.id,
+                activity: activity
+            )
+        }
+        return result
+    }
+
     func clearPorts(_ args: String) -> String {
         let parsed = parseOptions(args)
         var result = "OK"
@@ -8186,16 +8495,29 @@ class TerminalController {
 
         if let scope = Self.explicitSocketScope(options: parsed.options) {
             DispatchQueue.main.async {
-                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: scope.workspaceId),
-                      let tab = tabManager.tabs.first(where: { $0.id == scope.workspaceId }) else {
+                // C11-171 (extended to report_tty): resolve the workspace from the
+                // PANEL, never from `--tab`. Shell integration sends the surface
+                // uuid in `--tab` (a legacy alias — see GhosttyTerminalView env
+                // injection), so trusting it makes `tabManagerFor` miss and this
+                // registration silently no-op while still returning "OK". That left
+                // every wrapper-less agent (grok/opencode/kimi/pi/omp) unclassified
+                // and port scanning unregistered for these surfaces. The
+                // shell-activity path already resolves panel→workspace this way.
+                guard let app = AppDelegate.shared,
+                      let located = app.workspaceContainingPanel(
+                          panelId: scope.panelId,
+                          preferredWorkspaceId: scope.workspaceId
+                      ) else {
                     return
                 }
+                let tab = located.workspace
+                let workspaceId = tab.id
                 let validSurfaceIds = Set(tab.panels.keys)
                 tab.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
                 guard validSurfaceIds.contains(scope.panelId) else { return }
                 tab.surfaceTTYNames[scope.panelId] = ttyName
-                PortScanner.shared.registerTTY(workspaceId: scope.workspaceId, panelId: scope.panelId, ttyName: ttyName)
-                AgentDetector.shared.registerTTY(workspaceId: scope.workspaceId, panelId: scope.panelId, ttyName: ttyName)
+                PortScanner.shared.registerTTY(workspaceId: workspaceId, panelId: scope.panelId, ttyName: ttyName)
+                AgentDetector.shared.registerTTY(workspaceId: workspaceId, panelId: scope.panelId, ttyName: ttyName)
                 // C11-25 fix DoD #5: install a Sendable PID provider so
                 // the per-surface CPU/MEM sampler can attribute usage to
                 // the foreground process running on this tty (typically
@@ -8757,13 +9079,22 @@ class TerminalController {
         }
 
         if let inSurfaceArg {
-            return launchInExistingSurface(
+            let outcome = launchInExistingSurface(
                 surfaceArg: inSurfaceArg,
                 agent: resolved.agent,
                 bareCommand: resolved.launch.bareCommand,
                 cwd: cwdArg,
                 prompt: promptText
             )
+            // C11-178 rail-1: record only a successful launch. `--in-surface` is
+            // CLI-originated → `.launchAgent`. Re-derive cfg the same way sites 1
+            // and 4 do (the composition plan doesn't carry model/effort scalars).
+            if !outcome.hasPrefix("ERROR"), let store = AgentLaunchStatsStore.shared {
+                let cfg = projectConfig?.agents[resolved.agent] ?? userDefault.config(for: resolved.agent)
+                let stats = ResolvedLaunch(harness: resolved.agent.rawValue, model: cfg.model, effort: cfg.effort)
+                DispatchQueue.global(qos: .utility).async { store.recordLaunch(stats, source: .launchAgent) }
+            }
+            return outcome
         } else {
             // A-button mimic: create a new surface in a pane. Prompt args are
             // ignored on this path (the operator's configured initial prompt
@@ -8792,7 +9123,9 @@ class TerminalController {
                     result = "ERROR: Pane not found"
                     return
                 }
-                tab.launchAgentSurface(inPane: pane, explicitAgent: explicitAgent)
+                // CLI-originated launch → tag `.launchAgent` (not `.aButton`), so
+                // the stats rail distinguishes button-clicks from CLI launches.
+                tab.launchAgentSurface(inPane: pane, explicitAgent: explicitAgent, source: .launchAgent)
                 result = "OK"
             }
             return result

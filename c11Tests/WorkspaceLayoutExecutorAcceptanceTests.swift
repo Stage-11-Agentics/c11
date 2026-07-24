@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 import Bonsplit
 
@@ -20,8 +21,7 @@ import Bonsplit
 /// 3. Every `SurfaceSpec.metadata` / `SurfaceSpec.paneMetadata` entry in the
 ///    fixture round-trips through `SurfaceMetadataStore` / `PaneMetadataStore`.
 ///
-/// Per `CLAUDE.md`, tests are never run locally by the impl agent; this file
-/// is committed and exercised only in CI.
+/// Runs in the no-host `c11LogicTests` process both locally and in CI.
 @MainActor
 final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
 
@@ -41,6 +41,10 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        // The logic-test runner has no host application, but constructing a
+        // TabManager reaches Ghostty setup that reads NSApp. Create AppKit's
+        // process singleton without launching or hosting the c11 application.
+        _ = NSApplication.shared
         tabManager = TabManager()
     }
 
@@ -78,6 +82,211 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             named: "deep-nested-splits",
             expectedSurfaceIds: ["a", "b", "c", "d", "e"]
         )
+    }
+
+    // MARK: - Agent companion persistence/remapping
+
+    func testBrowserBeforeAgentLinkResolvesAfterAllSurfacesMaterialize() throws {
+        let plan = WorkspaceApplyPlan(
+            version: 1,
+            workspace: WorkspaceSpec(title: "browser before agent"),
+            layout: .pane(.init(surfaceIds: ["browser", "agent"])),
+            surfaces: [
+                SurfaceSpec(
+                    id: "browser",
+                    kind: .browser,
+                    url: "https://example.com",
+                    linkedAgentSurfacePlanId: "agent"
+                ),
+                SurfaceSpec(
+                    id: "agent",
+                    kind: .terminal,
+                    declaredAgentKind: "codex"
+                )
+            ]
+        )
+        var applied: [(browser: UUID, agent: UUID)] = []
+        let deps = WorkspaceLayoutExecutorDependencies(
+            tabManager: tabManager,
+            workspaceRefMinter: { "workspace:\($0.uuidString)" },
+            surfaceRefMinter: { "surface:\($0.uuidString)" },
+            paneRefMinter: { "pane:\($0.uuidString)" },
+            applyCompanionLink: { _, browserID, agentID in
+                applied.append((browserID, agentID))
+            }
+        )
+
+        let result = WorkspaceLayoutExecutor.apply(
+            plan,
+            options: ApplyOptions(select: false),
+            dependencies: deps
+        )
+        XCTAssertTrue(result.companionDiagnostics.isEmpty)
+        XCTAssertEqual(applied.count, 1)
+        XCTAssertEqual(applied.first?.browser, parseUUIDSuffix(result.surfaceRefs["browser"]))
+        XCTAssertEqual(applied.first?.agent, parseUUIDSuffix(result.surfaceRefs["agent"]))
+    }
+
+    func testCompanionApplyRejectsUndeclaredAgentWithStructuredDiagnostic() {
+        let plan = WorkspaceApplyPlan(
+            version: 1,
+            workspace: WorkspaceSpec(title: "invalid target"),
+            layout: .pane(.init(surfaceIds: ["browser", "terminal"])),
+            surfaces: [
+                SurfaceSpec(
+                    id: "browser",
+                    kind: .browser,
+                    linkedAgentSurfacePlanId: "terminal"
+                ),
+                SurfaceSpec(id: "terminal", kind: .terminal)
+            ]
+        )
+        var mutationCount = 0
+        let deps = WorkspaceLayoutExecutorDependencies(
+            tabManager: tabManager,
+            workspaceRefMinter: { "workspace:\($0.uuidString)" },
+            surfaceRefMinter: { "surface:\($0.uuidString)" },
+            paneRefMinter: { "pane:\($0.uuidString)" },
+            applyCompanionLink: { _, _, _ in mutationCount += 1 }
+        )
+
+        let result = WorkspaceLayoutExecutor.apply(
+            plan,
+            options: ApplyOptions(select: false),
+            dependencies: deps
+        )
+        XCTAssertEqual(mutationCount, 0)
+        XCTAssertEqual(result.companionDiagnostics, [
+            CompanionPlanDiagnostic(
+                code: .targetNotAgent,
+                severity: .error,
+                sourcePlanID: "browser",
+                targetPlanID: "terminal"
+            )
+        ])
+        let expectedMessage = CompanionPlanDiagnosticMessage.localized(
+            code: .targetNotAgent,
+            sourcePlanID: "browser",
+            targetPlanID: "terminal"
+        )
+        XCTAssertTrue(expectedMessage.contains("browser"))
+        XCTAssertTrue(expectedMessage.contains("terminal"))
+        XCTAssertTrue(result.warnings.contains(expectedMessage))
+        XCTAssertTrue(result.failures.contains {
+            $0.code == "companion_link_target_not_agent"
+                && $0.message == expectedMessage
+        })
+    }
+
+    func testTwoPassCaptureRemapsLinkAndOmitsOrphanWithWarning() throws {
+        let seedPlan = WorkspaceApplyPlan(
+            version: 1,
+            workspace: WorkspaceSpec(title: "capture remap"),
+            layout: .pane(.init(surfaceIds: ["browser", "agent"])),
+            surfaces: [
+                SurfaceSpec(id: "browser", kind: .browser, url: "https://example.com"),
+                SurfaceSpec(id: "agent", kind: .terminal)
+            ]
+        )
+        let seed = WorkspaceLayoutExecutor.apply(
+            seedPlan,
+            options: ApplyOptions(select: false),
+            dependencies: WorkspaceLayoutExecutorDependencies(
+                tabManager: tabManager,
+                workspaceRefMinter: { "workspace:\($0.uuidString)" },
+                surfaceRefMinter: { "surface:\($0.uuidString)" },
+                paneRefMinter: { "pane:\($0.uuidString)" }
+            )
+        )
+        let workspace = try XCTUnwrap(resolveWorkspace(from: seed.workspaceRef))
+        let browserID = try XCTUnwrap(parseUUIDSuffix(seed.surfaceRefs["browser"]))
+        let agentID = try XCTUnwrap(parseUUIDSuffix(seed.surfaceRefs["agent"]))
+
+        let captured = WorkspacePlanCapture.capture(
+            workspace: workspace,
+            companionBridge: WorkspacePlanCompanionCaptureBridge(
+                linkedAgentForBrowser: { id in
+                    id == browserID ? AgentSurfaceLink(
+                        surfaceID: agentID,
+                        lastKnownName: "Agent"
+                    ) : nil
+                },
+                declaredAgentKindForTerminal: { id in id == agentID ? "codex" : nil }
+            )
+        )
+        XCTAssertEqual(captured.plan.surfaces.map(\.id), ["s1", "s2"])
+        XCTAssertEqual(captured.plan.surfaces[0].linkedAgentSurfacePlanId, "s2")
+        XCTAssertEqual(captured.plan.surfaces[1].declaredAgentKind, "codex")
+        XCTAssertTrue(captured.warnings.isEmpty)
+
+        let missingAgentID = UUID()
+        let orphanBridge = WorkspacePlanCompanionCaptureBridge(
+            linkedAgentForBrowser: { id in
+                id == browserID ? AgentSurfaceLink(
+                    surfaceID: missingAgentID,
+                    lastKnownName: "Gone"
+                ) : nil
+            },
+            declaredAgentKindForTerminal: { id in id == agentID ? "codex" : nil }
+        )
+        let orphaned = WorkspacePlanCapture.capture(
+            workspace: workspace,
+            companionBridge: orphanBridge
+        )
+        XCTAssertNil(orphaned.plan.surfaces[0].linkedAgentSurfacePlanId)
+        XCTAssertEqual(orphaned.warnings, [
+            CompanionPlanDiagnostic(
+                code: .orphanOmitted,
+                severity: .warning,
+                sourcePlanID: "s1",
+                targetPlanID: nil
+            )
+        ])
+
+        let declassifiedBridge = WorkspacePlanCompanionCaptureBridge(
+            linkedAgentForBrowser: { id in
+                id == browserID ? AgentSurfaceLink(
+                    surfaceID: agentID,
+                    lastKnownName: "Former Agent"
+                ) : nil
+            },
+            declaredAgentKindForTerminal: { _ in nil }
+        )
+        let declassified = WorkspacePlanCapture.capture(
+            workspace: workspace,
+            companionBridge: declassifiedBridge
+        )
+        XCTAssertNil(declassified.plan.surfaces[0].linkedAgentSurfacePlanId)
+        XCTAssertEqual(declassified.warnings, [
+            CompanionPlanDiagnostic(
+                code: .orphanOmitted,
+                severity: .warning,
+                sourcePlanID: "s1",
+                targetPlanID: "s2"
+            )
+        ])
+
+        let snapshot = try XCTUnwrap(LiveWorkspaceSnapshotSource(
+            tabManager: tabManager,
+            c11Version: "companion-test+0"
+        ).captureResult(
+            workspaceId: workspace.id,
+            origin: .manual,
+            clock: { Date(timeIntervalSince1970: 1_745_000_000) },
+            companionBridge: orphanBridge
+        ))
+        XCTAssertEqual(snapshot.warnings, orphaned.warnings)
+        XCTAssertNil(snapshot.snapshot.plan.surfaces[0].linkedAgentSurfacePlanId)
+
+        let blueprint = try XCTUnwrap(WorkspaceBlueprintExporter(
+            tabManager: tabManager
+        ).exportWithDiagnostics(
+            workspaceId: workspace.id,
+            name: "Orphan capture",
+            companionBridge: orphanBridge
+        ))
+        XCTAssertEqual(blueprint.warnings, orphaned.warnings)
+        XCTAssertNil(blueprint.file.plan.surfaces[0].linkedAgentSurfacePlanId)
     }
 
     // MARK: - Phase 0 parity: whitespace-only command (B4)
@@ -138,6 +347,88 @@ final class WorkspaceLayoutExecutorAcceptanceTests: XCTestCase {
             sent,
             " ",
             "Phase 0 whitespace command must reach sendText verbatim"
+        )
+        #endif
+    }
+
+    // MARK: - Opt-in submit (blueprint `submit: true`)
+
+    /// Shared driver: apply a single-terminal plan carrying `command` and the
+    /// given `submitCommand`, then return the freshly created (not-yet-attached)
+    /// terminal surface so the caller can inspect what was queued.
+    private func applySingleTerminal(
+        command: String,
+        submitCommand: Bool
+    ) throws -> TerminalSurface {
+        let plan = WorkspaceApplyPlan(
+            version: 1,
+            workspace: WorkspaceSpec(title: "submit opt-in"),
+            layout: .pane(LayoutTreeSpec.PaneSpec(surfaceIds: ["t"])),
+            surfaces: [
+                SurfaceSpec(
+                    id: "t",
+                    kind: .terminal,
+                    title: "launcher",
+                    command: command,
+                    submitCommand: submitCommand
+                )
+            ]
+        )
+        let deps = WorkspaceLayoutExecutorDependencies(
+            tabManager: tabManager,
+            workspaceRefMinter: { "workspace:\($0.uuidString)" },
+            surfaceRefMinter: { "surface:\($0.uuidString)" },
+            paneRefMinter: { "pane:\($0.uuidString)" }
+        )
+        let result = WorkspaceLayoutExecutor.apply(
+            plan,
+            options: ApplyOptions(select: false),
+            dependencies: deps
+        )
+        let workspace = try XCTUnwrap(resolveWorkspace(from: result.workspaceRef))
+        let panelId = try XCTUnwrap(parseUUIDSuffix(result.surfaceRefs["t"]))
+        let terminal = try XCTUnwrap(workspace.panels[panelId] as? TerminalPanel)
+        return terminal.surface
+    }
+
+    /// `submit: true` routes an explicit command through `sendSubmitFormText`,
+    /// which on a not-yet-attached surface queues the bytes AND arms a Return
+    /// to fire on flush. Both the command text and the armed submit are
+    /// observable.
+    func testSubmitTrueArmsReturnOnFlush() throws {
+        let surface = try applySingleTerminal(
+            command: "python3 /path/position.py --watch",
+            submitCommand: true
+        )
+        #if DEBUG
+        XCTAssertEqual(
+            surface.pendingInitialInputForTests,
+            "python3 /path/position.py --watch",
+            "submit:true still delivers the command bytes"
+        )
+        XCTAssertTrue(
+            surface.pendingSubmitOnFlushForTests,
+            "submit:true must arm a synthetic Return via sendSubmitFormText"
+        )
+        #endif
+    }
+
+    /// Default (`submit` absent / false) preserves Phase 0 parity: the command
+    /// is typed via `sendText` but no Return is armed, so it sits at the prompt.
+    func testSubmitFalseDoesNotArmReturn() throws {
+        let surface = try applySingleTerminal(
+            command: "python3 /path/position.py --watch",
+            submitCommand: false
+        )
+        #if DEBUG
+        XCTAssertEqual(
+            surface.pendingInitialInputForTests,
+            "python3 /path/position.py --watch",
+            "default path still delivers the command bytes"
+        )
+        XCTAssertFalse(
+            surface.pendingSubmitOnFlushForTests,
+            "default must not submit — sendText leaves the line at the prompt"
         )
         #endif
     }

@@ -182,6 +182,9 @@ struct cmuxApp: App {
     @AppStorage(KeyboardShortcutSettings.Action.newSurface.defaultsKey) private var newSurfaceShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.openBrowser.defaultsKey) private var openBrowserShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.renameTab.defaultsKey) private var renameTabShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.globalFontIncrease.defaultsKey) private var globalFontIncreaseShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.globalFontDecrease.defaultsKey) private var globalFontDecreaseShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.globalFontReset.defaultsKey) private var globalFontResetShortcutData = Data()
     @AppStorage(ChromeScaleSettings.presetKey) private var chromeScalePresetRaw = ChromeScaleSettings.defaultPreset.rawValue
     @AppStorage(ChromeScaleSettings.customMultiplierKey) private var chromeScaleCustomMultiplier: Double = Double(ChromeScaleSettings.defaultCustomMultiplier)
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -989,6 +992,22 @@ struct cmuxApp: App {
                 }
                 .keyboardShortcut("t", modifiers: [.command, .option])
                 .disabled(!activeTabManager.canCloseOtherTabsInFocusedPane())
+
+                Divider()
+
+                // Global font size: fans out to every terminal surface at once,
+                // relative to each surface's current size (unlike per-surface Cmd +/-/0).
+                splitCommandButton(title: String(localized: "menu.pane.globalFontIncrease", defaultValue: "Increase Font Size (All Terminals)"), shortcut: globalFontIncreaseMenuShortcut) {
+                    GlobalTerminalFontSize.apply(.increase)
+                }
+
+                splitCommandButton(title: String(localized: "menu.pane.globalFontDecrease", defaultValue: "Decrease Font Size (All Terminals)"), shortcut: globalFontDecreaseMenuShortcut) {
+                    GlobalTerminalFontSize.apply(.decrease)
+                }
+
+                splitCommandButton(title: String(localized: "menu.pane.globalFontReset", defaultValue: "Reset Font Size (All Terminals)"), shortcut: globalFontResetMenuShortcut) {
+                    GlobalTerminalFontSize.apply(.reset)
+                }
             }
 
             // C11-41 Browser menu: every browser-surface verb in one home.
@@ -1236,6 +1255,18 @@ struct cmuxApp: App {
 
     private var renameTabMenuShortcut: StoredShortcut {
         decodeShortcut(from: renameTabShortcutData, fallback: KeyboardShortcutSettings.Action.renameTab.defaultShortcut)
+    }
+
+    private var globalFontIncreaseMenuShortcut: StoredShortcut {
+        decodeShortcut(from: globalFontIncreaseShortcutData, fallback: KeyboardShortcutSettings.Action.globalFontIncrease.defaultShortcut)
+    }
+
+    private var globalFontDecreaseMenuShortcut: StoredShortcut {
+        decodeShortcut(from: globalFontDecreaseShortcutData, fallback: KeyboardShortcutSettings.Action.globalFontDecrease.defaultShortcut)
+    }
+
+    private var globalFontResetMenuShortcut: StoredShortcut {
+        decodeShortcut(from: globalFontResetShortcutData, fallback: KeyboardShortcutSettings.Action.globalFontReset.defaultShortcut)
     }
 
     private func openNewMarkdownSurface() {
@@ -3112,6 +3143,9 @@ enum SettingsNavigationTarget: String {
     case browserImport
     case textBoxInput
     case keyboardShortcuts
+    /// The Agents & Automation page's default-agent / Saved Configs section
+    /// (C11-182), the anchor the agent-config editor navigates to.
+    case agents
 }
 
 enum SettingsNavigationRequest {
@@ -4364,6 +4398,8 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
             return .input
         case .keyboardShortcuts:
             return .keyboardShortcuts
+        case .agents:
+            return .agents
         }
     }
 }
@@ -4386,6 +4422,8 @@ struct SettingsView: View {
     private var internalBrowserEnabled = SurfaceTypeAvailability.defaultEnabled
     @AppStorage(SurfaceTypeAvailability.markdownSurfacesEnabledKey)
     private var markdownSurfacesEnabled = SurfaceTypeAvailability.defaultEnabled
+    @AppStorage(TabOrdinalDisplaySettings.showSurfaceIdsInTabTitlesKey)
+    private var showSurfaceIdsInTabTitles = TabOrdinalDisplaySettings.defaultShowSurfaceIds
     @AppStorage(ClaudeCodeIntegrationSettings.hooksEnabledKey)
     private var claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
     @AppStorage(TelemetrySettings.sendAnonymousTelemetryKey)
@@ -4409,11 +4447,9 @@ struct SettingsView: View {
     @AppStorage(NotificationSoundSettings.customFilePathKey)
     private var notificationSoundCustomFilePath = NotificationSoundSettings.defaultCustomFilePath
     @AppStorage(NotificationSoundSettings.customCommandKey) private var notificationCustomCommand = NotificationSoundSettings.defaultCustomCommand
-    @AppStorage(NotificationBadgeSettings.dockBadgeEnabledKey) private var notificationDockBadgeEnabled = NotificationBadgeSettings.defaultDockBadgeEnabled
     @AppStorage(NotificationPaneRingSettings.enabledKey) private var notificationPaneRingEnabled = NotificationPaneRingSettings.defaultEnabled
     @AppStorage(NotificationPaneFlashSettings.enabledKey) private var notificationPaneFlashEnabled = NotificationPaneFlashSettings.defaultEnabled
     @AppStorage(NotificationFlashDurationSettings.storageKey) private var notificationFlashDurationMs: Int = NotificationFlashDurationSettings.defaultMs
-    @AppStorage(MenuBarExtraSettings.showInMenuBarKey) private var showMenuBarExtra = MenuBarExtraSettings.defaultShowInMenuBar
     @AppStorage(QuitWarningSettings.warnBeforeQuitKey) private var warnBeforeQuitShortcut = QuitWarningSettings.defaultWarnBeforeQuit
     @AppStorage(CommandPaletteRenameSelectionSettings.selectAllOnFocusKey)
     private var commandPaletteRenameSelectAllOnFocus = CommandPaletteRenameSelectionSettings.defaultSelectAllOnFocus
@@ -5120,6 +5156,20 @@ struct SettingsView: View {
                 Toggle("", isOn: $markdownSurfacesEnabled)
                     .labelsHidden()
                     .controlSize(.small)
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                String(localized: "settings.app.showSurfaceIdsInTabTitles", defaultValue: "Show Surface IDs in Tab Titles"),
+                subtitle: showSurfaceIdsInTabTitles
+                    ? String(localized: "settings.app.showSurfaceIdsInTabTitles.subtitleOn", defaultValue: "Tabs display their surface number (\"292: Build agent\"). Say the number to address a surface; agents target it as surface:N.")
+                    : String(localized: "settings.app.showSurfaceIdsInTabTitles.subtitleOff", defaultValue: "Tabs display their title only. Turn on to prefix every tab with its addressable surface number.")
+            ) {
+                Toggle("", isOn: $showSurfaceIdsInTabTitles)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .accessibilityIdentifier("SettingsShowSurfaceIdsToggle")
             }
         }
     }
@@ -5938,31 +5988,6 @@ struct SettingsView: View {
         SettingsSectionHeader(title: String(localized: "settings.section.systemSignals", defaultValue: "System Signals"))
         SettingsCard {
             SettingsCardRow(
-                String(localized: "settings.app.dockBadge", defaultValue: "Dock Badge"),
-                subtitle: String(localized: "settings.app.dockBadge.subtitle", defaultValue: "Show unread count on app icon (Dock and Cmd+Tab).")
-            ) {
-                Toggle("", isOn: $notificationDockBadgeEnabled)
-                    .labelsHidden()
-                    .controlSize(.small)
-            }
-
-            SettingsCardDivider()
-
-            SettingsCardRow(
-                String(localized: "settings.app.showInMenuBar", defaultValue: "Show in Menu Bar"),
-                subtitle: String(localized: "settings.app.showInMenuBar.subtitle", defaultValue: "Keep c11 in the menu bar for unread notifications and quick actions.")
-            ) {
-                Toggle("", isOn: $showMenuBarExtra)
-                    .labelsHidden()
-                    .controlSize(.small)
-                    .accessibilityLabel(
-                        String(localized: "settings.app.showInMenuBar", defaultValue: "Show in Menu Bar")
-                    )
-            }
-
-            SettingsCardDivider()
-
-            SettingsCardRow(
                 String(localized: "settings.notifications.desktop.title", defaultValue: "Desktop Notifications"),
                 subtitle: notificationPermissionSubtitle
             ) {
@@ -6219,6 +6244,7 @@ struct SettingsView: View {
             localized: "settings.section.defaultAgent",
             defaultValue: "default agent"
         ))
+        .id(SettingsNavigationTarget.agents)
         SettingsCardNote(String(
             localized: "settings.defaultAgent.note",
             defaultValue: "the A button on every pane launches this. new terminal still opens bash. drop a `.c11/agents.json` in any repo to override these settings for terminals opened there."
@@ -6440,6 +6466,11 @@ struct SettingsView: View {
                 actions: [.focusLeft, .focusRight, .focusUp, .focusDown, .splitRight, .splitDown, .toggleSplitZoom, .splitBrowserRight, .splitBrowserDown]
             ),
             ShortcutSettingsGroup(
+                id: "font",
+                title: String(localized: "settings.shortcuts.group.font", defaultValue: "Font"),
+                actions: [.globalFontIncrease, .globalFontDecrease, .globalFontReset]
+            ),
+            ShortcutSettingsGroup(
                 id: "browser",
                 title: String(localized: "settings.shortcuts.group.browser", defaultValue: "Browser"),
                 actions: [.openBrowser, .toggleBrowserDeveloperTools, .showBrowserJavaScriptConsole]
@@ -6491,6 +6522,7 @@ struct SettingsView: View {
         socketControlMode = SocketControlSettings.defaultMode.rawValue
         internalBrowserEnabled = SurfaceTypeAvailability.defaultEnabled
         markdownSurfacesEnabled = SurfaceTypeAvailability.defaultEnabled
+        showSurfaceIdsInTabTitles = TabOrdinalDisplaySettings.defaultShowSurfaceIds
         claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
         sendAnonymousTelemetry = TelemetrySettings.defaultSendAnonymousTelemetry
         browserSearchEngine = BrowserSearchSettings.defaultSearchEngine.rawValue
@@ -6512,10 +6544,8 @@ struct SettingsView: View {
         showNotificationCustomSoundErrorAlert = false
         notificationCustomSoundErrorAlertMessage = ""
         notificationCustomCommand = NotificationSoundSettings.defaultCustomCommand
-        notificationDockBadgeEnabled = NotificationBadgeSettings.defaultDockBadgeEnabled
         notificationPaneRingEnabled = NotificationPaneRingSettings.defaultEnabled
         notificationPaneFlashEnabled = NotificationPaneFlashSettings.defaultEnabled
-        showMenuBarExtra = MenuBarExtraSettings.defaultShowInMenuBar
         warnBeforeQuitShortcut = QuitWarningSettings.defaultWarnBeforeQuit
         commandPaletteRenameSelectAllOnFocus = CommandPaletteRenameSelectionSettings.defaultSelectAllOnFocus
         commandPaletteSearchAllSurfaces = CommandPaletteSwitcherSearchSettings.defaultSearchAllSurfaces

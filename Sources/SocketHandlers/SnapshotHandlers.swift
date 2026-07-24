@@ -63,16 +63,26 @@ extension TerminalController {
         // so each inner snapshot stays independently restorable.
         let captureAll = (params["all"] as? Bool) == true
         if captureAll {
-            var snapshots: [(envelope: WorkspaceSnapshotFile, ref: String, isSelected: Bool)] = []
+            var snapshots: [(
+                envelope: WorkspaceSnapshotFile,
+                ref: String,
+                isSelected: Bool,
+                warnings: [CompanionPlanDiagnostic]
+            )] = []
             v2MainSync {
                 let source = LiveWorkspaceSnapshotSource(tabManager: tabManager)
                 let selectedId = tabManager.selectedWorkspace?.id
                 for ws in tabManager.tabs {
-                    if let envelope = source.capture(
+                    if let capture = source.captureResult(
                         workspaceId: ws.id, origin: origin, clock: { Date() }
                     ) {
                         let ref = self.v2EnsureHandleRef(kind: .workspace, uuid: ws.id)
-                        snapshots.append((envelope, ref, ws.id == selectedId))
+                        snapshots.append((
+                            capture.snapshot,
+                            ref,
+                            ws.id == selectedId,
+                            capture.warnings
+                        ))
                     }
                 }
             }
@@ -82,14 +92,15 @@ extension TerminalController {
             var selectedIndex: Int?
             var anyWriteFailed = false
             for (offset, item) in snapshots.enumerated() {
-                let (envelope, ref, isSelected) = item
+                let (envelope, ref, isSelected, captureWarnings) = item
                 do {
                     let path = try store.writeToDefaultDirectory(envelope)
                     var row: [String: Any] = [
                         "snapshot_id": envelope.snapshotId,
                         "path": path.path,
                         "surface_count": envelope.plan.surfaces.count,
-                        "workspace_ref": ref
+                        "workspace_ref": ref,
+                        "warnings": captureWarnings.map(Self.companionDiagnosticPayload)
                     ]
                     if isSelected { row["selected"] = true }
                     results.append(row)
@@ -104,7 +115,8 @@ extension TerminalController {
                     results.append([
                         "snapshot_id": envelope.snapshotId,
                         "error": "\(error)",
-                        "workspace_ref": ref
+                        "workspace_ref": ref,
+                        "warnings": captureWarnings.map(Self.companionDiagnosticPayload)
                     ])
                     anyWriteFailed = true
                 }
@@ -141,17 +153,22 @@ extension TerminalController {
             return .ok(payload)
         }
 
-        var snapshot: WorkspaceSnapshotFile?
+        var captureResult: WorkspaceSnapshotCaptureResult?
         var workspaceRef = ""
         v2MainSync {
             guard let workspace = v2ResolveWorkspace(params: params, tabManager: tabManager) else { return }
             let source = LiveWorkspaceSnapshotSource(tabManager: tabManager)
-            snapshot = source.capture(workspaceId: workspace.id, origin: origin, clock: { Date() })
+            captureResult = source.captureResult(
+                workspaceId: workspace.id,
+                origin: origin,
+                clock: { Date() }
+            )
             workspaceRef = self.v2EnsureHandleRef(kind: .workspace, uuid: workspace.id)
         }
-        guard let envelope = snapshot else {
+        guard let captureResult else {
             return .err(code: "not_found", message: "Workspace not found for snapshot.create", data: nil)
         }
+        let envelope = captureResult.snapshot
         let store = WorkspaceSnapshotStore()
         let path: URL
         do {
@@ -165,9 +182,29 @@ extension TerminalController {
             "snapshot_id": envelope.snapshotId,
             "path": path.path,
             "surface_count": envelope.plan.surfaces.count,
-            "workspace_ref": workspaceRef
+            "workspace_ref": workspaceRef,
+            "warnings": captureResult.warnings.map(Self.companionDiagnosticPayload)
         ]
         return .ok(payload)
+    }
+
+    nonisolated static func companionDiagnosticPayload(
+        _ diagnostic: CompanionPlanDiagnostic
+    ) -> [String: Any] {
+        var payload: [String: Any] = [
+            "code": diagnostic.code.rawValue,
+            "severity": diagnostic.severity.rawValue,
+            "source_plan_id": diagnostic.sourcePlanID,
+            "message": CompanionPlanDiagnosticMessage.localized(
+                code: diagnostic.code,
+                sourcePlanID: diagnostic.sourcePlanID,
+                targetPlanID: diagnostic.targetPlanID
+            )
+        ]
+        if let target = diagnostic.targetPlanID {
+            payload["target_plan_id"] = target
+        }
+        return payload
     }
 
     /// `snapshot.restore`: read a snapshot by id, run the embedded plan

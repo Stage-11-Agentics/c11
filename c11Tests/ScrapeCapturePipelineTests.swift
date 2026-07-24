@@ -28,6 +28,40 @@ final class ScrapeCapturePipelineTests: XCTestCase {
         }
     }
 
+    final class CountingBatchScraper: ConversationScraper, @unchecked Sendable {
+        let kind: String
+        let preset: [ScrapeCandidate]
+        let failure: ScrapeCollectionFailure?
+        private(set) var collectionCount = 0
+        private(set) var requestedBudgets: [Int] = []
+
+        init(
+            kind: String = "codex",
+            preset: [ScrapeCandidate],
+            failure: ScrapeCollectionFailure? = nil
+        ) {
+            self.kind = kind
+            self.preset = preset
+            self.failure = failure
+        }
+
+        func candidates(cwd: String?) -> [ScrapeCandidate] { preset }
+
+        func collectBatchCandidates(
+            contexts: [ScrapeCaptureContext],
+            maxCandidates: Int
+        ) -> ScrapeCandidateCollectionResult {
+            collectionCount += 1
+            requestedBudgets.append(maxCandidates)
+            if let failure { return .failure(failure) }
+            let sorted = preset.sorted {
+                if $0.mtime != $1.mtime { return $0.mtime > $1.mtime }
+                return $0.filePath < $1.filePath
+            }
+            return .success(Array(sorted.prefix(maxCandidates)))
+        }
+    }
+
     /// C11-164 (RES-2): logic-local filesystem mock supporting the bounded
     /// head read used by `CodexScraper` cwd recovery. Recursive listing +
     /// per-path head content; stat-only otherwise.
@@ -93,7 +127,7 @@ final class ScrapeCapturePipelineTests: XCTestCase {
 
     // MARK: - Case 2: ambiguous codex → skip
 
-    func testAmbiguousCodexCandidatesYieldUnknownAndSkip() {
+    func testAmbiguousCodexCandidatesYieldUnknownAndSkip() async throws {
         let surfaceId = UUID().uuidString
         let cwd = "/work/proj"
         let now = Date()
@@ -106,10 +140,14 @@ final class ScrapeCapturePipelineTests: XCTestCase {
         let pipeline = ScrapeCapturePipeline(scrapers: scrapers, strategies: .v1)
         let contexts = [ScrapeCaptureContext(surfaceId: surfaceId, kind: "codex", cwd: cwd)]
 
-        let captured = pipeline.captureRefs(contexts: contexts, existing: [:])
-        XCTAssertEqual(captured.count, 1)
-        XCTAssertEqual(captured[0].ref.state, .unknown)
-        if case .skip = CodexStrategy().resume(ref: captured[0].ref) {
+        let batch = try await pipeline.collectCandidateBatch(contexts: contexts)
+        let store = ConversationStore()
+        let result = await store.applyScrapeBatch(batch, pipeline: pipeline)
+        XCTAssertEqual(result.quarantinedSurfaceIds, [surfaceId])
+        let active = await store.active(for: surfaceId)
+        XCTAssertEqual(active?.state, .unknown)
+        XCTAssertEqual(active?.quarantineReason, .ambiguousGlobalAssignment)
+        if let active, case .skip = CodexStrategy().resume(ref: active) {
             // expected
         } else {
             XCTFail("ambiguous ref must skip resume")
@@ -164,7 +202,7 @@ final class ScrapeCapturePipelineTests: XCTestCase {
 
     // MARK: - Case 5: runScrapeCapture actor driver round-trips through the store
 
-    func testRunScrapeCaptureAppliesRefToStoreAndRoundTripsToResume() async {
+    func testRunScrapeCaptureAppliesRefToStoreAndRoundTripsToResume() async throws {
         let surfaceId = UUID().uuidString
         let cwd = "/work/proj"
         let scrapers = ConversationScraperRegistry(scrapers: [
@@ -174,8 +212,8 @@ final class ScrapeCapturePipelineTests: XCTestCase {
         let contexts = [ScrapeCaptureContext(surfaceId: surfaceId, kind: "codex", cwd: cwd)]
 
         let store = ConversationStore()
-        let applied = await store.runScrapeCapture(contexts: contexts, pipeline: pipeline)
-        XCTAssertEqual(applied.count, 1)
+        let applied = try await store.runScrapeCapture(contexts: contexts, pipeline: pipeline)
+        XCTAssertEqual(applied.applied.count, 1)
 
         // The store's active ref for the surface is now the scraped, resumable ref.
         let active = await store.active(for: surfaceId)
@@ -230,6 +268,269 @@ final class ScrapeCapturePipelineTests: XCTestCase {
         let contexts = ScrapeCaptureContext.contexts(from: snapshot)
         XCTAssertEqual(contexts.count, 1)
         XCTAssertEqual(contexts[0].lastActivityTimestamp, floor)
+    }
+
+    // MARK: - C11-206: bounded global assignment and atomic commit
+
+    private func stableUUID(_ index: Int) -> String {
+        String(format: "00000000-0000-4000-8000-%012d", index)
+    }
+
+    func testThirtyTwoLiveCodexSurfacesCollectOnceAndResolvePastLegacySixteen() async throws {
+        let now = Date()
+        let floor = now.addingTimeInterval(-120)
+        let contexts = (0..<32).map { index in
+            ScrapeCaptureContext(
+                surfaceId: "S\(index)",
+                kind: "codex",
+                cwd: "/work/p\(index)",
+                lastActivityTimestamp: floor
+            )
+        }
+        let foreign = (100..<120).map { index in
+            candidate(
+                stableUUID(index),
+                mtime: now.addingTimeInterval(TimeInterval(1_000 - index)),
+                cwd: "/foreign/p\(index)"
+            )
+        }
+        let stale = (200..<220).map { index in
+            candidate(
+                stableUUID(index),
+                mtime: floor.addingTimeInterval(-TimeInterval(index)),
+                cwd: "/work/p\(index - 200)"
+            )
+        }
+        let live = (0..<32).map { index in
+            candidate(
+                stableUUID(index),
+                mtime: now.addingTimeInterval(-TimeInterval(index)),
+                cwd: "/work/p\(index)"
+            )
+        }
+        let scraper = CountingBatchScraper(preset: foreign + stale + live)
+        let pipeline = ScrapeCapturePipeline(
+            scrapers: ConversationScraperRegistry(scrapers: [scraper]),
+            strategies: .v1
+        )
+
+        let batch = try await pipeline.collectCandidateBatch(contexts: contexts)
+        XCTAssertEqual(scraper.collectionCount, 1, "one global enumeration per kind")
+        XCTAssertEqual(scraper.requestedBudgets, [128])
+        let sortedIds = batch.candidatesByKind["codex"]?.map(\.id) ?? []
+        let lastLiveId = stableUUID(31)
+        XCTAssertGreaterThan(sortedIds.firstIndex(of: lastLiveId) ?? -1, 15,
+                             "the oldest live candidate must be discoverable beyond legacy top-16")
+
+        let store = ConversationStore()
+        let result = await store.applyScrapeBatch(batch, pipeline: pipeline)
+        XCTAssertEqual(result.applied.count, 32)
+        XCTAssertTrue(result.quarantinedSurfaceIds.isEmpty)
+        let assigned = Dictionary(uniqueKeysWithValues: result.applied.map { ($0.surfaceId, $0.ref.id) })
+        XCTAssertEqual(Set(assigned.values).count, 32)
+        XCTAssertEqual(assigned["S31"], lastLiveId)
+    }
+
+    func testSameCwdWithoutCausalIdentityQuarantinesEverySurface() async throws {
+        let now = Date()
+        let contexts = [
+            ScrapeCaptureContext(surfaceId: "S1", kind: "codex", cwd: "/work/shared"),
+            ScrapeCaptureContext(surfaceId: "S2", kind: "codex", cwd: "/work/shared")
+        ]
+        let scraper = CountingBatchScraper(preset: [
+            candidate(stableUUID(1), mtime: now, cwd: "/work/shared"),
+            candidate(stableUUID(2), mtime: now.addingTimeInterval(-1), cwd: "/work/shared")
+        ])
+        let pipeline = ScrapeCapturePipeline(
+            scrapers: ConversationScraperRegistry(scrapers: [scraper])
+        )
+        let batch = try await pipeline.collectCandidateBatch(contexts: contexts)
+        let store = ConversationStore()
+        let result = await store.applyScrapeBatch(batch, pipeline: pipeline)
+
+        XCTAssertEqual(result.quarantinedSurfaceIds, ["S1", "S2"])
+        let s1 = await store.active(for: "S1")
+        let s2 = await store.active(for: "S2")
+        XCTAssertEqual(s1?.quarantineReason, .sameCwdWithoutCausalIdentity)
+        XCTAssertEqual(s2?.quarantineReason, .sameCwdWithoutCausalIdentity)
+    }
+
+    func testUnknownCwdCandidateCannotBeConsumedByAnySurface() async throws {
+        let contexts = [
+            ScrapeCaptureContext(surfaceId: "S1", kind: "codex"),
+            ScrapeCaptureContext(surfaceId: "S2", kind: "codex")
+        ]
+        let scraper = CountingBatchScraper(preset: [
+            candidate(stableUUID(1), mtime: Date(), cwd: nil)
+        ])
+        let pipeline = ScrapeCapturePipeline(
+            scrapers: ConversationScraperRegistry(scrapers: [scraper])
+        )
+        let batch = try await pipeline.collectCandidateBatch(contexts: contexts)
+        let store = ConversationStore()
+        let result = await store.applyScrapeBatch(batch, pipeline: pipeline)
+
+        XCTAssertTrue(result.applied.isEmpty)
+        XCTAssertTrue(result.quarantinedSurfaceIds.isEmpty)
+        let s1 = await store.active(for: "S1")
+        let s2 = await store.active(for: "S2")
+        XCTAssertNil(s1)
+        XCTAssertNil(s2)
+    }
+
+    func testKnownSurfaceRejectsForeignCandidateWithUnknownCwd() {
+        let inputs = ConversationStrategyInputs(
+            surfaceId: "S1",
+            cwd: "/work/project",
+            lastActivityTimestamp: nil,
+            wrapperClaim: nil,
+            push: nil,
+            scrapeCandidates: [
+                candidate(stableUUID(1), mtime: Date(), cwd: nil),
+            ]
+        )
+
+        XCTAssertTrue(CodexStrategy().eligibleCandidates(inputs: inputs).isEmpty)
+        XCTAssertNil(CodexStrategy().capture(inputs: inputs))
+    }
+
+    func testMissingSurfaceCwdRejectsKnownCandidateCwd() {
+        let inputs = ConversationStrategyInputs(
+            surfaceId: "S1",
+            cwd: nil,
+            lastActivityTimestamp: nil,
+            wrapperClaim: nil,
+            push: nil,
+            scrapeCandidates: [
+                candidate(stableUUID(1), mtime: Date(), cwd: "/foreign/project"),
+            ]
+        )
+
+        XCTAssertTrue(CodexStrategy().eligibleCandidates(inputs: inputs).isEmpty)
+        XCTAssertNil(CodexStrategy().capture(inputs: inputs))
+    }
+
+    func testWrapperClaimCwdCanProvideExplicitNormalizedOwnerContext() {
+        let claim = ConversationRef(
+            kind: "codex",
+            id: "wrapper-claim:S1:fixture",
+            placeholder: true,
+            cwd: "/work/shared/../shared",
+            capturedAt: Date(timeIntervalSince1970: 1_000),
+            capturedVia: .wrapperClaim,
+            state: .unknown
+        )
+        let inputs = ConversationStrategyInputs(
+            surfaceId: "S1",
+            cwd: nil,
+            lastActivityTimestamp: nil,
+            wrapperClaim: claim,
+            push: nil,
+            scrapeCandidates: [
+                candidate(
+                    stableUUID(1),
+                    mtime: Date(timeIntervalSince1970: 1_001),
+                    cwd: "/work/shared"
+                ),
+            ]
+        )
+
+        XCTAssertEqual(
+            CodexStrategy().eligibleCandidates(inputs: inputs).map(\.id),
+            [stableUUID(1)]
+        )
+    }
+
+    func testRuntimeCaptureLandingAfterCollectionWinsAtomicCommit() async throws {
+        let scrapeId = stableUUID(1)
+        let runtimeId = stableUUID(2)
+        let contexts = [
+            ScrapeCaptureContext(surfaceId: "S1", kind: "codex", cwd: "/work/p")
+        ]
+        let scraper = CountingBatchScraper(preset: [
+            candidate(scrapeId, mtime: Date(), cwd: "/work/p")
+        ])
+        let pipeline = ScrapeCapturePipeline(
+            scrapers: ConversationScraperRegistry(scrapers: [scraper])
+        )
+        let batch = try await pipeline.collectCandidateBatch(contexts: contexts)
+        let store = ConversationStore()
+        _ = await store.captureRuntimeEnv(surfaceId: "S1", id: runtimeId, cwd: "/work/p")
+
+        let result = await store.applyScrapeBatch(batch, pipeline: pipeline)
+        XCTAssertTrue(result.applied.isEmpty)
+        let active = await store.active(for: "S1")
+        XCTAssertEqual(active?.id, runtimeId)
+        XCTAssertEqual(active?.capturedVia, .runtimeEnv)
+        XCTAssertNil(active?.quarantineReason)
+    }
+
+    func testCollectionFailureIsDistinctFromSuccessfulEmptyCollection() async throws {
+        let contexts = [
+            ScrapeCaptureContext(surfaceId: "S1", kind: "codex", cwd: "/work/p")
+        ]
+        let emptyScraper = CountingBatchScraper(preset: [])
+        let emptyPipeline = ScrapeCapturePipeline(
+            scrapers: ConversationScraperRegistry(scrapers: [emptyScraper])
+        )
+        let emptyBatch = try await emptyPipeline.collectCandidateBatch(contexts: contexts)
+        XCTAssertEqual(emptyBatch.candidatesByKind["codex"], [])
+
+        let failingScraper = CountingBatchScraper(
+            preset: [],
+            failure: .injectedFailure
+        )
+        let failingPipeline = ScrapeCapturePipeline(
+            scrapers: ConversationScraperRegistry(scrapers: [failingScraper])
+        )
+        do {
+            _ = try await failingPipeline.collectCandidateBatch(contexts: contexts)
+            XCTFail("typed collection failure must throw")
+        } catch let error as ScrapeCandidateBatchCollectionError {
+            XCTAssertEqual(error.failuresByKind, ["codex": .injectedFailure])
+        }
+    }
+
+    func testQASessionsRootOverrideRequiresTaggedOrQALaunch() {
+        let path = "/tmp/c11-206-fixtures/../sessions"
+        XCTAssertNil(CodexScraper.qaSessionsRootOverride(environment: [
+            CodexScraper.qaSessionsRootEnvironmentKey: path
+        ]))
+        let overridden = CodexScraper.qaSessionsRootOverride(environment: [
+            "C11_TAG": "c11-206",
+            CodexScraper.qaSessionsRootEnvironmentKey: path
+        ])
+        XCTAssertEqual(overridden?.path, "/tmp/sessions")
+    }
+
+    func testSnapshotCaptureScopeAuthorizesEveryTerminalButScrapesOnlyTypedAgents() {
+        let typed = UUID()
+        let missingType = UUID()
+        let emptyType = UUID()
+        let browser = UUID()
+        let snapshot = makeSnapshot(panels: [
+            makeTerminalPanel(
+                id: typed,
+                directory: "/tmp/typed",
+                metadata: [SurfaceMetadataKeyName.terminalType: .string("codex")]
+            ),
+            makeTerminalPanel(id: missingType, directory: nil, metadata: nil),
+            makeTerminalPanel(
+                id: emptyType,
+                directory: nil,
+                metadata: [SurfaceMetadataKeyName.terminalType: .string("   ")]
+            ),
+            makeBrowserPanel(id: browser),
+        ])
+
+        let scope = ConversationSnapshotCaptureScope(snapshot: snapshot)
+
+        XCTAssertEqual(scope.scrapeContexts.map(\.surfaceId), [typed.uuidString])
+        XCTAssertEqual(
+            scope.markerSurfaceIds,
+            [typed.uuidString, missingType.uuidString, emptyType.uuidString]
+        )
+        XCTAssertFalse(scope.markerSurfaceIds.contains(browser.uuidString))
     }
 
     // MARK: - Snapshot builders
@@ -349,6 +650,26 @@ final class ScrapeCapturePipelineTests: XCTestCase {
         let ref = CodexStrategy().capture(inputs: inputs)
         XCTAssertEqual(ref?.state, .unknown)
         XCTAssertEqual(ref?.diagnosticReason?.contains("ambiguous"), true)
+    }
+
+    func testCodexTranscriptVerificationFindsExactIdPastLegacySixteen() {
+        let now = Date()
+        let sessions = (0..<32).map { index in
+            (stableUUID(index), "/Users/test/p\(index)", now.addingTimeInterval(-TimeInterval(index)))
+        }
+        let targetId = stableUUID(31)
+        let ref = ConversationRef(
+            kind: "codex",
+            id: targetId,
+            cwd: "/Users/test/p31",
+            capturedVia: .runtimeEnv,
+            state: .suspended
+        )
+        XCTAssertEqual(
+            CodexStrategy().transcriptExists(for: ref, filesystem: codexFS(sessions: sessions)),
+            true,
+            "exact membership verification must not inherit the legacy newest-16 cutoff"
+        )
     }
 
     // MARK: - C11-164: parseCodexCwd (bounded, allowlisted extractor)

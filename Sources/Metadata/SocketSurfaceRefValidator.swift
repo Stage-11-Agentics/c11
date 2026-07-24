@@ -30,7 +30,7 @@ internal enum SocketSurfaceRefValidator {
 
     /// Classification of one raw param value.
     enum RefState: Equatable {
-        /// Key missing entirely, or present as JSON `null` (`NSNull`).
+        /// Key missing entirely.
         case absent
         /// Key present as a string that is empty/whitespace-only, or as a
         /// non-string value (a malformed ref — refs are always strings).
@@ -40,10 +40,13 @@ internal enum SocketSurfaceRefValidator {
     }
 
     /// Classify `raw` where `raw` is the result of `params[key]` (an
-    /// `Any?`). A missing key arrives as `nil`; an explicit JSON null as
-    /// `NSNull`; both are `.absent`.
+    /// `Any?`). Only a missing key (`nil`) is `.absent`. An explicit JSON
+    /// `null` arrives as `NSNull` and is `.empty`: the caller supplied a
+    /// target key that cannot resolve, so optional-target commands must not
+    /// mistake it for permission to use their focused-surface fallback.
     static func classify(_ raw: Any?) -> RefState {
-        guard let raw, !(raw is NSNull) else { return .absent }
+        guard let raw else { return .absent }
+        guard !(raw is NSNull) else { return .empty }
         guard let s = raw as? String else { return .empty }
         let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? .empty : .present(trimmed)

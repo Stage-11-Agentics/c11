@@ -138,6 +138,55 @@ final class SocketSurfaceRefRejectionWiringTests: XCTestCase {
         XCTAssertEqual(fixture.workspace.focusedPanelId, fixture.focusedSurfaceId)
     }
 
+    func testSurfaceCloseRejectsExplicitNullWithoutClosingFocusedSurface() throws {
+        let controller = TerminalController.shared
+        let previousManager = controller.tabManager
+        let fixture = try makeTwoSurfaceFixture()
+        controller.setActiveTabManager(fixture.manager)
+        defer { controller.setActiveTabManager(previousManager) }
+
+        let panelIdsBefore = Set(fixture.workspace.panels.keys)
+        let code = responseCode(for: """
+        {"method":"surface.close","params":{"workspace_id":"\(fixture.workspace.id.uuidString)","surface_id":null}}
+        """)
+
+        XCTAssertEqual(code, "empty_ref")
+        XCTAssertEqual(
+            Set(fixture.workspace.panels.keys),
+            panelIdsBefore,
+            "an explicit null is a named invalid target, not permission to close focus"
+        )
+        XCTAssertEqual(fixture.workspace.focusedPanelId, fixture.focusedSurfaceId)
+    }
+
+    func testSurfaceCloseRejectsInvalidExplicitWorkspaceWithoutClosingFocusedSurface() throws {
+        let controller = TerminalController.shared
+        let previousManager = controller.tabManager
+        let fixture = try makeTwoSurfaceFixture()
+        controller.setActiveTabManager(fixture.manager)
+        defer { controller.setActiveTabManager(previousManager) }
+
+        let panelIdsBefore = Set(fixture.workspace.panels.keys)
+        let cases = [
+            (workspaceJSON: "null", expectedCode: "empty_ref", label: "null"),
+            (workspaceJSON: "\"workspace:999999999\"", expectedCode: "not_found", label: "stale")
+        ]
+
+        for testCase in cases {
+            let code = responseCode(for: """
+            {"method":"surface.close","params":{"workspace_id":\(testCase.workspaceJSON)}}
+            """)
+
+            XCTAssertEqual(code, testCase.expectedCode, "unexpected result for \(testCase.label) workspace")
+            XCTAssertEqual(
+                Set(fixture.workspace.panels.keys),
+                panelIdsBefore,
+                "an invalid explicit workspace must not become permission to close the focused surface"
+            )
+            XCTAssertEqual(fixture.workspace.focusedPanelId, fixture.focusedSurfaceId)
+        }
+    }
+
     func testSurfaceCloseRejectsCaseMismatchedLiveRefWithoutClosingFocusedSurface() throws {
         let controller = TerminalController.shared
         let previousManager = controller.tabManager
@@ -250,24 +299,54 @@ final class SocketSurfaceRefRejectionWiringTests: XCTestCase {
 
         let liveRef = controller.surfaceRefOnly(forSurfaceUUID: fixture.otherSurfaceId)
         let cases = [
-            (targetKey: "surface_id", targetRef: "surface:999999999", expectedCode: "not_found"),
-            (targetKey: "tab_id", targetRef: "tab:999999999", expectedCode: "not_found"),
-            (targetKey: "surface_id", targetRef: liveRef.uppercased(), expectedCode: "not_found"),
-            (targetKey: "surface_id", targetRef: " ", expectedCode: "empty_ref"),
-            (targetKey: "tab_id", targetRef: " ", expectedCode: "empty_ref")
+            (targetKey: "surface_id", targetJSON: "\"surface:999999999\"", label: "surface:999999999", expectedCode: "not_found"),
+            (targetKey: "tab_id", targetJSON: "\"tab:999999999\"", label: "tab:999999999", expectedCode: "not_found"),
+            (targetKey: "surface_id", targetJSON: "\"\(liveRef.uppercased())\"", label: liveRef.uppercased(), expectedCode: "not_found"),
+            (targetKey: "surface_id", targetJSON: "\" \"", label: "whitespace", expectedCode: "empty_ref"),
+            (targetKey: "tab_id", targetJSON: "\" \"", label: "whitespace", expectedCode: "empty_ref"),
+            (targetKey: "surface_id", targetJSON: "null", label: "null", expectedCode: "empty_ref"),
+            (targetKey: "tab_id", targetJSON: "null", label: "null", expectedCode: "empty_ref")
         ]
         let panelIdsBefore = Set(fixture.workspace.panels.keys)
 
         for testCase in cases {
             let code = responseCode(for: """
-            {"method":"tab.action","params":{"workspace_id":"\(fixture.workspace.id.uuidString)","action":"close_others","\(testCase.targetKey)":"\(testCase.targetRef)"}}
+            {"method":"tab.action","params":{"workspace_id":"\(fixture.workspace.id.uuidString)","action":"close_others","\(testCase.targetKey)":\(testCase.targetJSON)}}
             """)
 
-            XCTAssertEqual(code, testCase.expectedCode, "unexpected result for \(testCase.targetKey)=\(testCase.targetRef)")
+            XCTAssertEqual(code, testCase.expectedCode, "unexpected result for \(testCase.targetKey)=\(testCase.label)")
             XCTAssertEqual(
                 Set(fixture.workspace.panels.keys),
                 panelIdsBefore,
                 "a rejected \(testCase.targetKey) must not let close_others mutate the workspace"
+            )
+            XCTAssertEqual(fixture.workspace.focusedPanelId, fixture.focusedSurfaceId)
+        }
+    }
+
+    func testTabActionRejectsInvalidExplicitWorkspaceBeforeDestructiveAction() throws {
+        let controller = TerminalController.shared
+        let previousManager = controller.tabManager
+        let fixture = try makeTwoSurfaceFixture()
+        controller.setActiveTabManager(fixture.manager)
+        defer { controller.setActiveTabManager(previousManager) }
+
+        let panelIdsBefore = Set(fixture.workspace.panels.keys)
+        let cases = [
+            (workspaceJSON: "null", expectedCode: "empty_ref", label: "null"),
+            (workspaceJSON: "\"workspace:999999999\"", expectedCode: "not_found", label: "stale")
+        ]
+
+        for testCase in cases {
+            let code = responseCode(for: """
+            {"method":"tab.action","params":{"workspace_id":\(testCase.workspaceJSON),"action":"close_others"}}
+            """)
+
+            XCTAssertEqual(code, testCase.expectedCode, "unexpected result for \(testCase.label) workspace")
+            XCTAssertEqual(
+                Set(fixture.workspace.panels.keys),
+                panelIdsBefore,
+                "an invalid explicit workspace must not let close_others use the focused workspace"
             )
             XCTAssertEqual(fixture.workspace.focusedPanelId, fixture.focusedSurfaceId)
         }

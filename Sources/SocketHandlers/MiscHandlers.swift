@@ -61,6 +61,10 @@ extension TerminalController {
         ])
 
         v2MainSync {
+            if let rejection = v2RejectInvalidOptionalWorkspacePin(params, tabManager: tabManager) {
+                result = rejection
+                return
+            }
             guard let workspace = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return

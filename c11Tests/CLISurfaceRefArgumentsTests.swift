@@ -37,6 +37,38 @@ final class CLISurfaceRefArgumentsTests: XCTestCase {
         }
     }
 
+    private func tabTargetPlan(
+        _ args: [String],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> CLISurfaceRefArguments.TabActionTargetPlan? {
+        switch CLISurfaceRefArguments.parseTabActionTargets(args) {
+        case .plan(let plan):
+            return plan
+        case .reject(let message):
+            XCTFail("expected a tab-action target plan, got reject: \(message)", file: file, line: line)
+            return nil
+        }
+    }
+
+    private func tabTargetRejection(
+        _ args: [String],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> String? {
+        switch CLISurfaceRefArguments.parseTabActionTargets(args) {
+        case .plan(let plan):
+            XCTFail(
+                "expected a tab-action target rejection, got workspace=\(String(describing: plan.workspace)) target=\(String(describing: plan.target))",
+                file: file,
+                line: line
+            )
+            return nil
+        case .reject(let message):
+            return message
+        }
+    }
+
     // MARK: - The incident
 
     func testPositionalSurfaceHandleIsHonoredNotDiscarded() {
@@ -131,6 +163,98 @@ final class CLISurfaceRefArgumentsTests: XCTestCase {
 
     func testRepeatingTheSameTargetIsNotAConflict() {
         XCTAssertEqual(plan(["--surface", "surface:1", "surface:1"])?.surface, "surface:1")
+        XCTAssertEqual(
+            plan(["--surface", "surface:1", "--surface", "surface:1"])?.surface,
+            "surface:1"
+        )
+        XCTAssertEqual(
+            plan(["--surface", "surface:1", "--panel", "surface:1"])?.surface,
+            "surface:1"
+        )
+    }
+
+    func testCloseSurfaceRejectsDistinctRepeatedWorkspaceValues() {
+        XCTAssertTrue(
+            rejection([
+                "--workspace", "workspace:1",
+                "--workspace", "workspace:2",
+                "--surface", "surface:3"
+            ])?.contains("more than one workspace") == true
+        )
+    }
+
+    func testCloseSurfaceAcceptsExactRepeatedWorkspaceValue() {
+        let parsed = plan([
+            "--workspace", "workspace:1",
+            "--workspace", "workspace:1",
+            "--surface", "surface:3"
+        ])
+        XCTAssertEqual(parsed?.workspace, "workspace:1")
+        XCTAssertEqual(parsed?.surface, "surface:3")
+    }
+
+    // MARK: - tab-action target flag safety
+
+    func testTabActionRejectsDistinctCrossAliasAndRepeatedTargetValues() {
+        let cases = [
+            ["--tab", "tab:2", "--surface", "surface:3", "--action", "close-others"],
+            ["--tab", "tab:2", "--tab", "tab:3", "--action", "close-others"],
+            ["--surface", "surface:2", "--surface", "surface:3", "--action", "close-others"]
+        ]
+
+        for args in cases {
+            XCTAssertTrue(
+                tabTargetRejection(args)?.contains("more than one tab or surface") == true,
+                "distinct destructive targets must reject before socket dispatch: \(args)"
+            )
+        }
+    }
+
+    func testTabActionRejectsDistinctRepeatedWorkspaceValues() {
+        let rejection = tabTargetRejection([
+            "--workspace", "workspace:1",
+            "--workspace", "workspace:2",
+            "--tab", "tab:3",
+            "--action", "close-others"
+        ])
+        XCTAssertTrue(rejection?.contains("more than one workspace") == true)
+    }
+
+    func testTabActionAcceptsExactDuplicateTargetAndWorkspaceValues() {
+        let parsed = tabTargetPlan([
+            "--workspace", "workspace:1",
+            "--workspace", "workspace:1",
+            "--tab", "surface:3",
+            "--surface", "surface:3",
+            "--action", "close-others"
+        ])
+
+        XCTAssertEqual(parsed?.workspace, "workspace:1")
+        XCTAssertEqual(parsed?.target, "surface:3")
+        XCTAssertEqual(parsed?.remaining, ["--action", "close-others"])
+    }
+
+    func testTabActionAcceptsExactRepeatedValueOnEachTargetFlag() {
+        let cases = [
+            (["--tab", "tab:3", "--tab", "tab:3"], "tab:3"),
+            (["--surface", "surface:3", "--surface", "surface:3"], "surface:3")
+        ]
+
+        for (args, expected) in cases {
+            XCTAssertEqual(
+                tabTargetPlan(args + ["--action", "close-others"])?.target,
+                expected,
+                "an exact normalized duplicate is not an ambiguous target: \(args)"
+            )
+        }
+    }
+
+    func testTabActionTargetFlagsRequireNonEmptyValues() {
+        XCTAssertTrue(tabTargetRejection(["--tab"])?.contains("requires a value") == true)
+        XCTAssertTrue(
+            tabTargetRejection(["--surface", "--action", "close-others"])?.contains("requires a value") == true
+        )
+        XCTAssertTrue(tabTargetRejection(["--workspace", " "])?.contains("non-empty") == true)
     }
 
     // MARK: - tab-action positional safety

@@ -157,9 +157,18 @@ c11 rename-workspace <title>
 c11 rename-tab [--workspace <id|ref>] [--surface <id|ref>] <title>
 
 # Close
-c11 close-surface [--surface <id|ref>]      # Close a surface (defaults to caller's)
+c11 close-surface [--workspace <id|ref>] [--surface <id|ref> | --panel <id|ref> | <surface:ref|UUID>]
+                                             # Close a named surface; a truly bare command defaults to caller's
 c11 close-workspace --workspace <id|ref>    # Close entire workspace
 ```
+
+`close-surface` honors a positional `surface:N` handle or UUID exactly like
+`--surface`; a bare numeric index is ambiguous and must be passed explicitly as
+`--surface <index>`. Named targets are never discarded or replaced with caller
+focus. For destructive `close-surface` and `tab-action` targeting, distinct
+repeated values across `--workspace`, `--surface`, `--panel`, or `--tab`
+aliases are rejected before socket dispatch; repeating the same value is
+accepted.
 
 ### `new-split` vs `new-pane` vs `new-surface`
 

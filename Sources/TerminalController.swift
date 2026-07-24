@@ -2731,6 +2731,40 @@ class TerminalController {
         return .resolved(first.id)
     }
 
+    /// Validate an optional workspace pin before a destructive handler calls
+    /// `v2ResolveWorkspace`. That resolver intentionally falls back to the
+    /// selected workspace when `v2UUID` returns nil, so an explicit null,
+    /// empty, malformed, or stale workspace ref must be rejected first.
+    ///
+    /// A genuinely missing key remains valid: surface.close and tab.action
+    /// intentionally support caller-focused defaults when no workspace was
+    /// named.
+    func v2RejectInvalidOptionalWorkspacePin(
+        _ params: [String: Any],
+        tabManager: TabManager
+    ) -> V2CallResult? {
+        switch SocketSurfaceRefValidator.classify(params["workspace_id"]) {
+        case .absent:
+            return nil
+        case .empty:
+            return .err(
+                code: SocketSurfaceRefValidator.emptyRefCode,
+                message: "workspace ref 'workspace_id' was provided but empty — pass a concrete id (no focused-workspace fallback)",
+                data: nil
+            )
+        case .present(let ref):
+            guard let id = v2UUID(params, "workspace_id"),
+                  tabManager.tabs.contains(where: { $0.id == id }) else {
+                return .err(
+                    code: "not_found",
+                    message: "workspace ref '\(ref)' did not resolve to a known handle; refusing to fall back to the focused workspace",
+                    data: ["target_key": "workspace_id", "target_ref": ref]
+                )
+            }
+            return nil
+        }
+    }
+
     func v2StrictInt(_ params: [String: Any], _ key: String) -> Int? {
         v2StrictIntAny(params[key])
     }

@@ -16,8 +16,8 @@ final class SocketSurfaceRefValidatorTests: XCTestCase {
     func testClassifyDistinguishesAbsentEmptyPresent() {
         // Missing key → absent.
         XCTAssertEqual(SocketSurfaceRefValidator.classify(([String: Any]())["surface_id"]), .absent)
-        // Explicit JSON null → absent.
-        XCTAssertEqual(SocketSurfaceRefValidator.classify(NSNull()), .absent)
+        // Explicit JSON null is an explicit-but-invalid target → empty.
+        XCTAssertEqual(SocketSurfaceRefValidator.classify(NSNull()), .empty)
         // Empty / whitespace-only string → empty.
         XCTAssertEqual(SocketSurfaceRefValidator.classify(""), .empty)
         XCTAssertEqual(SocketSurfaceRefValidator.classify("   "), .empty)
@@ -71,13 +71,13 @@ final class SocketSurfaceRefValidatorTests: XCTestCase {
         XCTAssertEqual(r?.code, SocketSurfaceRefValidator.missingRefCode)
     }
 
-    func testExplicitNullPinnedRefIsMissingRef() {
+    func testExplicitNullPinnedRefIsEmptyRef() {
         let r = SocketSurfaceRefValidator.rejection(
             params: ["surface_id": NSNull()],
             targetKeys: ["surface_id"],
             requiredAnyOf: ["surface_id"]
         )
-        XCTAssertEqual(r?.code, SocketSurfaceRefValidator.missingRefCode)
+        XCTAssertEqual(r?.code, SocketSurfaceRefValidator.emptyRefCode)
     }
 
     func testCoarserRefDoesNotSatisfyPinnedRequirement() {

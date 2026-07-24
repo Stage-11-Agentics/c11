@@ -457,6 +457,10 @@ extension TerminalController {
 
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to close surface", data: nil)
         v2MainSync {
+            if let rejection = v2RejectInvalidOptionalWorkspacePin(params, tabManager: tabManager) {
+                result = rejection
+                return
+            }
             guard let ws = v2ResolveWorkspace(params: params, tabManager: tabManager) else {
                 result = .err(code: "not_found", message: "Workspace not found", data: nil)
                 return

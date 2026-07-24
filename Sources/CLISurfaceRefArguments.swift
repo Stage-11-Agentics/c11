@@ -45,6 +45,26 @@ public enum CLISurfaceRefArguments {
         case reject(String)
     }
 
+    /// Target flags consumed from a `tab-action` command line. `remaining`
+    /// preserves action/title/url flags and positional rename text for the
+    /// command runner to parse normally.
+    public struct TabActionTargetPlan: Equatable {
+        public let workspace: String?
+        public let target: String?
+        public let remaining: [String]
+
+        public init(workspace: String?, target: String?, remaining: [String]) {
+            self.workspace = workspace
+            self.target = target
+            self.remaining = remaining
+        }
+    }
+
+    public enum TabActionTargetParseResult: Equatable {
+        case plan(TabActionTargetPlan)
+        case reject(String)
+    }
+
     private static let knownValueFlags: Set<String> = ["--surface", "--panel", "--workspace"]
 
     private static let knownFlagsHelp =
@@ -56,7 +76,7 @@ public enum CLISurfaceRefArguments {
     /// positional surface handle (`c11 close-surface surface:101`), and refuses
     /// anything else rather than silently discarding it.
     public static func parseCloseSurface(_ args: [String]) -> ParseResult {
-        var workspace: String?
+        var namedWorkspaces: [String] = []
         var namedSurfaces: [String] = []
         var index = 0
 
@@ -105,11 +125,17 @@ public enum CLISurfaceRefArguments {
             }
 
             if name == "--workspace" {
-                workspace = value
+                namedWorkspaces.append(value)
             } else {
                 namedSurfaces.append(value)
             }
             index += 1
+        }
+
+        let distinctWorkspaces = distinctTrimmedValues(namedWorkspaces)
+        if distinctWorkspaces.count > 1 {
+            let listed = distinctWorkspaces.sorted().joined(separator: ", ")
+            return .reject("close-surface: more than one workspace named (\(listed)). Name exactly one workspace.")
         }
 
         let distinct = Set(namedSurfaces.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) })
@@ -118,7 +144,77 @@ public enum CLISurfaceRefArguments {
             return .reject("close-surface: more than one surface named (\(listed)). Name exactly one target.")
         }
 
-        return .plan(CloseSurfacePlan(workspace: workspace, surface: namedSurfaces.first))
+        return .plan(CloseSurfacePlan(
+            workspace: distinctWorkspaces.first,
+            surface: distinct.first
+        ))
+    }
+
+    /// Consume `--workspace`, `--tab`, and `--surface` from a `tab-action`
+    /// command line without the generic option parser's last-value-wins
+    /// behavior. Distinct repeated values — whether on one flag or split
+    /// across the `--tab`/`--surface` aliases — are ambiguous destructive
+    /// targets and reject before any socket resolution or dispatch. Repeating
+    /// the same trimmed value is harmless and remains accepted.
+    public static func parseTabActionTargets(_ args: [String]) -> TabActionTargetParseResult {
+        let targetFlags: Set<String> = ["--workspace", "--tab", "--surface"]
+        var namedWorkspaces: [String] = []
+        var namedTargets: [String] = []
+        var remaining: [String] = []
+        var index = 0
+        var pastTerminator = false
+
+        while index < args.count {
+            let raw = args[index]
+            if raw == "--" {
+                pastTerminator = true
+                remaining.append(raw)
+                index += 1
+                continue
+            }
+            guard !pastTerminator, targetFlags.contains(raw) else {
+                remaining.append(raw)
+                index += 1
+                continue
+            }
+
+            guard index + 1 < args.count else {
+                return .reject("tab-action: flag '\(raw)' requires a value")
+            }
+            let value = args[index + 1]
+            guard !value.hasPrefix("--") else {
+                return .reject("tab-action: flag '\(raw)' requires a value, got another flag '\(value)'")
+            }
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                return .reject("tab-action: flag '\(raw)' requires a non-empty value")
+            }
+
+            if raw == "--workspace" {
+                namedWorkspaces.append(trimmed)
+            } else {
+                namedTargets.append(trimmed)
+            }
+            index += 2
+        }
+
+        let distinctWorkspaces = distinctTrimmedValues(namedWorkspaces)
+        if distinctWorkspaces.count > 1 {
+            let listed = distinctWorkspaces.sorted().joined(separator: ", ")
+            return .reject("tab-action: more than one workspace named (\(listed)). Name exactly one workspace.")
+        }
+
+        let distinctTargets = distinctTrimmedValues(namedTargets)
+        if distinctTargets.count > 1 {
+            let listed = distinctTargets.sorted().joined(separator: ", ")
+            return .reject("tab-action: more than one tab or surface named (\(listed)). Name exactly one target.")
+        }
+
+        return .plan(TabActionTargetPlan(
+            workspace: distinctWorkspaces.first,
+            target: distinctTargets.first,
+            remaining: remaining
+        ))
     }
 
     /// Refuse any positional token left after `tab-action` has consumed its
@@ -141,6 +237,10 @@ public enum CLISurfaceRefArguments {
     private enum PositionalClass {
         case surface(String)
         case refuse(String)
+    }
+
+    private static func distinctTrimmedValues(_ values: [String]) -> Set<String> {
+        Set(values.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) })
     }
 
     private static func classifyPositional(_ raw: String) -> PositionalClass {

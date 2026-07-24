@@ -5253,14 +5253,20 @@ struct CMUXCLI {
         idFormat: CLIIDFormat,
         windowOverride: String?
     ) throws {
-        let (workspaceOpt, rem0) = parseOption(commandArgs, name: "--workspace")
-        let (tabOpt, rem1) = parseOption(rem0, name: "--tab")
-        let (surfaceOpt, rem2) = parseOption(rem1, name: "--surface")
-        let (actionOpt, rem3) = parseOption(rem2, name: "--action")
-        let (titleOpt, rem4) = parseOption(rem3, name: "--title")
-        let (urlOpt, rem5) = parseOption(rem4, name: "--url")
+        let targetPlan: CLISurfaceRefArguments.TabActionTargetPlan
+        switch CLISurfaceRefArguments.parseTabActionTargets(commandArgs) {
+        case .plan(let plan):
+            targetPlan = plan
+        case .reject(let message):
+            throw CLIError(message: message)
+        }
 
-        var positional = rem5
+        let workspaceOpt = targetPlan.workspace
+        let (actionOpt, rem0) = parseOption(targetPlan.remaining, name: "--action")
+        let (titleOpt, rem1) = parseOption(rem0, name: "--title")
+        let (urlOpt, rem2) = parseOption(rem1, name: "--url")
+
+        var positional = rem2
         let actionRaw: String
         if let actionOpt {
             actionRaw = actionOpt
@@ -5289,8 +5295,7 @@ struct CMUXCLI {
         }
 
         let workspaceArg = workspaceOpt ?? (windowOverride == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
-        let tabArg = tabOpt
-            ?? surfaceOpt
+        let tabArg = targetPlan.target
             ?? (workspaceOpt == nil && windowOverride == nil
                 ? (ProcessInfo.processInfo.environment["CMUX_TAB_ID"] ?? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"])
                 : nil)

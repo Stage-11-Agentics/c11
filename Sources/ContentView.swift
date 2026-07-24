@@ -5108,6 +5108,12 @@ struct ContentView: View {
             return .toggleSplitZoom
         case "palette.triggerFlash":
             return .triggerFlash
+        case "palette.globalFontIncrease":
+            return .globalFontIncrease
+        case "palette.globalFontDecrease":
+            return .globalFontDecrease
+        case "palette.globalFontReset":
+            return .globalFontReset
         default:
             return nil
         }
@@ -5938,6 +5944,30 @@ struct ContentView: View {
                 when: { $0.bool(CommandPaletteContextKeys.workspaceHasSplits) }
             )
         )
+        contributions.append(
+            CommandPaletteCommandContribution(
+                commandId: "palette.globalFontIncrease",
+                title: constant(String(localized: "command.globalFontIncrease.title", defaultValue: "Increase Font Size (All Terminals)")),
+                subtitle: constant(String(localized: "command.globalFont.subtitle", defaultValue: "Terminal Font")),
+                keywords: ["font", "size", "increase", "bigger", "zoom", "all", "global", "terminal"]
+            )
+        )
+        contributions.append(
+            CommandPaletteCommandContribution(
+                commandId: "palette.globalFontDecrease",
+                title: constant(String(localized: "command.globalFontDecrease.title", defaultValue: "Decrease Font Size (All Terminals)")),
+                subtitle: constant(String(localized: "command.globalFont.subtitle", defaultValue: "Terminal Font")),
+                keywords: ["font", "size", "decrease", "smaller", "zoom", "all", "global", "terminal"]
+            )
+        )
+        contributions.append(
+            CommandPaletteCommandContribution(
+                commandId: "palette.globalFontReset",
+                title: constant(String(localized: "command.globalFontReset.title", defaultValue: "Reset Font Size (All Terminals)")),
+                subtitle: constant(String(localized: "command.globalFont.subtitle", defaultValue: "Terminal Font")),
+                keywords: ["font", "size", "reset", "default", "zoom", "all", "global", "terminal"]
+            )
+        )
 
         return contributions
     }
@@ -6278,6 +6308,15 @@ struct ContentView: View {
                 NSSound.beep()
                 return
             }
+        }
+        registry.register(commandId: "palette.globalFontIncrease") {
+            GlobalTerminalFontSize.apply(.increase)
+        }
+        registry.register(commandId: "palette.globalFontDecrease") {
+            GlobalTerminalFontSize.apply(.decrease)
+        }
+        registry.register(commandId: "palette.globalFontReset") {
+            GlobalTerminalFontSize.apply(.reset)
         }
     }
 

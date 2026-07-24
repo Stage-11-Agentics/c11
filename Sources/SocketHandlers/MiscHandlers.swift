@@ -35,11 +35,9 @@ extension TerminalController {
             return .err(code: "invalid_params", message: "Missing action", data: nil)
         }
 
-        // C11-165 COR-1: rename (rename-tab) is a surface/tab-scoped write; an
-        // empty or absent ref must not rename the operator-focused tab. Here
-        // `tab_id` and `surface_id` both pin the target (line 57 resolves both
-        // to a surface id). Other tab.action verbs (close_*, pin, duplicate, …)
-        // are outside COR-1's enumerated 10 and keep their focused-tab default.
+        // C11-165 COR-1: rename (rename-tab) is a surface/tab-scoped write and
+        // therefore requires an explicit pin. Other tab actions intentionally
+        // retain their focused-tab default when both pin keys are absent.
         if action == "rename",
            let reject = v2RejectInvalidSurfaceRef(
                params,
@@ -68,7 +66,19 @@ extension TerminalController {
                 return
             }
 
-            let surfaceId = v2UUID(params, "surface_id") ?? v2UUID(params, "tab_id") ?? workspace.focusedPanelId
+            // Explicit pins must never collapse into the focused-tab default:
+            // stale, empty, case-mismatched, or conflicting refs all reject
+            // before the action switch can mutate workspace state.
+            let surfaceId: UUID?
+            switch v2ResolveOptionalSurfacePin(params, pinningKeys: ["surface_id", "tab_id"]) {
+            case .absent:
+                surfaceId = workspace.focusedPanelId
+            case .resolved(let resolved):
+                surfaceId = resolved
+            case .rejected(let rejection):
+                result = rejection
+                return
+            }
             guard let surfaceId else {
                 result = .err(code: "not_found", message: "No focused tab", data: nil)
                 return

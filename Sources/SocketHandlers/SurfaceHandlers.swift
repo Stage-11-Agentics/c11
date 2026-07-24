@@ -462,7 +462,16 @@ extension TerminalController {
                 return
             }
 
-            let surfaceId = v2UUID(params, "surface_id") ?? ws.focusedPanelId
+            let surfaceId: UUID?
+            switch v2ResolveOptionalSurfacePin(params, pinningKeys: ["surface_id"]) {
+            case .absent:
+                surfaceId = ws.focusedPanelId
+            case .resolved(let resolved):
+                surfaceId = resolved
+            case .rejected(let rejection):
+                result = rejection
+                return
+            }
             guard let surfaceId else {
                 result = .err(code: "not_found", message: "No focused surface", data: nil)
                 return

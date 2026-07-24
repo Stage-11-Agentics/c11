@@ -2352,6 +2352,14 @@ class TerminalController {
         case err(code: String, message: String, data: Any?)
     }
 
+    /// Resolution result for commands that intentionally default to the
+    /// focused surface only when the caller supplied no explicit pin.
+    enum V2OptionalSurfacePinResolution {
+        case absent
+        case resolved(UUID)
+        case rejected(V2CallResult)
+    }
+
     nonisolated func v2Result(id: Any?, _ res: V2CallResult) -> String {
         switch res {
         case .ok(let payload):
@@ -2671,6 +2679,56 @@ class TerminalController {
             message: "surface ref did not resolve to a known handle (one of \(pinningKeys.joined(separator: ", "))); refusing to fall back to the focused surface",
             data: nil
         )
+    }
+
+    /// Resolve an optional surface/tab pin without collapsing a bad explicit
+    /// ref into "not supplied". Callers may use their focused-surface default
+    /// only for `.absent`; every explicit pin must be non-empty, resolve, and
+    /// agree with any other explicit pin.
+    func v2ResolveOptionalSurfacePin(
+        _ params: [String: Any],
+        pinningKeys: [String]
+    ) -> V2OptionalSurfacePinResolution {
+        var resolvedPins: [(key: String, ref: String, id: UUID)] = []
+
+        for key in pinningKeys {
+            switch SocketSurfaceRefValidator.classify(params[key]) {
+            case .absent:
+                continue
+            case .empty:
+                return .rejected(.err(
+                    code: SocketSurfaceRefValidator.emptyRefCode,
+                    message: "surface ref '\(key)' was provided but empty — pass a concrete id (no focused-surface fallback)",
+                    data: nil
+                ))
+            case .present(let ref):
+                guard let id = v2UUID(params, key) else {
+                    return .rejected(.err(
+                        code: "not_found",
+                        message: "surface ref '\(ref)' did not resolve to a known handle; refusing to fall back to the focused surface",
+                        data: ["target_key": key, "target_ref": ref]
+                    ))
+                }
+                resolvedPins.append((key: key, ref: ref, id: id))
+            }
+        }
+
+        guard let first = resolvedPins.first else {
+            return .absent
+        }
+        if let conflict = resolvedPins.dropFirst().first(where: { $0.id != first.id }) {
+            return .rejected(.err(
+                code: "invalid_params",
+                message: "conflicting explicit surface targets; refusing to choose one or fall back to the focused surface",
+                data: [
+                    "first_target_key": first.key,
+                    "first_target_ref": first.ref,
+                    "conflicting_target_key": conflict.key,
+                    "conflicting_target_ref": conflict.ref
+                ]
+            ))
+        }
+        return .resolved(first.id)
     }
 
     func v2StrictInt(_ params: [String: Any], _ key: String) -> Int? {

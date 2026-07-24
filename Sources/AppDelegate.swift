@@ -5509,6 +5509,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         )
     }
 
+    /// C11-181: open the tier-1 agent launch picker for the active workspace's
+    /// focused pane (⌘⇧A / menu path). The picker anchors at the window's
+    /// top-trailing corner when there's no click location.
+    func presentAgentPickerForActiveWorkspace() {
+        let preferredWindow = [NSApp.keyWindow, NSApp.mainWindow]
+            .compactMap { $0 }
+            .first(where: { isMainTerminalWindow($0) })
+        guard let manager = synchronizeActiveMainWindowContext(preferredWindow: preferredWindow),
+              let workspace = manager.selectedWorkspace,
+              let pane = workspace.bonsplitController.focusedPaneId else { return }
+
+        let managerWindow = mainWindowContexts.values
+            .first(where: { $0.tabManager === manager })
+            .flatMap { $0.window ?? windowForMainWindowId($0.windowId) }
+        guard let window = preferredWindow ?? managerWindow else { return }
+        workspace.presentAgentPicker(inPane: pane, window: window, at: nil)
+    }
+
     private func clearCommandPalettePendingOpen(for window: NSWindow?) {
         guard let window,
               let windowId = mainWindowId(for: window) else { return }

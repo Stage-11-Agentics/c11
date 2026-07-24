@@ -12366,13 +12366,7 @@ extension Workspace: BonsplitDelegate {
     ///   `.aButton` (the real UI spawn button); the CLI `default-agent launch`
     ///   new-surface path passes `.launchAgent` so button-clicks and CLI launches
     ///   are honestly distinguished in the stats rail.
-    /// Launch an agent surface. Returns `true` when a launch was actually
-    /// performed; `false` when it declined (empty resolved command, surface
-    /// creation failed, or an `explicitConfig` whose recipe couldn't be
-    /// resolved) — the "Save & Launch" caller surfaces that as feedback rather
-    /// than a silent no-op.
-    @discardableResult
-    func launchAgentSurface(inPane pane: PaneID, explicitAgent: AgentType? = nil, explicitConfig: SavedAgentConfig? = nil, source: AgentLaunchSource = .aButton) -> Bool {
+    func launchAgentSurface(inPane pane: PaneID, explicitAgent: AgentType? = nil, source: AgentLaunchSource = .aButton) {
         let userDefault = DefaultAgentConfigStore.shared.current
         let projectConfig = DefaultAgentProjectConfig.find(from: resolverCwdForAgentLaunch())
 
@@ -12388,18 +12382,11 @@ extension Workspace: BonsplitDelegate {
         let resolvedSystemPromptMode: String?
         let savedConfigId: String?
 
-        // A caller-chosen config (Settings "Save & Launch", C11-182) launches
-        // exactly that recipe. Otherwise a plain left-click consults the
-        // saved-config library's `effectiveDefault()`; an explicit agent keeps
-        // `nil` here and takes the raw-harness path below.
-        let overlaySaved: SavedAgentConfig?
-        if let explicitConfig {
-            overlaySaved = explicitConfig
-        } else if explicitAgent == nil {
-            overlaySaved = AgentConfigLibraryStore.shared.effectiveDefault()
-        } else {
-            overlaySaved = nil
-        }
+        // Only a plain left-click consults the saved-config library; an explicit
+        // agent keeps `nil` here and takes the raw-harness path below.
+        let overlaySaved: SavedAgentConfig? = explicitAgent == nil
+            ? AgentConfigLibraryStore.shared.effectiveDefault()
+            : nil
         if let saved = overlaySaved,
            let overlay = DefaultAgentResolver.resolveOverlay(
                savedConfig: saved,
@@ -12412,11 +12399,6 @@ extension Workspace: BonsplitDelegate {
             resolvedEffort = overlay.mergedConfig.effort.trimmingCharacters(in: .whitespacesAndNewlines)
             resolvedSystemPromptMode = overlay.mergedConfig.systemPrompt?.mode.rawValue
             savedConfigId = saved.id.isEmpty ? nil : saved.id
-        } else if explicitConfig != nil {
-            // A caller asked to launch a specific recipe that the resolver could
-            // not materialize (unknown harness in a hand-edited agent-configs.json).
-            // Decline rather than silently launching the default agent instead.
-            return false
         } else {
             let resolved = DefaultAgentResolver.resolve(
                 explicitAgent: explicitAgent,
@@ -12432,11 +12414,11 @@ extension Workspace: BonsplitDelegate {
             savedConfigId = nil
         }
 
-        guard !launch.command.isEmpty else { return false }
+        guard !launch.command.isEmpty else { return }
         guard let panel = newTerminalSurface(
             inPane: pane,
             startupEnvironment: launch.envOverrides
-        ) else { return false }
+        ) else { return }
         // By default no orientation prompt is baked (see `c11OrientPrompt`),
         // so the agent boots straight to ready with no dead-time. c11 stamps
         // the identity the sidebar needs itself — no agent round-trip: the
@@ -12472,7 +12454,6 @@ extension Workspace: BonsplitDelegate {
         // this workspace's A-button tooltip. Cheap: `refreshSplitButtonTooltips`
         // diffs and no-ops when unchanged.
         refreshSplitButtonTooltips()
-        return true
     }
 
     /// C11-178/179: emit a rail-1 launch-stats record for an A-button-lineage

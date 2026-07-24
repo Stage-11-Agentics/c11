@@ -3143,9 +3143,6 @@ enum SettingsNavigationTarget: String {
     case browserImport
     case textBoxInput
     case keyboardShortcuts
-    /// The Agents & Automation page's default-agent / Saved Configs section
-    /// (C11-182), the anchor the agent-config editor navigates to.
-    case agents
 }
 
 enum SettingsNavigationRequest {
@@ -4398,8 +4395,6 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
             return .input
         case .keyboardShortcuts:
             return .keyboardShortcuts
-        case .agents:
-            return .agents
         }
     }
 }
@@ -6242,7 +6237,6 @@ struct SettingsView: View {
             localized: "settings.section.defaultAgent",
             defaultValue: "default agent"
         ))
-        .id(SettingsNavigationTarget.agents)
         SettingsCardNote(String(
             localized: "settings.defaultAgent.note",
             defaultValue: "the A button on every pane launches this. new terminal still opens bash. drop a `.c11/agents.json` in any repo to override these settings for terminals opened there."

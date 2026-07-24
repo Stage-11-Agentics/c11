@@ -48,6 +48,11 @@ enum KeyboardShortcutSettings {
         // Input
         case toggleTextBoxInput
 
+        // Font (all terminals)
+        case globalFontIncrease
+        case globalFontDecrease
+        case globalFontReset
+
         var id: String { rawValue }
 
         var label: String {
@@ -83,6 +88,9 @@ enum KeyboardShortcutSettings {
             case .toggleBrowserDeveloperTools: return String(localized: "shortcut.toggleBrowserDevTools.label", defaultValue: "Toggle Browser Developer Tools")
             case .showBrowserJavaScriptConsole: return String(localized: "shortcut.showBrowserJSConsole.label", defaultValue: "Show Browser JavaScript Console")
             case .toggleTextBoxInput: return String(localized: "shortcut.toggleTextBoxInput.label", defaultValue: "Toggle TextBox Input")
+            case .globalFontIncrease: return String(localized: "shortcut.globalFontIncrease.label", defaultValue: "Increase Font Size (All Terminals)")
+            case .globalFontDecrease: return String(localized: "shortcut.globalFontDecrease.label", defaultValue: "Decrease Font Size (All Terminals)")
+            case .globalFontReset: return String(localized: "shortcut.globalFontReset.label", defaultValue: "Reset Font Size (All Terminals)")
             }
         }
 
@@ -119,6 +127,9 @@ enum KeyboardShortcutSettings {
             case .toggleBrowserDeveloperTools: return "shortcut.toggleBrowserDeveloperTools"
             case .showBrowserJavaScriptConsole: return "shortcut.showBrowserJavaScriptConsole"
             case .toggleTextBoxInput: return "shortcut.toggleTextBoxInput"
+            case .globalFontIncrease: return "shortcut.globalFontIncrease"
+            case .globalFontDecrease: return "shortcut.globalFontDecrease"
+            case .globalFontReset: return "shortcut.globalFontReset"
             }
         }
 
@@ -193,6 +204,13 @@ enum KeyboardShortcutSettings {
                 // own source comment calls out Cmd+Option+B as the conflict-free
                 // choice. See plan §4.5.
                 return StoredShortcut(key: "b", command: true, shift: false, option: true, control: false)
+            case .globalFontIncrease:
+                // ⌘⌃= — distinct from per-surface ⌘= which zooms only the focused surface.
+                return StoredShortcut(key: "=", command: true, shift: false, option: false, control: true)
+            case .globalFontDecrease:
+                return StoredShortcut(key: "-", command: true, shift: false, option: false, control: true)
+            case .globalFontReset:
+                return StoredShortcut(key: "0", command: true, shift: false, option: false, control: true)
             }
         }
 

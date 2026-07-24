@@ -182,6 +182,9 @@ struct cmuxApp: App {
     @AppStorage(KeyboardShortcutSettings.Action.newSurface.defaultsKey) private var newSurfaceShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.openBrowser.defaultsKey) private var openBrowserShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.renameTab.defaultsKey) private var renameTabShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.globalFontIncrease.defaultsKey) private var globalFontIncreaseShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.globalFontDecrease.defaultsKey) private var globalFontDecreaseShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.globalFontReset.defaultsKey) private var globalFontResetShortcutData = Data()
     @AppStorage(ChromeScaleSettings.presetKey) private var chromeScalePresetRaw = ChromeScaleSettings.defaultPreset.rawValue
     @AppStorage(ChromeScaleSettings.customMultiplierKey) private var chromeScaleCustomMultiplier: Double = Double(ChromeScaleSettings.defaultCustomMultiplier)
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -989,6 +992,22 @@ struct cmuxApp: App {
                 }
                 .keyboardShortcut("t", modifiers: [.command, .option])
                 .disabled(!activeTabManager.canCloseOtherTabsInFocusedPane())
+
+                Divider()
+
+                // Global font size: fans out to every terminal surface at once,
+                // relative to each surface's current size (unlike per-surface Cmd +/-/0).
+                splitCommandButton(title: String(localized: "menu.pane.globalFontIncrease", defaultValue: "Increase Font Size (All Terminals)"), shortcut: globalFontIncreaseMenuShortcut) {
+                    GlobalTerminalFontSize.apply(.increase)
+                }
+
+                splitCommandButton(title: String(localized: "menu.pane.globalFontDecrease", defaultValue: "Decrease Font Size (All Terminals)"), shortcut: globalFontDecreaseMenuShortcut) {
+                    GlobalTerminalFontSize.apply(.decrease)
+                }
+
+                splitCommandButton(title: String(localized: "menu.pane.globalFontReset", defaultValue: "Reset Font Size (All Terminals)"), shortcut: globalFontResetMenuShortcut) {
+                    GlobalTerminalFontSize.apply(.reset)
+                }
             }
 
             // C11-41 Browser menu: every browser-surface verb in one home.
@@ -1236,6 +1255,18 @@ struct cmuxApp: App {
 
     private var renameTabMenuShortcut: StoredShortcut {
         decodeShortcut(from: renameTabShortcutData, fallback: KeyboardShortcutSettings.Action.renameTab.defaultShortcut)
+    }
+
+    private var globalFontIncreaseMenuShortcut: StoredShortcut {
+        decodeShortcut(from: globalFontIncreaseShortcutData, fallback: KeyboardShortcutSettings.Action.globalFontIncrease.defaultShortcut)
+    }
+
+    private var globalFontDecreaseMenuShortcut: StoredShortcut {
+        decodeShortcut(from: globalFontDecreaseShortcutData, fallback: KeyboardShortcutSettings.Action.globalFontDecrease.defaultShortcut)
+    }
+
+    private var globalFontResetMenuShortcut: StoredShortcut {
+        decodeShortcut(from: globalFontResetShortcutData, fallback: KeyboardShortcutSettings.Action.globalFontReset.defaultShortcut)
     }
 
     private func openNewMarkdownSurface() {
@@ -6433,6 +6464,11 @@ struct SettingsView: View {
                 id: "panes",
                 title: String(localized: "settings.shortcuts.group.panes", defaultValue: "Panes"),
                 actions: [.focusLeft, .focusRight, .focusUp, .focusDown, .splitRight, .splitDown, .toggleSplitZoom, .splitBrowserRight, .splitBrowserDown]
+            ),
+            ShortcutSettingsGroup(
+                id: "font",
+                title: String(localized: "settings.shortcuts.group.font", defaultValue: "Font"),
+                actions: [.globalFontIncrease, .globalFontDecrease, .globalFontReset]
             ),
             ShortcutSettingsGroup(
                 id: "browser",

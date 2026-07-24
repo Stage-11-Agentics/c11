@@ -2551,6 +2551,45 @@ final class TerminalSurfaceRegistry {
     }
 }
 
+/// Global (all-terminals) font-size control.
+///
+/// Fans a *relative* Ghostty font-size binding action out to every live
+/// terminal surface. Ghostty's `increase_font_size` / `decrease_font_size`
+/// step from each surface's own current size, so terminals that were zoomed
+/// independently stay relatively offset — the whole board moves together
+/// without collapsing to a single shared size. This is distinct from the
+/// per-surface Cmd +/-/0 path, which only touches the focused surface.
+enum GlobalTerminalFontSize {
+    enum Direction {
+        case increase
+        case decrease
+        case reset
+
+        /// Ghostty binding-action string. The `:1` steps by one point.
+        var bindingAction: String {
+            switch self {
+            case .increase: return "increase_font_size:1"
+            case .decrease: return "decrease_font_size:1"
+            case .reset: return "reset_font_size"
+            }
+        }
+    }
+
+    /// Apply `direction` to every live terminal surface. Returns the count of
+    /// surfaces that accepted the action. Must be called on the main thread
+    /// (it drives Ghostty surfaces).
+    @discardableResult
+    static func apply(_ direction: Direction) -> Int {
+        let action = direction.bindingAction
+        var applied = 0
+        for surface in TerminalSurfaceRegistry.shared.allSurfaces()
+        where surface.performBindingAction(action) {
+            applied += 1
+        }
+        return applied
+    }
+}
+
 // MARK: - Terminal Surface (owns the ghostty_surface_t lifecycle)
 
 final class TerminalSurface: Identifiable, ObservableObject {

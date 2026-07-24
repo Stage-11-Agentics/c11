@@ -25,8 +25,16 @@ enum PickerSysChip: Equatable {
     /// The gold chip label the view draws.
     var label: String {
         switch self {
-        case .blank: return "·blank·"
-        case .mode(let m): return "sys:\(m)"
+        case .blank:
+            return String(localized: "agentPicker.chip.blank", defaultValue: "·blank·")
+        case .mode(let mode):
+            return String(
+                format: String(
+                    localized: "agentPicker.chip.systemPrompt",
+                    defaultValue: "sys:%@"
+                ),
+                mode
+            )
         }
     }
 }
@@ -147,6 +155,9 @@ struct AgentPickerModel {
     let recentConfig: SavedAgentConfig?
     /// What ⏎ launches when nothing is keyboard-selected (design §5.1).
     let effectiveDefault: SavedAgentConfig
+    /// Installed state for the effective default, including transient
+    /// follow-recent recipes whose blank id cannot be found in the shortlist.
+    private let effectiveDefaultIsInstalled: Bool
     /// Precomputed render content.
     let content: AgentPickerContent
 
@@ -162,6 +173,7 @@ struct AgentPickerModel {
         let sorted = library.configs.sorted { $0.order < $1.order }
         self.configs = sorted
         self.effectiveDefault = effectiveDefault
+        self.effectiveDefaultIsInstalled = env.isInstalled(effectiveDefault.config.harness)
 
         let followRecent = library.default.mode == .followRecent
         let pinnedId = library.default.mode == .pinned ? library.default.configId : nil
@@ -275,7 +287,12 @@ struct AgentPickerModel {
     }
 
     private func launchOrNotInstalled(_ cfg: SavedAgentConfig) -> PickerAction {
-        if content.shortlist.first(where: { $0.config.id == cfg.id })?.isInstalled == false {
+        let shortlistInstalled = content.shortlist.first(where: {
+            !$0.config.id.isEmpty && $0.config.id == cfg.id
+        })?.isInstalled
+        let isInstalled = shortlistInstalled
+            ?? (cfg == effectiveDefault ? effectiveDefaultIsInstalled : true)
+        if !isInstalled {
             return .notInstalled(cfg)
         }
         return .launch(cfg)
@@ -291,7 +308,9 @@ struct AgentPickerModel {
     /// `deepseek/deepseek-chat-v3.1` → `deepseek-chat-v3.1`; `opus` → `opus`;
     /// `nil` → `inherit`.
     static func modelLabel(_ model: String?) -> String {
-        guard let m = nonEmpty(model) else { return "inherit" }
+        guard let m = nonEmpty(model) else {
+            return String(localized: "agentPicker.model.inherit", defaultValue: "inherit")
+        }
         if let slash = m.firstIndex(of: "/") { return String(m[m.index(after: slash)...]) }
         return m
     }
@@ -306,7 +325,8 @@ struct AgentPickerModel {
         // No derived provider. Router harnesses still read as "router"; everything
         // else (custom / unknown) shows nothing.
         switch harness {
-        case "opencode", "pi", "omp": return "router"
+        case "opencode", "pi", "omp":
+            return String(localized: "agentPicker.provider.router", defaultValue: "router")
         default: return ""
         }
     }
@@ -356,7 +376,11 @@ struct AgentPickerModel {
             cost: costString(recent.model, env: env),
             showLiveHint: harness != AgentType.claudeCode.rawValue,
             harnessDisplayName: env.displayName(harness),
-            isInstalled: env.isInstalled(harness)
+            // A saved recent row launches the saved recipe as it exists now
+            // (matching `effectiveDefault()`), so availability must follow that
+            // current harness too. The historical harness/model remain visible
+            // provenance in the sub-line.
+            isInstalled: env.isInstalled(cfg?.config.harness ?? harness)
         )
     }
 

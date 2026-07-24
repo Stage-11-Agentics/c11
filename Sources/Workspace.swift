@@ -12404,8 +12404,9 @@ extension Workspace: BonsplitDelegate {
         if let event = NSApp.currentEvent,
            event.type == .rightMouseDown || event.type == .rightMouseUp {
             let location = NSEvent.mouseLocation
+            let window = event.window
             DispatchQueue.main.async { [weak self] in
-                self?.presentAgentPicker(inPane: pane, at: location)
+                self?.presentAgentPicker(inPane: pane, window: window, at: location)
             }
         }
         return []
@@ -12421,8 +12422,17 @@ extension Workspace: BonsplitDelegate {
     /// (design §5.1). `screenPoint` anchors under the right-clicked button; `nil`
     /// (⌘⇧A / menu) anchors at the window's top-trailing corner. Row click =
     /// launch now; pin / ⌥-click = set default without launching (C11-181).
-    func presentAgentPicker(inPane pane: PaneID, at screenPoint: NSPoint? = nil) {
-        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
+    func presentAgentPicker(
+        inPane pane: PaneID,
+        window requestedWindow: NSWindow? = nil,
+        at screenPoint: NSPoint? = nil
+    ) {
+        guard let window = requestedWindow ?? NSApp.keyWindow ?? NSApp.mainWindow else { return }
+
+        // The A button belongs to a pane. Make that pane the launch target before
+        // building the picker so a right-click in an unfocused pane cannot create
+        // the selected agent as a hidden/background tab.
+        bonsplitController.focusPane(pane)
 
         let controller = AgentPickerController(model: makeAgentPickerModel())
         controller.rebuild = { [weak self] in self?.makeAgentPickerModel() }
@@ -12442,12 +12452,20 @@ extension Workspace: BonsplitDelegate {
         // when the effective default is a transient with no id); "Launch stats"
         // opens the stats view. `origin: .popover` lets the sheet order Settings
         // out on close. The Launch-stats row also shows a real inline headline.
+        let armEditorReturn = { [weak self, weak window] in
+            AgentPickerPresenter.shared.armReturnToPicker {
+                guard let self, let window else { return }
+                self.presentAgentPicker(inPane: pane, window: window, at: nil)
+            }
+        }
         controller.onViewAll = {
+            armEditorReturn()
             let eff = AgentConfigLibraryStore.shared.effectiveDefault()
             let focus: AgentConfigEditorFocus = eff.id.isEmpty ? .new : .config(eff.id)
             AppDelegate.shared?.openAgentConfigEditor(focus: focus, origin: .popover)
         }
         controller.onStats = {
+            armEditorReturn()
             AppDelegate.shared?.openAgentConfigEditor(focus: .stats, origin: .popover)
         }
         controller.onNotInstalledHint = { _ in NSSound.beep() }

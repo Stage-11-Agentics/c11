@@ -390,6 +390,40 @@ final class AgentPickerModelTests: XCTestCase {
         XCTAssertEqual(m.handleKey(.enter, option: true), .pin(configs[3])) // ⌥⏎ still pins
     }
 
+    func testRecentAvailabilityFollowsCurrentSavedRecipeHarness() throws {
+        let current = cfg(
+            "c1",
+            "Edited since launch",
+            order: 0,
+            harness: "kimi",
+            model: "k2.5"
+        )
+        let recent = RecentAgentConfig(
+            configId: "c1",
+            harness: "claude-code",
+            model: "opus"
+        )
+        var m = AgentPickerModel(
+            library: library(
+                [current],
+                default: .init(mode: .followRecent, configId: "c1"),
+                recent: recent
+            ),
+            effectiveDefault: current,
+            env: env(installed: { $0 != "kimi" })
+        )
+
+        // The row keeps historical launch axes as provenance, but its disabled
+        // state and activation follow the current saved recipe that will launch.
+        let row = try XCTUnwrap(m.content.recent)
+        XCTAssertEqual(row.subLine, "claude code · opus")
+        XCTAssertFalse(row.isInstalled)
+        _ = m.handleKey(.down) // shortlist
+        _ = m.handleKey(.down) // recent
+        XCTAssertEqual(m.handleKey(.enter), .notInstalled(current))
+        XCTAssertEqual(m.recentClickAction(), .notInstalled(current))
+    }
+
     func testEnterDefaultRespectsInstalledGuard() {
         let configs = sampleConfigs() // default c1 = claude-code
         var m = AgentPickerModel(
@@ -399,6 +433,33 @@ final class AgentPickerModelTests: XCTestCase {
         )
         XCTAssertEqual(m.selectedIndex, -1)
         XCTAssertEqual(m.handleKey(.enter), .notInstalled(configs[0]))
+    }
+
+    func testTransientFollowRecentDefaultRespectsInstalledGuard() {
+        let configs = sampleConfigs()
+        let transient = cfg(
+            "",
+            "Recent router",
+            order: -1,
+            harness: "opencode",
+            model: "openai/gpt-5.2"
+        )
+        var m = AgentPickerModel(
+            library: library(
+                configs,
+                default: .init(mode: .followRecent, configId: "c1"),
+                recent: RecentAgentConfig(
+                    configId: nil,
+                    harness: "opencode",
+                    model: "openai/gpt-5.2"
+                )
+            ),
+            effectiveDefault: transient,
+            env: env(installed: { $0 != "opencode" })
+        )
+
+        XCTAssertEqual(m.selectedIndex, -1)
+        XCTAssertEqual(m.handleKey(.enter), .notInstalled(transient))
     }
 
     func testRelativeTimeBucketTopsClamp() {

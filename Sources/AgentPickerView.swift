@@ -613,6 +613,38 @@ final class AgentPickerPresenter: NSObject, NSPopoverDelegate {
     private var popover: NSPopover?
     private var keyMonitor: Any?
     private weak var controller: AgentPickerController?
+    private var editorClosedObserver: NSObjectProtocol?
+    private var returnToPicker: (() -> Void)?
+
+    private override init() {
+        super.init()
+        editorClosedObserver = NotificationCenter.default.addObserver(
+            forName: AgentConfigEditorRequest.closedName,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let self else { return }
+            let reopen = self.returnToPicker
+            self.returnToPicker = nil
+            guard AgentConfigEditorRequest.shouldReturnToPopover(from: note) else { return }
+            DispatchQueue.main.async {
+                reopen?()
+            }
+        }
+    }
+
+    deinit {
+        if let editorClosedObserver {
+            NotificationCenter.default.removeObserver(editorClosedObserver)
+        }
+    }
+
+    /// Arm the one-shot route back from the tier-2 editor. A launch posts a
+    /// close with `returnToPopover == false`, which clears this action without
+    /// reopening; Back/Escape consumes it and restores the same pane/window.
+    func armReturnToPicker(_ action: @escaping () -> Void) {
+        returnToPicker = action
+    }
 
     /// Present the picker. `screenPoint` anchors under the right-clicked A button
     /// (pointer path); `nil` anchors at the window's top-trailing corner (⌘⇧A / menu).

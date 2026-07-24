@@ -114,6 +114,13 @@ final class CLISurfaceRefArgumentsTests: XCTestCase {
         XCTAssertTrue(rejection(["--surface", "--workspace", "workspace:1"])?.contains("requires a value") == true)
     }
 
+    func testEmptyFlagValuesAreRefusedClientSide() {
+        XCTAssertTrue(rejection(["--surface="])?.contains("requires a non-empty value") == true)
+        XCTAssertTrue(rejection(["--surface", " \t "])?.contains("requires a non-empty value") == true)
+        XCTAssertTrue(rejection(["--panel="])?.contains("requires a non-empty value") == true)
+        XCTAssertTrue(rejection(["--workspace="])?.contains("requires a non-empty value") == true)
+    }
+
     func testConflictingTargetsAreRefused() {
         // Naming two different surfaces can only ever be a mistake; guessing
         // which one to destroy is not an option.
@@ -126,20 +133,73 @@ final class CLISurfaceRefArgumentsTests: XCTestCase {
         XCTAssertEqual(plan(["--surface", "surface:1", "surface:1"])?.surface, "surface:1")
     }
 
-    // MARK: - looksLikeHandle (guards tab-action's destructive close-* actions)
+    // MARK: - tab-action positional safety
 
-    func testLooksLikeHandleAcceptsHandlesAndUUIDs() {
-        XCTAssertTrue(CLISurfaceRefArguments.looksLikeHandle("surface:101"))
-        XCTAssertTrue(CLISurfaceRefArguments.looksLikeHandle("tab:3"))
-        XCTAssertTrue(CLISurfaceRefArguments.looksLikeHandle("pane:46"))
-        XCTAssertTrue(CLISurfaceRefArguments.looksLikeHandle("9E4C3E52-6E4E-4B0E-9E2E-0A1B2C3D4E5F"))
+    func testEveryNonRenameTabActionRejectsEveryLeftoverPositionalShape() {
+        let actions = [
+            "clear-name",
+            "close-left", "close-right", "close-others",
+            "new-terminal-right", "new-browser-right",
+            "reload", "duplicate", "pin", "unpin", "mark-unread",
+            "future-action",
+        ]
+        let unexpected = [
+            "surface:9",
+            "9",
+            "surface:",
+            "ordinary text",
+        ]
+
+        for action in actions {
+            for positional in unexpected {
+                let rejection = CLISurfaceRefArguments.tabActionPositionalRejection(
+                    action: action,
+                    positional: [positional]
+                )
+                XCTAssertNotNil(
+                    rejection,
+                    "\(action) must reject leftover positional '\(positional)' instead of falling back to caller focus"
+                )
+                XCTAssertTrue(rejection?.contains("unexpected '\(positional)'") == true)
+                XCTAssertTrue(rejection?.contains("--tab <id|ref|index>") == true)
+            }
+        }
     }
 
-    func testLooksLikeHandleRejectsFreeText() {
-        // tab-action's positional slot carries the rename title; ordinary words
-        // and bare numbers must stay usable as titles.
-        XCTAssertFalse(CLISurfaceRefArguments.looksLikeHandle("Session forensics"))
-        XCTAssertFalse(CLISurfaceRefArguments.looksLikeHandle("3"))
-        XCTAssertFalse(CLISurfaceRefArguments.looksLikeHandle("notes:today"))
+    func testNonRenameTabActionRejectsTheFirstOfMultipleLeftovers() {
+        let rejection = CLISurfaceRefArguments.tabActionPositionalRejection(
+            action: "close-others",
+            positional: ["surface:", "ignored-second-token"]
+        )
+        XCTAssertTrue(rejection?.contains("unexpected 'surface:'") == true)
+    }
+
+    func testTabActionWithoutLeftoverPositionalIsAccepted() {
+        XCTAssertNil(
+            CLISurfaceRefArguments.tabActionPositionalRejection(
+                action: "close-others",
+                positional: []
+            )
+        )
+    }
+
+    func testRenamePreservesAllTrailingTitleSemantics() {
+        let titles = [
+            ["Session", "forensics"],
+            ["3"],
+            ["surface:9"],
+            ["surface:"],
+            ["notes:today"],
+        ]
+
+        for title in titles {
+            XCTAssertNil(
+                CLISurfaceRefArguments.tabActionPositionalRejection(
+                    action: "ReNaMe",
+                    positional: title
+                ),
+                "rename must preserve trailing title tokens \(title)"
+            )
+        }
     }
 }

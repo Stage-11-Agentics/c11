@@ -99,10 +99,15 @@ public enum CLISurfaceRefArguments {
                 index += 1
             }
 
+            guard let value,
+                  !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return .reject("close-surface: flag '\(name)' requires a non-empty value")
+            }
+
             if name == "--workspace" {
                 workspace = value
             } else {
-                namedSurfaces.append(value ?? "")
+                namedSurfaces.append(value)
             }
             index += 1
         }
@@ -116,14 +121,21 @@ public enum CLISurfaceRefArguments {
         return .plan(CloseSurfacePlan(workspace: workspace, surface: namedSurfaces.first))
     }
 
-    /// True when a token is plainly one of c11's `<kind>:<ordinal>` handles or a
-    /// UUID, i.e. the caller meant it as a target, not as free text. Bare
-    /// integers are deliberately excluded: `3` is as likely to be a title as an
-    /// index.
-    public static func looksLikeHandle(_ raw: String) -> Bool {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if UUID(uuidString: trimmed) != nil { return true }
-        return handleKindAndOrdinal(trimmed) != nil
+    /// Refuse any positional token left after `tab-action` has consumed its
+    /// action, except for `rename`, whose trailing positionals intentionally
+    /// form the title.
+    ///
+    /// Other actions do not own a positional slot. Accepting even an
+    /// innocent-looking value such as a bare index or a malformed handle would
+    /// discard the caller's apparent target and let tab resolution fall back to
+    /// caller focus. Keep this generic so every present and future non-rename
+    /// action gets the same destructive-target safety rule.
+    public static func tabActionPositionalRejection(action: String, positional: [String]) -> String? {
+        let normalizedAction = action.lowercased().replacingOccurrences(of: "-", with: "_")
+        guard normalizedAction != "rename", let stray = positional.first else {
+            return nil
+        }
+        return "tab-action: action '\(normalizedAction)' does not take positional arguments; unexpected '\(stray)'. Pass the target with '--tab <id|ref|index>'."
     }
 
     private enum PositionalClass {

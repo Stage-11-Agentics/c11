@@ -5277,16 +5277,15 @@ struct CMUXCLI {
 
         let action = actionRaw.lowercased().replacingOccurrences(of: "-", with: "_")
 
-        // A leftover positional handle is a mis-typed target, not a title. Left
-        // alone it is swallowed into `title` and the tab resolver falls back to
-        // $CMUX_TAB_ID/$CMUX_SURFACE_ID, so `tab-action --action close-others
-        // surface:9` would close every tab *except* the caller's, while the
-        // operator is looking at the ref they typed. Refuse instead: the
-        // positional slot here already belongs to the action and the rename
-        // title, so there is no unambiguous way to honor it.
-        if action != "rename",
-           let stray = positional.first(where: { CLISurfaceRefArguments.looksLikeHandle($0) }) {
-            throw CLIError(message: "tab-action: unexpected argument '\(stray)'. Did you mean '--tab \(stray)'?")
+        // Only rename owns trailing positional arguments (its title). For every
+        // other action, refuse every leftover token: accepting a handle, bare
+        // index, malformed handle, or arbitrary text would discard the apparent
+        // target and let the action fall back to the caller-focused tab.
+        if let rejection = CLISurfaceRefArguments.tabActionPositionalRejection(
+            action: action,
+            positional: positional
+        ) {
+            throw CLIError(message: rejection)
         }
 
         let workspaceArg = workspaceOpt ?? (windowOverride == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)

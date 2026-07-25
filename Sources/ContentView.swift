@@ -11908,8 +11908,22 @@ private struct TabItemView: View, Equatable {
 
     private var cardSelectionRingColor: Color {
         colorScheme == .light
-            ? BrandColors.blackSwiftUI.opacity(0.9)
-            : BrandColors.whiteSwiftUI.opacity(0.98)
+            ? BrandColors.blackSwiftUI.opacity(0.92)
+            : BrandColors.whiteSwiftUI
+    }
+
+    /// Inner-ring accent for selected workspaces that have no color of their
+    /// own: the c11 brand gold, deepened in light mode so it keeps its bite
+    /// against the parchment card base (the void-black base needs no help).
+    private var cardSelectionAccentColor: Color {
+        colorScheme == .light
+            ? Color(nsColor: NSColor(
+                srgbRed: 0x8F / 255.0,
+                green: 0x77 / 255.0,
+                blue: 0x33 / 255.0,
+                alpha: 1
+            ))
+            : BrandColors.goldSwiftUI
     }
 
     /// Outer ring. Priority: selection, then the live waiting signal, then
@@ -11930,21 +11944,39 @@ private struct TabItemView: View, Equatable {
     }
 
     private var workspacePulseBorderLineWidth: CGFloat {
-        if isActive { return 2 }
+        if isActive { return 2.5 }
         if workspacePulse.waitingCount > 0 { return 1.5 }
         return workspaceIdentityOutlineColor == nil ? 1 : 2
     }
 
-    /// Inner ring, inset just inside the outer one. Carries the workspace
+    /// Inner ring, inset flush against the outer one. Carries the workspace
     /// color when selection or the waiting signal has claimed the outer ring,
     /// so a selected card is unmistakably selected *and* still identifiable
-    /// by color at a glance.
+    /// by color at a glance. Selected workspaces with no color of their own
+    /// fall back to the brand gold, so selection always reads as a filled
+    /// double edge rather than a lone outline.
+    ///
+    /// Waiting and selection both land on gold-family hues, so the grammar of
+    /// the card edge is what separates them: gold on the *outermost* edge
+    /// with no white ring means waiting; white on the outermost edge with the
+    /// gold inset *inside* it means selected. The widths reinforce it — the
+    /// selection ring is 2.5pt against waiting's 1.5pt.
     private var workspacePulseInnerRingColor: Color? {
-        guard !cardFillCarriesIdentityColor,
-              let workspaceIdentityOutlineColor,
-              isActive || workspacePulse.waitingCount > 0
-        else { return nil }
-        return workspaceIdentityOutlineColor
+        if !cardFillCarriesIdentityColor,
+           let workspaceIdentityOutlineColor,
+           isActive || workspacePulse.waitingCount > 0 {
+            return workspaceIdentityOutlineColor
+        }
+        if isActive, !cardFillCarriesIdentityColor {
+            return cardSelectionAccentColor
+        }
+        return nil
+    }
+
+    /// Keeps the inner ring flush against the outer one whatever width the
+    /// outer ring resolved to, and keeps the two radii concentric.
+    private var workspacePulseInnerRingInset: CGFloat {
+        workspacePulseBorderLineWidth
     }
 
     private var workspacePulseCardOpacity: Double {
@@ -11987,9 +12019,10 @@ private struct TabItemView: View, Equatable {
             }
             .overlay {
                 if let workspacePulseInnerRingColor {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    let inset = workspacePulseInnerRingInset
+                    RoundedRectangle(cornerRadius: 12 - inset, style: .continuous)
                         .strokeBorder(workspacePulseInnerRingColor, lineWidth: 2)
-                        .padding(2)
+                        .padding(inset)
                         .allowsHitTesting(false)
                 }
             }

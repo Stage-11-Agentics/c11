@@ -6682,14 +6682,18 @@ final class Workspace: Identifiable, ObservableObject {
         AppDelegate.shared?.notificationStore?.hasUnreadNotification(forTabId: id, surfaceId: panelId) ?? false
     }
 
+    /// `terminalKind` lets a caller that has already read the surface's kind
+    /// hand it in. The sidebar roster reads it for its agent test and would
+    /// otherwise pay for the same lookup twice per surface, per evaluation.
     func resolvedSurfaceTabActivityState(
         panelId: UUID,
-        hasExactSurfaceNotification: Bool? = nil
+        hasExactSurfaceNotification: Bool? = nil,
+        terminalKind: String?? = nil
     ) -> BonsplitTabActivityState? {
         SurfaceTabActivityResolver.resolve(
             hasExactSurfaceNotification: hasExactSurfaceNotification ?? hasUnreadNotification(panelId: panelId),
             derivedActivity: derivedActivityBySurface[panelId],
-            terminalType: surfaceTerminalKind(panelId: panelId)
+            terminalType: terminalKind ?? surfaceTerminalKind(panelId: panelId)
         )
     }
 
@@ -7480,7 +7484,14 @@ final class Workspace: Identifiable, ObservableObject {
 
     /// Read the current M7 title-bar state for a surface as a SwiftUI view state.
     func surfaceTitleBarState(panelId: UUID) -> SurfaceTitleBarState {
-        let snapshot = SurfaceMetadataStore.shared.getMetadata(workspaceId: id, surfaceId: panelId)
+        // Sidebar-hot: called for every agent surface of every workspace on
+        // each sidebar body evaluation. Ask for the two keys it reads rather
+        // than a whole converted source map.
+        let snapshot = SurfaceMetadataStore.shared.getMetadata(
+            workspaceId: id,
+            surfaceId: panelId,
+            keys: [MetadataKey.title, MetadataKey.description]
+        )
         let title = snapshot.metadata[MetadataKey.title] as? String
         let description = snapshot.metadata[MetadataKey.description] as? String
         return SurfaceTitleBarState(
@@ -8254,8 +8265,11 @@ final class Workspace: Identifiable, ObservableObject {
 
     /// Read a surface's declared `terminal_type` (canonical metadata key), if any.
     func surfaceTerminalKind(panelId: UUID) -> String? {
-        let md = SurfaceMetadataStore.shared.getMetadata(workspaceId: id, surfaceId: panelId).metadata
-        return md[MetadataKey.terminalType] as? String
+        SurfaceMetadataStore.shared.metadataValue(
+            workspaceId: id,
+            surfaceId: panelId,
+            key: MetadataKey.terminalType
+        ) as? String
     }
 
     /// Optional per-surface minimum override (`min_cols` / `min_rows` metadata) —

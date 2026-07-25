@@ -55509,6 +55509,52 @@
         }
       }
     },
+    "sidebar.workspacePulse.browserCount.one": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 browser"
+          }
+        }
+      }
+    },
+    "sidebar.workspacePulse.browserCount.other": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld browsers"
+          }
+        }
+      }
+    },
+    "sidebar.workspacePulse.censusEmpty": {
+      "comment" : "Workspace pulse card surface census when the workspace holds no countable surfaces.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No surfaces"
+          }
+        }
+      }
+    },
+    "sidebar.workspacePulse.censusSeparator": {
+      "comment" : "Joins the parts of the workspace pulse surface census, e.g. \"13 agents, 2 browsers\". Use the list separator conventional for the locale.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ", "
+          }
+        }
+      }
+    },
     "sidebar.workspacePulse.cold": {
       "extractionState": "manual",
       "localizations": {
@@ -55552,6 +55598,42 @@
           "stringUnit": {
             "state": "translated",
             "value": "Холодна"
+          }
+        }
+      }
+    },
+    "sidebar.workspacePulse.documentCount.one": {
+      "comment" : "One markdown surface in the workspace pulse census. Keep it short; the card is narrow.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 doc"
+          }
+        }
+      }
+    },
+    "sidebar.workspacePulse.documentCount.other": {
+      "comment" : "Markdown surfaces in the workspace pulse census. Keep it short; the card is narrow.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld docs"
+          }
+        }
+      }
+    },
+    "sidebar.workspacePulse.markOverflow": {
+      "comment" : "Accessibility label for the workspace pulse agent-mark row when the census does not fit the sidebar; %lld is the number of agents not drawn.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld more agents"
           }
         }
       }

@@ -55556,6 +55556,18 @@
         }
       }
     },
+    "sidebar.workspacePulse.markOverflow": {
+      "comment" : "Accessibility label for the workspace pulse agent-mark row when the census does not fit the sidebar; %lld is the number of agents not drawn.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld more agents"
+          }
+        }
+      }
+    },
     "sidebar.workspacePulse.moreWaiting": {
       "extractionState": "manual",
       "localizations": {

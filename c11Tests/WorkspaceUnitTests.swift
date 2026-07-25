@@ -2294,11 +2294,125 @@ final class SidebarWorkspaceShortcutHintMetricsTests: XCTestCase {
 
     func testSlotWidthAppliesMinimumAndDebugInset() {
         let nilLabelWidth = SidebarWorkspaceShortcutHintMetrics.slotWidth(label: nil, debugXOffset: 999)
-        XCTAssertEqual(nilLabelWidth, 28)
+        XCTAssertEqual(nilLabelWidth, 18)
 
         let base = SidebarWorkspaceShortcutHintMetrics.slotWidth(label: "⌘1", debugXOffset: 0)
         let widened = SidebarWorkspaceShortcutHintMetrics.slotWidth(label: "⌘1", debugXOffset: 10)
         XCTAssertGreaterThan(widened, base)
+    }
+
+    /// A shortcut label still reserves the measured pill width, so trimming
+    /// the label-less minimum must not narrow the labelled slot.
+    func testSlotWidthForLabelledWorkspaceStillFitsPill() {
+        let labelled = SidebarWorkspaceShortcutHintMetrics.slotWidth(label: "⌘1", debugXOffset: 0)
+        XCTAssertGreaterThanOrEqual(labelled, SidebarWorkspaceShortcutHintMetrics.hintWidth(for: "⌘1"))
+    }
+}
+
+@MainActor
+final class WorkspacePulseMarkRowMetricsTests: XCTestCase {
+    private let sidebarCardContentWidth: CGFloat = 178
+
+    private func fittedWidth(_ layout: WorkspacePulseMarkRowMetrics.Layout) -> CGFloat {
+        WorkspacePulseMarkRowMetrics.width(
+            count: layout.visibleCount,
+            slot: layout.slot,
+            spacing: layout.spacing
+        ) + (layout.hiddenCount > 0
+            ? WorkspacePulseMarkRowMetrics.overflowLabelWidth + WorkspacePulseMarkRowMetrics.minimumSpacing
+            : 0)
+    }
+
+    func testSmallRosterKeepsPreferredMetrics() {
+        let layout = WorkspacePulseMarkRowMetrics.layout(count: 4, availableWidth: sidebarCardContentWidth)
+        XCTAssertEqual(layout.slot, WorkspacePulseMarkRowMetrics.preferredSlot)
+        XCTAssertEqual(layout.spacing, WorkspacePulseMarkRowMetrics.preferredSpacing)
+        XCTAssertEqual(layout.visibleCount, 4)
+        XCTAssertEqual(layout.hiddenCount, 0)
+    }
+
+    /// The bug this row was rebuilt for: at twelve agents a fixed 14pt slot
+    /// with 7pt gaps needs 245pt in a 178pt card, and the overflow grew and
+    /// centre-clipped the whole workspace card.
+    func testCrowdedRosterStaysInsideTheCard() {
+        for count in 1...40 {
+            let layout = WorkspacePulseMarkRowMetrics.layout(
+                count: count,
+                availableWidth: sidebarCardContentWidth
+            )
+            XCTAssertLessThanOrEqual(
+                fittedWidth(layout),
+                sidebarCardContentWidth + 0.01,
+                "count=\(count) overflows the card"
+            )
+            XCTAssertEqual(layout.visibleCount + layout.hiddenCount, count, "count=\(count) lost agents")
+        }
+    }
+
+    func testCrowdedRosterCompressesGapsBeforeMarks() {
+        let layout = WorkspacePulseMarkRowMetrics.layout(count: 10, availableWidth: sidebarCardContentWidth)
+        XCTAssertEqual(layout.slot, WorkspacePulseMarkRowMetrics.preferredSlot)
+        XCTAssertLessThan(layout.spacing, WorkspacePulseMarkRowMetrics.preferredSpacing)
+        XCTAssertGreaterThanOrEqual(layout.spacing, WorkspacePulseMarkRowMetrics.minimumSpacing)
+        XCTAssertEqual(layout.hiddenCount, 0)
+    }
+
+    func testVeryCrowdedRosterShrinksMarksAndKeepsThemAllVisible() {
+        let layout = WorkspacePulseMarkRowMetrics.layout(count: 16, availableWidth: sidebarCardContentWidth)
+        XCTAssertEqual(layout.spacing, WorkspacePulseMarkRowMetrics.minimumSpacing)
+        XCTAssertLessThan(layout.slot, WorkspacePulseMarkRowMetrics.preferredSlot)
+        XCTAssertGreaterThanOrEqual(layout.slot, WorkspacePulseMarkRowMetrics.minimumSlot)
+        XCTAssertEqual(layout.visibleCount, 16)
+        XCTAssertEqual(layout.hiddenCount, 0)
+        XCTAssertEqual(layout.markSide, min(9, layout.slot), accuracy: 0.01)
+        XCTAssertLessThanOrEqual(layout.markSide, layout.slot)
+    }
+
+    func testOverflowingRosterCountsTheRemainder() {
+        let layout = WorkspacePulseMarkRowMetrics.layout(count: 60, availableWidth: sidebarCardContentWidth)
+        XCTAssertGreaterThan(layout.hiddenCount, 0)
+        XCTAssertGreaterThan(layout.visibleCount, 0)
+        XCTAssertEqual(layout.visibleCount + layout.hiddenCount, 60)
+        XCTAssertLessThanOrEqual(fittedWidth(layout), sidebarCardContentWidth + 0.01)
+    }
+
+    func testNarrowSidebarStillFits() {
+        for width in stride(from: 60.0, through: 400.0, by: 10.0) {
+            let layout = WorkspacePulseMarkRowMetrics.layout(count: 24, availableWidth: CGFloat(width))
+            XCTAssertLessThanOrEqual(
+                fittedWidth(layout),
+                CGFloat(width) + 0.01,
+                "width=\(width) overflows"
+            )
+            XCTAssertEqual(layout.visibleCount + layout.hiddenCount, 24)
+        }
+    }
+
+    /// Below the width of the overflow count itself the row has nothing left
+    /// to give; it must still return a usable layout rather than negative
+    /// metrics or a lost agent count.
+    func testDegenerateWidthStaysSane() {
+        for width in stride(from: 1.0, through: 55.0, by: 3.0) {
+            let layout = WorkspacePulseMarkRowMetrics.layout(count: 24, availableWidth: CGFloat(width))
+            XCTAssertGreaterThanOrEqual(layout.slot, WorkspacePulseMarkRowMetrics.minimumSlot)
+            XCTAssertGreaterThanOrEqual(layout.spacing, WorkspacePulseMarkRowMetrics.minimumSpacing)
+            XCTAssertGreaterThanOrEqual(layout.visibleCount, 0)
+            XCTAssertEqual(layout.visibleCount + layout.hiddenCount, 24)
+        }
+    }
+
+    /// Geometry is zero on the first layout pass; rendering a `+N` there
+    /// would flash on every card appearance.
+    func testUnresolvedGeometryRendersEveryMark() {
+        let layout = WorkspacePulseMarkRowMetrics.layout(count: 12, availableWidth: 0)
+        XCTAssertEqual(layout.visibleCount, 12)
+        XCTAssertEqual(layout.hiddenCount, 0)
+    }
+
+    func testEmptyRosterRendersNothing() {
+        let layout = WorkspacePulseMarkRowMetrics.layout(count: 0, availableWidth: sidebarCardContentWidth)
+        XCTAssertEqual(layout.visibleCount, 0)
+        XCTAssertEqual(layout.hiddenCount, 0)
     }
 }
 

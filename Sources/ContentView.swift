@@ -11883,16 +11883,68 @@ private struct TabItemView: View, Equatable {
         ))
     }
 
+    /// Full-strength workspace identity color for the card outline, or nil
+    /// when the workspace has no identity color of its own (those cards stay
+    /// on the neutral hairline). Prefers the theme's resolved rail color when
+    /// the theme path supplies one, otherwise resolves the user's custom hex
+    /// against the current appearance — deliberately *not* force-brightened
+    /// like `resolvedCustomTabColor`, so the outline stays legible on the
+    /// light card base as well as the void-black one.
+    private var workspaceIdentityOutlineColor: Color? {
+        if let themedRailColor {
+            return Color(nsColor: themedRailColor)
+        }
+        guard let hex = tab.customColor else { return nil }
+        return WorkspaceTabColorSettings.displayColor(hex: hex, colorScheme: colorScheme)
+    }
+
+    /// True when the card fill already *is* the workspace color (the
+    /// `.solidFill` indicator style with a custom color). Stacking an inner
+    /// identity ring on an identity-colored fill only muddies the edge, so
+    /// the double border collapses to the selection ring there.
+    private var cardFillCarriesIdentityColor: Bool {
+        tab.customColor != nil && themedBackgroundColor != nil
+    }
+
+    private var cardSelectionRingColor: Color {
+        colorScheme == .light
+            ? BrandColors.blackSwiftUI.opacity(0.9)
+            : BrandColors.whiteSwiftUI.opacity(0.98)
+    }
+
+    /// Outer ring. Priority: selection, then the live waiting signal, then
+    /// the workspace's own color, then the neutral hairline. Whenever
+    /// selection or waiting claims the outer ring, the workspace color moves
+    /// to the inner ring rather than disappearing.
     private var workspacePulseBorderColor: Color {
         if isActive {
-            return colorScheme == .light
-                ? BrandColors.blackSwiftUI.opacity(0.82)
-                : BrandColors.whiteSwiftUI.opacity(0.9)
+            return cardSelectionRingColor
         }
         if workspacePulse.waitingCount > 0 {
-            return workspacePulseColor(for: .waiting).opacity(0.38)
+            return workspacePulseColor(for: .waiting).opacity(0.7)
+        }
+        if let workspaceIdentityOutlineColor {
+            return workspaceIdentityOutlineColor
         }
         return workspacePulseIdentityColor.opacity(0.32)
+    }
+
+    private var workspacePulseBorderLineWidth: CGFloat {
+        if isActive { return 2 }
+        if workspacePulse.waitingCount > 0 { return 1.5 }
+        return workspaceIdentityOutlineColor == nil ? 1 : 2
+    }
+
+    /// Inner ring, inset just inside the outer one. Carries the workspace
+    /// color when selection or the waiting signal has claimed the outer ring,
+    /// so a selected card is unmistakably selected *and* still identifiable
+    /// by color at a glance.
+    private var workspacePulseInnerRingColor: Color? {
+        guard !cardFillCarriesIdentityColor,
+              let workspaceIdentityOutlineColor,
+              isActive || workspacePulse.waitingCount > 0
+        else { return nil }
+        return workspaceIdentityOutlineColor
     }
 
     private var workspacePulseCardOpacity: Double {
@@ -11930,8 +11982,16 @@ private struct TabItemView: View, Equatable {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(
                         workspacePulseBorderColor,
-                        lineWidth: isActive ? 2 : 1
+                        lineWidth: workspacePulseBorderLineWidth
                     )
+            }
+            .overlay {
+                if let workspacePulseInnerRingColor {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(workspacePulseInnerRingColor, lineWidth: 2)
+                        .padding(2)
+                        .allowsHitTesting(false)
+                }
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)

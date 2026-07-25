@@ -2310,6 +2310,165 @@ final class SidebarWorkspaceShortcutHintMetricsTests: XCTestCase {
 }
 
 @MainActor
+final class WorkspacePulseCensusTests: XCTestCase {
+    private func line(_ parts: [(Int, String)]) -> String {
+        WorkspacePulseCensus.line(
+            parts: parts.map { (count: $0.0, label: $0.1) },
+            separator: ", ",
+            empty: "No surfaces"
+        )
+    }
+
+    func testJoinsEveryPresentKindInOrder() {
+        XCTAssertEqual(
+            line([(13, "13 agents"), (2, "2 terminals"), (3, "3 browsers"), (1, "1 doc")]),
+            "13 agents, 2 terminals, 3 browsers, 1 doc"
+        )
+    }
+
+    /// The card has one census line in a ~178pt column, so absent kinds have
+    /// to yield their space to the kinds that are actually there.
+    func testDropsAbsentKinds() {
+        XCTAssertEqual(
+            line([(13, "13 agents"), (0, "0 terminals"), (2, "2 browsers"), (0, "0 docs")]),
+            "13 agents, 2 browsers"
+        )
+    }
+
+    func testSingleKindHasNoSeparator() {
+        XCTAssertEqual(line([(0, "0 agents"), (4, "4 terminals")]), "4 terminals")
+    }
+
+    func testEmptyCensusFallsBackRatherThanRenderingBlank() {
+        XCTAssertEqual(line([(0, "0 agents"), (0, "0 terminals")]), "No surfaces")
+        XCTAssertEqual(line([]), "No surfaces")
+    }
+
+    func testNegativeCountsAreTreatedAsAbsent() {
+        XCTAssertEqual(line([(-1, "-1 agents"), (1, "1 browser")]), "1 browser")
+    }
+}
+
+@MainActor
+final class SurfaceMetadataStoreTargetedReadTests: XCTestCase {
+    private let workspaceId = UUID()
+
+    /// The targeted reads exist to keep the sidebar off the whole-source-map
+    /// conversion; they are only worth having if they agree with it.
+    func testTargetedReadsMatchTheFullSnapshot() throws {
+        let store = SurfaceMetadataStore.shared
+        let surfaceId = UUID()
+        _ = try store.setMetadata(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId,
+            partial: [
+                MetadataKey.terminalType: "claude-code",
+                MetadataKey.title: "Sidebar card bug",
+                MetadataKey.description: "Lineage: operator → fix"
+            ],
+            mode: .merge,
+            source: .explicit
+        )
+        defer {
+            _ = try? store.clearMetadata(
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                keys: nil,
+                source: .explicit
+            )
+        }
+
+        let full = store.getMetadata(workspaceId: workspaceId, surfaceId: surfaceId)
+
+        XCTAssertEqual(
+            store.metadataValue(
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                key: MetadataKey.terminalType
+            ) as? String,
+            full.metadata[MetadataKey.terminalType] as? String
+        )
+
+        let subset = store.getMetadata(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId,
+            keys: [MetadataKey.title, MetadataKey.description]
+        )
+        XCTAssertEqual(subset.metadata[MetadataKey.title] as? String, full.metadata[MetadataKey.title] as? String)
+        XCTAssertEqual(
+            subset.metadata[MetadataKey.description] as? String,
+            full.metadata[MetadataKey.description] as? String
+        )
+        XCTAssertEqual(
+            subset.sources[MetadataKey.title]?["source"] as? String,
+            full.sources[MetadataKey.title]?["source"] as? String
+        )
+        // The subset carries only what was asked for.
+        XCTAssertNil(subset.metadata[MetadataKey.terminalType])
+        XCTAssertNil(subset.sources[MetadataKey.terminalType])
+    }
+
+    func testTargetedReadsOnUnknownSurfaceAreEmpty() {
+        let store = SurfaceMetadataStore.shared
+        let missing = UUID()
+        XCTAssertNil(store.metadataValue(workspaceId: workspaceId, surfaceId: missing, key: MetadataKey.terminalType))
+        let subset = store.getMetadata(workspaceId: workspaceId, surfaceId: missing, keys: [MetadataKey.title])
+        XCTAssertTrue(subset.metadata.isEmpty)
+        XCTAssertTrue(subset.sources.isEmpty)
+    }
+}
+
+@MainActor
+final class WorkspacePulseSurfaceCensusProjectionTests: XCTestCase {
+    func testProjectorCarriesEverySurfaceKind() {
+        let summary = WorkspacePulseProjector.project(
+            hasWorkspaceDemand: false,
+            agents: [
+                WorkspacePulseAgent(surfaceId: UUID(), state: .working, context: nil),
+                WorkspacePulseAgent(surfaceId: UUID(), state: .idle, context: nil)
+            ],
+            terminalCount: 3,
+            browserCount: 2,
+            documentCount: 1
+        )
+        XCTAssertEqual(summary.agents.count, 2)
+        XCTAssertEqual(summary.terminalCount, 3)
+        XCTAssertEqual(summary.browserCount, 2)
+        XCTAssertEqual(summary.documentCount, 1)
+    }
+
+    func testNegativeSurfaceCountsClampToZero() {
+        let summary = WorkspacePulseProjector.project(
+            hasWorkspaceDemand: false,
+            agents: [],
+            terminalCount: -4,
+            browserCount: -1,
+            documentCount: -9
+        )
+        XCTAssertEqual(summary.terminalCount, 0)
+        XCTAssertEqual(summary.browserCount, 0)
+        XCTAssertEqual(summary.documentCount, 0)
+    }
+
+    /// Browser and document counts join the card's Equatable identity, so a
+    /// browser opening in a background workspace has to redraw its card.
+    func testSurfaceCountsParticipateInEquality() {
+        func summary(browsers: Int, documents: Int) -> WorkspacePulseSummary {
+            WorkspacePulseProjector.project(
+                hasWorkspaceDemand: false,
+                agents: [],
+                terminalCount: 1,
+                browserCount: browsers,
+                documentCount: documents
+            )
+        }
+        XCTAssertEqual(summary(browsers: 1, documents: 1), summary(browsers: 1, documents: 1))
+        XCTAssertNotEqual(summary(browsers: 1, documents: 1), summary(browsers: 2, documents: 1))
+        XCTAssertNotEqual(summary(browsers: 1, documents: 1), summary(browsers: 1, documents: 0))
+    }
+}
+
+@MainActor
 final class WorkspacePulseMarkRowMetricsTests: XCTestCase {
     private let sidebarCardContentWidth: CGFloat = 178
 

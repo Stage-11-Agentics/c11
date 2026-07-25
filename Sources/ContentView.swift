@@ -8625,14 +8625,24 @@ struct VerticalTabsSidebar: View {
                                 // parent. TabItemView receives an immutable value so
                                 // its typing-hot body does no metadata/store work.
                                 let unreadCount = notificationStore.unreadCount(forTabId: tab.id)
-                                let pulseRoster: (agents: [WorkspacePulseAgent], terminalCount: Int) = {
+                                let pulseRoster: (
+                                    agents: [WorkspacePulseAgent],
+                                    terminalCount: Int,
+                                    browserCount: Int,
+                                    documentCount: Int
+                                ) = {
                                     var agents: [WorkspacePulseAgent] = []
                                     var terminalCount = 0
+                                    var browserCount = 0
+                                    var documentCount = 0
                                     for panelId in tab.sidebarOrderedPanelIds() {
                                         let terminalKind = tab.surfaceTerminalKind(panelId: panelId)
                                         guard PaneSizePolicy.isAgentKind(terminalKind) else {
-                                            if tab.panels[panelId]?.panelType == .terminal {
-                                                terminalCount += 1
+                                            switch tab.panels[panelId]?.panelType {
+                                            case .terminal: terminalCount += 1
+                                            case .browser: browserCount += 1
+                                            case .markdown: documentCount += 1
+                                            case nil: break
                                             }
                                             continue
                                         }
@@ -8641,7 +8651,8 @@ struct VerticalTabsSidebar: View {
                                             hasExactSurfaceNotification: notificationStore.hasUnreadNotification(
                                                 forTabId: tab.id,
                                                 surfaceId: panelId
-                                            )
+                                            ),
+                                            terminalKind: .some(terminalKind)
                                         )
                                         let pulseState: WorkspacePulseState
                                         switch resolved {
@@ -8670,12 +8681,14 @@ struct VerticalTabsSidebar: View {
                                             )
                                         )
                                     }
-                                    return (agents, terminalCount)
+                                    return (agents, terminalCount, browserCount, documentCount)
                                 }()
                                 let workspacePulse = WorkspacePulseProjector.project(
                                     hasWorkspaceDemand: unreadCount > 0,
                                     agents: pulseRoster.agents,
-                                    terminalCount: pulseRoster.terminalCount
+                                    terminalCount: pulseRoster.terminalCount,
+                                    browserCount: pulseRoster.browserCount,
+                                    documentCount: pulseRoster.documentCount
                                 )
                                 TabItemView(
                                     tabManager: tabManager,
@@ -8713,6 +8726,24 @@ struct VerticalTabsSidebar: View {
                             }
                         }
                         .padding(.vertical, 8)
+                        // Structural guarantee for the card metaphor.
+                        //
+                        // A vertical ScrollView does not clamp its rows to the
+                        // viewport. Any descendant whose *minimum* width beats
+                        // the sidebar — a fixed-slot row, a `fixedSize` label,
+                        // anything that cannot truncate — widens the whole
+                        // stack, and centre alignment then shifts every card
+                        // left until its border, its inset, and the first
+                        // characters of every line are outside the window.
+                        //
+                        // Individual offenders get fixed where they live (the
+                        // pulse mark row measures and compresses). This is the
+                        // backstop that keeps the next one from breaking the
+                        // card at all: pinned to the viewport and leading
+                        // aligned, an over-wide row can only clip its own
+                        // right edge.
+                        .frame(width: proxy.size.width, alignment: .leading)
+                        .clipped()
 
                         SidebarEmptyArea(
                             rowSpacing: tabRowSpacing,
@@ -11369,6 +11400,23 @@ enum WorkspacePulseMarkRowMetrics {
     }
 }
 
+/// Joins the workspace pulse card's surface census.
+///
+/// Absent kinds are dropped rather than reported as zero: a card that spends
+/// its one census line on "0 browsers" has nothing left for the kinds the
+/// workspace actually holds, and the sidebar is narrow enough that the line
+/// truncates when every kind is listed.
+enum WorkspacePulseCensus {
+    static func line(
+        parts: [(count: Int, label: String)],
+        separator: String,
+        empty: String
+    ) -> String {
+        let present = parts.filter { $0.count > 0 }.map(\.label)
+        return present.isEmpty ? empty : present.joined(separator: separator)
+    }
+}
+
 enum SidebarWorkspaceShortcutHintMetrics {
     private static let measurementFont = NSFont.systemFont(ofSize: 10, weight: .semibold)
     /// Held for the close button (16pt) when the workspace has no ⌘-digit
@@ -11904,6 +11952,53 @@ private struct TabItemView: View, Equatable {
         )
     }
 
+    private var workspacePulseBrowserCountText: String {
+        if workspacePulse.browserCount == 1 {
+            return String(
+                localized: "sidebar.workspacePulse.browserCount.one",
+                defaultValue: "1 browser"
+            )
+        }
+        return String(
+            localized: "sidebar.workspacePulse.browserCount.other",
+            defaultValue: "\(workspacePulse.browserCount) browsers"
+        )
+    }
+
+    private var workspacePulseDocumentCountText: String {
+        if workspacePulse.documentCount == 1 {
+            return String(
+                localized: "sidebar.workspacePulse.documentCount.one",
+                defaultValue: "1 doc"
+            )
+        }
+        return String(
+            localized: "sidebar.workspacePulse.documentCount.other",
+            defaultValue: "\(workspacePulse.documentCount) docs"
+        )
+    }
+
+    /// The workspace's whole surface census on one line, every kind it
+    /// actually holds: "13 agents, 2 browsers, 1 doc".
+    private var workspacePulseCensusText: String {
+        WorkspacePulseCensus.line(
+            parts: [
+                (workspacePulse.agents.count, workspacePulseAgentCountText),
+                (workspacePulse.terminalCount, workspacePulseTerminalCountText),
+                (workspacePulse.browserCount, workspacePulseBrowserCountText),
+                (workspacePulse.documentCount, workspacePulseDocumentCountText)
+            ],
+            separator: String(
+                localized: "sidebar.workspacePulse.censusSeparator",
+                defaultValue: ", "
+            ),
+            empty: String(
+                localized: "sidebar.workspacePulse.censusEmpty",
+                defaultValue: "No surfaces"
+            )
+        )
+    }
+
     /// Trailing-aligned census of per-agent state marks.
     ///
     /// Sized against measured geometry rather than a fixed slot per agent so
@@ -11951,13 +12046,14 @@ private struct TabItemView: View, Equatable {
     private var workspacePulseFooter: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
-                Text(verbatim: workspacePulseAgentCountText)
+                // Three or four kinds on a ~160pt card outruns the line.
+                // Shrinking the census is a better trade than cutting the
+                // last kind off it: the counts stay readable, and a card
+                // that lists browsers is exactly the card that needed the
+                // extra room.
+                Text(verbatim: workspacePulseCensusText)
                     .lineLimit(1)
-                Circle()
-                    .fill(Color.secondary.opacity(0.65))
-                    .frame(width: 2, height: 2)
-                Text(verbatim: workspacePulseTerminalCountText)
-                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                     .truncationMode(.tail)
                 Spacer(minLength: 0)
             }

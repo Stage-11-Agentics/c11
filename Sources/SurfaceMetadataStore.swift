@@ -437,6 +437,44 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         }
     }
 
+    /// One metadata value, without materialising the surface's source map.
+    ///
+    /// `getMetadata` converts every source entry to JSON on every call. The
+    /// sidebar reads `terminal_type` for every surface of every workspace on
+    /// each evaluation of its body, so on a workspace holding tens of agents
+    /// that conversion was being paid hundreds of times per frame for a
+    /// single string. Callers that want one key should ask for one key.
+    func metadataValue(workspaceId: UUID, surfaceId: UUID, key: String) -> Any? {
+        return queue.sync {
+            metadata[workspaceId]?[surfaceId]?[key]
+        }
+    }
+
+    /// Metadata plus sources for a named subset of keys. Same reasoning as
+    /// `metadataValue`: converting the keys the caller asked about is bounded
+    /// work, converting all of them is not.
+    func getMetadata(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        keys: [String]
+    ) -> (metadata: [String: Any], sources: [String: [String: Any]]) {
+        return queue.sync {
+            let allMetadata = metadata[workspaceId]?[surfaceId]
+            let allSources = sources[workspaceId]?[surfaceId]
+            var md: [String: Any] = [:]
+            var src: [String: [String: Any]] = [:]
+            for key in keys {
+                if let value = allMetadata?[key] {
+                    md[key] = value
+                }
+                if let source = allSources?[key] {
+                    src[key] = source.toJSON()
+                }
+            }
+            return (md, src)
+        }
+    }
+
     /// Read the monotonic revision counter. Used by the autosave fingerprint
     /// so metadata-only mutations trigger a write at the next tick.
     func currentRevision() -> UInt64 {

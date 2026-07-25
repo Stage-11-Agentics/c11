@@ -5615,22 +5615,28 @@ final class Workspace: Identifiable, ObservableObject {
         .init(backgroundHex: backgroundColor.hexString())
     }
 
+    /// Agent-state palette shared by sidebar workspace pulse marks, the card
+    /// agent rollup bar, and bonsplit surface-tab activity chips.
+    ///
+    /// running/idle/cold are a neutral white-to-gray ramp (running most present,
+    /// cold most receded) so `waiting` gold stays the only chromatic mark in the
+    /// chrome: the brand's deliberate "needs you" signal.
     nonisolated static func resolvedSurfaceTabActivityColors(
         from backgroundColor: NSColor
     ) -> BonsplitConfiguration.Appearance.TabActivityColors {
         if backgroundColor.isLightColor {
             return .init(
-                runningHex: "#326D9E",
-                idleHex: "#357B61",
-                coldHex: "#7F8289",
+                runningHex: "#1D2024",
+                idleHex: "#585D66",
+                coldHex: "#8D939C",
                 waitingHex: "#9B7415",
                 waitingInkHex: "#FFFDF8"
             )
         }
         return .init(
-            runningHex: "#79AEE8",
-            idleHex: "#78B59E",
-            coldHex: "#707681",
+            runningHex: "#E8E8E8",
+            idleHex: "#9AA0A9",
+            coldHex: "#62676F",
             waitingHex: "#D0AA45",
             waitingInkHex: "#08090B"
         )

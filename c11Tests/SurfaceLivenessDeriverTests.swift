@@ -174,16 +174,16 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
 
     func testSurfaceTabActivityColorsMatchDarkAndLightContract() {
         let dark = Workspace.resolvedSurfaceTabActivityColors(from: NSColor(hex: "#101114")!)
-        XCTAssertEqual(dark.runningHex, "#79AEE8")
-        XCTAssertEqual(dark.idleHex, "#78B59E")
-        XCTAssertEqual(dark.coldHex, "#707681")
+        XCTAssertEqual(dark.runningHex, "#E8E8E8")
+        XCTAssertEqual(dark.idleHex, "#9AA0A9")
+        XCTAssertEqual(dark.coldHex, "#62676F")
         XCTAssertEqual(dark.waitingHex, "#D0AA45")
         XCTAssertEqual(dark.waitingInkHex, "#08090B")
 
         let light = Workspace.resolvedSurfaceTabActivityColors(from: NSColor(hex: "#F5F3EF")!)
-        XCTAssertEqual(light.runningHex, "#326D9E")
-        XCTAssertEqual(light.idleHex, "#357B61")
-        XCTAssertEqual(light.coldHex, "#7F8289")
+        XCTAssertEqual(light.runningHex, "#1D2024")
+        XCTAssertEqual(light.idleHex, "#585D66")
+        XCTAssertEqual(light.coldHex, "#8D939C")
         XCTAssertEqual(light.waitingHex, "#9B7415")
         XCTAssertEqual(light.waitingInkHex, "#FFFDF8")
     }

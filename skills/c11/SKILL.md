@@ -16,7 +16,7 @@ This card is deliberately short. It covers **orientation** — the one thing eve
 
 Refs accept UUIDs, short refs, or indexes: `workspace:1`, `pane:2`, `surface:3`, `tab:1`. **A bare number from the operator is a surface ref.** With the "Show Surface IDs in Tab Titles" setting on, every tab displays `N: title` where N is its `surface:N` ordinal — so "send that to 292" means target `surface:292` (with its `--workspace`). Always write the `surface:N` form; a bare integer in a CLI flag is a positional index, a different thing. Your own N is `$C11_SURFACE_NUM`.
 
-**Where new work goes:** a new **pane** when the work wants its own spatial slot (a sub-agent, a log tail, a browser for validation); a new **surface** when a pane just wants another tab; a new **workspace** when the operator names a different project or mission. Default to one workspace per project unless the operator's setup says otherwise.
+**Where new work goes:** a new **pane** when the work wants its own spatial slot (a sub-agent, a log tail, a browser for validation); a new **surface** when a pane just wants another tab; a new **workspace** when the operator names a different project or mission. Default to one workspace per project unless the operator's setup says otherwise. **Wanting agents isolated from each other is not a reason for a new workspace** — same-workspace agents are already separate processes with separate context; blindness between agents comes from their prompts, never from topology (see [references/orchestration.md](references/orchestration.md#isolation-is-a-prompt-rule-not-a-topology-rule)).
 
 ## Boot fast, orient lazily
 

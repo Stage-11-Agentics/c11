@@ -19,6 +19,14 @@ Patterns for running multiple agents in parallel panes: layout, tab naming, laun
 
 Within a single orchestration run, keep the agents as surfaces (tabs) within panes of the run's workspace rather than spawning a fresh workspace per agent. One workspace per agent fragments the run across the sidebar and makes it hard to read; grouping them keeps the whole run legible in one place.
 
+### Isolation is a prompt rule, not a topology rule
+
+**Do not reach for `--new-workspace` to keep agents from influencing each other.** Agents in the same workspace are *already* isolated: separate processes, separate context, no shared state. Nothing about sharing a workspace lets one agent see another's work. If you need agents not to consult each other — independent audits, blind reviews, a bake-off — say so **in the prompt** ("work alone; do not read, message, or coordinate with any other agent, surface, or pane; do not read other agents' transcripts"). That is the only mechanism that actually binds. A separate workspace adds zero isolation and costs real legibility.
+
+Observed failure (2026-07-25): an orchestrator asked to open two blind auditors "as surfaces" spawned each with `--new-workspace`, reasoning that the operator's "don't let them look at each other" called for a hard barrier. The barrier was imaginary — the prompt was already doing the work — and the run ended up scattered across three workspaces the operator then had to hunt through. Note that `launch-agent` defaults to `$C11_WORKSPACE_ID` and the focused pane, so **the correct call was the one with fewer flags**.
+
+Before adding any separation flag, ask what it actually isolates. If the answer is "nothing the prompt doesn't already handle," drop it.
+
 Standard orchestration layout for a single project:
 
 ```

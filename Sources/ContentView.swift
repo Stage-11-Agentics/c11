@@ -11635,10 +11635,6 @@ private struct TabItemView: View, Equatable {
         return Color(nsColor: hex.flatMap(NSColor.init(hex:)) ?? .secondaryLabelColor)
     }
 
-    private var workspacePulseWaitingInk: Color {
-        Color(nsColor: workspacePulseColors.waitingInkHex.flatMap(NSColor.init(hex:)) ?? .textColor)
-    }
-
     private func workspacePulseLabel(for state: WorkspacePulseState) -> String {
         switch state {
         case .waiting:
@@ -11652,36 +11648,30 @@ private struct TabItemView: View, Equatable {
         }
     }
 
+    /// Agent-state mark: a hard-edged terminal cell, matching the surface-tab
+    /// chips bonsplit draws. Fill state carries the meaning — solid for
+    /// working, hollow for idle, a flat line for cold, solid gold for waiting —
+    /// so the state reads without relying on color alone. Nothing animates.
     @ViewBuilder
     private func workspacePulseMark(
         for state: WorkspacePulseState,
         summaryScale: Bool = false
     ) -> some View {
         let color = workspacePulseColor(for: state)
+        let side: CGFloat = summaryScale ? 10 : 9
         switch state {
-        case .waiting:
-            ZStack {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(color)
-                Text(verbatim: "W")
-                    .font(.system(size: summaryScale ? 8 : 7, weight: .black, design: .monospaced))
-                    .foregroundColor(workspacePulseWaitingInk)
-            }
-            .frame(width: summaryScale ? 16 : 14, height: summaryScale ? 16 : 14)
-        case .working:
-            Circle()
-                .trim(from: 0.12, to: 0.88)
-                .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                .rotationEffect(.degrees(-42))
-                .frame(width: summaryScale ? 11 : 10, height: summaryScale ? 11 : 10)
-        case .idle:
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
+        case .waiting, .working:
+            Rectangle()
                 .fill(color)
-                .frame(width: summaryScale ? 9 : 8, height: summaryScale ? 9 : 8)
+                .frame(width: side, height: side)
+        case .idle:
+            Rectangle()
+                .strokeBorder(color, lineWidth: 1)
+                .frame(width: side, height: side)
         case .cold:
-            Circle()
-                .fill(color.opacity(0.82))
-                .frame(width: summaryScale ? 7 : 6, height: summaryScale ? 7 : 6)
+            Rectangle()
+                .fill(color)
+                .frame(width: side, height: 2)
         }
     }
 
@@ -11845,7 +11835,7 @@ private struct TabItemView: View, Equatable {
             let availableWidth = max(0, proxy.size.width - totalGaps)
             HStack(spacing: gap) {
                 ForEach(populatedStates, id: \.self) { state in
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    Rectangle()
                         .fill(workspacePulseColor(for: state))
                         .frame(
                             width: availableWidth
@@ -11857,10 +11847,10 @@ private struct TabItemView: View, Equatable {
         }
         .frame(height: 4)
         .background(
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
+            Rectangle()
                 .fill(BrandColors.ruleSwiftUI.opacity(workspacePulse.agents.isEmpty ? 0.55 : 0.35))
         )
-        .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
+        .clipShape(Rectangle())
         .padding(.top, 9)
         .accessibilityHidden(true)
     }

@@ -38,7 +38,6 @@ struct WorkspacePulseSummary: Equatable {
     let agents: [WorkspacePulseAgent]
     let terminalCount: Int
     let browserCount: Int
-    let documentCount: Int
 
     init(
         waitingCount: Int,
@@ -47,8 +46,7 @@ struct WorkspacePulseSummary: Equatable {
         coldCount: Int,
         agents: [WorkspacePulseAgent] = [],
         terminalCount: Int = 0,
-        browserCount: Int = 0,
-        documentCount: Int = 0
+        browserCount: Int = 0
     ) {
         self.waitingCount = waitingCount
         self.workingCount = workingCount
@@ -57,7 +55,6 @@ struct WorkspacePulseSummary: Equatable {
         self.agents = agents
         self.terminalCount = terminalCount
         self.browserCount = browserCount
-        self.documentCount = documentCount
     }
 
     var dominant: WorkspacePulseState {
@@ -122,8 +119,7 @@ enum WorkspacePulseProjector {
         hasWorkspaceDemand: Bool,
         agents: [WorkspacePulseAgent],
         terminalCount: Int,
-        browserCount: Int = 0,
-        documentCount: Int = 0
+        browserCount: Int = 0
     ) -> WorkspacePulseSummary {
         var waiting = agents.filter { $0.state == .waiting }.count
         if hasWorkspaceDemand && waiting == 0 {
@@ -136,8 +132,7 @@ enum WorkspacePulseProjector {
             coldCount: agents.filter { $0.state == .cold }.count,
             agents: agents,
             terminalCount: max(0, terminalCount),
-            browserCount: max(0, browserCount),
-            documentCount: max(0, documentCount)
+            browserCount: max(0, browserCount)
         )
     }
 

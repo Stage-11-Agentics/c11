@@ -2321,8 +2321,8 @@ final class WorkspacePulseCensusTests: XCTestCase {
 
     func testJoinsEveryPresentKindInOrder() {
         XCTAssertEqual(
-            line([(13, "13 agents"), (2, "2 terminals"), (3, "3 browsers"), (1, "1 doc")]),
-            "13 agents, 2 terminals, 3 browsers, 1 doc"
+            line([(13, "13 agents"), (2, "2 terminals"), (3, "3 browsers")]),
+            "13 agents, 2 terminals, 3 browsers"
         )
     }
 
@@ -2330,7 +2330,7 @@ final class WorkspacePulseCensusTests: XCTestCase {
     /// to yield their space to the kinds that are actually there.
     func testDropsAbsentKinds() {
         XCTAssertEqual(
-            line([(13, "13 agents"), (0, "0 terminals"), (2, "2 browsers"), (0, "0 docs")]),
+            line([(13, "13 agents"), (0, "0 terminals"), (2, "2 browsers")]),
             "13 agents, 2 browsers"
         )
     }
@@ -2428,13 +2428,11 @@ final class WorkspacePulseSurfaceCensusProjectionTests: XCTestCase {
                 WorkspacePulseAgent(surfaceId: UUID(), state: .idle, context: nil)
             ],
             terminalCount: 3,
-            browserCount: 2,
-            documentCount: 1
+            browserCount: 2
         )
         XCTAssertEqual(summary.agents.count, 2)
         XCTAssertEqual(summary.terminalCount, 3)
         XCTAssertEqual(summary.browserCount, 2)
-        XCTAssertEqual(summary.documentCount, 1)
     }
 
     func testNegativeSurfaceCountsClampToZero() {
@@ -2442,29 +2440,26 @@ final class WorkspacePulseSurfaceCensusProjectionTests: XCTestCase {
             hasWorkspaceDemand: false,
             agents: [],
             terminalCount: -4,
-            browserCount: -1,
-            documentCount: -9
+            browserCount: -1
         )
         XCTAssertEqual(summary.terminalCount, 0)
         XCTAssertEqual(summary.browserCount, 0)
-        XCTAssertEqual(summary.documentCount, 0)
     }
 
-    /// Browser and document counts join the card's Equatable identity, so a
-    /// browser opening in a background workspace has to redraw its card.
+    /// The browser count joins the card's Equatable identity, so a browser
+    /// opening in a background workspace has to redraw its card.
     func testSurfaceCountsParticipateInEquality() {
-        func summary(browsers: Int, documents: Int) -> WorkspacePulseSummary {
+        func summary(browsers: Int) -> WorkspacePulseSummary {
             WorkspacePulseProjector.project(
                 hasWorkspaceDemand: false,
                 agents: [],
                 terminalCount: 1,
-                browserCount: browsers,
-                documentCount: documents
+                browserCount: browsers
             )
         }
-        XCTAssertEqual(summary(browsers: 1, documents: 1), summary(browsers: 1, documents: 1))
-        XCTAssertNotEqual(summary(browsers: 1, documents: 1), summary(browsers: 2, documents: 1))
-        XCTAssertNotEqual(summary(browsers: 1, documents: 1), summary(browsers: 1, documents: 0))
+        XCTAssertEqual(summary(browsers: 1), summary(browsers: 1))
+        XCTAssertNotEqual(summary(browsers: 1), summary(browsers: 2))
+        XCTAssertNotEqual(summary(browsers: 1), summary(browsers: 0))
     }
 }
 

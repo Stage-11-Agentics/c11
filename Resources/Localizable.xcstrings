@@ -54333,30 +54333,6 @@
         }
       }
     },
-    "sidebar.workspacePulse.documentCount.one": {
-      "comment" : "One markdown surface in the workspace pulse census. Keep it short; the card is narrow.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 doc"
-          }
-        }
-      }
-    },
-    "sidebar.workspacePulse.documentCount.other": {
-      "comment" : "Markdown surfaces in the workspace pulse census. Keep it short; the card is narrow.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld docs"
-          }
-        }
-      }
-    },
     "sidebar.workspacePulse.markOverflow": {
       "comment" : "Accessibility label for the workspace pulse agent-mark row when the census does not fit the sidebar; %lld is the number of agents not drawn.",
       "extractionState": "manual",

@@ -8628,20 +8628,18 @@ struct VerticalTabsSidebar: View {
                                 let pulseRoster: (
                                     agents: [WorkspacePulseAgent],
                                     terminalCount: Int,
-                                    browserCount: Int,
-                                    documentCount: Int
+                                    browserCount: Int
                                 ) = {
                                     var agents: [WorkspacePulseAgent] = []
                                     var terminalCount = 0
                                     var browserCount = 0
-                                    var documentCount = 0
                                     for panelId in tab.sidebarOrderedPanelIds() {
                                         let terminalKind = tab.surfaceTerminalKind(panelId: panelId)
                                         guard PaneSizePolicy.isAgentKind(terminalKind) else {
                                             switch tab.panels[panelId]?.panelType {
                                             case .terminal: terminalCount += 1
                                             case .browser: browserCount += 1
-                                            case .markdown: documentCount += 1
+                                            case .markdown: break
                                             case nil: break
                                             }
                                             continue
@@ -8681,14 +8679,13 @@ struct VerticalTabsSidebar: View {
                                             )
                                         )
                                     }
-                                    return (agents, terminalCount, browserCount, documentCount)
+                                    return (agents, terminalCount, browserCount)
                                 }()
                                 let workspacePulse = WorkspacePulseProjector.project(
                                     hasWorkspaceDemand: unreadCount > 0,
                                     agents: pulseRoster.agents,
                                     terminalCount: pulseRoster.terminalCount,
-                                    browserCount: pulseRoster.browserCount,
-                                    documentCount: pulseRoster.documentCount
+                                    browserCount: pulseRoster.browserCount
                                 )
                                 TabItemView(
                                     tabManager: tabManager,
@@ -11965,28 +11962,14 @@ private struct TabItemView: View, Equatable {
         )
     }
 
-    private var workspacePulseDocumentCountText: String {
-        if workspacePulse.documentCount == 1 {
-            return String(
-                localized: "sidebar.workspacePulse.documentCount.one",
-                defaultValue: "1 doc"
-            )
-        }
-        return String(
-            localized: "sidebar.workspacePulse.documentCount.other",
-            defaultValue: "\(workspacePulse.documentCount) docs"
-        )
-    }
-
-    /// The workspace's whole surface census on one line, every kind it
-    /// actually holds: "13 agents, 2 browsers, 1 doc".
+    /// The workspace's surface census on one line, every kind it actually
+    /// holds: "9 agents, 3 terminals, 1 browser".
     private var workspacePulseCensusText: String {
         WorkspacePulseCensus.line(
             parts: [
                 (workspacePulse.agents.count, workspacePulseAgentCountText),
                 (workspacePulse.terminalCount, workspacePulseTerminalCountText),
-                (workspacePulse.browserCount, workspacePulseBrowserCountText),
-                (workspacePulse.documentCount, workspacePulseDocumentCountText)
+                (workspacePulse.browserCount, workspacePulseBrowserCountText)
             ],
             separator: String(
                 localized: "sidebar.workspacePulse.censusSeparator",
@@ -12046,11 +12029,11 @@ private struct TabItemView: View, Equatable {
     private var workspacePulseFooter: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
-                // Three or four kinds on a ~160pt card outruns the line.
-                // Shrinking the census is a better trade than cutting the
-                // last kind off it: the counts stay readable, and a card
-                // that lists browsers is exactly the card that needed the
-                // extra room.
+                // All three kinds on a narrow card runs the line close to
+                // its limit. Shrinking the census is a better trade than
+                // cutting the last kind off it: the counts stay readable,
+                // and a card that lists browsers is exactly the card that
+                // needed the extra room.
                 Text(verbatim: workspacePulseCensusText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)

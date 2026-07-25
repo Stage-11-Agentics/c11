@@ -8444,11 +8444,11 @@ private struct SidebarResizerAccessibilityModifier: ViewModifier {
 struct VerticalTabsSidebar: View {
     @ObservedObject var updateViewModel: UpdateViewModel
     @ObservedObject private var themeManager = ThemeManager.shared
-    /// C11-25: subscribe to per-surface CPU/RSS sampler revision bumps so
-    /// the sidebar re-evaluates at the sample cadence (default 2 Hz).
-    /// `TabItemView.==` short-circuits body re-eval when the row's
-    /// metrics value didn't change, so this stays cheap.
-    @ObservedObject private var surfaceMetricsSampler = SurfaceMetricsSampler.shared
+    // C11-25: the CPU/RSS sampler is deliberately NOT observed here. Its
+    // 2 Hz revision bump is subscribed inside `SidebarSurfaceMetricsReadout`,
+    // the leaf that renders the numbers, so a sample tick no longer walks
+    // the whole sidebar (workspace pulse projection, worktree chips, per-row
+    // Equatable compares) twice a second.
     let onSendFeedback: () -> Void
     @EnvironmentObject var tabManager: TabManager
     @EnvironmentObject var notificationStore: TerminalNotificationStore
@@ -8620,15 +8620,6 @@ struct VerticalTabsSidebar: View {
                                         isDirty: isDirty
                                     )
                                 }()
-                                // C11-25: read the focused surface's most recent CPU/RSS
-                                // sample as a precomputed `let`. The sampler's revision is
-                                // observed at the struct level so this re-evaluates at the
-                                // sample cadence; equality on the resolved sample (rounded
-                                // for stability) decides whether the row body re-renders.
-                                let surfaceMetricsSample: SurfaceMetricsSampler.Sample? = {
-                                    guard let focusedId = tab.focusedPanelId else { return nil }
-                                    return SurfaceMetricsSampler.shared.sample(forSurfaceId: focusedId)
-                                }()
                                 // Workspace Pulse preview: project existing exact
                                 // notification + agent liveness truth once in the
                                 // parent. TabItemView receives an immutable value so
@@ -8693,7 +8684,6 @@ struct VerticalTabsSidebar: View {
                                     index: index,
                                     isActive: isActive,
                                     worktreeChipRows: worktreeChipRows,
-                                    surfaceMetricsSample: surfaceMetricsSample,
                                     workspaceShortcutDigit: WorkspaceShortcutMapper.commandDigitForWorkspace(
                                         at: index,
                                         workspaceCount: workspaceCount
@@ -11323,6 +11313,71 @@ enum SidebarWorkspaceShortcutHintMetrics {
     #endif
 }
 
+/// C11-25: the focused surface's CPU/RSS readout inside a workspace card.
+///
+/// The sampler's 2 Hz `revision` is observed HERE and never inside
+/// `TabItemView`'s Equatable body — the same containment discipline
+/// `SidebarProgressIndicator` uses for the decay clock. Two consequences
+/// the sidebar depends on:
+///
+/// 1. The slot always occupies its line. A workspace whose focused surface
+///    has no sample yet (terminal still resolving its PID, browser between
+///    WebContent processes) shows a dimmed placeholder in the same font and
+///    on the same baseline, so real values fade in without the card
+///    restructuring underneath them.
+/// 2. `TabItemView`'s body no longer re-evaluates twice a second just
+///    because a digit moved, which is what tore down an open workspace
+///    context menu while the operator was still reading it.
+private struct SidebarSurfaceMetricsReadout: View {
+    @ObservedObject private var sampler = SurfaceMetricsSampler.shared
+
+    /// Focused surface for the workspace, or nil when the workspace has no
+    /// focused panel. Either way the slot renders.
+    let surfaceId: UUID?
+    let valueColor: Color
+    let placeholderColor: Color
+
+    /// Null state. Holds the shape of a real reading ("12% 340MB") without
+    /// asserting a number. Glyph-only, so it needs no localization.
+    static let placeholder = "–% –MB"
+
+    /// Render a Sample as a compact "<cpu>% <mem>" string.
+    /// CPU is integer percent (0%–800% on multi-core spikes); memory is
+    /// integer MB up to 1024, otherwise 1-decimal GB.
+    nonisolated static func format(_ sample: SurfaceMetricsSampler.Sample) -> String {
+        let cpu = "\(Int(sample.cpuPct.rounded()))%"
+        let mem: String
+        if sample.rssMb >= 1024 {
+            mem = String(format: "%.1fGB", sample.rssMb / 1024)
+        } else {
+            mem = "\(Int(sample.rssMb.rounded()))MB"
+        }
+        return "\(cpu) \(mem)"
+    }
+
+    var body: some View {
+        let sample = surfaceId.flatMap { sampler.sample(forSurfaceId: $0) }
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+            Text(sample.map(Self.format) ?? Self.placeholder)
+                .font(.system(size: 9, design: .monospaced))
+                .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .foregroundColor(sample == nil ? placeholderColor : valueColor)
+                // Trailing-aligned against a floor width so a value growing
+                // from "0% 1MB" to "104% 1.2GB" never nudges the line.
+                .frame(minWidth: 52, alignment: .trailing)
+                .accessibilityIdentifier(
+                    sample == nil
+                        ? "SidebarTabSurfaceMetricsPlaceholder"
+                        : "SidebarTabSurfaceMetrics"
+                )
+        }
+        .padding(.top, 1)
+    }
+}
+
 // PERF: TabItemView is Equatable so SwiftUI skips body re-evaluation when
 // the parent rebuilds with unchanged values. Without this, every TabManager
 // or NotificationStore publish causes ALL tab items to re-evaluate (~18% of
@@ -11342,7 +11397,6 @@ private struct TabItemView: View, Equatable {
         lhs.index == rhs.index &&
         lhs.isActive == rhs.isActive &&
         lhs.worktreeChipRows == rhs.worktreeChipRows &&
-        TabItemView.surfaceMetricsEqual(lhs.surfaceMetricsSample, rhs.surfaceMetricsSample) &&
         lhs.workspaceShortcutDigit == rhs.workspaceShortcutDigit &&
         lhs.canCloseWorkspace == rhs.canCloseWorkspace &&
         lhs.accessibilityWorkspaceCount == rhs.accessibilityWorkspaceCount &&
@@ -11360,39 +11414,6 @@ private struct TabItemView: View, Equatable {
         lhs.chromeTokens == rhs.chromeTokens
     }
 
-    /// Equality on metric samples is rounded so sub-percent / sub-MB
-    /// jitter at the 2 Hz sample cadence does not invalidate
-    /// `TabItemView.==` and force body re-eval. We only redraw when the
-    /// rendered text would change.
-    nonisolated static func surfaceMetricsEqual(
-        _ a: SurfaceMetricsSampler.Sample?,
-        _ b: SurfaceMetricsSampler.Sample?
-    ) -> Bool {
-        switch (a, b) {
-        case (nil, nil):
-            return true
-        case let (a?, b?):
-            return Int(a.cpuPct.rounded()) == Int(b.cpuPct.rounded())
-                && Int(a.rssMb.rounded()) == Int(b.rssMb.rounded())
-        default:
-            return false
-        }
-    }
-
-    /// Render a Sample as a compact "<cpu>% <mem>" string.
-    /// CPU is integer percent (0%–800% on multi-core spikes); memory is
-    /// integer MB up to 1024, otherwise 1-decimal GB.
-    nonisolated static func formatSurfaceMetrics(_ sample: SurfaceMetricsSampler.Sample) -> String {
-        let cpu = "\(Int(sample.cpuPct.rounded()))%"
-        let mem: String
-        if sample.rssMb >= 1024 {
-            mem = String(format: "%.1fGB", sample.rssMb / 1024)
-        } else {
-            mem = "\(Int(sample.rssMb.rounded()))MB"
-        }
-        return "\(cpu) \(mem)"
-    }
-
     // Use plain references instead of @EnvironmentObject to avoid subscribing
     // to ALL changes on these objects. Body reads use precomputed parameters;
     // action handlers use the plain references without triggering re-evaluation.
@@ -11407,10 +11428,6 @@ private struct TabItemView: View, Equatable {
     /// not in a git directory. Keeping the projection upstream means
     /// the TabItemView body does zero IO/git work.
     let worktreeChipRows: [WorktreeChipRow]
-    /// C11-25: most recent CPU/RSS sample for the workspace's focused
-    /// surface, or nil when no PID is registered (terminals — pending
-    /// the TTY → child PID resolver follow-up).
-    let surfaceMetricsSample: SurfaceMetricsSampler.Sample?
     let workspaceShortcutDigit: Int?
     let canCloseWorkspace: Bool
     let accessibilityWorkspaceCount: Int
@@ -12065,17 +12082,19 @@ private struct TabItemView: View, Equatable {
             // C11-25: preserve the focused surface's CPU/RSS reading without
             // the legacy focused-agent identity badge. Workspace Pulse owns
             // agent state and identity in this card.
-            if let sample = surfaceMetricsSample {
-                HStack {
-                    Spacer(minLength: 0)
-                    Text(TabItemView.formatSurfaceMetrics(sample))
-                        .font(.system(size: 9, design: .monospaced))
-                        .monospacedDigit()
-                        .foregroundColor(activeSecondaryColor(0.55))
-                        .accessibilityIdentifier("SidebarTabSurfaceMetrics")
-                }
-                .padding(.top, 1)
-            }
+            //
+            // Rendered unconditionally: the readout owns its own null state
+            // and its own observation of the sampler, so the card's structure
+            // is identical whether or not a sample exists. See
+            // `SidebarSurfaceMetricsReadout`.
+            SidebarSurfaceMetricsReadout(
+                surfaceId: tab.focusedPanelId,
+                valueColor: activeSecondaryColor(0.55),
+                // `activeSecondaryColor` collapses to `.secondary` on the
+                // non-inverted path, so the null state's dimming has to be
+                // applied explicitly rather than through its opacity arg.
+                placeholderColor: activeSecondaryColor(0.55).opacity(0.45)
+            )
 
             // C11-104 — worktree + branch chips. Renders when the master
             // toggle is on AND the resolver returned context for this

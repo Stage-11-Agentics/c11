@@ -120,6 +120,17 @@ final class TerminalControllerSocketSecurityTests: XCTestCase {
 #endif
     }
 
+    func testPingHasContextFreeSocketWorkerResponse() async {
+        let response = await Task.detached {
+            XCTAssertFalse(Thread.isMainThread)
+            return TerminalController.socketWorkerImmediateV1Response("  PING  ")
+        }.value
+
+        XCTAssertEqual(response, "PONG")
+        XCTAssertNil(TerminalController.socketWorkerImmediateV1Response("list_windows"))
+        XCTAssertNil(TerminalController.socketWorkerImmediateV1Response(#"{"method":"system.ping"}"#))
+    }
+
     func testRemoteStatusPayloadOmitsSensitiveSSHConfiguration() {
         let tabManager = TabManager()
         let workspace = tabManager.addWorkspace(select: false, eagerLoadTerminal: false)

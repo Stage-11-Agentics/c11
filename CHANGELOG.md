@@ -6,19 +6,24 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
-## [0.60.1] - 2026-07-25
+## [0.60.1] - 2026-07-26
 
-Headline: **Workspace cards hold their shape at any agent count.** A busy workspace could push its card off the left edge of the window; it no longer can, whatever the workspace holds.
+Headline: **Busy workspaces stay legible, and untouched agents go Cold on a clock.** Workspace cards hold their shape at any agent count, while a live agent becomes Cold only after the configured dormancy interval.
 
 ### Fixed
 
 - **Workspace cards stay inside the sidebar however many agents a workspace holds.** Past roughly nine agents the card ran edge to edge, lost its border, and shifted far enough left that the title and every metadata line were cut off by the window. The agent-state marks now compress to fit, falling back to a `+N` count on a very large roster, and the card's geometry is enforced structurally so no future row can break it. ([#374](https://github.com/Stage-11-Agentics/c11/pull/374)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
 - **Workspace card titles use the room they have.** Every card reserved space for accessories it was not showing, truncating titles roughly 17pt early. ([#374](https://github.com/Stage-11-Agentics/c11/pull/374)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
 - **The sidebar does less work per frame on workspaces with many agents.** Reading one metadata value no longer converts a surface's entire source map, and the workspace roster no longer looks the same value up twice per surface. ([#374](https://github.com/Stage-11-Agentics/c11/pull/374)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **Exited agents return to terminal presentation instead of becoming Cold.** When an agent process exits and leaves its shell behind, the surface is classified as a terminal again rather than lingering as a dormant agent.
+- **Agent notifications no longer suppress one another across a workspace.** Grok and Codex surfaces keep their native notifications when a Claude surface is open beside them.
+- **Agent launch checks stay responsive while c11 is busy.** The lightweight socket ping used by agent wrappers no longer waits behind unrelated UI work and incorrectly treats a live c11 instance as unavailable.
 
 ### Changed
 
 - **Workspace cards count every surface, not just agents and terminals.** The card's census separates agents from everything else the workspace holds, browsers and markdown surfaces included: `9 agents, 4 other surfaces`. A workspace with no agents just reads `4 surfaces`. ([#374](https://github.com/Stage-11-Agentics/c11/pull/374)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **Live agents become Cold after a configurable untouched interval, defaulting to ten minutes.** Submitting a task or receiving lifecycle activity resets the clock.
+- **Settings exposes only the understandable “Agents Go Cold After” control.** Status-pill staleness and expiry still work, but their decay thresholds remain internal instead of appearing as separate operator controls.
 
 ### Thanks to 1 contributor!
 

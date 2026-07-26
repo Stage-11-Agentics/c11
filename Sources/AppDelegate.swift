@@ -2271,6 +2271,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// would masquerade as the prior shutdown — so the capture must be armed
     /// from whichever path runs first.
     private var didArmShutdownSentinel = false
+    private var resolvedResumeRecoveryMode: ResumeRecoveryMode?
+    private var didEmitResolvedResumeRecoveryMode = false
     private var didAttemptStartupSessionRestore = false
     private var isApplyingStartupSessionRestore = false
     private var sessionAutosaveTimer: DispatchSourceTimer?
@@ -2470,6 +2472,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         ShutdownSentinel.writeDirty(bundleId: bundleId)
     }
 
+    private func recordResolvedResumeRecoveryMode(_ mode: ResumeRecoveryMode) {
+        resolvedResumeRecoveryMode = mode
+        guard !didEmitResolvedResumeRecoveryMode else { return }
+        didEmitResolvedResumeRecoveryMode =
+            EventEmitter.shared.emitConversationResumeMode(mode)
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         mirrorC11CmuxEnv()
 
@@ -2477,6 +2486,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // recreates workspaces/surfaces — so surface.created and the
         // log.opened marker land from the first instant (amendment K).
         EventEmitter.shared.start()
+        if let resolvedResumeRecoveryMode {
+            recordResolvedResumeRecoveryMode(resolvedResumeRecoveryMode)
+        }
 
         // C11-24/C11-131: capture the prior-shutdown decision and arm this
         // run's dirty sentinel as early as possible — before any potential
@@ -3267,7 +3279,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // prior-shutdown decision, not the default `.missing`, before the
         // dirty-recovery branch below consumes it. Idempotent.
         armShutdownSentinelIfNeeded()
-        guard SessionRestorePolicy.shouldAttemptRestore() else { return }
+        guard SessionRestorePolicy.shouldAttemptRestore() else {
+            recordResolvedResumeRecoveryMode(.noResume)
+            return
+        }
         let snapshot = SessionPersistenceStore.load()
         startupSessionSnapshot = snapshot
 
@@ -3285,6 +3300,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             explicitNoResume: explicitNoResume,
             priorShutdown: priorShutdownAtLaunch
         )
+        recordResolvedResumeRecoveryMode(mode)
         let epoch = ResumeStartupEpochGate.shared.begin(mode: mode)
 
         guard let snapshot, !ConversationStorePolicy.isDisabled else {

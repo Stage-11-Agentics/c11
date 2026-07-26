@@ -214,6 +214,63 @@ final class EventLogTests: XCTestCase {
         XCTAssertEqual(payload?["scope"] as? String, "surface")
     }
 
+    func testEmitterRecordsResumeModeAndTypedDecisions() {
+        let log = EventLog(url: logURL(), instance: "resume-inst")
+        EventEmitter.shared.startForTesting(log: log, instance: "resume-inst")
+        let ws = UUID()
+        let skippedSurface = UUID()
+        let commandSurface = UUID()
+
+        XCTAssertTrue(EventEmitter.shared.emitConversationResumeMode(.dirty))
+        XCTAssertTrue(EventEmitter.shared.emitConversationResumeDecision(
+            workspace: ws,
+            surface: skippedSurface,
+            kind: "claude-code",
+            conversationId: "abc12345-ef67-890a-bcde-f0123456789a",
+            mode: .dirty,
+            decision: .skip(
+                code: .transcriptMissing,
+                reason: "transcript not found"
+            )
+        ))
+        XCTAssertTrue(EventEmitter.shared.emitConversationResumeDecision(
+            workspace: ws,
+            surface: commandSurface,
+            kind: "opencode",
+            conversationId: "ses_example",
+            mode: .dirty,
+            decision: .command(ResumeCommand(text: "not persisted"))
+        ))
+        EventEmitter.shared.flush()
+
+        let events = readLines(logURL()).map(parse)
+        XCTAssertEqual(events.count, 3)
+
+        XCTAssertEqual(events[0]["type"] as? String, "conversation.resume.mode")
+        let modePayload = events[0]["payload"] as? [String: Any]
+        XCTAssertEqual(modePayload?["mode"] as? String, "dirty")
+
+        XCTAssertEqual(events[1]["type"] as? String, "conversation.resume.decision")
+        XCTAssertEqual(events[1]["workspace"] as? String, ws.uuidString)
+        XCTAssertEqual(events[1]["surface"] as? String, skippedSurface.uuidString)
+        let skipPayload = events[1]["payload"] as? [String: Any]
+        XCTAssertEqual(skipPayload?["kind"] as? String, "claude-code")
+        XCTAssertEqual(
+            skipPayload?["conversation_id"] as? String,
+            "abc12345-ef67-890a-bcde-f0123456789a"
+        )
+        XCTAssertEqual(skipPayload?["mode"] as? String, "dirty")
+        XCTAssertEqual(skipPayload?["decision"] as? String, "skip")
+        XCTAssertEqual(skipPayload?["skip_code"] as? String, "transcript-missing")
+        XCTAssertEqual(skipPayload?["reason"] as? String, "transcript not found")
+
+        XCTAssertEqual(events[2]["surface"] as? String, commandSurface.uuidString)
+        let commandPayload = events[2]["payload"] as? [String: Any]
+        XCTAssertEqual(commandPayload?["decision"] as? String, "command")
+        XCTAssertTrue(commandPayload?["skip_code"] is NSNull)
+        XCTAssertNil(commandPayload?["command"], "resume command text must not be logged")
+    }
+
     // MARK: - C11-171: set_status mirror emits metadata.changed via the store
 
     /// The set_status fast path mirrors a canonical `status` write into the

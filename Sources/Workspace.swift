@@ -491,9 +491,39 @@ extension Workspace {
             guard panelSnapshot.type == .terminal else { continue }
             let key = panelSnapshot.id.uuidString
             guard let surface = storeSnapshot[key], let ref = surface.active else {
+                let persistedRef = panelSnapshot.surfaceConversations?.active
+                let metadataKind = Self.stringValues(from: panelSnapshot.metadata)[
+                    SurfaceMetadataKeyName.terminalType
+                ]?.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let kind = persistedRef?.kind ?? metadataKind,
+                   !kind.isEmpty,
+                   registry.contains(kind: kind) {
+                    EventEmitter.shared.emitConversationResumeDecision(
+                        workspace: id,
+                        surface: panelSnapshot.id,
+                        kind: kind,
+                        conversationId: persistedRef?.id,
+                        mode: startup.mode,
+                        decision: .skip(
+                            code: .conversationUnavailable,
+                            reason: "no active conversation in restore store"
+                        )
+                    )
+                }
                 continue
             }
             guard let strategy = registry.strategy(forKind: ref.kind) else {
+                EventEmitter.shared.emitConversationResumeDecision(
+                    workspace: id,
+                    surface: panelSnapshot.id,
+                    kind: ref.kind,
+                    conversationId: ref.id,
+                    mode: startup.mode,
+                    decision: .skip(
+                        code: .strategyUnavailable,
+                        reason: "no registered resume strategy for kind \(ref.kind)"
+                    )
+                )
                 continue
             }
             let strategyAction = strategy.resume(ref: ref)
@@ -516,6 +546,14 @@ extension Workspace {
                 diagnosticReason: ref.diagnosticReason,
                 fallbackCommand: fallbackCommand
             ))
+            EventEmitter.shared.emitConversationResumeDecision(
+                workspace: id,
+                surface: panelSnapshot.id,
+                kind: ref.kind,
+                conversationId: ref.id,
+                mode: startup.mode,
+                decision: decision
+            )
             guard case .command(let command) = decision else { continue }
             result.append((
                 panelId: panelSnapshot.id,

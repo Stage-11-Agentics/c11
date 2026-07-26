@@ -17,7 +17,7 @@ where `<instance>` is the per-process instance id (e.g. `com.stage11.c11-12345`)
 
 - `seq` is an integer ≥ 0 — the monotonic per-instance sequence number.
 - `ts` is an RFC3339 / ISO-8601 UTC timestamp with `Z` suffix and optional fractional seconds.
-- `type` is one of the closed v1 enum: `surface.created`, `surface.closed`, `workspace.selected`, `metadata.changed`, `liveness.derived`, `waiting.entered`, `waiting.left`, `mailbox.accepted`, `mailbox.delivered`, plus the stream-control markers `log.opened`, `log.rotated`, `log.dropped`.
+- `type` is one of the closed v1 enum: `surface.created`, `surface.closed`, `workspace.selected`, `metadata.changed`, `liveness.derived`, `waiting.entered`, `waiting.left`, `mailbox.accepted`, `mailbox.delivered`, `conversation.resume.mode`, `conversation.resume.decision`, plus the stream-control markers `log.opened`, `log.rotated`, `log.dropped`.
 - `instance` is a non-empty string.
 - `v` is the integer `1`.
 - `workspace`, `surface`, `pane` are optional UUID strings.

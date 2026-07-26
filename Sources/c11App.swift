@@ -4484,6 +4484,8 @@ struct SettingsView: View {
     private var sidebarStaleThresholdSeconds = SidebarStalenessSettings.defaultStaleSeconds
     @AppStorage(SidebarStalenessSettings.expiryThresholdKey)
     private var sidebarExpiryThresholdSeconds = SidebarStalenessSettings.defaultExpirySeconds
+    @AppStorage(SidebarAgentColdSettings.thresholdKey)
+    private var sidebarAgentColdThresholdSeconds = SidebarAgentColdSettings.defaultSeconds
     @AppStorage("sidebarTintHex") private var sidebarTintHex = SidebarTintDefaults.hex
     @AppStorage("sidebarTintHexLight") private var sidebarTintHexLight: String?
     @AppStorage("sidebarTintHexDark") private var sidebarTintHexDark: String?
@@ -5591,6 +5593,47 @@ struct SettingsView: View {
 
             SettingsCardDivider()
 
+            SettingsCardRow(
+                String(
+                    localized: "settings.app.sidebarAgentColdThreshold.title",
+                    defaultValue: "Agents Go Cold After"
+                ),
+                subtitle: String(
+                    localized: "settings.app.sidebarAgentColdThreshold.subtitle",
+                    defaultValue: "A live agent becomes Cold after this long without a submitted task or lifecycle activity."
+                )
+            ) {
+                HStack(spacing: 8) {
+                    Slider(
+                        value: Binding<Double>(
+                            get: { sidebarAgentColdThresholdSeconds },
+                            set: {
+                                sidebarAgentColdThresholdSeconds =
+                                    SidebarAgentColdSettings.clamp($0)
+                            }
+                        ),
+                        in: SidebarAgentColdSettings.minSeconds...SidebarAgentColdSettings.maxSeconds,
+                        step: 60
+                    )
+                    .controlSize(.small)
+                    .frame(width: 140)
+                    .accessibilityLabel(
+                        String(
+                            localized: "settings.app.sidebarAgentColdThreshold.title",
+                            defaultValue: "Agents Go Cold After"
+                        )
+                    )
+                    Text(sidebarDecayThresholdLabel(sidebarAgentColdThresholdSeconds))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .frame(minWidth: 56, alignment: .trailing)
+                }
+            }
+            .disabled(sidebarHideAllDetails)
+
+            SettingsCardDivider()
+
             // TEL-2: decay thresholds. A status pill dims once older than the
             // stale threshold and grays out (or hands off to derived activity)
             // once older than the expiry threshold.
@@ -6569,6 +6612,7 @@ struct SettingsView: View {
         sidebarShowMetadata = true
         sidebarStaleThresholdSeconds = SidebarStalenessSettings.defaultStaleSeconds
         sidebarExpiryThresholdSeconds = SidebarStalenessSettings.defaultExpirySeconds
+        sidebarAgentColdThresholdSeconds = SidebarAgentColdSettings.defaultSeconds
         sidebarTintHex = SidebarTintDefaults.hex
         sidebarTintHexLight = nil
         sidebarTintHexDark = nil

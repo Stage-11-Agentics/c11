@@ -26,6 +26,7 @@ final class AgentDetector: @unchecked Sendable {
     }
 
     private var ttyNames: [PanelKey: String] = [:]
+    private var detectedTerminalTypes: [PanelKey: String] = [:]
     private var pendingKicks: Set<PanelKey> = []
     private var coalesceTimer: DispatchSourceTimer?
     private var scanInFlight = false
@@ -47,6 +48,7 @@ final class AgentDetector: @unchecked Sendable {
         queue.async { [self] in
             let key = PanelKey(workspaceId: workspaceId, panelId: panelId)
             ttyNames.removeValue(forKey: key)
+            detectedTerminalTypes.removeValue(forKey: key)
             pendingKicks.remove(key)
         }
     }
@@ -131,6 +133,10 @@ final class AgentDetector: @unchecked Sendable {
                 continue
             }
             let classification = Self.classify(comm: info.comm, args: info.args)
+            let detectionChanged = detectedTerminalTypes[key] != classification
+            if detectionChanged {
+                detectedTerminalTypes[key] = classification
+            }
             let changed = SurfaceMetadataStore.shared.setInternal(
                 workspaceId: key.workspaceId,
                 surfaceId: key.panelId,
@@ -138,14 +144,20 @@ final class AgentDetector: @unchecked Sendable {
                 value: classification,
                 source: .heuristic
             )
-            if changed {
+            if changed || detectionChanged {
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
                         guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: key.workspaceId),
                               let workspace = tabManager.tabs.first(where: { $0.id == key.workspaceId }) else {
                             return
                         }
-                        workspace.syncSurfaceTabActivityStateForPanel(key.panelId)
+                        workspace.setDetectedTerminalType(
+                            classification,
+                            forSurface: key.panelId
+                        )
+                        if changed && !detectionChanged {
+                            workspace.syncSurfaceTabActivityStateForPanel(key.panelId)
+                        }
                     }
                 }
             }

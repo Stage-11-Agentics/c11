@@ -5,6 +5,7 @@ enum SurfaceTabActivityResolver {
     static func resolve(
         hasExactSurfaceNotification: Bool,
         derivedActivity: SidebarActivityState?,
+        isCold: Bool = false,
         terminalType: String?
     ) -> BonsplitTabActivityState? {
         if hasExactSurfaceNotification {
@@ -13,14 +14,35 @@ enum SurfaceTabActivityResolver {
         guard PaneSizePolicy.isAgentKind(terminalType) else {
             return nil
         }
+        if isCold {
+            return .cold
+        }
         switch derivedActivity {
         case .working:
             return .running
         case .idle:
             return .idle
         case nil:
-            return .cold
+            // A live agent without liveness evidence has not crossed the
+            // configured dormancy threshold. Keep it warm until the
+            // reconciler has an actual last-touch timestamp to compare.
+            return .idle
         }
+    }
+}
+
+enum SurfaceActivityTerminalKindResolver {
+    static func resolve(
+        detectedTerminalType: String?,
+        declaredTerminalType: String?
+    ) -> String? {
+        if detectedTerminalType == "shell" {
+            return "shell"
+        }
+        if PaneSizePolicy.isAgentKind(detectedTerminalType) {
+            return detectedTerminalType
+        }
+        return declaredTerminalType
     }
 }
 
@@ -89,6 +111,7 @@ enum SurfaceLivenessDeriver {
         workspace: Workspace
     ) {
         let derived = activityState(for: state)
+        SurfaceActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         queue.async {
             // NOTE (C11-162 m5 / C11-163): this realtime path runs on `Self.queue`
             // while `reconcile(...)` runs on the AgentDetector sweep queue — two
@@ -114,6 +137,7 @@ enum SurfaceLivenessDeriver {
             let mirrored = after.flatMap { SidebarActivityState(rawValue: $0) }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
+                    workspace.setAgentCold(false, forSurface: surfaceId)
                     workspace.setDerivedActivity(mirrored, forSurface: surfaceId)
                 }
             }
@@ -130,6 +154,7 @@ enum SurfaceLivenessDeriver {
         workspaceId: UUID,
         activity: SidebarActivityState
     ) {
+        SurfaceActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         queue.async {
             let prior = currentActivityRaw(workspaceId: workspaceId, surfaceId: surfaceId)
             applyToStore(
@@ -153,6 +178,7 @@ enum SurfaceLivenessDeriver {
                           let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }) else {
                         return
                     }
+                    workspace.setAgentCold(false, forSurface: surfaceId)
                     workspace.setDerivedActivity(mirrored, forSurface: surfaceId)
                 }
             }
@@ -175,7 +201,8 @@ enum SurfaceLivenessDeriver {
     static func reconcile(
         surfaceId: UUID,
         workspaceId: UUID,
-        now: Date = Date()
+        now: Date = Date(),
+        coldAfterSeconds: TimeInterval = SidebarAgentColdSettings.thresholdSeconds()
     ) {
         let snap = SurfaceMetadataStore.shared.getMetadata(
             workspaceId: workspaceId,
@@ -185,16 +212,39 @@ enum SurfaceLivenessDeriver {
         guard let record = snap.sources[MetadataKey.activity],
               (record["source"] as? String) == MetadataSource.derived.rawValue,
               let current = snap.metadata[MetadataKey.activity] as? String else {
+            publishCold(false, workspaceId: workspaceId, surfaceId: surfaceId)
             return
         }
-        // Only `working` can decay; `idle` is already the resting truth.
-        guard current == SidebarActivityState.working.rawValue else { return }
 
         let last = SurfaceActivityTracker.shared.lastActivity(for: surfaceId.uuidString)
+        let metadataTouch = (record["ts"] as? Double).map(Date.init(timeIntervalSince1970:))
+        let lastTouched = [last, metadataTouch].compactMap { $0 }.max()
+
+        if current == SidebarActivityState.idle.rawValue {
+            publishCold(
+                Self.isCold(
+                    activity: .idle,
+                    lastTouchedAt: lastTouched,
+                    now: now,
+                    coldAfterSeconds: coldAfterSeconds
+                ),
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                observedLastTouchedAt: lastTouched
+            )
+            return
+        }
+
+        publishCold(false, workspaceId: workspaceId, surfaceId: surfaceId)
+
+        // Only `working` can decay to idle. Any other externally-restored
+        // vocabulary is left untouched.
+        guard current == SidebarActivityState.working.rawValue else { return }
         let isStale = last.map { now.timeIntervalSince($0) >= idleDecayThreshold } ?? true
         guard isStale else { return }
 
         applyToStore(derived: .idle, workspaceId: workspaceId, surfaceId: surfaceId)
+        SurfaceActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString, at: now)
         emitLivenessTransition(
             from: SidebarActivityState.working.rawValue,
             to: SidebarActivityState.idle.rawValue,
@@ -208,7 +258,49 @@ enum SurfaceLivenessDeriver {
                       let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }) else {
                     return
                 }
+                workspace.setAgentCold(false, forSurface: surfaceId)
                 workspace.setDerivedActivity(.idle, forSurface: surfaceId)
+            }
+        }
+    }
+
+    /// Pure live-agent dormancy classifier. Missing touch evidence fails warm:
+    /// absence of telemetry is not enough to claim that a live agent has been
+    /// untouched for the configured interval.
+    static func isCold(
+        activity: SidebarActivityState?,
+        lastTouchedAt: Date?,
+        now: Date,
+        coldAfterSeconds: TimeInterval
+    ) -> Bool {
+        guard activity == .idle, let lastTouchedAt else { return false }
+        return now.timeIntervalSince(lastTouchedAt) >= max(0, coldAfterSeconds)
+    }
+
+    private static func publishCold(
+        _ isCold: Bool,
+        workspaceId: UUID,
+        surfaceId: UUID,
+        observedLastTouchedAt: Date? = nil
+    ) {
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: workspaceId),
+                      let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }) else {
+                    return
+                }
+                if isCold,
+                   let observedLastTouchedAt,
+                   let currentLastTouchedAt = SurfaceActivityTracker.shared.lastActivity(
+                       for: surfaceId.uuidString
+                   ),
+                   currentLastTouchedAt > observedLastTouchedAt {
+                    // A lifecycle/input signal landed after this sweep read its
+                    // snapshot. Never let that stale sweep re-cold the agent.
+                    workspace.setAgentCold(false, forSurface: surfaceId)
+                    return
+                }
+                workspace.setAgentCold(isCold, forSurface: surfaceId)
             }
         }
     }

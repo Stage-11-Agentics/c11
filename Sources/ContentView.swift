@@ -8632,7 +8632,7 @@ struct VerticalTabsSidebar: View {
                                     var agents: [WorkspacePulseAgent] = []
                                     var otherSurfaceCount = 0
                                     for panelId in tab.sidebarOrderedPanelIds() {
-                                        let terminalKind = tab.surfaceTerminalKind(panelId: panelId)
+                                        let terminalKind = tab.surfaceActivityTerminalKind(panelId: panelId)
                                         guard PaneSizePolicy.isAgentKind(terminalKind) else {
                                             if tab.panels[panelId] != nil {
                                                 otherSurfaceCount += 1

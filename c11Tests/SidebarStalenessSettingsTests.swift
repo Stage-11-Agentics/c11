@@ -123,4 +123,59 @@ final class SidebarStalenessSettingsTests: XCTestCase {
             .expired
         )
     }
+
+    // MARK: - live-agent cold threshold
+
+    func testAgentColdThresholdDefaultsToTenMinutes() {
+        let defaults = makeDefaults()
+        XCTAssertEqual(
+            SidebarAgentColdSettings.thresholdSeconds(
+                defaults: defaults,
+                environment: [:]
+            ),
+            10 * 60
+        )
+    }
+
+    func testAgentColdThresholdUsesStoredMinutesAndClampsRange() {
+        let defaults = makeDefaults()
+        defaults.set(15 * 60.0, forKey: SidebarAgentColdSettings.thresholdKey)
+        XCTAssertEqual(
+            SidebarAgentColdSettings.thresholdSeconds(
+                defaults: defaults,
+                environment: [:]
+            ),
+            15 * 60
+        )
+
+        defaults.set(1, forKey: SidebarAgentColdSettings.thresholdKey)
+        XCTAssertEqual(
+            SidebarAgentColdSettings.thresholdSeconds(
+                defaults: defaults,
+                environment: [:]
+            ),
+            SidebarAgentColdSettings.minSeconds
+        )
+
+        defaults.set(100_000, forKey: SidebarAgentColdSettings.thresholdKey)
+        XCTAssertEqual(
+            SidebarAgentColdSettings.thresholdSeconds(
+                defaults: defaults,
+                environment: [:]
+            ),
+            SidebarAgentColdSettings.maxSeconds
+        )
+    }
+
+    func testAgentColdThresholdEnvironmentOverrideWins() {
+        let defaults = makeDefaults()
+        defaults.set(20 * 60.0, forKey: SidebarAgentColdSettings.thresholdKey)
+        XCTAssertEqual(
+            SidebarAgentColdSettings.thresholdSeconds(
+                defaults: defaults,
+                environment: [SidebarAgentColdSettings.environmentKey: "300"]
+            ),
+            5 * 60
+        )
+    }
 }

@@ -88,3 +88,40 @@ public enum SidebarStalenessSettings {
         return .expired
     }
 }
+
+/// Operator-tunable dormancy threshold for live agent surfaces.
+///
+/// An agent remains `idle` while it is recently available at its prompt, then
+/// projects as `cold` after this much time passes without a submitted task or
+/// agent lifecycle signal. Process presence is deliberately separate: once the
+/// foreground agent exits, `AgentDetector` projects the surface as a terminal
+/// instead of preserving an agent state.
+enum SidebarAgentColdSettings {
+    static let thresholdKey = "sidebarAgentColdThresholdSeconds"
+    static let defaultSeconds: Double = 10 * 60
+    static let minSeconds: Double = 60
+    static let maxSeconds: Double = 60 * 60
+    static let environmentKey = "C11_AGENT_COLD_SECONDS"
+
+    static func clamp(_ value: Double) -> Double {
+        min(max(value, minSeconds), maxSeconds)
+    }
+
+    static func thresholdSeconds(defaults: UserDefaults = .standard) -> Double {
+        thresholdSeconds(
+            defaults: defaults,
+            environment: ProcessInfo.processInfo.environment
+        )
+    }
+
+    static func thresholdSeconds(
+        defaults: UserDefaults,
+        environment: [String: String]
+    ) -> Double {
+        if let raw = environment[environmentKey], let value = Double(raw) {
+            return clamp(value)
+        }
+        let stored = (defaults.object(forKey: thresholdKey) as? Double) ?? defaultSeconds
+        return clamp(stored)
+    }
+}

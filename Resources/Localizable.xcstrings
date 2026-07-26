@@ -34547,6 +34547,100 @@
         }
       }
     },
+    "settings.app.sidebarAgentColdThreshold.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A live agent becomes Cold after this long without a submitted task or lifecycle activity."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "稼働中のエージェントは、タスクの送信もライフサイクルアクティビティもない状態がこの時間続くと、コールドになります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行中的代理如果在这段时间内没有收到新提交的任务，也没有生命周期活动，就会进入冷态。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "執行中的代理若在這段時間內沒有收到新提交的任務，也沒有生命週期活動，就會進入冷態。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 중인 에이전트는 이 시간 동안 제출된 작업이나 수명 주기 활동이 없으면 콜드 상태가 됩니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запущенный агент переходит в состояние «Холодная», если за это время не было ни новых задач, ни событий жизненного цикла."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запущений агент переходить у стан «Холодна», якщо за цей час не було ані надісланих завдань, ані подій життєвого циклу."
+          }
+        }
+      }
+    },
+    "settings.app.sidebarAgentColdThreshold.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agents Go Cold After"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントがコールドになるまで"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理进入冷态前的时长"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理進入冷態前的時間"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트가 콜드 상태가 되는 시간"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агенты переходят в состояние «Холодная» через"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агенти переходять у стан «Холодна» через"
+          }
+        }
+      }
+    },
     "settings.app.sidebarBranchLayout": {
       "extractionState": "manual",
       "localizations": {

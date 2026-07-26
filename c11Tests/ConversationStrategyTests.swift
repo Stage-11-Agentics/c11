@@ -275,11 +275,11 @@ final class ConversationStrategyTests: XCTestCase {
 
     // MARK: - Grok strategy
 
-    func testGrokAliveTypesBestEffortResume() {
+    func testGrokAliveTypesExactResume() {
         let strategy = GrokStrategy()
         let ref = ConversationRef(
             kind: "grok",
-            id: "real-id",
+            id: validUUID,
             placeholder: false,
             capturedAt: Date(),
             capturedVia: .hook,
@@ -289,7 +289,10 @@ final class ConversationStrategyTests: XCTestCase {
             XCTFail("expected typeCommand")
             return
         }
-        XCTAssertEqual(text, "grok --always-approve --resume")
+        XCTAssertEqual(
+            text,
+            "grok --always-approve --resume '\(validUUID)'"
+        )
         XCTAssertTrue(submit)
     }
 

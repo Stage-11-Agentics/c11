@@ -1,14 +1,12 @@
 import Foundation
 
-/// Pull-primary strategy for oh-my-pi (`omp`). Like codex, omp exposes no
-/// session-id injection flag and no SessionStart hook, so the c11 omp wrapper
-/// (`Resources/bin/omp`) mints a placeholder wrapper-claim at launch; the
-/// scraper resolves the real id from
-/// `~/.omp/agent/sessions/<cwd-slug>/<ts>_<uuid>.jsonl` (id = the trailing
-/// UUIDv7), filtered by cwd, mtime ≥ wrapper-claim time, and mtime ≥ surface
-/// `lastActivityTimestamp`. The claim time floors out the older sessions a
-/// cwd accumulates so resume resolves this pane's session instead of going
-/// `.unknown` (the same latent bug pi hit; see `Resources/bin/omp`).
+/// Causal-primary strategy for oh-my-pi (`omp`). OMP writes a tty-scoped
+/// pointer under `~/.omp/agent/terminal-sessions/` containing the effective
+/// cwd and exact session JSONL path. Once that JSONL exists (after the first
+/// real message), the c11 wrapper pushes its UUIDv7 and exact path as hook
+/// evidence. This remains correct when OMP refuses `$HOME` and moves to `/tmp`.
+///
+/// The older cwd scraper remains as a compatibility fallback.
 ///
 /// Ambiguity policy (mirrors `CodexStrategy`): when more than one candidate
 /// matches the surface filter, return a ref with `state = .unknown`,
@@ -22,10 +20,18 @@ import Foundation
 /// `<ts>_<uuid>.jsonl` filename, so `resume`/`capture` receive a clean id).
 struct OmpStrategy: ConversationStrategy {
     let kind: String = "omp"
+    static let sessionFilePayloadKey = "session_file_path"
 
     init() {}
 
     func capture(inputs: ConversationStrategyInputs) -> ConversationRef? {
+        if let push = inputs.push,
+           !push.placeholder,
+           push.capturedVia.isCausal,
+           isValidConversationUUID(push.id) {
+            return push
+        }
+
         // Filter the candidates by what we know about the surface.
         let activityFloor = inputs.lastActivityTimestamp
         let claimTime = inputs.wrapperClaim?.capturedAt
@@ -112,6 +118,10 @@ struct OmpStrategy: ConversationStrategy {
         filesystem: ConversationFilesystem
     ) -> Bool? {
         guard isValidConversationUUID(ref.id) else { return false }
+        if case .string(let path)? = ref.payload?[Self.sessionFilePayloadKey],
+           !path.isEmpty {
+            return filesystem.fileExists(atPath: path)
+        }
         return OmpScraper(filesystem: filesystem)
             .candidates(cwd: ref.cwd)
             .contains { $0.id == ref.id }

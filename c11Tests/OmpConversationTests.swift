@@ -223,6 +223,24 @@ final class OmpConversationTests: XCTestCase {
         XCTAssertFalse(ref?.placeholder ?? true)
     }
 
+    func testOmpPersistedPointerPushWinsOverMismatchedCwdScrape() {
+        let exactPath = "/Users/test/.omp/agent/sessions/--private-tmp--/session_\(v7Id).jsonl"
+        let push = ConversationRef(
+            kind: "omp", id: v7Id, cwd: "/tmp",
+            capturedAt: Date(), capturedVia: .hook, state: .alive,
+            payload: [OmpStrategy.sessionFilePayloadKey: .string(exactPath)]
+        )
+        let captured = OmpStrategy().capture(inputs: ConversationStrategyInputs(
+            surfaceId: "surface:1",
+            cwd: "/Users/test",
+            push: push,
+            scrapeCandidates: [
+                candidate(id: v7Id2, mtime: Date(), cwd: "/Users/test")
+            ]
+        ))
+        XCTAssertEqual(captured, push)
+    }
+
     func testOmpResumeEmitsResumeFlagWithSpecificId() {
         let strategy = OmpStrategy()
         let ref = ConversationRef(
@@ -341,6 +359,21 @@ final class OmpConversationTests: XCTestCase {
         XCTAssertEqual(strategy.transcriptExists(for: present, filesystem: mock), true)
         let absent = ConversationRef(kind: "omp", id: v7Id2, placeholder: false, cwd: cwd, capturedVia: .scrape, state: .suspended)
         XCTAssertEqual(strategy.transcriptExists(for: absent, filesystem: mock), false)
+    }
+
+    func testOmpTranscriptExistsStatsExactPointerPath() {
+        let mock = MockFS()
+        let exactPath = "/Users/test/.omp/agent/sessions/--private-tmp--/session_\(v7Id).jsonl"
+        mock.existingPaths.insert(exactPath)
+        let ref = ConversationRef(
+            kind: "omp", id: v7Id, placeholder: false, cwd: "/tmp",
+            capturedVia: .hook, state: .alive,
+            payload: [OmpStrategy.sessionFilePayloadKey: .string(exactPath)]
+        )
+        XCTAssertEqual(
+            OmpStrategy().transcriptExists(for: ref, filesystem: mock),
+            true
+        )
     }
 
     // MARK: - Registry wiring

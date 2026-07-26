@@ -74,9 +74,9 @@ Reconciliation first respects evidence strength: causal `runtimeEnv`/hook identi
 | `claude-code` | Strong (push-id deterministic) | SessionStart hook → `c11 conversation push`. Pull-scrape `~/.claude/projects/<cwd-slug>/` is the fallback when the hook was missed. | `claude --dangerously-skip-permissions --resume <id>` (id shell-quoted) |
 | `codex` | Exact, causal | Before its expiry-bounded claim, the wrapper atomically writes a c11-owned per-surface launch-boundary marker beside the active socket. The marker survives acknowledged and failed/expired claims so a crash before autosave cannot expose the older on-disk owner. The listener records its actual post-fallback socket path per bundle, allowing startup to find that marker before the new listener binds. Marker replay is retained intentionally and is harmless after a durable placeholder or newer runtime capture; the next launch overwrites it. The running target executes `capture-runtime`, which records its exact `CODEX_THREAD_ID`. `CodexScraper` remains a conservative crash fallback when causal capture was missed. | `codex resume <id>` (specific id; never `--last`) |
 | `pi` | Exact, ambiguity-aware | Wrapper-claim placeholder → `PiScraper` resolves the real id from the cwd slug dir, claim-time + activity floors narrowing past stale sessions. | `pi --session '<id>'` (specific id) |
-| `omp` | Exact, ambiguity-aware | Wrapper-claim placeholder → `OmpScraper` resolves the real id from the cwd slug dir, claim-time + activity floors. | `omp --resume='<id>'` (specific id) |
+| `omp` | Exact, causal after persistence | Wrapper watches OMP's tty pointer and, once the first message creates its JSONL, pushes the exact UUID, effective cwd, and path. The cwd scraper remains a legacy fallback. Empty sessions stay placeholders. | `omp --resume='<id>'` (specific id) |
 | `opencode` | Push (plugin rail) | Plugin-emitted push of the real id. No scraper in the pull registry. | `cd '<dir>' && opencode -s <id>` — `.skip` for placeholders |
-| `grok` | Best-effort resume | Wrapper-claim placeholder | `grok --always-approve --resume` (no id) — `.skip` for placeholders |
+| `grok` | Exact after persistence | PATH wrapper injects a UUID, then pushes it with the exact session directory after the first message persists. Empty sessions remain uncaptured. | `grok --always-approve --resume '<id>'` |
 | `kimi` | Fresh-launch only | Wrapper-claim placeholder | `kimi` (process launch) — `.skip` for placeholders |
 | `github-copilot` | Fresh-launch only | Wrapper-claim placeholder | `copilot` (process launch) — `.skip` for placeholders |
 
@@ -91,8 +91,10 @@ The forced-kill (`kill -9`) path is a first-class, tested guarantee as of the Tr
 The contract: after a crash, **every conversation either resumes exactly per its kind's tier, or the surface carries an honest, specific `diagnostic_reason`.** There are no silent fresh-launches presented as resumes.
 
 - **claude-code** — resumes when the hook-captured (or scrape-recovered) id has a transcript on disk; otherwise `transcript not found`.
-- **codex / pi / omp** — the scraper resolves the placeholder to the real id at restore, then reclassify verifies it. A surface whose session file is absent stays a placeholder and simply skips (no wrong resume).
-- **opencode / grok / kimi / github-copilot** — no exact-resume rail; a fresh launch is the honest outcome (placeholders skip).
+- **codex / pi** — the scraper resolves the placeholder to the real id at restore, then reclassify verifies it. A surface whose session file is absent stays a placeholder and simply skips (no wrong resume).
+- **omp / grok** — their PATH wrappers publish exact causal identity only after the first message creates the durable JSONL/session directory. Dirty restore stats that exact payload path. An empty session never reaches this tier and skips.
+- **opencode** — the plugin pushes exact identity; restore resumes that id.
+- **kimi / github-copilot** — no exact-resume rail; a fresh launch is the honest outcome (placeholders skip).
 
 ### Codex real-cwd disambiguation
 
@@ -106,7 +108,7 @@ The per-surface **activity floor** (`SurfaceActivityTracker`, persisted in the s
 ## Wrapper-claim flow (TUI integrators)
 
 ```bash
-# Pseudo-shape; real wrappers stay bash. See Resources/bin/{claude,codex,pi,omp}.
+# Pseudo-shape; real wrappers stay bash. See Resources/bin/{claude,codex,pi,omp,grok}.
 1. Detect c11 environment (CMUX_SURFACE_ID + live socket). Pass through if absent.
 2. For Codex, synchronously run `conversation claim ... --ttl-ms <short-bound>`.
    The server checks the absolute expiry at the store mutation boundary.

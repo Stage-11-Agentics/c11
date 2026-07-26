@@ -303,6 +303,10 @@ struct AgentRegistry: Sendable {
             detectNodeArgsSubstrings: [],
             iconAsset: "AgentIcons/grok",
             sfSymbolFallback: "bolt.fill",
+            // Resources/bin/grok injects a UUID but publishes it only after
+            // the first message creates a durable session directory. The
+            // conversation strategy then resumes that exact UUID. Keep this
+            // no-id command only for the legacy disabled-store path.
             resume: .fixed("grok --always-approve --resume\n"),
             launch: AgentLaunchTemplate(
                 modelArg: .flag("--model"),
@@ -422,13 +426,10 @@ struct AgentRegistry: Sendable {
             detectNodeArgsSubstrings: ["@oh-my-pi/"],
             iconAsset: nil,
             sfSymbolFallback: "o.circle",
-            // Exact-session resume via the conversation rail: the omp wrapper
-            // (`Resources/bin/omp`) mints a wrapper-claim whose time floor lets
-            // `OmpScraper` (JSONL metadata over ~/.omp/agent/sessions/) feed
-            // `OmpStrategy`, which emits `omp --resume='<id>'`. No fixed-command
-            // fallback exists for the legacy `resume` path (the TUI offers
-            // `/resume` only), so `resume` stays `.none` while the strategy owns
-            // exact resume — same split as the codex row.
+            // Exact-session resume via the conversation rail: after the first
+            // message persists, Resources/bin/omp reads OMP's tty pointer and
+            // pushes the exact JSONL path + UUID to OmpStrategy, which emits
+            // `omp --resume='<id>'`. Empty sessions remain placeholders.
             resume: .none,
             launch: AgentLaunchTemplate(
                 modelArg: .flag("--model"),

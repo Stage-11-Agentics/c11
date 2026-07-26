@@ -36,7 +36,10 @@ struct WorkspacePulseSummary: Equatable {
     let idleCount: Int
     let coldCount: Int
     let agents: [WorkspacePulseAgent]
-    let terminalCount: Int
+    /// Every non-agent surface the workspace holds: terminals, browsers,
+    /// markdown. The card separates agents from everything else because
+    /// agents are what the operator is tracking; the rest is furniture.
+    let otherSurfaceCount: Int
 
     init(
         waitingCount: Int,
@@ -44,14 +47,14 @@ struct WorkspacePulseSummary: Equatable {
         idleCount: Int,
         coldCount: Int,
         agents: [WorkspacePulseAgent] = [],
-        terminalCount: Int = 0
+        otherSurfaceCount: Int = 0
     ) {
         self.waitingCount = waitingCount
         self.workingCount = workingCount
         self.idleCount = idleCount
         self.coldCount = coldCount
         self.agents = agents
-        self.terminalCount = terminalCount
+        self.otherSurfaceCount = otherSurfaceCount
     }
 
     var dominant: WorkspacePulseState {
@@ -115,7 +118,7 @@ enum WorkspacePulseProjector {
     static func project(
         hasWorkspaceDemand: Bool,
         agents: [WorkspacePulseAgent],
-        terminalCount: Int
+        otherSurfaceCount: Int = 0
     ) -> WorkspacePulseSummary {
         var waiting = agents.filter { $0.state == .waiting }.count
         if hasWorkspaceDemand && waiting == 0 {
@@ -127,7 +130,7 @@ enum WorkspacePulseProjector {
             idleCount: agents.filter { $0.state == .idle }.count,
             coldCount: agents.filter { $0.state == .cold }.count,
             agents: agents,
-            terminalCount: max(0, terminalCount)
+            otherSurfaceCount: max(0, otherSurfaceCount)
         )
     }
 

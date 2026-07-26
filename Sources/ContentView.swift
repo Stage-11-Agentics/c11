@@ -8625,14 +8625,17 @@ struct VerticalTabsSidebar: View {
                                 // parent. TabItemView receives an immutable value so
                                 // its typing-hot body does no metadata/store work.
                                 let unreadCount = notificationStore.unreadCount(forTabId: tab.id)
-                                let pulseRoster: (agents: [WorkspacePulseAgent], terminalCount: Int) = {
+                                let pulseRoster: (
+                                    agents: [WorkspacePulseAgent],
+                                    otherSurfaceCount: Int
+                                ) = {
                                     var agents: [WorkspacePulseAgent] = []
-                                    var terminalCount = 0
+                                    var otherSurfaceCount = 0
                                     for panelId in tab.sidebarOrderedPanelIds() {
-                                        let terminalKind = tab.surfaceTerminalKind(panelId: panelId)
+                                        let terminalKind = tab.surfaceActivityTerminalKind(panelId: panelId)
                                         guard PaneSizePolicy.isAgentKind(terminalKind) else {
-                                            if tab.panels[panelId]?.panelType == .terminal {
-                                                terminalCount += 1
+                                            if tab.panels[panelId] != nil {
+                                                otherSurfaceCount += 1
                                             }
                                             continue
                                         }
@@ -8641,7 +8644,8 @@ struct VerticalTabsSidebar: View {
                                             hasExactSurfaceNotification: notificationStore.hasUnreadNotification(
                                                 forTabId: tab.id,
                                                 surfaceId: panelId
-                                            )
+                                            ),
+                                            terminalKind: .some(terminalKind)
                                         )
                                         let pulseState: WorkspacePulseState
                                         switch resolved {
@@ -8670,12 +8674,12 @@ struct VerticalTabsSidebar: View {
                                             )
                                         )
                                     }
-                                    return (agents, terminalCount)
+                                    return (agents, otherSurfaceCount)
                                 }()
                                 let workspacePulse = WorkspacePulseProjector.project(
                                     hasWorkspaceDemand: unreadCount > 0,
                                     agents: pulseRoster.agents,
-                                    terminalCount: pulseRoster.terminalCount
+                                    otherSurfaceCount: pulseRoster.otherSurfaceCount
                                 )
                                 TabItemView(
                                     tabManager: tabManager,
@@ -8713,6 +8717,24 @@ struct VerticalTabsSidebar: View {
                             }
                         }
                         .padding(.vertical, 8)
+                        // Structural guarantee for the card metaphor.
+                        //
+                        // A vertical ScrollView does not clamp its rows to the
+                        // viewport. Any descendant whose *minimum* width beats
+                        // the sidebar — a fixed-slot row, a `fixedSize` label,
+                        // anything that cannot truncate — widens the whole
+                        // stack, and centre alignment then shifts every card
+                        // left until its border, its inset, and the first
+                        // characters of every line are outside the window.
+                        //
+                        // Individual offenders get fixed where they live (the
+                        // pulse mark row measures and compresses). This is the
+                        // backstop that keeps the next one from breaking the
+                        // card at all: pinned to the viewport and leading
+                        // aligned, an over-wide row can only clip its own
+                        // right edge.
+                        .frame(width: proxy.size.width, alignment: .leading)
+                        .clipped()
 
                         SidebarEmptyArea(
                             rowSpacing: tabRowSpacing,
@@ -11260,9 +11282,151 @@ enum SidebarPathFormatter {
     }
 }
 
+/// Sizing for the workspace-pulse per-agent mark row.
+///
+/// The row is trailing-aligned inside the card and every mark is a
+/// fixed-width slot, so its minimum width grows linearly with the agent
+/// count. Past roughly nine agents that minimum exceeds the sidebar, and
+/// SwiftUI answers an oversized child by growing the whole row and
+/// centre-clipping it: the card loses its rounded edges and every line of
+/// text in it shifts off the left edge of the window. Measuring the real
+/// width and compressing here is what keeps the card inside the sidebar.
+///
+/// Compression order: gaps first (they carry no information), then the
+/// marks themselves, and only once both bottom out does the row drop
+/// marks in favour of a leading `+N` count.
+enum WorkspacePulseMarkRowMetrics {
+    static let preferredSlot: CGFloat = 14
+    static let preferredSpacing: CGFloat = 7
+    static let minimumSlot: CGFloat = 8
+    static let minimumSpacing: CGFloat = 2
+    /// Room held back for the `+N` overflow count when marks get dropped.
+    static let overflowLabelWidth: CGFloat = 24
+
+    struct Layout: Equatable {
+        var slot: CGFloat
+        var spacing: CGFloat
+        var visibleCount: Int
+        var hiddenCount: Int
+
+        /// Square side for a mark in this layout. The preferred slot carries
+        /// 5pt of breathing room around a 9pt square; once the slot itself is
+        /// compressed the square follows it down.
+        var markSide: CGFloat {
+            min(9, slot)
+        }
+    }
+
+    static func width(count: Int, slot: CGFloat, spacing: CGFloat) -> CGFloat {
+        guard count > 0 else { return 0 }
+        return slot * CGFloat(count) + spacing * CGFloat(count - 1)
+    }
+
+    static func layout(count: Int, availableWidth: CGFloat) -> Layout {
+        guard count > 0 else {
+            return Layout(
+                slot: preferredSlot,
+                spacing: preferredSpacing,
+                visibleCount: 0,
+                hiddenCount: 0
+            )
+        }
+
+        // A width of zero is the first layout pass before the geometry
+        // resolves; render at preferred metrics rather than collapsing to a
+        // `+N` count that would flash on every appearance.
+        guard availableWidth > 0 else {
+            return Layout(
+                slot: preferredSlot,
+                spacing: preferredSpacing,
+                visibleCount: count,
+                hiddenCount: 0
+            )
+        }
+
+        if width(count: count, slot: preferredSlot, spacing: preferredSpacing) <= availableWidth {
+            return Layout(
+                slot: preferredSlot,
+                spacing: preferredSpacing,
+                visibleCount: count,
+                hiddenCount: 0
+            )
+        }
+
+        if count > 1 {
+            let fittedSpacing = (availableWidth - preferredSlot * CGFloat(count)) / CGFloat(count - 1)
+            if fittedSpacing >= minimumSpacing {
+                return Layout(
+                    slot: preferredSlot,
+                    spacing: min(preferredSpacing, fittedSpacing),
+                    visibleCount: count,
+                    hiddenCount: 0
+                )
+            }
+        }
+
+        let gaps = minimumSpacing * CGFloat(count - 1)
+        let fittedSlot = (availableWidth - gaps) / CGFloat(count)
+        if fittedSlot >= minimumSlot {
+            return Layout(
+                slot: min(preferredSlot, fittedSlot),
+                spacing: minimumSpacing,
+                visibleCount: count,
+                hiddenCount: 0
+            )
+        }
+
+        let widthForMarks = availableWidth - overflowLabelWidth - minimumSpacing
+        let stride = minimumSlot + minimumSpacing
+        let fitCount = widthForMarks > 0
+            ? Int(((widthForMarks + minimumSpacing) / stride).rounded(.down))
+            : 0
+        let visible = max(0, min(count - 1, fitCount))
+        return Layout(
+            slot: minimumSlot,
+            spacing: minimumSpacing,
+            visibleCount: visible,
+            hiddenCount: count - visible
+        )
+    }
+}
+
+/// Joins the workspace pulse card's surface census.
+///
+/// Absent kinds are dropped rather than reported as zero: a card that spends
+/// its one census line on "0 browsers" has nothing left for the kinds the
+/// workspace actually holds, and the sidebar is narrow enough that the line
+/// truncates when every kind is listed.
+enum WorkspacePulseCensus {
+    static func line(
+        parts: [(count: Int, label: String)],
+        separator: String,
+        empty: String
+    ) -> String {
+        let present = parts.filter { $0.count > 0 }.map(\.label)
+        return present.isEmpty ? empty : present.joined(separator: separator)
+    }
+}
+
+enum WorkspacePulseDividerColorResolver {
+    static func resolve(
+        customHex: String?,
+        colorScheme: ColorScheme
+    ) -> NSColor {
+        guard let customHex else { return BrandColors.gold }
+        return WorkspaceTabColorSettings.displayNSColor(
+            hex: customHex,
+            colorScheme: colorScheme
+        ) ?? BrandColors.gold
+    }
+}
+
 enum SidebarWorkspaceShortcutHintMetrics {
     private static let measurementFont = NSFont.systemFont(ofSize: 10, weight: .semibold)
-    private static let minimumSlotWidth: CGFloat = 28
+    /// Held for the close button (16pt) when the workspace has no ⌘-digit
+    /// shortcut to reserve pill width for. Everything wider than the button
+    /// here is title text the operator does not get to read.
+    private static let minimumSlotWidth: CGFloat = 18
     private static let horizontalPadding: CGFloat = 12
     private static let lock = NSLock()
     private static var cachedHintWidths: [String: CGFloat] = [:]
@@ -11655,10 +11819,11 @@ private struct TabItemView: View, Equatable {
     @ViewBuilder
     private func workspacePulseMark(
         for state: WorkspacePulseState,
-        summaryScale: Bool = false
+        summaryScale: Bool = false,
+        side overrideSide: CGFloat? = nil
     ) -> some View {
         let color = workspacePulseColor(for: state)
-        let side: CGFloat = summaryScale ? 10 : 9
+        let side: CGFloat = overrideSide ?? (summaryScale ? 10 : 9)
         switch state {
         case .waiting, .working:
             Rectangle()
@@ -11778,48 +11943,122 @@ private struct TabItemView: View, Equatable {
         )
     }
 
-    private var workspacePulseTerminalCountText: String {
-        if workspacePulse.terminalCount == 1 {
+    /// Non-agent surfaces, worded as "other" only when there are agents to
+    /// be other *than*. A workspace with no agents just has surfaces.
+    private var workspacePulseOtherSurfaceCountText: String {
+        let count = workspacePulse.otherSurfaceCount
+        if workspacePulse.agents.isEmpty {
+            if count == 1 {
+                return String(
+                    localized: "sidebar.workspacePulse.surfaceCount.one",
+                    defaultValue: "1 surface"
+                )
+            }
             return String(
-                localized: "sidebar.workspacePulse.terminalCount.one",
-                defaultValue: "1 terminal"
+                localized: "sidebar.workspacePulse.surfaceCount.other",
+                defaultValue: "\(count) surfaces"
+            )
+        }
+        if count == 1 {
+            return String(
+                localized: "sidebar.workspacePulse.otherSurfaceCount.one",
+                defaultValue: "1 other surface"
             )
         }
         return String(
-            localized: "sidebar.workspacePulse.terminalCount.other",
-            defaultValue: "\(workspacePulse.terminalCount) terminals"
+            localized: "sidebar.workspacePulse.otherSurfaceCount.other",
+            defaultValue: "\(count) other surfaces"
         )
     }
 
-    private var workspacePulseFooter: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 6) {
-                Text(verbatim: workspacePulseAgentCountText)
-                Circle()
-                    .fill(Color.secondary.opacity(0.65))
-                    .frame(width: 2, height: 2)
-                Text(verbatim: workspacePulseTerminalCountText)
-            }
-            .fixedSize(horizontal: true, vertical: false)
+    /// The card's census: agents, then everything else in one bucket.
+    /// "9 agents, 4 other surfaces". Agents are what the operator tracks;
+    /// which flavour of furniture sits beside them does not earn a column
+    /// in a sidebar this narrow.
+    private var workspacePulseCensusText: String {
+        WorkspacePulseCensus.line(
+            parts: [
+                (workspacePulse.agents.count, workspacePulseAgentCountText),
+                (workspacePulse.otherSurfaceCount, workspacePulseOtherSurfaceCountText)
+            ],
+            separator: String(
+                localized: "sidebar.workspacePulse.censusSeparator",
+                defaultValue: ", "
+            ),
+            empty: String(
+                localized: "sidebar.workspacePulse.censusEmpty",
+                defaultValue: "No surfaces"
+            )
+        )
+    }
 
-            HStack(spacing: 7) {
-                ForEach(workspacePulse.agents) { agent in
-                    workspacePulseMark(for: agent.state)
-                        .frame(width: 14, height: 14)
+    /// Trailing-aligned census of per-agent state marks.
+    ///
+    /// Sized against measured geometry rather than a fixed slot per agent so
+    /// a busy workspace cannot push the card wider than the sidebar. When
+    /// even the compressed metrics run out of room the row keeps the marks
+    /// nearest the trailing edge and counts the rest in a leading `+N`; the
+    /// composition rail at the foot of the card still carries the full
+    /// state distribution.
+    @ViewBuilder
+    private var workspacePulseMarkRow: some View {
+        let agents = workspacePulse.agents
+        GeometryReader { proxy in
+            let layout = WorkspacePulseMarkRowMetrics.layout(
+                count: agents.count,
+                availableWidth: proxy.size.width
+            )
+            let visible = Array(agents.suffix(layout.visibleCount))
+            // Trailing alignment comes from the outer frame rather than a
+            // leading Spacer: a Spacer would add one more `layout.spacing`
+            // gap on top of the width the metrics just fitted.
+            HStack(spacing: layout.spacing) {
+                if layout.hiddenCount > 0 {
+                    Text(verbatim: "+\(layout.hiddenCount)")
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .accessibilityLabel(Text(String(
+                            localized: "sidebar.workspacePulse.markOverflow",
+                            defaultValue: "\(layout.hiddenCount) more agents"
+                        )))
+                }
+
+                ForEach(visible) { agent in
+                    workspacePulseMark(for: agent.state, side: layout.markSide)
+                        .frame(width: layout.slot, height: 14)
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(Text(agent.context?.title ?? workspacePulseLabel(for: agent.state)))
                         .accessibilityValue(Text(workspacePulseLabel(for: agent.state)))
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .frame(height: 14)
+            .frame(width: proxy.size.width, height: 14, alignment: .trailing)
+        }
+        .frame(height: 14)
+    }
+
+    private var workspacePulseFooter: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                // All three kinds on a narrow card runs the line close to
+                // its limit. Shrinking the census is a better trade than
+                // cutting the last kind off it: the counts stay readable,
+                // and a card that lists browsers is exactly the card that
+                // needed the extra room.
+                Text(verbatim: workspacePulseCensusText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .truncationMode(.tail)
+                Spacer(minLength: 0)
+            }
+
+            workspacePulseMarkRow
         }
         .font(.system(size: chromeTokens.sidebarWorkspaceMetadata - 0.5, design: .monospaced))
         .foregroundColor(.secondary.opacity(0.68))
         .padding(.top, 8)
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(workspacePulseIdentityColor.opacity(0.18))
+                .fill(workspacePulseDividerColor.opacity(0.42))
                 .frame(height: 1)
         }
         .padding(.top, 10)
@@ -11867,6 +12106,13 @@ private struct TabItemView: View, Equatable {
             green: 0.51,
             blue: 0.57,
             alpha: 1
+        ))
+    }
+
+    private var workspacePulseDividerColor: Color {
+        Color(nsColor: WorkspacePulseDividerColorResolver.resolve(
+            customHex: tab.customColor,
+            colorScheme: colorScheme
         ))
     }
 
@@ -12101,7 +12347,12 @@ private struct TabItemView: View, Equatable {
         }()
 
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .center, spacing: 7) {
+            // Spacing and the trailing accessory slot are both held back from
+            // the title on every card, so anything reserved here is title the
+            // operator never gets to read in a narrow sidebar. Keep the pin
+            // inline (an empty container still claims spacing on both sides)
+            // and keep the gaps tight.
+            HStack(alignment: .center, spacing: 5) {
                 Text(tab.title)
                     .font(.system(size: chromeTokens.sidebarWorkspaceTitle + 1.5, weight: titleFontWeight))
                     .foregroundColor(.primary)
@@ -12109,15 +12360,12 @@ private struct TabItemView: View, Equatable {
                     .truncationMode(.tail)
                     .layoutPriority(1)
 
-                Spacer(minLength: 4)
+                Spacer(minLength: 2)
 
-                HStack(spacing: 5) {
-                    if tab.isPinned {
-                        Image(systemName: "diamond.fill")
-                            .font(.system(size: chromeTokens.sidebarWorkspaceAccessory + 1, weight: .semibold))
-                            .foregroundColor(.secondary.opacity(0.7))
-                    }
-
+                if tab.isPinned {
+                    Image(systemName: "diamond.fill")
+                        .font(.system(size: chromeTokens.sidebarWorkspaceAccessory + 1, weight: .semibold))
+                        .foregroundColor(.secondary.opacity(0.7))
                 }
 
                 ZStack(alignment: .trailing) {

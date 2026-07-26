@@ -156,11 +156,11 @@ final class SidebarActivityProjectorTests: XCTestCase {
                     context: WorkspacePulseAgentContext(title: "Build", subtitle: "verifying push")
                 ),
             ],
-            terminalCount: 3
+            otherSurfaceCount: 3
         )
 
         XCTAssertEqual(summary.agents.count, 3)
-        XCTAssertEqual(summary.terminalCount, 3)
+        XCTAssertEqual(summary.otherSurfaceCount, 3)
         XCTAssertEqual(summary.agentCount(for: .waiting), 1)
         XCTAssertEqual(summary.relevantAgents.map(\.surfaceId), [waitingId, workingId, idleId])
     }
@@ -169,13 +169,13 @@ final class SidebarActivityProjectorTests: XCTestCase {
         let summary = WorkspacePulseProjector.project(
             hasWorkspaceDemand: true,
             agents: [],
-            terminalCount: 2
+            otherSurfaceCount: 2
         )
 
         XCTAssertEqual(summary.dominant, .waiting)
         XCTAssertEqual(summary.waitingCount, 1)
         XCTAssertTrue(summary.agents.isEmpty)
-        XCTAssertEqual(summary.terminalCount, 2)
+        XCTAssertEqual(summary.otherSurfaceCount, 2)
     }
 
     func testWorkspacePulseFallsThroughWorkingIdleAndCold() {
@@ -199,6 +199,76 @@ final class SidebarActivityProjectorTests: XCTestCase {
                 surfaceStates: []
             ).dominant,
             .cold
+        )
+    }
+}
+
+final class GhosttyOSCNotificationPolicyTests: XCTestCase {
+    func testClaudeHookDoesNotSuppressGrokNotificationInSameWorkspace() {
+        XCTAssertFalse(
+            GhosttyOSCNotificationPolicy.shouldSuppress(
+                hasActiveClaudeHookSession: true,
+                sourceTerminalKind: "grok"
+            )
+        )
+    }
+
+    func testClaudeHookSuppressesOnlyClaudeSurfaceNotification() {
+        XCTAssertTrue(
+            GhosttyOSCNotificationPolicy.shouldSuppress(
+                hasActiveClaudeHookSession: true,
+                sourceTerminalKind: "  CLAUDE-CODE "
+            )
+        )
+        XCTAssertFalse(
+            GhosttyOSCNotificationPolicy.shouldSuppress(
+                hasActiveClaudeHookSession: false,
+                sourceTerminalKind: "claude-code"
+            )
+        )
+        XCTAssertFalse(
+            GhosttyOSCNotificationPolicy.shouldSuppress(
+                hasActiveClaudeHookSession: true,
+                sourceTerminalKind: nil
+            )
+        )
+    }
+}
+
+final class WorkspacePulseDividerColorResolverTests: XCTestCase {
+    func testUsesBrandGoldWhenWorkspaceHasNoColor() {
+        XCTAssertEqual(
+            WorkspacePulseDividerColorResolver.resolve(
+                customHex: nil,
+                colorScheme: .dark
+            ).hexString(),
+            BrandColors.goldHex.uppercased()
+        )
+    }
+
+    func testUsesWorkspaceDisplayColorWhenSet() {
+        let customHex = "#1565C0"
+        let expected = WorkspaceTabColorSettings.displayNSColor(
+            hex: customHex,
+            colorScheme: .dark
+        )
+
+        XCTAssertEqual(
+            WorkspacePulseDividerColorResolver.resolve(
+                customHex: customHex,
+                colorScheme: .dark
+            ).hexString(),
+            expected?.hexString()
+        )
+    }
+
+    func testInvalidWorkspaceColorFallsBackToBrandGold() {
+        XCTAssertEqual(
+            WorkspacePulseDividerColorResolver.resolve(
+                customHex: "not-a-color",
+                colorScheme: .light
+            ).hexString(),
+            BrandColors.goldHex.uppercased()
         )
     }
 }

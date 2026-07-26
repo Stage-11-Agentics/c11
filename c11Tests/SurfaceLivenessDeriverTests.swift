@@ -100,6 +100,15 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
             SurfaceTabActivityResolver.resolve(
                 hasExactSurfaceNotification: false,
                 derivedActivity: .idle,
+                isCold: true,
+                terminalType: "claude-code"
+            ),
+            .cold
+        )
+        XCTAssertEqual(
+            SurfaceTabActivityResolver.resolve(
+                hasExactSurfaceNotification: false,
+                derivedActivity: .idle,
                 terminalType: "claude-code"
             ),
             .idle
@@ -110,7 +119,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
                 derivedActivity: nil,
                 terminalType: "opencode-run"
             ),
-            .cold
+            .idle
         )
     }
 
@@ -142,7 +151,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
                 derivedActivity: nil,
                 terminalType: "codex"
             ),
-            .cold
+            .idle
         )
     }
 
@@ -157,6 +166,69 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
             derivedActivity: .idle,
             terminalType: nil
         ))
+        XCTAssertNil(SurfaceTabActivityResolver.resolve(
+            hasExactSurfaceNotification: false,
+            derivedActivity: .idle,
+            isCold: true,
+            terminalType: "shell"
+        ))
+    }
+
+    func testColdDormancyStartsAtConfiguredBoundaryForIdleAgentsOnly() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let threshold: TimeInterval = 10 * 60
+
+        XCTAssertFalse(SurfaceLivenessDeriver.isCold(
+            activity: .idle,
+            lastTouchedAt: now.addingTimeInterval(-threshold + 0.1),
+            now: now,
+            coldAfterSeconds: threshold
+        ))
+        XCTAssertTrue(SurfaceLivenessDeriver.isCold(
+            activity: .idle,
+            lastTouchedAt: now.addingTimeInterval(-threshold),
+            now: now,
+            coldAfterSeconds: threshold
+        ))
+        XCTAssertFalse(SurfaceLivenessDeriver.isCold(
+            activity: .working,
+            lastTouchedAt: now.addingTimeInterval(-threshold * 2),
+            now: now,
+            coldAfterSeconds: threshold
+        ))
+        XCTAssertFalse(SurfaceLivenessDeriver.isCold(
+            activity: .idle,
+            lastTouchedAt: nil,
+            now: now,
+            coldAfterSeconds: threshold
+        ))
+    }
+
+    func testDetectedShellTurnsDeclaredAgentIntoTerminalPresentation() {
+        XCTAssertEqual(
+            SurfaceActivityTerminalKindResolver.resolve(
+                detectedTerminalType: "shell",
+                declaredTerminalType: "codex"
+            ),
+            "shell"
+        )
+        XCTAssertEqual(
+            SurfaceActivityTerminalKindResolver.resolve(
+                detectedTerminalType: "codex",
+                declaredTerminalType: "claude-code"
+            ),
+            "codex"
+        )
+    }
+
+    func testUnknownForegroundChildKeepsDeclaredAgentPresentation() {
+        XCTAssertEqual(
+            SurfaceActivityTerminalKindResolver.resolve(
+                detectedTerminalType: "unknown",
+                declaredTerminalType: "claude-code"
+            ),
+            "claude-code"
+        )
     }
 
     func testHarnessIdentityDoesNotChangeResolvedState() {

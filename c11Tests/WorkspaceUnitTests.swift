@@ -1253,6 +1253,60 @@ final class WorkspaceBrowserProfileSelectionTests: XCTestCase {
 
 
 @MainActor
+final class WorkspaceAgentPresentationTests: XCTestCase {
+    func testLiveIdleAgentProjectsColdOnlyWhileDormant() throws {
+        let workspace = Workspace()
+        let panelId = try XCTUnwrap(workspace.focusedPanelId)
+        let tabId = try XCTUnwrap(workspace.surfaceIdFromPanelId(panelId))
+        defer {
+            SurfaceMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: panelId)
+        }
+
+        _ = try SurfaceMetadataStore.shared.setMetadata(
+            workspaceId: workspace.id,
+            surfaceId: panelId,
+            partial: [MetadataKey.terminalType: "codex"],
+            mode: .merge,
+            source: .explicit
+        )
+        workspace.setDerivedActivity(.idle, forSurface: panelId)
+
+        workspace.setAgentCold(true, forSurface: panelId)
+        XCTAssertEqual(workspace.resolvedSurfaceTabActivityState(panelId: panelId), .cold)
+        XCTAssertEqual(workspace.bonsplitController.tab(tabId)?.activityState, .cold)
+
+        workspace.setAgentCold(false, forSurface: panelId)
+        XCTAssertEqual(workspace.resolvedSurfaceTabActivityState(panelId: panelId), .idle)
+        XCTAssertEqual(workspace.bonsplitController.tab(tabId)?.activityState, .idle)
+    }
+
+    func testAgentProcessExitImmediatelyRestoresTerminalPresentation() throws {
+        let workspace = Workspace()
+        let panelId = try XCTUnwrap(workspace.focusedPanelId)
+        let tabId = try XCTUnwrap(workspace.surfaceIdFromPanelId(panelId))
+        defer {
+            SurfaceMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: panelId)
+        }
+
+        _ = try SurfaceMetadataStore.shared.setMetadata(
+            workspaceId: workspace.id,
+            surfaceId: panelId,
+            partial: [MetadataKey.terminalType: "codex"],
+            mode: .merge,
+            source: .explicit
+        )
+        workspace.setDerivedActivity(.idle, forSurface: panelId)
+        XCTAssertEqual(workspace.resolvedSurfaceTabActivityState(panelId: panelId), .idle)
+
+        workspace.setDetectedTerminalType("shell", forSurface: panelId)
+        XCTAssertEqual(workspace.surfaceActivityTerminalKind(panelId: panelId), "shell")
+        XCTAssertNil(workspace.resolvedSurfaceTabActivityState(panelId: panelId))
+        XCTAssertNil(workspace.bonsplitController.tab(tabId)?.activityState)
+    }
+}
+
+
+@MainActor
 final class WorkspacePanelGitBranchTests: XCTestCase {
     private func drainMainQueue() {
         let expectation = expectation(description: "drain main queue")
@@ -1498,7 +1552,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         )
 
         destination.setDerivedActivity(nil, forSurface: panelId)
-        XCTAssertEqual(destination.bonsplitController.tab(destinationTabId)?.activityState, .cold)
+        XCTAssertEqual(destination.bonsplitController.tab(destinationTabId)?.activityState, .idle)
 
         let rollbackTransfer = try XCTUnwrap(destination.detachSurface(panelId: panelId))
         XCTAssertEqual(
@@ -1509,10 +1563,10 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         let rollbackTabId = try XCTUnwrap(source.surfaceIdFromPanelId(panelId))
         XCTAssertEqual(source.surfaceTerminalKind(panelId: panelId), "codex")
         XCTAssertNil(source.derivedActivityBySurface[panelId])
-        XCTAssertEqual(source.bonsplitController.tab(rollbackTabId)?.activityState, .cold)
+        XCTAssertEqual(source.bonsplitController.tab(rollbackTabId)?.activityState, .idle)
     }
 
-    func testRemovingTerminalTypeMetadataClearsColdSurfaceActivityState() throws {
+    func testRemovingTerminalTypeMetadataClearsAgentSurfaceActivityState() throws {
         let manager = TabManager()
         let workspace = try XCTUnwrap(manager.selectedWorkspace)
         let panelId = try XCTUnwrap(workspace.focusedPanelId)
@@ -1521,7 +1575,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
             SurfaceMetadataStore.shared.removeSurface(workspaceId: workspace.id, surfaceId: panelId)
         }
 
-        func seedColdAgentState() throws {
+        func seedAgentState() throws {
             _ = try SurfaceMetadataStore.shared.setMetadata(
                 workspaceId: workspace.id,
                 surfaceId: panelId,
@@ -1530,10 +1584,10 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
                 source: .explicit
             )
             workspace.syncSurfaceTabActivityStateForPanel(panelId)
-            XCTAssertEqual(workspace.bonsplitController.tab(tabId)?.activityState, .cold)
+            XCTAssertEqual(workspace.bonsplitController.tab(tabId)?.activityState, .idle)
         }
 
-        try seedColdAgentState()
+        try seedAgentState()
         let clearResult = try SurfaceMetadataStore.shared.clearMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
@@ -1551,7 +1605,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         XCTAssertTrue(clearResult.removedKeys.contains(MetadataKey.terminalType))
         XCTAssertNil(workspace.bonsplitController.tab(tabId)?.activityState)
 
-        try seedColdAgentState()
+        try seedAgentState()
         let keyedClearResult = try SurfaceMetadataStore.shared.clearMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
@@ -1569,7 +1623,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         XCTAssertEqual(keyedClearResult.removedKeys, [MetadataKey.terminalType])
         XCTAssertNil(workspace.bonsplitController.tab(tabId)?.activityState)
 
-        try seedColdAgentState()
+        try seedAgentState()
         let replaceResult = try SurfaceMetadataStore.shared.setMetadata(
             workspaceId: workspace.id,
             surfaceId: panelId,
@@ -1666,7 +1720,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         )
         apply(keyedClearResult)
         XCTAssertNil(workspace.derivedActivityBySurface[panelId])
-        XCTAssertEqual(workspace.bonsplitController.tab(tabId)?.activityState, .cold)
+        XCTAssertEqual(workspace.bonsplitController.tab(tabId)?.activityState, .idle)
 
         let clearAllResult = try SurfaceMetadataStore.shared.clearMetadata(
             workspaceId: workspace.id,
@@ -1702,7 +1756,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         apply(replaceResult)
         XCTAssertTrue(replaceResult.removedKeys.contains(MetadataKey.activity))
         XCTAssertNil(workspace.derivedActivityBySurface[panelId])
-        XCTAssertEqual(workspace.bonsplitController.tab(tabId)?.activityState, .cold)
+        XCTAssertEqual(workspace.bonsplitController.tab(tabId)?.activityState, .idle)
     }
 
     func testClosingBackgroundTabPreservesSelectedSurfaceAndFocus() throws {
@@ -2294,11 +2348,274 @@ final class SidebarWorkspaceShortcutHintMetricsTests: XCTestCase {
 
     func testSlotWidthAppliesMinimumAndDebugInset() {
         let nilLabelWidth = SidebarWorkspaceShortcutHintMetrics.slotWidth(label: nil, debugXOffset: 999)
-        XCTAssertEqual(nilLabelWidth, 28)
+        XCTAssertEqual(nilLabelWidth, 18)
 
         let base = SidebarWorkspaceShortcutHintMetrics.slotWidth(label: "⌘1", debugXOffset: 0)
         let widened = SidebarWorkspaceShortcutHintMetrics.slotWidth(label: "⌘1", debugXOffset: 10)
         XCTAssertGreaterThan(widened, base)
+    }
+
+    /// A shortcut label still reserves the measured pill width, so trimming
+    /// the label-less minimum must not narrow the labelled slot.
+    func testSlotWidthForLabelledWorkspaceStillFitsPill() {
+        let labelled = SidebarWorkspaceShortcutHintMetrics.slotWidth(label: "⌘1", debugXOffset: 0)
+        XCTAssertGreaterThanOrEqual(labelled, SidebarWorkspaceShortcutHintMetrics.hintWidth(for: "⌘1"))
+    }
+}
+
+@MainActor
+final class WorkspacePulseCensusTests: XCTestCase {
+    private func line(_ parts: [(Int, String)]) -> String {
+        WorkspacePulseCensus.line(
+            parts: parts.map { (count: $0.0, label: $0.1) },
+            separator: ", ",
+            empty: "No surfaces"
+        )
+    }
+
+    func testJoinsEveryPresentKindInOrder() {
+        XCTAssertEqual(
+            line([(13, "13 agents"), (4, "4 other surfaces")]),
+            "13 agents, 4 other surfaces"
+        )
+    }
+
+    /// The card has one census line in a ~178pt column, so absent kinds have
+    /// to yield their space to the kinds that are actually there.
+    func testDropsAbsentKinds() {
+        XCTAssertEqual(
+            line([(13, "13 agents"), (0, "0 other surfaces")]),
+            "13 agents"
+        )
+    }
+
+    func testSingleKindHasNoSeparator() {
+        XCTAssertEqual(line([(0, "0 agents"), (4, "4 surfaces")]), "4 surfaces")
+    }
+
+    func testEmptyCensusFallsBackRatherThanRenderingBlank() {
+        XCTAssertEqual(line([(0, "0 agents"), (0, "0 surfaces")]), "No surfaces")
+        XCTAssertEqual(line([]), "No surfaces")
+    }
+
+    func testNegativeCountsAreTreatedAsAbsent() {
+        XCTAssertEqual(line([(-1, "-1 agents"), (1, "1 surface")]), "1 surface")
+    }
+}
+
+@MainActor
+final class SurfaceMetadataStoreTargetedReadTests: XCTestCase {
+    private let workspaceId = UUID()
+
+    /// The targeted reads exist to keep the sidebar off the whole-source-map
+    /// conversion; they are only worth having if they agree with it.
+    func testTargetedReadsMatchTheFullSnapshot() throws {
+        let store = SurfaceMetadataStore.shared
+        let surfaceId = UUID()
+        _ = try store.setMetadata(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId,
+            partial: [
+                MetadataKey.terminalType: "claude-code",
+                MetadataKey.title: "Sidebar card bug",
+                MetadataKey.description: "Lineage: operator → fix"
+            ],
+            mode: .merge,
+            source: .explicit
+        )
+        defer {
+            _ = try? store.clearMetadata(
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                keys: nil,
+                source: .explicit
+            )
+        }
+
+        let full = store.getMetadata(workspaceId: workspaceId, surfaceId: surfaceId)
+
+        XCTAssertEqual(
+            store.metadataValue(
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                key: MetadataKey.terminalType
+            ) as? String,
+            full.metadata[MetadataKey.terminalType] as? String
+        )
+
+        let subset = store.getMetadata(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId,
+            keys: [MetadataKey.title, MetadataKey.description]
+        )
+        XCTAssertEqual(subset.metadata[MetadataKey.title] as? String, full.metadata[MetadataKey.title] as? String)
+        XCTAssertEqual(
+            subset.metadata[MetadataKey.description] as? String,
+            full.metadata[MetadataKey.description] as? String
+        )
+        XCTAssertEqual(
+            subset.sources[MetadataKey.title]?["source"] as? String,
+            full.sources[MetadataKey.title]?["source"] as? String
+        )
+        // The subset carries only what was asked for.
+        XCTAssertNil(subset.metadata[MetadataKey.terminalType])
+        XCTAssertNil(subset.sources[MetadataKey.terminalType])
+    }
+
+    func testTargetedReadsOnUnknownSurfaceAreEmpty() {
+        let store = SurfaceMetadataStore.shared
+        let missing = UUID()
+        XCTAssertNil(store.metadataValue(workspaceId: workspaceId, surfaceId: missing, key: MetadataKey.terminalType))
+        let subset = store.getMetadata(workspaceId: workspaceId, surfaceId: missing, keys: [MetadataKey.title])
+        XCTAssertTrue(subset.metadata.isEmpty)
+        XCTAssertTrue(subset.sources.isEmpty)
+    }
+}
+
+@MainActor
+final class WorkspacePulseSurfaceCensusProjectionTests: XCTestCase {
+    func testProjectorCarriesEverySurfaceKind() {
+        let summary = WorkspacePulseProjector.project(
+            hasWorkspaceDemand: false,
+            agents: [
+                WorkspacePulseAgent(surfaceId: UUID(), state: .working, context: nil),
+                WorkspacePulseAgent(surfaceId: UUID(), state: .idle, context: nil)
+            ],
+            otherSurfaceCount: 5
+        )
+        XCTAssertEqual(summary.agents.count, 2)
+        XCTAssertEqual(summary.otherSurfaceCount, 5)
+    }
+
+    func testNegativeSurfaceCountsClampToZero() {
+        let summary = WorkspacePulseProjector.project(
+            hasWorkspaceDemand: false,
+            agents: [],
+            otherSurfaceCount: -4
+        )
+        XCTAssertEqual(summary.otherSurfaceCount, 0)
+    }
+
+    /// The surface count joins the card's Equatable identity, so a browser
+    /// opening in a background workspace has to redraw its card.
+    func testSurfaceCountsParticipateInEquality() {
+        func summary(other: Int) -> WorkspacePulseSummary {
+            WorkspacePulseProjector.project(
+                hasWorkspaceDemand: false,
+                agents: [],
+                otherSurfaceCount: other
+            )
+        }
+        XCTAssertEqual(summary(other: 1), summary(other: 1))
+        XCTAssertNotEqual(summary(other: 1), summary(other: 2))
+        XCTAssertNotEqual(summary(other: 1), summary(other: 0))
+    }
+}
+
+@MainActor
+final class WorkspacePulseMarkRowMetricsTests: XCTestCase {
+    private let sidebarCardContentWidth: CGFloat = 178
+
+    private func fittedWidth(_ layout: WorkspacePulseMarkRowMetrics.Layout) -> CGFloat {
+        WorkspacePulseMarkRowMetrics.width(
+            count: layout.visibleCount,
+            slot: layout.slot,
+            spacing: layout.spacing
+        ) + (layout.hiddenCount > 0
+            ? WorkspacePulseMarkRowMetrics.overflowLabelWidth + WorkspacePulseMarkRowMetrics.minimumSpacing
+            : 0)
+    }
+
+    func testSmallRosterKeepsPreferredMetrics() {
+        let layout = WorkspacePulseMarkRowMetrics.layout(count: 4, availableWidth: sidebarCardContentWidth)
+        XCTAssertEqual(layout.slot, WorkspacePulseMarkRowMetrics.preferredSlot)
+        XCTAssertEqual(layout.spacing, WorkspacePulseMarkRowMetrics.preferredSpacing)
+        XCTAssertEqual(layout.visibleCount, 4)
+        XCTAssertEqual(layout.hiddenCount, 0)
+    }
+
+    /// The bug this row was rebuilt for: at twelve agents a fixed 14pt slot
+    /// with 7pt gaps needs 245pt in a 178pt card, and the overflow grew and
+    /// centre-clipped the whole workspace card.
+    func testCrowdedRosterStaysInsideTheCard() {
+        for count in 1...40 {
+            let layout = WorkspacePulseMarkRowMetrics.layout(
+                count: count,
+                availableWidth: sidebarCardContentWidth
+            )
+            XCTAssertLessThanOrEqual(
+                fittedWidth(layout),
+                sidebarCardContentWidth + 0.01,
+                "count=\(count) overflows the card"
+            )
+            XCTAssertEqual(layout.visibleCount + layout.hiddenCount, count, "count=\(count) lost agents")
+        }
+    }
+
+    func testCrowdedRosterCompressesGapsBeforeMarks() {
+        let layout = WorkspacePulseMarkRowMetrics.layout(count: 10, availableWidth: sidebarCardContentWidth)
+        XCTAssertEqual(layout.slot, WorkspacePulseMarkRowMetrics.preferredSlot)
+        XCTAssertLessThan(layout.spacing, WorkspacePulseMarkRowMetrics.preferredSpacing)
+        XCTAssertGreaterThanOrEqual(layout.spacing, WorkspacePulseMarkRowMetrics.minimumSpacing)
+        XCTAssertEqual(layout.hiddenCount, 0)
+    }
+
+    func testVeryCrowdedRosterShrinksMarksAndKeepsThemAllVisible() {
+        let layout = WorkspacePulseMarkRowMetrics.layout(count: 16, availableWidth: sidebarCardContentWidth)
+        XCTAssertEqual(layout.spacing, WorkspacePulseMarkRowMetrics.minimumSpacing)
+        XCTAssertLessThan(layout.slot, WorkspacePulseMarkRowMetrics.preferredSlot)
+        XCTAssertGreaterThanOrEqual(layout.slot, WorkspacePulseMarkRowMetrics.minimumSlot)
+        XCTAssertEqual(layout.visibleCount, 16)
+        XCTAssertEqual(layout.hiddenCount, 0)
+        XCTAssertEqual(layout.markSide, min(9, layout.slot), accuracy: 0.01)
+        XCTAssertLessThanOrEqual(layout.markSide, layout.slot)
+    }
+
+    func testOverflowingRosterCountsTheRemainder() {
+        let layout = WorkspacePulseMarkRowMetrics.layout(count: 60, availableWidth: sidebarCardContentWidth)
+        XCTAssertGreaterThan(layout.hiddenCount, 0)
+        XCTAssertGreaterThan(layout.visibleCount, 0)
+        XCTAssertEqual(layout.visibleCount + layout.hiddenCount, 60)
+        XCTAssertLessThanOrEqual(fittedWidth(layout), sidebarCardContentWidth + 0.01)
+    }
+
+    func testNarrowSidebarStillFits() {
+        for width in stride(from: 60.0, through: 400.0, by: 10.0) {
+            let layout = WorkspacePulseMarkRowMetrics.layout(count: 24, availableWidth: CGFloat(width))
+            XCTAssertLessThanOrEqual(
+                fittedWidth(layout),
+                CGFloat(width) + 0.01,
+                "width=\(width) overflows"
+            )
+            XCTAssertEqual(layout.visibleCount + layout.hiddenCount, 24)
+        }
+    }
+
+    /// Below the width of the overflow count itself the row has nothing left
+    /// to give; it must still return a usable layout rather than negative
+    /// metrics or a lost agent count.
+    func testDegenerateWidthStaysSane() {
+        for width in stride(from: 1.0, through: 55.0, by: 3.0) {
+            let layout = WorkspacePulseMarkRowMetrics.layout(count: 24, availableWidth: CGFloat(width))
+            XCTAssertGreaterThanOrEqual(layout.slot, WorkspacePulseMarkRowMetrics.minimumSlot)
+            XCTAssertGreaterThanOrEqual(layout.spacing, WorkspacePulseMarkRowMetrics.minimumSpacing)
+            XCTAssertGreaterThanOrEqual(layout.visibleCount, 0)
+            XCTAssertEqual(layout.visibleCount + layout.hiddenCount, 24)
+        }
+    }
+
+    /// Geometry is zero on the first layout pass; rendering a `+N` there
+    /// would flash on every card appearance.
+    func testUnresolvedGeometryRendersEveryMark() {
+        let layout = WorkspacePulseMarkRowMetrics.layout(count: 12, availableWidth: 0)
+        XCTAssertEqual(layout.visibleCount, 12)
+        XCTAssertEqual(layout.hiddenCount, 0)
+    }
+
+    func testEmptyRosterRendersNothing() {
+        let layout = WorkspacePulseMarkRowMetrics.layout(count: 0, availableWidth: sidebarCardContentWidth)
+        XCTAssertEqual(layout.visibleCount, 0)
+        XCTAssertEqual(layout.hiddenCount, 0)
     }
 }
 

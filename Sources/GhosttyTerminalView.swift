@@ -11,6 +11,20 @@ import IOSurface
 import UniformTypeIdentifiers
 import os
 
+/// Claude Code's wrapper hooks already deliver structured notifications, so
+/// its raw OSC completion notification would be a duplicate. The hook status
+/// is workspace-scoped, though: it must not suppress OSC notifications emitted
+/// by Grok, Codex, or another surface that happens to share that workspace.
+enum GhosttyOSCNotificationPolicy {
+    static func shouldSuppress(
+        hasActiveClaudeHookSession: Bool,
+        sourceTerminalKind: String?
+    ) -> Bool {
+        guard hasActiveClaudeHookSession else { return false }
+        return AgentIdentityPolicy.normalizedKind(sourceTerminalKind) == "claude-code"
+    }
+}
+
 #if os(macOS)
 func cmuxShouldUseTransparentBackgroundWindow() -> Bool {
     let defaults = UserDefaults.standard
@@ -1955,14 +1969,19 @@ class GhosttyApp {
                     // The hook system manages notifications with proper lifecycle tracking;
                     // raw OSC notifications would duplicate or outlive the structured hooks.
                     let owningManager = AppDelegate.shared?.tabManagerFor(tabId: tabId) ?? tabManager
+                    let surfaceId = owningManager.focusedSurfaceId(for: tabId)
                     if let workspace = owningManager.tabs.first(where: { $0.id == tabId }),
-                       workspace.agentPIDs["claude_code"] != nil {
+                       GhosttyOSCNotificationPolicy.shouldSuppress(
+                           hasActiveClaudeHookSession: workspace.agentPIDs["claude_code"] != nil,
+                           sourceTerminalKind: surfaceId.flatMap {
+                               workspace.surfaceTerminalKind(panelId: $0)
+                           }
+                       ) {
                         return true
                     }
                     let tabTitle = owningManager.titleForTab(tabId) ?? "Terminal"
                     let command = actionTitle.isEmpty ? tabTitle : actionTitle
                     let body = actionBody
-                    let surfaceId = tabManager.focusedSurfaceId(for: tabId)
                     TerminalNotificationStore.shared.addNotification(
                         tabId: tabId,
                         surfaceId: surfaceId,
@@ -2234,10 +2253,17 @@ class GhosttyApp {
             let actionBody = action.action.desktop_notification.body
                 .flatMap { String(cString: $0) } ?? ""
             performOnMain {
-                // Suppress OSC notifications for workspaces with active Claude hook sessions.
+                // Suppress only the Claude surface whose structured hooks would
+                // duplicate this OSC notification. Other agents in the same
+                // workspace still own their native terminal notifications.
                 let owningManager = AppDelegate.shared?.tabManagerFor(tabId: tabId) ?? AppDelegate.shared?.tabManager
                 if let workspace = owningManager?.tabs.first(where: { $0.id == tabId }),
-                   workspace.agentPIDs["claude_code"] != nil {
+                   GhosttyOSCNotificationPolicy.shouldSuppress(
+                       hasActiveClaudeHookSession: workspace.agentPIDs["claude_code"] != nil,
+                       sourceTerminalKind: surfaceId.flatMap {
+                           workspace.surfaceTerminalKind(panelId: $0)
+                       }
+                   ) {
                     return
                 }
                 let tabTitle = owningManager?.titleForTab(tabId) ?? "Terminal"

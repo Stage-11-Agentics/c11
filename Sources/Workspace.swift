@@ -5463,6 +5463,13 @@ final class Workspace: Identifiable, ObservableObject {
     /// pruned alongside the other per-surface metadata. Absence of a key means
     /// "no derived signal yet."
     @Published var derivedActivityBySurface: [UUID: SidebarActivityState] = [:]
+    /// Live-agent dormancy is a reversible presentation projection, kept
+    /// separate from the durable working/idle metadata truth.
+    @Published private(set) var coldAgentSurfaceIds: Set<UUID> = []
+    /// Foreground-process classifications from `AgentDetector`. Durable
+    /// `terminal_type` metadata describes resumable identity; this live map
+    /// decides whether that identity is currently an agent or a plain shell.
+    @Published private(set) var detectedTerminalTypesBySurface: [UUID: String] = [:]
     @Published var gitBranch: SidebarGitBranchState?
     @Published var panelGitBranches: [UUID: SidebarGitBranchState] = [:]
     /// C11-104 — per-panel resolved worktree+branch context for the
@@ -6368,6 +6375,8 @@ final class Workspace: Identifiable, ObservableObject {
         let terminalTypeSource: MetadataSource?
         let derivedActivity: SidebarActivityState?
         let derivedActivitySource: MetadataSource?
+        let isAgentCold: Bool
+        let detectedTerminalType: String?
         let activityState: BonsplitTabActivityState?
     }
 
@@ -6682,14 +6691,19 @@ final class Workspace: Identifiable, ObservableObject {
         AppDelegate.shared?.notificationStore?.hasUnreadNotification(forTabId: id, surfaceId: panelId) ?? false
     }
 
+    /// `terminalKind` lets a caller that has already read the surface's kind
+    /// hand it in. The sidebar roster reads it for its agent test and would
+    /// otherwise pay for the same lookup twice per surface, per evaluation.
     func resolvedSurfaceTabActivityState(
         panelId: UUID,
-        hasExactSurfaceNotification: Bool? = nil
+        hasExactSurfaceNotification: Bool? = nil,
+        terminalKind: String?? = nil
     ) -> BonsplitTabActivityState? {
         SurfaceTabActivityResolver.resolve(
             hasExactSurfaceNotification: hasExactSurfaceNotification ?? hasUnreadNotification(panelId: panelId),
             derivedActivity: derivedActivityBySurface[panelId],
-            terminalType: surfaceTerminalKind(panelId: panelId)
+            isCold: coldAgentSurfaceIds.contains(panelId),
+            terminalType: terminalKind ?? surfaceActivityTerminalKind(panelId: panelId)
         )
     }
 
@@ -7057,6 +7071,42 @@ final class Workspace: Identifiable, ObservableObject {
             changed = true
         } else {
             changed = false
+        }
+        if changed {
+            syncSurfaceTabActivityStateForPanel(surfaceId)
+        }
+    }
+
+    /// Update the live dormancy projection for one agent surface.
+    func setAgentCold(_ isCold: Bool, forSurface surfaceId: UUID) {
+        let changed: Bool
+        if isCold {
+            changed = coldAgentSurfaceIds.insert(surfaceId).inserted
+        } else {
+            changed = coldAgentSurfaceIds.remove(surfaceId) != nil
+        }
+        if changed {
+            syncSurfaceTabActivityStateForPanel(surfaceId)
+        }
+    }
+
+    /// Install the detector's current foreground-process classification.
+    /// `"shell"` is authoritative evidence that the agent process exited;
+    /// `"unknown"` is not, because an agent may temporarily foreground an
+    /// unrecognized child command.
+    func setDetectedTerminalType(_ terminalType: String?, forSurface surfaceId: UUID) {
+        let normalized = terminalType?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = normalized?.isEmpty == false ? normalized : nil
+        let changed: Bool
+        if let value {
+            if detectedTerminalTypesBySurface[surfaceId] != value {
+                detectedTerminalTypesBySurface[surfaceId] = value
+                changed = true
+            } else {
+                changed = false
+            }
+        } else {
+            changed = detectedTerminalTypesBySurface.removeValue(forKey: surfaceId) != nil
         }
         if changed {
             syncSurfaceTabActivityStateForPanel(surfaceId)
@@ -7480,7 +7530,14 @@ final class Workspace: Identifiable, ObservableObject {
 
     /// Read the current M7 title-bar state for a surface as a SwiftUI view state.
     func surfaceTitleBarState(panelId: UUID) -> SurfaceTitleBarState {
-        let snapshot = SurfaceMetadataStore.shared.getMetadata(workspaceId: id, surfaceId: panelId)
+        // Sidebar-hot: called for every agent surface of every workspace on
+        // each sidebar body evaluation. Ask for the two keys it reads rather
+        // than a whole converted source map.
+        let snapshot = SurfaceMetadataStore.shared.getMetadata(
+            workspaceId: id,
+            surfaceId: panelId,
+            keys: [MetadataKey.title, MetadataKey.description]
+        )
         let title = snapshot.metadata[MetadataKey.title] as? String
         let description = snapshot.metadata[MetadataKey.description] as? String
         return SurfaceTitleBarState(
@@ -7636,6 +7693,10 @@ final class Workspace: Identifiable, ObservableObject {
         // TEL-4: drop derived-activity for surfaces that no longer exist so the
         // @Published map doesn't leak stale liveness for pruned surfaces.
         derivedActivityBySurface = derivedActivityBySurface.filter { validSurfaceIds.contains($0.key) }
+        coldAgentSurfaceIds = coldAgentSurfaceIds.filter { validSurfaceIds.contains($0) }
+        detectedTerminalTypesBySurface = detectedTerminalTypesBySurface.filter {
+            validSurfaceIds.contains($0.key)
+        }
         mailboxStdinBuffer.retainOnly(surfaceIds: validSurfaceIds)
         panelPullRequests = panelPullRequests.filter { validSurfaceIds.contains($0.key) }
         SurfaceMetadataStore.shared.pruneWorkspace(workspaceId: id, validSurfaceIds: validSurfaceIds)
@@ -8254,8 +8315,24 @@ final class Workspace: Identifiable, ObservableObject {
 
     /// Read a surface's declared `terminal_type` (canonical metadata key), if any.
     func surfaceTerminalKind(panelId: UUID) -> String? {
-        let md = SurfaceMetadataStore.shared.getMetadata(workspaceId: id, surfaceId: panelId).metadata
-        return md[MetadataKey.terminalType] as? String
+        SurfaceMetadataStore.shared.metadataValue(
+            workspaceId: id,
+            surfaceId: panelId,
+            key: MetadataKey.terminalType
+        ) as? String
+    }
+
+    /// Terminal kind used only for live agent-state presentation.
+    ///
+    /// A detected shell means the prior agent process exited, so the surface
+    /// is now an ordinary terminal even though its durable resume identity is
+    /// retained. A recognized agent classification wins. Unknown child
+    /// commands fall back to the durable declaration to avoid roster flicker.
+    func surfaceActivityTerminalKind(panelId: UUID) -> String? {
+        SurfaceActivityTerminalKindResolver.resolve(
+            detectedTerminalType: detectedTerminalTypesBySurface[panelId],
+            declaredTerminalType: surfaceTerminalKind(panelId: panelId)
+        )
     }
 
     /// Optional per-surface minimum override (`min_cols` / `min_rows` metadata) —
@@ -9374,6 +9451,16 @@ final class Workspace: Identifiable, ObservableObject {
         } else {
             derivedActivityBySurface.removeValue(forKey: detached.panelId)
         }
+        if detached.isAgentCold {
+            coldAgentSurfaceIds.insert(detached.panelId)
+        } else {
+            coldAgentSurfaceIds.remove(detached.panelId)
+        }
+        if let detectedTerminalType = detached.detectedTerminalType {
+            detectedTerminalTypesBySurface[detached.panelId] = detectedTerminalType
+        } else {
+            detectedTerminalTypesBySurface.removeValue(forKey: detached.panelId)
+        }
 
         guard let newTabId = bonsplitController.createTab(
             title: TitleFormatting.sidebarLabel(from: detached.title),
@@ -9399,6 +9486,8 @@ final class Workspace: Identifiable, ObservableObject {
             manualUnreadPanelIds.remove(detached.panelId)
             manualUnreadMarkedAt.removeValue(forKey: detached.panelId)
             derivedActivityBySurface.removeValue(forKey: detached.panelId)
+            coldAgentSurfaceIds.remove(detached.panelId)
+            detectedTerminalTypesBySurface.removeValue(forKey: detached.panelId)
             SurfaceMetadataStore.shared.removeSurface(workspaceId: id, surfaceId: detached.panelId)
             panelSubscriptions.removeValue(forKey: detached.panelId)
 #if DEBUG
@@ -11653,6 +11742,8 @@ extension Workspace: BonsplitDelegate {
                     surfaceId: panelId,
                     key: MetadataKey.activity
                 ),
+                isAgentCold: coldAgentSurfaceIds.contains(panelId),
+                detectedTerminalType: detectedTerminalTypesBySurface[panelId],
                 activityState: resolvedSurfaceTabActivityState(
                     panelId: panelId,
                     hasExactSurfaceNotification: false
@@ -11691,6 +11782,8 @@ extension Workspace: BonsplitDelegate {
         panelSubscriptions.removeValue(forKey: panelId)
         panelShellActivityStates.removeValue(forKey: panelId)
         derivedActivityBySurface.removeValue(forKey: panelId)
+        coldAgentSurfaceIds.remove(panelId)
+        detectedTerminalTypesBySurface.removeValue(forKey: panelId)
         mailboxStdinBuffer.removeSurface(panelId)
         surfaceTTYNames.removeValue(forKey: panelId)
         restoredTerminalScrollbackByPanelId.removeValue(forKey: panelId)
@@ -11874,6 +11967,8 @@ extension Workspace: BonsplitDelegate {
                 panelSubscriptions.removeValue(forKey: panelId)
                 panelShellActivityStates.removeValue(forKey: panelId)
                 derivedActivityBySurface.removeValue(forKey: panelId)
+                coldAgentSurfaceIds.remove(panelId)
+                detectedTerminalTypesBySurface.removeValue(forKey: panelId)
                 mailboxStdinBuffer.removeSurface(panelId)
                 surfaceTTYNames.removeValue(forKey: panelId)
                 surfaceListeningPorts.removeValue(forKey: panelId)

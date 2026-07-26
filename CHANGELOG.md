@@ -6,6 +6,24 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.60.1] - 2026-07-25
+
+Headline: **Workspace cards hold their shape at any agent count.** A busy workspace could push its card off the left edge of the window; it no longer can, whatever the workspace holds.
+
+### Fixed
+
+- **Workspace cards stay inside the sidebar however many agents a workspace holds.** Past roughly nine agents the card ran edge to edge, lost its border, and shifted far enough left that the title and every metadata line were cut off by the window. The agent-state marks now compress to fit, falling back to a `+N` count on a very large roster, and the card's geometry is enforced structurally so no future row can break it. ([#374](https://github.com/Stage-11-Agentics/c11/pull/374)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **Workspace card titles use the room they have.** Every card reserved space for accessories it was not showing, truncating titles roughly 17pt early. ([#374](https://github.com/Stage-11-Agentics/c11/pull/374)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **The sidebar does less work per frame on workspaces with many agents.** Reading one metadata value no longer converts a surface's entire source map, and the workspace roster no longer looks the same value up twice per surface. ([#374](https://github.com/Stage-11-Agentics/c11/pull/374)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+### Changed
+
+- **Workspace cards count browsers, not just agents and terminals.** The card's census reads as a comma-joined list of what the workspace actually holds, for example `9 agents, 3 terminals, 1 browser`, with absent kinds left out. ([#374](https://github.com/Stage-11-Agentics/c11/pull/374)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+### Thanks to 1 contributor!
+
+- [@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [0.60.0] - 2026-07-24
 
 Headline: **Agent activity is legible at a glance.** Surface tabs show each agent's state and workspace cards roll their agents into a compact pulse, so active, waiting, and idle work reads without opening every pane. This release also adds a typed `c11 launch-agent` command with a saved launch-configuration library on the CLI, global terminal font controls, exact Codex conversation restore at scale, and a fix for a high-surface-count autosave stall.

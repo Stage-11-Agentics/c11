@@ -1,0 +1,10 @@
+{
+  "seq": 2,
+  "ts": "2026-07-26T03:10:48.883Z",
+  "type": "conversation.resume.mode",
+  "instance": "resumefix-84906",
+  "v": 1,
+  "payload": {
+    "mode": "clean"
+  }
+}

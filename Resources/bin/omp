@@ -5,25 +5,19 @@
 # this wrapper:
 #   1. declares the surface as terminal_type=omp (sidebar chip / role hint),
 #      and
-#   2. wrapper-claims a placeholder ConversationRef so c11's conversation
-#      store records a post-launch claim time before omp creates its
-#      session file. The OmpStrategy's pull-scrape on next workspace open
-#      then keeps only candidates whose mtime is >= that claim time, which
-#      floors out the older sessions that accumulate in a cwd's slug dir
-#      (`~/.omp/agent/sessions/<slug>/`) so exact resume resolves *this*
-#      pane's session instead of going ambiguous.
+#   2. wrapper-claims a placeholder ConversationRef at launch, and
+#   3. watches OMP's tty-scoped pointer until its JSONL actually exists,
+#      then pushes the exact UUID, effective cwd, and path as causal evidence.
 #
 # Outside c11 (or when the socket is unreachable), it passes through to the
 # real omp binary unchanged.
 #
-# === Why this exists (the "pi fails, omp passes" resume bug) =================
-# omp resumes scrape-primary, exactly like pi: c11 resolves the real session
-# id at restore time from the cwd's slug dir, and omp exposes no SessionStart
-# hook to learn the id while it runs. Without a wrapper-claim the restore
-# scrape has no time floor, so a cwd with more than one omp session resolves
-# to state=unknown and resume SKIPS. omp happened to pass the staging smoke
-# because its slug dirs usually hold one session, but it carries the same
-# latent bug pi hit; this wrapper gives omp the codex-style time floor too.
+# === Why this exists ==========================================================
+# OMP can move an interactive session away from the shell's cwd (for example
+# from $HOME to /tmp), so a later cwd scrape can miss the session even after it
+# has persisted. OMP's tty pointer identifies the exact effective cwd and JSONL
+# without reading transcript bytes. The placeholder remains the conservative
+# fallback when no message ever creates that durable file.
 #
 # See `Resources/bin/claude` for the reference implementation of the
 # session-resume wrapper pattern and the four constraints all wrappers
@@ -99,10 +93,9 @@ c11_bin="$self_dir/c11"
 [[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
 
 # (1) Mark the surface as terminal_type=omp (sidebar chip / role hint).
-# (2) Wrapper-claim a placeholder ConversationRef so the conversation store
-#     records a post-launch claim time. Idempotent: a second invocation in
-#     the same surface cannot regress a real id back to a placeholder
-#     (ConversationStore.claim never displaces a non-wrapperClaim source).
+# (2) Keep the placeholder claim until OMP has persisted a real session.
+# (3) Watch its own tty pointer and push only after the JSONL exists. Empty
+#     sessions deliberately remain placeholders and are not resumable.
 #
 # Both run in the background so omp startup latency is unaffected; `disown`
 # so a stale write can't keep the wrapper process alive after `exec` (moot
@@ -122,6 +115,81 @@ if [[ -n "$c11_bin" ]]; then
             >/dev/null 2>&1
     ) &
     disown 2>/dev/null || true
+
+    tty_path="$(/usr/bin/tty 2>/dev/null || true)"
+    tty_name=""
+    if [[ "$tty_path" == /dev/* ]]; then
+        tty_name="${tty_path##*/}"
+    fi
+    omp_agent_dir="${PI_CODING_AGENT_DIR:-${HOME}/.omp/agent}"
+    pointer_file="${omp_agent_dir}/terminal-sessions/${tty_name}"
+    old_session_path=""
+    if [[ -n "$tty_name" && -f "$pointer_file" ]]; then
+        old_session_path="$(/usr/bin/sed -n '2p' "$pointer_file" 2>/dev/null || true)"
+    fi
+
+    expected_resume_id=""
+    expect_resume_value=0
+    for arg in "$@"; do
+        if [[ "$expect_resume_value" == "1" ]]; then
+            expected_resume_id="$arg"
+            expect_resume_value=0
+            continue
+        fi
+        case "$arg" in
+            --resume=*) expected_resume_id="${arg#--resume=}" ;;
+            -r=*) expected_resume_id="${arg#-r=}" ;;
+            --resume|-r) expect_resume_value=1 ;;
+        esac
+    done
+
+    if [[ -n "$tty_name" ]]; then
+        wrapped_pid="$$"
+        (
+            while /bin/kill -0 "$wrapped_pid" >/dev/null 2>&1; do
+                if [[ -f "$pointer_file" ]]; then
+                    effective_cwd="$(/usr/bin/sed -n '1p' "$pointer_file" 2>/dev/null || true)"
+                    session_path="$(/usr/bin/sed -n '2p' "$pointer_file" 2>/dev/null || true)"
+                    session_file="${session_path##*/}"
+                    session_stem="${session_file%.jsonl}"
+                    session_id="${session_stem##*_}"
+                    pointer_is_current=0
+                    if [[ -n "$expected_resume_id" && "$session_id" == "$expected_resume_id" ]]; then
+                        pointer_is_current=1
+                    elif [[ -z "$expected_resume_id" && -n "$session_path" && "$session_path" != "$old_session_path" ]]; then
+                        pointer_is_current=1
+                    fi
+                    if [[ "$pointer_is_current" == "1"
+                          && "$session_path" == *.jsonl
+                          && -f "$session_path"
+                          && "$session_id" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+                        payload_dir="$(/usr/bin/mktemp -d /tmp/c11-omp-capture.XXXXXX 2>/dev/null || true)"
+                        payload_file="${payload_dir}/payload.json"
+                        if [[ -n "$payload_dir" ]] \
+                            && /usr/bin/plutil -create xml1 "$payload_file" >/dev/null 2>&1 \
+                            && /usr/bin/plutil -insert session_file_path -string "$session_path" "$payload_file" >/dev/null 2>&1 \
+                            && /usr/bin/plutil -convert json "$payload_file" >/dev/null 2>&1; then
+                            CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+                                "$c11_bin" --socket "${CMUX_SOCKET_PATH}" \
+                                conversation push --kind omp --id "$session_id" \
+                                --source hook --state alive \
+                                --cwd "${effective_cwd:-$PWD}" \
+                                --reason "omp persisted exact tty session" \
+                                --payload "@${payload_file}" \
+                                >/dev/null 2>&1
+                        fi
+                        if [[ -n "$payload_dir" ]]; then
+                            /bin/unlink "$payload_file" >/dev/null 2>&1 || true
+                            /bin/rmdir "$payload_dir" >/dev/null 2>&1 || true
+                        fi
+                        exit 0
+                    fi
+                fi
+                /bin/sleep 0.25
+            done
+        ) &
+        disown 2>/dev/null || true
+    fi
 fi
 
 exec "$REAL_OMP" "$@"

@@ -51,6 +51,7 @@ public struct ResumeCommand: Sendable, Equatable {
 public enum ResumeSkipCode: String, Codable, Sendable, Equatable {
     case policyNoResume = "policy-no-resume"
     case startupUnaudited = "startup-unaudited"
+    case conversationUnavailable = "conversation-unavailable"
     case duplicateOwnership = "duplicate-ownership"
     case ambiguousOwnership = "ambiguous-ownership"
     case ownershipUnaudited = "ownership-unaudited"

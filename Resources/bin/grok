@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# c11 Grok wrapper - exact durable-session identity for restart/resume.
+#
+# Grok supports `--session-id <uuid>` for a new conversation and
+# `--resume <uuid>` for an existing one. Inside c11 this wrapper injects the
+# new UUID, but publishes it to c11 only after Grok creates that UUID's
+# session directory (the first real message). Empty sessions remain uncaptured
+# and intentionally do not resume.
+
+set -uo pipefail
+
+find_real_grok() {
+    local self_dir
+    self_dir="$(cd "$(dirname "$0")" && pwd)"
+    local IFS=:
+    for d in $PATH; do
+        [[ "$d" == "$self_dir" ]] && continue
+        [[ -x "$d/grok" ]] && printf '%s' "$d/grok" && return 0
+    done
+    return 1
+}
+
+c11_socket_available() {
+    local socket="${CMUX_SOCKET_PATH:-}"
+    [[ -n "$socket" && -S "$socket" ]] || return 1
+    local self_dir c11_bin
+    self_dir="$(cd "$(dirname "$0")" && pwd)"
+    c11_bin="$self_dir/c11"
+    [[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
+    [[ -n "$c11_bin" ]] || return 1
+    CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+        "$c11_bin" --socket "$socket" ping >/dev/null 2>&1
+}
+
+REAL_GROK="$(find_real_grok)" || {
+    echo "Error: grok not found in PATH" >&2
+    exit 127
+}
+if [[ -z "${CMUX_SURFACE_ID:-}" || "${CMUX_GROK_HOOKS_DISABLED:-}" == "1" ]] \
+    || ! c11_socket_available; then
+    exec "$REAL_GROK" "$@"
+fi
+
+case "${1:-}" in
+    agent|completions|dashboard|doctor|export|help|inspect|leader|login|logout|mcp|memory|models|plugin|sessions|setup|trace|update|version|worktree|wrap|--help|-h|--version|-v)
+        exec "$REAL_GROK" "$@"
+        ;;
+esac
+for arg in "$@"; do
+    case "$arg" in
+        -p|--single|--prompt-file|--prompt-json)
+            exec "$REAL_GROK" "$@"
+            ;;
+    esac
+done
+
+self_dir="$(cd "$(dirname "$0")" && pwd)"
+c11_bin="$self_dir/c11"
+[[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
+
+is_uuid() {
+    [[ "$1" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]
+}
+
+session_id=""
+resume_id=""
+expect_session_id=0
+expect_resume_id=0
+continue_latest=0
+fork_session=0
+for arg in "$@"; do
+    if [[ "$expect_session_id" == "1" ]]; then
+        session_id="$arg"
+        expect_session_id=0
+        continue
+    fi
+    if [[ "$expect_resume_id" == "1" ]]; then
+        if [[ "$arg" != -* ]]; then resume_id="$arg"; fi
+        expect_resume_id=0
+        continue
+    fi
+    case "$arg" in
+        --session-id=*) session_id="${arg#--session-id=}" ;;
+        --session-id|-s) expect_session_id=1 ;;
+        --resume=*) resume_id="${arg#--resume=}" ;;
+        -r=*) resume_id="${arg#-r=}" ;;
+        --resume|-r) expect_resume_id=1 ;;
+        --continue|-c) continue_latest=1 ;;
+        --fork-session) fork_session=1 ;;
+    esac
+done
+
+capture_id=""
+injected_id=0
+if [[ "$fork_session" == "1" && -n "$session_id" ]] && is_uuid "$session_id"; then
+    capture_id="$session_id"
+elif [[ -n "$resume_id" ]] && is_uuid "$resume_id"; then
+    capture_id="$resume_id"
+elif [[ -n "$session_id" ]] && is_uuid "$session_id"; then
+    capture_id="$session_id"
+elif [[ "$continue_latest" == "0" && "$expect_resume_id" == "0"
+        && -z "$resume_id" && -z "$session_id" ]]; then
+    capture_id="$(/usr/bin/uuidgen)"
+    injected_id=1
+fi
+
+if [[ -n "$c11_bin" ]]; then
+    (
+        CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+            "$c11_bin" --socket "${CMUX_SOCKET_PATH}" set-agent --type grok \
+            >/dev/null 2>&1
+    ) &
+    disown 2>/dev/null || true
+fi
+
+if [[ -n "$c11_bin" && -n "$capture_id" ]]; then
+    wrapped_pid="$$"
+    (
+        sessions_root="${HOME}/.grok/sessions"
+        while /bin/kill -0 "$wrapped_pid" >/dev/null 2>&1; do
+            session_dir="$(/usr/bin/find "$sessions_root" -type d -name "$capture_id" -print -quit 2>/dev/null || true)"
+            if [[ -n "$session_dir" && -d "$session_dir" ]]; then
+                payload_dir="$(/usr/bin/mktemp -d /tmp/c11-grok-capture.XXXXXX 2>/dev/null || true)"
+                payload_file="${payload_dir}/payload.json"
+                if [[ -n "$payload_dir" ]] \
+                    && /usr/bin/plutil -create xml1 "$payload_file" >/dev/null 2>&1 \
+                    && /usr/bin/plutil -insert session_directory_path -string "$session_dir" "$payload_file" >/dev/null 2>&1 \
+                    && /usr/bin/plutil -convert json "$payload_file" >/dev/null 2>&1; then
+                    CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+                        "$c11_bin" --socket "${CMUX_SOCKET_PATH}" \
+                        conversation push --kind grok --id "$capture_id" \
+                        --source hook --state alive --cwd "$PWD" \
+                        --reason "grok persisted exact injected session" \
+                        --payload "@${payload_file}" \
+                        >/dev/null 2>&1
+                fi
+                if [[ -n "$payload_dir" ]]; then
+                    /bin/unlink "$payload_file" >/dev/null 2>&1 || true
+                    /bin/rmdir "$payload_dir" >/dev/null 2>&1 || true
+                fi
+                exit 0
+            fi
+            /bin/sleep 0.25
+        done
+    ) &
+    disown 2>/dev/null || true
+fi
+
+if [[ "$injected_id" == "1" ]]; then
+    exec "$REAL_GROK" --session-id "$capture_id" "$@"
+fi
+exec "$REAL_GROK" "$@"

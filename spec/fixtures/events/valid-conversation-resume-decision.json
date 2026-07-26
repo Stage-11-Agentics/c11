@@ -1,0 +1,17 @@
+{
+  "seq": 16,
+  "ts": "2026-07-26T03:10:49.181Z",
+  "type": "conversation.resume.decision",
+  "instance": "resumefix-84906",
+  "v": 1,
+  "workspace": "25D7C803-EA62-4BB7-8253-FB76FB286341",
+  "surface": "F27C88D4-C927-4019-A889-6C6A0F90B3F2",
+  "payload": {
+    "kind": "claude-code",
+    "conversation_id": "e6373b1d-273c-4132-9b86-473cbd08813c",
+    "mode": "dirty",
+    "decision": "skip",
+    "skip_code": "transcript-missing",
+    "reason": "transcript not found"
+  }
+}

@@ -41,7 +41,7 @@ Every line is a flat JSON object. Five fields are required; the subject refs and
 
 ## v1 taxonomy
 
-The nine taxonomy types below are the closed v1 enum. `workspace` / `surface` / `pane` mark which subject refs are populated; `payload` shows the type-specific shape.
+The eleven taxonomy types below are the closed v1 enum. `workspace` / `surface` / `pane` mark which subject refs are populated; `payload` shows the type-specific shape.
 
 | `type` | Subject refs | Payload | Notes |
 |--------|--------------|---------|-------|
@@ -54,6 +54,8 @@ The nine taxonomy types below are the closed v1 enum. `workspace` / `surface` / 
 | `waiting.left` | workspace (= tabId) + surface? | — | Paired exit edge for `waiting.entered`. |
 | `mailbox.accepted` | workspace | `{id, from, to?, topic?}` | A mailbox message was accepted onto the bus. |
 | `mailbox.delivered` | workspace + surface? | `{id, recipient}` | A mailbox message reached a recipient. |
+| `conversation.resume.mode` | — | `{mode}` | The resolved recovery mode (`clean`, `dirty`, or `no-resume`) once per app launch. |
+| `conversation.resume.decision` | workspace + surface | `{kind, conversation_id, mode, decision, skip_code, reason?}` | One outcome for each restored agent candidate. `decision` is `command` or `skip`; `skip_code` is null for a command. |
 
 ## Stream-control markers
 

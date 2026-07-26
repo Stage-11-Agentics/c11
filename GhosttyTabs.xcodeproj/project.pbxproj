@@ -320,6 +320,7 @@
 		C1CDE00002A1B2C3D4E5F719 /* codex in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1CDE00001A1B2C3D4E5F719 /* codex */; };
 		C1F1E00002A1B2C3D4E5F719 /* pi in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F1E00001A1B2C3D4E5F719 /* pi */; };
 		C1F2E00002A1B2C3D4E5F719 /* omp in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F2E00001A1B2C3D4E5F719 /* omp */; };
+		C1F3E00002A1B2C3D4E5F719 /* grok in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F3E00001A1B2C3D4E5F719 /* grok */; };
 		C22557799917F42164A6C855 /* TitlebarSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F01B /* TitlebarSnapshotTests.swift */; };
 		C49B42317DA68794CC9C29E4 /* MailboxULIDTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7105BF1A1B2C3D4E5F60718 /* MailboxULIDTests.swift */; };
 		C622796239CFCFB69D68C5D9 /* CLIHealthRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH015BF1A1B2C3D4E5F60718 /* CLIHealthRuntimeTests.swift */; };
@@ -487,6 +488,7 @@
 				C1CDE00002A1B2C3D4E5F719 /* codex in Copy CLI */,
 				C1F1E00002A1B2C3D4E5F719 /* pi in Copy CLI */,
 				C1F2E00002A1B2C3D4E5F719 /* omp in Copy CLI */,
+				C1F3E00002A1B2C3D4E5F719 /* grok in Copy CLI */,
 				D1BEF00002A1B2C3D4E5F719 /* open in Copy CLI */,
 				4EE5E828CC9D3BA957B86380 /* copilot in Copy CLI */,
 			);
@@ -747,6 +749,7 @@
 		C1CDE00001A1B2C3D4E5F719 /* codex */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/codex; sourceTree = SOURCE_ROOT; };
 		C1F1E00001A1B2C3D4E5F719 /* pi */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/pi; sourceTree = SOURCE_ROOT; };
 		C1F2E00001A1B2C3D4E5F719 /* omp */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/omp; sourceTree = SOURCE_ROOT; };
+		C1F3E00001A1B2C3D4E5F719 /* grok */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/grok; sourceTree = SOURCE_ROOT; };
 		C28AE9F41DE55AB88CAE431D /* AgentManifest.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentManifest.swift; sourceTree = "<group>"; };
 		ACB000000000000000000001 /* AgentCompanionContext.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentCompanionContext.swift; sourceTree = "<group>"; };
 		ACB000000000000000000002 /* BrowserCompanionPolicyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BrowserCompanionPolicyTests.swift; sourceTree = "<group>"; };
@@ -961,6 +964,7 @@
 				C1CDE00001A1B2C3D4E5F719 /* codex */,
 				C1F1E00001A1B2C3D4E5F719 /* pi */,
 				C1F2E00001A1B2C3D4E5F719 /* omp */,
+				C1F3E00001A1B2C3D4E5F719 /* grok */,
 				D8017BF1A1B2C3D4E5F60718 /* Blueprints */,
 				DA7A10CA710E000000000001 /* Localizable.xcstrings */,
 				DA7A10CA710E000000000002 /* InfoPlist.xcstrings */,

@@ -1,22 +1,20 @@
 import Foundation
 
-/// Best-effort resume strategy for Grok Build. Grok exposes `grok --resume`
-/// (no id) to attach to the most recent session globally, but ships no
-/// SessionStart hook and no verified per-session transcript path c11 can
-/// scrape. So capture is fresh-launch-only — it acts on a hook/manual push
-/// or a wrapper-claim placeholder, same shape as Kimi/Opencode in v1.
-///
-/// When a non-placeholder ref does exist (alive/suspended), `resume()` types
-/// the best-effort `grok --always-approve --resume`, mirroring the
-/// `AgentRestartRegistry.phase1` fallback row. The command carries no
-/// interpolated id, so there is no untrusted-input surface to shell-quote.
+/// Exact resume strategy for durable Grok Build sessions. The c11 PATH wrapper
+/// injects a UUID for new sessions but pushes it only after Grok creates that
+/// UUID's session directory (the first real message). Empty sessions remain
+/// uncaptured. Restore always names the exact UUID, never "most recent".
 struct GrokStrategy: ConversationStrategy {
     let kind: String = "grok"
+    static let sessionDirectoryPayloadKey = "session_directory_path"
 
     init() {}
 
     func capture(inputs: ConversationStrategyInputs) -> ConversationRef? {
-        if let push = inputs.push, !push.placeholder {
+        if let push = inputs.push,
+           !push.placeholder,
+           push.capturedVia.isCausal,
+           isValidConversationUUID(push.id) {
             return push
         }
         return inputs.wrapperClaim
@@ -26,13 +24,29 @@ struct GrokStrategy: ConversationStrategy {
         if ref.placeholder {
             return .skip(reason: "fresh-launch-only")
         }
-        switch ref.state {
-        case .alive, .suspended:
-            // grok --resume (no id) attaches to the most recent session.
-            // Best-effort: may not match the exact session in the snapshot.
-            return .typeCommand(text: "grok --always-approve --resume", submitWithReturn: true)
-        default:
+        guard ref.state == .alive || ref.state == .suspended else {
             return .skip(reason: "state=\(ref.state.rawValue) not auto-resumable")
         }
+        guard isValidConversationUUID(ref.id) else {
+            return .skip(reason: "invalid id grammar")
+        }
+        return .typeCommand(
+            text: "grok --always-approve --resume \(conversationShellQuote(ref.id))",
+            submitWithReturn: true
+        )
+    }
+
+    func isValidId(_ id: String) -> Bool {
+        isValidConversationUUID(id)
+    }
+
+    func transcriptExists(
+        for ref: ConversationRef,
+        filesystem: ConversationFilesystem
+    ) -> Bool? {
+        guard isValidConversationUUID(ref.id) else { return false }
+        guard case .string(let path)? = ref.payload?[Self.sessionDirectoryPayloadKey],
+              !path.isEmpty else { return nil }
+        return filesystem.fileExists(atPath: path)
     }
 }

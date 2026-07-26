@@ -12424,6 +12424,7 @@ struct CMUXCLI {
         let capturedVia: String?
         let quarantineReason: String?
         let diagnosticReason: String?
+        let payload: [String: Any]?
     }
 
     /// Read-only resume-decision dry run. The recovery mode is mandatory and
@@ -12482,7 +12483,8 @@ struct CMUXCLI {
                         placeholder: active["placeholder"] as? Bool ?? false,
                         capturedVia: (active["captured_via"] ?? active["capturedVia"]) as? String,
                         quarantineReason: (active["quarantine_reason"] ?? active["quarantineReason"]) as? String,
-                        diagnosticReason: (active["diagnostic_reason"] ?? active["diagnosticReason"]) as? String
+                        diagnosticReason: (active["diagnostic_reason"] ?? active["diagnosticReason"]) as? String,
+                        payload: active["payload"] as? [String: Any]
                     ))
                 }
             }
@@ -12722,7 +12724,7 @@ struct CMUXCLI {
         let persistedState = ResumePersistedState(rawValue: input.state) ?? .unknown
         let idValid: Bool
         switch input.kind {
-        case "codex", "claude-code":
+        case "codex", "claude-code", "omp", "grok":
             idValid = isUUIDv4(input.id)
         case "opencode":
             idValid = isValidOpencodeSessionId(input.id)
@@ -12753,6 +12755,18 @@ struct CMUXCLI {
             case .some(let exists): transcriptEvidence = exists ? .verified : .missing
             case .none: transcriptEvidence = .unavailable
             }
+        } else if input.kind == "omp", idValid,
+                  let path = input.payload?["session_file_path"] as? String,
+                  !path.isEmpty {
+            transcriptEvidence = FileManager.default.fileExists(atPath: path)
+                ? .verified
+                : .missing
+        } else if input.kind == "grok", idValid,
+                  let path = input.payload?["session_directory_path"] as? String,
+                  !path.isEmpty {
+            transcriptEvidence = FileManager.default.fileExists(atPath: path)
+                ? .verified
+                : .missing
         } else {
             transcriptEvidence = .unavailable
         }
@@ -12768,6 +12782,12 @@ struct CMUXCLI {
                 command = "cd '\(cwd)' && \(command)"
             }
             fallback = ResumeCommand(text: command)
+        } else if input.kind == "omp", idValid {
+            fallback = ResumeCommand(text: "omp --resume=\(shellQuote(input.id))")
+        } else if input.kind == "grok", idValid {
+            fallback = ResumeCommand(
+                text: "grok --always-approve --resume \(shellQuote(input.id))"
+            )
         } else {
             fallback = nil
         }

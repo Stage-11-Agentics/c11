@@ -179,18 +179,64 @@ final class EventEmitter {
         )
     }
 
+    /// Records the recovery policy selected for this launch before any
+    /// per-surface decisions are evaluated. Returns false when the event log
+    /// has not started yet so AppDelegate can retry after launch setup.
+    @discardableResult
+    func emitConversationResumeMode(_ mode: ResumeRecoveryMode) -> Bool {
+        emit(.conversationResumeMode, payload: ["mode": mode.rawValue])
+    }
+
+    /// One durable outcome for each restored agent candidate. The command
+    /// itself is intentionally excluded: the kind + exact conversation id
+    /// identify the target without duplicating shell text in diagnostics.
+    @discardableResult
+    func emitConversationResumeDecision(
+        workspace: UUID,
+        surface: UUID,
+        kind: String,
+        conversationId: String?,
+        mode: ResumeRecoveryMode,
+        decision: ResumeDecision
+    ) -> Bool {
+        var payload: [String: Any] = [
+            "kind": kind,
+            "conversation_id": conversationId ?? NSNull(),
+            "mode": mode.rawValue,
+        ]
+        switch decision {
+        case .command:
+            payload["decision"] = "command"
+            payload["skip_code"] = NSNull()
+        case .skip(let code, let reason):
+            payload["decision"] = "skip"
+            payload["skip_code"] = code.rawValue
+            payload["reason"] = reason
+        }
+        return emit(
+            .conversationResumeDecision,
+            workspace: workspace,
+            surface: surface,
+            payload: payload
+        )
+    }
+
     // MARK: - Core
 
+    @discardableResult
     private func emit(
         _ type: EventEnvelope.EventType,
         workspace: UUID? = nil,
         surface: UUID? = nil,
         pane: UUID? = nil,
         payload: [String: Any] = [:]
-    ) {
+    ) -> Bool {
         // Capture ts + snapshot the log under the lock; build + append outside.
         lock.lock()
-        guard enabled, let log else { lock.unlock(); return }
+        guard enabled, let log else {
+            lock.unlock()
+            return false
+        }
         let instance = instanceId
         lock.unlock()
 
@@ -204,6 +250,7 @@ final class EventEmitter {
             payload: payload
         )
         log.append(envelope)
+        return true
     }
 
     private func currentLog() -> EventLog? {

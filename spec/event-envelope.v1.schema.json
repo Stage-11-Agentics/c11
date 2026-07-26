@@ -28,11 +28,13 @@
         "waiting.left",
         "mailbox.accepted",
         "mailbox.delivered",
+        "conversation.resume.mode",
+        "conversation.resume.decision",
         "log.opened",
         "log.rotated",
         "log.dropped"
       ],
-      "description": "Dotted event type. The v1 taxonomy (EVT-2): surface.created, surface.closed, workspace.selected, metadata.changed, liveness.derived, waiting.entered, waiting.left, mailbox.accepted, mailbox.delivered. The trailing three (log.opened, log.rotated, log.dropped) are stream-control markers — not taxonomy members — that let consumers detect instance boundaries, rotation, and backpressure drops. The taxonomy is extensible in future schema versions; v1 pins the closed enum above (all wire values match ^[a-z][a-z0-9_.]*$)."
+      "description": "Dotted event type. The v1 taxonomy (EVT-2): surface.created, surface.closed, workspace.selected, metadata.changed, liveness.derived, waiting.entered, waiting.left, mailbox.accepted, mailbox.delivered, conversation.resume.mode, conversation.resume.decision. The trailing three (log.opened, log.rotated, log.dropped) are stream-control markers — not taxonomy members — that let consumers detect instance boundaries, rotation, and backpressure drops. The taxonomy is extensible in future schema versions; v1 pins the closed enum above (all wire values match ^[a-z][a-z0-9_.]*$)."
     },
     "instance": {
       "type": "string",
@@ -61,7 +63,7 @@
     },
     "payload": {
       "type": "object",
-      "description": "Optional, type-specific detail. Free-form object; any keys allowed inside. Shape is keyed by type — e.g. surface.created carries { kind, title }; metadata.changed carries { key, value, prior, source, scope }; workspace.selected carries { previous }; mailbox.accepted carries { id, from, to, topic }; mailbox.delivered carries { id, recipient }; log.opened carries { pid }; log.rotated carries { rolled_to }; log.dropped carries { count }. Omitted (not encoded as null) when empty."
+      "description": "Optional, type-specific detail. Free-form object; any keys allowed inside. Shape is keyed by type — e.g. surface.created carries { kind, title }; metadata.changed carries { key, value, prior, source, scope }; workspace.selected carries { previous }; mailbox.accepted carries { id, from, to, topic }; mailbox.delivered carries { id, recipient }; conversation.resume.mode carries { mode }; conversation.resume.decision carries { kind, conversation_id, mode, decision, skip_code, reason? }; log.opened carries { pid }; log.rotated carries { rolled_to }; log.dropped carries { count }. Omitted (not encoded as null) when empty."
     }
   },
   "additionalProperties": false

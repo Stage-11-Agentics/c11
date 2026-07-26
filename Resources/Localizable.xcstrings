@@ -54240,28 +54240,6 @@
         }
       }
     },
-    "sidebar.workspacePulse.browserCount.one": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 browser"
-          }
-        }
-      }
-    },
-    "sidebar.workspacePulse.browserCount.other": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld browsers"
-          }
-        }
-      }
-    },
     "sidebar.workspacePulse.censusEmpty": {
       "comment" : "Workspace pulse card surface census when the workspace holds no countable surfaces.",
       "extractionState": "manual",
@@ -54329,6 +54307,30 @@
           "stringUnit": {
             "state": "translated",
             "value": "Холодна"
+          }
+        }
+      }
+    },
+    "sidebar.workspacePulse.otherSurfaceCount.one": {
+      "comment" : "Non-agent surfaces on a workspace card that also has agents. Keep it short; the card is narrow.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 other surface"
+          }
+        }
+      }
+    },
+    "sidebar.workspacePulse.otherSurfaceCount.other": {
+      "comment" : "Non-agent surfaces on a workspace card that also has agents. Keep it short; the card is narrow.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld other surfaces"
           }
         }
       }
@@ -54439,96 +54441,26 @@
         }
       }
     },
-    "sidebar.workspacePulse.terminalCount.one": {
+    "sidebar.workspacePulse.surfaceCount.one": {
+      "comment" : "Surface count on a workspace card with no agents, so nothing to be \"other\" than.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "1 terminal"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ターミナル 1件"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 个终端"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 個終端"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "터미널 1개"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 терминал"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 термінал"
+            "value": "1 surface"
           }
         }
       }
     },
-    "sidebar.workspacePulse.terminalCount.other": {
+    "sidebar.workspacePulse.surfaceCount.other": {
+      "comment" : "Surface count on a workspace card with no agents, so nothing to be \"other\" than.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld terminals"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ターミナル %lld件"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 个终端"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 個終端"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "터미널 %lld개"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld терминалов"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld терміналів"
+            "value": "%lld surfaces"
           }
         }
       }

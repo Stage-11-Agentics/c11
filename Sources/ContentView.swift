@@ -8627,20 +8627,15 @@ struct VerticalTabsSidebar: View {
                                 let unreadCount = notificationStore.unreadCount(forTabId: tab.id)
                                 let pulseRoster: (
                                     agents: [WorkspacePulseAgent],
-                                    terminalCount: Int,
-                                    browserCount: Int
+                                    otherSurfaceCount: Int
                                 ) = {
                                     var agents: [WorkspacePulseAgent] = []
-                                    var terminalCount = 0
-                                    var browserCount = 0
+                                    var otherSurfaceCount = 0
                                     for panelId in tab.sidebarOrderedPanelIds() {
                                         let terminalKind = tab.surfaceTerminalKind(panelId: panelId)
                                         guard PaneSizePolicy.isAgentKind(terminalKind) else {
-                                            switch tab.panels[panelId]?.panelType {
-                                            case .terminal: terminalCount += 1
-                                            case .browser: browserCount += 1
-                                            case .markdown: break
-                                            case nil: break
+                                            if tab.panels[panelId] != nil {
+                                                otherSurfaceCount += 1
                                             }
                                             continue
                                         }
@@ -8679,13 +8674,12 @@ struct VerticalTabsSidebar: View {
                                             )
                                         )
                                     }
-                                    return (agents, terminalCount, browserCount)
+                                    return (agents, otherSurfaceCount)
                                 }()
                                 let workspacePulse = WorkspacePulseProjector.project(
                                     hasWorkspaceDemand: unreadCount > 0,
                                     agents: pulseRoster.agents,
-                                    terminalCount: pulseRoster.terminalCount,
-                                    browserCount: pulseRoster.browserCount
+                                    otherSurfaceCount: pulseRoster.otherSurfaceCount
                                 )
                                 TabItemView(
                                     tabManager: tabManager,
@@ -11936,40 +11930,43 @@ private struct TabItemView: View, Equatable {
         )
     }
 
-    private var workspacePulseTerminalCountText: String {
-        if workspacePulse.terminalCount == 1 {
+    /// Non-agent surfaces, worded as "other" only when there are agents to
+    /// be other *than*. A workspace with no agents just has surfaces.
+    private var workspacePulseOtherSurfaceCountText: String {
+        let count = workspacePulse.otherSurfaceCount
+        if workspacePulse.agents.isEmpty {
+            if count == 1 {
+                return String(
+                    localized: "sidebar.workspacePulse.surfaceCount.one",
+                    defaultValue: "1 surface"
+                )
+            }
             return String(
-                localized: "sidebar.workspacePulse.terminalCount.one",
-                defaultValue: "1 terminal"
+                localized: "sidebar.workspacePulse.surfaceCount.other",
+                defaultValue: "\(count) surfaces"
+            )
+        }
+        if count == 1 {
+            return String(
+                localized: "sidebar.workspacePulse.otherSurfaceCount.one",
+                defaultValue: "1 other surface"
             )
         }
         return String(
-            localized: "sidebar.workspacePulse.terminalCount.other",
-            defaultValue: "\(workspacePulse.terminalCount) terminals"
+            localized: "sidebar.workspacePulse.otherSurfaceCount.other",
+            defaultValue: "\(count) other surfaces"
         )
     }
 
-    private var workspacePulseBrowserCountText: String {
-        if workspacePulse.browserCount == 1 {
-            return String(
-                localized: "sidebar.workspacePulse.browserCount.one",
-                defaultValue: "1 browser"
-            )
-        }
-        return String(
-            localized: "sidebar.workspacePulse.browserCount.other",
-            defaultValue: "\(workspacePulse.browserCount) browsers"
-        )
-    }
-
-    /// The workspace's surface census on one line, every kind it actually
-    /// holds: "9 agents, 3 terminals, 1 browser".
+    /// The card's census: agents, then everything else in one bucket.
+    /// "9 agents, 4 other surfaces". Agents are what the operator tracks;
+    /// which flavour of furniture sits beside them does not earn a column
+    /// in a sidebar this narrow.
     private var workspacePulseCensusText: String {
         WorkspacePulseCensus.line(
             parts: [
                 (workspacePulse.agents.count, workspacePulseAgentCountText),
-                (workspacePulse.terminalCount, workspacePulseTerminalCountText),
-                (workspacePulse.browserCount, workspacePulseBrowserCountText)
+                (workspacePulse.otherSurfaceCount, workspacePulseOtherSurfaceCountText)
             ],
             separator: String(
                 localized: "sidebar.workspacePulse.censusSeparator",

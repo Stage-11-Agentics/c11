@@ -18,7 +18,7 @@ Headline: **Workspace cards hold their shape at any agent count.** A busy worksp
 
 ### Changed
 
-- **Workspace cards count browsers, not just agents and terminals.** The card's census reads as a comma-joined list of what the workspace actually holds, for example `9 agents, 3 terminals, 1 browser`, with absent kinds left out. ([#374](https://github.com/Stage-11-Agentics/c11/pull/374)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **Workspace cards count every surface, not just agents and terminals.** The card's census separates agents from everything else the workspace holds, browsers and markdown surfaces included: `9 agents, 4 other surfaces`. A workspace with no agents just reads `4 surfaces`. ([#374](https://github.com/Stage-11-Agentics/c11/pull/374)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
 
 ### Thanks to 1 contributor!
 

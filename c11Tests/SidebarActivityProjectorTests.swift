@@ -156,11 +156,11 @@ final class SidebarActivityProjectorTests: XCTestCase {
                     context: WorkspacePulseAgentContext(title: "Build", subtitle: "verifying push")
                 ),
             ],
-            terminalCount: 3
+            otherSurfaceCount: 3
         )
 
         XCTAssertEqual(summary.agents.count, 3)
-        XCTAssertEqual(summary.terminalCount, 3)
+        XCTAssertEqual(summary.otherSurfaceCount, 3)
         XCTAssertEqual(summary.agentCount(for: .waiting), 1)
         XCTAssertEqual(summary.relevantAgents.map(\.surfaceId), [waitingId, workingId, idleId])
     }
@@ -169,13 +169,13 @@ final class SidebarActivityProjectorTests: XCTestCase {
         let summary = WorkspacePulseProjector.project(
             hasWorkspaceDemand: true,
             agents: [],
-            terminalCount: 2
+            otherSurfaceCount: 2
         )
 
         XCTAssertEqual(summary.dominant, .waiting)
         XCTAssertEqual(summary.waitingCount, 1)
         XCTAssertTrue(summary.agents.isEmpty)
-        XCTAssertEqual(summary.terminalCount, 2)
+        XCTAssertEqual(summary.otherSurfaceCount, 2)
     }
 
     func testWorkspacePulseFallsThroughWorkingIdleAndCold() {

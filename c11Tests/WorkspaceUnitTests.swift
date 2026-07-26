@@ -2321,8 +2321,8 @@ final class WorkspacePulseCensusTests: XCTestCase {
 
     func testJoinsEveryPresentKindInOrder() {
         XCTAssertEqual(
-            line([(13, "13 agents"), (2, "2 terminals"), (3, "3 browsers")]),
-            "13 agents, 2 terminals, 3 browsers"
+            line([(13, "13 agents"), (4, "4 other surfaces")]),
+            "13 agents, 4 other surfaces"
         )
     }
 
@@ -2330,22 +2330,22 @@ final class WorkspacePulseCensusTests: XCTestCase {
     /// to yield their space to the kinds that are actually there.
     func testDropsAbsentKinds() {
         XCTAssertEqual(
-            line([(13, "13 agents"), (0, "0 terminals"), (2, "2 browsers")]),
-            "13 agents, 2 browsers"
+            line([(13, "13 agents"), (0, "0 other surfaces")]),
+            "13 agents"
         )
     }
 
     func testSingleKindHasNoSeparator() {
-        XCTAssertEqual(line([(0, "0 agents"), (4, "4 terminals")]), "4 terminals")
+        XCTAssertEqual(line([(0, "0 agents"), (4, "4 surfaces")]), "4 surfaces")
     }
 
     func testEmptyCensusFallsBackRatherThanRenderingBlank() {
-        XCTAssertEqual(line([(0, "0 agents"), (0, "0 terminals")]), "No surfaces")
+        XCTAssertEqual(line([(0, "0 agents"), (0, "0 surfaces")]), "No surfaces")
         XCTAssertEqual(line([]), "No surfaces")
     }
 
     func testNegativeCountsAreTreatedAsAbsent() {
-        XCTAssertEqual(line([(-1, "-1 agents"), (1, "1 browser")]), "1 browser")
+        XCTAssertEqual(line([(-1, "-1 agents"), (1, "1 surface")]), "1 surface")
     }
 }
 
@@ -2427,39 +2427,34 @@ final class WorkspacePulseSurfaceCensusProjectionTests: XCTestCase {
                 WorkspacePulseAgent(surfaceId: UUID(), state: .working, context: nil),
                 WorkspacePulseAgent(surfaceId: UUID(), state: .idle, context: nil)
             ],
-            terminalCount: 3,
-            browserCount: 2
+            otherSurfaceCount: 5
         )
         XCTAssertEqual(summary.agents.count, 2)
-        XCTAssertEqual(summary.terminalCount, 3)
-        XCTAssertEqual(summary.browserCount, 2)
+        XCTAssertEqual(summary.otherSurfaceCount, 5)
     }
 
     func testNegativeSurfaceCountsClampToZero() {
         let summary = WorkspacePulseProjector.project(
             hasWorkspaceDemand: false,
             agents: [],
-            terminalCount: -4,
-            browserCount: -1
+            otherSurfaceCount: -4
         )
-        XCTAssertEqual(summary.terminalCount, 0)
-        XCTAssertEqual(summary.browserCount, 0)
+        XCTAssertEqual(summary.otherSurfaceCount, 0)
     }
 
-    /// The browser count joins the card's Equatable identity, so a browser
+    /// The surface count joins the card's Equatable identity, so a browser
     /// opening in a background workspace has to redraw its card.
     func testSurfaceCountsParticipateInEquality() {
-        func summary(browsers: Int) -> WorkspacePulseSummary {
+        func summary(other: Int) -> WorkspacePulseSummary {
             WorkspacePulseProjector.project(
                 hasWorkspaceDemand: false,
                 agents: [],
-                terminalCount: 1,
-                browserCount: browsers
+                otherSurfaceCount: other
             )
         }
-        XCTAssertEqual(summary(browsers: 1), summary(browsers: 1))
-        XCTAssertNotEqual(summary(browsers: 1), summary(browsers: 2))
-        XCTAssertNotEqual(summary(browsers: 1), summary(browsers: 0))
+        XCTAssertEqual(summary(other: 1), summary(other: 1))
+        XCTAssertNotEqual(summary(other: 1), summary(other: 2))
+        XCTAssertNotEqual(summary(other: 1), summary(other: 0))
     }
 }
 

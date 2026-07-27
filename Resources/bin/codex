@@ -190,7 +190,7 @@ if [[ -n "$c11_bin" ]]; then
     # submission and idle again when Codex emits its completion notification.
     (
         CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
-            "$c11_bin" --socket "${CMUX_SOCKET_PATH}" codex-hook idle \
+            "$c11_bin" --socket "${CMUX_SOCKET_PATH}" agent-hook idle \
             >/dev/null 2>&1
     ) &
     disown 2>/dev/null || true

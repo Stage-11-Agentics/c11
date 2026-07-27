@@ -354,6 +354,32 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         XCTAssertEqual(activitySource(ws, surface), .derived)
     }
 
+    func testReconcilePreservesStaleWorkingForDetectedLiveAgents() {
+        for agentKind in ["codex", "opencode", "pi", "grok"] {
+            let ws = UUID(); let surface = UUID()
+            defer { store.removeSurface(workspaceId: ws, surfaceId: surface) }
+
+            XCTAssertTrue(store.setInternal(
+                workspaceId: ws, surfaceId: surface,
+                key: MetadataKey.activity, value: SidebarActivityState.working.rawValue,
+                source: .derived
+            ))
+            SurfaceActivityTracker.shared.clear(surfaceId: surface.uuidString)
+
+            SurfaceLivenessDeriver.reconcile(
+                surfaceId: surface,
+                workspaceId: ws,
+                detectedTerminalType: agentKind
+            )
+            XCTAssertEqual(
+                activityValue(ws, surface),
+                SidebarActivityState.working.rawValue,
+                "\(agentKind) must stay working until an exact lifecycle signal says it is idle"
+            )
+            XCTAssertEqual(activitySource(ws, surface), .derived)
+        }
+    }
+
     func testReconcileLeavesFreshWorkingAlone() {
         let ws = UUID(); let surface = UUID()
         defer { store.removeSurface(workspaceId: ws, surfaceId: surface) }

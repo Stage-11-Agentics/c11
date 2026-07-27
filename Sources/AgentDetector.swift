@@ -103,7 +103,8 @@ final class AgentDetector: @unchecked Sendable {
             for key in self.ttyNames.keys {
                 SurfaceLivenessDeriver.reconcile(
                     surfaceId: key.panelId,
-                    workspaceId: key.workspaceId
+                    workspaceId: key.workspaceId,
+                    detectedTerminalType: self.detectedTerminalTypes[key]
                 )
             }
         }

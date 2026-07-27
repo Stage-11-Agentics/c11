@@ -156,7 +156,15 @@ public enum ResumeDecisionEngine {
         }
 
         if input.kind == "codex" {
-            return .command(ResumeCommand(text: "codex resume \(shellSingleQuoteForResume(input.id))"))
+            // `--yolo` must match `CodexStrategy.resume` and the manifest's
+            // `factoryCommand` (see `AgentAutoApprove`) — a resumed codex must
+            // not start asking for approvals its launched twin never asked
+            // for. Spelled literally here because this file is also a member
+            // of the CLI target, which does not link `AgentManifest`;
+            // `CLIResolutionSnapshotTests` pins it against the strategy.
+            return .command(
+                ResumeCommand(text: "codex resume --yolo \(shellSingleQuoteForResume(input.id))")
+            )
         }
         guard let fallback = input.fallbackCommand else {
             return .skip(code: .strategyUnavailable, reason: "no resume command for kind \(input.kind)")

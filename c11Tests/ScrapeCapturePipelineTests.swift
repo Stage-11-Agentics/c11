@@ -121,7 +121,7 @@ final class ScrapeCapturePipelineTests: XCTestCase {
         guard case let .typeCommand(text, submit) = action else {
             return XCTFail("expected .typeCommand, got \(action)")
         }
-        XCTAssertEqual(text, "codex resume '\(codexId)'")
+        XCTAssertEqual(text, "codex resume --yolo '\(codexId)'")
         XCTAssertTrue(submit)
     }
 
@@ -223,7 +223,7 @@ final class ScrapeCapturePipelineTests: XCTestCase {
         guard let active, case let .typeCommand(text, _) = CodexStrategy().resume(ref: active) else {
             return XCTFail("store ref must resume to a typeCommand")
         }
-        XCTAssertEqual(text, "codex resume '\(codexId)'")
+        XCTAssertEqual(text, "codex resume --yolo '\(codexId)'")
     }
 
     // MARK: - Case 6: ScrapeCaptureContext.contexts(from:) extraction

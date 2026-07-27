@@ -158,3 +158,129 @@ final class AgentManifestTests: XCTestCase {
             "cd '/tmp/wt' && claude --dangerously-skip-permissions --resume \(uuid)\n")
     }
 }
+
+/// Every rail that synthesizes a command line for an agent must carry that
+/// agent's auto-approve flag. c11's contract is that an agent it launches
+/// never stops on a permission prompt the operator didn't ask for — and a
+/// *resumed* agent is still a launched agent.
+///
+/// The bug these tests lock out: `codex resume <id>` was typed on restore
+/// without `--yolo`, so a resumed Codex pane sat on approval prompts while its
+/// freshly-launched twin (`codex --yolo`) never did. The same drift existed on
+/// opencode, kimi, omp, and github-copilot.
+final class AgentAutoApproveCoverageTests: XCTestCase {
+    private var registry: AgentRegistry { .shared }
+
+    /// A ref each strategy accepts as resumable, keyed by kind. Ids match each
+    /// strategy's documented grammar (UUID, opencode `ses_`+base62, or an
+    /// opaque non-placeholder id for the fresh-launch kinds).
+    private static let resumableIDs: [String: String] = [
+        "claude-code": "550e8400-e29b-41d4-a716-446655440000",
+        "codex": "550e8400-e29b-41d4-a716-446655440000",
+        "omp": "019f0b94-be86-7000-bf88-d9b6dcae2616",
+        "pi": "550e8400-e29b-41d4-a716-446655440000",
+        "opencode": "ses_0fda89a49ffeLHwJXtrxnn4X6g",
+        // grok resumes an exact UUID; kimi/copilot re-launch fresh and accept
+        // any non-placeholder id.
+        "grok": "550e8400-e29b-41d4-a716-446655440000",
+        "kimi": "real-id",
+        "github-copilot": "real-id",
+    ]
+
+    private func resumeText(forKind kind: String) -> String? {
+        guard let strategy = ConversationStrategyRegistry.v1.strategy(forKind: kind),
+              let id = Self.resumableIDs[kind] else { return nil }
+        let ref = ConversationRef(
+            kind: kind,
+            id: id,
+            placeholder: false,
+            cwd: nil,
+            capturedAt: Date(),
+            capturedVia: .hook,
+            state: .alive
+        )
+        guard case .typeCommand(let text, _) = strategy.resume(ref: ref) else { return nil }
+        return text
+    }
+
+    /// The operator-visible launch command carries the flag.
+    func testFactoryCommandsCarryAutoApproveFlags() {
+        for (kind, flags) in AgentAutoApprove.byKind {
+            guard let m = registry.manifest(forKind: kind) else {
+                XCTFail("no manifest for auto-approve kind \(kind)"); continue
+            }
+            XCTAssertTrue(
+                m.factoryCommand.contains(flags),
+                "\(kind) factoryCommand '\(m.factoryCommand)' is missing \(flags)")
+        }
+    }
+
+    /// The snapshot-restore rail carries it too — this is the one that regressed.
+    func testRestartRegistryResumeCommandsCarryAutoApproveFlags() {
+        let registryRows = AgentRestartRegistry.phase1
+        for m in registry.all {
+            guard let flags = AgentAutoApprove.flags(forKind: m.kind) else { continue }
+            guard let command = registryRows.resolveCommand(
+                terminalType: m.kind,
+                sessionId: Self.resumableIDs[m.kind],
+                metadata: [:]
+            ) else { continue }  // `.none` kinds re-launch through the normal path
+            XCTAssertTrue(
+                command.contains(flags),
+                "\(m.kind) restart command '\(command)' is missing \(flags)")
+        }
+    }
+
+    /// …and so does the conversation-store rail, which is what actually types
+    /// the resume line for an exact captured session.
+    func testConversationStrategyResumeCommandsCarryAutoApproveFlags() {
+        for m in registry.all where m.hasConversationStrategy {
+            guard let text = resumeText(forKind: m.kind) else {
+                // Not `continue`: a kind whose strategy stops producing a
+                // command for a plainly resumable ref would otherwise drop out
+                // of this test's coverage silently.
+                XCTFail("\(m.kind) strategy typed no resume command for a live ref")
+                continue
+            }
+            guard let flags = AgentAutoApprove.flags(forKind: m.kind) else {
+                continue  // pi: no auto-approve flag exists to carry
+            }
+            XCTAssertTrue(
+                text.contains(flags),
+                "\(m.kind) strategy resume '\(text)' is missing \(flags)")
+        }
+    }
+
+    /// `ResumeDecisionEngine` re-spells the codex command because it also
+    /// compiles into the CLI target, which does not link `AgentManifest`. Pin
+    /// the two spellings together so the copy can't drift.
+    func testResumeDecisionEngineCodexMatchesStrategy() {
+        let id = Self.resumableIDs["codex"]!
+        let decision = ResumeDecisionEngine.decide(ResumeDecisionInput(
+            mode: .clean,
+            auditComplete: true,
+            ownership: .unique,
+            kind: "codex",
+            id: id,
+            placeholder: false,
+            state: .alive,
+            exactIDValid: true,
+            transcriptEvidence: .verified
+        ))
+        guard case .command(let command) = decision else {
+            XCTFail("expected a codex resume command, got \(decision)"); return
+        }
+        XCTAssertEqual(command.text, resumeText(forKind: "codex"))
+    }
+
+    /// Kinds absent from the table are a deliberate statement ("this CLI has
+    /// no auto-approve flag"), not an oversight. Locking the list means adding
+    /// an agent forces a decision about its permission posture.
+    func testKindsWithoutAutoApproveFlagsAreDeliberate() {
+        let uncovered = Set(registry.all.map(\.kind))
+            .subtracting(AgentAutoApprove.byKind.keys)
+        XCTAssertEqual(
+            uncovered, ["pi", "custom"],
+            "an agent gained/lost an auto-approve flag: reconcile AgentAutoApprove")
+    }
+}

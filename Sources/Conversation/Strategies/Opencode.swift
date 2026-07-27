@@ -10,10 +10,13 @@ import Foundation
 /// UUID and NOT Crockford base32 — opencode session ids routinely contain
 /// `I/L/O/U`, which a Crockford alphabet would wrongly reject.
 ///
-/// Resume flag note: `--dangerously-skip-permissions` is `opencode run`-only
-/// (verified against opencode 1.17.5 `--help`); the interactive command this
-/// strategy re-attaches to accepts `-s/--session` but not that flag, so the
-/// resume command is bare `opencode -s <id>`.
+/// Resume flag note: the bare TUI accepts the auto-approve flag too — it is a
+/// hidden alias of the documented `--auto`, wired on both the `$0 [project]`
+/// and `run` commands (verified against opencode 1.18.0). The resume command
+/// therefore carries the same flag the manifest's `factoryCommand` does; see
+/// `AgentAutoApprove`. It does not appear in `--help`, and yargs silently
+/// ignores flags it does not know, so a wrong spelling here would fail
+/// open — into approval prompts — rather than erroring.
 struct OpencodeStrategy: ConversationStrategy {
     let kind: String = "opencode"
 
@@ -72,7 +75,7 @@ struct OpencodeStrategy: ConversationStrategy {
             return .skip(reason: "invalid id grammar")
         }
         let quotedId = conversationShellQuote(ref.id)
-        var command = "opencode -s \(quotedId)"
+        var command = "\(withAutoApprove("opencode")) -s \(quotedId)"
         // cd into the recorded project dir first when present and valid —
         // opencode resolves session state relative to the launching cwd.
         if let cwd = ref.cwd?.trimmingCharacters(in: .whitespacesAndNewlines),

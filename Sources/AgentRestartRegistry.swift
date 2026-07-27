@@ -147,6 +147,11 @@ struct AgentRestartRegistry: Sendable {
     /// globally. Opencode and kimi have no verified resume flag and launch
     /// fresh — best-effort is preferable to a broken flag. Grok supports
     /// `--resume` without an id to attach to the most recent session.
+    ///
+    /// Every row carries its agent's auto-approve flag (`AgentAutoApprove`),
+    /// matching the manifest's `factoryCommand`. A restored agent that
+    /// re-launches without it lands the operator in permission prompts they
+    /// never see on a normal launch.
     static let phase1: AgentRestartRegistry = {
         // Rows are generated from the agent registry: every manifest that
         // declares a resume spec contributes a row whose resolver is the

@@ -31,7 +31,7 @@ struct GrokStrategy: ConversationStrategy {
             return .skip(reason: "invalid id grammar")
         }
         return .typeCommand(
-            text: "grok --always-approve --resume \(conversationShellQuote(ref.id))",
+            text: "\(withAutoApprove("grok")) --resume \(conversationShellQuote(ref.id))",
             submitWithReturn: true
         )
     }

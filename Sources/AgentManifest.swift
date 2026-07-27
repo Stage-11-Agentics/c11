@@ -201,6 +201,49 @@ struct AgentLaunchTemplate: Sendable, Equatable {
     let systemPromptArg: AgentSystemPromptArg?
 }
 
+/// The flag(s) that put an agent into its no-approval-prompt mode.
+///
+/// c11's contract is that an agent it launches never stops on a permission
+/// prompt the operator did not ask for — and that **resuming** a session keeps
+/// the same posture as launching one. Every rail that synthesizes a command
+/// line for an agent (`factoryCommand` below, `ResumeSpec`, the conversation
+/// strategies' `resume()`, `ResumeDecisionEngine`) composes from this one
+/// table, so a resume can't silently drop the flag its launch carried.
+/// `AgentAutoApproveCoverageTests` fails the build if a rail drifts.
+///
+/// A `nil`/absent entry means the CLI has no auto-approve-all flag c11 knows
+/// of — that agent launches and resumes bare, and prompts. Adding one is a
+/// one-line change here plus the manifest's `factoryCommand`.
+enum AgentAutoApprove {
+    /// kind → flag string, verified against each CLI's `--help` on
+    /// 2026-07-27. Absent kinds have no such flag:
+    /// - `pi` — `--approve` only trusts project-local *files*, not tool calls.
+    /// - `custom` — the operator owns the whole command line.
+    static let byKind: [String: String] = [
+        "claude-code": "--dangerously-skip-permissions",
+        // Hidden alias of `--dangerously-bypass-approvals-and-sandbox`;
+        // accepted by the bare TUI *and* the `resume` subcommand.
+        "codex": "--yolo",
+        "grok": "--always-approve",
+        // kimi-cli spells it `--yolo` / `--yes` / `-y`.
+        "kimi": "--yolo",
+        // Hidden alias of opencode's documented `--auto`, accepted by both the
+        // bare TUI (`opencode -s <id>`) and `opencode run`.
+        "opencode": "--dangerously-skip-permissions",
+        "github-copilot": "--allow-all --autopilot",
+        "omp": "--auto-approve",
+    ]
+
+    static func flags(forKind kind: String) -> String? { byKind[kind] }
+
+    /// `"<command> <flags>"`, or `command` unchanged when the kind has no
+    /// auto-approve flag or the command already carries it.
+    static func applying(toCommand command: String, kind: String) -> String {
+        guard let flags = byKind[kind], !command.contains(flags) else { return command }
+        return "\(command) \(flags)"
+    }
+}
+
 /// How a captured session is resumed on restart. Mirrors today's
 /// `AgentRestartRegistry.phase1` rows as data.
 enum ResumeSpec: Sendable, Equatable {
@@ -280,7 +323,7 @@ struct AgentRegistry: Sendable {
             detectNodeArgsSubstrings: ["codex-cli", "openai/codex", "/codex"],
             iconAsset: "AgentIcons/codex",
             sfSymbolFallback: "chevron.left.forwardslash.chevron.right",
-            resume: .fixed("codex resume --last\n"),
+            resume: .fixed("codex resume --yolo --last\n"),
             launch: AgentLaunchTemplate(
                 modelArg: .flag("--model"),
             // Codex has no --effort flag; reasoning effort rides the
@@ -322,13 +365,13 @@ struct AgentRegistry: Sendable {
             kind: "kimi",
             agentType: .kimi,
             displayName: "Kimi",
-            factoryCommand: "kimi",
+            factoryCommand: "kimi --yolo",
             factoryInitialPrompt: c11OrientPrompt,
             detectComms: ["kimi", "kimi-cli"],
             detectNodeArgsSubstrings: ["kimi-cli", "moonshot/kimi", "/kimi"],
             iconAsset: "AgentIcons/kimi",
             sfSymbolFallback: "moon.stars",
-            resume: .fixed("kimi\n"),
+            resume: .fixed("kimi --yolo\n"),
             launch: AgentLaunchTemplate(
                 modelArg: .flag("--model"),
             // kimi's --thinking is boolean, not tiered — no effort axis.
@@ -390,8 +433,9 @@ struct AgentRegistry: Sendable {
             kind: "pi",
             agentType: .pi,
             displayName: "Pi",
-            // No documented auto-approve flag — launches bare (documented
-            // degradation, same as opencode/kimi historically).
+            // No auto-approve-all flag: pi's `--approve` trusts project-local
+            // *files* for the run, not tool calls. Launches (and resumes) bare
+            // — a documented degradation, not an oversight.
             factoryCommand: "pi",
             factoryInitialPrompt: c11OrientPrompt,
             detectComms: ["pi"],
@@ -420,7 +464,7 @@ struct AgentRegistry: Sendable {
             kind: "omp",
             agentType: .omp,
             displayName: "oh-my-pi",
-            factoryCommand: "omp",
+            factoryCommand: "omp --auto-approve",
             factoryInitialPrompt: c11OrientPrompt,
             detectComms: ["omp"],
             detectNodeArgsSubstrings: ["@oh-my-pi/"],

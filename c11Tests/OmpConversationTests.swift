@@ -250,7 +250,7 @@ final class OmpConversationTests: XCTestCase {
         guard case .typeCommand(let text, let submit) = strategy.resume(ref: ref) else {
             XCTFail("expected typeCommand"); return
         }
-        XCTAssertEqual(text, "omp --resume='\(v7Id)'")
+        XCTAssertEqual(text, "omp --auto-approve --resume='\(v7Id)'")
         XCTAssertTrue(text.contains(v7Id), "must resume the specific id, not a --last-style flag")
         XCTAssertTrue(submit)
     }
@@ -309,7 +309,7 @@ final class OmpConversationTests: XCTestCase {
         guard case .typeCommand(let text, _) = strategy.resume(ref: ref!) else {
             XCTFail("expected typeCommand"); return
         }
-        XCTAssertEqual(text, "omp --resume='\(v7Id)'")
+        XCTAssertEqual(text, "omp --auto-approve --resume='\(v7Id)'")
     }
 
     func testOmpResumeSkipsPlaceholder() {

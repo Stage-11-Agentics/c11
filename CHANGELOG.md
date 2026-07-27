@@ -6,6 +6,18 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.60.2] - 2026-07-27
+
+Headline: **Agent activity icons stay truthful across the whole fleet.** Codex, OpenCode, Pi, and Grok now drive their live/idle state from the agent loop, keeping the top surface tabs and workspace sidebar in sync with what each agent is actually doing.
+
+### Fixed
+
+- **Live/idle indicators now follow the real agent loop for Codex, OpenCode, Pi, and Grok.** Agents no longer appear idle while they are working: the icon in the top surface tabs and each workspace's sidebar pulse updates when work starts and settles when the agent is ready again. — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+### Thanks to 1 contributor!
+
+- [@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [0.60.1] - 2026-07-26
 
 Headline: **Busy workspaces stay legible, and untouched agents go Cold on a clock.** Workspace cards hold their shape at any agent count, while a live agent becomes Cold only after the configured dormancy interval.

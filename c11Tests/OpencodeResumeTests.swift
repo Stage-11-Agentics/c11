@@ -200,8 +200,8 @@ final class OpencodeStrategyResumeTests: XCTestCase {
             return XCTFail("suspended must typeCommand")
         }
         XCTAssertEqual(text, "opencode --dangerously-skip-permissions -s 'ses_0fda89a49ffeLHwJXtrxnn4X6g'")
-        XCTAssertFalse(text.contains("--dangerously-skip-permissions"),
-                       "interactive resume must not use the run-only flag")
+        XCTAssertTrue(text.contains("--dangerously-skip-permissions"),
+                      "interactive resume must keep the launch command's auto-approve posture")
     }
 
     func testResumeSkipsInvalidId() {

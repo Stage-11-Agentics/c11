@@ -4,8 +4,9 @@
 # When running inside a c11 terminal (CMUX_SURFACE_ID set + socket live),
 # this wrapper:
 #   1. declares the surface as terminal_type=pi (sidebar chip / role hint),
-#      and
-#   2. wrapper-claims a placeholder ConversationRef so c11's conversation
+#   2. reports exact Pi agent-loop working/idle transitions through a bundled
+#      runtime extension, and
+#   3. wrapper-claims a placeholder ConversationRef so c11's conversation
 #      store records a post-launch claim time before pi creates its
 #      session file. The PiStrategy's pull-scrape on next workspace open
 #      then keeps only candidates whose mtime is >= that claim time, which
@@ -125,6 +126,14 @@ if [[ -n "$c11_bin" ]]; then
             >/dev/null 2>&1
     ) &
     disown 2>/dev/null || true
+
+    (
+        CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+            "$c11_bin" --socket "${CMUX_SOCKET_PATH}" agent-hook idle \
+            >/dev/null 2>&1
+    ) &
+    disown 2>/dev/null || true
 fi
 
-exec "$REAL_PI" "$@"
+export C11_AGENT_HOOK_CLI="$c11_bin"
+exec "$REAL_PI" --extension "$self_dir/pi-lifecycle.ts" "$@"

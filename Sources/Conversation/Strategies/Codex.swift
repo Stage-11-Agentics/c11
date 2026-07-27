@@ -124,7 +124,11 @@ struct CodexStrategy: ConversationStrategy {
         }
         let quoted = conversationShellQuote(ref.id)
         // Specific id, not `--last`. The plan motivates this directly.
-        let text = "codex resume \(quoted)"
+        // `--yolo` mirrors the launch posture (`AgentAutoApprove`): a resumed
+        // agent must not start asking for approvals its launched twin never
+        // asked for. Accepted by the `resume` subcommand as a hidden alias of
+        // `--dangerously-bypass-approvals-and-sandbox`.
+        let text = "\(withAutoApprove("codex resume")) \(quoted)"
         return .typeCommand(text: text, submitWithReturn: true)
     }
 

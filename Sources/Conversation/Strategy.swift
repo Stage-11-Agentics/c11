@@ -123,6 +123,23 @@ extension ConversationStrategy {
     ) -> Bool? {
         nil
     }
+
+    /// This kind's auto-approve flag(s), or `""` when the CLI has none.
+    ///
+    /// A resumed agent must carry the same permission posture as a launched
+    /// one, so every `resume()` that synthesizes a command line interpolates
+    /// this. `AgentAutoApprove` is the single source of truth shared with the
+    /// manifest's `factoryCommand`; interpolating it here is what keeps the
+    /// two rails from drifting the way `codex resume <id>` did.
+    var autoApproveArgs: String {
+        AgentAutoApprove.flags(forKind: kind) ?? ""
+    }
+
+    /// `command` with this kind's auto-approve flag(s) appended, or unchanged
+    /// when the kind has none (or the flags are already present).
+    func withAutoApprove(_ command: String) -> String {
+        AgentAutoApprove.applying(toCommand: command, kind: kind)
+    }
 }
 
 /// Shell-quoting helper for `typeCommand` interpolation. Single-quotes the

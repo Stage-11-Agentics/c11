@@ -255,7 +255,7 @@ final class ConversationStrategyTests: XCTestCase {
         XCTAssertEqual(reason, "fresh-launch-only")
     }
 
-    func testKimiAliveTypesShellQuotedCommand() {
+    func testKimiAliveTypesAutoApprovingLaunch() {
         let strategy = KimiStrategy()
         let ref = ConversationRef(
             kind: "kimi",
@@ -269,7 +269,7 @@ final class ConversationStrategyTests: XCTestCase {
             XCTFail("expected typeCommand")
             return
         }
-        XCTAssertEqual(text, "'kimi'")
+        XCTAssertEqual(text, "kimi --yolo")
         XCTAssertTrue(submit)
     }
 
@@ -315,7 +315,7 @@ final class ConversationStrategyTests: XCTestCase {
 
     // MARK: - GitHub Copilot strategy
 
-    func testGitHubCopilotAliveTypesShellQuotedCommand() {
+    func testGitHubCopilotAliveTypesAutoApprovingLaunch() {
         let strategy = GitHubCopilotStrategy()
         let ref = ConversationRef(
             kind: "github-copilot",
@@ -329,7 +329,7 @@ final class ConversationStrategyTests: XCTestCase {
             XCTFail("expected typeCommand")
             return
         }
-        XCTAssertEqual(text, "'copilot'")
+        XCTAssertEqual(text, "copilot --allow-all --autopilot")
         XCTAssertTrue(submit)
     }
 

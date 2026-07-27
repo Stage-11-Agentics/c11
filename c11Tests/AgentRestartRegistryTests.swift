@@ -281,7 +281,7 @@ final class AgentRestartRegistryTests: XCTestCase {
         // Returns the command regardless of whether a session id is present.
         XCTAssertEqual(
             registry.resolveCommand(terminalType: "codex", sessionId: nil, metadata: [:]),
-            "codex resume --last\n",
+            "codex resume --yolo --last\n",
             "codex row returns best-effort resume --last even without session id"
         )
         XCTAssertEqual(
@@ -290,7 +290,7 @@ final class AgentRestartRegistryTests: XCTestCase {
                 sessionId: "abc12345-ef67-890a-bcde-f0123456789a",
                 metadata: [:]
             ),
-            "codex resume --last\n",
+            "codex resume --yolo --last\n",
             "codex row ignores session id and always returns resume --last"
         )
     }
@@ -319,7 +319,7 @@ final class AgentRestartRegistryTests: XCTestCase {
         let registry = AgentRestartRegistry.phase1
         XCTAssertEqual(
             registry.resolveCommand(terminalType: "kimi", sessionId: nil, metadata: [:]),
-            "kimi\n",
+            "kimi --yolo\n",
             "kimi row returns bare launch (no resume flag)"
         )
         XCTAssertEqual(
@@ -328,7 +328,7 @@ final class AgentRestartRegistryTests: XCTestCase {
                 sessionId: "aaaabbbb-cccc-dddd-eeee-ffff00001111",
                 metadata: [:]
             ),
-            "kimi\n",
+            "kimi --yolo\n",
             "kimi row ignores session id and returns bare launch"
         )
     }

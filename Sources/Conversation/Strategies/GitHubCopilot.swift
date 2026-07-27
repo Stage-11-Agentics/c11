@@ -25,7 +25,10 @@ struct GitHubCopilotStrategy: ConversationStrategy {
         }
         switch ref.state {
         case .alive, .suspended:
-            return .typeCommand(text: conversationShellQuote("copilot"), submitWithReturn: true)
+            // A fresh launch, so it must carry the same auto-approve posture
+            // as the manifest's `factoryCommand` — see `AgentAutoApprove`.
+            // Unquoted: the text is a command line, not a single argument.
+            return .typeCommand(text: withAutoApprove("copilot"), submitWithReturn: true)
         default:
             return .skip(reason: "state=\(ref.state.rawValue) not auto-resumable")
         }

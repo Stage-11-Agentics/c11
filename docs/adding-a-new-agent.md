@@ -27,8 +27,10 @@ The checklist below is the pre-registry worked example; the surfaces called out 
 Before editing code, capture three facts about the new agent:
 
 1. **Binary name.** What runs on PATH (`grok`, `aider`, `cursor-cli`, …).
-2. **Auto-approve flag.** The CLI flag that bypasses per-tool confirmation prompts — c11 launches agents in that mode by default (parallel to `claude --dangerously-skip-permissions`, `codex --yolo`, `grok --always-approve`, `opencode run --dangerously-skip-permissions`). If the agent has no such mode, leave it bare; flag it in the contributor commit so reviewers know.
-3. **Resume command.** How the agent picks up its most recent session. `grok --resume`, `codex resume --last`, etc. If there's no stable resume flag, the restart registry launches fresh — best-effort, same as Kimi/OpenCode today.
+2. **Auto-approve flag.** The CLI flag that bypasses per-tool confirmation prompts — c11 launches agents in that mode by default (parallel to `claude --dangerously-skip-permissions`, `codex --yolo`, `grok --always-approve`). Record it in `AgentAutoApprove.byKind` (`Sources/AgentManifest.swift`): that one table feeds the factory command **and** every resume rail, so a resumed agent keeps the permission posture its launch had. If the agent has no such mode, leave it out of the table and update `testKindsWithoutAutoApproveFlagsAreDeliberate`, which locks the uncovered list so "no flag" is always a decision rather than an oversight.
+3. **Resume command.** How the agent picks up its most recent session. `grok --resume`, `codex resume --last`, etc. If there's no stable resume flag, the restart registry launches fresh — best-effort, same as Kimi/OpenCode today. Whatever the shape, compose it through `withAutoApprove(_:)` so it carries the flag from (2).
+
+**Verify both flags against the installed CLI's `--help`, not from memory.** These CLIs rename and hide flags between releases, and several (opencode's yargs, notably) silently *ignore* unknown flags rather than erroring — so a stale spelling fails open into exactly the approval prompts you were trying to avoid.
 
 If the agent's config root convention is `~/.<name>/` (Claude → `~/.claude/`, Grok → `~/.grok/`), the `SkillInstaller` will wire up automatically once you add the enum case. If it isn't, you'll need a small override there too — flag it.
 

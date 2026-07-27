@@ -132,7 +132,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         guard case .typeCommand(let text, let submitWithReturn) = plans.first?.action else {
             return XCTFail("expected exact Codex resume command")
         }
-        XCTAssertEqual(text, "codex resume '\(codexSessionId)'")
+        XCTAssertEqual(text, "codex resume --yolo '\(codexSessionId)'")
         XCTAssertTrue(submitWithReturn)
     }
 
@@ -358,7 +358,7 @@ final class WorkspaceConversationResumeTests: XCTestCase {
         }
         XCTAssertEqual(
             command,
-            "codex resume 'aaaa1111-2222-3333-4444-555566667777'"
+            "codex resume --yolo 'aaaa1111-2222-3333-4444-555566667777'"
         )
     }
 

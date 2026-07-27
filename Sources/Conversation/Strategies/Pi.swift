@@ -97,6 +97,9 @@ struct PiStrategy: ConversationStrategy {
         }
         let quoted = conversationShellQuote(ref.id)
         // Specific id, not `pi -c`. Exact-session resume is the whole point.
+        // No auto-approve flag is appended because pi has none — `--approve`
+        // trusts project-local *files*, not tool calls — so `withAutoApprove`
+        // would be a no-op. Same posture as the manifest's bare `factoryCommand`.
         let text = "pi --session \(quoted)"
         return .typeCommand(text: text, submitWithReturn: true)
     }

@@ -65,7 +65,7 @@ final class DefaultAgentResolverTests: XCTestCase {
             projectConfig: nil
         )
         XCTAssertEqual(agent, .kimi)
-        XCTAssertEqual(launch.command, "kimi")
+        XCTAssertEqual(launch.command, "kimi --yolo")
     }
 
     func testProjectConfigFallsBackToUserPerAgentWhenProjectMissingAgent() {
@@ -734,7 +734,7 @@ final class AgentLaunchPlannerTests: XCTestCase {
 
     func testKimiPromptGoesPostBoot() throws {
         let p = try plan(AgentLaunchRequest(kind: "kimi", prompt: "hello")).get()
-        XCTAssertEqual(p.launchLine, "kimi")
+        XCTAssertEqual(p.launchLine, "kimi --yolo")
         XCTAssertEqual(p.delayedPrompt, "hello")
     }
 

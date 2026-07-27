@@ -100,7 +100,7 @@ struct OmpStrategy: ConversationStrategy {
         let quoted = conversationShellQuote(ref.id)
         // Specific id, not a `--last`-style flag — the whole point of the
         // exact-resume rail is restoring *this* surface's session.
-        let text = "omp --resume=\(quoted)"
+        let text = "\(withAutoApprove("omp")) --resume=\(quoted)"
         return .typeCommand(text: text, submitWithReturn: true)
     }
 

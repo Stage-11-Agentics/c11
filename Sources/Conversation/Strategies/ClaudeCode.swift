@@ -54,7 +54,7 @@ struct ClaudeCodeStrategy: ConversationStrategy {
             return .skip(reason: "invalid id grammar")
         }
         let quoted = conversationShellQuote(ref.id)
-        let text = "claude --dangerously-skip-permissions --resume \(quoted)"
+        let text = "\(withAutoApprove("claude")) --resume \(quoted)"
         return .typeCommand(text: text, submitWithReturn: true)
     }
 

@@ -260,14 +260,14 @@ final class CLIResolutionSnapshotTests: XCTestCase {
     func testCodexCleanDecisionEmitsExactResumeCommand() {
         XCTAssertEqual(
             ResumeDecisionEngine.decide(resumeInput(mode: .clean, transcript: .notRequired)),
-            .command(ResumeCommand(text: "codex resume '\(codexID)'"))
+            .command(ResumeCommand(text: "codex resume --yolo '\(codexID)'"))
         )
     }
 
     func testCodexDirtyDecisionRequiresVerifiedTranscript() {
         XCTAssertEqual(
             ResumeDecisionEngine.decide(resumeInput(mode: .dirty, transcript: .verified)),
-            .command(ResumeCommand(text: "codex resume '\(codexID)'"))
+            .command(ResumeCommand(text: "codex resume --yolo '\(codexID)'"))
         )
         guard case .skip(let code, _) = ResumeDecisionEngine.decide(
             resumeInput(mode: .dirty, transcript: .missing)

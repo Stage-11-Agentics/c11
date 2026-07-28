@@ -314,7 +314,9 @@
 		C1ADE00002A1B2C3D4E5F719 /* claude in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1ADE00001A1B2C3D4E5F719 /* claude */; };
 		C1CDE00002A1B2C3D4E5F719 /* codex in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1CDE00001A1B2C3D4E5F719 /* codex */; };
 		C1F1E00002A1B2C3D4E5F719 /* pi in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F1E00001A1B2C3D4E5F719 /* pi */; };
+		C1F1E00004A1B2C3D4E5F719 /* pi-lifecycle.ts in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F1E00003A1B2C3D4E5F719 /* pi-lifecycle.ts */; };
 		C1F2E00002A1B2C3D4E5F719 /* omp in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F2E00001A1B2C3D4E5F719 /* omp */; };
+		C1F4E00002A1B2C3D4E5F719 /* opencode in Copy CLI */ = {isa = PBXBuildFile; fileRef = C1F4E00001A1B2C3D4E5F719 /* opencode */; };
 		C22557799917F42164A6C855 /* TitlebarSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F01B /* TitlebarSnapshotTests.swift */; };
 		C49B42317DA68794CC9C29E4 /* MailboxULIDTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7105BF1A1B2C3D4E5F60718 /* MailboxULIDTests.swift */; };
 		C622796239CFCFB69D68C5D9 /* CLIHealthRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DH015BF1A1B2C3D4E5F60718 /* CLIHealthRuntimeTests.swift */; };
@@ -479,7 +481,9 @@
 				C1ADE00002A1B2C3D4E5F719 /* claude in Copy CLI */,
 				C1CDE00002A1B2C3D4E5F719 /* codex in Copy CLI */,
 				C1F1E00002A1B2C3D4E5F719 /* pi in Copy CLI */,
+				C1F1E00004A1B2C3D4E5F719 /* pi-lifecycle.ts in Copy CLI */,
 				C1F2E00002A1B2C3D4E5F719 /* omp in Copy CLI */,
+				C1F4E00002A1B2C3D4E5F719 /* opencode in Copy CLI */,
 				D1BEF00002A1B2C3D4E5F719 /* open in Copy CLI */,
 				4EE5E828CC9D3BA957B86380 /* copilot in Copy CLI */,
 			);
@@ -736,7 +740,9 @@
 		C1ADE00001A1B2C3D4E5F719 /* claude */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/claude; sourceTree = SOURCE_ROOT; };
 		C1CDE00001A1B2C3D4E5F719 /* codex */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/codex; sourceTree = SOURCE_ROOT; };
 		C1F1E00001A1B2C3D4E5F719 /* pi */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/pi; sourceTree = SOURCE_ROOT; };
+		C1F1E00003A1B2C3D4E5F719 /* pi-lifecycle.ts */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.typescript; path = Resources/bin/pi-lifecycle.ts; sourceTree = SOURCE_ROOT; };
 		C1F2E00001A1B2C3D4E5F719 /* omp */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/omp; sourceTree = SOURCE_ROOT; };
+		C1F4E00001A1B2C3D4E5F719 /* opencode */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = Resources/bin/opencode; sourceTree = SOURCE_ROOT; };
 		C28AE9F41DE55AB88CAE431D /* AgentManifest.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentManifest.swift; sourceTree = "<group>"; };
 		ACB000000000000000000001 /* AgentCompanionContext.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentCompanionContext.swift; sourceTree = "<group>"; };
 		ACB000000000000000000002 /* BrowserCompanionPolicyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BrowserCompanionPolicyTests.swift; sourceTree = "<group>"; };
@@ -947,7 +953,9 @@
 				C1ADE00001A1B2C3D4E5F719 /* claude */,
 				C1CDE00001A1B2C3D4E5F719 /* codex */,
 				C1F1E00001A1B2C3D4E5F719 /* pi */,
+				C1F1E00003A1B2C3D4E5F719 /* pi-lifecycle.ts */,
 				C1F2E00001A1B2C3D4E5F719 /* omp */,
+				C1F4E00001A1B2C3D4E5F719 /* opencode */,
 				D8017BF1A1B2C3D4E5F60718 /* Blueprints */,
 				DA7A10CA710E000000000001 /* Localizable.xcstrings */,
 				DA7A10CA710E000000000002 /* InfoPlist.xcstrings */,
@@ -2099,10 +2107,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 121;
+				CURRENT_PROJECT_VERSION = 122;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.60.1;
+				MARKETING_VERSION = 0.60.2;
 				ONLY_ACTIVE_ARCH = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11.appuitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -2180,7 +2188,7 @@
 				CODE_SIGN_ENTITLEMENTS = "";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 121;
+				CURRENT_PROJECT_VERSION = 122;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = NO;
 				EXECUTABLE_NAME = c11;
@@ -2190,7 +2198,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.60.1;
+				MARKETING_VERSION = 0.60.2;
 				OTHER_LDFLAGS = (
 					"-lc++",
 					"-framework",
@@ -2221,7 +2229,7 @@
 				CODE_SIGN_ENTITLEMENTS = "";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 121;
+				CURRENT_PROJECT_VERSION = 122;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = NO;
 				EXECUTABLE_NAME = c11;
@@ -2231,7 +2239,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.60.1;
+				MARKETING_VERSION = 0.60.2;
 				ONLY_ACTIVE_ARCH = NO;
 				OTHER_LDFLAGS = (
 					"-lc++",
@@ -2299,10 +2307,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 121;
+				CURRENT_PROJECT_VERSION = 122;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.60.1;
+				MARKETING_VERSION = 0.60.2;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11.appuitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -2317,14 +2325,14 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(BUILT_PRODUCTS_DIR)/c11.app/Contents/MacOS/c11";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 121;
+				CURRENT_PROJECT_VERSION = 122;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@loader_path/../../../c11.app/Contents/MacOS",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.60.1;
+				MARKETING_VERSION = 0.60.2;
 				ONLY_ACTIVE_ARCH = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11.logictests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -2339,14 +2347,14 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(BUILT_PRODUCTS_DIR)/c11 DEV.app/Contents/MacOS/c11.debug.dylib";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 121;
+				CURRENT_PROJECT_VERSION = 122;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@loader_path/../../../c11\\ DEV.app/Contents/MacOS",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.60.1;
+				MARKETING_VERSION = 0.60.2;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11.logictests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -2362,10 +2370,10 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 121;
+				CURRENT_PROJECT_VERSION = 122;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.60.1;
+				MARKETING_VERSION = 0.60.2;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11.apptests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -2381,10 +2389,10 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 121;
+				CURRENT_PROJECT_VERSION = 122;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.60.1;
+				MARKETING_VERSION = 0.60.2;
 				ONLY_ACTIVE_ARCH = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = com.stage11.c11.apptests;
 				PRODUCT_NAME = "$(TARGET_NAME)";

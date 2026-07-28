@@ -113,7 +113,7 @@ fi
             )
             c11_lines = wait_for_line(
                 c11_log,
-                " notify " if callback else " codex-hook idle",
+                " notify " if callback else " agent-hook idle",
             )
         finally:
             if test_socket is not None:
@@ -148,7 +148,7 @@ def test_live_socket_injects_completion_callback(failures: list[str]) -> None:
         failures,
     )
     expect(real_argv[-1] == "hello", f"live socket: original argv was not preserved: {real_argv}", failures)
-    expect(any(" codex-hook idle" in line for line in c11_log), f"missing initial idle seed: {c11_log}", failures)
+    expect(any(" agent-hook idle" in line for line in c11_log), f"missing initial idle seed: {c11_log}", failures)
 
 
 def test_completion_callback_creates_surface_notification(failures: list[str]) -> None:

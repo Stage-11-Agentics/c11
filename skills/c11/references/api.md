@@ -273,6 +273,9 @@ c11 set-agent --type opencode --model <model-id>
 - Writes land as `source: declare` in the metadata store, overriding heuristic auto-detection but not user-explicit writes.
 - Environment declaration: `C11_AGENT_TYPE`, `C11_AGENT_MODEL`, `C11_AGENT_TASK` in the surface's startup env are read once at surface-child-process start.
 - Clear with `c11 clear-metadata --key terminal_type` (no `c11 unset-agent`).
+- Bundled provider wrappers and runtime plugins may report exact loop state with
+  `c11 agent-hook working|idle`. This is a bundle-private lifecycle bridge,
+  not a command agents need to call in ordinary skill-driven operation.
 
 ## Title & description
 

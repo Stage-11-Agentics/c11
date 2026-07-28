@@ -2977,8 +2977,12 @@ struct CMUXCLI {
                 throw error
             }
 
-        case "codex-hook":
-            try runCodexHook(commandArgs: commandArgs, client: client)
+        case "agent-hook", "codex-hook":
+            try runAgentHook(
+                commandName: command,
+                commandArgs: commandArgs,
+                client: client
+            )
 
         case "set-app-focus":
             guard let value = commandArgs.first else { throw CLIError(message: "set-app-focus requires a value") }
@@ -15790,24 +15794,28 @@ struct CMUXCLI {
         }
     }
 
-    /// Bundle-private lifecycle bridge used by Resources/bin/codex. Codex's
-    /// interactive process keeps the outer shell in `running` for its entire
-    /// lifetime, so the wrapper seeds the truthful resting state explicitly.
-    /// Turn submission/completion transitions are reported by c11's terminal
-    /// input and notification seams inside the app.
-    private func runCodexHook(commandArgs: [String], client: SocketClient) throws {
+    /// Bundle-private lifecycle bridge used by agent wrappers and runtime
+    /// plugins. Interactive agent processes keep the outer shell in `running`
+    /// for their entire lifetime, so providers report their truthful loop
+    /// state through this command. `codex-hook` remains as a compatibility
+    /// alias for already-installed c11 builds and wrapper fixtures.
+    private func runAgentHook(
+        commandName: String,
+        commandArgs: [String],
+        client: SocketClient
+    ) throws {
         guard let rawActivity = commandArgs.first?.lowercased(),
               rawActivity == "working" || rawActivity == "idle" else {
-            throw CLIError(message: "codex-hook requires working or idle")
+            throw CLIError(message: "\(commandName) requires working or idle")
         }
         let environment = ProcessInfo.processInfo.environment
         guard let workspaceId = environment["CMUX_WORKSPACE_ID"] ?? environment["C11_WORKSPACE_ID"],
               UUID(uuidString: workspaceId) != nil else {
-            throw CLIError(message: "codex-hook requires a c11 workspace id")
+            throw CLIError(message: "\(commandName) requires a c11 workspace id")
         }
         guard let surfaceId = environment["CMUX_SURFACE_ID"] ?? environment["C11_SURFACE_ID"],
               UUID(uuidString: surfaceId) != nil else {
-            throw CLIError(message: "codex-hook requires a c11 surface id")
+            throw CLIError(message: "\(commandName) requires a c11 surface id")
         }
         let response = try sendV1Command(
             "report_agent_activity \(rawActivity) --tab=\(workspaceId) --panel=\(surfaceId)",

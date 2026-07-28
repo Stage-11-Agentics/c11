@@ -9752,14 +9752,14 @@ private struct SidebarFooterButtons: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                SidebarWaitingAgentCluster()
-                    .frame(maxWidth: .infinity)
-
-                SidebarFooterScrollIndicator(controller: scrollIndicatorController)
-                    .frame(width: 8)
-                    .frame(maxHeight: .infinity)
-            }
+            SidebarWaitingAgentCluster()
+                .padding(.trailing, 14)
+                .overlay(alignment: .trailing) {
+                    SidebarFooterScrollIndicator(controller: scrollIndicatorController)
+                        .frame(width: 8)
+                        .frame(maxHeight: .infinity)
+                }
+                .frame(maxWidth: .infinity)
             HStack(spacing: 4) {
                 SidebarHelpMenuButton(onSendFeedback: onSendFeedback)
                 UpdatePill(model: updateViewModel)

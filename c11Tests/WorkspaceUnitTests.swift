@@ -2516,14 +2516,14 @@ final class WorkspacePulseMarkRowMetricsTests: XCTestCase {
         XCTAssertEqual(layout.hiddenCount, 0)
     }
 
-    func testVeryCrowdedRosterShrinksMarksAndKeepsThemAllVisible() {
+    func testVeryCrowdedRosterYieldsSlotsButKeepsNinePointMarks() {
         let layout = WorkspacePulseMarkRowMetrics.layout(count: 16, availableWidth: sidebarCardContentWidth)
         XCTAssertEqual(layout.spacing, WorkspacePulseMarkRowMetrics.minimumSpacing)
         XCTAssertLessThan(layout.slot, WorkspacePulseMarkRowMetrics.preferredSlot)
         XCTAssertGreaterThanOrEqual(layout.slot, WorkspacePulseMarkRowMetrics.minimumSlot)
         XCTAssertEqual(layout.visibleCount, 16)
         XCTAssertEqual(layout.hiddenCount, 0)
-        XCTAssertEqual(layout.markSide, min(9, layout.slot), accuracy: 0.01)
+        XCTAssertEqual(layout.markSide, 9, accuracy: 0.01)
         XCTAssertLessThanOrEqual(layout.markSide, layout.slot)
     }
 
@@ -2554,6 +2554,7 @@ final class WorkspacePulseMarkRowMetricsTests: XCTestCase {
         for width in stride(from: 1.0, through: 55.0, by: 3.0) {
             let layout = WorkspacePulseMarkRowMetrics.layout(count: 24, availableWidth: CGFloat(width))
             XCTAssertGreaterThanOrEqual(layout.slot, WorkspacePulseMarkRowMetrics.minimumSlot)
+            XCTAssertEqual(layout.markSide, 9)
             XCTAssertGreaterThanOrEqual(layout.spacing, WorkspacePulseMarkRowMetrics.minimumSpacing)
             XCTAssertGreaterThanOrEqual(layout.visibleCount, 0)
             XCTAssertEqual(layout.visibleCount + layout.hiddenCount, 24)

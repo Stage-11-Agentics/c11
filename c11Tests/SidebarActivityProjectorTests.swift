@@ -178,6 +178,60 @@ final class SidebarActivityProjectorTests: XCTestCase {
         XCTAssertEqual(summary.terminalCount, 2)
     }
 
+    func testWorkspacePulseSuppressesUnflaggedWaitingIntoIdle() {
+        let agent = WorkspacePulseAgent(
+            surfaceId: UUID(),
+            state: .waiting,
+            context: nil,
+            suppressed: true
+        )
+
+        let summary = WorkspacePulseProjector.project(
+            hasWorkspaceDemand: false,
+            agents: [agent],
+            terminalCount: 1
+        )
+
+        XCTAssertEqual(agent.state, .waiting, "The source lifecycle remains available to C11-184")
+        XCTAssertEqual(agent.presentedState, .idle)
+        XCTAssertEqual(summary.waitingCount, 0)
+        XCTAssertEqual(summary.idleCount, 1)
+        XCTAssertEqual(summary.relevantAgents.map(\.presentedState), [.idle])
+    }
+
+    func testWorkspacePulseFlagOverridesSuppression() {
+        let agent = WorkspacePulseAgent(
+            surfaceId: UUID(),
+            state: .waiting,
+            context: nil,
+            flagged: true,
+            suppressed: true
+        )
+
+        let summary = WorkspacePulseProjector.project(
+            hasWorkspaceDemand: false,
+            agents: [agent],
+            terminalCount: 1
+        )
+
+        XCTAssertEqual(agent.presentedState, .waiting)
+        XCTAssertEqual(summary.waitingCount, 1)
+        XCTAssertEqual(summary.idleCount, 0)
+        XCTAssertEqual(summary.relevantAgents.map(\.presentedState), [.waiting])
+    }
+
+    func testWorkspacePulseModifierDefaultsPreserveLifecycle() {
+        let agent = WorkspacePulseAgent(
+            surfaceId: UUID(),
+            state: .working,
+            context: nil
+        )
+
+        XCTAssertFalse(agent.flagged)
+        XCTAssertFalse(agent.suppressed)
+        XCTAssertEqual(agent.presentedState, .working)
+    }
+
     func testWorkspacePulseFallsThroughWorkingIdleAndCold() {
         XCTAssertEqual(
             WorkspacePulseProjector.project(

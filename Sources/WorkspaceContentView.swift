@@ -215,6 +215,9 @@ struct WorkspaceContentView: View {
                 bonsplitView
             }
         }
+        // Unselected workspaces stay mounted for instant restoration, but
+        // their surface-tab marks must not keep clock subscriptions alive.
+        .environment(\.bonsplitActivityAnimationEnabled, isWorkspaceInputActive)
         .overlay(
             WorkspaceFrame(
                 workspace: workspace,

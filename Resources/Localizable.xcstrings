@@ -36333,6 +36333,100 @@
         }
       }
     },
+    "settings.app.staticMarks": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Static marks"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "静止マーク"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "静态标记"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "靜態標記"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "정적 마크"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Статичные метки"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Статичні позначки"
+          }
+        }
+      }
+    },
+    "settings.app.staticMarks.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop normal lifecycle motion. Flagged working and waiting marks remain animated unless Reduce Motion is enabled."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通常のライフサイクルアニメーションを停止します。フラグ付きの「作業中」と「待機中」のマークは、「視差効果を減らす」が有効でない限りアニメーションを続けます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止常规生命周期动画。带旗标的“工作中”和“等待中”标记仍会保持动画，除非启用了“减弱动态效果”。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止一般的生命週期動畫。帶旗標的「工作中」和「等待中」標記仍會保持動畫，除非已啟用「減少動態效果」。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일반적인 라이프사이클 애니메이션을 중지합니다. 플래그가 지정된 작업 중 및 대기 중 마크는 '동작 줄이기'가 켜져 있지 않으면 계속 애니메이션됩니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Останавливает обычную анимацию жизненного цикла. Метки «Работает» и «Ожидает» с флажком продолжают анимироваться, если не включено «Уменьшение движения»."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Зупиняє звичайну анімацію життєвого циклу. Позначки «Працює» та «Очікує» з прапорцем продовжують анімуватися, якщо не ввімкнено «Зменшення руху»."
+          }
+        }
+      }
+    },
     "settings.app.telemetry": {
       "extractionState": "manual",
       "localizations": {

@@ -138,6 +138,7 @@ c11 ships in English plus six translations: Japanese (ja), Ukrainian (uk), Korea
 - **All user-facing strings must be localized at the call site.** Use `String(localized: "key.name", defaultValue: "English text")` everywhere — labels, buttons, menus, alerts, tooltips, error messages. No bare string literals in SwiftUI `Text()`, `Button()`, alert titles, etc.
 - **Delegate translation to a sub-agent in a new c11 surface.** After adding or changing English strings, spawn a translator in a fresh c11 pane to sync `Localizable.xcstrings` for the other six locales. Point it at the new/changed English values; it reads the xcstrings, emits the six translations, writes back.
 - **Parallelize when there's a lot to translate.** For a handful of strings, one sub-agent is fine. For a larger batch, spawn one sub-agent per locale — six in parallel — so the translation pass doesn't gate the next piece of work.
+- **Validate the edited xcstrings with `jq`, not `plutil`.** `plutil -lint Resources/Localizable.xcstrings` fails with `Unexpected character { at line 1` — it dispatches on the file extension and tries to parse the JSON as a plist. That is a tooling artifact, not a corrupt file, so don't chase it. `jq . Resources/Localizable.xcstrings > /dev/null` is the real well-formedness check. Also assert that every interpolation token (`%@`, `%lld`, …) present in the English value survives in all six translations — a dropped token is a crash at format time, not a cosmetic bug.
 
 ## Test quality policy
 

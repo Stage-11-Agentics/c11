@@ -26,8 +26,34 @@ struct WorkspacePulseAgent: Equatable, Identifiable {
     let surfaceId: UUID
     let state: WorkspacePulseState
     let context: WorkspacePulseAgentContext?
+    /// Forward-compatible attention modifiers. C11-184 owns the metadata and
+    /// signal primitives that will populate them; false defaults preserve the
+    /// current lifecycle-only projection until that wiring lands.
+    let flagged: Bool
+    let suppressed: Bool
 
     var id: UUID { surfaceId }
+
+    init(
+        surfaceId: UUID,
+        state: WorkspacePulseState,
+        context: WorkspacePulseAgentContext?,
+        flagged: Bool = false,
+        suppressed: Bool = false
+    ) {
+        self.surfaceId = surfaceId
+        self.state = state
+        self.context = context
+        self.flagged = flagged
+        self.suppressed = suppressed
+    }
+
+    /// Suppression is a lifecycle projection, and a flag wins when both
+    /// modifiers are present. The stored `state` remains the source truth for
+    /// C11-184; renderers and summary counts consume this presented value.
+    var presentedState: WorkspacePulseState {
+        suppressed && !flagged && state == .waiting ? .idle : state
+    }
 }
 
 struct WorkspacePulseSummary: Equatable {
@@ -77,12 +103,12 @@ struct WorkspacePulseSummary: Equatable {
     }
 
     func agentCount(for state: WorkspacePulseState) -> Int {
-        agents.lazy.filter { $0.state == state }.count
+        agents.lazy.filter { $0.presentedState == state }.count
     }
 
     var relevantAgents: [WorkspacePulseAgent] {
         WorkspacePulseState.allCases.flatMap { state in
-            agents.filter { $0.state == state }
+            agents.filter { $0.presentedState == state }
         }
     }
 }
@@ -125,15 +151,15 @@ enum WorkspacePulseProjector {
         browserCount: Int = 0,
         documentCount: Int = 0
     ) -> WorkspacePulseSummary {
-        var waiting = agents.filter { $0.state == .waiting }.count
+        var waiting = agents.filter { $0.presentedState == .waiting }.count
         if hasWorkspaceDemand && waiting == 0 {
             waiting = 1
         }
         return WorkspacePulseSummary(
             waitingCount: waiting,
-            workingCount: agents.filter { $0.state == .working }.count,
-            idleCount: agents.filter { $0.state == .idle }.count,
-            coldCount: agents.filter { $0.state == .cold }.count,
+            workingCount: agents.filter { $0.presentedState == .working }.count,
+            idleCount: agents.filter { $0.presentedState == .idle }.count,
+            coldCount: agents.filter { $0.presentedState == .cold }.count,
             agents: agents,
             terminalCount: max(0, terminalCount),
             browserCount: max(0, browserCount),

@@ -11301,13 +11301,13 @@ enum SidebarPathFormatter {
 /// text in it shifts off the left edge of the window. Measuring the real
 /// width and compressing here is what keeps the card inside the sidebar.
 ///
-/// Compression order: gaps first (they carry no information), then the
-/// marks themselves, and only once both bottom out does the row drop
-/// marks in favour of a leading `+N` count.
+/// Compression order: gaps first (they carry no information), then the row
+/// drops marks in favour of a leading `+N` count. The 9pt marks themselves
+/// never shrink — the signal is the element this layout protects.
 enum WorkspacePulseMarkRowMetrics {
     static let preferredSlot: CGFloat = 14
     static let preferredSpacing: CGFloat = 7
-    static let minimumSlot: CGFloat = 8
+    static let minimumSlot: CGFloat = 9
     static let minimumSpacing: CGFloat = 2
     /// Room held back for the `+N` overflow count when marks get dropped.
     static let overflowLabelWidth: CGFloat = 24
@@ -11318,11 +11318,10 @@ enum WorkspacePulseMarkRowMetrics {
         var visibleCount: Int
         var hiddenCount: Int
 
-        /// Square side for a mark in this layout. The preferred slot carries
-        /// 5pt of breathing room around a 9pt square; once the slot itself is
-        /// compressed the square follows it down.
+        /// Square side for a mark in this layout. The slot may yield its
+        /// breathing room, but the mark itself stays at the contractual 9pt.
         var markSide: CGFloat {
-            min(9, slot)
+            9
         }
     }
 
@@ -11397,6 +11396,198 @@ enum WorkspacePulseMarkRowMetrics {
             visibleCount: visible,
             hiddenCount: count - visible
         )
+    }
+}
+
+enum ActivityMarkSettings {
+    static let staticMarksKey = "staticActivityMarks"
+    static let defaultStaticMarks = false
+}
+
+/// Leaf-isolated workspace-pulse mark. This is the c11 renderer half of the
+/// shared 9pt vocabulary; its clock and phase sampling are the same Bonsplit
+/// primitives used by surface-tab marks.
+private struct WorkspacePulseMark: View {
+    private static let flaggedColor = Color(
+        nsColor: NSColor(
+            srgbRed: 0x9D / 255,
+            green: 0x8A / 255,
+            blue: 0xD9 / 255,
+            alpha: 1
+        )
+    )
+
+    let state: WorkspacePulseState
+    let lifecycleColor: Color
+    let phaseId: UUID
+    let flagged: Bool
+    let suppressed: Bool
+    let animationEligible: Bool
+
+    @AppStorage(ActivityMarkSettings.staticMarksKey)
+    private var staticMarks = ActivityMarkSettings.defaultStaticMarks
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var clockToken: UUID?
+    @State private var visibleWorkingDots = 9
+    @State private var waitingCoreOpacity = 1.0
+    @State private var flaggedWaitingShowsWhite = false
+
+    private var presentedState: WorkspacePulseState {
+        suppressed && !flagged && state == .waiting ? .idle : state
+    }
+
+    private var color: Color {
+        flagged ? Self.flaggedColor : lifecycleColor
+    }
+
+    private var motion: BonsplitActivityMarkMotion? {
+        guard animationEligible, scenePhase == .active, !reduceMotion else { return nil }
+        if flagged {
+            switch presentedState {
+            case .working: return .steppedFill
+            case .waiting: return .binaryFlash
+            case .idle, .cold: return nil
+            }
+        }
+        guard !suppressed, !staticMarks else { return nil }
+        switch presentedState {
+        case .working: return .steppedFill
+        case .waiting: return .easedDip
+        case .idle, .cold: return nil
+        }
+    }
+
+    private var motionSignature: Int {
+        switch motion {
+        case .steppedFill: return 1
+        case .easedDip: return 2
+        case .binaryFlash: return 3
+        case nil: return 0
+        }
+    }
+
+    var body: some View {
+        markShape
+            .frame(width: 9, height: 9)
+            .onAppear { refreshClockSubscription() }
+            .onChange(of: motionSignature) { _, _ in refreshClockSubscription() }
+            .onChange(of: phaseId) { _, _ in refreshClockSubscription() }
+            .onDisappear { unsubscribeFromClock() }
+    }
+
+    @ViewBuilder
+    private var markShape: some View {
+        switch presentedState {
+        case .working:
+            ZStack {
+                Rectangle()
+                    .fill(color.opacity(0.25))
+                    .frame(width: 9, height: 9)
+                VStack(spacing: 1) {
+                    ForEach(0..<3, id: \.self) { row in
+                        HStack(spacing: 1) {
+                            ForEach(0..<3, id: \.self) { column in
+                                let rank = (2 - row) * 3 + column
+                                Rectangle()
+                                    .fill(color)
+                                    .frame(width: 2, height: 2)
+                                    .opacity(rank < visibleWorkingDots ? 1 : 0)
+                            }
+                        }
+                    }
+                }
+            }
+
+        case .waiting:
+            ZStack {
+                Rectangle()
+                    .strokeBorder(color, lineWidth: 1.5)
+                Rectangle()
+                    .fill(color)
+                    .frame(width: 4, height: 4)
+                    .opacity(flagged ? 1 : waitingCoreOpacity)
+                if flagged {
+                    Rectangle()
+                        .fill(Color.white)
+                        .frame(width: 4, height: 4)
+                        .opacity(flaggedWaitingShowsWhite ? 1 : 0)
+                }
+            }
+
+        case .idle:
+            Rectangle()
+                .strokeBorder(color, lineWidth: 1)
+
+        case .cold:
+            Rectangle()
+                .fill(color)
+                .frame(width: 9, height: 2)
+        }
+    }
+
+    private func refreshClockSubscription() {
+        unsubscribeFromClock()
+        guard let motion else {
+            resetToStaticState()
+            return
+        }
+        clockToken = BonsplitActivityAnimationClock.shared.subscribe { elapsed in
+            apply(elapsed: elapsed, motion: motion)
+        }
+    }
+
+    private func unsubscribeFromClock() {
+        guard let clockToken else { return }
+        BonsplitActivityAnimationClock.shared.unsubscribe(clockToken)
+        self.clockToken = nil
+    }
+
+    private func resetToStaticState() {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            visibleWorkingDots = 9
+            waitingCoreOpacity = 1
+            flaggedWaitingShowsWhite = false
+        }
+    }
+
+    private func apply(elapsed: TimeInterval, motion: BonsplitActivityMarkMotion) {
+        switch motion {
+        case .steppedFill:
+            let dots = BonsplitActivityMarkAnimation.visibleWorkingDots(
+                at: elapsed,
+                id: phaseId
+            )
+            guard dots != visibleWorkingDots else { return }
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                visibleWorkingDots = dots
+            }
+
+        case .easedDip:
+            let opacity = BonsplitActivityMarkAnimation.waitingCoreOpacity(
+                at: elapsed,
+                id: phaseId
+            )
+            withAnimation(.linear(duration: BonsplitActivityMarkAnimation.clockInterval)) {
+                waitingCoreOpacity = opacity
+            }
+
+        case .binaryFlash:
+            let showsWhite = BonsplitActivityMarkAnimation.binaryFlashShowsAlternate(
+                at: elapsed,
+                id: phaseId
+            )
+            guard showsWhite != flaggedWaitingShowsWhite else { return }
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                flaggedWaitingShowsWhite = showsWhite
+            }
+        }
     }
 }
 
@@ -11808,32 +11999,16 @@ private struct TabItemView: View, Equatable {
         }
     }
 
-    /// Agent-state mark: a hard-edged terminal cell, matching the surface-tab
-    /// chips bonsplit draws. Fill state carries the meaning — solid for
-    /// working, hollow for idle, a flat line for cold, solid gold for waiting —
-    /// so the state reads without relying on color alone. Nothing animates.
-    @ViewBuilder
-    private func workspacePulseMark(
-        for state: WorkspacePulseState,
-        summaryScale: Bool = false,
-        side overrideSide: CGFloat? = nil
-    ) -> some View {
-        let color = workspacePulseColor(for: state)
-        let side: CGFloat = overrideSide ?? (summaryScale ? 10 : 9)
-        switch state {
-        case .waiting, .working:
-            Rectangle()
-                .fill(color)
-                .frame(width: side, height: side)
-        case .idle:
-            Rectangle()
-                .strokeBorder(color, lineWidth: 1)
-                .frame(width: side, height: side)
-        case .cold:
-            Rectangle()
-                .fill(color)
-                .frame(width: side, height: 2)
-        }
+    /// Leaf-isolated 9pt mark matching the Bonsplit surface-tab vocabulary.
+    private func workspacePulseMark(for agent: WorkspacePulseAgent) -> some View {
+        WorkspacePulseMark(
+            state: agent.state,
+            lifecycleColor: workspacePulseColor(for: agent.presentedState),
+            phaseId: agent.surfaceId,
+            flagged: agent.flagged,
+            suppressed: agent.suppressed,
+            animationEligible: isActive
+        )
     }
 
     private var workspacePulseVisibleAgents: [WorkspacePulseAgent] {
@@ -11849,7 +12024,7 @@ private struct TabItemView: View, Equatable {
     }
 
     private func openWorkspacePulseAgent(_ agent: WorkspacePulseAgent) {
-        guard agent.state == .waiting else { return }
+        guard agent.presentedState == .waiting else { return }
         _ = AppDelegate.shared?.openNotification(
             tabId: tab.id,
             surfaceId: agent.surfaceId,
@@ -11864,7 +12039,7 @@ private struct TabItemView: View, Equatable {
     ) -> some View {
         let context = agent.context
         let content = HStack(spacing: 7) {
-            workspacePulseMark(for: agent.state, summaryScale: true)
+            workspacePulseMark(for: agent)
                 .frame(width: 16, height: 16)
 
             Group {
@@ -11874,7 +12049,7 @@ private struct TabItemView: View, Equatable {
                         + Text(verbatim: context.subtitle.map { " · \($0)" } ?? "")
                     )
                 } else {
-                    Text(verbatim: workspacePulseLabel(for: agent.state))
+                    Text(verbatim: workspacePulseLabel(for: agent.presentedState))
                 }
             }
             .font(.system(size: chromeTokens.sidebarWorkspaceDetail + 1))
@@ -11885,7 +12060,7 @@ private struct TabItemView: View, Equatable {
             Spacer(minLength: 0)
         }
 
-        if agent.state == .waiting {
+        if agent.presentedState == .waiting {
             Button(action: { openWorkspacePulseAgent(agent) }) {
                 content
             }
@@ -12031,11 +12206,11 @@ private struct TabItemView: View, Equatable {
                 }
 
                 ForEach(visible) { agent in
-                    workspacePulseMark(for: agent.state, side: layout.markSide)
+                    workspacePulseMark(for: agent)
                         .frame(width: layout.slot, height: 14)
                         .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(Text(agent.context?.title ?? workspacePulseLabel(for: agent.state)))
-                        .accessibilityValue(Text(workspacePulseLabel(for: agent.state)))
+                        .accessibilityLabel(Text(agent.context?.title ?? workspacePulseLabel(for: agent.presentedState)))
+                        .accessibilityValue(Text(workspacePulseLabel(for: agent.presentedState)))
                 }
             }
             .frame(width: proxy.size.width, height: 14, alignment: .trailing)

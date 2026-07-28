@@ -19,9 +19,13 @@ struct WorkspaceContentView: View {
     @State private var config = WorkspaceContentView.resolveGhosttyAppearanceConfig(reason: "stateInit")
     @AppStorage(WorkspacePresentationModeSettings.modeKey)
     private var workspacePresentationMode = WorkspacePresentationModeSettings.defaultMode.rawValue
+    @AppStorage(ActivityMarkSettings.staticMarksKey)
+    private var staticActivityMarks = ActivityMarkSettings.defaultStaticMarks
     @AppStorage(ThemeAppStorage.Keys.m1bWorkspaceContentViewContextMigrated, store: ThemeAppStorage.defaults)
     private var m1bWorkspaceContentViewContextMigrated = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject var notificationStore: TerminalNotificationStore
 
     private var isMinimalMode: Bool {
@@ -215,6 +219,16 @@ struct WorkspaceContentView: View {
                 bonsplitView
             }
         }
+        // c11 owns mark policy. Bonsplit receives only the resolved generic
+        // permission to subscribe: no user-default, accessibility, or
+        // application-lifecycle semantics cross the package boundary.
+        .environment(
+            \.bonsplitActivityAnimationEnabled,
+            isWorkspaceInputActive
+                && scenePhase == .active
+                && !reduceMotion
+                && !staticActivityMarks
+        )
         .overlay(
             WorkspaceFrame(
                 workspace: workspace,

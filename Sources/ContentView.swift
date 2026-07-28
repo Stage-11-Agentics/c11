@@ -11294,10 +11294,11 @@ struct SidebarScrollIndicatorMetrics: Equatable {
 }
 
 @MainActor
-private final class SidebarScrollIndicatorController: ObservableObject {
+final class SidebarScrollIndicatorController: ObservableObject {
     private weak var scrollView: NSScrollView?
     private weak var indicator: SidebarFooterScroller?
     private var observationTokens: [NSObjectProtocol] = []
+    private var hasVerticalScrollerObservation: NSKeyValueObservation?
     private var originalHasVerticalScroller: Bool?
     private var originalClipPostsBoundsChanges: Bool?
     private var originalScrollPostsFrameChanges: Bool?
@@ -11308,7 +11309,7 @@ private final class SidebarScrollIndicatorController: ObservableObject {
             // SwiftUI may re-apply its own scroll configuration during an
             // update. Keep the edge scroller suppressed while this controller
             // owns the footer replacement.
-            scrollView?.hasVerticalScroller = false
+            suppressStockScroller()
             synchronize()
             return
         }
@@ -11325,7 +11326,16 @@ private final class SidebarScrollIndicatorController: ObservableObject {
         // The sidebar's stock overlay scroller is managed at the viewport's
         // trailing edge. Suppress that presentation; the footer scroller below
         // remains wired to the same clip view and scroll position.
-        scrollView.hasVerticalScroller = false
+        suppressStockScroller()
+        hasVerticalScrollerObservation = scrollView.observe(
+            \.hasVerticalScroller,
+            options: [.new]
+        ) { [weak self] _, change in
+            guard change.newValue == true else { return }
+            Task { @MainActor [weak self] in
+                self?.suppressStockScroller()
+            }
+        }
         scrollView.contentView.postsBoundsChangedNotifications = true
         scrollView.postsFrameChangedNotifications = true
         scrollView.documentView?.postsFrameChangedNotifications = true
@@ -11347,13 +11357,13 @@ private final class SidebarScrollIndicatorController: ObservableObject {
         synchronize()
     }
 
-    func register(indicator: SidebarFooterScroller) {
+    fileprivate func register(indicator: SidebarFooterScroller) {
         self.indicator = indicator
         indicator.controller = self
         synchronize()
     }
 
-    func unregister(indicator: SidebarFooterScroller) {
+    fileprivate func unregister(indicator: SidebarFooterScroller) {
         guard self.indicator === indicator else { return }
         indicator.controller = nil
         self.indicator = nil
@@ -11395,6 +11405,12 @@ private final class SidebarScrollIndicatorController: ObservableObject {
     }
 
     private func synchronize() {
+        // SwiftUI can restore its stock overlay scroller while reconciling the
+        // ScrollView. Every scroll/geometry synchronization reasserts footer
+        // ownership, while KVO covers configuration changes that do not move
+        // the clip view.
+        suppressStockScroller()
+
         guard let scrollView,
               let documentView = scrollView.documentView
         else {
@@ -11430,6 +11446,8 @@ private final class SidebarScrollIndicatorController: ObservableObject {
     private func detach() {
         observationTokens.forEach(NotificationCenter.default.removeObserver)
         observationTokens.removeAll()
+        hasVerticalScrollerObservation?.invalidate()
+        hasVerticalScrollerObservation = nil
 
         if let scrollView {
             if let originalHasVerticalScroller {
@@ -11459,6 +11477,14 @@ private final class SidebarScrollIndicatorController: ObservableObject {
                 isScrollable: false
             )
         )
+    }
+
+    private func suppressStockScroller() {
+        guard let scrollView else { return }
+        if scrollView.hasVerticalScroller {
+            scrollView.hasVerticalScroller = false
+        }
+        scrollView.verticalScroller?.isHidden = true
     }
 }
 

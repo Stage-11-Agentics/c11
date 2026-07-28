@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 #if canImport(c11_DEV)
@@ -96,5 +97,35 @@ final class SidebarScrollIndicatorMetricsTests: XCTestCase {
             ),
             20
         )
+    }
+
+    @MainActor
+    func testControllerReclaimsStockScrollerAfterConfigurationRestoresIt() {
+        let scrollView = NSScrollView(frame: CGRect(x: 0, y: 0, width: 400, height: 250))
+        scrollView.documentView = NSView(frame: CGRect(x: 0, y: 0, width: 400, height: 1_000))
+        scrollView.hasVerticalScroller = true
+
+        let controller = SidebarScrollIndicatorController()
+        controller.attach(scrollView: scrollView)
+        XCTAssertFalse(scrollView.hasVerticalScroller)
+
+        // Model SwiftUI restoring its edge scroller after the initial attach.
+        scrollView.hasVerticalScroller = true
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
+
+        XCTAssertFalse(scrollView.hasVerticalScroller)
+    }
+
+    @MainActor
+    func testControllerReclaimsStockScrollerDuringScrollSynchronization() {
+        let scrollView = NSScrollView(frame: CGRect(x: 0, y: 0, width: 400, height: 250))
+        scrollView.documentView = NSView(frame: CGRect(x: 0, y: 0, width: 400, height: 1_000))
+
+        let controller = SidebarScrollIndicatorController()
+        controller.attach(scrollView: scrollView)
+        scrollView.hasVerticalScroller = true
+        controller.scroll(to: 0.5)
+
+        XCTAssertFalse(scrollView.hasVerticalScroller)
     }
 }

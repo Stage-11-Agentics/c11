@@ -37,7 +37,8 @@ This is the load-bearing rule. Suppression restricts the lifecycle to `working` 
 | Sidebar mark | rendered in **normal lifecycle colors**, no dimming |
 | Waiting count / Waiting Agent button | **excluded** |
 | ⌥V destination | **excluded** |
-| System notification | **not delivered** |
+| Routine waiting-derived system notification | **not delivered** |
+| Direct `flag.raise` system notification | **delivered when flagged** |
 | `waiting.entered` event | **not emitted** |
 | Notification store record | **written**, readable in the notifications list |
 
@@ -258,7 +259,12 @@ Content: flag glyph, reason string, X. Clicking X lowers the flag.
 
 A **flag raise** fires a `UNUserNotification` through the existing delivery path: surface title as the notification title, reason as the body. Waiting stays in-app only; a flag is exactly the signal that should reach the operator in another application.
 
-Suppressed surfaces deliver no system notification, by definition.
+Suppressed unflagged surfaces deliver no routine waiting-derived system
+notification. The separate direct notification emitted by `flag.raise` is
+exempt: a flag overrides suppression completely and therefore delivers even
+when the surface is suppressed. This exception is centralized at the direct
+flag-delivery call site; it does not make suppressed notification-store records
+signal-eligible on their own.
 
 v1 uses the existing notification sound setting. A dedicated flag sound is a reasonable follow-up, not a launch requirement.
 

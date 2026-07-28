@@ -44,30 +44,21 @@ extension TerminalController {
             }
         }
 
-        let semaphore = DispatchSemaphore(value: 0)
-        var result: V2CallResult = .err(
-            code: "main_thread_timeout",
-            message: "main thread did not respond within deadline",
-            data: nil
-        )
-        DispatchQueue.main.async {
+        let commit = FailClosedCommitGate<V2CallResult> {
             MainActor.assumeIsolated {
-                defer { semaphore.signal() }
                 guard let surfaceId = self.v2UUIDAny(trimmedSurface) else {
-                    result = .err(
+                    return .err(
                         code: "invalid_params",
                         message: "surface_id must be a UUID or surface ref",
                         data: nil
                     )
-                    return
                 }
                 let preferredWorkspaceId = self.v2UUIDAny(params["workspace_id"])
                 guard let located = AppDelegate.shared?.workspaceContainingPanel(
                     panelId: surfaceId,
                     preferredWorkspaceId: preferredWorkspaceId
                 ) else {
-                    result = .err(code: "surface_not_found", message: "Surface not found", data: nil)
-                    return
+                    return .err(code: "surface_not_found", message: "Surface not found", data: nil)
                 }
                 let workspace = located.workspace
                 do {
@@ -100,14 +91,13 @@ extension TerminalController {
                             by: actor
                         )
                     default:
-                        result = .err(code: "method_not_found", message: "Unknown method", data: nil)
-                        return
+                        return .err(code: "method_not_found", message: "Unknown method", data: nil)
                     }
                     let snapshot = SurfaceMetadataStore.shared.attentionSnapshot(
                         workspaceId: workspace.id,
                         surfaceId: surfaceId
                     )
-                    result = .ok([
+                    return .ok([
                         "workspace_id": workspace.id.uuidString,
                         "workspace_ref": self.v2Ref(kind: .workspace, uuid: workspace.id),
                         "surface_id": surfaceId.uuidString,
@@ -118,22 +108,24 @@ extension TerminalController {
                         "applied": write.applied
                     ])
                 } catch let error as SurfaceMetadataStore.WriteError {
-                    result = .err(code: "invalid_params", message: error.message, data: error.detailData)
+                    return .err(code: "invalid_params", message: error.message, data: error.detailData)
                 } catch {
-                    result = .err(code: "internal_error", message: "\(error)", data: nil)
+                    return .err(code: "internal_error", message: "\(error)", data: nil)
                 }
             }
         }
-        guard semaphore.wait(timeout: .now() + 8) == .success else { return result }
-        return result
+        commit.enqueueOnMain()
+        return commit.wait(timeout: 8) ?? .err(
+            code: "main_thread_timeout",
+            message: "main thread did not begin the attention mutation before the deadline",
+            data: nil
+        )
     }
 
     nonisolated private func v2FlagListWorker() -> V2CallResult {
-        let semaphore = DispatchSemaphore(value: 0)
-        var flags: [[String: Any]] = []
-        DispatchQueue.main.async {
+        let commit = FailClosedCommitGate<V2CallResult> {
             MainActor.assumeIsolated {
-                flags = SurfaceAttentionIndex.shared.oldestFlags.map { snapshot in
+                let flags = SurfaceAttentionIndex.shared.oldestFlags.map { snapshot in
                     [
                         "workspace_id": snapshot.workspaceId.uuidString,
                         "workspace_ref": self.v2Ref(kind: .workspace, uuid: snapshot.workspaceId),
@@ -144,12 +136,14 @@ extension TerminalController {
                         "suppressed": snapshot.suppressed
                     ]
                 }
-                semaphore.signal()
+                return .ok(["flags": flags, "count": flags.count])
             }
         }
-        guard semaphore.wait(timeout: .now() + 8) == .success else {
-            return .err(code: "main_thread_timeout", message: "main thread did not respond within deadline", data: nil)
-        }
-        return .ok(["flags": flags, "count": flags.count])
+        commit.enqueueOnMain()
+        return commit.wait(timeout: 8) ?? .err(
+            code: "main_thread_timeout",
+            message: "main thread did not begin the attention read before the deadline",
+            data: nil
+        )
     }
 }

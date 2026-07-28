@@ -1349,6 +1349,97 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
         XCTAssertFalse(hostedView.debugHasSearchOverlay())
     }
 
+    func testFlagBannerMountIsAdditiveAndDoesNotStealFocusOrReflowTerminal() {
+        let workspace = UUID()
+        let surface = TerminalSurface(
+            tabId: workspace,
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            configTemplate: nil,
+            workingDirectory: nil
+        )
+        let hostedView = surface.hostedView
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 240),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            SurfaceAttentionIndex.shared.remove(workspaceId: workspace, surfaceId: surface.id)
+            hostedView.updateFlagBanner()
+            window.orderOut(nil)
+        }
+        guard let contentView = window.contentView else {
+            XCTFail("Expected content view")
+            return
+        }
+        hostedView.frame = contentView.bounds
+        let outsideResponder = NSTextField(frame: NSRect(x: 4, y: 4, width: 80, height: 20))
+        contentView.addSubview(hostedView)
+        contentView.addSubview(outsideResponder)
+        window.makeKeyAndOrderFront(nil)
+        window.displayIfNeeded()
+        hostedView.reconcileGeometryNow()
+        XCTAssertTrue(window.makeFirstResponder(outsideResponder))
+        let before = hostedView.debugFlagBannerState()
+
+        SurfaceAttentionIndex.shared.publish(
+            SurfaceAttentionSnapshot(
+                workspaceId: workspace,
+                surfaceId: surface.id,
+                flagReason: "Need a schema decision",
+                flagRaisedAt: Date(timeIntervalSince1970: 100),
+                suppressed: false
+            )
+        )
+        hostedView.updateFlagBanner()
+        let after = hostedView.debugFlagBannerState()
+
+        XCTAssertTrue(after.isMounted)
+        XCTAssertTrue(after.isAboveFlashOverlay)
+        XCTAssertEqual(after.bannerFrame?.height, 30)
+        XCTAssertEqual(after.scrollFrame, before.scrollFrame)
+        XCTAssertEqual(after.surfaceFrame, before.surfaceFrame)
+        XCTAssertTrue(window.firstResponder === outsideResponder)
+    }
+
+    func testFlagBannerStaysBelowSearchOverlayInPortalZOrder() {
+        let workspace = UUID()
+        let surface = TerminalSurface(
+            tabId: workspace,
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            configTemplate: nil,
+            workingDirectory: nil
+        )
+        let hostedView = surface.hostedView
+        defer {
+            SurfaceAttentionIndex.shared.remove(workspaceId: workspace, surfaceId: surface.id)
+            hostedView.updateFlagBanner()
+            hostedView.setSearchOverlay(searchState: nil)
+        }
+
+        hostedView.frame = NSRect(x: 0, y: 0, width: 360, height: 240)
+        hostedView.setSearchOverlay(
+            searchState: TerminalSurface.SearchState(needle: "operator")
+        )
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        SurfaceAttentionIndex.shared.publish(
+            SurfaceAttentionSnapshot(
+                workspaceId: workspace,
+                surfaceId: surface.id,
+                flagReason: "Need operator input",
+                flagRaisedAt: Date(timeIntervalSince1970: 100),
+                suppressed: false
+            )
+        )
+        hostedView.updateFlagBanner()
+
+        let state = hostedView.debugFlagBannerState()
+        XCTAssertTrue(state.isMounted)
+        XCTAssertEqual(state.isBelowSearchOverlay, true)
+        XCTAssertTrue(state.isAboveFlashOverlay)
+    }
+
     func testRapidSearchOverlayToggleDoesNotLeaveStaleOverlayMounted() {
         let surface = TerminalSurface(
             tabId: UUID(),

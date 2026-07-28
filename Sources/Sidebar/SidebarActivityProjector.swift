@@ -119,10 +119,20 @@ struct WorkspacePulseSummary: Equatable {
         agents.lazy.filter { $0.presentedState == state }.count
     }
 
+    func visibleWaitingOverflow(visibleAgents: [WorkspacePulseAgent]) -> Int {
+        max(
+            0,
+            agentCount(for: .waiting)
+                - visibleAgents.lazy.filter { $0.presentedState == .waiting }.count
+        )
+    }
+
     var relevantAgents: [WorkspacePulseAgent] {
-        WorkspacePulseState.allCases.flatMap { state in
-            agents.filter { $0.presentedState == state }
+        let flagged = agents.filter(\.flagged)
+        let unflagged = WorkspacePulseState.allCases.flatMap { state in
+            agents.filter { !$0.flagged && $0.presentedState == state }
         }
+        return flagged + unflagged
     }
 }
 

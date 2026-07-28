@@ -65,6 +65,93 @@ enum AttentionJumpSelector {
     }
 }
 
+/// A worker-to-queue commit gate with fail-closed timeout semantics.
+///
+/// If the deadline expires while work is still pending, the gate atomically
+/// cancels it and a later queue turn becomes a no-op. If the operation has
+/// already started, the waiter follows it through completion instead of
+/// returning an ambiguous timeout that could be followed by a late commit.
+final class FailClosedCommitGate<Result>: @unchecked Sendable {
+    private enum State {
+        case pending
+        case running
+        case cancelled
+        case completed(Result)
+    }
+
+    private let condition = NSCondition()
+    private let operation: () -> Result
+    private var state: State = .pending
+
+    init(operation: @escaping () -> Result) {
+        self.operation = operation
+    }
+
+    func enqueueOnMain() {
+        enqueue { work in
+            DispatchQueue.main.async(execute: work)
+        }
+    }
+
+    func enqueue(using schedule: (@escaping @Sendable () -> Void) -> Void) {
+        schedule { [self] in
+            condition.lock()
+            guard case .pending = state else {
+                condition.unlock()
+                return
+            }
+            state = .running
+            condition.unlock()
+
+            let result = operation()
+
+            condition.lock()
+            state = .completed(result)
+            condition.broadcast()
+            condition.unlock()
+        }
+    }
+
+    func wait(timeout: TimeInterval) -> Result? {
+        let deadline = Date().addingTimeInterval(timeout)
+        condition.lock()
+        defer { condition.unlock() }
+
+        while true {
+            switch state {
+            case .pending:
+                if !condition.wait(until: deadline), case .pending = state {
+                    state = .cancelled
+                    return nil
+                }
+            case .running:
+                condition.wait()
+            case .cancelled:
+                return nil
+            case .completed(let result):
+                return result
+            }
+        }
+    }
+}
+
+/// Production seam for the launch invariant: identity and attention metadata
+/// are durable before the first byte of the agent command reaches the PTY.
+@MainActor
+enum AgentLaunchAttentionSequencer {
+    static func stampThenSend(
+        stampIdentity: () -> Void,
+        stampSuppression: () throws -> Void,
+        stampFlag: () throws -> Void,
+        sendCommand: () -> Void
+    ) rethrows {
+        stampIdentity()
+        try stampSuppression()
+        try stampFlag()
+        sendCommand()
+    }
+}
+
 @MainActor
 final class SurfaceAttentionIndex: ObservableObject {
     static let shared = SurfaceAttentionIndex()
@@ -114,10 +201,9 @@ final class SurfaceAttentionIndex: ObservableObject {
 /// Serialized boundary for canonical attention mutation and every projection.
 /// A caller receives a result only after metadata, render cache, signal index,
 /// events, and optional direct delivery are all committed.
-final class SurfaceAttentionService: @unchecked Sendable {
+@MainActor
+final class SurfaceAttentionService {
     static let shared = SurfaceAttentionService()
-
-    private let lock = NSLock()
 
     private init() {}
 
@@ -187,30 +273,67 @@ final class SurfaceAttentionService: @unchecked Sendable {
     }
 
     func restore(_ snapshot: SurfaceAttentionSnapshot) {
-        lock.lock()
-        defer { lock.unlock() }
         SurfaceMetadataStore.shared.restoreAttention(snapshot)
-        commitProjection(snapshot)
+        let canonical = SurfaceMetadataStore.shared.attentionSnapshot(
+            workspaceId: snapshot.workspaceId,
+            surfaceId: snapshot.surfaceId
+        )
+        publishProjection(canonical)
+        TerminalNotificationStore.shared.refreshSignalEligibility()
     }
 
     func remove(workspaceId: UUID, surfaceId: UUID) {
-        commitOnMain {
-            SurfaceAttentionIndex.shared.remove(workspaceId: workspaceId, surfaceId: surfaceId)
-            AppDelegate.shared?.tabManagerFor(tabId: workspaceId)?
-                .tabs.first(where: { $0.id == workspaceId })?
-                .setAttentionSnapshot(nil, forSurface: surfaceId)
-            TerminalNotificationStore.shared.refreshSignalEligibility()
+        let attention = SurfaceAttentionIndex.shared.snapshot(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId
+        )
+        if let epoch = attention.flagRaisedAt {
+            TerminalNotificationStore.shared.cancelFlagNotification(
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                flagRaisedAt: epoch
+            )
         }
+        // Raw notification history must disappear while suppression is still
+        // projected. Removing the modifier first would transiently manufacture
+        // a waiting edge for a surface that is already gone.
+        TerminalNotificationStore.shared.clearNotifications(
+            forTabId: workspaceId,
+            surfaceId: surfaceId
+        )
+        SurfaceMetadataStore.shared.removeSurface(workspaceId: workspaceId, surfaceId: surfaceId)
+        SurfaceAttentionIndex.shared.remove(workspaceId: workspaceId, surfaceId: surfaceId)
+        AppDelegate.shared?.tabManagerFor(tabId: workspaceId)?
+            .tabs.first(where: { $0.id == workspaceId })?
+            .setAttentionSnapshot(nil, forSurface: surfaceId)
     }
 
     func prune(workspaceId: UUID, validSurfaceIds: Set<UUID>) {
-        commitOnMain {
-            SurfaceAttentionIndex.shared.prune(
-                workspaceId: workspaceId,
-                validSurfaceIds: validSurfaceIds
-            )
-            TerminalNotificationStore.shared.refreshSignalEligibility()
+        for attention in SurfaceAttentionIndex.shared.oldestFlags
+        where attention.workspaceId == workspaceId
+            && !validSurfaceIds.contains(attention.surfaceId) {
+            if let epoch = attention.flagRaisedAt {
+                TerminalNotificationStore.shared.cancelFlagNotification(
+                    workspaceId: workspaceId,
+                    surfaceId: attention.surfaceId,
+                    flagRaisedAt: epoch
+                )
+            }
         }
+        // As with single-surface removal, clear raw history before removing the
+        // attention projection that currently keeps it signal-ineligible.
+        TerminalNotificationStore.shared.clearNotifications(
+            forTabId: workspaceId,
+            excludingSurfaceIds: validSurfaceIds
+        )
+        SurfaceMetadataStore.shared.pruneWorkspace(
+            workspaceId: workspaceId,
+            validSurfaceIds: validSurfaceIds
+        )
+        SurfaceAttentionIndex.shared.prune(
+            workspaceId: workspaceId,
+            validSurfaceIds: validSurfaceIds
+        )
     }
 
     private func mutate(
@@ -221,9 +344,6 @@ final class SurfaceAttentionService: @unchecked Sendable {
         actor: SurfaceAttentionActor = .agent,
         title: String? = nil
     ) throws -> SurfaceMetadataStore.WriteResult {
-        lock.lock()
-        defer { lock.unlock() }
-
         let transaction = try SurfaceMetadataStore.shared.mutateAttention(
             workspaceId: workspaceId,
             surfaceId: surfaceId,
@@ -234,84 +354,73 @@ final class SurfaceAttentionService: @unchecked Sendable {
         let suppressionChanged = transaction.result.applied[MetadataKey.suppressed] == true
         guard flagChanged || suppressionChanged else { return transaction.result }
 
-        commitOnMain {
-            self.publishProjection(transaction.after)
-            TerminalNotificationStore.shared.refreshSignalEligibility()
+        publishProjection(transaction.after)
+        TerminalNotificationStore.shared.refreshSignalEligibility()
 
-            if flagChanged {
-                if let reason = transaction.after.flagReason {
-                    EventEmitter.shared.emitFlagRaised(
-                        workspace: workspaceId,
-                        surface: surfaceId,
-                        reason: reason
-                    )
-                    // Operator decision 2026-07-28: direct flag delivery is
-                    // exempt from suppression. Routine waiting delivery is not.
-                    let deliversDirectFlagWhileSuppressed = true
-                    if !transaction.after.suppressed || deliversDirectFlagWhileSuppressed {
-                        TerminalNotificationStore.shared.deliverFlagNotification(
-                            workspaceId: workspaceId,
-                            surfaceId: surfaceId,
-                            title: title,
-                            reason: reason
-                        )
-                    }
-                } else {
-                    EventEmitter.shared.emitFlagLowered(
-                        workspace: workspaceId,
-                        surface: surfaceId,
-                        by: actor
+        if flagChanged {
+            if let reason = transaction.after.flagReason,
+               let epoch = transaction.after.flagRaisedAt {
+                EventEmitter.shared.emitFlagRaised(
+                    workspace: workspaceId,
+                    surface: surfaceId,
+                    reason: reason
+                )
+                // Operator decision 2026-07-28: direct flag delivery pierces
+                // suppression. Its stable epoch identity also replaces a
+                // prior reason revision instead of accumulating alerts.
+                TerminalNotificationStore.shared.deliverFlagNotification(
+                    workspaceId: workspaceId,
+                    surfaceId: surfaceId,
+                    flagRaisedAt: epoch,
+                    title: title,
+                    reason: reason
+                )
+            } else {
+                EventEmitter.shared.emitFlagLowered(
+                    workspace: workspaceId,
+                    surface: surfaceId,
+                    by: actor
+                )
+                if let epoch = transaction.before.flagRaisedAt {
+                    TerminalNotificationStore.shared.cancelFlagNotification(
+                        workspaceId: workspaceId,
+                        surfaceId: surfaceId,
+                        flagRaisedAt: epoch
                     )
                 }
             }
-            if suppressionChanged {
-                if transaction.after.suppressed {
-                    EventEmitter.shared.emitFlagSuppressed(
-                        workspace: workspaceId,
-                        surface: surfaceId,
-                        by: actor
-                    )
-                    TerminalNotificationStore.shared.cancelRoutineExternalNotifications(
-                        workspaceId: workspaceId,
-                        surfaceId: surfaceId
-                    )
-                } else {
-                    EventEmitter.shared.emitFlagUnsuppressed(
-                        workspace: workspaceId,
-                        surface: surfaceId,
-                        by: actor
-                    )
-                }
+        }
+        if suppressionChanged {
+            if transaction.after.suppressed {
+                EventEmitter.shared.emitFlagSuppressed(
+                    workspace: workspaceId,
+                    surface: surfaceId,
+                    by: actor
+                )
+                TerminalNotificationStore.shared.cancelRoutineExternalNotifications(
+                    workspaceId: workspaceId,
+                    surfaceId: surfaceId
+                )
+            } else {
+                EventEmitter.shared.emitFlagUnsuppressed(
+                    workspace: workspaceId,
+                    surface: surfaceId,
+                    by: actor
+                )
             }
         }
         return transaction.result
     }
 
     private func commitProjection(_ snapshot: SurfaceAttentionSnapshot) {
-        commitOnMain {
-            self.publishProjection(snapshot)
-            TerminalNotificationStore.shared.refreshSignalEligibility()
-        }
+        publishProjection(snapshot)
+        TerminalNotificationStore.shared.refreshSignalEligibility()
     }
 
-    @MainActor
     private func publishProjection(_ snapshot: SurfaceAttentionSnapshot) {
         SurfaceAttentionIndex.shared.publish(snapshot)
         AppDelegate.shared?.tabManagerFor(tabId: snapshot.workspaceId)?
             .tabs.first(where: { $0.id == snapshot.workspaceId })?
             .setAttentionSnapshot(snapshot, forSurface: snapshot.surfaceId)
-    }
-
-    private func commitOnMain(_ body: @escaping @MainActor () -> Void) {
-        if Thread.isMainThread {
-            MainActor.assumeIsolated { body() }
-            return
-        }
-        let semaphore = DispatchSemaphore(value: 0)
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated { body() }
-            semaphore.signal()
-        }
-        semaphore.wait()
     }
 }

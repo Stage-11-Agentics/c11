@@ -7751,7 +7751,6 @@ final class Workspace: Identifiable, ObservableObject {
         attentionBySurface = attentionBySurface.filter { validSurfaceIds.contains($0.key) }
         mailboxStdinBuffer.retainOnly(surfaceIds: validSurfaceIds)
         panelPullRequests = panelPullRequests.filter { validSurfaceIds.contains($0.key) }
-        SurfaceMetadataStore.shared.pruneWorkspace(workspaceId: id, validSurfaceIds: validSurfaceIds)
         SurfaceAttentionService.shared.prune(
             workspaceId: id,
             validSurfaceIds: validSurfaceIds
@@ -9531,7 +9530,6 @@ final class Workspace: Identifiable, ObservableObject {
             manualUnreadPanelIds.remove(detached.panelId)
             manualUnreadMarkedAt.removeValue(forKey: detached.panelId)
             derivedActivityBySurface.removeValue(forKey: detached.panelId)
-            SurfaceMetadataStore.shared.removeSurface(workspaceId: id, surfaceId: detached.panelId)
             SurfaceAttentionService.shared.remove(workspaceId: id, surfaceId: detached.panelId)
             panelSubscriptions.removeValue(forKey: detached.panelId)
 #if DEBUG
@@ -11831,7 +11829,6 @@ extension Workspace: BonsplitDelegate {
         restoredTerminalScrollbackByPanelId.removeValue(forKey: panelId)
         titleBarCollapsed.removeValue(forKey: panelId)
         titleBarUserCollapsed.remove(panelId)
-        SurfaceMetadataStore.shared.removeSurface(workspaceId: id, surfaceId: panelId)
         SurfaceAttentionService.shared.remove(workspaceId: id, surfaceId: panelId)
         PortScanner.shared.unregisterPanel(workspaceId: id, panelId: panelId)
         AgentDetector.shared.unregister(workspaceId: id, panelId: panelId)
@@ -11840,8 +11837,6 @@ extension Workspace: BonsplitDelegate {
             lastTerminalConfigInheritancePanelId = nil
         }
         clearRemoteConfigurationIfWorkspaceBecameLocal()
-        AppDelegate.shared?.notificationStore?.clearNotifications(forTabId: id, surfaceId: panelId)
-
         // Keep the workspace invariant for normal close paths.
         // Detach/move flows intentionally allow a temporary empty workspace so AppDelegate can
         // prune the source workspace/window after the tab is attached elsewhere.

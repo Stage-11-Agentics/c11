@@ -1127,29 +1127,43 @@ extension TerminalController {
                 }
             }
 
-            ws.stampAgentLaunchIdentity(
-                surfaceId: panel.id,
-                kind: plan.kind,
-                model: plan.model,
-                task: request.task,
-                title: title
-            )
             do {
-                if launchSuppressed {
-                    _ = try SurfaceAttentionService.shared.suppress(
-                        workspaceId: ws.id,
-                        surfaceId: panel.id,
-                        by: .operator
-                    )
-                }
-                if let launchFlagReason {
-                    _ = try SurfaceAttentionService.shared.raise(
-                        workspaceId: ws.id,
-                        surfaceId: panel.id,
-                        reason: launchFlagReason,
-                        title: ws.panelTitle(panelId: panel.id) ?? panel.displayTitle
-                    )
-                }
+                try AgentLaunchAttentionSequencer.stampThenSend(
+                    stampIdentity: {
+                        ws.stampAgentLaunchIdentity(
+                            surfaceId: panel.id,
+                            kind: plan.kind,
+                            model: plan.model,
+                            task: request.task,
+                            title: title
+                        )
+                    },
+                    stampSuppression: {
+                        if launchSuppressed {
+                            _ = try SurfaceAttentionService.shared.suppress(
+                                workspaceId: ws.id,
+                                surfaceId: panel.id,
+                                by: .operator
+                            )
+                        }
+                    },
+                    stampFlag: {
+                        if let launchFlagReason {
+                            _ = try SurfaceAttentionService.shared.raise(
+                                workspaceId: ws.id,
+                                surfaceId: panel.id,
+                                reason: launchFlagReason,
+                                title: ws.panelTitle(panelId: panel.id) ?? panel.displayTitle
+                            )
+                        }
+                    },
+                    sendCommand: {
+                        // Attention is committed before the launch line can
+                        // run, so even a fast completion cannot escape
+                        // dispatch-time suppression.
+                        panel.sendText(plan.launchLine + "\n")
+                    }
+                )
             } catch let error as SurfaceMetadataStore.WriteError {
                 result = .err(code: "invalid_params", message: error.message, data: error.detailData)
                 return
@@ -1157,9 +1171,6 @@ extension TerminalController {
                 result = .err(code: "internal_error", message: "\(error)", data: nil)
                 return
             }
-            // Attention is committed before the launch line can run, so even a
-            // fast completion cannot escape dispatch-time suppression.
-            panel.sendText(plan.launchLine + "\n")
 
             if let delayedPrompt = plan.delayedPrompt {
                 // Post-boot delivery for TUIs with no argv prompt. Same fixed

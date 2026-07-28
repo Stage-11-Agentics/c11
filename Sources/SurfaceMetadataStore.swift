@@ -645,11 +645,19 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         queue.sync {
             var blob = metadata[snapshot.workspaceId]?[snapshot.surfaceId] ?? [:]
             var sourceBlob = sources[snapshot.workspaceId]?[snapshot.surfaceId] ?? [:]
-            if let reason = snapshot.flagReason {
+            blob.removeValue(forKey: MetadataKey.flag)
+            blob.removeValue(forKey: MetadataKey.suppressed)
+            sourceBlob.removeValue(forKey: MetadataKey.flag)
+            sourceBlob.removeValue(forKey: MetadataKey.suppressed)
+
+            if let reason = snapshot.flagReason,
+               Self.validateReservedKey(MetadataKey.flag, reason) == nil {
+                let epoch = Self.validAttentionTimestamp(snapshot.flagRaisedAt?.timeIntervalSince1970)
+                    ?? Date().timeIntervalSince1970
                 blob[MetadataKey.flag] = reason
                 sourceBlob[MetadataKey.flag] = SourceRecord(
                     source: .explicit,
-                    ts: (snapshot.flagRaisedAt ?? Date()).timeIntervalSince1970
+                    ts: epoch
                 )
             }
             if snapshot.suppressed {
@@ -752,8 +760,13 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         sources: [String: SourceRecord]
     ) {
         queue.sync {
-            metadata[workspaceId, default: [:]][surfaceId] = values
-            self.sources[workspaceId, default: [:]][surfaceId] = sources
+            let canonical = Self.canonicalizingAttention(
+                values: values,
+                sources: sources,
+                now: Date()
+            )
+            metadata[workspaceId, default: [:]][surfaceId] = canonical.values
+            self.sources[workspaceId, default: [:]][surfaceId] = canonical.sources
             // Bump the revision so a post-restore autosave tick sees the
             // fingerprint differ from the pre-restore state, writing the
             // restored contents back to disk with a fresh createdAt.
@@ -764,33 +777,89 @@ final class SurfaceMetadataStore: @unchecked Sendable {
     /// Remove all metadata for a surface. Called from `pruneSurfaceMetadata`
     /// when a surface closes. Bypasses precedence (the surface is gone).
     func removeSurface(workspaceId: UUID, surfaceId: UUID) {
-        queue.async { [self] in
-            metadata[workspaceId]?.removeValue(forKey: surfaceId)
-            sources[workspaceId]?.removeValue(forKey: surfaceId)
+        queue.sync {
+            let removedMetadata = metadata[workspaceId]?.removeValue(forKey: surfaceId) != nil
+            let removedSources = sources[workspaceId]?.removeValue(forKey: surfaceId) != nil
+            if removedMetadata || removedSources {
+                metadataStoreRevision &+= 1
+            }
         }
     }
 
     /// Remove metadata for any surfaces not in the `validSurfaceIds` set.
     /// Called from `Workspace.pruneSurfaceMetadata`.
     func pruneWorkspace(workspaceId: UUID, validSurfaceIds: Set<UUID>) {
-        queue.async { [self] in
+        queue.sync {
+            var removedAny = false
             if var wsMetadata = metadata[workspaceId] {
+                let priorCount = wsMetadata.count
                 wsMetadata = wsMetadata.filter { validSurfaceIds.contains($0.key) }
                 metadata[workspaceId] = wsMetadata
+                removedAny = removedAny || wsMetadata.count != priorCount
             }
             if var wsSources = sources[workspaceId] {
+                let priorCount = wsSources.count
                 wsSources = wsSources.filter { validSurfaceIds.contains($0.key) }
                 sources[workspaceId] = wsSources
+                removedAny = removedAny || wsSources.count != priorCount
+            }
+            if removedAny {
+                metadataStoreRevision &+= 1
             }
         }
     }
 
     /// Remove all metadata for a workspace.
     func removeWorkspace(workspaceId: UUID) {
-        queue.async { [self] in
-            metadata.removeValue(forKey: workspaceId)
-            sources.removeValue(forKey: workspaceId)
+        queue.sync {
+            let removedMetadata = metadata.removeValue(forKey: workspaceId) != nil
+            let removedSources = sources.removeValue(forKey: workspaceId) != nil
+            if removedMetadata || removedSources {
+                metadataStoreRevision &+= 1
+            }
         }
+    }
+
+    private static func canonicalizingAttention(
+        values: [String: Any],
+        sources: [String: SourceRecord],
+        now: Date
+    ) -> (values: [String: Any], sources: [String: SourceRecord]) {
+        var values = values
+        var sources = sources
+        let fallbackTimestamp = now.timeIntervalSince1970
+
+        if let reason = values[MetadataKey.flag] as? String,
+           validateReservedKey(MetadataKey.flag, reason) == nil {
+            values[MetadataKey.flag] = reason
+            sources[MetadataKey.flag] = SourceRecord(
+                source: .explicit,
+                ts: validAttentionTimestamp(sources[MetadataKey.flag]?.ts) ?? fallbackTimestamp
+            )
+        } else {
+            values.removeValue(forKey: MetadataKey.flag)
+            sources.removeValue(forKey: MetadataKey.flag)
+        }
+
+        if values[MetadataKey.suppressed] as? Bool == true {
+            values[MetadataKey.suppressed] = true
+            sources[MetadataKey.suppressed] = SourceRecord(
+                source: .explicit,
+                ts: validAttentionTimestamp(sources[MetadataKey.suppressed]?.ts) ?? fallbackTimestamp
+            )
+        } else {
+            // `false` is the canonical absence of suppression. Invalid values
+            // and orphan source records are dropped rather than installed.
+            values.removeValue(forKey: MetadataKey.suppressed)
+            sources.removeValue(forKey: MetadataKey.suppressed)
+        }
+
+        return (values, sources)
+    }
+
+    private static func validAttentionTimestamp(_ value: Double?) -> Double? {
+        guard let value, value.isFinite, value > 0 else { return nil }
+        return value
     }
 
     // MARK: - Internal write path (used by heuristic — no socket round-trip)

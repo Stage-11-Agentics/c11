@@ -8378,6 +8378,39 @@ final class GhosttySurfaceScrollView: NSView {
         return overlay.superview === self && !overlay.isHidden
     }
 
+    struct DebugFlagBannerState {
+        let isMounted: Bool
+        let bannerFrame: CGRect?
+        let scrollFrame: CGRect
+        let surfaceFrame: CGRect
+        let isAboveFlashOverlay: Bool
+        let isBelowSearchOverlay: Bool?
+    }
+
+    func debugFlagBannerState() -> DebugFlagBannerState {
+        let bannerIndex = flagBannerHostingView.flatMap { banner in
+            subviews.firstIndex(where: { $0 === banner })
+        }
+        let flashIndex = subviews.firstIndex(where: { $0 === flashOverlayView })
+        let searchIndex = searchOverlayHostingView.flatMap { search in
+            subviews.firstIndex(where: { $0 === search })
+        }
+        return DebugFlagBannerState(
+            isMounted: flagBannerHostingView?.superview === self,
+            bannerFrame: flagBannerHostingView?.frame,
+            scrollFrame: scrollView.frame,
+            surfaceFrame: surfaceView.frame,
+            isAboveFlashOverlay: {
+                guard let bannerIndex, let flashIndex else { return false }
+                return bannerIndex > flashIndex
+            }(),
+            isBelowSearchOverlay: searchIndex.map { searchIndex in
+                guard let bannerIndex else { return false }
+                return bannerIndex < searchIndex
+            }
+        )
+    }
+
     func debugHasKeyboardCopyModeIndicator() -> Bool {
         keyboardCopyModeBadgeContainerView.superview === self && !keyboardCopyModeBadgeContainerView.isHidden
     }

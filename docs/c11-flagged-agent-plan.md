@@ -1,6 +1,6 @@
 # Flagged and Suppressed Agents
 
-Design spec for two modifiers on the existing attention model: **flagged** agents that explicitly request human involvement and jump the queue, and **suppressed** agents that reach the operator through no channel at all.
+Design spec for two modifiers on the existing attention model: **flagged** agents that explicitly request human involvement and jump the queue, and **suppressed** agents that produce no routine attention signal unless a flag overrides suppression.
 
 ## Motivation
 
@@ -21,7 +21,7 @@ The existing lifecycle (`working` / `waiting` / `idle` / `cold`) is unchanged an
 | Field | Type | Set by | Meaning |
 |---|---|---|---|
 | `flag` | reason string, or none | agent mid-run, or operator at dispatch | a human must act, or this mission is one the operator intends to watch |
-| `suppressed` | Bool | operator (usually at dispatch) or agent | this surface reaches the operator through no channel |
+| `suppressed` | Bool | operator (usually at dispatch) or agent | routine attention is withheld; a direct flag escalation still reaches the operator |
 
 A flagged agent still has a full lifecycle: it can be flagged-and-working, flagged-and-idle, flagged-and-waiting. Flagging qualifies the state without replacing it. Suppression works differently: it *restricts* which states are reachable, barring needs-attention entirely (below).
 
@@ -31,7 +31,7 @@ A flagged agent still has a full lifecycle: it can be flagged-and-working, flagg
 
 This is the load-bearing rule. Suppression restricts the lifecycle to `working` / `idle` / `cold`. On stop, a suppressed surface reads **idle**, never needs-attention.
 
-| | Suppressed surface |
+| | Suppressed, unflagged surface |
 |---|---|
 | Lifecycle state | `working` / `idle` / `cold` only; **never** `waiting` |
 | Sidebar mark | rendered in **normal lifecycle colors**, no dimming |
@@ -41,6 +41,10 @@ This is the load-bearing rule. Suppression restricts the lifecycle to `working` 
 | Direct `flag.raise` system notification | **delivered when flagged** |
 | `waiting.entered` event | **not emitted** |
 | Notification store record | **written**, readable in the notifications list |
+
+Once that surface raises a flag, the flag tier overrides every restriction in
+this table, including waiting reachability, `waiting.entered`, ⌥V priority, and
+direct external delivery.
 
 **Known cost, accepted deliberately.** A suppressed agent that finished and one that stalled both read as idle. The glance-read of "this one is done" is given up; the notifications list remains the record. This is the trade the operator opts into by suppressing, and it is the price of the mark never implying a demand the operator asked not to receive.
 

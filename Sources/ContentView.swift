@@ -10784,7 +10784,7 @@ private struct FlaggedAgentsRow: View {
                     .accessibilityHidden(true)
 
                 Spacer(minLength: 4)
-                Text("\u{2192}")
+                Text(verbatim: "\u{2192}")
                     .font(.system(size: 13, weight: .medium))
             }
             .padding(.horizontal, 10)
@@ -12098,11 +12098,17 @@ private struct TabItemView: View, Equatable {
     }
 
     private var workspacePulseWaitingOverflow: Int {
-        max(
-            0,
-            workspacePulse.agentCount(for: .waiting)
-                - workspacePulseVisibleAgents.filter { $0.state == .waiting }.count
-        )
+        workspacePulse.visibleWaitingOverflow(visibleAgents: workspacePulseVisibleAgents)
+    }
+
+    private func workspacePulseMarkAccessibilityLabel(_ agent: WorkspacePulseAgent) -> String {
+        if agent.flagged {
+            return String(
+                localized: "sidebar.workspacePulse.flagged.accessibility",
+                defaultValue: "Flagged agent: \(agent.flagReason ?? "")"
+            )
+        }
+        return agent.context?.title ?? workspacePulseLabel(for: agent.presentedState)
     }
 
     private func openWorkspacePulseAgent(_ agent: WorkspacePulseAgent) {
@@ -12301,7 +12307,7 @@ private struct TabItemView: View, Equatable {
                     workspacePulseMark(for: agent)
                         .frame(width: layout.slot, height: 14)
                         .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(Text(agent.context?.title ?? workspacePulseLabel(for: agent.presentedState)))
+                        .accessibilityLabel(Text(workspacePulseMarkAccessibilityLabel(agent)))
                         .accessibilityValue(Text(workspacePulseLabel(for: agent.presentedState)))
                 }
             }

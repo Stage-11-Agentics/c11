@@ -6,6 +6,27 @@ import XCTest
 @testable import c11
 #endif
 
+private final class AttentionTestBox<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value
+
+    init(_ value: Value) {
+        self.value = value
+    }
+
+    func get() -> Value {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func set(_ value: Value) {
+        lock.lock()
+        self.value = value
+        lock.unlock()
+    }
+}
+
 @MainActor
 final class AttentionModelTests: XCTestCase {
     private let store = SurfaceMetadataStore.shared
@@ -71,6 +92,33 @@ final class AttentionModelTests: XCTestCase {
         )
         XCTAssertEqual(noOp.result.applied[MetadataKey.flag], false)
         XCTAssertEqual(noOp.result.applied[MetadataKey.suppressed], false)
+
+        let lowered = try store.mutateAttention(
+            workspaceId: workspace,
+            surfaceId: surface,
+            flag: .lower,
+            now: Date(timeIntervalSince1970: 3_000)
+        )
+        XCTAssertNil(lowered.after.flagRaisedAt)
+        let reraised = try store.mutateAttention(
+            workspaceId: workspace,
+            surfaceId: surface,
+            flag: .raise("New epoch"),
+            now: Date(timeIntervalSince1970: 4_000)
+        )
+        XCTAssertEqual(reraised.after.flagRaisedAt, Date(timeIntervalSince1970: 4_000))
+        XCTAssertNotEqual(
+            TerminalNotificationStore.flagNotificationIdentifier(
+                workspaceId: workspace,
+                surfaceId: surface,
+                flagRaisedAt: raisedAt
+            ),
+            TerminalNotificationStore.flagNotificationIdentifier(
+                workspaceId: workspace,
+                surfaceId: surface,
+                flagRaisedAt: reraised.after.flagRaisedAt!
+            )
+        )
     }
 
     func testSnapshotRestorePreservesAttentionReasonSuppressionAndRaiseTimestamp() {
@@ -102,6 +150,76 @@ final class AttentionModelTests: XCTestCase {
         XCTAssertEqual(
             store.getSource(workspaceId: workspace, surfaceId: surface, key: MetadataKey.suppressed),
             .explicit
+        )
+    }
+
+    func testSnapshotRestoreCanonicalizesAttentionSourcesAndRejectsAdversarialValues() {
+        let workspace = UUID()
+        let validSurface = UUID()
+        let invalidSurface = UUID()
+        defer {
+            store.removeSurface(workspaceId: workspace, surfaceId: validSurface)
+            store.removeSurface(workspaceId: workspace, surfaceId: invalidSurface)
+        }
+        let epoch: Double = 1_725_000_999
+
+        store.restoreFromSnapshot(
+            workspaceId: workspace,
+            surfaceId: validSurface,
+            values: [
+                MetadataKey.flag: "Need operator approval",
+                MetadataKey.suppressed: true,
+                "opaque": "preserved",
+            ],
+            sources: [
+                MetadataKey.flag: .init(source: .heuristic, ts: epoch),
+                MetadataKey.suppressed: .init(source: .osc, ts: .infinity),
+                "opaque": .init(source: .declare, ts: 12),
+            ]
+        )
+        let valid = store.attentionSnapshot(workspaceId: workspace, surfaceId: validSurface)
+        XCTAssertEqual(valid.flagReason, "Need operator approval")
+        XCTAssertEqual(valid.flagRaisedAt?.timeIntervalSince1970, epoch)
+        XCTAssertTrue(valid.suppressed)
+        XCTAssertEqual(
+            store.getSource(workspaceId: workspace, surfaceId: validSurface, key: MetadataKey.flag),
+            .explicit
+        )
+        XCTAssertEqual(
+            store.getSource(workspaceId: workspace, surfaceId: validSurface, key: MetadataKey.suppressed),
+            .explicit
+        )
+        XCTAssertEqual(
+            store.getMetadata(workspaceId: workspace, surfaceId: validSurface)
+                .metadata["opaque"] as? String,
+            "preserved"
+        )
+
+        store.restoreFromSnapshot(
+            workspaceId: workspace,
+            surfaceId: invalidSurface,
+            values: [
+                MetadataKey.flag: " two lines\n",
+                MetadataKey.suppressed: "true",
+            ],
+            sources: [
+                MetadataKey.flag: .init(source: .explicit, ts: .nan),
+                MetadataKey.suppressed: .init(source: .explicit, ts: -1),
+            ]
+        )
+        let invalid = store.attentionSnapshot(workspaceId: workspace, surfaceId: invalidSurface)
+        XCTAssertNil(invalid.flagReason)
+        XCTAssertNil(invalid.flagRaisedAt)
+        XCTAssertFalse(invalid.suppressed)
+        XCTAssertNil(
+            store.getSource(workspaceId: workspace, surfaceId: invalidSurface, key: MetadataKey.flag)
+        )
+        XCTAssertNil(
+            store.getSource(
+                workspaceId: workspace,
+                surfaceId: invalidSurface,
+                key: MetadataKey.suppressed
+            )
         )
     }
 
@@ -205,6 +323,111 @@ final class AttentionModelTests: XCTestCase {
         )
     }
 
+    func testFailClosedCommitGateCancelsPendingMutationAfterTimeout() {
+        let mutationCount = AttentionTestBox(0)
+        let scheduled = AttentionTestBox<(@Sendable () -> Void)?>(nil)
+        let gate = FailClosedCommitGate<Int> {
+            mutationCount.set(mutationCount.get() + 1)
+            return 7
+        }
+        gate.enqueue { work in
+            scheduled.set(work)
+        }
+
+        XCTAssertNil(gate.wait(timeout: 0.001))
+        scheduled.get()?()
+        XCTAssertEqual(mutationCount.get(), 0, "Timed-out pending work must be a permanent no-op")
+    }
+
+    func testFailClosedCommitGateWaitsThroughRunningCommitBeforeResponse() {
+        let started = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let order = AttentionTestBox<[String]>([])
+        let gate = FailClosedCommitGate<Int> {
+            order.set(order.get() + ["commit.started"])
+            started.signal()
+            release.wait()
+            order.set(order.get() + ["commit.finished"])
+            return 9
+        }
+        gate.enqueue { work in
+            DispatchQueue.global(qos: .userInitiated).async(execute: work)
+        }
+        XCTAssertEqual(started.wait(timeout: .now() + 1), .success)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.02) {
+            release.signal()
+        }
+
+        XCTAssertEqual(gate.wait(timeout: 0.001), 9)
+        order.set(order.get() + ["response"])
+        XCTAssertEqual(order.get(), ["commit.started", "commit.finished", "response"])
+    }
+
+    func testFlagListSocketMethodReturnsOldestFirstWithCanonicalFields() {
+        let workspace = UUID()
+        let olderSurface = UUID()
+        let newerSurface = UUID()
+        let controller = TerminalController.shared
+        SurfaceAttentionIndex.shared.publish(
+            SurfaceAttentionSnapshot(
+                workspaceId: workspace,
+                surfaceId: newerSurface,
+                flagReason: "newer",
+                flagRaisedAt: Date(timeIntervalSince1970: 20),
+                suppressed: false
+            )
+        )
+        SurfaceAttentionIndex.shared.publish(
+            SurfaceAttentionSnapshot(
+                workspaceId: workspace,
+                surfaceId: olderSurface,
+                flagReason: "older",
+                flagRaisedAt: Date(timeIntervalSince1970: 10),
+                suppressed: true
+            )
+        )
+        defer {
+            SurfaceAttentionIndex.shared.remove(workspaceId: workspace, surfaceId: olderSurface)
+            SurfaceAttentionIndex.shared.remove(workspaceId: workspace, surfaceId: newerSurface)
+        }
+
+        let response = AttentionTestBox<String?>(nil)
+        let completed = expectation(description: "flag.list worker response")
+        DispatchQueue.global(qos: .userInitiated).async {
+            response.set(
+                controller.socketWorkerV2Response(
+                    TerminalController.V2SocketRequest(id: 17, method: "flag.list", params: [:])
+                )
+            )
+            completed.fulfill()
+        }
+        wait(for: [completed], timeout: 2)
+
+        let data = try! XCTUnwrap(response.get()?.data(using: .utf8))
+        let object = try! XCTUnwrap(
+            try! JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        XCTAssertEqual(object["ok"] as? Bool, true)
+        let result = try! XCTUnwrap(object["result"] as? [String: Any])
+        let flags = try! XCTUnwrap(result["flags"] as? [[String: Any]])
+        XCTAssertEqual(result["count"] as? Int, 2)
+        XCTAssertEqual(flags.compactMap { $0["reason"] as? String }, ["older", "newer"])
+        XCTAssertEqual(flags.first?["suppressed"] as? Bool, true)
+        XCTAssertEqual(flags.first?["workspace_id"] as? String, workspace.uuidString)
+        XCTAssertEqual(flags.first?["surface_id"] as? String, olderSurface.uuidString)
+    }
+
+    func testLaunchSequencerStampsIdentityAndAttentionBeforeSendingCommand() {
+        var order: [String] = []
+        AgentLaunchAttentionSequencer.stampThenSend(
+            stampIdentity: { order.append("identity") },
+            stampSuppression: { order.append("suppression") },
+            stampFlag: { order.append("flag") },
+            sendCommand: { order.append("command") }
+        )
+        XCTAssertEqual(order, ["identity", "suppression", "flag", "command"])
+    }
+
     func testNotificationIndexesRetainSuppressedHistoryButExcludeItsSignal() {
         let workspace = UUID()
         let suppressedSurface = UUID()
@@ -227,6 +450,111 @@ final class AttentionModelTests: XCTestCase {
             indexes.unreadByTabSurface.contains(
                 .init(tabId: workspace, surfaceId: suppressedSurface)
             )
+        )
+    }
+
+    func testSuppressionEdgesRetainRawHistoryWhileTogglingSignalDemand() throws {
+        let workspace = UUID()
+        let surface = UUID()
+        let notificationStore = TerminalNotificationStore.shared
+        let originalNotifications = notificationStore.notifications
+        var edges: [Bool] = []
+        notificationStore.replaceNotificationsForTesting([])
+        notificationStore.configureWaitingEdgeHandlerForTesting { entered, tabId in
+            if tabId == workspace { edges.append(entered) }
+        }
+        defer {
+            notificationStore.resetWaitingEdgeHandlerForTesting()
+            notificationStore.replaceNotificationsForTesting(originalNotifications)
+            SurfaceAttentionService.shared.remove(workspaceId: workspace, surfaceId: surface)
+        }
+
+        notificationStore.replaceNotificationsForTesting([
+            notification(workspace: workspace, surface: surface)
+        ])
+        _ = try SurfaceAttentionService.shared.suppress(
+            workspaceId: workspace,
+            surfaceId: surface,
+            by: .operator
+        )
+        XCTAssertEqual(notificationStore.rawUnreadCount, 1)
+        XCTAssertEqual(notificationStore.unreadCount, 0)
+        _ = try SurfaceAttentionService.shared.unsuppress(
+            workspaceId: workspace,
+            surfaceId: surface,
+            by: .operator
+        )
+        XCTAssertEqual(notificationStore.rawUnreadCount, 1)
+        XCTAssertEqual(notificationStore.unreadCount, 1)
+        XCTAssertEqual(edges, [true, false, true])
+    }
+
+    func testRemoveAndPruneClearHistoryBeforeDroppingSuppressionProjection() {
+        let workspace = UUID()
+        let removedSurface = UUID()
+        let prunedSurface = UUID()
+        let notificationStore = TerminalNotificationStore.shared
+        let originalNotifications = notificationStore.notifications
+        var edges: [Bool] = []
+        notificationStore.replaceNotificationsForTesting([])
+        notificationStore.configureWaitingEdgeHandlerForTesting { entered, tabId in
+            if tabId == workspace { edges.append(entered) }
+        }
+        defer {
+            notificationStore.resetWaitingEdgeHandlerForTesting()
+            notificationStore.replaceNotificationsForTesting(originalNotifications)
+            SurfaceAttentionService.shared.remove(workspaceId: workspace, surfaceId: removedSurface)
+            SurfaceAttentionService.shared.remove(workspaceId: workspace, surfaceId: prunedSurface)
+        }
+
+        SurfaceAttentionService.shared.restore(
+            SurfaceAttentionSnapshot(
+                workspaceId: workspace,
+                surfaceId: removedSurface,
+                flagReason: nil,
+                flagRaisedAt: nil,
+                suppressed: true
+            )
+        )
+        notificationStore.replaceNotificationsForTesting([
+            notification(workspace: workspace, surface: removedSurface)
+        ])
+        XCTAssertEqual(notificationStore.rawUnreadCount, 1)
+        XCTAssertEqual(notificationStore.unreadCount, 0)
+        edges.removeAll()
+
+        SurfaceAttentionService.shared.remove(workspaceId: workspace, surfaceId: removedSurface)
+        XCTAssertEqual(notificationStore.rawUnreadCount, 0)
+        XCTAssertEqual(notificationStore.unreadCount, 0)
+        XCTAssertTrue(edges.isEmpty, "Close must not manufacture waiting.entered/left edges")
+        XCTAssertFalse(
+            SurfaceAttentionIndex.shared.snapshot(
+                workspaceId: workspace,
+                surfaceId: removedSurface
+            ).suppressed
+        )
+
+        SurfaceAttentionService.shared.restore(
+            SurfaceAttentionSnapshot(
+                workspaceId: workspace,
+                surfaceId: prunedSurface,
+                flagReason: nil,
+                flagRaisedAt: nil,
+                suppressed: true
+            )
+        )
+        notificationStore.replaceNotificationsForTesting([
+            notification(workspace: workspace, surface: prunedSurface)
+        ])
+        edges.removeAll()
+        SurfaceAttentionService.shared.prune(workspaceId: workspace, validSurfaceIds: [])
+        XCTAssertEqual(notificationStore.rawUnreadCount, 0)
+        XCTAssertTrue(edges.isEmpty, "Prune must not expose invalid-surface demand transiently")
+        XCTAssertFalse(
+            SurfaceAttentionIndex.shared.snapshot(
+                workspaceId: workspace,
+                surfaceId: prunedSurface
+            ).suppressed
         )
     }
 
@@ -278,12 +606,20 @@ final class AttentionModelTests: XCTestCase {
         let notificationStore = TerminalNotificationStore.shared
         let originalHistoryCount = notificationStore.notifications.count
         var delivered: [TerminalNotification] = []
+        var replacementOrder: [String] = []
+        notificationStore.configureFlagNotificationReplacementHandlerForTesting {
+            identifier,
+            add in
+            replacementOrder.append("remove:\(identifier)")
+            add()
+        }
         notificationStore.configureNotificationDeliveryHandlerForTesting { _, notification in
+            replacementOrder.append("add:\(notification.systemIdentifier ?? "")")
             delivered.append(notification)
         }
         defer {
+            notificationStore.resetFlagNotificationReplacementHandlerForTesting()
             notificationStore.resetNotificationDeliveryHandlerForTesting()
-            store.removeSurface(workspaceId: workspace, surfaceId: surface)
             SurfaceAttentionService.shared.remove(workspaceId: workspace, surfaceId: surface)
         }
 
@@ -298,10 +634,39 @@ final class AttentionModelTests: XCTestCase {
             reason: "Blocked on operator decision",
             title: "Build agent"
         )
+        _ = try SurfaceAttentionService.shared.raise(
+            workspaceId: workspace,
+            surfaceId: surface,
+            reason: "Blocked on revised operator decision",
+            title: "Build agent"
+        )
 
-        XCTAssertEqual(delivered.count, 1)
-        XCTAssertEqual(delivered.first?.body, "Blocked on operator decision")
+        XCTAssertEqual(delivered.count, 2)
+        XCTAssertEqual(delivered.last?.body, "Blocked on revised operator decision")
+        XCTAssertEqual(delivered[0].systemIdentifier, delivered[1].systemIdentifier)
+        XCTAssertEqual(
+            replacementOrder,
+            delivered.flatMap { notification in
+                let identifier = notification.systemIdentifier ?? ""
+                return ["remove:\(identifier)", "add:\(identifier)"]
+            },
+            "Each active-epoch revision must finish removal before scheduling its replacement"
+        )
         XCTAssertEqual(notificationStore.notifications.count, originalHistoryCount)
+
+        _ = try SurfaceAttentionService.shared.lower(
+            workspaceId: workspace,
+            surfaceId: surface,
+            by: .operator
+        )
+        _ = try SurfaceAttentionService.shared.raise(
+            workspaceId: workspace,
+            surfaceId: surface,
+            reason: "New active epoch",
+            title: "Build agent"
+        )
+        XCTAssertEqual(delivered.count, 3)
+        XCTAssertNotEqual(delivered[1].systemIdentifier, delivered[2].systemIdentifier)
     }
 
     private func notification(workspace: UUID, surface: UUID) -> TerminalNotification {

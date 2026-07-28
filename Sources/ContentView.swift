@@ -8459,7 +8459,6 @@ struct VerticalTabsSidebar: View {
     @StateObject private var modifierKeyMonitor = SidebarShortcutHintModifierMonitor()
     @StateObject private var dragAutoScrollController = SidebarDragAutoScrollController()
     @StateObject private var dragFailsafeMonitor = SidebarDragFailsafeMonitor()
-    @StateObject private var scrollIndicatorController = SidebarScrollIndicatorController()
     @State private var draggedTabId: UUID?
     @State private var dropIndicator: SidebarDropIndicator?
     @AppStorage(SidebarWorkspaceDetailSettings.hideAllDetailsKey)
@@ -8753,7 +8752,6 @@ struct VerticalTabsSidebar: View {
                 .background(
                     SidebarScrollViewResolver { scrollView in
                         dragAutoScrollController.attach(scrollView: scrollView)
-                        scrollIndicatorController.attach(scrollView: scrollView)
                     }
                     .frame(width: 0, height: 0)
                 )
@@ -8777,11 +8775,7 @@ struct VerticalTabsSidebar: View {
                 .background(Color.clear)
                 .modifier(ClearScrollBackground())
             }
-            SidebarFooter(
-                updateViewModel: updateViewModel,
-                scrollIndicatorController: scrollIndicatorController,
-                onSendFeedback: onSendFeedback
-            )
+            SidebarFooter(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityIdentifier("Sidebar")
@@ -9722,22 +9716,13 @@ private final class SidebarShortcutHintModifierMonitor: ObservableObject {
 
 private struct SidebarFooter: View {
     @ObservedObject var updateViewModel: UpdateViewModel
-    let scrollIndicatorController: SidebarScrollIndicatorController
     let onSendFeedback: () -> Void
 
     var body: some View {
 #if DEBUG
-        SidebarDevFooter(
-            updateViewModel: updateViewModel,
-            scrollIndicatorController: scrollIndicatorController,
-            onSendFeedback: onSendFeedback
-        )
+        SidebarDevFooter(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback)
 #else
-        SidebarFooterButtons(
-            updateViewModel: updateViewModel,
-            scrollIndicatorController: scrollIndicatorController,
-            onSendFeedback: onSendFeedback
-        )
+        SidebarFooterButtons(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback)
             .padding(.leading, 6)
             .padding(.trailing, 10)
             .padding(.bottom, 6)
@@ -9747,19 +9732,11 @@ private struct SidebarFooter: View {
 
 private struct SidebarFooterButtons: View {
     @ObservedObject var updateViewModel: UpdateViewModel
-    let scrollIndicatorController: SidebarScrollIndicatorController
     let onSendFeedback: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             SidebarWaitingAgentCluster()
-                .padding(.trailing, 14)
-                .overlay(alignment: .trailing) {
-                    SidebarFooterScrollIndicator(controller: scrollIndicatorController)
-                        .frame(width: 8)
-                        .frame(maxHeight: .infinity)
-                }
-                .frame(maxWidth: .infinity)
             HStack(spacing: 4) {
                 SidebarHelpMenuButton(onSendFeedback: onSendFeedback)
                 UpdatePill(model: updateViewModel)
@@ -11143,18 +11120,13 @@ private struct SidebarFooterIconButtonStyleBody: View {
 #if DEBUG
 private struct SidebarDevFooter: View {
     @ObservedObject var updateViewModel: UpdateViewModel
-    let scrollIndicatorController: SidebarScrollIndicatorController
     let onSendFeedback: () -> Void
     @AppStorage(DevBuildBannerDebugSettings.sidebarBannerVisibleKey)
     private var showSidebarDevBuildBanner = DevBuildBannerDebugSettings.defaultShowSidebarBanner
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SidebarFooterButtons(
-                updateViewModel: updateViewModel,
-                scrollIndicatorController: scrollIndicatorController,
-                onSendFeedback: onSendFeedback
-            )
+            SidebarFooterButtons(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback)
             if showSidebarDevBuildBanner {
                 Text(String(localized: "debug.devBuildBanner.title", defaultValue: "THIS IS A DEV BUILD"))
                     .font(.system(size: 11, weight: .semibold))
@@ -11215,11 +11187,6 @@ private struct SidebarScrollViewResolver: NSViewRepresentable {
         nsView.onResolve = onResolve
         nsView.resolveScrollView()
     }
-
-    static func dismantleNSView(_ nsView: SidebarScrollViewResolverView, coordinator: ()) {
-        nsView.onResolve?(nil)
-        nsView.onResolve = nil
-    }
 }
 
 private final class SidebarScrollViewResolverView: NSView {
@@ -11240,301 +11207,6 @@ private final class SidebarScrollViewResolverView: NSView {
             guard let self else { return }
             onResolve?(self.enclosingScrollView)
         }
-    }
-}
-
-struct SidebarScrollIndicatorMetrics: Equatable {
-    let position: CGFloat
-    let knobProportion: CGFloat
-    let isScrollable: Bool
-
-    static func resolve(
-        documentHeight: CGFloat,
-        visibleHeight: CGFloat,
-        offsetFromTop: CGFloat
-    ) -> SidebarScrollIndicatorMetrics {
-        guard documentHeight > 0, visibleHeight > 0 else {
-            return SidebarScrollIndicatorMetrics(
-                position: 0,
-                knobProportion: 1,
-                isScrollable: false
-            )
-        }
-
-        let clampedVisibleHeight = min(visibleHeight, documentHeight)
-        let scrollRange = max(documentHeight - clampedVisibleHeight, 0)
-        guard scrollRange > 0.5 else {
-            return SidebarScrollIndicatorMetrics(
-                position: 0,
-                knobProportion: 1,
-                isScrollable: false
-            )
-        }
-
-        return SidebarScrollIndicatorMetrics(
-            position: min(max(offsetFromTop / scrollRange, 0), 1),
-            knobProportion: min(max(clampedVisibleHeight / documentHeight, 0), 1),
-            isScrollable: true
-        )
-    }
-
-    static func documentOriginY(
-        position: CGFloat,
-        documentBounds: CGRect,
-        visibleHeight: CGFloat,
-        isFlipped: Bool
-    ) -> CGFloat {
-        let scrollRange = max(documentBounds.height - visibleHeight, 0)
-        let clampedPosition = min(max(position, 0), 1)
-        if isFlipped {
-            return documentBounds.minY + (scrollRange * clampedPosition)
-        }
-        return documentBounds.maxY - visibleHeight - (scrollRange * clampedPosition)
-    }
-}
-
-@MainActor
-final class SidebarScrollIndicatorController: ObservableObject {
-    private weak var scrollView: NSScrollView?
-    private weak var indicator: SidebarFooterScroller?
-    private var observationTokens: [NSObjectProtocol] = []
-    private var hasVerticalScrollerObservation: NSKeyValueObservation?
-    private var originalHasVerticalScroller: Bool?
-    private var originalClipPostsBoundsChanges: Bool?
-    private var originalScrollPostsFrameChanges: Bool?
-    private var originalDocumentPostsFrameChanges: Bool?
-
-    func attach(scrollView: NSScrollView?) {
-        if self.scrollView === scrollView {
-            // SwiftUI may re-apply its own scroll configuration during an
-            // update. Keep the edge scroller suppressed while this controller
-            // owns the footer replacement.
-            suppressStockScroller()
-            synchronize()
-            return
-        }
-
-        detach()
-        guard let scrollView else { return }
-
-        self.scrollView = scrollView
-        originalHasVerticalScroller = scrollView.hasVerticalScroller
-        originalClipPostsBoundsChanges = scrollView.contentView.postsBoundsChangedNotifications
-        originalScrollPostsFrameChanges = scrollView.postsFrameChangedNotifications
-        originalDocumentPostsFrameChanges = scrollView.documentView?.postsFrameChangedNotifications
-
-        // The sidebar's stock overlay scroller is managed at the viewport's
-        // trailing edge. Suppress that presentation; the footer scroller below
-        // remains wired to the same clip view and scroll position.
-        suppressStockScroller()
-        hasVerticalScrollerObservation = scrollView.observe(
-            \.hasVerticalScroller,
-            options: [.new]
-        ) { [weak self] _, change in
-            guard change.newValue == true else { return }
-            Task { @MainActor [weak self] in
-                self?.suppressStockScroller()
-            }
-        }
-        scrollView.contentView.postsBoundsChangedNotifications = true
-        scrollView.postsFrameChangedNotifications = true
-        scrollView.documentView?.postsFrameChangedNotifications = true
-
-        observe(
-            name: NSView.boundsDidChangeNotification,
-            object: scrollView.contentView
-        )
-        observe(
-            name: NSView.frameDidChangeNotification,
-            object: scrollView
-        )
-        if let documentView = scrollView.documentView {
-            observe(
-                name: NSView.frameDidChangeNotification,
-                object: documentView
-            )
-        }
-        synchronize()
-    }
-
-    fileprivate func register(indicator: SidebarFooterScroller) {
-        self.indicator = indicator
-        indicator.controller = self
-        synchronize()
-    }
-
-    fileprivate func unregister(indicator: SidebarFooterScroller) {
-        guard self.indicator === indicator else { return }
-        indicator.controller = nil
-        self.indicator = nil
-    }
-
-    func scroll(to position: CGFloat) {
-        guard let scrollView, let documentView = scrollView.documentView else { return }
-
-        let clipView = scrollView.contentView
-        let targetY = SidebarScrollIndicatorMetrics.documentOriginY(
-            position: position,
-            documentBounds: documentView.bounds,
-            visibleHeight: clipView.bounds.height,
-            isFlipped: documentView.isFlipped
-        )
-        let proposedBounds = CGRect(
-            x: clipView.bounds.minX,
-            y: targetY,
-            width: clipView.bounds.width,
-            height: clipView.bounds.height
-        )
-        let constrainedBounds = clipView.constrainBoundsRect(proposedBounds)
-        clipView.scroll(to: constrainedBounds.origin)
-        scrollView.reflectScrolledClipView(clipView)
-        synchronize()
-    }
-
-    private func observe(name: Notification.Name, object: AnyObject) {
-        let token = NotificationCenter.default.addObserver(
-            forName: name,
-            object: object,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.synchronize()
-            }
-        }
-        observationTokens.append(token)
-    }
-
-    private func synchronize() {
-        // SwiftUI can restore its stock overlay scroller while reconciling the
-        // ScrollView. Every scroll/geometry synchronization reasserts footer
-        // ownership, while KVO covers configuration changes that do not move
-        // the clip view.
-        suppressStockScroller()
-
-        guard let scrollView,
-              let documentView = scrollView.documentView
-        else {
-            indicator?.apply(
-                SidebarScrollIndicatorMetrics(
-                    position: 0,
-                    knobProportion: 1,
-                    isScrollable: false
-                )
-            )
-            return
-        }
-
-        let clipView = scrollView.contentView
-        let visibleRect = clipView.documentVisibleRect
-        let documentBounds = documentView.bounds
-        let offsetFromTop: CGFloat
-        if documentView.isFlipped {
-            offsetFromTop = visibleRect.minY - documentBounds.minY
-        } else {
-            offsetFromTop = documentBounds.maxY - visibleRect.maxY
-        }
-
-        indicator?.apply(
-            SidebarScrollIndicatorMetrics.resolve(
-                documentHeight: documentBounds.height,
-                visibleHeight: visibleRect.height,
-                offsetFromTop: offsetFromTop
-            )
-        )
-    }
-
-    private func detach() {
-        observationTokens.forEach(NotificationCenter.default.removeObserver)
-        observationTokens.removeAll()
-        hasVerticalScrollerObservation?.invalidate()
-        hasVerticalScrollerObservation = nil
-
-        if let scrollView {
-            if let originalHasVerticalScroller {
-                scrollView.hasVerticalScroller = originalHasVerticalScroller
-            }
-            if let originalClipPostsBoundsChanges {
-                scrollView.contentView.postsBoundsChangedNotifications = originalClipPostsBoundsChanges
-            }
-            if let originalScrollPostsFrameChanges {
-                scrollView.postsFrameChangedNotifications = originalScrollPostsFrameChanges
-            }
-            if let originalDocumentPostsFrameChanges,
-               let documentView = scrollView.documentView {
-                documentView.postsFrameChangedNotifications = originalDocumentPostsFrameChanges
-            }
-        }
-
-        scrollView = nil
-        originalHasVerticalScroller = nil
-        originalClipPostsBoundsChanges = nil
-        originalScrollPostsFrameChanges = nil
-        originalDocumentPostsFrameChanges = nil
-        indicator?.apply(
-            SidebarScrollIndicatorMetrics(
-                position: 0,
-                knobProportion: 1,
-                isScrollable: false
-            )
-        )
-    }
-
-    private func suppressStockScroller() {
-        guard let scrollView else { return }
-        if scrollView.hasVerticalScroller {
-            scrollView.hasVerticalScroller = false
-        }
-        scrollView.verticalScroller?.isHidden = true
-    }
-}
-
-private struct SidebarFooterScrollIndicator: NSViewRepresentable {
-    let controller: SidebarScrollIndicatorController
-
-    func makeNSView(context: Context) -> SidebarFooterScroller {
-        let scroller = SidebarFooterScroller(frame: .zero)
-        controller.register(indicator: scroller)
-        return scroller
-    }
-
-    func updateNSView(_ nsView: SidebarFooterScroller, context: Context) {
-        controller.register(indicator: nsView)
-    }
-
-    static func dismantleNSView(_ nsView: SidebarFooterScroller, coordinator: ()) {
-        nsView.controller?.unregister(indicator: nsView)
-    }
-}
-
-private final class SidebarFooterScroller: NSScroller {
-    weak var controller: SidebarScrollIndicatorController?
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        scrollerStyle = .overlay
-        controlSize = .small
-        knobStyle = .light
-        isContinuous = true
-        target = self
-        action = #selector(didScroll(_:))
-        isHidden = true
-        setAccessibilityIdentifier("SidebarFooterScrollIndicator")
-    }
-
-    required init?(coder: NSCoder) {
-        nil
-    }
-
-    func apply(_ metrics: SidebarScrollIndicatorMetrics) {
-        doubleValue = Double(metrics.position)
-        knobProportion = metrics.knobProportion
-        isEnabled = metrics.isScrollable
-        isHidden = !metrics.isScrollable
-        needsDisplay = true
-    }
-
-    @objc private func didScroll(_ sender: NSScroller) {
-        controller?.scroll(to: CGFloat(sender.doubleValue))
     }
 }
 

@@ -11399,6 +11399,11 @@ enum WorkspacePulseMarkRowMetrics {
     }
 }
 
+enum ActivityMarkSettings {
+    static let staticMarksKey = "staticActivityMarks"
+    static let defaultStaticMarks = false
+}
+
 /// Leaf-isolated workspace-pulse mark. This is the c11 renderer half of the
 /// shared 9pt vocabulary; its clock and phase sampling are the same Bonsplit
 /// primitives used by surface-tab marks.
@@ -11419,9 +11424,10 @@ private struct WorkspacePulseMark: View {
     let suppressed: Bool
     let animationEligible: Bool
 
-    @AppStorage(BonsplitActivityMarkSettings.staticMarksKey)
-    private var staticMarks = BonsplitActivityMarkSettings.defaultStaticMarks
+    @AppStorage(ActivityMarkSettings.staticMarksKey)
+    private var staticMarks = ActivityMarkSettings.defaultStaticMarks
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @State private var clockToken: UUID?
     @State private var visibleWorkingDots = 9
     @State private var waitingCoreOpacity = 1.0
@@ -11436,27 +11442,27 @@ private struct WorkspacePulseMark: View {
     }
 
     private var motion: BonsplitActivityMarkMotion? {
-        guard animationEligible, !reduceMotion else { return nil }
+        guard animationEligible, scenePhase == .active, !reduceMotion else { return nil }
         if flagged {
             switch presentedState {
-            case .working: return .working
-            case .waiting: return .flaggedWaiting
+            case .working: return .steppedFill
+            case .waiting: return .binaryFlash
             case .idle, .cold: return nil
             }
         }
         guard !suppressed, !staticMarks else { return nil }
         switch presentedState {
-        case .working: return .working
-        case .waiting: return .waiting
+        case .working: return .steppedFill
+        case .waiting: return .easedDip
         case .idle, .cold: return nil
         }
     }
 
     private var motionSignature: Int {
         switch motion {
-        case .working: return 1
-        case .waiting: return 2
-        case .flaggedWaiting: return 3
+        case .steppedFill: return 1
+        case .easedDip: return 2
+        case .binaryFlash: return 3
         case nil: return 0
         }
     }
@@ -11549,7 +11555,7 @@ private struct WorkspacePulseMark: View {
 
     private func apply(elapsed: TimeInterval, motion: BonsplitActivityMarkMotion) {
         switch motion {
-        case .working:
+        case .steppedFill:
             let dots = BonsplitActivityMarkAnimation.visibleWorkingDots(
                 at: elapsed,
                 id: phaseId
@@ -11561,7 +11567,7 @@ private struct WorkspacePulseMark: View {
                 visibleWorkingDots = dots
             }
 
-        case .waiting:
+        case .easedDip:
             let opacity = BonsplitActivityMarkAnimation.waitingCoreOpacity(
                 at: elapsed,
                 id: phaseId
@@ -11570,8 +11576,8 @@ private struct WorkspacePulseMark: View {
                 waitingCoreOpacity = opacity
             }
 
-        case .flaggedWaiting:
-            let showsWhite = BonsplitActivityMarkAnimation.flaggedWaitingShowsWhite(
+        case .binaryFlash:
+            let showsWhite = BonsplitActivityMarkAnimation.binaryFlashShowsAlternate(
                 at: elapsed,
                 id: phaseId
             )

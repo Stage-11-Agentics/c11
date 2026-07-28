@@ -4468,8 +4468,8 @@ struct SettingsView: View {
     @AppStorage(LastSurfaceCloseShortcutSettings.key)
     private var closeWorkspaceOnLastSurfaceShortcut = LastSurfaceCloseShortcutSettings.defaultValue
     @AppStorage(WorkspaceAutoReorderSettings.key) private var workspaceAutoReorder = WorkspaceAutoReorderSettings.defaultValue
-    @AppStorage(BonsplitActivityMarkSettings.staticMarksKey)
-    private var staticActivityMarks = BonsplitActivityMarkSettings.defaultStaticMarks
+    @AppStorage(ActivityMarkSettings.staticMarksKey)
+    private var staticActivityMarks = ActivityMarkSettings.defaultStaticMarks
     @AppStorage(SidebarWorkspaceDetailSettings.hideAllDetailsKey)
     private var sidebarHideAllDetails = SidebarWorkspaceDetailSettings.defaultHideAllDetails
     @AppStorage(SidebarWorkspaceDetailSettings.showNotificationMessageKey)
@@ -5460,7 +5460,7 @@ struct SettingsView: View {
                 String(localized: "settings.app.staticMarks", defaultValue: "Static marks"),
                 subtitle: String(
                     localized: "settings.app.staticMarks.subtitle",
-                    defaultValue: "Stop normal lifecycle motion. Flagged marks remain animated unless Reduce Motion is enabled."
+                    defaultValue: "Stop normal lifecycle motion. Flagged working and waiting marks remain animated unless Reduce Motion is enabled."
                 )
             ) {
                 Toggle("", isOn: $staticActivityMarks)

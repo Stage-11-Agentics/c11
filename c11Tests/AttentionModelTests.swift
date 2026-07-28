@@ -121,6 +121,71 @@ final class AttentionModelTests: XCTestCase {
         )
     }
 
+    func testAttentionMutationRejectsPayloadOverCapWithoutPartialCommitOrRevision() throws {
+        let workspace = UUID()
+        let surface = UUID()
+        defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
+        let reason = "Needs review"
+
+        var paddingCount = SurfaceMetadataStore.payloadCapBytes
+        var base: [String: Any] = [:]
+        while paddingCount > 0 {
+            let candidate: [String: Any] = [
+                "padding": String(repeating: "x", count: paddingCount),
+            ]
+            let withFlag = candidate.merging([MetadataKey.flag: reason]) { _, new in new }
+            let baseSize = try JSONSerialization.data(withJSONObject: candidate).count
+            let flaggedSize = try JSONSerialization.data(withJSONObject: withFlag).count
+            if baseSize <= SurfaceMetadataStore.payloadCapBytes,
+               flaggedSize > SurfaceMetadataStore.payloadCapBytes {
+                base = candidate
+                break
+            }
+            paddingCount -= 1
+        }
+        XCTAssertFalse(base.isEmpty, "test fixture must straddle the encoded payload cap")
+        _ = try store.setMetadata(
+            workspaceId: workspace,
+            surfaceId: surface,
+            partial: base,
+            mode: .merge,
+            source: .explicit
+        )
+        let before = store.getMetadata(workspaceId: workspace, surfaceId: surface)
+        let beforeRevision = store.currentRevision()
+        let beforeMetadata = try JSONSerialization.data(
+            withJSONObject: before.metadata,
+            options: [.sortedKeys]
+        )
+        let beforeSources = try JSONSerialization.data(
+            withJSONObject: before.sources,
+            options: [.sortedKeys]
+        )
+
+        XCTAssertThrowsError(
+            try store.mutateAttention(
+                workspaceId: workspace,
+                surfaceId: surface,
+                flag: .raise(reason)
+            )
+        ) {
+            XCTAssertEqual(($0 as? SurfaceMetadataStore.WriteError)?.code, "payload_too_large")
+        }
+
+        let after = store.getMetadata(workspaceId: workspace, surfaceId: surface)
+        XCTAssertEqual(
+            try JSONSerialization.data(withJSONObject: after.metadata, options: [.sortedKeys]),
+            beforeMetadata
+        )
+        XCTAssertEqual(
+            try JSONSerialization.data(withJSONObject: after.sources, options: [.sortedKeys]),
+            beforeSources
+        )
+        XCTAssertEqual(store.currentRevision(), beforeRevision)
+        XCTAssertNil(store.attentionSnapshot(workspaceId: workspace, surfaceId: surface).flagReason)
+        XCTAssertNil(store.getSource(workspaceId: workspace, surfaceId: surface, key: MetadataKey.flag))
+    }
+
     func testSnapshotRestorePreservesAttentionReasonSuppressionAndRaiseTimestamp() {
         let workspace = UUID()
         let surface = UUID()
@@ -613,13 +678,16 @@ final class AttentionModelTests: XCTestCase {
             replacementOrder.append("remove:\(identifier)")
             add()
         }
-        notificationStore.configureNotificationDeliveryHandlerForTesting { _, notification in
+        notificationStore.configureDirectFlagAuthorizationHandlerForTesting { completion in
+            completion(true)
+        }
+        notificationStore.configureDirectFlagAddHandlerForTesting { notification, _ in
             replacementOrder.append("add:\(notification.systemIdentifier ?? "")")
             delivered.append(notification)
         }
         defer {
             notificationStore.resetFlagNotificationReplacementHandlerForTesting()
-            notificationStore.resetNotificationDeliveryHandlerForTesting()
+            notificationStore.resetDirectFlagDeliveryHandlersForTesting()
             SurfaceAttentionService.shared.remove(workspaceId: workspace, surfaceId: surface)
         }
 
@@ -667,6 +735,113 @@ final class AttentionModelTests: XCTestCase {
         )
         XCTAssertEqual(delivered.count, 3)
         XCTAssertNotEqual(delivered[1].systemIdentifier, delivered[2].systemIdentifier)
+    }
+
+    func testLowerInvalidatesPendingDirectFlagAuthorizationBeforeExternalAdd() throws {
+        let workspace = UUID()
+        let surface = UUID()
+        let notificationStore = TerminalNotificationStore.shared
+        var authorizationCompletions: [(Bool) -> Void] = []
+        var added: [TerminalNotification] = []
+        var customCommands: [TerminalNotification] = []
+        notificationStore.configureFlagNotificationReplacementHandlerForTesting { _, add in add() }
+        notificationStore.configureDirectFlagAuthorizationHandlerForTesting { completion in
+            authorizationCompletions.append(completion)
+        }
+        notificationStore.configureDirectFlagAddHandlerForTesting { notification, _ in
+            added.append(notification)
+        }
+        notificationStore.configureDirectFlagCustomCommandHandlerForTesting {
+            customCommands.append($0)
+        }
+        defer {
+            notificationStore.resetFlagNotificationReplacementHandlerForTesting()
+            notificationStore.resetDirectFlagDeliveryHandlersForTesting()
+            SurfaceAttentionService.shared.remove(workspaceId: workspace, surfaceId: surface)
+        }
+
+        _ = try SurfaceAttentionService.shared.raise(
+            workspaceId: workspace,
+            surfaceId: surface,
+            reason: "Waiting for operator",
+            title: "Build agent"
+        )
+        XCTAssertEqual(authorizationCompletions.count, 1)
+        _ = try SurfaceAttentionService.shared.lower(
+            workspaceId: workspace,
+            surfaceId: surface,
+            by: .operator
+        )
+
+        authorizationCompletions[0](true)
+        XCTAssertTrue(added.isEmpty, "lowered flag must not resume a stale direct add")
+        XCTAssertTrue(customCommands.isEmpty)
+    }
+
+    func testReasonRevisionSupersedesStaleAuthorizationAndAddCompletion() throws {
+        let workspace = UUID()
+        let surface = UUID()
+        let notificationStore = TerminalNotificationStore.shared
+        var authorizationCompletions: [(Bool) -> Void] = []
+        var added: [TerminalNotification] = []
+        var addCompletions: [(Error?) -> Void] = []
+        var customCommands: [TerminalNotification] = []
+        let customCommandRan = expectation(description: "latest direct flag custom command")
+        notificationStore.configureFlagNotificationReplacementHandlerForTesting { _, add in add() }
+        notificationStore.configureDirectFlagAuthorizationHandlerForTesting { completion in
+            authorizationCompletions.append(completion)
+        }
+        notificationStore.configureDirectFlagAddHandlerForTesting { notification, completion in
+            added.append(notification)
+            addCompletions.append(completion)
+        }
+        notificationStore.configureDirectFlagCustomCommandHandlerForTesting { notification in
+            customCommands.append(notification)
+            customCommandRan.fulfill()
+        }
+        defer {
+            notificationStore.resetFlagNotificationReplacementHandlerForTesting()
+            notificationStore.resetDirectFlagDeliveryHandlersForTesting()
+            SurfaceAttentionService.shared.remove(workspaceId: workspace, surfaceId: surface)
+        }
+
+        _ = try SurfaceAttentionService.shared.raise(
+            workspaceId: workspace,
+            surfaceId: surface,
+            reason: "First reason",
+            title: "Build agent"
+        )
+        _ = try SurfaceAttentionService.shared.raise(
+            workspaceId: workspace,
+            surfaceId: surface,
+            reason: "Second reason",
+            title: "Build agent"
+        )
+        XCTAssertEqual(authorizationCompletions.count, 2)
+
+        authorizationCompletions[0](true)
+        XCTAssertTrue(added.isEmpty, "superseded authorization must not add stale content")
+        authorizationCompletions[1](true)
+        XCTAssertEqual(added.map(\.body), ["Second reason"])
+        XCTAssertEqual(addCompletions.count, 1)
+
+        _ = try SurfaceAttentionService.shared.raise(
+            workspaceId: workspace,
+            surfaceId: surface,
+            reason: "Latest reason",
+            title: "Build agent"
+        )
+        XCTAssertEqual(authorizationCompletions.count, 3)
+        authorizationCompletions[2](true)
+        XCTAssertEqual(added.map(\.body), ["Second reason", "Latest reason"])
+        XCTAssertEqual(added[0].systemIdentifier, added[1].systemIdentifier)
+        XCTAssertEqual(addCompletions.count, 2)
+
+        addCompletions[0](nil)
+        addCompletions[1](nil)
+        wait(for: [customCommandRan], timeout: 1)
+        XCTAssertEqual(customCommands.map(\.body), ["Latest reason"])
+        XCTAssertEqual(added.last?.body, "Latest reason", "newest same-epoch delivery must survive")
     }
 
     private func notification(workspace: UUID, surface: UUID) -> TerminalNotification {

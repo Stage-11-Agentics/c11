@@ -621,6 +621,16 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             }
 
             let changed = result.applied.values.contains(true)
+            // Attention owns a dedicated mutation primitive, but it still
+            // participates in the same per-surface encoded payload contract as
+            // generic metadata writes. Guard before installing either blob so
+            // rejection cannot partially mutate values, sources, or revision.
+            guard let encoded = try? JSONSerialization.data(withJSONObject: blob, options: []) else {
+                throw WriteError.encodeFailed
+            }
+            if encoded.count > SurfaceMetadataStore.payloadCapBytes {
+                throw WriteError.payloadTooLarge
+            }
             metadata[workspaceId, default: [:]][surfaceId] = blob
             sources[workspaceId, default: [:]][surfaceId] = sourceBlob
             if changed { metadataStoreRevision &+= 1 }

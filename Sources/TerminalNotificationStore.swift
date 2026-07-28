@@ -690,6 +690,11 @@ final class TerminalNotificationStore: ObservableObject {
 
     static let shared = TerminalNotificationStore()
 
+    private struct DirectFlagDeliveryToken: Equatable {
+        let identifier: String
+        let generation: UUID
+    }
+
     static let categoryIdentifier = "com.stage11.c11.userNotification"
     static let actionShowIdentifier = "com.stage11.c11.userNotification.show"
     private enum AuthorizationRequestOrigin: String {
@@ -739,10 +744,20 @@ final class TerminalNotificationStore: ObservableObject {
         notification in
         store.scheduleUserNotification(notification)
     }
+    /// Current direct-delivery generation per active flag epoch. Reason
+    /// revisions keep the deterministic identifier but replace its generation;
+    /// lower/close/prune remove the generation before cancellation.
+    private var directFlagDeliveryTokens: [String: DirectFlagDeliveryToken] = [:]
 #if DEBUG
     private var waitingEdgeHandlerForTesting: ((Bool, UUID) -> Void)?
     private var flagNotificationReplacementHandlerForTesting:
         ((_ identifier: String, _ add: @escaping @MainActor () -> Void) -> Void)?
+    private var directFlagAuthorizationHandlerForTesting:
+        ((_ completion: @escaping (Bool) -> Void) -> Void)?
+    private var directFlagAddHandlerForTesting:
+        ((_ notification: TerminalNotification, _ completion: @escaping (Error?) -> Void) -> Void)?
+    private var directFlagCustomCommandHandlerForTesting:
+        ((_ notification: TerminalNotification) -> Void)?
 #endif
     private var indexes = NotificationIndexes()
 
@@ -998,6 +1013,8 @@ final class TerminalNotificationStore: ObservableObject {
             surfaceId: surfaceId,
             flagRaisedAt: flagRaisedAt
         )
+        let token = DirectFlagDeliveryToken(identifier: identifier, generation: UUID())
+        directFlagDeliveryTokens[identifier] = token
         let notification = TerminalNotification(
             id: UUID(),
             systemIdentifier: identifier,
@@ -1010,8 +1027,8 @@ final class TerminalNotificationStore: ObservableObject {
             isRead: true
         )
         let add = { [weak self] in
-            guard let self else { return }
-            self.notificationDeliveryHandler(self, notification)
+            guard let self, self.isCurrent(token) else { return }
+            self.scheduleDirectFlagNotification(notification, token: token)
         }
 #if DEBUG
         if let replacement = flagNotificationReplacementHandlerForTesting {
@@ -1052,6 +1069,9 @@ final class TerminalNotificationStore: ObservableObject {
             surfaceId: surfaceId,
             flagRaisedAt: flagRaisedAt
         )
+        // Invalidate before cancellation so a delayed authorization or add
+        // completion cannot resurrect delivery after lower/close/prune.
+        directFlagDeliveryTokens.removeValue(forKey: identifier)
         center.removeDeliveredNotificationsOffMain(withIdentifiers: [identifier])
         center.removePendingNotificationRequestsOffMain(withIdentifiers: [identifier])
     }
@@ -1250,6 +1270,97 @@ final class TerminalNotificationStore: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Direct flag delivery has a separate generation guard from routine
+    /// notifications. Authorization can resume long after the flag changed;
+    /// both that boundary and the add completion must observe the same current
+    /// generation before producing an external side effect.
+    private func scheduleDirectFlagNotification(
+        _ notification: TerminalNotification,
+        token: DirectFlagDeliveryToken
+    ) {
+        guard isCurrent(token) else { return }
+        requestDirectFlagAuthorization { [weak self] authorized in
+            guard let self, authorized, self.isCurrent(token) else { return }
+            self.addDirectFlagNotification(notification) { [weak self] error in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if let error {
+                        NSLog("Failed to schedule direct flag notification: \(error)")
+                        return
+                    }
+                    // Never remove here: an old same-identifier completion may
+                    // arrive after a newer revision has already been added.
+                    guard self.isCurrent(token) else { return }
+                    self.runDirectFlagCustomCommand(notification)
+                }
+            }
+        }
+    }
+
+    private func isCurrent(_ token: DirectFlagDeliveryToken) -> Bool {
+        directFlagDeliveryTokens[token.identifier] == token
+    }
+
+    private func requestDirectFlagAuthorization(
+        _ completion: @escaping (Bool) -> Void
+    ) {
+#if DEBUG
+        if let handler = directFlagAuthorizationHandlerForTesting {
+            handler(completion)
+            return
+        }
+#endif
+        ensureAuthorization(origin: .notificationDelivery, completion)
+    }
+
+    private func addDirectFlagNotification(
+        _ notification: TerminalNotification,
+        completion: @escaping (Error?) -> Void
+    ) {
+#if DEBUG
+        if let handler = directFlagAddHandlerForTesting {
+            handler(notification, completion)
+            return
+        }
+#endif
+        let content = UNMutableNotificationContent()
+        let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
+            ?? "cmux"
+        content.title = notification.title.isEmpty ? appName : notification.title
+        content.subtitle = notification.subtitle
+        content.body = notification.body
+        content.sound = NotificationSoundSettings.sound()
+        content.categoryIdentifier = Self.categoryIdentifier
+        content.userInfo = [
+            "tabId": notification.tabId.uuidString,
+            "notificationId": notification.id.uuidString,
+        ]
+        if let surfaceId = notification.surfaceId {
+            content.userInfo["surfaceId"] = surfaceId.uuidString
+        }
+        let request = UNNotificationRequest(
+            identifier: notification.systemIdentifier ?? notification.id.uuidString,
+            content: content,
+            trigger: nil
+        )
+        center.add(request, withCompletionHandler: completion)
+    }
+
+    private func runDirectFlagCustomCommand(_ notification: TerminalNotification) {
+#if DEBUG
+        if let handler = directFlagCustomCommandHandlerForTesting {
+            handler(notification)
+            return
+        }
+#endif
+        NotificationSoundSettings.runCustomCommand(
+            title: notification.title,
+            subtitle: notification.subtitle,
+            body: notification.body
+        )
     }
 
     private func ensureAuthorization(
@@ -1504,6 +1615,33 @@ final class TerminalNotificationStore: ObservableObject {
 
     func resetFlagNotificationReplacementHandlerForTesting() {
         flagNotificationReplacementHandlerForTesting = nil
+    }
+
+    func configureDirectFlagAuthorizationHandlerForTesting(
+        _ handler: @escaping (_ completion: @escaping (Bool) -> Void) -> Void
+    ) {
+        directFlagAuthorizationHandlerForTesting = handler
+    }
+
+    func configureDirectFlagAddHandlerForTesting(
+        _ handler: @escaping (
+            _ notification: TerminalNotification,
+            _ completion: @escaping (Error?) -> Void
+        ) -> Void
+    ) {
+        directFlagAddHandlerForTesting = handler
+    }
+
+    func configureDirectFlagCustomCommandHandlerForTesting(
+        _ handler: @escaping (_ notification: TerminalNotification) -> Void
+    ) {
+        directFlagCustomCommandHandlerForTesting = handler
+    }
+
+    func resetDirectFlagDeliveryHandlersForTesting() {
+        directFlagAuthorizationHandlerForTesting = nil
+        directFlagAddHandlerForTesting = nil
+        directFlagCustomCommandHandlerForTesting = nil
     }
 
     func promptToEnableNotificationsForTesting() {

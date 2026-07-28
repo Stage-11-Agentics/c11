@@ -2256,6 +2256,12 @@ struct CMUXCLI {
             }
 
             var params: [String: Any] = ["type": agentKind]
+            if let flagReason = optionValue(commandArgs, name: "--flag") {
+                params["flag"] = flagReason
+            }
+            if commandArgs.contains("--suppressed") {
+                params["suppressed"] = true
+            }
             if let v = optionValue(commandArgs, name: "--model") { params["model"] = v }
             if let v = optionValue(commandArgs, name: "--effort") { params["effort"] = v }
             if let sysPromptModeRaw {
@@ -2288,6 +2294,61 @@ struct CMUXCLI {
             // the global parser only consumes it before the subcommand.
             let launchJSONOut = jsonOutput || commandArgs.contains("--json")
             printV2Payload(launchPayload, jsonOutput: launchJSONOut, idFormat: idFormat, fallbackText: v2OKSummary(launchPayload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
+
+        case "raise-flag", "lower-flag", "suppress", "unsuppress":
+            guard let rawSurface = optionValue(commandArgs, name: "--surface") else {
+                throw CLIError(message: "\(command) requires --surface <id|ref>")
+            }
+            guard !rawSurface.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw CLIError(message: "\(command): --surface received an empty value")
+            }
+            let workspaceRaw = workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId)
+            let workspaceHandle = try normalizeWorkspaceHandle(workspaceRaw, client: client)
+            guard let surfaceHandle = try normalizeSurfaceHandle(
+                rawSurface,
+                client: client,
+                workspaceHandle: workspaceHandle,
+                allowFocused: false
+            ) else {
+                throw CLIError(message: "\(command): surface not found")
+            }
+            var params: [String: Any] = ["surface_id": surfaceHandle]
+            if let workspaceHandle { params["workspace_id"] = workspaceHandle }
+            if let by = optionValue(commandArgs, name: "--by") { params["by"] = by }
+
+            let method: String
+            switch command {
+            case "raise-flag":
+                method = "flag.raise"
+                var positionals: [String] = []
+                var index = 0
+                while index < commandArgs.count {
+                    let value = commandArgs[index]
+                    if ["--surface", "--workspace", "--window", "--by"].contains(value) {
+                        index += 2
+                    } else if value == "--json" {
+                        index += 1
+                    } else {
+                        positionals.append(value)
+                        index += 1
+                    }
+                }
+                guard positionals.count == 1 else {
+                    throw CLIError(message: "raise-flag requires exactly one reason argument")
+                }
+                params["reason"] = positionals[0]
+            case "lower-flag": method = "flag.lower"
+            case "suppress": method = "flag.suppress"
+            default: method = "flag.unsuppress"
+            }
+            let payload = try client.sendV2(method: method, params: params)
+            let attentionJSON = jsonOutput || commandArgs.contains("--json")
+            printV2Payload(
+                payload,
+                jsonOutput: attentionJSON,
+                idFormat: idFormat,
+                fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["surface", "workspace"])
+            )
 
         case "config":
             // Only `config launch` reaches here — the app-down subcommands
@@ -8664,6 +8725,8 @@ struct CMUXCLI {
               --prompt <text>          Initial prompt (one-shot argv where supported)
               --prompt-file <path>     Read the initial prompt from a file
               --title <text>           Tab title (default: launch placeholder)
+              --flag <reason>          Raise a sticky flag before command delivery
+              --suppressed             Suppress routine attention before command delivery
               --env KEY=VALUE          Extra spawn env (repeatable)
               --json                   Print the machine-readable result object
 
@@ -8674,10 +8737,23 @@ struct CMUXCLI {
               c11 launch-agent --type claude-code --model opus --effort high
               c11 launch-agent --type codex --model gpt-5.2 --new-workspace --json
               c11 launch-agent --type opencode --prompt-file /tmp/brief.md --pane pane:2
+              c11 launch-agent --type codex --suppressed
+              c11 launch-agent --type claude-code --flag 'Watch migration'
               c11 launch-agent --type claude-code --system-prompt-mode append \\
                 --system-prompt 'Prefer terse answers.'
               c11 launch-agent --type claude-code --system-prompt-mode replace \\
                 --system-prompt ''      # Gregorovich blank slate
+            """
+        case "raise-flag", "lower-flag", "suppress", "unsuppress":
+            return """
+            Usage:
+              c11 raise-flag --surface <id|ref> "<reason>" [--by agent|operator]
+              c11 lower-flag --surface <id|ref> [--by agent|operator]
+              c11 suppress --surface <id|ref> [--by agent|operator]
+              c11 unsuppress --surface <id|ref> [--by agent|operator]
+
+            Attention mutations require an explicit surface and never focus,
+            select, or raise their target.
             """
         case "new-surface":
             return """
@@ -17146,7 +17222,11 @@ struct CMUXCLI {
           claude-hook <session-start|stop|notification> [--workspace <id|ref>] [--surface <id|ref>]
           set-agent --type <terminal_type> [--model <id>] [--task <id>] [--role <id>] [--surface <id|ref>] [--workspace <id|ref>]
           default-agent {get | set <type> | launch [--in-surface <id|ref> | --pane <id>] [--agent <type>] [--cwd <path>] [--prompt <text> | --prompt-file <path>]}
-          launch-agent --type <kind> [--model <id>] [--effort <tier>] [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] [--task <id>] [--pane <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--title <text>] [--env K=V ...] [--json]
+          launch-agent --type <kind> [--model <id>] [--effort <tier>] [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] [--task <id>] [--pane <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--title <text>] [--flag <reason>] [--suppressed] [--env K=V ...] [--json]
+          raise-flag --surface <id|ref> "<reason>"
+          lower-flag --surface <id|ref>
+          suppress --surface <id|ref>
+          unsuppress --surface <id|ref>
           set-metadata (--json '{...}' | --key <K> --value <V> [--type string|number|bool|json]) [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>] [--mode merge|replace] [--source <src>]
           get-metadata [--key <K> ...] [--sources] [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]
           clear-metadata [--key <K> ...] [--source <src>] [--surface <id|ref> | --pane <id|ref>] [--workspace <id|ref>]

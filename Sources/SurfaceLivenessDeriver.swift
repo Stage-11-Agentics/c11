@@ -5,9 +5,12 @@ enum SurfaceTabActivityResolver {
     static func resolve(
         hasExactSurfaceNotification: Bool,
         derivedActivity: SidebarActivityState?,
-        terminalType: String?
+        terminalType: String?,
+        flagged: Bool = false,
+        suppressed: Bool = false
     ) -> BonsplitTabActivityState? {
         if hasExactSurfaceNotification {
+            if suppressed && !flagged { return .idle }
             return .waiting
         }
         guard PaneSizePolicy.isAgentKind(terminalType) else {

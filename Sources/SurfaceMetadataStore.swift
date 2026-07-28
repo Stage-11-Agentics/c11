@@ -18,6 +18,8 @@ public enum MetadataKey {
     public static let title = "title"
     public static let description = "description"
     public static let lifecycleState = "lifecycle_state"
+    public static let flag = "flag"
+    public static let suppressed = "suppressed"
 
     /// C11-104 — derived canonical keys. Written by the c11 runtime,
     /// not by agents. Validated as plain strings with size caps.
@@ -35,7 +37,7 @@ public enum MetadataKey {
 
     public static let canonical: Set<String> = [
         role, status, task, model, progress, terminalType, title, description, lifecycleState,
-        worktree, branch, activity
+        worktree, branch, activity, flag, suppressed
     ]
 
     // Derived from the agent registry plus the two non-agent terminal types.
@@ -110,6 +112,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         case invalidSource(String)
         case invalidKeysParam
         case replaceRequiresExplicit
+        case attentionRequiresService
         case encodeFailed
 
         var code: String {
@@ -121,6 +124,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             case .invalidSource: return "invalid_source"
             case .invalidKeysParam: return "invalid_keys_param"
             case .replaceRequiresExplicit: return "replace_requires_explicit"
+            case .attentionRequiresService: return "attention_requires_service"
             case .encodeFailed: return "encode_error"
             }
         }
@@ -134,6 +138,7 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             case .invalidSource(let d): return "invalid source: \(d)"
             case .invalidKeysParam: return "keys must be an array of strings"
             case .replaceRequiresExplicit: return "mode 'replace' requires source 'explicit'"
+            case .attentionRequiresService: return "flag and suppressed must be mutated through the attention service"
             case .encodeFailed: return "failed to encode metadata"
             }
         }
@@ -185,6 +190,8 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         "worktree",
         "branch",
         "activity",
+        "flag",
+        "suppressed",
         "claude.session_id",
         "claude.session_project_dir",
         "opencode.session_id",
@@ -271,6 +278,32 @@ final class SurfaceMetadataStore: @unchecked Sendable {
             // `SidebarActivityState`, so a size cap is sufficient; no grammar
             // check is needed.
             return validateString(key: key, value: value, maxLen: 16)
+        case "flag":
+            guard let reason = value as? String else {
+                return .reservedKeyInvalidType(key, "expected string")
+            }
+            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                return .reservedKeyInvalidType(key, "expected a non-empty reason")
+            }
+            guard reason == trimmed else {
+                return .reservedKeyInvalidType(key, "reason must not have leading or trailing whitespace")
+            }
+            guard reason.count <= SurfaceAttentionReason.maxLength else {
+                return .reservedKeyInvalidType(
+                    key,
+                    "exceeds max length \(SurfaceAttentionReason.maxLength)"
+                )
+            }
+            guard !reason.contains("\n"), !reason.contains("\r") else {
+                return .reservedKeyInvalidType(key, "reason must be a single line")
+            }
+            return nil
+        case "suppressed":
+            guard value is Bool else {
+                return .reservedKeyInvalidType(key, "expected boolean")
+            }
+            return nil
         case "claude.session_id":
             // Claude SessionStart's `session_id` is a UUIDv4; reject
             // anything else. The value is interpolated verbatim into
@@ -488,6 +521,152 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         }
     }
 
+    /// Canonical attention read. The flag source timestamp is the original
+    /// active-epoch timestamp; reason revisions deliberately preserve it.
+    func attentionSnapshot(workspaceId: UUID, surfaceId: UUID) -> SurfaceAttentionSnapshot {
+        queue.sync {
+            let blob = metadata[workspaceId]?[surfaceId] ?? [:]
+            let source = sources[workspaceId]?[surfaceId]?[MetadataKey.flag]
+            return SurfaceAttentionSnapshot(
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                flagReason: blob[MetadataKey.flag] as? String,
+                flagRaisedAt: source.map { Date(timeIntervalSince1970: $0.ts) },
+                suppressed: blob[MetadataKey.suppressed] as? Bool ?? false
+            )
+        }
+    }
+
+    /// The sole metadata mutation primitive for attention keys. It keeps the
+    /// flag's original source timestamp across active-to-active reason edits,
+    /// and applies both modifiers atomically under the store queue.
+    func mutateAttention(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        flag: SurfaceAttentionFlagMutation = .unchanged,
+        suppression: SurfaceAttentionSuppressionMutation = .unchanged,
+        now: Date = Date()
+    ) throws -> (result: WriteResult, before: SurfaceAttentionSnapshot, after: SurfaceAttentionSnapshot) {
+        try queue.sync {
+            var blob = metadata[workspaceId]?[surfaceId] ?? [:]
+            var sourceBlob = sources[workspaceId]?[surfaceId] ?? [:]
+            let before = SurfaceAttentionSnapshot(
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                flagReason: blob[MetadataKey.flag] as? String,
+                flagRaisedAt: sourceBlob[MetadataKey.flag].map { Date(timeIntervalSince1970: $0.ts) },
+                suppressed: blob[MetadataKey.suppressed] as? Bool ?? false
+            )
+            var result = WriteResult()
+
+            switch flag {
+            case .unchanged:
+                break
+            case .raise(let reason):
+                if let error = Self.validateReservedKey(MetadataKey.flag, reason) {
+                    throw error
+                }
+                let priorReason = blob[MetadataKey.flag] as? String
+                if priorReason != reason || sourceBlob[MetadataKey.flag]?.source != .explicit {
+                    if let priorReason { result.priorValues[MetadataKey.flag] = priorReason }
+                    blob[MetadataKey.flag] = reason
+                    let epoch = sourceBlob[MetadataKey.flag]?.ts ?? now.timeIntervalSince1970
+                    sourceBlob[MetadataKey.flag] = SourceRecord(source: .explicit, ts: epoch)
+                    result.applied[MetadataKey.flag] = true
+                } else {
+                    result.applied[MetadataKey.flag] = false
+                    result.reasons[MetadataKey.flag] = "unchanged"
+                }
+            case .lower:
+                if let prior = blob.removeValue(forKey: MetadataKey.flag) {
+                    result.priorValues[MetadataKey.flag] = prior
+                    sourceBlob.removeValue(forKey: MetadataKey.flag)
+                    result.removedKeys.insert(MetadataKey.flag)
+                    result.applied[MetadataKey.flag] = true
+                } else {
+                    result.applied[MetadataKey.flag] = false
+                    result.reasons[MetadataKey.flag] = "unchanged"
+                }
+            }
+
+            switch suppression {
+            case .unchanged:
+                break
+            case .suppress:
+                if blob[MetadataKey.suppressed] as? Bool != true
+                    || sourceBlob[MetadataKey.suppressed]?.source != .explicit {
+                    if let prior = blob[MetadataKey.suppressed] {
+                        result.priorValues[MetadataKey.suppressed] = prior
+                    }
+                    blob[MetadataKey.suppressed] = true
+                    sourceBlob[MetadataKey.suppressed] = SourceRecord(
+                        source: .explicit,
+                        ts: now.timeIntervalSince1970
+                    )
+                    result.applied[MetadataKey.suppressed] = true
+                } else {
+                    result.applied[MetadataKey.suppressed] = false
+                    result.reasons[MetadataKey.suppressed] = "unchanged"
+                }
+            case .unsuppress:
+                if let prior = blob.removeValue(forKey: MetadataKey.suppressed) {
+                    result.priorValues[MetadataKey.suppressed] = prior
+                    sourceBlob.removeValue(forKey: MetadataKey.suppressed)
+                    result.removedKeys.insert(MetadataKey.suppressed)
+                    result.applied[MetadataKey.suppressed] = true
+                } else {
+                    result.applied[MetadataKey.suppressed] = false
+                    result.reasons[MetadataKey.suppressed] = "unchanged"
+                }
+            }
+
+            let changed = result.applied.values.contains(true)
+            metadata[workspaceId, default: [:]][surfaceId] = blob
+            sources[workspaceId, default: [:]][surfaceId] = sourceBlob
+            if changed { metadataStoreRevision &+= 1 }
+            result.metadata = blob
+            result.sources = sourceBlob.mapValues { $0.toJSON() }
+
+            let after = SurfaceAttentionSnapshot(
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                flagReason: blob[MetadataKey.flag] as? String,
+                flagRaisedAt: sourceBlob[MetadataKey.flag].map { Date(timeIntervalSince1970: $0.ts) },
+                suppressed: blob[MetadataKey.suppressed] as? Bool ?? false
+            )
+            return (result, before, after)
+        }
+    }
+
+    /// Canonical lifecycle restore used when a live surface crosses workspace
+    /// ownership. This preserves the active flag epoch without emitting a new
+    /// raise or notification.
+    func restoreAttention(_ snapshot: SurfaceAttentionSnapshot) {
+        queue.sync {
+            var blob = metadata[snapshot.workspaceId]?[snapshot.surfaceId] ?? [:]
+            var sourceBlob = sources[snapshot.workspaceId]?[snapshot.surfaceId] ?? [:]
+            if let reason = snapshot.flagReason {
+                blob[MetadataKey.flag] = reason
+                sourceBlob[MetadataKey.flag] = SourceRecord(
+                    source: .explicit,
+                    ts: (snapshot.flagRaisedAt ?? Date()).timeIntervalSince1970
+                )
+            }
+            if snapshot.suppressed {
+                blob[MetadataKey.suppressed] = true
+                sourceBlob[MetadataKey.suppressed] = SourceRecord(
+                    source: .explicit,
+                    ts: Date().timeIntervalSince1970
+                )
+            }
+            metadata[snapshot.workspaceId, default: [:]][snapshot.surfaceId] = blob
+            sources[snapshot.workspaceId, default: [:]][snapshot.surfaceId] = sourceBlob
+            if snapshot.isFlagged || snapshot.suppressed {
+                metadataStoreRevision &+= 1
+            }
+        }
+    }
+
     /// Clear specific keys (or the entire blob when `keys == nil`).
     /// `keys == nil` requires `source == .explicit`.
     func clearMetadata(
@@ -498,6 +677,15 @@ final class SurfaceMetadataStore: @unchecked Sendable {
     ) throws -> WriteResult {
         return try queue.sync {
             var result = WriteResult()
+            let attentionKeys: Set<String> = [MetadataKey.flag, MetadataKey.suppressed]
+            let existingKeys = Set((metadata[workspaceId]?[surfaceId] ?? [:]).keys)
+            if let keys {
+                if !attentionKeys.isDisjoint(with: keys) {
+                    throw WriteError.attentionRequiresService
+                }
+            } else if !attentionKeys.isDisjoint(with: existingKeys) {
+                throw WriteError.attentionRequiresService
+            }
             if keys == nil {
                 guard source == .explicit else {
                     throw WriteError.replaceRequiresExplicit
@@ -617,6 +805,9 @@ final class SurfaceMetadataStore: @unchecked Sendable {
         value: Any,
         source: MetadataSource
     ) -> Bool {
+        guard key != MetadataKey.flag, key != MetadataKey.suppressed else {
+            return false
+        }
         return queue.sync {
             var blob = metadata[workspaceId]?[surfaceId] ?? [:]
             var sblob = sources[workspaceId]?[surfaceId] ?? [:]
@@ -672,6 +863,12 @@ final class SurfaceMetadataStore: @unchecked Sendable {
     ) throws -> WriteResult {
         if mode == .replace, source != .explicit {
             throw WriteError.replaceRequiresExplicit
+        }
+        let attentionKeys: Set<String> = [MetadataKey.flag, MetadataKey.suppressed]
+        let existingKeys = Set((metadata[workspaceId]?[surfaceId] ?? [:]).keys)
+        if !attentionKeys.isDisjoint(with: partial.keys)
+            || (mode == .replace && !attentionKeys.isDisjoint(with: existingKeys)) {
+            throw WriteError.attentionRequiresService
         }
 
         // Pre-validate every reserved key *before* taking the mutation path so

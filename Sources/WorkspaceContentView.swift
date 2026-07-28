@@ -229,6 +229,12 @@ struct WorkspaceContentView: View {
                 && !reduceMotion
                 && !staticActivityMarks
         )
+        .environment(
+            \.bonsplitExplicitActivityAnimationEnabled,
+            isWorkspaceInputActive
+                && scenePhase == .active
+                && !reduceMotion
+        )
         .overlay(
             WorkspaceFrame(
                 workspace: workspace,
@@ -266,11 +272,18 @@ struct WorkspaceContentView: View {
                         hasExactSurfaceNotification: unreadFromNotifications.contains($0)
                     )
                 }
+                let expectedPresentation = panelId.flatMap {
+                    workspace.resolvedSurfaceTabActivityPresentation(
+                        panelId: $0,
+                        activityState: expectedActivity
+                    )
+                }
                 let shouldShow = panelId.map { manualUnread.contains($0) } ?? false
                 let kindUpdate: String?? = expectedKind.map { .some($0) }
 
                 if tab.showsNotificationBadge != shouldShow ||
                     tab.activityState != expectedActivity ||
+                    tab.activityPresentation != expectedPresentation ||
                     tab.isPinned != expectedPinned ||
                     (expectedKind != nil && tab.kind != expectedKind) {
                     workspace.bonsplitController.updateTab(
@@ -278,7 +291,8 @@ struct WorkspaceContentView: View {
                         kind: kindUpdate,
                         showsNotificationBadge: shouldShow,
                         isPinned: expectedPinned,
-                        activityState: .some(expectedActivity)
+                        activityState: .some(expectedActivity),
+                        activityPresentation: .some(expectedPresentation)
                     )
                 }
             }

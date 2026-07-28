@@ -4768,6 +4768,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                         values: values,
                         sources: sources
                     )
+                    SurfaceAttentionService.shared.syncFromMetadata(
+                        workspaceId: workspace.id,
+                        surfaceId: panelSnapshot.id
+                    )
                 }
 
                 // CMUX-11 Phase 3: same replay for `PaneMetadataStore`. The
@@ -10368,10 +10372,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             ])
         }
 #endif
+        for flag in SurfaceAttentionIndex.shared.oldestFlags {
+            if openNotification(
+                tabId: flag.workspaceId,
+                surfaceId: flag.surfaceId,
+                notificationId: nil
+            ) {
+                return
+            }
+        }
         // Prefer the latest unread that we can actually open. In early startup (especially on the VM),
         // the window-context registry can lag behind model initialization, so fall back to whatever
         // tab manager currently owns the tab.
-        for notification in notificationStore.notifications where !notification.isRead {
+        for notification in notificationStore.notifications
+        where !notification.isRead && notificationStore.isSignalEligible(notification) {
             if openNotification(tabId: notification.tabId, surfaceId: notification.surfaceId, notificationId: notification.id) {
                 return
             }

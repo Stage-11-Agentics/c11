@@ -31,6 +31,7 @@ struct WorkspacePulseAgent: Equatable, Identifiable {
     /// current lifecycle-only projection until that wiring lands.
     let flagged: Bool
     let suppressed: Bool
+    let flagReason: String?
 
     var id: UUID { surfaceId }
 
@@ -39,24 +40,31 @@ struct WorkspacePulseAgent: Equatable, Identifiable {
         state: WorkspacePulseState,
         context: WorkspacePulseAgentContext?,
         flagged: Bool = false,
-        suppressed: Bool = false
+        suppressed: Bool = false,
+        flagReason: String? = nil
     ) {
         self.surfaceId = surfaceId
         self.state = state
         self.context = context
         self.flagged = flagged
         self.suppressed = suppressed
+        self.flagReason = flagReason
     }
 
     /// Suppression is a lifecycle projection, and a flag wins when both
     /// modifiers are present. The stored `state` remains the source truth for
     /// C11-184; renderers and summary counts consume this presented value.
     var presentedState: WorkspacePulseState {
-        suppressed && !flagged && state == .waiting ? .idle : state
+        SurfaceAttentionSnapshot.presentedState(
+            state,
+            flagged: flagged,
+            suppressed: suppressed
+        )
     }
 }
 
 struct WorkspacePulseSummary: Equatable {
+    let flaggedCount: Int
     let waitingCount: Int
     let workingCount: Int
     let idleCount: Int
@@ -67,6 +75,7 @@ struct WorkspacePulseSummary: Equatable {
     let documentCount: Int
 
     init(
+        flaggedCount: Int = 0,
         waitingCount: Int,
         workingCount: Int,
         idleCount: Int,
@@ -76,6 +85,7 @@ struct WorkspacePulseSummary: Equatable {
         browserCount: Int = 0,
         documentCount: Int = 0
     ) {
+        self.flaggedCount = flaggedCount
         self.waitingCount = waitingCount
         self.workingCount = workingCount
         self.idleCount = idleCount
@@ -87,6 +97,9 @@ struct WorkspacePulseSummary: Equatable {
     }
 
     var dominant: WorkspacePulseState {
+        if flaggedCount > 0 {
+            return agents.first(where: \.flagged)?.presentedState ?? .waiting
+        }
         if waitingCount > 0 { return .waiting }
         if workingCount > 0 { return .working }
         if idleCount > 0 { return .idle }
@@ -156,6 +169,7 @@ enum WorkspacePulseProjector {
             waiting = 1
         }
         return WorkspacePulseSummary(
+            flaggedCount: agents.lazy.filter(\.flagged).count,
             waitingCount: waiting,
             workingCount: agents.filter { $0.presentedState == .working }.count,
             idleCount: agents.filter { $0.presentedState == .idle }.count,

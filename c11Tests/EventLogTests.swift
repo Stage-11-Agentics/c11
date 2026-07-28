@@ -323,4 +323,34 @@ final class EventLogTests: XCTestCase {
             .filter { ($0["type"] as? String) == "metadata.changed" }
         XCTAssertTrue(progressEvents.isEmpty, "progress must not flood the event stream")
     }
+
+    func testAttentionEventsUseExactTypesAndPayloadVocabulary() {
+        let log = EventLog(url: logURL(), instance: "attention-inst")
+        EventEmitter.shared.startForTesting(log: log, instance: "attention-inst")
+        let workspace = UUID()
+        let surface = UUID()
+
+        EventEmitter.shared.emitFlagRaised(
+            workspace: workspace,
+            surface: surface,
+            reason: "Needs schema decision"
+        )
+        EventEmitter.shared.emitFlagLowered(workspace: workspace, surface: surface, by: .operator)
+        EventEmitter.shared.emitFlagSuppressed(workspace: workspace, surface: surface, by: .agent)
+        EventEmitter.shared.emitFlagUnsuppressed(workspace: workspace, surface: surface, by: .operator)
+        EventEmitter.shared.flush()
+
+        let events = readLines(logURL()).map(parse)
+        XCTAssertEqual(
+            events.compactMap { $0["type"] as? String },
+            ["flag.raised", "flag.lowered", "flag.suppressed", "flag.unsuppressed"]
+        )
+        XCTAssertEqual(
+            (events[0]["payload"] as? [String: Any])?["reason"] as? String,
+            "Needs schema decision"
+        )
+        XCTAssertEqual((events[1]["payload"] as? [String: Any])?["by"] as? String, "operator")
+        XCTAssertEqual((events[2]["payload"] as? [String: Any])?["by"] as? String, "agent")
+        XCTAssertEqual((events[3]["payload"] as? [String: Any])?["by"] as? String, "operator")
+    }
 }

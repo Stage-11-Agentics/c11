@@ -1983,6 +1983,11 @@ class TerminalController {
         "config.rm",
         "config.reorder",
         "config.default",
+        "flag.raise",
+        "flag.lower",
+        "flag.list",
+        "flag.suppress",
+        "flag.unsuppress",
     ]
 
     // C11-4: v1 telemetry commands the worker is allowed to handle off-main.

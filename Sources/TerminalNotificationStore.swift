@@ -630,12 +630,15 @@ struct TerminalNotification: Identifiable, Hashable {
 
 @MainActor
 final class TerminalNotificationStore: ObservableObject {
-    private struct TabSurfaceKey: Hashable {
+    struct TabSurfaceKey: Hashable {
         let tabId: UUID
         let surfaceId: UUID?
     }
 
-    private struct NotificationIndexes {
+    struct NotificationIndexes {
+        var rawUnreadCount = 0
+        var rawUnreadCountByTabId: [UUID: Int] = [:]
+        var rawUnreadByTabSurface = Set<TabSurfaceKey>()
         var unreadCount = 0
         var unreadCountByTabId: [UUID: Int] = [:]
         var unreadByTabSurface = Set<TabSurfaceKey>()
@@ -658,7 +661,10 @@ final class TerminalNotificationStore: ObservableObject {
             // C11-163: capture the prior per-tab unread counts before the
             // rebuild so waiting-agent edges can be detected (amendment H).
             let previousUnreadByTab = indexes.unreadCountByTabId
-            indexes = Self.buildIndexes(for: notifications)
+            indexes = Self.buildIndexes(
+                for: notifications,
+                signalEligible: Self.isSignalEligible
+            )
             emitWaitingEdges(previous: previousUnreadByTab, current: indexes.unreadCountByTabId)
         }
     }
@@ -713,12 +719,16 @@ final class TerminalNotificationStore: ObservableObject {
     }
 
     private init() {
-        indexes = Self.buildIndexes(for: notifications)
+        indexes = Self.buildIndexes(for: notifications, signalEligible: Self.isSignalEligible)
         refreshAuthorizationStatus()
     }
 
     var unreadCount: Int {
         indexes.unreadCount
+    }
+
+    var rawUnreadCount: Int {
+        indexes.rawUnreadCount
     }
 
     private func logAuthorization(_ message: String) {
@@ -821,6 +831,35 @@ final class TerminalNotificationStore: ObservableObject {
         indexes.unreadByTabSurface.contains(TabSurfaceKey(tabId: tabId, surfaceId: surfaceId))
     }
 
+    func hasRawUnreadNotification(forTabId tabId: UUID, surfaceId: UUID?) -> Bool {
+        indexes.rawUnreadByTabSurface.contains(TabSurfaceKey(tabId: tabId, surfaceId: surfaceId))
+    }
+
+    func isSignalEligible(_ notification: TerminalNotification) -> Bool {
+        Self.isSignalEligible(notification)
+    }
+
+    func refreshSignalEligibility() {
+        let previous = indexes.unreadCountByTabId
+        let next = Self.buildIndexes(
+            for: notifications,
+            signalEligible: Self.isSignalEligible
+        )
+        guard previous != next.unreadCountByTabId
+                || indexes.unreadByTabSurface != next.unreadByTabSurface else {
+            indexes = next
+            return
+        }
+        objectWillChange.send()
+        indexes = next
+        emitWaitingEdges(previous: previous, current: indexes.unreadCountByTabId)
+        for workspaceId in Set(previous.keys).union(indexes.unreadCountByTabId.keys) {
+            AppDelegate.shared?.tabManagerFor(tabId: workspaceId)?
+                .tabs.first(where: { $0.id == workspaceId })?
+                .syncSurfaceTabActivityStates()
+        }
+    }
+
     func latestNotification(forTabId tabId: UUID) -> TerminalNotification? {
         indexes.latestUnreadByTabId[tabId] ?? indexes.latestByTabId[tabId]
     }
@@ -839,7 +878,10 @@ final class TerminalNotificationStore: ObservableObject {
         let isFocusedSurface = surfaceId == nil || focusedSurfaceId == surfaceId
         let isFocusedPanel = isActiveTab && isFocusedSurface
         let isAppFocused = AppFocusState.isAppFocused()
-        let shouldSuppressExternalDelivery = isAppFocused && isFocusedPanel
+        let attentionSuppressed = surfaceId.map {
+            SurfaceAttentionIndex.shared.snapshot(workspaceId: tabId, surfaceId: $0).suppressed
+        } ?? false
+        let shouldSuppressExternalDelivery = (isAppFocused && isFocusedPanel) || attentionSuppressed
 
         // An agent notification is a lifecycle boundary: the turn either
         // completed or paused for operator input. Waiting still dominates the
@@ -877,6 +919,50 @@ final class TerminalNotificationStore: ObservableObject {
         if !shouldSuppressExternalDelivery {
             notificationDeliveryHandler(self, notification)
         }
+    }
+
+    /// Direct flag delivery intentionally does not append to `notifications`.
+    /// Operator decision: this path pierces suppression; routine delivery above
+    /// remains barred for every suppressed surface.
+    func deliverFlagNotification(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        title: String?,
+        reason: String
+    ) {
+        let fallback = String(
+            localized: "notification.flaggedAgent.title",
+            defaultValue: "Flagged agent"
+        )
+        let normalizedTitle: String? = {
+            guard let value = title?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !value.isEmpty else { return nil }
+            return value
+        }()
+        notificationDeliveryHandler(
+            self,
+            TerminalNotification(
+                id: UUID(),
+                tabId: workspaceId,
+                surfaceId: surfaceId,
+                title: normalizedTitle ?? fallback,
+                subtitle: "",
+                body: reason,
+                createdAt: Date(),
+                isRead: true
+            )
+        )
+    }
+
+    func cancelRoutineExternalNotifications(workspaceId: UUID, surfaceId: UUID) {
+        let identifiers = notifications.compactMap { notification in
+            notification.tabId == workspaceId && notification.surfaceId == surfaceId
+                ? notification.id.uuidString
+                : nil
+        }
+        guard !identifiers.isEmpty else { return }
+        center.removeDeliveredNotificationsOffMain(withIdentifiers: identifiers)
+        center.removePendingNotificationRequestsOffMain(withIdentifiers: identifiers)
     }
 
     func markRead(id: UUID) {
@@ -1200,13 +1286,30 @@ final class TerminalNotificationStore: ObservableObject {
         return shouldDeferAutomaticAuthorizationRequest(status: status, isAppActive: isAppActive)
     }
 
-    private static func buildIndexes(for notifications: [TerminalNotification]) -> NotificationIndexes {
+    private static func isSignalEligible(_ notification: TerminalNotification) -> Bool {
+        guard let surfaceId = notification.surfaceId else { return true }
+        return SurfaceAttentionIndex.shared.snapshot(
+            workspaceId: notification.tabId,
+            surfaceId: surfaceId
+        ).isSignalEligible
+    }
+
+    static func buildIndexes(
+        for notifications: [TerminalNotification],
+        signalEligible: (TerminalNotification) -> Bool
+    ) -> NotificationIndexes {
         var indexes = NotificationIndexes()
         for notification in notifications {
             if indexes.latestByTabId[notification.tabId] == nil {
                 indexes.latestByTabId[notification.tabId] = notification
             }
             guard !notification.isRead else { continue }
+            indexes.rawUnreadCount += 1
+            indexes.rawUnreadCountByTabId[notification.tabId, default: 0] += 1
+            indexes.rawUnreadByTabSurface.insert(
+                TabSurfaceKey(tabId: notification.tabId, surfaceId: notification.surfaceId)
+            )
+            guard signalEligible(notification) else { continue }
             indexes.unreadCount += 1
             indexes.unreadCountByTabId[notification.tabId, default: 0] += 1
             indexes.unreadByTabSurface.insert(

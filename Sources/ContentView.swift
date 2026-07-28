@@ -8673,11 +8673,15 @@ struct VerticalTabsSidebar: View {
                                                 ? titleBarState.description
                                                 : nil
                                         )
+                                        let attention = tab.attentionSnapshot(panelId: panelId)
                                         agents.append(
                                             WorkspacePulseAgent(
                                                 surfaceId: panelId,
                                                 state: pulseState,
-                                                context: context
+                                                context: context,
+                                                flagged: attention.isFlagged,
+                                                suppressed: attention.suppressed,
+                                                flagReason: attention.flagReason
                                             )
                                         )
                                     }
@@ -10695,6 +10699,7 @@ private struct SidebarHelpMenuButton: View {
 private struct SidebarWaitingAgentCluster: View {
     @EnvironmentObject private var notificationStore: TerminalNotificationStore
     @EnvironmentObject private var tabManager: TabManager
+    @ObservedObject private var attentionIndex = SurfaceAttentionIndex.shared
 
     private var display: StatusBarButtonDisplay {
         StatusBarButtonDisplay(unreadCount: notificationStore.unreadCount)
@@ -10714,6 +10719,12 @@ private struct SidebarWaitingAgentCluster: View {
 
     var body: some View {
         VStack(spacing: 6) {
+            if attentionIndex.flaggedCount > 0 {
+                FlaggedAgentsRow(
+                    count: attentionIndex.flaggedCount,
+                    onJump: jump
+                )
+            }
             WaitingAgentRow(display: display, onJump: jump)
             WorkspaceNavRow(
                 isFirstDisabled: isFirstWorkspace,
@@ -10738,6 +10749,65 @@ private struct SidebarWaitingAgentCluster: View {
     private func goToNextWorkspace() {
         guard !isLastWorkspace else { return }
         tabManager.selectNextTab()
+    }
+}
+
+private struct FlaggedAgentsRow: View {
+    let count: Int
+    let onJump: () -> Void
+
+    private let violet = Color(
+        red: 157.0 / 255.0,
+        green: 138.0 / 255.0,
+        blue: 217.0 / 255.0
+    )
+
+    var body: some View {
+        Button(action: onJump) {
+            HStack(spacing: 6) {
+                Text(String(
+                    localized: "statusBar.flaggedAgents.title",
+                    defaultValue: "Flagged Agents"
+                ))
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1)
+
+                Text(verbatim: String(count))
+                    .font(.system(size: 9, weight: .bold))
+                    .monospacedDigit()
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(BrandColors.blackSwiftUI.opacity(0.18))
+                    )
+                    .accessibilityHidden(true)
+
+                Spacer(minLength: 4)
+                Text("\u{2192}")
+                    .font(.system(size: 13, weight: .medium))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(violet)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(violet, lineWidth: 0.75)
+            )
+            .foregroundColor(BrandColors.blackSwiftUI)
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("SidebarFlaggedAgentsButton")
+        .accessibilityLabel(Text(String(
+            localized: "statusBar.flaggedAgents.accessibility",
+            defaultValue: "Jump to oldest flagged agent"
+        )))
+        .accessibilityValue(Text(verbatim: String(count)))
     }
 }
 
@@ -11432,6 +11502,7 @@ private struct WorkspacePulseMark: View {
     @State private var visibleWorkingDots = 9
     @State private var waitingCoreOpacity = 1.0
     @State private var flaggedWaitingShowsWhite = false
+    @State private var markOpacity = 1.0
 
     private var presentedState: WorkspacePulseState {
         suppressed && !flagged && state == .waiting ? .idle : state
@@ -11445,9 +11516,8 @@ private struct WorkspacePulseMark: View {
         guard animationEligible, scenePhase == .active, !reduceMotion else { return nil }
         if flagged {
             switch presentedState {
-            case .working: return .steppedFill
+            case .working, .idle, .cold: return .breathe
             case .waiting: return .binaryFlash
-            case .idle, .cold: return nil
             }
         }
         guard !suppressed, !staticMarks else { return nil }
@@ -11463,6 +11533,7 @@ private struct WorkspacePulseMark: View {
         case .steppedFill: return 1
         case .easedDip: return 2
         case .binaryFlash: return 3
+        case .breathe: return 4
         case nil: return 0
         }
     }
@@ -11470,6 +11541,7 @@ private struct WorkspacePulseMark: View {
     var body: some View {
         markShape
             .frame(width: 9, height: 9)
+            .opacity(markOpacity)
             .onAppear { refreshClockSubscription() }
             .onChange(of: motionSignature) { _, _ in refreshClockSubscription() }
             .onChange(of: phaseId) { _, _ in refreshClockSubscription() }
@@ -11550,6 +11622,7 @@ private struct WorkspacePulseMark: View {
             visibleWorkingDots = 9
             waitingCoreOpacity = 1
             flaggedWaitingShowsWhite = false
+            markOpacity = 1
         }
     }
 
@@ -11586,6 +11659,15 @@ private struct WorkspacePulseMark: View {
             transaction.disablesAnimations = true
             withTransaction(transaction) {
                 flaggedWaitingShowsWhite = showsWhite
+            }
+
+        case .breathe:
+            let opacity = BonsplitActivityMarkAnimation.breatheOpacity(
+                at: elapsed,
+                id: phaseId
+            )
+            withAnimation(.linear(duration: BonsplitActivityMarkAnimation.clockInterval)) {
+                markOpacity = opacity
             }
         }
     }
@@ -12024,7 +12106,7 @@ private struct TabItemView: View, Equatable {
     }
 
     private func openWorkspacePulseAgent(_ agent: WorkspacePulseAgent) {
-        guard agent.presentedState == .waiting else { return }
+        guard agent.flagged || agent.presentedState == .waiting else { return }
         _ = AppDelegate.shared?.openNotification(
             tabId: tab.id,
             surfaceId: agent.surfaceId,
@@ -12043,7 +12125,9 @@ private struct TabItemView: View, Equatable {
                 .frame(width: 16, height: 16)
 
             Group {
-                if let context {
+                if agent.flagged, let reason = agent.flagReason {
+                    Text(verbatim: reason).fontWeight(.medium)
+                } else if let context {
                     (
                         Text(verbatim: context.title).fontWeight(.medium)
                         + Text(verbatim: context.subtitle.map { " · \($0)" } ?? "")
@@ -12060,13 +12144,21 @@ private struct TabItemView: View, Equatable {
             Spacer(minLength: 0)
         }
 
-        if agent.presentedState == .waiting {
+        if agent.flagged || agent.presentedState == .waiting {
             Button(action: { openWorkspacePulseAgent(agent) }) {
                 content
             }
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
+            .accessibilityLabel(
+                agent.flagged
+                    ? Text(String(
+                        localized: "sidebar.workspacePulse.flagged.accessibility",
+                        defaultValue: "Flagged agent: \(agent.flagReason ?? "")"
+                    ))
+                    : Text(workspacePulseLabel(for: agent.presentedState))
+            )
         } else {
             content
         }

@@ -139,6 +139,22 @@ final class EventEmitter {
         emit(entered ? .waitingEntered : .waitingLeft, workspace: tabId, surface: surface)
     }
 
+    func emitFlagRaised(workspace: UUID, surface: UUID, reason: String) {
+        emit(.flagRaised, workspace: workspace, surface: surface, payload: ["reason": reason])
+    }
+
+    func emitFlagLowered(workspace: UUID, surface: UUID, by actor: SurfaceAttentionActor) {
+        emit(.flagLowered, workspace: workspace, surface: surface, payload: ["by": actor.rawValue])
+    }
+
+    func emitFlagSuppressed(workspace: UUID, surface: UUID, by actor: SurfaceAttentionActor) {
+        emit(.flagSuppressed, workspace: workspace, surface: surface, payload: ["by": actor.rawValue])
+    }
+
+    func emitFlagUnsuppressed(workspace: UUID, surface: UUID, by actor: SurfaceAttentionActor) {
+        emit(.flagUnsuppressed, workspace: workspace, surface: surface, payload: ["by": actor.rawValue])
+    }
+
     func emitMailboxAccepted(
         workspace: UUID,
         id: String,

@@ -83,6 +83,7 @@
 		56D5F7E29DC4C9999E4EDA7B /* DefaultAgentProjectConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76375733F860DAB840D28800 /* DefaultAgentProjectConfig.swift */; };
 		573FC5E8BE58AFF9E421E3B6 /* AgentDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B4202C77B3590FB8D760708 /* AgentDetectorTests.swift */; };
 		592E7B94FECC0B5AAB3B53B4 /* SidebarActivityProjectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0054553DCE5D3CED90037B0C /* SidebarActivityProjectorTests.swift */; };
+		C11840000000000000000005 /* AttentionModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11840000000000000000006 /* AttentionModelTests.swift */; };
 		5A86082FF691F6FBCBDE52CB /* AgentLaunchOverlayCompositionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0C8786B9F13542B2C4D9D35 /* AgentLaunchOverlayCompositionTests.swift */; };
 		5AE9C6CE7FCF928F695FE26D /* MainThreadHangMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB26BFF19A91FD51B78AF28E /* MainThreadHangMonitor.swift */; };
 		5AEB95ABF100C21BFCDB40E4 /* C11ThemeLoaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F015 /* C11ThemeLoaderTests.swift */; };
@@ -200,6 +201,8 @@
 		A5001534 /* BrowserWindowPortal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001533 /* BrowserWindowPortal.swift */; };
 		A5001540 /* PortScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001541 /* PortScanner.swift */; };
 		A5001542 /* SurfaceMetadataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001543 /* SurfaceMetadataStore.swift */; };
+		C11840000000000000000001 /* AttentionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11840000000000000000002 /* AttentionModel.swift */; };
+		C11840000000000000000003 /* AttentionHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11840000000000000000004 /* AttentionHandlers.swift */; };
 		A5001544 /* AgentDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001545 /* AgentDetector.swift */; };
 		A5001601 /* SentryHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001600 /* SentryHelper.swift */; };
 		A5001610 /* SessionPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001611 /* SessionPersistence.swift */; };
@@ -499,6 +502,7 @@
 
 /* Begin PBXFileReference section */
 		0054553DCE5D3CED90037B0C /* SidebarActivityProjectorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SidebarActivityProjectorTests.swift; sourceTree = "<group>"; };
+		C11840000000000000000006 /* AttentionModelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AttentionModelTests.swift; sourceTree = "<group>"; };
 		0095C3D72A7722FFA42A7ED1 /* PaneSizePolicy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PaneSizePolicy.swift; sourceTree = "<group>"; };
 		00B9399C201ED734873E67B9 /* EventEmitter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EventEmitter.swift; path = Events/EventEmitter.swift; sourceTree = "<group>"; };
 		01822B693A5DD01EFE28F75F /* SnapshotHandlers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SnapshotHandlers.swift; sourceTree = "<group>"; };
@@ -624,6 +628,8 @@
 		A5001533 /* BrowserWindowPortal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserWindowPortal.swift; sourceTree = "<group>"; };
 		A5001541 /* PortScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortScanner.swift; sourceTree = "<group>"; };
 		A5001543 /* SurfaceMetadataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfaceMetadataStore.swift; sourceTree = "<group>"; };
+		C11840000000000000000002 /* AttentionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionModel.swift; sourceTree = "<group>"; };
+		C11840000000000000000004 /* AttentionHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionHandlers.swift; sourceTree = "<group>"; };
 		A5001545 /* AgentDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDetector.swift; sourceTree = "<group>"; };
 		A5001600 /* SentryHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentryHelper.swift; sourceTree = "<group>"; };
 		A5001611 /* SessionPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPersistence.swift; sourceTree = "<group>"; };
@@ -1055,6 +1061,7 @@
 				A5001019 /* TerminalController.swift */,
 				A5001541 /* PortScanner.swift */,
 				A5001543 /* SurfaceMetadataStore.swift */,
+				C11840000000000000000002 /* AttentionModel.swift */,
 				D70A3BF1A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift */,
 				D70B3BF1A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift */,
 				D7005BF1A1B2C3D4E5F60718 /* PersistedMetadata.swift */,
@@ -1265,6 +1272,7 @@
 				F4C57DBBB7C3C6C27357EBA8 /* BrowserHandlers.swift */,
 				B7C0D996AACCF41CBCBC7D7C /* BrowserQueryHandlers.swift */,
 				F8BCDD954BED18665E7E3145 /* SocketDispatch.swift */,
+				C11840000000000000000004 /* AttentionHandlers.swift */,
 				C967AD5F66B6E2304632FD54 /* ConfigHandlers.swift */,
 			);
 			name = SocketHandlers;
@@ -1430,6 +1438,7 @@
 				9A99FEE21A45CCAB920CC627 /* WorkspaceDerivedActivityTests.swift */,
 				C5E34AD8B3A4814F5DDD4B2D /* SidebarStalenessSettingsTests.swift */,
 				0054553DCE5D3CED90037B0C /* SidebarActivityProjectorTests.swift */,
+				C11840000000000000000006 /* AttentionModelTests.swift */,
 				EE5E15A4988E33E201CBAE37 /* SocketSurfaceRefValidatorTests.swift */,
 				36732611CC1BEFB8D99BB606 /* SocketSurfaceRefRejectionWiringTests.swift */,
 				91488CE83CF7CEC3B741B1E5 /* EventLogTests.swift */,
@@ -1774,6 +1783,7 @@
 				9E41ED7321B6C6644A698D8C /* WorkspaceDerivedActivityTests.swift in Sources */,
 				3A4B80EACD78ED4A40F5BB6E /* SidebarStalenessSettingsTests.swift in Sources */,
 				592E7B94FECC0B5AAB3B53B4 /* SidebarActivityProjectorTests.swift in Sources */,
+				C11840000000000000000005 /* AttentionModelTests.swift in Sources */,
 				F26F83DDD9A2554D8FC6E8CE /* SocketSurfaceRefValidatorTests.swift in Sources */,
 				0D76F685D48115A43B14C5D5 /* EventLogTests.swift in Sources */,
 				8713E62944414CDC27EA1AD8 /* AgentLaunchStatsTests.swift in Sources */,
@@ -1815,6 +1825,7 @@
 				A5001007 /* TerminalController.swift in Sources */,
 				A5001540 /* PortScanner.swift in Sources */,
 				A5001542 /* SurfaceMetadataStore.swift in Sources */,
+				C11840000000000000000001 /* AttentionModel.swift in Sources */,
 				D70A3BF0A1B2C3D4E5F60718 /* WorkspaceMetadataKeys.swift in Sources */,
 				D70B3BF0A1B2C3D4E5F60718 /* CLIAdvisoryConnectivity.swift in Sources */,
 				D7005BF0A1B2C3D4E5F60718 /* PersistedMetadata.swift in Sources */,
@@ -1981,6 +1992,7 @@
 				C0AE6CCEF674AD50CCEEACE9 /* BrowserHandlers.swift in Sources */,
 				9112C6C26F5FA76D26214579 /* BrowserQueryHandlers.swift in Sources */,
 				B39195B311AC251C6034CB4A /* SocketDispatch.swift in Sources */,
+				C11840000000000000000003 /* AttentionHandlers.swift in Sources */,
 				6A0C33F6E77CC3ACF487BAF9 /* SidebarStalenessSettings.swift in Sources */,
 				8CAB6EE26E1CF4530AB6A400 /* SidebarDecayClock.swift in Sources */,
 				442C70C79A00A668A6B29640 /* SurfaceLivenessDeriver.swift in Sources */,

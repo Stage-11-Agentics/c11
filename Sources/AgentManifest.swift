@@ -269,9 +269,17 @@ enum AgentAutoApprove {
 /// **Changing a `factoryCommand` means appending the old string here, in the
 /// same commit.** `AgentFactoryCommandHistoryTests` pins the current commands
 /// so the change can't land unnoticed, and checks the rows stay honest (no row
-/// equal to the current command, no row pointing at a different executable). Kinds absent here have never changed their default
-/// (`claude-code`, `codex`, `grok`, `github-copilot`, `pi`) or have no default
-/// to change (`custom` — the operator owns the whole line).
+/// equal to the current command, no row pointing at a different executable).
+///
+/// Kinds absent here have never changed their default (`claude-code`, `codex`,
+/// `grok`, `github-copilot`, `pi`) or have no default to change (`custom` — the
+/// operator owns the whole line). Codex and Copilot are absent *despite*
+/// appearing in #384: that fix repaired the **resume** rail dropping a flag
+/// their launch command already carried, and `codex --yolo` /
+/// `copilot --allow-all --autopilot` have been constant since the day each was
+/// introduced — verified across the full history of this file and of
+/// `DefaultAgentConfig.swift`, which held the factory commands before the
+/// registry existed.
 enum AgentFactoryCommandHistory {
     static let byKind: [String: [String]] = [
         // Bare through 2026-07-27, then `--yolo` in v0.61.0 — which only
@@ -284,6 +292,7 @@ enum AgentFactoryCommandHistory {
             "opencode run --dangerously-skip-permissions",
             "opencode --dangerously-skip-permissions",
         ],
+        // Bare through #384, which gave it `--auto-approve`.
         "omp": ["omp"],
     ]
 

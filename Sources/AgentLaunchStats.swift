@@ -30,10 +30,6 @@ public enum AgentLaunchSource: String, Codable, Sendable, CaseIterable {
     case socket
     case blueprint
     case fader
-    /// A launch fired from the Settings Saved Configs editor's "Save & Launch"
-    /// (design §5.4). Distinct provenance from `.aButton` so the stats rail can
-    /// tell a configured-then-launched recipe from a plain A-button launch.
-    case configEditor = "config-editor"
 }
 
 /// The ingestion rail that produced a most-recent observation. Used only for

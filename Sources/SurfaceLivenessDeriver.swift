@@ -204,6 +204,7 @@ enum SurfaceLivenessDeriver {
     static func reconcile(
         surfaceId: UUID,
         workspaceId: UUID,
+        detectedTerminalType: String? = nil,
         now: Date = Date(),
         coldAfterSeconds: TimeInterval = SidebarAgentColdSettings.thresholdSeconds()
     ) {
@@ -243,6 +244,17 @@ enum SurfaceLivenessDeriver {
         // Only `working` can decay to idle. Any other externally-restored
         // vocabulary is left untouched.
         guard current == SidebarActivityState.working.rawValue else { return }
+
+        // A foreground agent TUI is itself live evidence. Its outer shell
+        // remains in one long-running command for the entire session, while
+        // SurfaceActivityTracker only sees input and lifecycle edges—not
+        // ongoing model work or tool output. Decaying that sparse evidence
+        // after 45 seconds makes a visibly-working Codex (and other agent
+        // TUIs) render idle. Exact lifecycle completion signals own the
+        // working→idle transition for detected agents; retain the timeout
+        // only as the fallback for ordinary shell commands.
+        guard !PaneSizePolicy.isAgentKind(detectedTerminalType) else { return }
+
         let isStale = last.map { now.timeIntervalSince($0) >= idleDecayThreshold } ?? true
         guard isStale else { return }
 

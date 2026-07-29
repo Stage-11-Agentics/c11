@@ -728,7 +728,7 @@ final class AgentLaunchPlannerTests: XCTestCase {
         )).get()
         XCTAssertEqual(
             p.launchLine,
-            "opencode run --dangerously-skip-permissions --model anthropic/claude-sonnet-4-5"
+            "opencode --auto --model anthropic/claude-sonnet-4-5"
         )
     }
 

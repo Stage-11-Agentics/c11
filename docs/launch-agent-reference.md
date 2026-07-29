@@ -141,9 +141,10 @@ operator's configured overrides (caller wins on collision).
 Delivered per the template's `promptDelivery`:
 
 - `positional` — appended to the launch argv, single-quoted (claude, codex, grok,
-  pi, omp, opencode's `run` form). One shot; no ready-state race.
-- `flag <name>` — appended as `<name> '<prompt>'` (for CLIs whose TUI takes an
-  initial prompt only via a named flag).
+  pi, omp). One shot; no ready-state race.
+- `flag <name>` — appended as `<name> '<prompt>'`, for CLIs whose TUI takes an
+  initial prompt only via a named flag (opencode `--prompt`). Same one-shot
+  argv delivery as `positional`, no ready-state race.
 - `post-boot` — typed into the TUI after a fixed delay (kimi, github-copilot),
   the same best-effort rail `default-agent launch` uses today. Racy by nature;
   prefer kinds with argv delivery for orchestration.
@@ -222,7 +223,7 @@ struct AgentSystemPromptArg {
 | `codex` | `--model` | `-c model_reasoning_effort=` | (pass-through) | — | positional |
 | `grok` | `--model` | — | | — | positional |
 | `kimi` | `--model` | — | | — | post-boot |
-| `opencode` | `--model` (provider/model) | — | | — | positional (`run` form) |
+| `opencode` | `--model` (provider/model) | — | | — | `--prompt` (bare TUI) |
 | `github-copilot` | `--model` | — | | — | post-boot |
 | `pi` | `--model` | `--thinking` | off, minimal, low, medium, high, xhigh | — | positional |
 | `omp` | `--model` | `--thinking` | off, minimal, low, medium, high, xhigh | — | positional |
@@ -231,10 +232,11 @@ The system-prompt axis is claude-code-only in v1 (other harnesses map to their
 equivalent flag in a later phase, the same way effort was staged); a non-inherit
 system-prompt request for a kind with `—` errors `system_prompt_unsupported`.
 
-Notes: opencode's prompt is positional **because** its factory command is the
-`opencode run` form; an operator who reconfigures the base command to the bare
-TUI owns the delivery consequences. kimi's `--thinking` is boolean, not tiered,
-so it is not mapped to `--effort`.
+Notes: opencode's prompt goes through `--prompt` **because** its factory
+command is the bare interactive TUI, whose only positional is `[project]` — a
+path, not a message. An operator who reconfigures the base command to the
+one-shot `opencode run` form owns the delivery consequences. kimi's
+`--thinking` is boolean, not tiered, so it is not mapped to `--effort`.
 
 ### Custom kinds
 

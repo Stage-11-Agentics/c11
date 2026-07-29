@@ -8,7 +8,13 @@
 //   session.idle       → c11 notify "Waiting for input"  (idle_prompt equivalent)
 //   permission.asked   → c11 notify "Approval needed"     (permission_prompt equivalent)
 //   session.error      → c11 notify "Session error"       (bonus, no Claude equivalent)
-//   session.status     → c11 set-metadata status=<value>  (sidebar chip)
+//
+// The sidebar's live state comes from c11's own derived `activity`, which
+// tracks the surface continuously. The plugin writes the `status` key only
+// for "Needs input", a state c11 cannot derive from the outside, and clears
+// it on idle. It deliberately does NOT mirror opencode's `session.status`:
+// that event fires only at turn boundaries, so a mid-turn surface read
+// `activity = working` next to a contradicting `status = idle`.
 //
 // The plugin is dependency-free and silently no-ops when c11 is not on
 // PATH or the socket is unavailable (e.g. OpenCode running outside c11).
@@ -16,7 +22,10 @@
 export const C11NotifyPlugin = async ({ $ }) => {
   const c11 = async (args) => {
     try {
-      await $`c11 ${args}`;
+      // `.quiet()` is load-bearing: without it Bun's shell forwards the CLI's
+      // stdout ("OK conversation.push kind=opencode …") straight to the PTY,
+      // where it interleaves with the TUI's own render and garbles the frame.
+      await $`c11 ${args}`.quiet();
     } catch {
       // c11 not on PATH, not running, or socket unavailable — no-op.
     }
@@ -58,13 +67,9 @@ export const C11NotifyPlugin = async ({ $ }) => {
         }
         case "session.idle":
           await notify("OpenCode", "Waiting for input");
-          await c11(["set-metadata", "--key", "status", "--value", "idle"]);
-          break;
-        case "session.status":
-          // event.properties.status is the source of truth for the sidebar chip.
-          if (event.properties?.status) {
-            await c11(["set-metadata", "--key", "status", "--value", event.properties.status]);
-          }
+          // Retire a pending "Needs input" chip. Nothing else writes the key,
+          // so without this a single approval prompt pins it forever.
+          await c11(["clear-metadata", "--key", "status"]);
           break;
         case "permission.asked":
           await notify("OpenCode", "Approval needed", "Permission");

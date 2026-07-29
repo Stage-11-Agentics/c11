@@ -227,9 +227,9 @@ enum AgentAutoApprove {
         "grok": "--always-approve",
         // kimi-cli spells it `--yolo` / `--yes` / `-y`.
         "kimi": "--yolo",
-        // Hidden alias of opencode's documented `--auto`, accepted by both the
-        // bare TUI (`opencode -s <id>`) and `opencode run`.
-        "opencode": "--dangerously-skip-permissions",
+        // The documented spelling, accepted by both the bare TUI
+        // (`opencode [project]`, incl. `-s <id>`) and `opencode run`.
+        "opencode": "--auto",
         "github-copilot": "--allow-all --autopilot",
         "omp": "--auto-approve",
     ]
@@ -387,21 +387,23 @@ struct AgentRegistry: Sendable {
             kind: "opencode",
             agentType: .opencode,
             displayName: "OpenCode",
-            factoryCommand: "opencode run --dangerously-skip-permissions",
+            factoryCommand: "opencode --auto",
             factoryInitialPrompt: c11OrientPrompt,
             detectComms: ["opencode", "opencode-cli"],
             detectNodeArgsSubstrings: ["opencode-cli", "sst/opencode", "/opencode"],
             iconAsset: "AgentIcons/opencode",
             sfSymbolFallback: "curlybraces",
-            resume: .fixed("opencode run --dangerously-skip-permissions\n"),
+            resume: .fixed("opencode --auto\n"),
             launch: AgentLaunchTemplate(
                 modelArg: .flag("--model"),
                 effortArg: nil,
                 effortValues: [],
-            // Positional because the factory command is the `opencode run`
-            // form, whose message is positional. An operator who rebases
-            // the command onto the bare TUI owns the delivery consequences.
-                promptDelivery: .positional,
+            // `--prompt` because the factory command is the bare TUI, whose
+            // sole positional is `[project]` — a path, not a message. A
+            // positional prompt there would be read as a directory. The
+            // one-shot `opencode run` form takes its message positionally;
+            // an operator who rebases the command onto it owns that.
+                promptDelivery: .flag("--prompt"),
                 systemPromptArg: nil
             ),
             isCanonicalTerminalType: true,

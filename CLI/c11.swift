@@ -12853,13 +12853,15 @@ struct CMUXCLI {
                 text: "claude --dangerously-skip-permissions --resume \(input.id)"
             )
         } else if input.kind == "opencode", idValid {
-            var command = "opencode -s '\(input.id)'"
+            var command = "opencode --auto -s '\(input.id)'"
             if let cwd = input.cwd, !cwd.isEmpty, isValidOpencodeSessionProjectDir(cwd) {
                 command = "cd '\(cwd)' && \(command)"
             }
             fallback = ResumeCommand(text: command)
         } else if input.kind == "omp", idValid {
-            fallback = ResumeCommand(text: "omp --resume=\(shellQuote(input.id))")
+            fallback = ResumeCommand(
+                text: "omp --auto-approve --resume=\(shellQuote(input.id))"
+            )
         } else if input.kind == "grok", idValid {
             fallback = ResumeCommand(
                 text: "grok --always-approve --resume \(shellQuote(input.id))"

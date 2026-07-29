@@ -229,7 +229,7 @@ final class AgentConfigEditorModelTests: XCTestCase {
 
     func testFirstBinaryToken() {
         XCTAssertEqual(AgentConfigAxes.firstBinaryToken("claude --dangerously-skip-permissions"), "claude")
-        XCTAssertEqual(AgentConfigAxes.firstBinaryToken("opencode run --dangerously-skip-permissions"), "opencode")
+        XCTAssertEqual(AgentConfigAxes.firstBinaryToken("opencode --auto"), "opencode")
         XCTAssertEqual(AgentConfigAxes.firstBinaryToken("FOO=bar mytool --x"), "mytool")
         XCTAssertEqual(AgentConfigAxes.firstBinaryToken("env BAR=baz tool"), "tool")
         XCTAssertNil(AgentConfigAxes.firstBinaryToken(""))

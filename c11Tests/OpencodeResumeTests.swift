@@ -191,7 +191,7 @@ final class OpencodeStrategyResumeTests: XCTestCase {
             return XCTFail("alive+cwd must typeCommand")
         }
         XCTAssertTrue(submit)
-        XCTAssertEqual(text, "cd '/Users/atin/Projects/proj' && opencode --dangerously-skip-permissions -s 'ses_0fda89a49ffeLHwJXtrxnn4X6g'")
+        XCTAssertEqual(text, "cd '/Users/atin/Projects/proj' && opencode --auto -s 'ses_0fda89a49ffeLHwJXtrxnn4X6g'")
     }
 
     func testResumeWithoutCwdHasNoCdPrefix() {
@@ -199,8 +199,8 @@ final class OpencodeStrategyResumeTests: XCTestCase {
         guard case let .typeCommand(text, _) = s.resume(ref: ref(state: .suspended)) else {
             return XCTFail("suspended must typeCommand")
         }
-        XCTAssertEqual(text, "opencode --dangerously-skip-permissions -s 'ses_0fda89a49ffeLHwJXtrxnn4X6g'")
-        XCTAssertTrue(text.contains("--dangerously-skip-permissions"),
+        XCTAssertEqual(text, "opencode --auto -s 'ses_0fda89a49ffeLHwJXtrxnn4X6g'")
+        XCTAssertTrue(text.contains("--auto"),
                       "interactive resume must keep the launch command's auto-approve posture")
     }
 

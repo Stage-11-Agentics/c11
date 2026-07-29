@@ -223,7 +223,7 @@ Both fit the design with **no new machinery**: a small `jsonlDir` scraper (the c
 | Agent | Cmd | Yolo flag | Resume specific | Store (format) | Id | Capture rail |
 |---|---|---|---|---|---|---|
 | Claude Code | `claude` | `--dangerously-skip-permissions` | `--resume <id>` | `~/.claude/projects/<cwd>/*.jsonl` (jsonlDir) | UUID | event hook + mint |
-| opencode | `opencode` | `--dangerously-skip-permissions` | `-s <id>` | `opencode.db` (sqlite) | `ses_`+base62 | event plugin |
+| opencode | `opencode` | `--auto` | `-s <id>` | `opencode.db` (sqlite) | `ses_`+base62 | event plugin |
 | Codex | `codex` | `--yolo` | `codex resume <id>` | `rollout-*.jsonl` (jsonlRollout) | UUID | watch |
 | Cline | `cline` | `--yolo` | `--id <id>` | `~/.cline/data/tasks/<id>/` | ts-derived | event hook (`TaskStart`) |
 | Qwen | `qwen` | `--yolo` | `--resume <id>` | `~/.qwen/projects/<cwd>/chats` (jsonlDir) | UUID | event hook |

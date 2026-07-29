@@ -10,13 +10,11 @@ import Foundation
 /// UUID and NOT Crockford base32 — opencode session ids routinely contain
 /// `I/L/O/U`, which a Crockford alphabet would wrongly reject.
 ///
-/// Resume flag note: the bare TUI accepts the auto-approve flag too — it is a
-/// hidden alias of the documented `--auto`, wired on both the `$0 [project]`
-/// and `run` commands (verified against opencode 1.18.0). The resume command
-/// therefore carries the same flag the manifest's `factoryCommand` does; see
-/// `AgentAutoApprove`. It does not appear in `--help`, and yargs silently
-/// ignores flags it does not know, so a wrong spelling here would fail
-/// open — into approval prompts — rather than erroring.
+/// Resume flag note: `--auto` is wired on both the `$0 [project]` and `run`
+/// commands (verified against opencode 1.18.0), so the resume command carries
+/// the same flag the manifest's `factoryCommand` does; see `AgentAutoApprove`.
+/// A wrong spelling fails loudly, not open: opencode's yargs parser rejects
+/// unknown flags and prints usage instead of starting the session.
 struct OpencodeStrategy: ConversationStrategy {
     let kind: String = "opencode"
 

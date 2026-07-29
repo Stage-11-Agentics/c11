@@ -108,7 +108,7 @@ notify = ["bash", "~/.local/bin/codex-notify.sh"]
 
 ### OpenCode Plugin (auto-installed)
 
-c11 ships a bundled OpenCode plugin that bridges `session.idle`, `permission.asked`, `session.error`, and `session.status` events into c11 notifications and sidebar status updates. This gives OpenCode the same "blue ring + tab highlight + Cmd+Shift+U jump-to-unread" workflow that Claude Code and Codex have.
+c11 ships a bundled OpenCode plugin that bridges `session.idle`, `permission.asked`, and `session.error` events into c11 notifications. This gives OpenCode the same "blue ring + tab highlight + Cmd+Shift+U jump-to-unread" workflow that Claude Code and Codex have.
 
 **Install:**
 
@@ -126,10 +126,16 @@ OpenCode auto-loads plugins from `~/.config/opencode/plugins/` at startup — no
 
 | OpenCode event | c11 action | Claude Code equivalent |
 |---|---|---|
-| `session.idle` | `c11 notify "Waiting for input"` + `set-metadata status=idle` | `idle_prompt` matcher |
+| `session.idle` | `c11 notify "Waiting for input"` + `clear-metadata status` | `idle_prompt` matcher |
 | `permission.asked` | `c11 notify "Approval needed"` + `set-metadata status="Needs input"` | `permission_prompt` matcher |
 | `session.error` | `c11 notify "Session error"` | (no equivalent) |
-| `session.status` | `c11 set-metadata status=<value>` | (wrapper-emitted status) |
+
+The sidebar's live state comes from c11's own derived `activity`, which tracks
+the surface continuously. The plugin writes the `status` key only for "Needs
+input" — a state c11 cannot see from the outside — and clears it on idle. It
+deliberately does not mirror OpenCode's `session.status` event: that fires only
+at turn boundaries, so a mid-turn surface would read `activity = working`
+beside a contradicting `status = idle`.
 
 **Uninstall:**
 
@@ -146,7 +152,9 @@ If you prefer not to use `c11 skill install`, you can create `.config/opencode/p
 ```javascript
 export const C11NotifyPlugin = async ({ $ }) => {
   const c11 = async (args) => {
-    try { await $`c11 ${args}`; } catch {}
+    // `.quiet()` keeps the CLI's stdout out of the PTY, where it would
+    // interleave with OpenCode's TUI render and garble the frame.
+    try { await $`c11 ${args}`.quiet(); } catch {}
   };
   const notify = (title, body, subtitle) => {
     const args = ["notify", "--title", title];
@@ -159,7 +167,7 @@ export const C11NotifyPlugin = async ({ $ }) => {
       switch (event.type) {
         case "session.idle":
           await notify("OpenCode", "Waiting for input");
-          await c11(["set-metadata", "--key", "status", "--value", "idle"]);
+          await c11(["clear-metadata", "--key", "status"]);
           break;
         case "permission.asked":
           await notify("OpenCode", "Approval needed", "Permission");
@@ -167,11 +175,6 @@ export const C11NotifyPlugin = async ({ $ }) => {
           break;
         case "session.error":
           await notify("OpenCode", "Session error", "Error");
-          break;
-        case "session.status":
-          if (event.properties?.status) {
-            await c11(["set-metadata", "--key", "status", "--value", event.properties.status]);
-          }
           break;
       }
     },

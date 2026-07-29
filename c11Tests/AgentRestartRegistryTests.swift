@@ -295,13 +295,15 @@ final class AgentRestartRegistryTests: XCTestCase {
         )
     }
 
-    /// Opencode has no verified resume flag — launches fresh with --dangerously-skip-permissions.
+    /// Opencode has no session-id resume flag on this row — launches a fresh
+    /// interactive TUI with `--auto`. Exact-session resume is the
+    /// conversation rail's job (`opencode --auto -s <id>`).
     func testOpencodeRowReturnsBareCommand() {
         let registry = AgentRestartRegistry.phase1
         XCTAssertEqual(
             registry.resolveCommand(terminalType: "opencode", sessionId: nil, metadata: [:]),
-            "opencode run --dangerously-skip-permissions\n",
-            "opencode row returns fresh launch with --dangerously-skip-permissions (no resume flag)"
+            "opencode --auto\n",
+            "opencode row returns a fresh interactive-TUI launch with --auto"
         )
         XCTAssertEqual(
             registry.resolveCommand(
@@ -309,7 +311,7 @@ final class AgentRestartRegistryTests: XCTestCase {
                 sessionId: "11111111-2222-3333-4444-555566667777",
                 metadata: [:]
             ),
-            "opencode run --dangerously-skip-permissions\n",
+            "opencode --auto\n",
             "opencode row ignores session id and returns fresh launch"
         )
     }

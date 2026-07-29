@@ -346,7 +346,7 @@ def main() -> int:
         expect(
             opencode_dirty.returncode == 0
             and opencode_panel.get("transcript_evidence") == "verified"
-            and opencode_panel.get("action") == f"cd '/work/opencode' && opencode -s '{opencode_id}'",
+            and opencode_panel.get("action") == f"cd '/work/opencode' && opencode --auto -s '{opencode_id}'",
             f"dirty OpenCode SQLite verification diverged from app behavior: {opencode_panel}",
             failures,
         )

@@ -249,8 +249,19 @@ struct DefaultAgentConfig: Codable, Equatable {
 
     /// Returns the config for `agent`, falling back to factory if the operator
     /// never edited that one.
+    ///
+    /// The canonical accessor for every launch rail (the A button, `launch-agent`,
+    /// `default-agent launch`, the resolver, the Settings UI), which is why the
+    /// stale-default upgrade lives here rather than in one caller: a persisted
+    /// entry that still holds a *previous release's* factory command is carried
+    /// forward to the current one (see `AgentFactoryCommandHistory`). Operator-
+    /// authored commands are returned untouched.
     func config(for agent: AgentType) -> AgentConfig {
-        agents[agent] ?? .factory(for: agent)
+        guard var entry = agents[agent] else { return .factory(for: agent) }
+        if let upgraded = AgentFactoryCommandHistory.upgrading(entry.command, forKind: agent.rawValue) {
+            entry.command = upgraded
+        }
+        return entry
     }
 
     // Shape-based equality: `hasExplicitDefaultAgent` is provenance metadata,
@@ -346,10 +357,14 @@ final class DefaultAgentConfigStore {
             return .factory
         }
         // Ensure every agent type has at least the factory defaults filled in;
-        // covers older blobs and operator-cleared individual entries.
+        // covers older blobs and operator-cleared individual entries. Entries
+        // that are present but still hold a previous release's factory command
+        // are carried forward here as well, so the next `save` normalizes the
+        // blob instead of re-persisting the stale line
+        // (`AgentFactoryCommandHistory`).
         var filled = cfg
-        for type in AgentType.allCases where filled.agents[type] == nil {
-            filled.agents[type] = .factory(for: type)
+        for type in AgentType.allCases {
+            filled.agents[type] = filled.config(for: type)
         }
         return filled
     }

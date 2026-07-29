@@ -225,8 +225,12 @@ enum AgentAutoApprove {
         // accepted by the bare TUI *and* the `resume` subcommand.
         "codex": "--yolo",
         "grok": "--always-approve",
-        // kimi-cli spells it `--yolo` / `--yes` / `-y`.
-        "kimi": "--yolo",
+        // kimi-code has two tiers: `--yolo` / `--yes` / `-y` auto-approves tool
+        // calls but still lets the agent stop to ask questions, while `--auto`
+        // is the fully autonomous permission mode. c11 launches unattended
+        // agents, so `--auto` is the posture (verified against
+        // `kimi --help` 0.30.0, 2026-07-29).
+        "kimi": "--auto",
         // The documented spelling, accepted by both the bare TUI
         // (`opencode [project]`, incl. `-s <id>`) and `opencode run`.
         "opencode": "--auto",
@@ -241,6 +245,57 @@ enum AgentAutoApprove {
     static func applying(toCommand command: String, kind: String) -> String {
         guard let flags = byKind[kind], !command.contains(flags) else { return command }
         return "\(command) \(flags)"
+    }
+}
+
+/// Launch commands that *earlier releases* shipped as a kind's factory default,
+/// oldest first, never including the current one.
+///
+/// Why this has to exist: the launch rails don't compose from `factoryCommand`.
+/// They compose from the operator's persisted per-agent command
+/// (`DefaultAgentConfigStore`), and that entry is frozen the first time anything
+/// calls `update(_:_:)` — which saves the *whole* config, so editing one agent
+/// silently pickles every other agent's then-current factory command into
+/// UserDefaults forever. Change a factory command after that and the operator
+/// keeps launching the old line: no warning, no diff, every launch, until
+/// somebody reads the plist. That is how `kimi` kept launching bare — with
+/// approval prompts on — for two months after the manifest said otherwise.
+///
+/// A persisted command that *exactly* equals one of these strings was never a
+/// deliberate choice; it is a previous release's default left behind. Those move
+/// forward. Anything else — a hand-edited line, a wrapper, extra flags, a
+/// different binary — is operator intent and is never touched.
+///
+/// **Changing a `factoryCommand` means appending the old string here, in the
+/// same commit.** `AgentFactoryCommandHistoryTests` pins the current commands
+/// so the change can't land unnoticed, and checks the rows stay honest (no row
+/// equal to the current command, no row pointing at a different executable). Kinds absent here have never changed their default
+/// (`claude-code`, `codex`, `grok`, `github-copilot`, `pi`) or have no default
+/// to change (`custom` — the operator owns the whole line).
+enum AgentFactoryCommandHistory {
+    static let byKind: [String: [String]] = [
+        // Bare through 2026-07-27, then `--yolo` in v0.61.0 — which only
+        // auto-approves tool calls and still stops to ask questions.
+        "kimi": ["kimi", "kimi --yolo"],
+        // `opencode run` is the headless subcommand (fixed in df535b35a), and
+        // `--dangerously-skip-permissions` was never an opencode flag at all.
+        "opencode": [
+            "opencode",
+            "opencode run --dangerously-skip-permissions",
+            "opencode --dangerously-skip-permissions",
+        ],
+        "omp": ["omp"],
+    ]
+
+    /// The current factory command when `command` is a stale shipped default for
+    /// `kind`, otherwise `nil` (leave it alone).
+    static func upgrading(_ command: String, forKind kind: String) -> String? {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let history = byKind[kind], history.contains(trimmed),
+              let current = AgentRegistry.shared.manifest(forKind: kind)?.factoryCommand,
+              current != trimmed
+        else { return nil }
+        return current
     }
 }
 
@@ -365,13 +420,13 @@ struct AgentRegistry: Sendable {
             kind: "kimi",
             agentType: .kimi,
             displayName: "Kimi",
-            factoryCommand: "kimi --yolo",
+            factoryCommand: "kimi --auto",
             factoryInitialPrompt: c11OrientPrompt,
             detectComms: ["kimi", "kimi-cli"],
             detectNodeArgsSubstrings: ["kimi-cli", "moonshot/kimi", "/kimi"],
             iconAsset: "AgentIcons/kimi",
             sfSymbolFallback: "moon.stars",
-            resume: .fixed("kimi --yolo\n"),
+            resume: .fixed("kimi --auto\n"),
             launch: AgentLaunchTemplate(
                 modelArg: .flag("--model"),
             // kimi's --thinking is boolean, not tiered — no effort axis.

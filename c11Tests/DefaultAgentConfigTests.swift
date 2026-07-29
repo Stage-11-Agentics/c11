@@ -297,6 +297,44 @@ final class DefaultAgentConfigTests: XCTestCase {
         XCTAssertEqual(store.current.config(for: .claudeCode).command, "claude --dangerously-skip-permissions")
     }
 
+    // MARK: - stale factory-command drift
+
+    /// A blob pickled by an older release keeps typing that release's launch
+    /// command on every rail. `kimi` shipped bare for two months; an operator
+    /// who edited any agent in that window froze bare `kimi` into UserDefaults,
+    /// and c11 kept launching it — with approval prompts on — long after the
+    /// manifest moved to `--auto`.
+    func testStoreUpgradesStaleFactoryCommandsFromAnOlderRelease() {
+        let (store, defaults) = makeStore()
+        let stale = #"{"defaultAgent":"kimi","agents":{"kimi":{"command":"kimi","initialPrompt":"","envOverridesText":"","model":"","effort":""},"opencode":{"command":"opencode","initialPrompt":"","envOverridesText":"","model":"","effort":""}}}"#
+        defaults.set(Data(stale.utf8), forKey: DefaultAgentConfigStore.defaultsKey)
+        XCTAssertEqual(store.current.config(for: .kimi).command, "kimi --auto")
+        XCTAssertEqual(store.current.config(for: .opencode).command, "opencode --auto")
+    }
+
+    /// The upgrade only ever touches strings a previous release shipped. A
+    /// command the operator wrote is theirs, flags and all.
+    func testStoreLeavesOperatorAuthoredCommandsAlone() {
+        let (store, defaults) = makeStore()
+        let edited = #"{"defaultAgent":"kimi","agents":{"kimi":{"command":"kimi --plan","initialPrompt":"","envOverridesText":"","model":"","effort":""}}}"#
+        defaults.set(Data(edited.utf8), forKey: DefaultAgentConfigStore.defaultsKey)
+        XCTAssertEqual(store.current.config(for: .kimi).command, "kimi --plan")
+    }
+
+    /// Reading upgrades; the next write persists the upgrade, so the blob stops
+    /// carrying the stale line instead of re-pickling it on every save.
+    func testStoreNormalizesStaleCommandsOnNextSave() throws {
+        let (store, defaults) = makeStore()
+        let stale = #"{"defaultAgent":"kimi","agents":{"kimi":{"command":"kimi","initialPrompt":"","envOverridesText":"","model":"","effort":""}}}"#
+        defaults.set(Data(stale.utf8), forKey: DefaultAgentConfigStore.defaultsKey)
+
+        store.update(.codex) { $0.command = "codex --yolo" }
+
+        let data = try XCTUnwrap(defaults.data(forKey: DefaultAgentConfigStore.defaultsKey))
+        let persisted = try JSONDecoder().decode(DefaultAgentConfig.self, from: data)
+        XCTAssertEqual(persisted.agents[.kimi]?.command, "kimi --auto")
+    }
+
     // MARK: - Project config discovery
 
     func testProjectConfigFindReturnsNilForMissingFile() throws {

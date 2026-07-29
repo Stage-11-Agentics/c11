@@ -321,7 +321,7 @@ final class AgentRestartRegistryTests: XCTestCase {
         let registry = AgentRestartRegistry.phase1
         XCTAssertEqual(
             registry.resolveCommand(terminalType: "kimi", sessionId: nil, metadata: [:]),
-            "kimi --yolo\n",
+            "kimi --auto\n",
             "kimi row returns bare launch (no resume flag)"
         )
         XCTAssertEqual(
@@ -330,7 +330,7 @@ final class AgentRestartRegistryTests: XCTestCase {
                 sessionId: "aaaabbbb-cccc-dddd-eeee-ffff00001111",
                 metadata: [:]
             ),
-            "kimi --yolo\n",
+            "kimi --auto\n",
             "kimi row ignores session id and returns bare launch"
         )
     }

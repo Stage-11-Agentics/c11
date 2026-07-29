@@ -284,3 +284,115 @@ final class AgentAutoApproveCoverageTests: XCTestCase {
             "an agent gained/lost an auto-approve flag: reconcile AgentAutoApprove")
     }
 }
+
+/// The launch rails compose from the operator's *persisted* per-agent command,
+/// not from `factoryCommand` — so a factory command that gains a flag leaves
+/// every existing operator launching the old line, silently, forever.
+///
+/// The bug these tests lock out: `kimi`'s factory default went bare → `--yolo`
+/// → `--auto`, but a blob pickled in May kept typing bare `kimi`, so every
+/// Kimi c11 launched sat on approval prompts while the manifest, the resume
+/// rails, and `AgentAutoApproveCoverageTests` all read green.
+final class AgentFactoryCommandHistoryTests: XCTestCase {
+    private var registry: AgentRegistry { .shared }
+
+    /// The pin that makes the ledger maintainable: editing a `factoryCommand`
+    /// fails here, and the message says where the old string has to go.
+    func testFactoryCommandsArePinned() {
+        let pinned: [String: String] = [
+            "claude-code": "claude --dangerously-skip-permissions",
+            "codex": "codex --yolo",
+            "grok": "grok --always-approve",
+            "kimi": "kimi --auto",
+            "opencode": "opencode --auto",
+            "github-copilot": "copilot --allow-all --autopilot",
+            "pi": "pi",
+            "omp": "omp --auto-approve",
+            "custom": "",
+        ]
+        for m in registry.all {
+            XCTAssertEqual(
+                m.factoryCommand, pinned[m.kind],
+                """
+                \(m.kind) factoryCommand changed. Append the OLD string to \
+                AgentFactoryCommandHistory.byKind in this same commit, or every \
+                operator who ran the previous build keeps launching it.
+                """)
+        }
+    }
+
+    /// Every recorded stale default moves forward to the current command.
+    func testStaleDefaultsUpgradeToCurrentFactoryCommand() {
+        for (kind, history) in AgentFactoryCommandHistory.byKind {
+            guard let current = registry.manifest(forKind: kind)?.factoryCommand else {
+                XCTFail("history row for unknown kind \(kind)"); continue
+            }
+            for stale in history {
+                XCTAssertEqual(
+                    AgentFactoryCommandHistory.upgrading(stale, forKind: kind), current,
+                    "'\(stale)' should upgrade to '\(current)' for \(kind)")
+            }
+        }
+    }
+
+    /// Surrounding whitespace is a persistence artifact, not operator intent.
+    func testStaleDefaultsUpgradeThroughSurroundingWhitespace() {
+        XCTAssertEqual(AgentFactoryCommandHistory.upgrading("  kimi\n", forKind: "kimi"),
+                       "kimi --auto")
+    }
+
+    /// Anything the operator actually wrote is left exactly as written — extra
+    /// flags, a wrapper path, a bare executable that was never a shipped
+    /// default, or a kind with no history at all.
+    func testOperatorAuthoredCommandsAreNeverUpgraded() {
+        let untouched: [(String, String)] = [
+            ("kimi", "kimi --plan"),
+            ("kimi", "kimi --yolo --model kimi-k2"),
+            ("kimi", "/usr/local/bin/kimi --auto"),
+            ("kimi", "kimi --auto"),            // already current
+            ("claude-code", "claude"),          // never a shipped default
+            ("codex", "codex"),                 // ditto
+            ("pi", "pi"),                       // no history, and it is current
+            ("custom", "anything at all"),
+        ]
+        for (kind, command) in untouched {
+            XCTAssertNil(
+                AgentFactoryCommandHistory.upgrading(command, forKind: kind),
+                "'\(command)' is operator intent for \(kind) and must not be rewritten")
+        }
+    }
+
+    /// Rows stay honest: none duplicates the current command (which would make
+    /// the upgrade a no-op that reads like coverage), and none points at a
+    /// different executable than the one the kind launches today.
+    func testHistoryRowsStayHonest() {
+        for (kind, history) in AgentFactoryCommandHistory.byKind {
+            guard let current = registry.manifest(forKind: kind)?.factoryCommand else { continue }
+            let currentExe = current.split(separator: " ").first.map(String.init)
+            XCTAssertFalse(history.isEmpty, "empty history row for \(kind) — drop the key instead")
+            XCTAssertEqual(Set(history).count, history.count, "duplicate history rows for \(kind)")
+            for stale in history {
+                XCTAssertNotEqual(stale, current, "\(kind) history row duplicates the current command")
+                XCTAssertEqual(
+                    stale.split(separator: " ").first.map(String.init), currentExe,
+                    "\(kind) history row '\(stale)' launches a different binary than '\(current)'")
+            }
+        }
+    }
+
+    /// A stale default that predates an auto-approve flag must land on a command
+    /// that carries one — the whole point of the upgrade.
+    func testUpgradedCommandsCarryAutoApproveFlags() {
+        for (kind, history) in AgentFactoryCommandHistory.byKind {
+            guard let flags = AgentAutoApprove.flags(forKind: kind) else { continue }
+            for stale in history {
+                guard let upgraded = AgentFactoryCommandHistory.upgrading(stale, forKind: kind) else {
+                    XCTFail("\(kind) history row '\(stale)' did not upgrade"); continue
+                }
+                XCTAssertTrue(
+                    upgraded.contains(flags),
+                    "\(kind) upgrade '\(upgraded)' is missing \(flags)")
+            }
+        }
+    }
+}

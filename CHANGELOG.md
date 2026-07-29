@@ -6,6 +6,28 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.61.0] - 2026-07-29
+
+Headline: **Agents keep their posture across a restart, and the sidebar tells you which one needs you.** Resuming a session no longer drops it into approval prompts, OMP and Grok now come back as the exact conversation you left, and a rebuilt lifecycle vocabulary plus flaggable attention make a large fleet readable at a glance.
+
+### Added
+
+- **Agents can be flagged for attention, and routine noise can be suppressed.** A flag is a sticky, canonical reason that puts a surface at the front of the ⌥V queue and into an on-demand Flagged Agents sidebar row; suppression keeps routine completions readable without pulling the surface into waiting. ([#387](https://github.com/Stage-11-Agentics/c11/pull/387)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **OMP and Grok sessions survive a restart by exact identity.** c11 captures each one's real session id and persisted path, then resumes that conversation rather than starting a fresh one. ([#377](https://github.com/Stage-11-Agentics/c11/pull/377)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+### Changed
+
+- **One lifecycle vocabulary across workspace pulse rows and surface tabs.** Working, waiting, idle, and cold each get a fixed shape and slot on a shared 9pt hard-edged ramp, with a shared animation clock and a new Static marks setting for anyone who wants the motion off. Reduce Motion, pane collapse, and tab overflow all gate the animation automatically. ([#386](https://github.com/Stage-11-Agentics/c11/pull/386)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
+### Fixed
+
+- **Resuming an agent no longer drops it into permission prompts.** A restored pane now carries the same auto-approve posture its freshly launched twin had. Codex, OpenCode, Kimi, OMP, and GitHub Copilot were all affected; every launch and resume rail now composes the flag from one shared table. ([#384](https://github.com/Stage-11-Agentics/c11/pull/384)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **Launching an OpenCode agent gives you a real interactive session.** `launch-agent --type opencode` invoked OpenCode's one-shot batch runner, so it either answered once and exited or, with no prompt, failed outright and left a dead shell. It now starts the interactive TUI and delivers the initial prompt correctly.
+
+### Thanks to 1 contributor!
+
+- [@BenevolentFutures](https://github.com/BenevolentFutures)
+
 ## [0.60.2] - 2026-07-27
 
 Headline: **Agent activity icons stay truthful across the whole fleet.** Codex, OpenCode, Pi, and Grok now drive their live/idle state from the agent loop, keeping the top surface tabs and workspace sidebar in sync with what each agent is actually doing.

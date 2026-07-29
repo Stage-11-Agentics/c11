@@ -2523,6 +2523,39 @@ final class WorkspacePulseSurfaceCensusProjectionTests: XCTestCase {
 }
 
 @MainActor
+final class WorkspaceLogicalCreationPersistenceTests: XCTestCase {
+    func testSnapshotAndRestorePreserveCreationAcrossPanelKinds() throws {
+        let workspace = Workspace()
+        defer { workspace.teardownAllPanels() }
+        let paneId = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
+        let terminal = try XCTUnwrap(workspace.focusedTerminalPanel)
+        let browser = try XCTUnwrap(
+            workspace.newBrowserSurface(inPane: paneId, focus: false)
+        )
+        let markdown = try XCTUnwrap(
+            workspace.newMarkdownSurface(inPane: paneId, focus: false)
+        )
+
+        let expected = [
+            terminal.id: try XCTUnwrap(terminal.createdAt),
+            browser.id: try XCTUnwrap(browser.createdAt),
+            markdown.id: try XCTUnwrap(markdown.createdAt),
+        ]
+        let snapshot = workspace.sessionSnapshot(includeScrollback: false)
+        for panel in snapshot.panels {
+            XCTAssertEqual(panel.createdAt, expected[panel.id])
+        }
+
+        let restored = Workspace()
+        defer { restored.teardownAllPanels() }
+        restored.restoreSessionSnapshot(snapshot)
+        for (panelId, createdAt) in expected {
+            XCTAssertEqual(restored.panels[panelId]?.createdAt, createdAt)
+        }
+    }
+}
+
+@MainActor
 final class WorkspacePulseMarkRowMetricsTests: XCTestCase {
     private let sidebarCardContentWidth: CGFloat = 178
 

@@ -1,4 +1,5 @@
 import Foundation
+import Bonsplit
 
 /// Coarse, derived activity classification for a workspace, computed from
 /// low-level surface signals when no agent has explicitly reported status.
@@ -22,6 +23,108 @@ enum WorkspacePulseState: String, CaseIterable {
     case cold
 }
 
+/// One c11-owned projection of the lifecycle and attention truth shown by
+/// top-tab/sidebar tooltips and Surface Details.
+///
+/// Renderers receive this immutable payload; they never infer lifecycle or
+/// consult metadata/activity/notification stores themselves.
+struct AgentActivityHelpProjection: Equatable {
+    let presentedState: WorkspacePulseState
+    let stateStartedAt: Date?
+    let help: BonsplitTabActivityHelp
+    let accessibilityValue: String
+    let lastActivityAt: Date?
+    let flagReason: String?
+    let flagRaisedAt: Date?
+    let suppressed: Bool
+
+    static func project(
+        state: WorkspacePulseState,
+        lastActivityAt: Date?,
+        waitingStartedAt: Date?,
+        coldAfterSeconds: TimeInterval,
+        flagReason: String?,
+        flagRaisedAt: Date?,
+        suppressed: Bool,
+        now: Date = Date()
+    ) -> AgentActivityHelpProjection {
+        let stateStartedAt: Date?
+        switch state {
+        case .waiting:
+            stateStartedAt = waitingStartedAt
+        case .working, .idle:
+            stateStartedAt = lastActivityAt
+        case .cold:
+            stateStartedAt = lastActivityAt?.addingTimeInterval(max(0, coldAfterSeconds))
+        }
+
+        let normalizedReason = flagReason?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        var detailLines: [String] = []
+        if let normalizedReason, !normalizedReason.isEmpty {
+            detailLines.append(String(
+                localized: "surface.activity.flagged",
+                defaultValue: "Flagged: \(normalizedReason)"
+            ))
+        }
+        if suppressed {
+            detailLines.append(String(
+                localized: "surface.activity.suppressed",
+                defaultValue: "Suppressed"
+            ))
+        }
+
+        let help = BonsplitTabActivityHelp(
+            stateLabel: localizedStateLabel(state),
+            startedAt: stateStartedAt,
+            durationFormat: String(
+                localized: "surface.activity.durationFormat",
+                defaultValue: "%1$@ for %2$@"
+            ),
+            detailLines: detailLines
+        )
+        return AgentActivityHelpProjection(
+            presentedState: state,
+            stateStartedAt: stateStartedAt,
+            help: help,
+            accessibilityValue: BonsplitTabActivityHelpFormatter.accessibilityValue(
+                for: help,
+                at: now
+            ),
+            lastActivityAt: lastActivityAt,
+            flagReason: normalizedReason.flatMap { $0.isEmpty ? nil : $0 },
+            flagRaisedAt: flagRaisedAt,
+            suppressed: suppressed
+        )
+    }
+
+    func text(at now: Date) -> String {
+        BonsplitTabActivityHelpFormatter.text(for: help, at: now)
+    }
+
+    private static func localizedStateLabel(_ state: WorkspacePulseState) -> String {
+        switch state {
+        case .waiting:
+            return String(
+                localized: "surface.activity.waiting",
+                defaultValue: "Waiting for your response"
+            )
+        case .working:
+            return String(localized: "surface.activity.working", defaultValue: "Working")
+        case .idle:
+            return String(localized: "surface.activity.idle", defaultValue: "Idle")
+        case .cold:
+            return String(localized: "surface.activity.cold", defaultValue: "Cold")
+        }
+    }
+}
+
+struct SurfaceActivityDetailsSnapshot: Equatable {
+    let activityHelp: AgentActivityHelpProjection?
+    let createdAt: Date?
+    let lastActivityAt: Date?
+}
+
 struct WorkspacePulseAgent: Equatable, Identifiable {
     let surfaceId: UUID
     let state: WorkspacePulseState
@@ -32,6 +135,7 @@ struct WorkspacePulseAgent: Equatable, Identifiable {
     let flagged: Bool
     let suppressed: Bool
     let flagReason: String?
+    let activityHelp: AgentActivityHelpProjection?
 
     var id: UUID { surfaceId }
 
@@ -41,7 +145,8 @@ struct WorkspacePulseAgent: Equatable, Identifiable {
         context: WorkspacePulseAgentContext?,
         flagged: Bool = false,
         suppressed: Bool = false,
-        flagReason: String? = nil
+        flagReason: String? = nil,
+        activityHelp: AgentActivityHelpProjection? = nil
     ) {
         self.surfaceId = surfaceId
         self.state = state
@@ -49,6 +154,7 @@ struct WorkspacePulseAgent: Equatable, Identifiable {
         self.flagged = flagged
         self.suppressed = suppressed
         self.flagReason = flagReason
+        self.activityHelp = activityHelp
     }
 
     /// Suppression is a lifecycle projection, and a flag wins when both

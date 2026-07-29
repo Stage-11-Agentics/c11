@@ -39,11 +39,28 @@ struct SurfaceHandleInfo {
 struct SurfaceManifestSnapshot {
     let metadata: [String: Any]
     let sources: [String: [String: Any]]
+    let activity: SurfaceActivityDetailsSnapshot
     let capturedAt: Date
 
+    @MainActor
     static func capture(workspaceId: UUID, surfaceId: UUID) -> SurfaceManifestSnapshot {
         let result = SurfaceMetadataStore.shared.getMetadata(workspaceId: workspaceId, surfaceId: surfaceId)
-        return SurfaceManifestSnapshot(metadata: result.metadata, sources: result.sources, capturedAt: Date())
+        let workspace = AppDelegate.shared?
+            .tabManagerFor(tabId: workspaceId)?
+            .tabs
+            .first(where: { $0.id == workspaceId })
+        let activity = workspace?.surfaceActivityDetailsSnapshot(panelId: surfaceId)
+            ?? SurfaceActivityDetailsSnapshot(
+                activityHelp: nil,
+                createdAt: nil,
+                lastActivityAt: nil
+            )
+        return SurfaceManifestSnapshot(
+            metadata: result.metadata,
+            sources: result.sources,
+            activity: activity,
+            capturedAt: Date()
+        )
     }
 
     var prettyJSON: String {
@@ -180,47 +197,95 @@ struct SurfaceManifestView: View {
     }
 
     private var detailsSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            row(
-                label: String(localized: "surfaceManifest.detail.type", defaultValue: "Type"),
-                value: kind.localizedLabel
-            )
-            if let terminalType = handle.terminalType, !terminalType.isEmpty {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            VStack(alignment: .leading, spacing: 4) {
                 row(
-                    label: String(localized: "surfaceManifest.detail.terminalType", defaultValue: "Terminal type"),
-                    value: terminalType
+                    label: String(localized: "surfaceManifest.detail.type", defaultValue: "Type"),
+                    value: kind.localizedLabel
+                )
+                if let terminalType = handle.terminalType, !terminalType.isEmpty {
+                    row(
+                        label: String(localized: "surfaceManifest.detail.terminalType", defaultValue: "Terminal type"),
+                        value: terminalType
+                    )
+                }
+                if let tty = handle.tty, !tty.isEmpty {
+                    row(
+                        label: String(localized: "surfaceManifest.detail.tty", defaultValue: "TTY"),
+                        value: tty
+                    )
+                }
+                if let cwd = handle.workingDirectory, !cwd.isEmpty {
+                    row(
+                        label: String(localized: "surfaceManifest.detail.directory", defaultValue: "Directory"),
+                        value: cwd
+                    )
+                }
+                if let url = handle.url, !url.isEmpty {
+                    row(
+                        label: String(localized: "surfaceManifest.detail.url", defaultValue: "URL"),
+                        value: url
+                    )
+                }
+                if let file = handle.filePath, !file.isEmpty {
+                    row(
+                        label: String(localized: "surfaceManifest.detail.file", defaultValue: "File"),
+                        value: file
+                    )
+                }
+                row(
+                    label: String(localized: "surfaceManifest.detail.activity", defaultValue: "Activity"),
+                    value: snapshot.activity.activityHelp?.text(at: context.date)
+                        ?? notRecordedText
+                )
+                row(
+                    label: String(localized: "surfaceManifest.detail.created", defaultValue: "Created"),
+                    value: snapshot.activity.createdAt.map {
+                        Self.timestampFormatter.string(from: $0)
+                    }
+                        ?? notRecordedText
+                )
+                row(
+                    label: String(
+                        localized: "surfaceManifest.detail.lastActivity",
+                        defaultValue: "Last activity"
+                    ),
+                    value: lastActivityText(at: context.date)
+                )
+                row(
+                    label: String(localized: "surfaceManifest.header.capturedAt", defaultValue: "Captured"),
+                    value: Self.timestampFormatter.string(from: snapshot.capturedAt)
                 )
             }
-            if let tty = handle.tty, !tty.isEmpty {
-                row(
-                    label: String(localized: "surfaceManifest.detail.tty", defaultValue: "TTY"),
-                    value: tty
-                )
-            }
-            if let cwd = handle.workingDirectory, !cwd.isEmpty {
-                row(
-                    label: String(localized: "surfaceManifest.detail.directory", defaultValue: "Directory"),
-                    value: cwd
-                )
-            }
-            if let url = handle.url, !url.isEmpty {
-                row(
-                    label: String(localized: "surfaceManifest.detail.url", defaultValue: "URL"),
-                    value: url
-                )
-            }
-            if let file = handle.filePath, !file.isEmpty {
-                row(
-                    label: String(localized: "surfaceManifest.detail.file", defaultValue: "File"),
-                    value: file
-                )
-            }
-            row(
-                label: String(localized: "surfaceManifest.header.capturedAt", defaultValue: "Captured"),
-                value: Self.timestampFormatter.string(from: snapshot.capturedAt)
-            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var notRecordedText: String {
+        String(
+            localized: "surfaceManifest.detail.notRecorded",
+            defaultValue: "Not recorded"
+        )
+    }
+
+    private func lastActivityText(at now: Date) -> String {
+        guard let lastActivityAt = snapshot.activity.lastActivityAt else {
+            return notRecordedText
+        }
+        let absolute = Self.timestampFormatter.string(from: lastActivityAt)
+        let relative = Self.activityRelativeAgeFormatter.localizedString(
+            for: lastActivityAt,
+            relativeTo: now
+        )
+        return String(
+            format: String(
+                localized: "surfaceManifest.detail.timestampWithAge",
+                defaultValue: "%1$@ — %2$@"
+            ),
+            locale: .current,
+            absolute,
+            relative
+        )
     }
 
     private func row(label: String, value: String) -> some View {
@@ -425,7 +490,14 @@ struct SurfaceManifestView: View {
 
     private static let timestampFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss zzz (ZZZZZ)"
+        return f
+    }()
+
+    private static let activityRelativeAgeFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.dateTimeStyle = .numeric
+        f.unitsStyle = .full
         return f
     }()
 

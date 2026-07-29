@@ -924,6 +924,18 @@ final class TerminalNotificationStore: ObservableObject {
         indexes.unreadByTabSurface.contains(TabSurfaceKey(tabId: tabId, surfaceId: surfaceId))
     }
 
+    /// Exact creation boundary for the signal-eligible unread notification
+    /// driving one surface into waiting. Callers use this as tooltip timing
+    /// evidence; absence stays nil rather than manufacturing an age.
+    func unreadNotificationCreatedAt(forTabId tabId: UUID, surfaceId: UUID) -> Date? {
+        notifications.first {
+            !$0.isRead
+                && $0.tabId == tabId
+                && $0.surfaceId == surfaceId
+                && Self.isSignalEligible($0)
+        }?.createdAt
+    }
+
     func hasRawUnreadNotification(forTabId tabId: UUID, surfaceId: UUID?) -> Bool {
         indexes.rawUnreadByTabSurface.contains(TabSurfaceKey(tabId: tabId, surfaceId: surfaceId))
     }

@@ -8,6 +8,7 @@ import Bonsplit
 @MainActor
 final class TerminalPanel: Panel, ObservableObject {
     let id: UUID
+    let createdAt: Date?
     let panelType: PanelType = .terminal
 
     /// The underlying terminal surface
@@ -94,8 +95,9 @@ final class TerminalPanel: Panel, ObservableObject {
         surface.requestedWorkingDirectory
     }
 
-    init(workspaceId: UUID, surface: TerminalSurface) {
+    init(workspaceId: UUID, surface: TerminalSurface, createdAt: Date? = Date()) {
         self.id = surface.id
+        self.createdAt = createdAt
         self.workspaceId = workspaceId
         self.surface = surface
         self.lifecycle = SurfaceLifecycleController(
@@ -139,6 +141,7 @@ final class TerminalPanel: Panel, ObservableObject {
     /// app restarts (Tier 1 persistence, Phase 1).
     convenience init(
         id: UUID? = nil,
+        createdAt: Date? = Date(),
         workspaceId: UUID,
         context: ghostty_surface_context_e = GHOSTTY_SURFACE_CONTEXT_SPLIT,
         configTemplate: ghostty_surface_config_s? = nil,
@@ -159,7 +162,7 @@ final class TerminalPanel: Panel, ObservableObject {
             additionalEnvironment: additionalEnvironment
         )
         surface.portOrdinal = portOrdinal
-        self.init(workspaceId: workspaceId, surface: surface)
+        self.init(workspaceId: workspaceId, surface: surface, createdAt: createdAt)
     }
 
     func updateTitle(_ newTitle: String) {

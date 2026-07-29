@@ -204,6 +204,100 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         ))
     }
 
+    func testActivityHelpUsesHonestStateBoundariesAndMissingEvidence() {
+        let now = Date(timeIntervalSince1970: 20_000)
+        let lastActivity = now.addingTimeInterval(-10 * 60)
+        let waitingStarted = now.addingTimeInterval(-2 * 60)
+
+        let working = AgentActivityHelpProjection.project(
+            state: .working,
+            lastActivityAt: lastActivity,
+            waitingStartedAt: nil,
+            coldAfterSeconds: 5 * 60,
+            flagReason: nil,
+            flagRaisedAt: nil,
+            suppressed: false,
+            now: now
+        )
+        XCTAssertEqual(working.help.startedAt, lastActivity)
+        XCTAssertEqual(working.stateStartedAt, lastActivity)
+        XCTAssertEqual(working.lastActivityAt, lastActivity)
+
+        let waiting = AgentActivityHelpProjection.project(
+            state: .waiting,
+            lastActivityAt: lastActivity,
+            waitingStartedAt: waitingStarted,
+            coldAfterSeconds: 5 * 60,
+            flagReason: nil,
+            flagRaisedAt: nil,
+            suppressed: false,
+            now: now
+        )
+        XCTAssertEqual(waiting.help.startedAt, waitingStarted)
+
+        let cold = AgentActivityHelpProjection.project(
+            state: .cold,
+            lastActivityAt: lastActivity,
+            waitingStartedAt: nil,
+            coldAfterSeconds: 5 * 60,
+            flagReason: nil,
+            flagRaisedAt: nil,
+            suppressed: false,
+            now: now
+        )
+        XCTAssertEqual(
+            cold.help.startedAt,
+            lastActivity.addingTimeInterval(5 * 60),
+            "Cold age begins at threshold crossing, not at the start of idle time"
+        )
+
+        let missing = AgentActivityHelpProjection.project(
+            state: .idle,
+            lastActivityAt: nil,
+            waitingStartedAt: nil,
+            coldAfterSeconds: 5 * 60,
+            flagReason: nil,
+            flagRaisedAt: nil,
+            suppressed: false,
+            now: now
+        )
+        XCTAssertNil(missing.help.startedAt)
+        XCTAssertEqual(missing.help.stateLabel, missing.text(at: now))
+    }
+
+    func testSuppressedWaitingAndFlagModifierCompositionPreserveLifecycle() {
+        let now = Date(timeIntervalSince1970: 20_000)
+        XCTAssertEqual(
+            SurfaceTabActivityResolver.resolve(
+                hasExactSurfaceNotification: true,
+                derivedActivity: .idle,
+                terminalType: "codex",
+                flagged: false,
+                suppressed: true
+            ),
+            .idle
+        )
+
+        let help = AgentActivityHelpProjection.project(
+            state: .idle,
+            lastActivityAt: now.addingTimeInterval(-7 * 60),
+            waitingStartedAt: nil,
+            coldAfterSeconds: 10 * 60,
+            flagReason: "Need a decision",
+            flagRaisedAt: now.addingTimeInterval(-60),
+            suppressed: true,
+            now: now
+        )
+        XCTAssertEqual(help.help.detailLines.count, 2)
+        XCTAssertEqual(help.flagReason, "Need a decision")
+        XCTAssertEqual(help.flagRaisedAt, now.addingTimeInterval(-60))
+        XCTAssertTrue(help.suppressed)
+        XCTAssertTrue(help.help.detailLines[0].contains("Need a decision"))
+        XCTAssertEqual(help.help.detailLines[1], "Suppressed")
+        XCTAssertTrue(help.text(at: now).hasPrefix("Idle"))
+        XCTAssertTrue(help.text(at: now).contains("\nFlagged: Need a decision\nSuppressed"))
+    }
+
     func testDetectedShellTurnsDeclaredAgentIntoTerminalPresentation() {
         XCTAssertEqual(
             SurfaceActivityTerminalKindResolver.resolve(

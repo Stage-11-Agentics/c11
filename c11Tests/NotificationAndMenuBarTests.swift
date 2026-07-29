@@ -561,6 +561,50 @@ final class NotificationAndMenuBarTests: XCTestCase {
         XCTAssertEqual(store.latestNotification(forTabId: tabB)?.id, notificationBUnread.id)
     }
 
+    func testUnreadNotificationCreationBoundaryUsesExactEligibleSurfaceSignal() {
+        let tab = UUID()
+        let targetSurface = UUID()
+        let otherSurface = UUID()
+        let targetCreatedAt = Date(timeIntervalSince1970: 1_700_000_123)
+        let store = TerminalNotificationStore.shared
+        store.replaceNotificationsForTesting([
+            TerminalNotification(
+                id: UUID(),
+                tabId: tab,
+                surfaceId: otherSurface,
+                title: "Other",
+                subtitle: "",
+                body: "",
+                createdAt: targetCreatedAt.addingTimeInterval(30),
+                isRead: false
+            ),
+            TerminalNotification(
+                id: UUID(),
+                tabId: tab,
+                surfaceId: targetSurface,
+                title: "Target",
+                subtitle: "",
+                body: "",
+                createdAt: targetCreatedAt,
+                isRead: false
+            ),
+        ])
+
+        XCTAssertEqual(
+            store.unreadNotificationCreatedAt(
+                forTabId: tab,
+                surfaceId: targetSurface
+            ),
+            targetCreatedAt
+        )
+        XCTAssertNil(
+            store.unreadNotificationCreatedAt(
+                forTabId: tab,
+                surfaceId: UUID()
+            )
+        )
+    }
+
     func testNotificationIndexesUpdateAfterReadAndClearMutations() {
         let tab = UUID()
         let surfaceUnread = UUID()

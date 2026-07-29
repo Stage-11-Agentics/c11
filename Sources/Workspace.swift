@@ -908,6 +908,7 @@ extension Workspace {
         }
         return SessionPanelSnapshot(
             id: panelId,
+            createdAt: panel.createdAt,
             type: panel.panelType,
             title: panelTitle,
             customTitle: customTitle,
@@ -1065,7 +1066,8 @@ extension Workspace {
                 focus: false,
                 workingDirectory: workingDirectory,
                 startupEnvironment: replayEnvironment,
-                panelId: restoredPanelId
+                panelId: restoredPanelId,
+                createdAt: snapshot.createdAt
             ) else {
                 return nil
             }
@@ -1091,7 +1093,8 @@ extension Workspace {
                 focus: false,
                 preferredProfileID: snapshot.browser?.profileID,
                 panelId: restoredPanelId,
-                pendingHibernate: restoredHibernated
+                pendingHibernate: restoredHibernated,
+                createdAt: snapshot.createdAt
             ) else {
                 return nil
             }
@@ -1102,7 +1105,8 @@ extension Workspace {
                 inPane: paneId,
                 filePath: snapshot.markdown?.filePath,
                 focus: false,
-                panelId: restoredPanelId
+                panelId: restoredPanelId,
+                createdAt: snapshot.createdAt
             ) else {
                 return nil
             }
@@ -6780,22 +6784,74 @@ final class Workspace: Identifiable, ObservableObject {
         activityState: BonsplitTabActivityState?
     ) -> BonsplitTabActivityPresentation? {
         let attention = attentionSnapshot(panelId: panelId)
-        if let reason = attention.flagReason {
-            return BonsplitTabActivityPresentation(
-                colorOverrideHex: "#9D8AD9",
-                motion: activityState == .waiting ? .binaryFlash : .breathe,
-                alternateCoreColorHex: activityState == .waiting ? "#FFFFFF" : nil,
-                suppressesDefaultMotion: true,
-                accessibilityValue: String(
-                    localized: "surface.flag.accessibility",
-                    defaultValue: "Flagged: \(reason)"
-                )
+        let help = resolvedAgentActivityHelp(
+            panelId: panelId,
+            activityState: activityState
+        )
+        guard help != nil || attention.isFlagged || attention.suppressed else {
+            return nil
+        }
+        return BonsplitTabActivityPresentation(
+            colorOverrideHex: attention.isFlagged ? "#9D8AD9" : nil,
+            motion: attention.isFlagged
+                ? (activityState == .waiting ? .binaryFlash : .breathe)
+                : nil,
+            alternateCoreColorHex: attention.isFlagged && activityState == .waiting
+                ? "#FFFFFF"
+                : nil,
+            suppressesDefaultMotion: attention.isFlagged || attention.suppressed,
+            accessibilityValue: help?.accessibilityValue,
+            help: help?.help
+        )
+    }
+
+    func resolvedAgentActivityHelp(
+        panelId: UUID,
+        activityState: BonsplitTabActivityState?
+    ) -> AgentActivityHelpProjection? {
+        let state: WorkspacePulseState
+        switch activityState {
+        case .waiting: state = .waiting
+        case .running: state = .working
+        case .idle: state = .idle
+        case .cold: state = .cold
+        case nil: return nil
+        }
+        let attention = attentionSnapshot(panelId: panelId)
+        let lastActivityAt = SurfaceActivityTracker.shared.lastActivity(
+            for: panelId.uuidString
+        )
+        let waitingStartedAt = state == .waiting
+            ? AppDelegate.shared?.notificationStore?.unreadNotificationCreatedAt(
+                forTabId: id,
+                surfaceId: panelId
             )
-        }
-        if attention.suppressed {
-            return BonsplitTabActivityPresentation(suppressesDefaultMotion: true)
-        }
-        return nil
+            : nil
+        return AgentActivityHelpProjection.project(
+            state: state,
+            lastActivityAt: lastActivityAt,
+            waitingStartedAt: waitingStartedAt,
+            coldAfterSeconds: SidebarAgentColdSettings.thresholdSeconds(),
+            flagReason: attention.flagReason,
+            flagRaisedAt: attention.flagRaisedAt,
+            suppressed: attention.suppressed
+        )
+    }
+
+    func surfaceActivityDetailsSnapshot(
+        panelId: UUID
+    ) -> SurfaceActivityDetailsSnapshot {
+        let activityState = resolvedSurfaceTabActivityState(panelId: panelId)
+        let activityHelp = resolvedAgentActivityHelp(
+            panelId: panelId,
+            activityState: activityState
+        )
+        return SurfaceActivityDetailsSnapshot(
+            activityHelp: activityHelp,
+            createdAt: panels[panelId]?.createdAt,
+            lastActivityAt: activityHelp?.lastActivityAt
+                ?? SurfaceActivityTracker.shared.lastActivity(for: panelId.uuidString)
+        )
     }
 
     func syncSurfaceTabActivityStateForPanel(
@@ -8657,7 +8713,8 @@ final class Workspace: Identifiable, ObservableObject {
         focus: Bool? = nil,
         workingDirectory: String? = nil,
         startupEnvironment: [String: String] = [:],
-        panelId: UUID? = nil
+        panelId: UUID? = nil,
+        createdAt: Date? = Date()
     ) -> TerminalPanel? {
         let shouldFocusNewTab = focus ?? (bonsplitController.focusedPaneId == paneId)
         let previousFocusedPanelId = focusedPanelId
@@ -8669,6 +8726,7 @@ final class Workspace: Identifiable, ObservableObject {
         // Create new terminal panel
         let newPanel = TerminalPanel(
             id: panelId,
+            createdAt: createdAt,
             workspaceId: id,
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: inheritedConfig,
@@ -8841,7 +8899,8 @@ final class Workspace: Identifiable, ObservableObject {
         preferredProfileID: UUID? = nil,
         bypassInsecureHTTPHostOnce: String? = nil,
         panelId: UUID? = nil,
-        pendingHibernate: Bool = false
+        pendingHibernate: Bool = false,
+        createdAt: Date? = Date()
     ) -> BrowserPanel? {
         let shouldFocusNewTab = focus ?? (bonsplitController.focusedPaneId == paneId)
         let sourcePanelId = effectiveSelectedPanelId(inPane: paneId)
@@ -8850,6 +8909,7 @@ final class Workspace: Identifiable, ObservableObject {
 
         let browserPanel = BrowserPanel(
             id: panelId,
+            createdAt: createdAt,
             workspaceId: id,
             profileID: resolvedNewBrowserProfileID(
                 preferredProfileID: preferredProfileID,
@@ -8967,13 +9027,19 @@ final class Workspace: Identifiable, ObservableObject {
         inPane paneId: PaneID,
         filePath: String? = nil,
         focus: Bool? = nil,
-        panelId: UUID? = nil
+        panelId: UUID? = nil,
+        createdAt: Date? = Date()
     ) -> MarkdownPanel? {
         let shouldFocusNewTab = focus ?? (bonsplitController.focusedPaneId == paneId)
         let previousFocusedPanelId = focusedPanelId
         let previousHostedView = focusedTerminalPanel?.hostedView
 
-        let markdownPanel = MarkdownPanel(id: panelId, workspaceId: id, filePath: filePath)
+        let markdownPanel = MarkdownPanel(
+            id: panelId,
+            createdAt: createdAt,
+            workspaceId: id,
+            filePath: filePath
+        )
         panels[markdownPanel.id] = markdownPanel
         panelTitles[markdownPanel.id] = markdownPanel.displayTitle
 

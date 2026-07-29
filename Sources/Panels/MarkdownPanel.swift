@@ -24,6 +24,7 @@ enum MarkdownSegment: Identifiable {
 @MainActor
 final class MarkdownPanel: Panel, ObservableObject {
     let id: UUID
+    let createdAt: Date?
     let panelType: PanelType = .markdown
 
     /// Absolute path to the markdown file being displayed, or nil when the
@@ -137,8 +138,14 @@ final class MarkdownPanel: Panel, ObservableObject {
     /// - Parameter filePath: Absolute path to a markdown file, or `nil` to
     ///   create an unbound panel (empty state — user binds via drag-drop or
     ///   the in-panel "Open Markdown File" button).
-    init(id: UUID? = nil, workspaceId: UUID, filePath: String? = nil) {
+    init(
+        id: UUID? = nil,
+        createdAt: Date? = Date(),
+        workspaceId: UUID,
+        filePath: String? = nil
+    ) {
         self.id = id ?? UUID()
+        self.createdAt = createdAt
         self.workspaceId = workspaceId
         self.filePath = filePath
         self.displayTitle = Self.titleForFilePath(filePath)

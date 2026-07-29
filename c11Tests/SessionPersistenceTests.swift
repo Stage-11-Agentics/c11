@@ -293,6 +293,50 @@ final class SessionPersistenceTests: XCTestCase {
         XCTAssertNil(decoded.lastActivityAt)
     }
 
+    func testSessionPanelSnapshotLogicalCreationRoundTrip() throws {
+        let createdAt = Date(timeIntervalSince1970: 1_700_000_456)
+        let snapshot = SessionPanelSnapshot(
+            id: UUID(),
+            createdAt: createdAt,
+            type: .browser,
+            title: nil,
+            customTitle: nil,
+            customColor: nil,
+            directory: nil,
+            isPinned: false,
+            isManuallyUnread: false,
+            gitBranch: nil,
+            listeningPorts: [],
+            ttyName: nil,
+            terminal: nil,
+            browser: nil,
+            markdown: nil,
+            metadata: nil,
+            metadataSources: nil
+        )
+
+        let encoded = try JSONEncoder().encode(snapshot)
+        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: encoded)
+        XCTAssertEqual(decoded.createdAt, createdAt)
+    }
+
+    func testSessionPanelSnapshotLegacyCreationIsNotInvented() throws {
+        let panelId = UUID()
+        let legacyJSON = """
+        {
+          "id": "\(panelId.uuidString)",
+          "type": "markdown",
+          "isPinned": false,
+          "isManuallyUnread": false,
+          "listeningPorts": []
+        }
+        """
+
+        let data = try XCTUnwrap(legacyJSON.data(using: .utf8))
+        let decoded = try JSONDecoder().decode(SessionPanelSnapshot.self, from: data)
+        XCTAssertNil(decoded.createdAt)
+    }
+
     func testWorkspaceCustomColorDecodeSupportsMissingLegacyField() throws {
         var snapshot = makeSnapshot(version: SessionSnapshotSchema.currentVersion)
         snapshot.windows[0].tabManager.workspaces[0].customColor = nil

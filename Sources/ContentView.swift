@@ -8674,6 +8674,10 @@ struct VerticalTabsSidebar: View {
                                                 : nil
                                         )
                                         let attention = tab.attentionSnapshot(panelId: panelId)
+                                        let activityHelp = tab.resolvedAgentActivityHelp(
+                                            panelId: panelId,
+                                            activityState: resolved
+                                        )
                                         agents.append(
                                             WorkspacePulseAgent(
                                                 surfaceId: panelId,
@@ -8681,7 +8685,8 @@ struct VerticalTabsSidebar: View {
                                                 context: context,
                                                 flagged: attention.isFlagged,
                                                 suppressed: attention.suppressed,
-                                                flagReason: attention.flagReason
+                                                flagReason: attention.flagReason,
+                                                activityHelp: activityHelp
                                             )
                                         )
                                     }
@@ -11485,6 +11490,57 @@ enum ActivityMarkSettings {
     static let defaultStaticMarks = false
 }
 
+/// Native tooltip/accessibility leaf for an individual sidebar mark.
+///
+/// Elapsed text is refreshed on appearance and hover entry, so no per-agent
+/// timer or date formatting reaches the typing-hot workspace row body.
+private struct WorkspacePulseActivityHelpTarget<Content: View>: View {
+    let activityHelp: AgentActivityHelpProjection
+    let accessibilityLabel: String
+    @ViewBuilder let content: () -> Content
+
+    @State private var tooltipText: String
+    @State private var accessibilityText: String
+
+    init(
+        activityHelp: AgentActivityHelpProjection,
+        accessibilityLabel: String,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.activityHelp = activityHelp
+        self.accessibilityLabel = accessibilityLabel
+        self.content = content
+        _tooltipText = State(
+            initialValue: ([activityHelp.help.stateLabel] + activityHelp.help.detailLines)
+                .joined(separator: "\n")
+        )
+        _accessibilityText = State(initialValue: activityHelp.accessibilityValue)
+    }
+
+    var body: some View {
+        content()
+            .contentShape(Rectangle())
+            .onAppear { refreshHelp() }
+            .onHover { hovering in
+                guard hovering else { return }
+                refreshHelp()
+            }
+            .help(tooltipText)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(accessibilityLabel))
+            .accessibilityValue(Text(accessibilityText))
+    }
+
+    private func refreshHelp() {
+        let now = Date()
+        tooltipText = activityHelp.text(at: now)
+        accessibilityText = BonsplitTabActivityHelpFormatter.accessibilityValue(
+            for: activityHelp.help,
+            at: now
+        )
+    }
+}
+
 /// Leaf-isolated workspace-pulse mark. This is the c11 renderer half of the
 /// shared 9pt vocabulary; its clock and phase sampling are the same Bonsplit
 /// primitives used by surface-tab marks.
@@ -12117,6 +12173,29 @@ private struct TabItemView: View, Equatable {
         )
     }
 
+    @ViewBuilder
+    private func workspacePulseMarkTarget(
+        for agent: WorkspacePulseAgent,
+        width: CGFloat,
+        height: CGFloat
+    ) -> some View {
+        let mark = workspacePulseMark(for: agent)
+            .frame(width: width, height: height)
+        if let activityHelp = agent.activityHelp {
+            WorkspacePulseActivityHelpTarget(
+                activityHelp: activityHelp,
+                accessibilityLabel: workspacePulseMarkAccessibilityLabel(agent)
+            ) {
+                mark
+            }
+        } else {
+            mark
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(workspacePulseMarkAccessibilityLabel(agent)))
+                .accessibilityValue(Text(workspacePulseLabel(for: agent.presentedState)))
+        }
+    }
+
     private var workspacePulseVisibleAgents: [WorkspacePulseAgent] {
         Array(workspacePulse.relevantAgents.prefix(2))
     }
@@ -12126,13 +12205,11 @@ private struct TabItemView: View, Equatable {
     }
 
     private func workspacePulseMarkAccessibilityLabel(_ agent: WorkspacePulseAgent) -> String {
-        if agent.flagged {
-            return String(
-                localized: "sidebar.workspacePulse.flagged.accessibility",
-                defaultValue: "Flagged agent: \(agent.flagReason ?? "")"
+        agent.context?.title
+            ?? String(
+                localized: "surfaceManifest.detail.activity",
+                defaultValue: "Activity"
             )
-        }
-        return agent.context?.title ?? workspacePulseLabel(for: agent.presentedState)
     }
 
     private func openWorkspacePulseAgent(_ agent: WorkspacePulseAgent) {
@@ -12151,8 +12228,7 @@ private struct TabItemView: View, Equatable {
     ) -> some View {
         let context = agent.context
         let content = HStack(spacing: 7) {
-            workspacePulseMark(for: agent)
-                .frame(width: 16, height: 16)
+            workspacePulseMarkTarget(for: agent, width: 16, height: 16)
 
             Group {
                 if agent.flagged, let reason = agent.flagReason {
@@ -12181,14 +12257,14 @@ private struct TabItemView: View, Equatable {
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .accessibilityLabel(
-                agent.flagged
-                    ? Text(String(
-                        localized: "sidebar.workspacePulse.flagged.accessibility",
-                        defaultValue: "Flagged agent: \(agent.flagReason ?? "")"
-                    ))
-                    : Text(workspacePulseLabel(for: agent.presentedState))
-            )
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(
+                agent.context?.title ?? workspacePulseMarkAccessibilityLabel(agent)
+            ))
+            .accessibilityValue(Text(
+                agent.activityHelp?.accessibilityValue
+                    ?? workspacePulseLabel(for: agent.presentedState)
+            ))
         } else {
             content
         }
@@ -12328,11 +12404,11 @@ private struct TabItemView: View, Equatable {
                 }
 
                 ForEach(visible) { agent in
-                    workspacePulseMark(for: agent)
-                        .frame(width: layout.slot, height: 14)
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(Text(workspacePulseMarkAccessibilityLabel(agent)))
-                        .accessibilityValue(Text(workspacePulseLabel(for: agent.presentedState)))
+                    workspacePulseMarkTarget(
+                        for: agent,
+                        width: layout.slot,
+                        height: 14
+                    )
                 }
             }
             .frame(width: proxy.size.width, height: 14, alignment: .trailing)

@@ -79,6 +79,10 @@ public protocol Panel: AnyObject, Identifiable, ObservableObject where ID == UUI
     /// Unique identifier for this panel
     var id: UUID { get }
 
+    /// Logical creation time for this surface. Legacy restored panels keep
+    /// this nil rather than inventing a timestamp at app launch.
+    var createdAt: Date? { get }
+
     /// The type of panel
     var panelType: PanelType { get }
 

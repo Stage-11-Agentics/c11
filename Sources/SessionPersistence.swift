@@ -321,6 +321,9 @@ struct SessionMarkdownPanelSnapshot: Codable, Sendable {
 
 struct SessionPanelSnapshot: Codable, Sendable {
     var id: UUID
+    /// Logical surface creation time. Optional so legacy snapshots remain
+    /// honest: absence means "not recorded", never "created on restore".
+    var createdAt: Date? = nil
     var type: PanelType
     var title: String?
     var customTitle: String?
@@ -375,6 +378,7 @@ struct SessionPanelSnapshot: Codable, Sendable {
         case id, type, title, customTitle, customColor, directory, isPinned,
              isManuallyUnread, gitBranch, listeningPorts, ttyName,
              terminal, browser, markdown, metadata, metadataSources
+        case createdAt = "created_at"
         case surfaceConversations = "surface_conversations"
         case lastActivityAt = "last_activity_at"
     }

@@ -1857,6 +1857,7 @@ final class BrowserPanel: Panel, ObservableObject {
     }
 
     let id: UUID
+    let createdAt: Date?
     let panelType: PanelType = .browser
 
     /// The workspace ID this panel belongs to
@@ -2602,6 +2603,7 @@ final class BrowserPanel: Panel, ObservableObject {
     ///   snapshot store) so `Resume Workspace` has a destination.
     init(
         id: UUID? = nil,
+        createdAt: Date? = Date(),
         workspaceId: UUID,
         profileID: UUID? = nil,
         initialURL: URL? = nil,
@@ -2612,6 +2614,7 @@ final class BrowserPanel: Panel, ObservableObject {
         pendingHibernate: Bool = false
     ) {
         self.id = id ?? UUID()
+        self.createdAt = createdAt
         self.workspaceId = workspaceId
         let requestedProfileID = profileID ?? BrowserProfileStore.shared.effectiveLastUsedProfileID
         let resolvedProfileID = BrowserProfileStore.shared.profileDefinition(id: requestedProfileID) != nil

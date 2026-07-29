@@ -6,6 +6,14 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+### Changed
+
+- **Kimi launches fully autonomous.** `--yolo` auto-approves tool calls but still lets Kimi stop to ask questions; `--auto` is its fully autonomous permission mode, which is the posture c11 wants for an agent it dispatches. Launch and resume rails both moved.
+
+### Fixed
+
+- **A launch command from an older release no longer sticks forever.** The launch rails compose from the operator's saved per-agent command, and editing any one agent in Settings pickles every agent's then-current factory default into UserDefaults — so a factory command that later gained a flag left existing operators launching the old line, silently, on every launch. Kimi went bare → `--yolo` → `--auto` and OpenCode bare → `--auto` this way; a saved command that still exactly matches a previous release's default is now carried forward, while anything hand-edited is left untouched.
+
 ## [0.61.0] - 2026-07-29
 
 Headline: **Agents keep their posture across a restart, and the sidebar tells you which one needs you.** Resuming a session no longer drops it into approval prompts, OMP and Grok now come back as the exact conversation you left, and a rebuilt lifecycle vocabulary plus flaggable attention make a large fleet readable at a glance.

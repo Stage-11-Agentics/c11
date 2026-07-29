@@ -26,6 +26,7 @@ final class AgentDetector: @unchecked Sendable {
     }
 
     private var ttyNames: [PanelKey: String] = [:]
+    private var detectedTerminalTypes: [PanelKey: String] = [:]
     private var pendingKicks: Set<PanelKey> = []
     private var coalesceTimer: DispatchSourceTimer?
     private var scanInFlight = false
@@ -47,6 +48,7 @@ final class AgentDetector: @unchecked Sendable {
         queue.async { [self] in
             let key = PanelKey(workspaceId: workspaceId, panelId: panelId)
             ttyNames.removeValue(forKey: key)
+            detectedTerminalTypes.removeValue(forKey: key)
             pendingKicks.remove(key)
         }
     }
@@ -101,7 +103,8 @@ final class AgentDetector: @unchecked Sendable {
             for key in self.ttyNames.keys {
                 SurfaceLivenessDeriver.reconcile(
                     surfaceId: key.panelId,
-                    workspaceId: key.workspaceId
+                    workspaceId: key.workspaceId,
+                    detectedTerminalType: self.detectedTerminalTypes[key]
                 )
             }
         }
@@ -131,6 +134,10 @@ final class AgentDetector: @unchecked Sendable {
                 continue
             }
             let classification = Self.classify(comm: info.comm, args: info.args)
+            let detectionChanged = detectedTerminalTypes[key] != classification
+            if detectionChanged {
+                detectedTerminalTypes[key] = classification
+            }
             let changed = SurfaceMetadataStore.shared.setInternal(
                 workspaceId: key.workspaceId,
                 surfaceId: key.panelId,
@@ -138,14 +145,20 @@ final class AgentDetector: @unchecked Sendable {
                 value: classification,
                 source: .heuristic
             )
-            if changed {
+            if changed || detectionChanged {
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
                         guard let tabManager = AppDelegate.shared?.tabManagerFor(tabId: key.workspaceId),
                               let workspace = tabManager.tabs.first(where: { $0.id == key.workspaceId }) else {
                             return
                         }
-                        workspace.syncSurfaceTabActivityStateForPanel(key.panelId)
+                        workspace.setDetectedTerminalType(
+                            classification,
+                            forSurface: key.panelId
+                        )
+                        if changed && !detectionChanged {
+                            workspace.syncSurfaceTabActivityStateForPanel(key.panelId)
+                        }
                     }
                 }
             }
@@ -237,10 +250,26 @@ final class AgentDetector: @unchecked Sendable {
     static func classify(comm: String, args: String) -> String {
         let c = comm.lowercased()
         let a = args.lowercased()
+        let commBase = String(c.split(separator: "/").last ?? Substring(c))
 
         // Exact comm match against any agent manifest's declared binaries.
-        for manifest in AgentRegistry.shared.all where manifest.detectComms.contains(c) {
+        // Accept a full path as well: `ps` usually reports the bare executable,
+        // but that representation is not stable across launch mechanisms.
+        for manifest in AgentRegistry.shared.all
+        where manifest.detectComms.contains(c) || manifest.detectComms.contains(commBase) {
             return manifest.kind
+        }
+
+        // Darwin truncates a long `comm` column (for example
+        // `/Users/atin/.local/bin/claude` becomes `/Users/atin/.loc`), while
+        // `args` still begins with the complete argv[0]. Match only that first
+        // token's basename: later arguments are arbitrary user input and must
+        // never classify a process as an agent.
+        if let argv0 = a.split(whereSeparator: \.isWhitespace).first {
+            let argv0Base = String(argv0.split(separator: "/").last ?? argv0)
+            for manifest in AgentRegistry.shared.all where manifest.detectComms.contains(argv0Base) {
+                return manifest.kind
+            }
         }
 
         // Interpreter-wrapped CLIs: comm is the runtime and the agent identity
@@ -268,7 +297,7 @@ final class AgentDetector: @unchecked Sendable {
 
         // Canonical shells → "shell".
         // `comm` from Darwin's ps may be `-zsh` for login shells.
-        let strippedShell = c.hasPrefix("-") ? String(c.dropFirst()) : c
+        let strippedShell = commBase.hasPrefix("-") ? String(commBase.dropFirst()) : commBase
         if canonicalShells.contains(strippedShell) {
             return "shell"
         }

@@ -8636,7 +8636,7 @@ struct VerticalTabsSidebar: View {
                                     var browserCount = 0
                                     var documentCount = 0
                                     for panelId in tab.sidebarOrderedPanelIds() {
-                                        let terminalKind = tab.surfaceTerminalKind(panelId: panelId)
+                                        let terminalKind = tab.surfaceActivityTerminalKind(panelId: panelId)
                                         guard PaneSizePolicy.isAgentKind(terminalKind) else {
                                             switch tab.panels[panelId]?.panelType {
                                             case .terminal: terminalCount += 1
@@ -11690,6 +11690,19 @@ enum WorkspacePulseCensus {
     }
 }
 
+enum WorkspacePulseDividerColorResolver {
+    static func resolve(
+        customHex: String?,
+        colorScheme: ColorScheme
+    ) -> NSColor {
+        guard let customHex else { return BrandColors.gold }
+        return WorkspaceTabColorSettings.displayNSColor(
+            hex: customHex,
+            colorScheme: colorScheme
+        ) ?? BrandColors.gold
+    }
+}
+
 enum SidebarWorkspaceShortcutHintMetrics {
     private static let measurementFont = NSFont.systemFont(ofSize: 10, weight: .semibold)
     /// Held for the close button (16pt) when the workspace has no ⌘-digit
@@ -12338,7 +12351,7 @@ private struct TabItemView: View, Equatable {
         .padding(.top, 8)
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(workspacePulseIdentityColor.opacity(0.18))
+                .fill(workspacePulseDividerColor.opacity(0.42))
                 .frame(height: 1)
         }
         .padding(.top, 10)
@@ -12386,6 +12399,13 @@ private struct TabItemView: View, Equatable {
             green: 0.51,
             blue: 0.57,
             alpha: 1
+        ))
+    }
+
+    private var workspacePulseDividerColor: Color {
+        Color(nsColor: WorkspacePulseDividerColorResolver.resolve(
+            customHex: tab.customColor,
+            colorScheme: colorScheme
         ))
     }
 

@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# c11 OpenCode wrapper - runtime lifecycle and session-resume bridge.
+#
+# Inside a live c11 terminal this wrapper declares OpenCode, seeds its resting
+# state, and runtime-loads c11's bundled OpenCode plugin. It never writes
+# ~/.config/opencode or any other persistent tenant configuration.
+
+set -uo pipefail
+
+find_real_opencode() {
+    local self_dir
+    self_dir="$(cd "$(dirname "$0")" && pwd)"
+    local IFS=:
+    for d in $PATH; do
+        [[ "$d" == "$self_dir" ]] && continue
+        [[ -x "$d/opencode" ]] && printf '%s' "$d/opencode" && return 0
+    done
+    return 1
+}
+
+c11_socket_available() {
+    local socket="${CMUX_SOCKET_PATH:-}"
+    [[ -n "$socket" && -S "$socket" ]] || return 1
+
+    local self_dir c11_bin
+    self_dir="$(cd "$(dirname "$0")" && pwd)"
+    c11_bin="$self_dir/c11"
+    [[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
+    [[ -n "$c11_bin" ]] || return 1
+
+    CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+        "$c11_bin" --socket "$socket" ping >/dev/null 2>&1
+}
+
+REAL_OPENCODE="$(find_real_opencode)" || {
+    echo "Error: opencode not found in PATH" >&2
+    exit 127
+}
+
+if [[ -z "${CMUX_SURFACE_ID:-}" || "${CMUX_OPENCODE_HOOKS_DISABLED:-}" == "1" ]] ||
+   ! c11_socket_available; then
+    exec "$REAL_OPENCODE" "$@"
+fi
+
+# OpenCode's named subcommands and informational flags do not start an
+# interactive agent TUI. Leave them completely transparent.
+case "${1:-}" in
+    serve|web|agent|models|auth|upgrade|uninstall|mcp|github|pr|stats|export|import|attach|acp|debug|--help|-h|--version|-v)
+        exec "$REAL_OPENCODE" "$@"
+        ;;
+esac
+
+self_dir="$(cd "$(dirname "$0")" && pwd)"
+c11_bin="$self_dir/c11"
+[[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
+
+if [[ -n "$c11_bin" ]]; then
+    (
+        CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+            "$c11_bin" --socket "${CMUX_SOCKET_PATH}" set-agent --type opencode \
+            >/dev/null 2>&1
+    ) &
+    disown 2>/dev/null || true
+
+    (
+        CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+            "$c11_bin" --socket "${CMUX_SOCKET_PATH}" agent-hook idle \
+            >/dev/null 2>&1
+    ) &
+    disown 2>/dev/null || true
+fi
+
+plugin_path="$(cd "$self_dir/../skills/opencode-plugins" && pwd)/c11-notify.js"
+plugin_url="file://$plugin_path"
+plugin_url="${plugin_url//\\/\\\\}"
+plugin_url="${plugin_url//\"/\\\"}"
+c11_runtime_config="{\"plugin\":[\"$plugin_url\"]}"
+
+# OpenCode merges its config sources. Prefer the in-memory content override;
+# if the operator already owns that slot, supply c11's plugin through a live
+# file descriptor instead. If both runtime slots are explicitly occupied,
+# preserve them untouched—the shared foreground-agent liveness guard still
+# prevents false-idle decay.
+if [[ -z "${OPENCODE_CONFIG_CONTENT:-}" ]]; then
+    export OPENCODE_CONFIG_CONTENT="$c11_runtime_config"
+elif [[ -z "${OPENCODE_CONFIG:-}" ]]; then
+    exec 3<<<"$c11_runtime_config"
+    export OPENCODE_CONFIG="/dev/fd/3"
+fi
+
+export C11_AGENT_HOOK_CLI="$c11_bin"
+exec "$REAL_OPENCODE" "$@"

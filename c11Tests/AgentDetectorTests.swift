@@ -25,6 +25,29 @@ final class AgentDetectorTests: XCTestCase {
         XCTAssertEqual(AgentDetector.classify(comm: "codex", args: ""), "codex")
     }
 
+    /// Darwin can truncate a long executable path in `ps`'s `comm` column
+    /// while retaining the complete argv[0]. This is the exact staging
+    /// failure that left live Claude processes classified as `unknown`.
+    func testClassifyTruncatedCommUsesArgvZeroExecutable() {
+        XCTAssertEqual(
+            AgentDetector.classify(
+                comm: "/Users/atin/.loc",
+                args: "/Users/atin/.local/bin/claude --dangerously-skip-permissions --model opus"
+            ),
+            "claude-code"
+        )
+    }
+
+    func testClassifyArgvZeroDoesNotMatchLaterUserArguments() {
+        XCTAssertEqual(
+            AgentDetector.classify(
+                comm: "/Users/atin/.loc",
+                args: "/Users/atin/bin/report --label claude"
+            ),
+            "unknown"
+        )
+    }
+
     // MARK: - Node-wrapped matches via args substring
 
     func testClassifyNodeWrappedCopilotBinPathReturnsGitHubCopilot() {

@@ -220,6 +220,51 @@ final class SidebarActivityProjectorTests: XCTestCase {
         XCTAssertEqual(summary.relevantAgents.map(\.presentedState), [.waiting])
     }
 
+    func testFlaggedAgentsLeadDominantDetailsRegardlessOfLifecycle() {
+        let waitingA = WorkspacePulseAgent(surfaceId: UUID(), state: .waiting, context: nil)
+        let waitingB = WorkspacePulseAgent(surfaceId: UUID(), state: .waiting, context: nil)
+        let flaggedWorking = WorkspacePulseAgent(
+            surfaceId: UUID(),
+            state: .working,
+            context: nil,
+            flagged: true,
+            flagReason: "Needs operator decision"
+        )
+        let summary = WorkspacePulseProjector.project(
+            hasWorkspaceDemand: true,
+            agents: [waitingA, waitingB, flaggedWorking],
+            terminalCount: 3
+        )
+
+        XCTAssertEqual(summary.flaggedCount, 1)
+        XCTAssertEqual(summary.relevantAgents.first?.surfaceId, flaggedWorking.surfaceId)
+        XCTAssertTrue(summary.relevantAgents.prefix(2).contains(where: \.flagged))
+    }
+
+    func testWaitingOverflowSubtractsPresentedVisibleWaitingOnly() {
+        let visibleSuppressedRawWaiting = WorkspacePulseAgent(
+            surfaceId: UUID(),
+            state: .waiting,
+            context: nil,
+            suppressed: true
+        )
+        let realWaitingA = WorkspacePulseAgent(surfaceId: UUID(), state: .waiting, context: nil)
+        let realWaitingB = WorkspacePulseAgent(surfaceId: UUID(), state: .waiting, context: nil)
+        let summary = WorkspacePulseProjector.project(
+            hasWorkspaceDemand: true,
+            agents: [visibleSuppressedRawWaiting, realWaitingA, realWaitingB],
+            terminalCount: 3
+        )
+
+        XCTAssertEqual(
+            summary.visibleWaitingOverflow(
+                visibleAgents: [visibleSuppressedRawWaiting, realWaitingA]
+            ),
+            1,
+            "A suppressed raw-waiting mark presents idle and must not hide real waiting overflow"
+        )
+    }
+
     func testWorkspacePulseModifierDefaultsPreserveLifecycle() {
         let agent = WorkspacePulseAgent(
             surfaceId: UUID(),

@@ -1,6 +1,6 @@
 # Flagged and Suppressed Agents
 
-Design spec for two modifiers on the existing attention model: **flagged** agents that explicitly request human involvement and jump the queue, and **suppressed** agents that reach the operator through no channel at all.
+Design spec for two modifiers on the existing attention model: **flagged** agents that explicitly request human involvement and jump the queue, and **suppressed** agents that produce no routine attention signal unless a flag overrides suppression.
 
 ## Motivation
 
@@ -21,7 +21,7 @@ The existing lifecycle (`working` / `waiting` / `idle` / `cold`) is unchanged an
 | Field | Type | Set by | Meaning |
 |---|---|---|---|
 | `flag` | reason string, or none | agent mid-run, or operator at dispatch | a human must act, or this mission is one the operator intends to watch |
-| `suppressed` | Bool | operator (usually at dispatch) or agent | this surface reaches the operator through no channel |
+| `suppressed` | Bool | operator (usually at dispatch) or agent | routine attention is withheld; a direct flag escalation still reaches the operator |
 
 A flagged agent still has a full lifecycle: it can be flagged-and-working, flagged-and-idle, flagged-and-waiting. Flagging qualifies the state without replacing it. Suppression works differently: it *restricts* which states are reachable, barring needs-attention entirely (below).
 
@@ -31,15 +31,20 @@ A flagged agent still has a full lifecycle: it can be flagged-and-working, flagg
 
 This is the load-bearing rule. Suppression restricts the lifecycle to `working` / `idle` / `cold`. On stop, a suppressed surface reads **idle**, never needs-attention.
 
-| | Suppressed surface |
+| | Suppressed, unflagged surface |
 |---|---|
 | Lifecycle state | `working` / `idle` / `cold` only; **never** `waiting` |
 | Sidebar mark | rendered in **normal lifecycle colors**, no dimming |
 | Waiting count / Waiting Agent button | **excluded** |
 | ⌥V destination | **excluded** |
-| System notification | **not delivered** |
+| Routine waiting-derived system notification | **not delivered** |
+| Direct `flag.raise` system notification | **delivered when flagged** |
 | `waiting.entered` event | **not emitted** |
 | Notification store record | **written**, readable in the notifications list |
+
+Once that surface raises a flag, the flag tier overrides every restriction in
+this table, including waiting reachability, `waiting.entered`, ⌥V priority, and
+direct external delivery.
 
 **Known cost, accepted deliberately.** A suppressed agent that finished and one that stalled both read as idle. The glance-read of "this one is done" is given up; the notifications list remains the record. This is the trade the operator opts into by suppressing, and it is the price of the mark never implying a demand the operator asked not to receive.
 
@@ -258,7 +263,12 @@ Content: flag glyph, reason string, X. Clicking X lowers the flag.
 
 A **flag raise** fires a `UNUserNotification` through the existing delivery path: surface title as the notification title, reason as the body. Waiting stays in-app only; a flag is exactly the signal that should reach the operator in another application.
 
-Suppressed surfaces deliver no system notification, by definition.
+Suppressed unflagged surfaces deliver no routine waiting-derived system
+notification. The separate direct notification emitted by `flag.raise` is
+exempt: a flag overrides suppression completely and therefore delivers even
+when the surface is suppressed. This exception is centralized at the direct
+flag-delivery call site; it does not make suppressed notification-store records
+signal-eligible on their own.
 
 v1 uses the existing notification sound setting. A dedicated flag sound is a reasonable follow-up, not a launch requirement.
 

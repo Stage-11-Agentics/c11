@@ -69,6 +69,11 @@ extension TerminalController {
         case "config.list", "config.recent", "config.stats",
              "config.save", "config.edit", "config.rm", "config.reorder", "config.default":
             return v2Result(id: request.id, TerminalController.v2ConfigNonLaunch(method: request.method, params: request.params))
+        case "flag.raise", "flag.lower", "flag.list", "flag.suppress", "flag.unsuppress":
+            return v2Result(
+                id: request.id,
+                self.v2FlagWorker(method: request.method, params: request.params)
+            )
         default:
             return v2Error(id: request.id, code: "method_not_found", message: "Unknown method")
         }
@@ -939,6 +944,7 @@ extension TerminalController {
         if method.hasPrefix("snapshot.") { return v2DispatchSnapshot(method, id: id, params: params) }
         if method.hasPrefix("conversation.") { return v2DispatchConversation(method, id: id, params: params) }
         if method.hasPrefix("notification.") { return v2DispatchNotification(method, id: id, params: params) }
+        if method.hasPrefix("flag.") { return v2Error(id: id, code: "invalid_dispatch", message: "\(method) must run on the socket worker") }
         if method.hasPrefix("markdown.") || method.hasPrefix("feedback.") { return v2DispatchMarkdownFeedback(method, id: id, params: params) }
         if method.hasPrefix("settings.") || method.hasPrefix("sidebar.") || method.hasPrefix("session.") || method.hasPrefix("tab.") || method.hasPrefix("mailbox.") { return v2DispatchMisc(method, id: id, params: params) }
         return nil
@@ -973,6 +979,22 @@ extension TerminalController {
               !kindRaw.isEmpty else {
             return .err(code: "invalid_params", message: "Missing required param: type", data: nil)
         }
+
+        let launchFlagReason: String?
+        if params["flag"] != nil {
+            switch SurfaceAttentionReason.validate(params["flag"]) {
+            case .success(let reason):
+                launchFlagReason = reason
+            case .failure(let error):
+                return .err(code: "invalid_params", message: error.message, data: error.detailData)
+            }
+        } else {
+            launchFlagReason = nil
+        }
+        if params["suppressed"] != nil, !(params["suppressed"] is Bool) {
+            return .err(code: "invalid_params", message: "suppressed must be a boolean", data: nil)
+        }
+        let launchSuppressed = params["suppressed"] as? Bool ?? false
 
         let newWorkspace = v2Bool(params, "new_workspace") ?? false
         let paneParam = v2UUID(params, "pane_id")
@@ -1064,7 +1086,6 @@ extension TerminalController {
                 ws = created
                 panel = initialPanel
                 paneUUID = created.bonsplitController.focusedPaneId?.id
-                panel.sendText(plan.launchLine + "\n")
             } else {
                 guard let target = self.v2ResolveWorkspace(params: params, tabManager: tabManager) else {
                     result = .err(code: "not_found", message: "Workspace not found", data: nil)
@@ -1104,16 +1125,52 @@ extension TerminalController {
                 if panel.surface.surface == nil {
                     panel.surface.requestBackgroundSurfaceStartIfNeeded()
                 }
-                panel.sendText(plan.launchLine + "\n")
             }
 
-            ws.stampAgentLaunchIdentity(
-                surfaceId: panel.id,
-                kind: plan.kind,
-                model: plan.model,
-                task: request.task,
-                title: title
-            )
+            do {
+                try AgentLaunchAttentionSequencer.stampThenSend(
+                    stampIdentity: {
+                        ws.stampAgentLaunchIdentity(
+                            surfaceId: panel.id,
+                            kind: plan.kind,
+                            model: plan.model,
+                            task: request.task,
+                            title: title
+                        )
+                    },
+                    stampSuppression: {
+                        if launchSuppressed {
+                            _ = try SurfaceAttentionService.shared.suppress(
+                                workspaceId: ws.id,
+                                surfaceId: panel.id,
+                                by: .operator
+                            )
+                        }
+                    },
+                    stampFlag: {
+                        if let launchFlagReason {
+                            _ = try SurfaceAttentionService.shared.raise(
+                                workspaceId: ws.id,
+                                surfaceId: panel.id,
+                                reason: launchFlagReason,
+                                title: ws.panelTitle(panelId: panel.id) ?? panel.displayTitle
+                            )
+                        }
+                    },
+                    sendCommand: {
+                        // Attention is committed before the launch line can
+                        // run, so even a fast completion cannot escape
+                        // dispatch-time suppression.
+                        panel.sendText(plan.launchLine + "\n")
+                    }
+                )
+            } catch let error as SurfaceMetadataStore.WriteError {
+                result = .err(code: "invalid_params", message: error.message, data: error.detailData)
+                return
+            } catch {
+                result = .err(code: "internal_error", message: "\(error)", data: nil)
+                return
+            }
 
             if let delayedPrompt = plan.delayedPrompt {
                 // Post-boot delivery for TUIs with no argv prompt. Same fixed
@@ -1137,6 +1194,8 @@ extension TerminalController {
             agent["model"] = plan.model.isEmpty ? NSNull() : plan.model
             agent["effort"] = plan.effort.isEmpty ? NSNull() : plan.effort
             agent["task"] = self.v2OrNull(request.task)
+            agent["flag"] = self.v2OrNull(launchFlagReason)
+            agent["suppressed"] = launchSuppressed
             result = .ok([
                 "agent": agent,
                 "command": plan.launchLine,

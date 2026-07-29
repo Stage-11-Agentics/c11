@@ -1407,6 +1407,20 @@ extension TerminalController {
             return .err(code: "surface_not_found", message: "Surface not found", data: nil)
         }
 
+        let attentionKeys = Set([MetadataKey.flag, MetadataKey.suppressed])
+        let existingAttention = SurfaceMetadataStore.shared.attentionSnapshot(
+            workspaceId: resolved.workspaceId,
+            surfaceId: resolved.surfaceId
+        )
+        if !attentionKeys.isDisjoint(with: metadataObj.keys)
+            || (mode == .replace && (existingAttention.isFlagged || existingAttention.suppressed)) {
+            return .err(
+                code: "attention_requires_flag_method",
+                message: "flag and suppressed must be changed through the flag.* methods",
+                data: nil
+            )
+        }
+
         do {
             let result = try SurfaceMetadataStore.shared.setMetadata(
                 workspaceId: resolved.workspaceId,
@@ -1521,6 +1535,20 @@ extension TerminalController {
 
         guard let resolved = v2ResolveSurfaceForMetadata(params: params) else {
             return .err(code: "surface_not_found", message: "Surface not found", data: nil)
+        }
+
+        let attentionKeys = Set([MetadataKey.flag, MetadataKey.suppressed])
+        let existingAttention = SurfaceMetadataStore.shared.attentionSnapshot(
+            workspaceId: resolved.workspaceId,
+            surfaceId: resolved.surfaceId
+        )
+        if keys.map({ !attentionKeys.isDisjoint(with: $0) })
+            ?? (existingAttention.isFlagged || existingAttention.suppressed) {
+            return .err(
+                code: "attention_requires_flag_method",
+                message: "flag and suppressed must be changed through the flag.* methods",
+                data: nil
+            )
         }
 
         do {

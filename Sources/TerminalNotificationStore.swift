@@ -27,6 +27,22 @@ extension UNUserNotificationCenter {
             self.removePendingNotificationRequests(withIdentifiers: ids)
         }
     }
+
+    /// Serialize remove-before-add for one replacement identifier. The removal
+    /// calls are synchronous XPC, so returning to main only after both calls
+    /// guarantees the newly-added request cannot race ahead and be deleted.
+    func replaceNotificationOffMain(
+        withIdentifier identifier: String,
+        add: @escaping @MainActor () -> Void
+    ) {
+        Self.removalQueue.async {
+            self.removeDeliveredNotifications(withIdentifiers: [identifier])
+            self.removePendingNotificationRequests(withIdentifiers: [identifier])
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { add() }
+            }
+        }
+    }
 }
 
 enum NotificationSoundSettings {
@@ -619,6 +635,10 @@ enum NotificationAuthorizationState: Equatable {
 
 struct TerminalNotification: Identifiable, Hashable {
     let id: UUID
+    /// Stable external-delivery identity. Routine notification-store records
+    /// use their UUID; direct flag alerts use workspace/surface/flag-epoch so
+    /// an active reason revision replaces the existing delivered alert.
+    let systemIdentifier: String?
     let tabId: UUID
     let surfaceId: UUID?
     let title: String
@@ -626,16 +646,41 @@ struct TerminalNotification: Identifiable, Hashable {
     let body: String
     let createdAt: Date
     var isRead: Bool
+
+    init(
+        id: UUID,
+        systemIdentifier: String? = nil,
+        tabId: UUID,
+        surfaceId: UUID?,
+        title: String,
+        subtitle: String,
+        body: String,
+        createdAt: Date,
+        isRead: Bool
+    ) {
+        self.id = id
+        self.systemIdentifier = systemIdentifier
+        self.tabId = tabId
+        self.surfaceId = surfaceId
+        self.title = title
+        self.subtitle = subtitle
+        self.body = body
+        self.createdAt = createdAt
+        self.isRead = isRead
+    }
 }
 
 @MainActor
 final class TerminalNotificationStore: ObservableObject {
-    private struct TabSurfaceKey: Hashable {
+    struct TabSurfaceKey: Hashable {
         let tabId: UUID
         let surfaceId: UUID?
     }
 
-    private struct NotificationIndexes {
+    struct NotificationIndexes {
+        var rawUnreadCount = 0
+        var rawUnreadCountByTabId: [UUID: Int] = [:]
+        var rawUnreadByTabSurface = Set<TabSurfaceKey>()
         var unreadCount = 0
         var unreadCountByTabId: [UUID: Int] = [:]
         var unreadByTabSurface = Set<TabSurfaceKey>()
@@ -643,7 +688,14 @@ final class TerminalNotificationStore: ObservableObject {
         var latestByTabId: [UUID: TerminalNotification] = [:]
     }
 
-    static let shared = TerminalNotificationStore()
+    static let shared = TerminalNotificationStore(
+        systemNotificationsEnabled: defaultSystemNotificationsEnabled()
+    )
+
+    private struct DirectFlagDeliveryToken: Equatable {
+        let identifier: String
+        let generation: UUID
+    }
 
     static let categoryIdentifier = "com.stage11.c11.userNotification"
     static let actionShowIdentifier = "com.stage11.c11.userNotification.show"
@@ -658,13 +710,25 @@ final class TerminalNotificationStore: ObservableObject {
             // C11-163: capture the prior per-tab unread counts before the
             // rebuild so waiting-agent edges can be detected (amendment H).
             let previousUnreadByTab = indexes.unreadCountByTabId
-            indexes = Self.buildIndexes(for: notifications)
+            indexes = Self.buildIndexes(
+                for: notifications,
+                signalEligible: Self.isSignalEligible
+            )
             emitWaitingEdges(previous: previousUnreadByTab, current: indexes.unreadCountByTabId)
         }
     }
     @Published private(set) var authorizationState: NotificationAuthorizationState = .unknown
 
-    private let center = UNUserNotificationCenter.current()
+    /// `UNUserNotificationCenter.current()` requires an application bundle.
+    /// Bare c11LogicTests run under `xctest` without `NSApplication`, where
+    /// calling it traps inside UserNotifications. Keep the real center lazy and
+    /// unavailable only for that process shape; hosted tests and the app retain
+    /// the production transport.
+    private let systemNotificationsEnabled: Bool
+    private lazy var center: UNUserNotificationCenter? = {
+        guard systemNotificationsEnabled else { return nil }
+        return UNUserNotificationCenter.current()
+    }()
     private var hasRequestedAutomaticAuthorization = false
     private var hasDeferredAuthorizationRequest = false
     private var hasPromptedForSettings = false
@@ -691,6 +755,21 @@ final class TerminalNotificationStore: ObservableObject {
         notification in
         store.scheduleUserNotification(notification)
     }
+    /// Current direct-delivery generation per active flag epoch. Reason
+    /// revisions keep the deterministic identifier but replace its generation;
+    /// lower/close/prune remove the generation before cancellation.
+    private var directFlagDeliveryTokens: [String: DirectFlagDeliveryToken] = [:]
+#if DEBUG
+    private var waitingEdgeHandlerForTesting: ((Bool, UUID) -> Void)?
+    private var flagNotificationReplacementHandlerForTesting:
+        ((_ identifier: String, _ add: @escaping @MainActor () -> Void) -> Void)?
+    private var directFlagAuthorizationHandlerForTesting:
+        ((_ completion: @escaping (Bool) -> Void) -> Void)?
+    private var directFlagAddHandlerForTesting:
+        ((_ notification: TerminalNotification, _ completion: @escaping (Error?) -> Void) -> Void)?
+    private var directFlagCustomCommandHandlerForTesting:
+        ((_ notification: TerminalNotification) -> Void)?
+#endif
     private var indexes = NotificationIndexes()
 
     /// C11-163: emit waiting.entered / waiting.left on the per-tab unread
@@ -706,19 +785,39 @@ final class TerminalNotificationStore: ObservableObject {
             let after = current[tab] ?? 0
             if before == 0, after > 0 {
                 EventEmitter.shared.emitWaiting(entered: true, workspace: tab, surface: nil)
+#if DEBUG
+                waitingEdgeHandlerForTesting?(true, tab)
+#endif
             } else if before > 0, after == 0 {
                 EventEmitter.shared.emitWaiting(entered: false, workspace: tab, surface: nil)
+#if DEBUG
+                waitingEdgeHandlerForTesting?(false, tab)
+#endif
             }
         }
     }
 
-    private init() {
-        indexes = Self.buildIndexes(for: notifications)
-        refreshAuthorizationStatus()
+    private init(systemNotificationsEnabled: Bool) {
+        self.systemNotificationsEnabled = systemNotificationsEnabled
+        indexes = Self.buildIndexes(for: notifications, signalEligible: Self.isSignalEligible)
+        if systemNotificationsEnabled {
+            refreshAuthorizationStatus()
+        }
+    }
+
+    private static func defaultSystemNotificationsEnabled(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        hasApplication: Bool = NSApp != nil
+    ) -> Bool {
+        !(environment["XCTestConfigurationFilePath"] != nil && !hasApplication)
     }
 
     var unreadCount: Int {
         indexes.unreadCount
+    }
+
+    var rawUnreadCount: Int {
+        indexes.rawUnreadCount
     }
 
     private func logAuthorization(_ message: String) {
@@ -746,6 +845,10 @@ final class TerminalNotificationStore: ObservableObject {
     }
 
     func refreshAuthorizationStatus() {
+        guard let center else {
+            authorizationState = .unknown
+            return
+        }
         center.getNotificationSettings { [weak self] settings in
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -773,7 +876,7 @@ final class TerminalNotificationStore: ObservableObject {
     func sendSettingsTestNotification() {
         logAuthorization("settings test tapped state=\(authorizationState.statusLabel)")
         ensureAuthorization(origin: .settingsTest) { [weak self] authorized in
-            guard let self, authorized else { return }
+            guard let self, authorized, let center = self.center else { return }
 
             let content = UNMutableNotificationContent()
             content.title = "cmux test notification"
@@ -787,7 +890,7 @@ final class TerminalNotificationStore: ObservableObject {
                 trigger: nil
             )
 
-            self.center.add(request) { error in
+            center.add(request) { error in
                 if let error {
                     NSLog("Failed to schedule test notification: \(error)")
                     self.logAuthorization("settings test schedule failed error=\(error.localizedDescription)")
@@ -821,6 +924,35 @@ final class TerminalNotificationStore: ObservableObject {
         indexes.unreadByTabSurface.contains(TabSurfaceKey(tabId: tabId, surfaceId: surfaceId))
     }
 
+    func hasRawUnreadNotification(forTabId tabId: UUID, surfaceId: UUID?) -> Bool {
+        indexes.rawUnreadByTabSurface.contains(TabSurfaceKey(tabId: tabId, surfaceId: surfaceId))
+    }
+
+    func isSignalEligible(_ notification: TerminalNotification) -> Bool {
+        Self.isSignalEligible(notification)
+    }
+
+    func refreshSignalEligibility() {
+        let previous = indexes.unreadCountByTabId
+        let next = Self.buildIndexes(
+            for: notifications,
+            signalEligible: Self.isSignalEligible
+        )
+        guard previous != next.unreadCountByTabId
+                || indexes.unreadByTabSurface != next.unreadByTabSurface else {
+            indexes = next
+            return
+        }
+        objectWillChange.send()
+        indexes = next
+        emitWaitingEdges(previous: previous, current: indexes.unreadCountByTabId)
+        for workspaceId in Set(previous.keys).union(indexes.unreadCountByTabId.keys) {
+            AppDelegate.shared?.tabManagerFor(tabId: workspaceId)?
+                .tabs.first(where: { $0.id == workspaceId })?
+                .syncSurfaceTabActivityStates()
+        }
+    }
+
     func latestNotification(forTabId tabId: UUID) -> TerminalNotification? {
         indexes.latestUnreadByTabId[tabId] ?? indexes.latestByTabId[tabId]
     }
@@ -839,7 +971,10 @@ final class TerminalNotificationStore: ObservableObject {
         let isFocusedSurface = surfaceId == nil || focusedSurfaceId == surfaceId
         let isFocusedPanel = isActiveTab && isFocusedSurface
         let isAppFocused = AppFocusState.isAppFocused()
-        let shouldSuppressExternalDelivery = isAppFocused && isFocusedPanel
+        let attentionSuppressed = surfaceId.map {
+            SurfaceAttentionIndex.shared.snapshot(workspaceId: tabId, surfaceId: $0).suppressed
+        } ?? false
+        let shouldSuppressExternalDelivery = (isAppFocused && isFocusedPanel) || attentionSuppressed
 
         // An agent notification is a lifecycle boundary: the turn either
         // completed or paused for operator input. Waiting still dominates the
@@ -871,12 +1006,110 @@ final class TerminalNotificationStore: ObservableObject {
         updated.insert(notification, at: 0)
         notifications = updated
         if !idsToClear.isEmpty {
-            center.removeDeliveredNotificationsOffMain(withIdentifiers: idsToClear)
-            center.removePendingNotificationRequestsOffMain(withIdentifiers: idsToClear)
+            center?.removeDeliveredNotificationsOffMain(withIdentifiers: idsToClear)
+            center?.removePendingNotificationRequestsOffMain(withIdentifiers: idsToClear)
         }
         if !shouldSuppressExternalDelivery {
             notificationDeliveryHandler(self, notification)
         }
+    }
+
+    /// Direct flag delivery intentionally does not append to `notifications`.
+    /// Operator decision: this path pierces suppression; routine delivery above
+    /// remains barred for every suppressed surface.
+    func deliverFlagNotification(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        flagRaisedAt: Date,
+        title: String?,
+        reason: String
+    ) {
+        let fallback = String(
+            localized: "notification.flaggedAgent.title",
+            defaultValue: "Flagged agent"
+        )
+        let normalizedTitle: String? = {
+            guard let value = title?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !value.isEmpty else { return nil }
+            return value
+        }()
+        let identifier = Self.flagNotificationIdentifier(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId,
+            flagRaisedAt: flagRaisedAt
+        )
+        let token = DirectFlagDeliveryToken(identifier: identifier, generation: UUID())
+        directFlagDeliveryTokens[identifier] = token
+        let notification = TerminalNotification(
+            id: UUID(),
+            systemIdentifier: identifier,
+            tabId: workspaceId,
+            surfaceId: surfaceId,
+            title: normalizedTitle ?? fallback,
+            subtitle: "",
+            body: reason,
+            createdAt: Date(),
+            isRead: true
+        )
+        let add = { [weak self] in
+            guard let self, self.isCurrent(token) else { return }
+            self.scheduleDirectFlagNotification(notification, token: token)
+        }
+#if DEBUG
+        if let replacement = flagNotificationReplacementHandlerForTesting {
+            replacement(identifier, add)
+            return
+        }
+#endif
+        // `UNUserNotificationCenter.add` replaces pending requests sharing an
+        // identifier, but an already-delivered alert is not a pending request.
+        // Serialize removal before scheduling the revised active epoch.
+        center?.replaceNotificationOffMain(
+            withIdentifier: identifier,
+            add: add
+        )
+    }
+
+    static func flagNotificationIdentifier(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        flagRaisedAt: Date
+    ) -> String {
+        let epochBits = flagRaisedAt.timeIntervalSince1970.bitPattern
+        return [
+            "com.stage11.c11.flag",
+            workspaceId.uuidString.lowercased(),
+            surfaceId.uuidString.lowercased(),
+            String(epochBits, radix: 16),
+        ].joined(separator: ".")
+    }
+
+    func cancelFlagNotification(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        flagRaisedAt: Date
+    ) {
+        let identifier = Self.flagNotificationIdentifier(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId,
+            flagRaisedAt: flagRaisedAt
+        )
+        // Invalidate before cancellation so a delayed authorization or add
+        // completion cannot resurrect delivery after lower/close/prune.
+        directFlagDeliveryTokens.removeValue(forKey: identifier)
+        center?.removeDeliveredNotificationsOffMain(withIdentifiers: [identifier])
+        center?.removePendingNotificationRequestsOffMain(withIdentifiers: [identifier])
+    }
+
+    func cancelRoutineExternalNotifications(workspaceId: UUID, surfaceId: UUID) {
+        let identifiers = notifications.compactMap { notification in
+            notification.tabId == workspaceId && notification.surfaceId == surfaceId
+                ? notification.id.uuidString
+                : nil
+        }
+        guard !identifiers.isEmpty else { return }
+        center?.removeDeliveredNotificationsOffMain(withIdentifiers: identifiers)
+        center?.removePendingNotificationRequestsOffMain(withIdentifiers: identifiers)
     }
 
     func markRead(id: UUID) {
@@ -885,7 +1118,7 @@ final class TerminalNotificationStore: ObservableObject {
         guard !updated[index].isRead else { return }
         updated[index].isRead = true
         notifications = updated
-        center.removeDeliveredNotificationsOffMain(withIdentifiers: [id.uuidString])
+        center?.removeDeliveredNotificationsOffMain(withIdentifiers: [id.uuidString])
     }
 
     func markRead(forTabId tabId: UUID) {
@@ -899,7 +1132,7 @@ final class TerminalNotificationStore: ObservableObject {
         }
         if !idsToClear.isEmpty {
             notifications = updated
-            center.removeDeliveredNotificationsOffMain(withIdentifiers: idsToClear)
+            center?.removeDeliveredNotificationsOffMain(withIdentifiers: idsToClear)
         }
     }
 
@@ -916,8 +1149,8 @@ final class TerminalNotificationStore: ObservableObject {
         }
         if !idsToClear.isEmpty {
             notifications = updated
-            center.removeDeliveredNotificationsOffMain(withIdentifiers: idsToClear)
-            center.removePendingNotificationRequestsOffMain(withIdentifiers: idsToClear)
+            center?.removeDeliveredNotificationsOffMain(withIdentifiers: idsToClear)
+            center?.removePendingNotificationRequestsOffMain(withIdentifiers: idsToClear)
         }
     }
 
@@ -946,8 +1179,8 @@ final class TerminalNotificationStore: ObservableObject {
         }
         if !idsToClear.isEmpty {
             notifications = updated
-            center.removeDeliveredNotificationsOffMain(withIdentifiers: idsToClear)
-            center.removePendingNotificationRequestsOffMain(withIdentifiers: idsToClear)
+            center?.removeDeliveredNotificationsOffMain(withIdentifiers: idsToClear)
+            center?.removePendingNotificationRequestsOffMain(withIdentifiers: idsToClear)
         }
     }
 
@@ -957,15 +1190,15 @@ final class TerminalNotificationStore: ObservableObject {
         updated.removeAll { $0.id == id }
         guard updated.count != originalCount else { return }
         notifications = updated
-        center.removeDeliveredNotificationsOffMain(withIdentifiers: [id.uuidString])
+        center?.removeDeliveredNotificationsOffMain(withIdentifiers: [id.uuidString])
     }
 
     func clearAll() {
         guard !notifications.isEmpty else { return }
         let ids = notifications.map { $0.id.uuidString }
         notifications.removeAll()
-        center.removeDeliveredNotificationsOffMain(withIdentifiers: ids)
-        center.removePendingNotificationRequestsOffMain(withIdentifiers: ids)
+        center?.removeDeliveredNotificationsOffMain(withIdentifiers: ids)
+        center?.removePendingNotificationRequestsOffMain(withIdentifiers: ids)
     }
 
     func clearNotifications(forTabId tabId: UUID, surfaceId: UUID?) {
@@ -981,8 +1214,8 @@ final class TerminalNotificationStore: ObservableObject {
         }
         guard !idsToClear.isEmpty else { return }
         notifications = updated
-        center.removeDeliveredNotificationsOffMain(withIdentifiers: idsToClear)
-        center.removePendingNotificationRequestsOffMain(withIdentifiers: idsToClear)
+        center?.removeDeliveredNotificationsOffMain(withIdentifiers: idsToClear)
+        center?.removePendingNotificationRequestsOffMain(withIdentifiers: idsToClear)
     }
 
     func clearNotifications(forTabId tabId: UUID) {
@@ -998,13 +1231,34 @@ final class TerminalNotificationStore: ObservableObject {
         }
         guard !idsToClear.isEmpty else { return }
         notifications = updated
-        center.removeDeliveredNotificationsOffMain(withIdentifiers: idsToClear)
-        center.removePendingNotificationRequestsOffMain(withIdentifiers: idsToClear)
+        center?.removeDeliveredNotificationsOffMain(withIdentifiers: idsToClear)
+        center?.removePendingNotificationRequestsOffMain(withIdentifiers: idsToClear)
+    }
+
+    /// Remove raw history for surfaces no longer present in a workspace.
+    /// Surface-less workspace notifications remain valid and are retained.
+    func clearNotifications(forTabId tabId: UUID, excludingSurfaceIds validSurfaceIds: Set<UUID>) {
+        var updated: [TerminalNotification] = []
+        updated.reserveCapacity(notifications.count)
+        var idsToClear: [String] = []
+        for notification in notifications {
+            if notification.tabId == tabId,
+               let surfaceId = notification.surfaceId,
+               !validSurfaceIds.contains(surfaceId) {
+                idsToClear.append(notification.systemIdentifier ?? notification.id.uuidString)
+            } else {
+                updated.append(notification)
+            }
+        }
+        guard !idsToClear.isEmpty else { return }
+        notifications = updated
+        center?.removeDeliveredNotificationsOffMain(withIdentifiers: idsToClear)
+        center?.removePendingNotificationRequestsOffMain(withIdentifiers: idsToClear)
     }
 
     private func scheduleUserNotification(_ notification: TerminalNotification) {
         ensureAuthorization(origin: .notificationDelivery) { [weak self] authorized in
-            guard let self, authorized else { return }
+            guard let self, authorized, let center = self.center else { return }
 
             let content = UNMutableNotificationContent()
             let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
@@ -1024,12 +1278,12 @@ final class TerminalNotificationStore: ObservableObject {
             }
 
             let request = UNNotificationRequest(
-                identifier: notification.id.uuidString,
+                identifier: notification.systemIdentifier ?? notification.id.uuidString,
                 content: content,
                 trigger: nil
             )
 
-            self.center.add(request) { error in
+            center.add(request) { error in
                 if let error {
                     NSLog("Failed to schedule notification: \(error)")
                 } else {
@@ -1043,11 +1297,116 @@ final class TerminalNotificationStore: ObservableObject {
         }
     }
 
+    /// Direct flag delivery has a separate generation guard from routine
+    /// notifications. Authorization can resume long after the flag changed;
+    /// both that boundary and the add completion must observe the same current
+    /// generation before producing an external side effect.
+    private func scheduleDirectFlagNotification(
+        _ notification: TerminalNotification,
+        token: DirectFlagDeliveryToken
+    ) {
+        guard isCurrent(token) else { return }
+        requestDirectFlagAuthorization { [weak self] authorized in
+            guard let self, authorized, self.isCurrent(token) else { return }
+            self.addDirectFlagNotification(notification) { [weak self] error in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if let error {
+                        NSLog("Failed to schedule direct flag notification: \(error)")
+                        return
+                    }
+                    // Never remove here: an old same-identifier completion may
+                    // arrive after a newer revision has already been added.
+                    guard self.isCurrent(token) else { return }
+                    self.runDirectFlagCustomCommand(notification)
+                }
+            }
+        }
+    }
+
+    private func isCurrent(_ token: DirectFlagDeliveryToken) -> Bool {
+        directFlagDeliveryTokens[token.identifier] == token
+    }
+
+    private func requestDirectFlagAuthorization(
+        _ completion: @escaping (Bool) -> Void
+    ) {
+#if DEBUG
+        if let handler = directFlagAuthorizationHandlerForTesting {
+            handler(completion)
+            return
+        }
+#endif
+        ensureAuthorization(origin: .notificationDelivery, completion)
+    }
+
+    private func addDirectFlagNotification(
+        _ notification: TerminalNotification,
+        completion: @escaping (Error?) -> Void
+    ) {
+#if DEBUG
+        if let handler = directFlagAddHandlerForTesting {
+            handler(notification, completion)
+            return
+        }
+#endif
+        guard let center else {
+            completion(
+                NSError(
+                    domain: "com.stage11.c11.notifications",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "System notification center unavailable"]
+                )
+            )
+            return
+        }
+        let content = UNMutableNotificationContent()
+        let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
+            ?? "cmux"
+        content.title = notification.title.isEmpty ? appName : notification.title
+        content.subtitle = notification.subtitle
+        content.body = notification.body
+        content.sound = NotificationSoundSettings.sound()
+        content.categoryIdentifier = Self.categoryIdentifier
+        content.userInfo = [
+            "tabId": notification.tabId.uuidString,
+            "notificationId": notification.id.uuidString,
+        ]
+        if let surfaceId = notification.surfaceId {
+            content.userInfo["surfaceId"] = surfaceId.uuidString
+        }
+        let request = UNNotificationRequest(
+            identifier: notification.systemIdentifier ?? notification.id.uuidString,
+            content: content,
+            trigger: nil
+        )
+        center.add(request, withCompletionHandler: completion)
+    }
+
+    private func runDirectFlagCustomCommand(_ notification: TerminalNotification) {
+#if DEBUG
+        if let handler = directFlagCustomCommandHandlerForTesting {
+            handler(notification)
+            return
+        }
+#endif
+        NotificationSoundSettings.runCustomCommand(
+            title: notification.title,
+            subtitle: notification.subtitle,
+            body: notification.body
+        )
+    }
+
     private func ensureAuthorization(
         origin: AuthorizationRequestOrigin,
         _ completion: @escaping (Bool) -> Void
     ) {
         logAuthorization("ensure start origin=\(origin.rawValue)")
+        guard let center else {
+            completion(false)
+            return
+        }
         center.getNotificationSettings { [weak self] settings in
             DispatchQueue.main.async {
                 guard let self else {
@@ -1090,6 +1449,10 @@ final class TerminalNotificationStore: ObservableObject {
         origin: AuthorizationRequestOrigin,
         _ completion: @escaping (Bool) -> Void
     ) {
+        guard let center else {
+            completion(false)
+            return
+        }
         let isAutomaticRequest = origin == .notificationDelivery
         guard Self.shouldRequestAuthorization(
             isAutomaticRequest: isAutomaticRequest,
@@ -1200,13 +1563,30 @@ final class TerminalNotificationStore: ObservableObject {
         return shouldDeferAutomaticAuthorizationRequest(status: status, isAppActive: isAppActive)
     }
 
-    private static func buildIndexes(for notifications: [TerminalNotification]) -> NotificationIndexes {
+    private static func isSignalEligible(_ notification: TerminalNotification) -> Bool {
+        guard let surfaceId = notification.surfaceId else { return true }
+        return SurfaceAttentionIndex.shared.snapshot(
+            workspaceId: notification.tabId,
+            surfaceId: surfaceId
+        ).isSignalEligible
+    }
+
+    static func buildIndexes(
+        for notifications: [TerminalNotification],
+        signalEligible: (TerminalNotification) -> Bool
+    ) -> NotificationIndexes {
         var indexes = NotificationIndexes()
         for notification in notifications {
             if indexes.latestByTabId[notification.tabId] == nil {
                 indexes.latestByTabId[notification.tabId] = notification
             }
             guard !notification.isRead else { continue }
+            indexes.rawUnreadCount += 1
+            indexes.rawUnreadCountByTabId[notification.tabId, default: 0] += 1
+            indexes.rawUnreadByTabSurface.insert(
+                TabSurfaceKey(tabId: notification.tabId, surfaceId: notification.surfaceId)
+            )
+            guard signalEligible(notification) else { continue }
             indexes.unreadCount += 1
             indexes.unreadCountByTabId[notification.tabId, default: 0] += 1
             indexes.unreadByTabSurface.insert(
@@ -1257,6 +1637,54 @@ final class TerminalNotificationStore: ObservableObject {
         notificationDeliveryHandler = { store, notification in
             store.scheduleUserNotification(notification)
         }
+    }
+
+    func configureWaitingEdgeHandlerForTesting(_ handler: @escaping (Bool, UUID) -> Void) {
+        waitingEdgeHandlerForTesting = handler
+    }
+
+    func resetWaitingEdgeHandlerForTesting() {
+        waitingEdgeHandlerForTesting = nil
+    }
+
+    func configureFlagNotificationReplacementHandlerForTesting(
+        _ handler: @escaping (
+            _ identifier: String,
+            _ add: @escaping @MainActor () -> Void
+        ) -> Void
+    ) {
+        flagNotificationReplacementHandlerForTesting = handler
+    }
+
+    func resetFlagNotificationReplacementHandlerForTesting() {
+        flagNotificationReplacementHandlerForTesting = nil
+    }
+
+    func configureDirectFlagAuthorizationHandlerForTesting(
+        _ handler: @escaping (_ completion: @escaping (Bool) -> Void) -> Void
+    ) {
+        directFlagAuthorizationHandlerForTesting = handler
+    }
+
+    func configureDirectFlagAddHandlerForTesting(
+        _ handler: @escaping (
+            _ notification: TerminalNotification,
+            _ completion: @escaping (Error?) -> Void
+        ) -> Void
+    ) {
+        directFlagAddHandlerForTesting = handler
+    }
+
+    func configureDirectFlagCustomCommandHandlerForTesting(
+        _ handler: @escaping (_ notification: TerminalNotification) -> Void
+    ) {
+        directFlagCustomCommandHandlerForTesting = handler
+    }
+
+    func resetDirectFlagDeliveryHandlersForTesting() {
+        directFlagAuthorizationHandlerForTesting = nil
+        directFlagAddHandlerForTesting = nil
+        directFlagCustomCommandHandlerForTesting = nil
     }
 
     func promptToEnableNotificationsForTesting() {

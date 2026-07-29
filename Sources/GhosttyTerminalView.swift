@@ -6796,6 +6796,52 @@ func shouldAllowEnsureFocusWindowActivation(
     return true
 }
 
+private struct SurfaceFlagBanner: View {
+    let reason: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "flag.fill")
+                .accessibilityHidden(true)
+            Text(verbatim: reason)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 4)
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(String(
+                localized: "surface.flag.dismiss.accessibility",
+                defaultValue: "Dismiss agent flag"
+            )))
+            .help(String(
+                localized: "surface.flag.dismiss.help",
+                defaultValue: "Dismiss this flag"
+            ))
+        }
+        .font(.system(size: 12, weight: .semibold))
+        .padding(.horizontal, 10)
+        .frame(height: 30)
+        .foregroundColor(Color.black.opacity(0.86))
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color(red: 157.0 / 255.0, green: 138.0 / 255.0, blue: 217.0 / 255.0))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(Color.white.opacity(0.25), lineWidth: 0.75)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(String(
+            localized: "surface.flag.banner.accessibility",
+            defaultValue: "Agent flag"
+        )))
+        .accessibilityValue(Text(verbatim: reason))
+    }
+}
+
 final class GhosttySurfaceScrollView: NSView {
     enum FlashStyle {
         case standardFocus
@@ -6822,6 +6868,7 @@ final class GhosttySurfaceScrollView: NSView {
     private let keyboardCopyModeBadgeIconView: NSImageView
     private let keyboardCopyModeBadgeLabel: NSTextField
     private var searchOverlayHostingView: NSHostingView<SurfaceSearchOverlay>?
+    private var flagBannerHostingView: NSHostingView<SurfaceFlagBanner>?
     private var deferredSearchOverlayMutationWorkItem: DispatchWorkItem?
     private var lastSearchOverlayStateID: ObjectIdentifier?
     private var searchOverlayMutationGeneration: UInt64 = 0
@@ -7339,6 +7386,9 @@ final class GhosttySurfaceScrollView: NSView {
         if let overlay = searchOverlayHostingView {
             _ = setFrameIfNeeded(overlay, to: bounds)
         }
+        if let banner = flagBannerHostingView {
+            _ = setFrameIfNeeded(banner, to: flagBannerFrame())
+        }
         // NSScrollView can defer clip-view/content-size updates until its own layout pass,
         // which makes interactive width changes arrive a queue turn late on Sequoia.
         scrollView.layoutSubtreeIfNeeded()
@@ -7348,6 +7398,65 @@ final class GhosttySurfaceScrollView: NSView {
         synchronizeSurfaceView()
         let didCoreSurfaceChange = synchronizeCoreSurface()
         return !sizeApproximatelyEqual(previousSurfaceSize, targetSize) || didCoreSurfaceChange
+    }
+
+    private func flagBannerFrame() -> CGRect {
+        let horizontalInset: CGFloat = 8
+        let height: CGFloat = 30
+        return CGRect(
+            x: horizontalInset,
+            y: max(8, bounds.height - height - 8),
+            width: max(0, bounds.width - horizontalInset * 2),
+            height: height
+        )
+    }
+
+    /// Portal-owned, additive flag banner. Its frame floats over terminal
+    /// pixels and never changes the scroll/document/surface geometry.
+    func updateFlagBanner() {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in self?.updateFlagBanner() }
+            return
+        }
+        guard let terminalSurface = surfaceView.terminalSurface else { return }
+        let snapshot = SurfaceAttentionIndex.shared.snapshot(
+            workspaceId: terminalSurface.tabId,
+            surfaceId: terminalSurface.id
+        )
+        guard let reason = snapshot.flagReason else {
+            flagBannerHostingView?.removeFromSuperview()
+            flagBannerHostingView = nil
+            return
+        }
+
+        let root = SurfaceFlagBanner(reason: reason) { [weak self, weak terminalSurface] in
+            guard let self, let terminalSurface else { return }
+            _ = try? SurfaceAttentionService.shared.lower(
+                workspaceId: terminalSurface.tabId,
+                surfaceId: terminalSurface.id,
+                by: .operator
+            )
+            self.moveFocus()
+        }
+        if let banner = flagBannerHostingView {
+            banner.rootView = root
+            _ = setFrameIfNeeded(banner, to: flagBannerFrame())
+            return
+        }
+
+        let banner = NSHostingView(rootView: root)
+        banner.frame = flagBannerFrame()
+        banner.autoresizingMask = [.width, .minYMargin]
+        flagBannerHostingView = banner
+        // Search remains above the banner and pane interaction remains modal;
+        // notification/flash rings stay below so every overlay is operable.
+        if let searchOverlayHostingView {
+            addSubview(banner, positioned: .below, relativeTo: searchOverlayHostingView)
+        } else if let paneInteractionOverlay {
+            addSubview(banner, positioned: .below, relativeTo: paneInteractionOverlay)
+        } else {
+            addSubview(banner, positioned: .above, relativeTo: flashOverlayView)
+        }
     }
 
     @discardableResult
@@ -8267,6 +8376,39 @@ final class GhosttySurfaceScrollView: NSView {
     func debugHasSearchOverlay() -> Bool {
         guard let overlay = searchOverlayHostingView else { return false }
         return overlay.superview === self && !overlay.isHidden
+    }
+
+    struct DebugFlagBannerState {
+        let isMounted: Bool
+        let bannerFrame: CGRect?
+        let scrollFrame: CGRect
+        let surfaceFrame: CGRect
+        let isAboveFlashOverlay: Bool
+        let isBelowSearchOverlay: Bool?
+    }
+
+    func debugFlagBannerState() -> DebugFlagBannerState {
+        let bannerIndex = flagBannerHostingView.flatMap { banner in
+            subviews.firstIndex(where: { $0 === banner })
+        }
+        let flashIndex = subviews.firstIndex(where: { $0 === flashOverlayView })
+        let searchIndex = searchOverlayHostingView.flatMap { search in
+            subviews.firstIndex(where: { $0 === search })
+        }
+        return DebugFlagBannerState(
+            isMounted: flagBannerHostingView?.superview === self,
+            bannerFrame: flagBannerHostingView?.frame,
+            scrollFrame: scrollView.frame,
+            surfaceFrame: surfaceView.frame,
+            isAboveFlashOverlay: {
+                guard let bannerIndex, let flashIndex else { return false }
+                return bannerIndex > flashIndex
+            }(),
+            isBelowSearchOverlay: searchIndex.map { searchIndex in
+                guard let bannerIndex else { return false }
+                return bannerIndex < searchIndex
+            }
+        )
     }
 
     func debugHasKeyboardCopyModeIndicator() -> Bool {

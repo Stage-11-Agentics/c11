@@ -49,8 +49,10 @@ c11 launch-agent ... --suppressed     # the common case: set at dispatch
 ```
 
 A suppressed surface never enters the needs-attention state: when it stops, its mark reads
-idle, and it is excluded from waiting counts, ⌥V, and system notifications. The notification
-record still lands in the store — suppression silences the signal, not the history.
+idle, and it is excluded from waiting counts, ⌥V, and routine waiting-derived system
+notifications. The notification record still lands in the store — suppression silences the
+routine signal, not the history. A direct notification from `flag.raise` is the deliberate
+exception because the flag tier overrides suppression completely.
 
 - The natural fit is **subagents under an orchestrator**: the orchestrator watches you, so
   the operator's sidebar stays quiet while coordination happens one level down. If you are

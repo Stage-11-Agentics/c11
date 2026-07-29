@@ -5501,6 +5501,9 @@ final class Workspace: Identifiable, ObservableObject {
     /// pruned alongside the other per-surface metadata. Absence of a key means
     /// "no derived signal yet."
     @Published var derivedActivityBySurface: [UUID: SidebarActivityState] = [:]
+    /// Main-actor render cache for canonical attention metadata. The metadata
+    /// store remains authoritative; views consume this immutable projection.
+    @Published private(set) var attentionBySurface: [UUID: SurfaceAttentionSnapshot] = [:]
     @Published var gitBranch: SidebarGitBranchState?
     @Published var panelGitBranches: [UUID: SidebarGitBranchState] = [:]
     /// C11-104 — per-panel resolved worktree+branch context for the
@@ -6407,6 +6410,7 @@ final class Workspace: Identifiable, ObservableObject {
         let derivedActivity: SidebarActivityState?
         let derivedActivitySource: MetadataSource?
         let activityState: BonsplitTabActivityState?
+        let attention: SurfaceAttentionSnapshot
     }
 
     private var detachingTabIds: Set<TabID> = []
@@ -6720,6 +6724,29 @@ final class Workspace: Identifiable, ObservableObject {
         AppDelegate.shared?.notificationStore?.hasUnreadNotification(forTabId: id, surfaceId: panelId) ?? false
     }
 
+    func attentionSnapshot(panelId: UUID) -> SurfaceAttentionSnapshot {
+        attentionBySurface[panelId]
+            ?? SurfaceAttentionSnapshot(
+                workspaceId: id,
+                surfaceId: panelId,
+                flagReason: nil,
+                flagRaisedAt: nil,
+                suppressed: false
+            )
+    }
+
+    func setAttentionSnapshot(_ snapshot: SurfaceAttentionSnapshot?, forSurface surfaceId: UUID) {
+        if let snapshot, snapshot.isFlagged || snapshot.suppressed {
+            if attentionBySurface[surfaceId] != snapshot {
+                attentionBySurface[surfaceId] = snapshot
+            }
+        } else {
+            attentionBySurface.removeValue(forKey: surfaceId)
+        }
+        syncSurfaceTabActivityStateForPanel(surfaceId)
+        (panels[surfaceId] as? TerminalPanel)?.surface.hostedView.updateFlagBanner()
+    }
+
     /// `terminalKind` lets a caller that has already read the surface's kind
     /// hand it in. The sidebar roster reads it for its agent test and would
     /// otherwise pay for the same lookup twice per surface, per evaluation.
@@ -6728,11 +6755,37 @@ final class Workspace: Identifiable, ObservableObject {
         hasExactSurfaceNotification: Bool? = nil,
         terminalKind: String?? = nil
     ) -> BonsplitTabActivityState? {
-        SurfaceTabActivityResolver.resolve(
+        let attention = attentionSnapshot(panelId: panelId)
+        return SurfaceTabActivityResolver.resolve(
             hasExactSurfaceNotification: hasExactSurfaceNotification ?? hasUnreadNotification(panelId: panelId),
             derivedActivity: derivedActivityBySurface[panelId],
-            terminalType: terminalKind ?? surfaceTerminalKind(panelId: panelId)
+            terminalType: terminalKind ?? surfaceTerminalKind(panelId: panelId),
+            flagged: attention.isFlagged,
+            suppressed: attention.suppressed
         )
+    }
+
+    func resolvedSurfaceTabActivityPresentation(
+        panelId: UUID,
+        activityState: BonsplitTabActivityState?
+    ) -> BonsplitTabActivityPresentation? {
+        let attention = attentionSnapshot(panelId: panelId)
+        if let reason = attention.flagReason {
+            return BonsplitTabActivityPresentation(
+                colorOverrideHex: "#9D8AD9",
+                motion: activityState == .waiting ? .binaryFlash : .breathe,
+                alternateCoreColorHex: activityState == .waiting ? "#FFFFFF" : nil,
+                suppressesDefaultMotion: true,
+                accessibilityValue: String(
+                    localized: "surface.flag.accessibility",
+                    defaultValue: "Flagged: \(reason)"
+                )
+            )
+        }
+        if attention.suppressed {
+            return BonsplitTabActivityPresentation(suppressesDefaultMotion: true)
+        }
+        return nil
     }
 
     func syncSurfaceTabActivityStateForPanel(
@@ -6746,13 +6799,19 @@ final class Workspace: Identifiable, ObservableObject {
             panelId: panelId,
             hasExactSurfaceNotification: hasExact
         )
+        let activityPresentation = resolvedSurfaceTabActivityPresentation(
+            panelId: panelId,
+            activityState: activityState
+        )
         let shouldShowLegacyUnread = manualUnreadPanelIds.contains(panelId)
         guard existing.activityState != activityState
+            || existing.activityPresentation != activityPresentation
             || existing.showsNotificationBadge != shouldShowLegacyUnread else { return }
         bonsplitController.updateTab(
             tabId,
             showsNotificationBadge: shouldShowLegacyUnread,
-            activityState: .some(activityState)
+            activityState: .some(activityState),
+            activityPresentation: .some(activityPresentation)
         )
     }
 
@@ -7611,6 +7670,10 @@ final class Workspace: Identifiable, ObservableObject {
                 values: values,
                 sources: sources
             )
+            SurfaceAttentionService.shared.syncFromMetadata(
+                workspaceId: id,
+                surfaceId: panelId
+            )
             if let rawActivity = values[MetadataKey.activity] as? String,
                let activity = SidebarActivityState(rawValue: rawActivity) {
                 derivedActivityBySurface[panelId] = activity
@@ -7685,9 +7748,13 @@ final class Workspace: Identifiable, ObservableObject {
         // TEL-4: drop derived-activity for surfaces that no longer exist so the
         // @Published map doesn't leak stale liveness for pruned surfaces.
         derivedActivityBySurface = derivedActivityBySurface.filter { validSurfaceIds.contains($0.key) }
+        attentionBySurface = attentionBySurface.filter { validSurfaceIds.contains($0.key) }
         mailboxStdinBuffer.retainOnly(surfaceIds: validSurfaceIds)
         panelPullRequests = panelPullRequests.filter { validSurfaceIds.contains($0.key) }
-        SurfaceMetadataStore.shared.pruneWorkspace(workspaceId: id, validSurfaceIds: validSurfaceIds)
+        SurfaceAttentionService.shared.prune(
+            workspaceId: id,
+            validSurfaceIds: validSurfaceIds
+        )
         titleBarCollapsed = titleBarCollapsed.filter { validSurfaceIds.contains($0.key) }
         titleBarUserCollapsed = titleBarUserCollapsed.filter { validSurfaceIds.contains($0) }
         recomputeListeningPorts()
@@ -9426,6 +9493,14 @@ final class Workspace: Identifiable, ObservableObject {
         } else {
             derivedActivityBySurface.removeValue(forKey: detached.panelId)
         }
+        let restoredAttention = SurfaceAttentionSnapshot(
+            workspaceId: id,
+            surfaceId: detached.panelId,
+            flagReason: detached.attention.flagReason,
+            flagRaisedAt: detached.attention.flagRaisedAt,
+            suppressed: detached.attention.suppressed
+        )
+        SurfaceAttentionService.shared.restore(restoredAttention)
 
         guard let newTabId = bonsplitController.createTab(
             title: TitleFormatting.sidebarLabel(from: detached.title),
@@ -9440,6 +9515,10 @@ final class Workspace: Identifiable, ObservableObject {
             customColorHex: detached.customColor,
             displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: detached.panelId),
             activityState: detached.activityState,
+            activityPresentation: resolvedSurfaceTabActivityPresentation(
+                panelId: detached.panelId,
+                activityState: detached.activityState
+            ),
             inPane: paneId
         ) else {
             panels.removeValue(forKey: detached.panelId)
@@ -9451,7 +9530,7 @@ final class Workspace: Identifiable, ObservableObject {
             manualUnreadPanelIds.remove(detached.panelId)
             manualUnreadMarkedAt.removeValue(forKey: detached.panelId)
             derivedActivityBySurface.removeValue(forKey: detached.panelId)
-            SurfaceMetadataStore.shared.removeSurface(workspaceId: id, surfaceId: detached.panelId)
+            SurfaceAttentionService.shared.remove(workspaceId: id, surfaceId: detached.panelId)
             panelSubscriptions.removeValue(forKey: detached.panelId)
 #if DEBUG
             dlog(
@@ -11708,7 +11787,8 @@ extension Workspace: BonsplitDelegate {
                 activityState: resolvedSurfaceTabActivityState(
                     panelId: panelId,
                     hasExactSurfaceNotification: false
-                )
+                ),
+                attention: attentionSnapshot(panelId: panelId)
             )
         } else {
             if let closedBrowserRestoreSnapshot {
@@ -11743,12 +11823,13 @@ extension Workspace: BonsplitDelegate {
         panelSubscriptions.removeValue(forKey: panelId)
         panelShellActivityStates.removeValue(forKey: panelId)
         derivedActivityBySurface.removeValue(forKey: panelId)
+        attentionBySurface.removeValue(forKey: panelId)
         mailboxStdinBuffer.removeSurface(panelId)
         surfaceTTYNames.removeValue(forKey: panelId)
         restoredTerminalScrollbackByPanelId.removeValue(forKey: panelId)
         titleBarCollapsed.removeValue(forKey: panelId)
         titleBarUserCollapsed.remove(panelId)
-        SurfaceMetadataStore.shared.removeSurface(workspaceId: id, surfaceId: panelId)
+        SurfaceAttentionService.shared.remove(workspaceId: id, surfaceId: panelId)
         PortScanner.shared.unregisterPanel(workspaceId: id, panelId: panelId)
         AgentDetector.shared.unregister(workspaceId: id, panelId: panelId)
         terminalInheritanceFontPointsByPanelId.removeValue(forKey: panelId)
@@ -11756,8 +11837,6 @@ extension Workspace: BonsplitDelegate {
             lastTerminalConfigInheritancePanelId = nil
         }
         clearRemoteConfigurationIfWorkspaceBecameLocal()
-        AppDelegate.shared?.notificationStore?.clearNotifications(forTabId: id, surfaceId: panelId)
-
         // Keep the workspace invariant for normal close paths.
         // Detach/move flows intentionally allow a temporary empty workspace so AppDelegate can
         // prune the source workspace/window after the tab is attached elsewhere.

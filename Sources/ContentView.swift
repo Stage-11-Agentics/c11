@@ -12225,6 +12225,19 @@ private struct TabItemView: View, Equatable {
         )
     }
 
+    private var workspacePulseTerminalCountText: String {
+        if workspacePulse.terminalCount == 1 {
+            return String(
+                localized: "sidebar.workspacePulse.terminalCount.one",
+                defaultValue: "1 terminal"
+            )
+        }
+        return String(
+            localized: "sidebar.workspacePulse.terminalCount.other",
+            defaultValue: "\(workspacePulse.terminalCount) terminals"
+        )
+    }
+
     private var workspacePulseBrowserCountText: String {
         if workspacePulse.browserCount == 1 {
             return String(

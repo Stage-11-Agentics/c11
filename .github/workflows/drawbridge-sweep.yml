@@ -35,8 +35,34 @@ jobs:
           set -euo pipefail
           MAX_DISPATCH=10
 
+          # search/issues carries GitHub's secondary rate limit, which a sweep can
+          # trip on a busy morning. Retry with backoff before giving up.
+          gh_search() {
+            local attempt
+            for attempt in 1 2 3; do
+              if gh api -X GET search/issues "$@"; then
+                return 0
+              fi
+              echo "search/issues attempt $attempt failed; retrying" >&2
+              sleep $((attempt * 10))
+            done
+            return 1
+          }
+
+          # A count is decoration on the digest, so degrade it rather than losing
+          # the whole digest to a throttled call.
+          count_open() {
+            local n
+            if n="$(gh_search -f q="$1" -f per_page=1 --jq '.total_count')"; then
+              printf '%s' "$n"
+            else
+              echo "::warning::could not count '$1'; reporting as unknown" >&2
+              printf '?'
+            fi
+          }
+
           q="repo:$GITHUB_REPOSITORY is:open -label:\"drawbridge:autonomous\" -label:\"drawbridge:review\" -label:\"drawbridge:close-suggest\""
-          gh api -X GET search/issues -f q="$q" -f per_page=50 \
+          gh_search -f q="$q" -f per_page=50 \
             --jq '.items | map({number, title, is_pr: (has("pull_request")), html_url})' > /tmp/untriaged.json
 
           total="$(jq 'length' /tmp/untriaged.json)"
@@ -52,8 +78,8 @@ jobs:
             dispatched=$((dispatched + 1))
           done < <(jq -c '.[]' /tmp/untriaged.json)
 
-          open_prs="$(gh api -X GET search/issues -f q="repo:$GITHUB_REPOSITORY is:open is:pr" -f per_page=1 --jq '.total_count')"
-          open_issues="$(gh api -X GET search/issues -f q="repo:$GITHUB_REPOSITORY is:open is:issue" -f per_page=1 --jq '.total_count')"
+          open_prs="$(count_open "repo:$GITHUB_REPOSITORY is:open is:pr")"
+          open_issues="$(count_open "repo:$GITHUB_REPOSITORY is:open is:issue")"
 
           {
             echo "🌉 **Nightly sweep** — $open_prs open PRs, $open_issues open issues, $total untriaged."
@@ -61,7 +87,9 @@ jobs:
               echo
               echo "Re-dispatched $dispatched for triage:"
               jq -r '.[] | "- [\(if .is_pr then "PR" else "issue" end) #\(.number): \(.title)](\(.html_url))"' /tmp/untriaged.json | head -n "$MAX_DISPATCH"
-              [[ "$total" -gt "$MAX_DISPATCH" ]] && echo "- …and $((total - MAX_DISPATCH)) more (next sweep)"
+              if [[ "$total" -gt "$MAX_DISPATCH" ]]; then
+                echo "- …and $((total - MAX_DISPATCH)) more (next sweep)"
+              fi
             fi
           } > /tmp/digest.md
 

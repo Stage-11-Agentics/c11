@@ -301,3 +301,73 @@ final class SidebarActivityProjectorTests: XCTestCase {
         )
     }
 }
+
+final class GhosttyOSCNotificationPolicyTests: XCTestCase {
+    func testClaudeHookDoesNotSuppressGrokNotificationInSameWorkspace() {
+        XCTAssertFalse(
+            GhosttyOSCNotificationPolicy.shouldSuppress(
+                hasActiveClaudeHookSession: true,
+                sourceTerminalKind: "grok"
+            )
+        )
+    }
+
+    func testClaudeHookSuppressesOnlyClaudeSurfaceNotification() {
+        XCTAssertTrue(
+            GhosttyOSCNotificationPolicy.shouldSuppress(
+                hasActiveClaudeHookSession: true,
+                sourceTerminalKind: "  CLAUDE-CODE "
+            )
+        )
+        XCTAssertFalse(
+            GhosttyOSCNotificationPolicy.shouldSuppress(
+                hasActiveClaudeHookSession: false,
+                sourceTerminalKind: "claude-code"
+            )
+        )
+        XCTAssertFalse(
+            GhosttyOSCNotificationPolicy.shouldSuppress(
+                hasActiveClaudeHookSession: true,
+                sourceTerminalKind: nil
+            )
+        )
+    }
+}
+
+final class WorkspacePulseDividerColorResolverTests: XCTestCase {
+    func testUsesBrandGoldWhenWorkspaceHasNoColor() {
+        XCTAssertEqual(
+            WorkspacePulseDividerColorResolver.resolve(
+                customHex: nil,
+                colorScheme: .dark
+            ).hexString(),
+            BrandColors.goldHex.uppercased()
+        )
+    }
+
+    func testUsesWorkspaceDisplayColorWhenSet() {
+        let customHex = "#1565C0"
+        let expected = WorkspaceTabColorSettings.displayNSColor(
+            hex: customHex,
+            colorScheme: .dark
+        )
+
+        XCTAssertEqual(
+            WorkspacePulseDividerColorResolver.resolve(
+                customHex: customHex,
+                colorScheme: .dark
+            ).hexString(),
+            expected?.hexString()
+        )
+    }
+
+    func testInvalidWorkspaceColorFallsBackToBrandGold() {
+        XCTAssertEqual(
+            WorkspacePulseDividerColorResolver.resolve(
+                customHex: "not-a-color",
+                colorScheme: .light
+            ).hexString(),
+            BrandColors.goldHex.uppercased()
+        )
+    }
+}

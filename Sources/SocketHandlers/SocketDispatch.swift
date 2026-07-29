@@ -80,6 +80,12 @@ extension TerminalController {
     }
 
     nonisolated func processCommandUsingSocketExecutionPolicy(_ command: String) -> String {
+        if let response = Self.socketWorkerImmediateV1Response(command) {
+            return withSocketCommandPolicy(commandKey: "ping", isV2: false) {
+                response
+            }
+        }
+
         if let response = socketWorkerV2ResponseIfNeeded(for: command) {
             return response
         }
@@ -98,6 +104,20 @@ extension TerminalController {
         return DispatchQueue.main.sync {
             MainActor.assumeIsolated { self.processCommand(command) }
         }
+    }
+
+    /// Context-free v1 commands that can answer entirely on the socket worker.
+    ///
+    /// The bundled agent wrappers use `ping` as a bounded startup gate before
+    /// installing their lifecycle hooks. Routing that probe through the main
+    /// actor made rapid A-button launches fail open whenever surface creation
+    /// kept the UI busy for longer than the wrapper's 750 ms timeout.
+    nonisolated static func socketWorkerImmediateV1Response(_ command: String) -> String? {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.hasPrefix("{") else { return nil }
+        let head = trimmed.split(separator: " ", maxSplits: 1).first.map(String.init)?.lowercased()
+        guard head == "ping" else { return nil }
+        return "PONG"
     }
 
     /// C11-156: ack a fire-and-forget telemetry command off-main and apply its

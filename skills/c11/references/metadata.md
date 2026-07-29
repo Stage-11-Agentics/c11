@@ -14,7 +14,7 @@ Every surface in c11 carries an open-ended JSON metadata blob. Agents read and w
 
 ## Delivery model
 
-- **Pull-on-demand only.** Consumers fetch the blob when they want the current state. No push/subscribe, no `metadata.changed` event.
+- **Pull-on-demand reads.** Consumers fetch the blob when they want the current state; there is no socket push/subscribe. Changes to evented keys (e.g. `status`) also land as `metadata.changed` on the file-first events stream (`c11 events tail` — see [events.md](events.md)) for consumers that prefer to follow along.
 - **In-memory only.** The blob lives on the `Surface` model in the running c11 process. It does not persist across app relaunch. Consumers that need durability own it.
 - **Per-surface.** Keyed by the surface UUID. No workspace- or window-scoped metadata in v1.
 - **64 KiB cap** on the serialized `metadata` object per surface. Writes that would exceed the cap return `payload_too_large`. Store large payloads externally (S3, Lattice attachments) and put a reference in the blob.
@@ -32,12 +32,12 @@ These keys have a defined shape and render in the sidebar or title bar. Any writ
 | `progress` | number | 0.0 – 1.0 | sidebar: progress bar |
 | `terminal_type` | string | kebab-case, ≤ 32 chars | sidebar chip. Canonical values: `claude-code`, `codex`, `grok`, `kimi`, `opencode`, `github-copilot`, `pi`, `omp`, `shell`, `unknown`. Open-ended. |
 | `title` | string | plain text, ≤ 256 chars | title bar + sidebar tab label (truncated) |
-| `description` | string | Markdown subset (bold/italic, inline `code`, lists, headings, blockquotes, links, rules — no images, fenced code, or tables), ≤ 2048 chars | title bar expanded region |
+| `description` | string | Markdown subset (bold/italic, inline `code`, lists, headings, blockquotes, links, rules — no images, fenced code, or tables), ≤ 2048 chars | title bar expanded region + sidebar agent line (flattened to one truncated line after the title) |
 | `worktree` | string | ≤ 128 chars (basename) | sidebar chip with colored-dot prefix. Only rendered when the surface's cwd is inside a *linked* git worktree (`git worktree add ...`). Color is a stable hash of the absolute worktree path. **Derived** — written by c11 runtime, not by agents. |
 | `branch` | string | ≤ 64 chars (branch name, `(detached @ <short-sha>)`, or `(no branch)`) | sidebar chip. Renders for main checkouts and linked worktrees. Dimmed for branch ∈ {`main`, `master`, `trunk`}. **Derived** — written by c11 runtime, not by agents. |
 | `activity` | string | `working` \| `idle`, ≤ 16 chars | Per-surface **derived liveness** (C11-162). Sidebar shows it as a visually-distinct *derived* pill when an explicit `status` has aged past expiry (or was never set). **Derived** — written by the c11 runtime from shell-integration prompt state, not by agents; recomputed on state change and not persisted across relaunch. See [Liveness, age & decay](#liveness-age--decay). |
 
-**Sidebar rendering order** when present: `model` → `terminal_type` → `role` → `status` → `task` → `progress` → `worktree` + `branch` chips row. `title` and `description` render in the title bar, not the sidebar — the sidebar tab label is a truncated projection of `title`. The `status` and `progress` pills [decay by age](#liveness-age--decay); when `status` is past expiry the derived `activity` pill takes its place.
+**Sidebar rendering order** when present: `model` → `terminal_type` → `role` → `status` → `task` → `progress` → `worktree` + `branch` chips row. `title` renders in the title bar and as the sidebar tab label (truncated). `description` renders in the title bar expanded region **and** as the sidebar agent line's subtitle — whitespace-collapsed to a single truncated line after the title (`Title · description…`, setting-gated under Settings → Sidebar). That line is the operator's live read on the surface: put the current state in the opening words and keep it fresh (see the skill card's subtitle contract). The `status` and `progress` pills [decay by age](#liveness-age--decay); when `status` is past expiry the derived `activity` pill takes its place. The description never decays.
 
 **Worktree + branch chips.** Both keys are projections of `cwd` + gitfs state — agents should not write them directly. They are computed off-main by `GitContextDeriver` on cwd updates (the `report_pwd` socket path) and rendered automatically. Inside a submodule, both the superproject context and the submodule context render as two stacked rows. Settings → Sidebar → "Show worktree + branch chips in sidebar" gates the entire row (default on, live-toggleable). The branch chip carries a `*` suffix when the working tree is dirty.
 
@@ -105,7 +105,7 @@ c11 clear-metadata                   # clear everything (requires explicit sourc
 >
 > ```bash
 > c11 set-metadata --surface "$C11_SURFACE_ID" --key status --value "running"
-> c11 set-title    --surface "$C11_SURFACE_ID" "TICKET-42 :: Impl"
+> c11 set-title    --surface "$C11_SURFACE_ID" "TICKET-42 Impl"
 > ```
 
 ### Agent-declaration sugar

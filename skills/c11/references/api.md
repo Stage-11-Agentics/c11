@@ -118,7 +118,8 @@ c11 new-surface [--type <terminal|browser|markdown>] [--pane <id|ref>] [--worksp
 c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] \
     [--task <id>] [--pane <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] \
-    [--prompt <text> | --prompt-file <path>] [--title <text>] [--env K=V ...] [--json]
+    [--prompt <text> | --prompt-file <path>] [--title <text>] \
+    [--flag <reason>] [--suppressed] [--env K=V ...] [--json]
     # Launch a typed agent (claude-code|codex|grok|kimi|opencode|github-copilot|pi|omp,
     # or a custom kind with ~/.config/c11/agents/<kind>.json) into a new surface or a
     # fresh workspace. One command owns the per-agent invocation quirks, model/effort
@@ -127,6 +128,9 @@ c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     # --system-prompt-mode append|replace injects the kind's system-prompt flag
     # (claude-code only in v1; replace + empty text = blank slate). errors
     # system_prompt_unsupported for a kind with no system-prompt axis.
+    # --flag <reason> raises a sticky flag before command delivery (operator-designated
+    # priority missions only); --suppressed marks the worker parent-owned. Semantics:
+    # the attention model in SKILL.md.
 
 # Saved agent configs (the model picker's CLI, design §6)
 c11 config list [--json]                          # saved configs + default(mode) + most-recent

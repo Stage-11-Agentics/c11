@@ -1,4 +1,4 @@
 interface:
   display_name: "c11 Core"
-  short_description: "Control windows/workspaces/panes/surfaces and routing with c11 CLI."
-  default_prompt: "Use this skill to inspect and manipulate c11 topology: identify context, target handles, create/focus/move/reorder windows/workspaces/panes/surfaces, and use trigger-flash for visual confirmation."
+  short_description: "Control c11 workspaces/panes/surfaces, self-report identity and status, and manage operator attention with the c11 CLI."
+  default_prompt: "Use this skill to inspect and manipulate c11 topology (identify context, target handles, create/focus/move/reorder windows/workspaces/panes/surfaces), keep your tab title and description current (the description is your live subtitle in the operator's sidebar), self-report status/progress, and use the attention verbs: raise-flag/lower-flag for human-required blockers, suppress/unsuppress for parent-owned workers, trigger-flash for visual confirmation."

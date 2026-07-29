@@ -29,7 +29,7 @@ c11 stamps your sidebar identity itself: the agent-type/model chip and a placeho
 **You'll usually load this skill because a task arrived** that touches the workspace (a split, a status report, a browser check). When that happens, orient in place and keep moving — at minimal effort, no per-command deliberation:
 
 - Refine the placeholder into your real role: `c11 rename-tab --surface "$C11_SURFACE_ID" "<2–4 word role>"`. The sidebar is the operator's only view into a room of parallel agents, so a working agent must not sit under "Awaiting first task".
-- Say why it's open right now: `c11 set-description --surface "$C11_SURFACE_ID" "<current context>"`.
+- Say why it's open right now: `c11 set-description --surface "$C11_SURFACE_ID" "<current context>"` — this is your live subtitle, the line the operator reads under your name (contract below).
 - If your model chip is blank (an unpinned launch c11 couldn't label), set it: `c11 set-agent --surface "$C11_SURFACE_ID" --type "$C11_AGENT_TYPE" --model "$C11_AGENT_MODEL"` — substitute your own known type/model if those vars are empty.
 - Reach for `c11 tree` / `c11 identify --json` only when you actually need layout or your refs (footgun below).
 - Read a reference (map below) only for the capability you're using — not preemptively.
@@ -39,71 +39,74 @@ c11 stamps your sidebar identity itself: the agent-type/model chip and a placeho
 
 > **Pass `--surface` explicitly on surface- or tab-scoped writes.** Every surface exports `$C11_SURFACE_ID` (inherited by subprocesses), so `--surface "$C11_SURFACE_ID"` targets you correctly. As of C11-165 a surface-scoped write with a **missing or empty** ref no longer silently falls back to the operator-focused surface — it is **rejected** with a clear error (`missing_ref` / `empty_ref`), so an omitted or empty flag fails loudly instead of stomping a peer agent's tab. You must therefore still pass a valid ref: if `$C11_SURFACE_ID` reads empty, capture your refs once from `c11 identify --json` and pass the literal `surface:<n>` (robust on any build). Applies to every surface/tab write (`set-metadata`, `set-agent`, `set-title`, `set-description`, `rename-tab`, `clear-metadata`, `trigger-flash`) and to the tab-scoped sidebar writes (`set-status`, `set-progress`, `log`), which require `--workspace`/`--tab` (auto-supplied from `$C11_WORKSPACE_ID` inside a pane; a ref-less call from a bare shell or cron is now rejected rather than routed to the selected tab). Verify the first write with `c11 get-titlebar-state --surface <surface>` against the surface marked `◀ here` in `c11 tree --no-layout`.
 
-### Title vs description, and lineage
+### Title vs description: identity and the live subtitle
 
-- **Title = what the surface *is*** — generic, reusable. A filename for file-backed surfaces (`PHILOSOPHY.md`); a role for terminals (`Phase 2 agent`, `Log tail`).
-- **Description = why it's open *right now*** — one or two sentences of current context the operator can read without opening the surface.
-- **Refresh both when scope shifts** (plan → impl, ticket → ticket, file → file) — at the pivot, not at session end.
-- **Lineage lives in the DESCRIPTION, not the title (revised 2026-07-20).** Titles are 2–3 words, role-first, DISTINCT — make the first word differ between sibling tabs; `::` parent-prefix chains are retired (at fleet scale every sibling truncates to the same parent prefix and the sidebar becomes unreadable — operator verdict). Lead the description with a `Lineage: <parent> → <role>` breadcrumb instead. Before renaming, check `c11 get-titlebar-state`; keep names short, keep the description's lineage line.
+- **Title = stable identity.** 2–3 words, role-first, DISTINCT from siblings — make the first word differ; the leading characters are all that survive sidebar truncation. A ticket ID is welcome (`C11-184 Attention`). No `Parent :: Child` chains, no shared prefixes. Rename only when your role or mission changes; check `c11 get-titlebar-state` first.
+- **Description = your live subtitle.** The operator reads it in two places: under the title in the title bar, and flattened to one truncated line in the sidebar. First sentence carries what you are doing *now* and the next meaningful gate, present tense: `"Auditing retry admission against the shipped tests; next, verify cancellation."` — not "Reviewing the code."
+- **Plain English always.** A ticket number may appear in the subtitle, never *as* the subtitle — the operator should not need a tracker lookup to know what a surface is doing.
+- **Refresh at transitions** (task start, phase change, blocker hit or cleared, handoff) — not after every command. The description never decays, so a stale one is a lie the operator cannot detect. A working agent must not sit under a stale subtitle; same register as tab naming.
+- **Lineage is the LAST line**: `Lineage: <parent> → <role>`. Arrow, never `::`. Ancestry is static; the line that survives truncation must be the live one. Preserve it on every update.
 
 ## Flags and suppression (the attention model)
 
 Your surface's mark shows your lifecycle — working, needs attention (waiting), idle, cold.
-Two modifiers sit over it, and they are yours to use. They are independent, not two ends of
-one dial: **suppressed and flagged at once is the most valuable combination in the feature** —
-"do not tell me when you finish, do tell me if you get stuck."
+Two independent modifiers sit over it. A flag is **attention** priority, not scheduling
+priority; suppression reroutes routine attention, it never blocks escalation.
 
-### Flag: work has stopped and only a human can restart it
+| State | Meaning |
+|---|---|
+| Normal | Independent agent; routine completion reaches the operator. Most agents, most of the time. |
+| Suppressed | A parent agent owns this worker's completion and recoverable blockers; routine signals stay off the operator's sidebar. |
+| Flagged | Operator-designated priority mission, or a running agent now needs human action. Marks render violet; the flag escalates to the menu bar extra, reaching the operator even when c11 isn't frontmost. |
+| Flagged + suppressed | Supervised priority mission: routine completion stays quiet, escalation still lands at full strength. |
+
+### Flag
 
 ```bash
 c11 raise-flag --surface "$C11_SURFACE_ID" "Need a call on schema migration vs dual-write"
 c11 lower-flag --surface "$C11_SURFACE_ID"
-c11 launch-agent ... --flag "Watch the migration"   # dispatch a mission already flagged
+c11 launch-agent ... --flag "Watch the migration"   # operator-designated priority mission
 ```
 
-The reason is required, one line, 256 characters at most, and surfaced everywhere the flag
-appears — write it as the sentence you would say if the operator walked over.
+The reason is required — one line, ≤256 chars, surfaced everywhere the flag appears. Write it
+as the sentence you would say if the operator walked over. Policy differs by origin:
 
-- A flag is **sticky**: it holds until the operator dismisses it or you lower it. While it is
-  up, your marks render violet across the workspace, and the flag escalates out of the window
-  into the menu bar extra, so it reaches the operator even when c11 is not frontmost. If you
-  are also stopped, the mark strobes — the strongest visual signal c11 has. When the flag
-  lowers, your marks return to normal lifecycle colors.
-- **Flag only when work has stopped and only a human can restart it**, or when you have hit
-  an urgent issue whose blast radius crosses other agents. "I finished, please review" is
-  waiting, not a flag. If the operator is already in conversation with you, just ask them —
-  the flag is your channel back when you were dispatched and left alone.
-- Flags arrive from either side: the operator may launch you flagged (a mission they intend
-  to watch), or you may raise one mid-run. Both are rare by design — **expect at least nine
-  in ten agents to never carry a flag**. The tier's power is its scarcity; an agent that
-  flags routinely is spending everyone's signal.
-- A dismissed flag is not an unseen flag. `flag.lowered` carries `by: "operator" | "agent"`;
-  operator dismissal without an answer means *seen and deferred*. Re-raise only if the
-  blocker still stands and you can say why the deferral does not.
-- All four attention verbs accept `--by agent|operator` and **default to `agent`**, so your
-  own raises and lowers need nothing extra. Pass `--by operator` only when you are acting on
-  an instruction the operator gave you, so the event trail stays honest.
+- **At dispatch** (`--flag`): reserved for missions the operator designated as priority. Pass
+  it only when relaying explicit operator intent, with `--by operator`.
+- **Self-raised** (mid-run): you have stopped on a decision only a human can make, or hit an
+  urgent issue whose blast radius crosses other agents. "I finished, please review" is
+  waiting, not a flag. If the operator is already in conversation with you, just ask them.
 
-### Suppression: keep working, do not signal
+A flag is **sticky** — it holds until dismissed or lowered, and if you are also stopped the
+mark strobes, the strongest signal c11 has. **Expect at least nine in ten agents to never
+carry one**; the tier's power is its scarcity. A dismissed flag was *seen*: `flag.lowered`
+carries `by`, and operator dismissal without an answer means seen and deferred — re-raise
+only if the blocker still stands and you can say why the deferral doesn't. All four attention
+verbs accept `--by agent|operator`, defaulting to `agent`; pass `--by operator` only when
+acting on the operator's instruction, so the event trail stays honest.
+
+### Suppression
 
 ```bash
 c11 suppress --surface "$C11_SURFACE_ID"
 c11 unsuppress --surface "$C11_SURFACE_ID"
-c11 launch-agent ... --suppressed     # the common case: set at dispatch
+c11 launch-agent ... --suppressed     # set at dispatch by the parent
 ```
 
-A suppressed surface never enters the needs-attention state: when it stops, its mark reads
-idle, and it is excluded from waiting counts, ⌥V, and routine waiting-derived system
-notifications. The notification record still lands in the store — suppression silences the
-routine signal, not the history. A direct notification from `flag.raise` is the deliberate
-exception because the flag tier overrides suppression completely.
+A suppressed surface never enters needs-attention: on stop its mark reads idle, and it is
+excluded from waiting counts, ⌥V, and routine waiting-derived notifications. The notification
+record still lands in the store; the `flag.raise` notification is the deliberate exception,
+because a flag overrides suppression completely.
 
-- The natural fit is **subagents under an orchestrator**: the orchestrator watches you, so
-  the operator's sidebar stays quiet while coordination happens one level down. If you are
-  orchestrating, launch your workers `--suppressed` and sweep them yourself.
-- **Suppression is not a gag.** If you hit a genuine blocker, raise the flag — a flag
-  overrides suppression entirely, at full visual strength. "Do not tell me when you finish,
-  do tell me if you get stuck" is the contract, and the flag is the second half.
+**Suppression is rare, and never a guess.** Suppress only when you *know* another agent owns
+your outcomes — it launched you, consumes your completion, handles your recoverable blockers.
+That knowledge comes from your launch prompt or from being the launcher yourself, never from
+inference about how the operator's setup probably works. In doubt, stay normal. A parent that
+suppresses a worker takes on both channels: give it a completion path back to you (mailbox,
+metadata key, a `send`) and put this contract in its prompt:
+
+> Report completion and recoverable blockers to your parent. Raise a c11 flag only when
+> operator action is required.
 
 ### Reading attention state
 
@@ -112,9 +115,7 @@ c11 get-metadata --surface surface:12    # flag = <reason> / suppressed = true, 
 ```
 
 `tree` and `get-titlebar-state` do not carry attention state; `get-metadata` is the read, and
-both keys are absent rather than empty when unset. This is how an orchestrator sweeps its own
-workers: launch them `--suppressed`, then poll each surface for a `flag =` line instead of
-watching a sidebar you deliberately made quiet. See
+both keys are absent rather than empty when unset. Parent-side monitoring patterns:
 [references/orchestration.md](references/orchestration.md).
 
 ## What c11 can do — load the reference when you need it

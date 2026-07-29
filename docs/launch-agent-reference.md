@@ -12,7 +12,8 @@ c11 launch-agent --type <kind>
     [--task <id>]
     [--pane <ref> | --workspace <ref> | --new-workspace] [--cwd <path>]
     [--prompt <text> | --prompt-file <path>]
-    [--title <text>] [--env KEY=VALUE ...] [--json]
+    [--title <text>] [--flag <reason>] [--suppressed]
+    [--env KEY=VALUE ...] [--json]
 ```
 
 `launch-agent` is the programmatic sibling of the A button. Where
@@ -135,6 +136,17 @@ there.
 
 `--env KEY=VALUE` (repeatable) adds caller extras to the spawn env after the
 operator's configured overrides (caller wins on collision).
+
+### Attention at dispatch (`--flag`, `--suppressed`)
+
+Both apply to the new surface before command delivery, so the attention state is
+correct from the first frame. `--flag <reason>` raises a sticky flag — reserved
+for operator-designated priority missions (pair with the caller relaying explicit
+operator intent). `--suppressed` marks the worker parent-owned: routine
+completion never reaches the operator, and the launching agent owes it a
+completion channel and the flag-escalation contract. Semantics live in the c11
+skill card's attention model; parent-side patterns in
+`skills/c11/references/orchestration.md`.
 
 ### Prompt delivery (`--prompt` | `--prompt-file`)
 

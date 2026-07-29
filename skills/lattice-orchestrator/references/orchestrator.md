@@ -29,6 +29,7 @@ then uses `--surface "$MY_SURF"` on every surface-scoped write. Ticket-bound rol
 10. **Verify the push landed:** after `git push`, `git fetch <remote> && test "$(git rev-parse HEAD)" = "$(git rev-parse <remote>/<branch>)"` and re-push until equal. A silently-failed push — or a commit leaked onto the root checkout's `main` — is the #1 false-completion mode. Then confirm the PR's `head.sha != base.sha`.
 11. **Cadence:** `/loop` with a 60-second tick; never bash `sleep`/`watch`/`lattice watch --exec` (subprocess loops die on compaction, can't re-enter the model, and are invisible to the harness). **Once you say `Loop ended`, you're dead** — no `send-key` revives a terminated loop, so do post-PR cleanup before ending it. (Codex has no `/loop`; use explicit `codex exec` re-invocations and flag the difference.)
 12. **Stop after the completion comment.** Sub-agents do not bump status and do not address the operator; the delegator is the only interface upward. Read-before-Write on pre-existing files (plan files are scaffolded at ticket creation — the path always exists).
+13. **Flag only human-required blockers:** on hitting a blocker only the operator can clear (a decision, a credential, an account swap), `c11 raise-flag --surface "$MY_SURF" "<one-line reason>"` in addition to the Lattice `needs_human` escalation, and `c11 lower-flag` once unblocked. Recoverable blockers go to the parent (delegator or Orchestrator), never to a flag. Do not launch delegators `--suppressed` by default — the operator watches these panes directly; suppression is reserved for workers whose completion the launching agent alone consumes (see the c11 skill's attention model).
 
 ## Spawning: atomic cwd binding
 
@@ -134,7 +135,7 @@ One-shot recovery agents for cross-cutting batch work (a Merge Captain, a Rebase
 
 ## Escalation format
 
-Terse banners, one per condition, re-surfaced every tick while standing: `🛑 NEEDS YOUR INPUT` (the `needs_human` flag — orthogonal to status, set via `lattice needs-human <ID>`), `⛔ BLOCKED`, `✅ READY FOR REVIEW`, `🎉 DONE`, `📋 UPDATE`. The body answers three questions: what changed, what it means, what's next and whose ball it is. An OS notification (`osascript -e 'display notification ...'`) sparingly for hard blocks; sidebar highlight color while blocked.
+Terse banners, one per condition, re-surfaced every tick while standing: `🛑 NEEDS YOUR INPUT` (the `needs_human` flag — orthogonal to status, set via `lattice needs-human <ID>`), `⛔ BLOCKED`, `✅ READY FOR REVIEW`, `🎉 DONE`, `📋 UPDATE`. The body answers three questions: what changed, what it means, what's next and whose ball it is. For hard blocks, `c11 raise-flag` on the blocked surface (one-line reason; lower it when cleared) — it escalates to the menu bar and outlives a scrolled-away banner; an OS notification (`osascript -e 'display notification ...'`) sparingly as backup; sidebar highlight color while blocked.
 
 ## Master Validator (if enabled)
 

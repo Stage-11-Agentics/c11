@@ -49,22 +49,26 @@ c11 stamps your sidebar identity itself: the agent-type/model chip and a placeho
 ## Flags and suppression (the attention model)
 
 Your surface's mark shows your lifecycle — working, needs attention (waiting), idle, cold.
-Two modifiers sit over it, and they are yours to use.
+Two modifiers sit over it, and they are yours to use. They are independent, not two ends of
+one dial: **suppressed and flagged at once is the most valuable combination in the feature** —
+"do not tell me when you finish, do tell me if you get stuck."
 
 ### Flag: work has stopped and only a human can restart it
 
 ```bash
 c11 raise-flag --surface "$C11_SURFACE_ID" "Need a call on schema migration vs dual-write"
 c11 lower-flag --surface "$C11_SURFACE_ID"
+c11 launch-agent ... --flag "Watch the migration"   # dispatch a mission already flagged
 ```
 
-The reason is required, one line, and surfaced everywhere the flag appears — write it as the
-sentence you would say if the operator walked over.
+The reason is required, one line, 256 characters at most, and surfaced everywhere the flag
+appears — write it as the sentence you would say if the operator walked over.
 
 - A flag is **sticky**: it holds until the operator dismisses it or you lower it. While it is
-  up, your marks render violet across the workspace; if you are also stopped, the mark
-  strobes — the strongest visual signal c11 has. When the flag lowers, your marks return to
-  normal lifecycle colors.
+  up, your marks render violet across the workspace, and the flag escalates out of the window
+  into the menu bar extra, so it reaches the operator even when c11 is not frontmost. If you
+  are also stopped, the mark strobes — the strongest visual signal c11 has. When the flag
+  lowers, your marks return to normal lifecycle colors.
 - **Flag only when work has stopped and only a human can restart it**, or when you have hit
   an urgent issue whose blast radius crosses other agents. "I finished, please review" is
   waiting, not a flag. If the operator is already in conversation with you, just ask them —
@@ -76,6 +80,9 @@ sentence you would say if the operator walked over.
 - A dismissed flag is not an unseen flag. `flag.lowered` carries `by: "operator" | "agent"`;
   operator dismissal without an answer means *seen and deferred*. Re-raise only if the
   blocker still stands and you can say why the deferral does not.
+- All four attention verbs accept `--by agent|operator` and **default to `agent`**, so your
+  own raises and lowers need nothing extra. Pass `--by operator` only when you are acting on
+  an instruction the operator gave you, so the event trail stays honest.
 
 ### Suppression: keep working, do not signal
 
@@ -97,6 +104,18 @@ exception because the flag tier overrides suppression completely.
 - **Suppression is not a gag.** If you hit a genuine blocker, raise the flag — a flag
   overrides suppression entirely, at full visual strength. "Do not tell me when you finish,
   do tell me if you get stuck" is the contract, and the flag is the second half.
+
+### Reading attention state
+
+```bash
+c11 get-metadata --surface surface:12    # flag = <reason> / suppressed = true, when set
+```
+
+`tree` and `get-titlebar-state` do not carry attention state; `get-metadata` is the read, and
+both keys are absent rather than empty when unset. This is how an orchestrator sweeps its own
+workers: launch them `--suppressed`, then poll each surface for a `flag =` line instead of
+watching a sidebar you deliberately made quiet. See
+[references/orchestration.md](references/orchestration.md).
 
 ## What c11 can do — load the reference when you need it
 

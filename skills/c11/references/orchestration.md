@@ -148,17 +148,17 @@ c11 new-split right
 # 2. Launch claude
 c11 send --workspace $WS --surface $SURF "claude --dangerously-skip-permissions"
 
-# 3. Wait for claude to be ready (see polling section), then name the tab with lineage
-#    (parent first, `::` separator — see Tab naming above)
-c11 rename-tab       --workspace $WS --surface $SURF "Login Button :: Lint Fixes"
+# 3. Wait for claude to be ready (see polling section), then name the tab: short,
+#    role-first, DISTINCT first word. Lineage goes in the description, never the title.
+c11 rename-tab       --workspace $WS --surface $SURF "Lint Fixes"
 c11 set-description  --workspace $WS --surface $SURF "Lineage: Login Button → Lint Fixes sub-agent.
 Clearing lint errors in src/ before the feature branch merges."
 
 # 4. Declare what this agent is (so the sidebar chip, title bar, and tree all reflect identity)
 c11 set-agent --workspace $WS --surface $SURF --type claude-code --model claude-opus-4-7
 
-# 5. Send the prompt. Tell the sub-agent its parent so it can preserve the chain on self-updates.
-c11 send --workspace $WS --surface $SURF "Your tab title is already set to 'Login Button :: Lint Fixes' — preserve that prefix. Now: fix all lint errors in src/"
+# 5. Send the prompt. Name the parent so the sub-agent can keep its own lineage line accurate.
+c11 send --workspace $WS --surface $SURF "Your tab is named 'Lint Fixes'; your parent is 'Login Button'. Keep the title short and distinct, and keep the description's 'Lineage:' line accurate. Now: fix all lint errors in src/"
 ```
 
 **One-call send.** `c11 send` types the text and dispatches a synthetic Return on the same turn, so the receiving TUI sees one user turn. Pass `--no-submit` to type without executing (e.g., staging a partial line across multiple calls).
@@ -296,10 +296,10 @@ c11 set-progress 0.6 --label "3/5 subtasks"
 c11 log --source "agent-name" "Finished the data model step"
 
 # Richer — canonical metadata keys light up sidebar chip and title bar.
-# When refining title/description, check `c11 get-titlebar-state` first and
-# preserve any lineage prefix (`Parent :: …`) and lineage line in the description.
+# When refining title/description, check `c11 get-titlebar-state` first, keep the
+# title short and distinct, and preserve the description's `Lineage:` line.
 c11 set-metadata --json '{"role":"reviewer","status":"running","progress":0.6}'
-c11 set-title "Login Button :: Review"
+c11 set-title "PR Review"
 c11 set-description "Lineage: Login Button → Review sub-agent.
 Reviewing PR #42 in 3 stages. Stage 2 running smoke tests."
 ```
@@ -321,13 +321,34 @@ c11 set-progress 0.6 --label "3/5 subtasks"
 c11 log --source "orchestrator" "Agent A finished; Agent B starting"
 ```
 
+### Suppress your workers, then sweep them yourself
+
+When you are the one watching a worker, launch it `--suppressed`. A suppressed surface never
+enters the needs-attention state: on stop it reads idle and is excluded from the waiting count,
+⌥V, and routine waiting-derived notifications, so the operator's sidebar stays quiet while
+coordination happens one level down. That trade makes the sweep **yours**.
+
+```bash
+c11 launch-agent --type claude-code --suppressed ...        # you watch it, not the operator
+c11 get-metadata --workspace $WS --surface $SURF | grep '^flag = '
+```
+
+`get-metadata` is the read for attention state — `flag = <reason>` and `suppressed = true`
+appear only when set, and neither `tree` nor `get-titlebar-state` carries them. Poll for a
+`flag =` line rather than watching a sidebar you deliberately made quiet.
+
+A flag overrides suppression completely and at full visual strength, so a genuinely blocked
+worker still reaches both you and the operator. Say so in the launch prompt: "do not tell me
+when you finish, do tell me if you get stuck." Suppression without that instruction reads to a
+worker as a gag, and a worker that believes it has been gagged will sit blocked in silence.
+
 ## Writing c11-aware agent prompts
 
 When spawning sub-agents in c11, include these as first-class instructions in the prompt:
 
-1. **Self-identify immediately.** First action: `c11 identify` + `c11 get-titlebar-state` (to read any lineage the orchestrator pre-wrote) + `c11 rename-tab "<descriptive name>"` + `c11 set-description "<why this pane is open right now>"` + `c11 set-agent --type <tui> --model <model-id>`. An unnamed, undescribed, undeclared tab is an unidentifiable agent. If a lineage prefix (`Parent :: …`) is already present, preserve it and refine only the trailing segment.
-2. **Name every tab you create with lineage — both fields, not just title.** Title format: `<parent title> :: <child role>` (e.g., `Login Button :: Plan`). Chain additional rungs as needed. Write `c11 set-description` alongside with a `Lineage: A → B → C` breadcrumb plus a one-sentence "why this pane is open right now" — description is mandatory, not an afterthought. Pass the parent title in the spawn prompt so the sub-agent can recompose if it ever has to rename from scratch.
-3. **Report at milestones** via `c11 set-metadata`, `c11 set-status`, `c11 set-progress`, `c11 log`. Interactive `claude --dangerously-skip-permissions` inherits the auth chain, so sub-agents can self-report. **When scope shifts** (new task, different file, pivot) refresh both title and description at the pivot, not at the end — preserve any lineage prefix/breadcrumb.
+1. **Self-identify immediately.** First action: `c11 identify` + `c11 get-titlebar-state` (to read any lineage the orchestrator pre-wrote) + `c11 rename-tab "<descriptive name>"` + `c11 set-description "<why this pane is open right now>"` + `c11 set-agent --type <tui> --model <model-id>`. An unnamed, undescribed, undeclared tab is an unidentifiable agent. If the orchestrator pre-named the tab, keep that name unless your role sharpened, and preserve the description's `Lineage:` line.
+2. **Name every tab you create in both fields, not just the title.** Title is 2–3 words, role-first, and DISTINCT from its siblings — make the first word differ (`Lint Fixes`, `Routes Impl`, `SPA Plan`). Lineage lives in the description, not the title: write `c11 set-description` alongside with a `Lineage: A → B → C` breadcrumb plus a one-sentence "why this pane is open right now" — description is mandatory, not an afterthought. Pass the parent title in the spawn prompt so the sub-agent can keep that breadcrumb accurate if it ever renames itself.
+3. **Report at milestones** via `c11 set-metadata`, `c11 set-status`, `c11 set-progress`, `c11 log`. Interactive `claude --dangerously-skip-permissions` inherits the auth chain, so sub-agents can self-report. **When scope shifts** (new task, different file, pivot) refresh both title and description at the pivot, not at the end — keep the description's `Lineage:` breadcrumb accurate.
 4. **Deliver complex prompts via temp files** — write to a file, tell the agent to read it. Avoids shell-escaping issues with `c11 send`.
 5. **Do not make silent splits.** For multiple related outputs, prefer tabs over splits. Propose layouts when they would help; do not impose them.
 6. **Read the room before reshaping it.** `c11 tree --json` gives pixel and percent coordinates for every pane — check whether a new split will fit before asking for one.

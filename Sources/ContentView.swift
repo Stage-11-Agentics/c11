@@ -8481,7 +8481,7 @@ struct VerticalTabsSidebar: View {
 
     /// Space at top of sidebar for traffic light buttons
     private let trafficLightPadding: CGFloat = 28
-    private let tabRowSpacing: CGFloat = 2
+    private let tabRowSpacing: CGFloat = 4
     /// Extra clearance between the traffic-light strip and the first
     /// workspace row so the row's selection highlight clears the
     /// `SidebarTopScrim` gradient. The scrim is `trafficLightPadding + 20`
@@ -8799,8 +8799,24 @@ struct VerticalTabsSidebar: View {
                 .background(Color.clear)
                 .modifier(ClearScrollBackground())
             }
-            SidebarFooter(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                // The footer floats over the scroll area: cards slide beneath
+                // it and dissolve in its scrim instead of hard-clipping at a
+                // structural boundary.
+                SidebarFooter(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background {
+                        // Solid blur under the controls, fading out over the
+                        // cards above. Extends past the footer's top edge via
+                        // the negative padding.
+                        VStack(spacing: 0) {
+                            SidebarBottomScrim(height: 28)
+                            SidebarTopBlurEffect().opacity(0.95)
+                        }
+                        .padding(.top, -28)
+                        .allowsHitTesting(false)
+                    }
+            }
         }
         .accessibilityIdentifier("Sidebar")
         .ignoresSafeArea()
@@ -9747,8 +9763,8 @@ private struct SidebarFooter: View {
         SidebarDevFooter(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback)
 #else
         SidebarFooterButtons(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback)
-            .padding(.leading, 6)
-            .padding(.trailing, 10)
+            .padding(.horizontal, 10)
+            .padding(.top, 4)
             .padding(.bottom, 6)
 #endif
     }
@@ -10705,27 +10721,14 @@ private struct SidebarHelpMenuButton: View {
     }
 }
 
-// MARK: - Waiting Agent + Workspace Nav Cluster
+// MARK: - Waiting Agent Cluster
 
 private struct SidebarWaitingAgentCluster: View {
     @EnvironmentObject private var notificationStore: TerminalNotificationStore
-    @EnvironmentObject private var tabManager: TabManager
     @ObservedObject private var attentionIndex = SurfaceAttentionIndex.shared
 
     private var display: StatusBarButtonDisplay {
         StatusBarButtonDisplay(unreadCount: notificationStore.unreadCount)
-    }
-
-    private var isFirstWorkspace: Bool {
-        guard let currentId = tabManager.selectedTabId,
-              let idx = tabManager.tabs.firstIndex(where: { $0.id == currentId }) else { return true }
-        return idx == 0
-    }
-
-    private var isLastWorkspace: Bool {
-        guard let currentId = tabManager.selectedTabId,
-              let idx = tabManager.tabs.firstIndex(where: { $0.id == currentId }) else { return true }
-        return idx == tabManager.tabs.count - 1
     }
 
     var body: some View {
@@ -10737,12 +10740,6 @@ private struct SidebarWaitingAgentCluster: View {
                 )
             }
             WaitingAgentRow(display: display, onJump: jump)
-            WorkspaceNavRow(
-                isFirstDisabled: isFirstWorkspace,
-                isLastDisabled: isLastWorkspace,
-                onPrevious: goToPreviousWorkspace,
-                onNext: goToNextWorkspace
-            )
         }
     }
 
@@ -10750,16 +10747,6 @@ private struct SidebarWaitingAgentCluster: View {
         DispatchQueue.main.async {
             AppDelegate.shared?.jumpToLatestUnread()
         }
-    }
-
-    private func goToPreviousWorkspace() {
-        guard !isFirstWorkspace else { return }
-        tabManager.selectPreviousTab()
-    }
-
-    private func goToNextWorkspace() {
-        guard !isLastWorkspace else { return }
-        tabManager.selectNextTab()
     }
 }
 
@@ -10900,130 +10887,6 @@ private struct WaitingAgentRow: View {
         .safeHelp(
             KeyboardShortcutSettings.Action.jumpToUnread.tooltip(label)
         )
-    }
-}
-
-private struct WorkspaceNavRow: View {
-    let isFirstDisabled: Bool
-    let isLastDisabled: Bool
-    let onPrevious: () -> Void
-    let onNext: () -> Void
-
-    var body: some View {
-        HStack(spacing: 1) {
-            WorkspaceArrowButton(
-                glyph: "\u{25B2}",
-                isDisabled: isFirstDisabled,
-                action: onPrevious,
-                tooltipText: KeyboardShortcutSettings.Action.prevSidebarTab.tooltip(
-                    String(localized: "sidebar.workspaceNav.previous", defaultValue: "Previous Workspace")
-                ),
-                accessibilityText: String(localized: "sidebar.workspaceNav.previous.accessibility", defaultValue: "Go to previous workspace")
-            )
-            WorkspaceArrowButton(
-                glyph: "\u{25BC}",
-                isDisabled: isLastDisabled,
-                action: onNext,
-                tooltipText: KeyboardShortcutSettings.Action.nextSidebarTab.tooltip(
-                    String(localized: "sidebar.workspaceNav.next", defaultValue: "Next Workspace")
-                ),
-                accessibilityText: String(localized: "sidebar.workspaceNav.next.accessibility", defaultValue: "Go to next workspace")
-            )
-        }
-    }
-}
-
-private struct WorkspaceArrowButton: View {
-    let glyph: String
-    let isDisabled: Bool
-    let action: () -> Void
-    let tooltipText: String
-    let accessibilityText: String
-
-    @State private var isHovering = false
-    @State private var isPressed = false
-    @State private var repeatTimer: Timer?
-
-    private var isActive: Bool { (isHovering || isPressed) && !isDisabled }
-
-    var body: some View {
-        Text(glyph)
-            .font(.system(size: 10, weight: .medium))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(BrandColors.surfaceSwiftUI)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .stroke(
-                        isActive ? BrandColors.goldSwiftUI : BrandColors.ruleSwiftUI,
-                        lineWidth: isActive ? 1.5 : 1
-                    )
-            )
-            .foregroundColor(
-                isDisabled
-                    ? BrandColors.whiteSwiftUI.opacity(0.3)
-                    : isActive
-                        ? BrandColors.goldSwiftUI
-                        : BrandColors.whiteSwiftUI
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-            .onHover { hovering in
-                guard !isDisabled else { return }
-                isHovering = hovering
-            }
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in
-                        guard !isDisabled, !isPressed else { return }
-                        isPressed = true
-                        action()
-                        startRepeat()
-                    }
-                    .onEnded { _ in
-                        isPressed = false
-                        stopRepeat()
-                    }
-            )
-            .onChange(of: isDisabled) {
-                // The press action mutates the selected workspace, which can rebuild
-                // this view mid-gesture and cause DragGesture.onEnded to be dropped —
-                // leaving `isPressed` stuck true and the auto-repeat Timer orphaned, so
-                // the sidebar keeps walking selection back to the first/last workspace.
-                // Reaching the first/last workspace disables the button; use that as a
-                // reliable signal to release the latch and cancel the repeat.
-                if isDisabled {
-                    isPressed = false
-                    stopRepeat()
-                }
-            }
-            .accessibilityLabel(accessibilityText)
-            .accessibilityAddTraits(isDisabled ? .isStaticText : .isButton)
-            .safeHelp(isDisabled ? "" : tooltipText)
-            .onDisappear { stopRepeat() }
-    }
-
-    private func startRepeat() {
-        repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { _ in
-            DispatchQueue.main.async {
-                self.repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { _ in
-                    DispatchQueue.main.async {
-                        guard self.isPressed, !self.isDisabled else {
-                            self.stopRepeat()
-                            return
-                        }
-                        self.action()
-                    }
-                }
-            }
-        }
-    }
-
-    private func stopRepeat() {
-        repeatTimer?.invalidate()
-        repeatTimer = nil
     }
 }
 
@@ -11223,8 +11086,8 @@ private struct SidebarDevFooter: View {
                     .foregroundColor(.red)
             }
         }
-        .padding(.leading, 6)
-        .padding(.trailing, 10)
+        .padding(.horizontal, 10)
+        .padding(.top, 4)
         .padding(.bottom, 6)
     }
 }
@@ -11243,6 +11106,27 @@ private struct SidebarTopScrim: View {
                         Color.black.opacity(0.75),
                         Color.black.opacity(0.35),
                         Color.clear
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+    }
+}
+
+private struct SidebarBottomScrim: View {
+    let height: CGFloat
+
+    var body: some View {
+        SidebarTopBlurEffect()
+            .frame(height: height)
+            .mask(
+                LinearGradient(
+                    colors: [
+                        Color.clear,
+                        Color.black.opacity(0.35),
+                        Color.black.opacity(0.75),
+                        Color.black.opacity(0.95)
                     ],
                     startPoint: .top,
                     endPoint: .bottom

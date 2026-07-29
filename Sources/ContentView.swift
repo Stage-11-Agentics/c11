@@ -8762,9 +8762,20 @@ struct VerticalTabsSidebar: View {
                     }
                     .frame(minHeight: proxy.size.height, alignment: .top)
                 }
+                // The sidebar is a card rail, not a document; the overlay
+                // scroller renders as a grey bar over the cards (and the
+                // traffic-light strip) whenever the workspace list overflows.
+                .scrollIndicators(.never)
                 .background(
                     SidebarScrollViewResolver { scrollView in
                         dragAutoScrollController.attach(scrollView: scrollView)
+                        // Backstop for the .scrollIndicators modifier: SwiftUI's
+                        // ScrollView is NSScrollView-backed here, and AppKit can
+                        // still materialize an overlay scroller on scroll.
+                        scrollView?.hasVerticalScroller = false
+                        scrollView?.hasHorizontalScroller = false
+                        scrollView?.verticalScroller = nil
+                        scrollView?.horizontalScroller = nil
                     }
                     .frame(width: 0, height: 0)
                 )

@@ -139,8 +139,23 @@ final class EventEmitter {
         emit(entered ? .waitingEntered : .waitingLeft, workspace: tabId, surface: surface)
     }
 
-    func emitFlagRaised(workspace: UUID, surface: UUID, reason: String) {
-        emit(.flagRaised, workspace: workspace, surface: surface, payload: ["reason": reason])
+    func emitFlagRaised(
+        workspace: UUID,
+        surface: UUID,
+        reason: String,
+        callerSurfaceId: UUID?,
+        by actor: SurfaceAttentionActor
+    ) {
+        emit(
+            .flagRaised,
+            workspace: workspace,
+            surface: surface,
+            payload: [
+                "reason": reason,
+                "caller_surface_id": callerSurfaceId?.uuidString ?? NSNull(),
+                "by": actor.rawValue,
+            ]
+        )
     }
 
     func emitFlagLowered(workspace: UUID, surface: UUID, by actor: SurfaceAttentionActor) {

@@ -2258,6 +2258,24 @@ struct CMUXCLI {
             var params: [String: Any] = ["type": agentKind]
             if let flagReason = optionValue(commandArgs, name: "--flag") {
                 params["flag"] = flagReason
+                let actor = optionValue(commandArgs, name: "--by") ?? "operator"
+                guard ["operator", "agent"].contains(actor) else {
+                    throw CLIError(message: "launch-agent: --by must be operator or agent")
+                }
+                params["by"] = actor
+                let callerSurfaceId = try resolveCallingSurface(
+                    environment: ProcessInfo.processInfo.environment
+                )
+                if actor == "agent", callerSurfaceId == nil {
+                    throw CLIError(
+                        message: "launch-agent: agent-raised flags require C11_SURFACE_ID or CMUX_SURFACE_ID"
+                    )
+                }
+                if let callerSurfaceId {
+                    params["caller_surface_id"] = callerSurfaceId
+                }
+            } else if optionValue(commandArgs, name: "--by") != nil {
+                throw CLIError(message: "launch-agent: --by requires --flag")
             }
             if commandArgs.contains("--suppressed") {
                 params["suppressed"] = true
@@ -2314,7 +2332,11 @@ struct CMUXCLI {
             }
             var params: [String: Any] = ["surface_id": surfaceHandle]
             if let workspaceHandle { params["workspace_id"] = workspaceHandle }
-            if let by = optionValue(commandArgs, name: "--by") { params["by"] = by }
+            let actor = optionValue(commandArgs, name: "--by") ?? "agent"
+            guard ["operator", "agent"].contains(actor) else {
+                throw CLIError(message: "\(command): --by must be operator or agent")
+            }
+            params["by"] = actor
 
             let method: String
             switch command {
@@ -2337,6 +2359,17 @@ struct CMUXCLI {
                     throw CLIError(message: "raise-flag requires exactly one reason argument")
                 }
                 params["reason"] = positionals[0]
+                let callerSurfaceId = try resolveCallingSurface(
+                    environment: ProcessInfo.processInfo.environment
+                )
+                if actor == "agent", callerSurfaceId == nil {
+                    throw CLIError(
+                        message: "raise-flag: agent-raised flags require C11_SURFACE_ID or CMUX_SURFACE_ID"
+                    )
+                }
+                if let callerSurfaceId {
+                    params["caller_surface_id"] = callerSurfaceId
+                }
             case "lower-flag": method = "flag.lower"
             case "suppress": method = "flag.suppress"
             default: method = "flag.unsuppress"
@@ -8730,6 +8763,8 @@ struct CMUXCLI {
               --prompt-file <path>     Read the initial prompt from a file
               --title <text>           Tab title (default: launch placeholder)
               --flag <reason>          Raise a sticky flag before command delivery
+              --by <actor>             Flag authority: operator (default) or agent;
+                                       requires --flag
               --suppressed             Suppress routine attention before command delivery
               --env KEY=VALUE          Extra spawn env (repeatable)
               --json                   Print the machine-readable result object
@@ -12059,7 +12094,7 @@ struct CMUXCLI {
     /// cooperative causal-report rail: the target Codex process invokes it
     /// from its own tool subprocess, so identities must come from that
     /// subprocess's environment rather than caller-supplied arguments.
-    private func resolveRuntimeConversationSurface(environment: [String: String]) throws -> String {
+    private func resolveCallingSurface(environment: [String: String]) throws -> String? {
         let canonical = environment["C11_SURFACE_ID"]?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let compat = environment["CMUX_SURFACE_ID"]?
@@ -12070,11 +12105,16 @@ struct CMUXCLI {
         if let canonicalValue, let compatValue, canonicalValue != compatValue {
             throw CLIError(message: "surface_env_mismatch: C11_SURFACE_ID and CMUX_SURFACE_ID disagree")
         }
-        guard let surface = canonicalValue ?? compatValue else {
-            throw CLIError(message: "missing_surface: C11_SURFACE_ID or CMUX_SURFACE_ID required")
-        }
+        guard let surface = canonicalValue ?? compatValue else { return nil }
         guard UUID(uuidString: surface) != nil else {
             throw CLIError(message: "invalid_surface: runtime surface environment must contain a UUID")
+        }
+        return surface
+    }
+
+    private func resolveRuntimeConversationSurface(environment: [String: String]) throws -> String {
+        guard let surface = try resolveCallingSurface(environment: environment) else {
+            throw CLIError(message: "missing_surface: C11_SURFACE_ID or CMUX_SURFACE_ID required")
         }
         return surface
     }

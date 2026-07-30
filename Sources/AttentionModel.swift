@@ -36,7 +36,24 @@ struct SurfaceAttentionSnapshot: Equatable, Identifiable {
     let surfaceId: UUID
     let flagReason: String?
     let flagRaisedAt: Date?
+    let flagCallerSurfaceId: UUID?
     let suppressed: Bool
+
+    init(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        flagReason: String?,
+        flagRaisedAt: Date?,
+        flagCallerSurfaceId: UUID? = nil,
+        suppressed: Bool
+    ) {
+        self.workspaceId = workspaceId
+        self.surfaceId = surfaceId
+        self.flagReason = flagReason
+        self.flagRaisedAt = flagRaisedAt
+        self.flagCallerSurfaceId = flagCallerSurfaceId
+        self.suppressed = suppressed
+    }
 
     var id: String { "\(workspaceId.uuidString):\(surfaceId.uuidString)" }
     var isFlagged: Bool { flagReason != nil }
@@ -212,12 +229,16 @@ final class SurfaceAttentionService {
         workspaceId: UUID,
         surfaceId: UUID,
         reason: String,
+        callerSurfaceId: UUID? = nil,
+        by actor: SurfaceAttentionActor = .agent,
         title: String?
     ) throws -> SurfaceMetadataStore.WriteResult {
         try mutate(
             workspaceId: workspaceId,
             surfaceId: surfaceId,
             flag: .raise(reason),
+            callerSurfaceId: callerSurfaceId,
+            actor: actor,
             title: title
         )
     }
@@ -356,6 +377,7 @@ final class SurfaceAttentionService {
         surfaceId: UUID,
         flag: SurfaceAttentionFlagMutation = .unchanged,
         suppression: SurfaceAttentionSuppressionMutation = .unchanged,
+        callerSurfaceId: UUID? = nil,
         actor: SurfaceAttentionActor = .agent,
         title: String? = nil
     ) throws -> SurfaceMetadataStore.WriteResult {
@@ -363,7 +385,8 @@ final class SurfaceAttentionService {
             workspaceId: workspaceId,
             surfaceId: surfaceId,
             flag: flag,
-            suppression: suppression
+            suppression: suppression,
+            callerSurfaceId: callerSurfaceId
         )
         let flagChanged = transaction.result.applied[MetadataKey.flag] == true
         let suppressionChanged = transaction.result.applied[MetadataKey.suppressed] == true
@@ -378,7 +401,9 @@ final class SurfaceAttentionService {
                 EventEmitter.shared.emitFlagRaised(
                     workspace: workspaceId,
                     surface: surfaceId,
-                    reason: reason
+                    reason: reason,
+                    callerSurfaceId: transaction.after.flagCallerSurfaceId,
+                    by: actor
                 )
                 // Operator decision 2026-07-28: direct flag delivery pierces
                 // suppression. Its stable epoch identity also replaces a

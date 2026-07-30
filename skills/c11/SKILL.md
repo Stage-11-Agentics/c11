@@ -79,11 +79,14 @@ as the sentence you would say if the operator walked over. Policy differs by ori
 
 A flag is **sticky** — it holds until dismissed or lowered, and if you are also stopped the
 mark strobes, the strongest signal c11 has. **Expect at least nine in ten agents to never
-carry one**; the tier's power is its scarcity. A dismissed flag was *seen*: `flag.lowered`
-carries `by`, and operator dismissal without an answer means seen and deferred — re-raise
-only if the blocker still stands and you can say why the deferral doesn't. All four attention
-verbs accept `--by agent|operator`, defaulting to `agent`; pass `--by operator` only when
-acting on the operator's instruction, so the event trail stays honest.
+carry one**; the tier's power is its scarcity. Typing into the flagged surface lowers the
+flag immediately — an operator's first keystroke of a reply is the answer arriving — so a
+flag that vanishes mid-conversation was answered, not lost. Otherwise a dismissed flag was
+*seen*: `flag.lowered` carries `by`, and operator dismissal without an answer means seen
+and deferred — re-raise only if the blocker still stands and you can say why the deferral
+doesn't. All four attention verbs accept `--by agent|operator`, defaulting to `agent`; pass
+`--by operator` only when acting on the operator's instruction, so the event trail stays
+honest.
 
 ### Suppression
 

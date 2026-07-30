@@ -518,6 +518,50 @@ final class AttentionModelTests: XCTestCase {
         )
     }
 
+    func testLowerIfFlaggedNoopsWhenUnflaggedAndLowersRaisedFlag() throws {
+        let workspace = UUID()
+        let surface = UUID()
+        let notificationStore = TerminalNotificationStore.shared
+        notificationStore.configureDirectFlagAuthorizationHandlerForTesting { completion in
+            completion(true)
+        }
+        notificationStore.configureDirectFlagAddHandlerForTesting { _, _ in }
+        defer {
+            notificationStore.resetDirectFlagDeliveryHandlersForTesting()
+            SurfaceAttentionService.shared.remove(workspaceId: workspace, surfaceId: surface)
+        }
+
+        XCTAssertNil(
+            try SurfaceAttentionService.shared.lowerIfFlagged(
+                workspaceId: workspace,
+                surfaceId: surface,
+                by: .operator
+            ),
+            "lowerIfFlagged must be a no-op when nothing is raised (typing hot path)"
+        )
+
+        _ = try SurfaceAttentionService.shared.raise(
+            workspaceId: workspace,
+            surfaceId: surface,
+            reason: "Need operator input",
+            title: nil
+        )
+        XCTAssertTrue(
+            SurfaceAttentionIndex.shared.snapshot(workspaceId: workspace, surfaceId: surface).isFlagged
+        )
+
+        XCTAssertNotNil(
+            try SurfaceAttentionService.shared.lowerIfFlagged(
+                workspaceId: workspace,
+                surfaceId: surface,
+                by: .operator
+            )
+        )
+        XCTAssertFalse(
+            SurfaceAttentionIndex.shared.snapshot(workspaceId: workspace, surfaceId: surface).isFlagged
+        )
+    }
+
     func testSuppressionEdgesRetainRawHistoryWhileTogglingSignalDemand() throws {
         let workspace = UUID()
         let surface = UUID()

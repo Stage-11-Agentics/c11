@@ -5528,6 +5528,13 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                 tabId: terminalSurface.tabId,
                 surfaceId: terminalSurface.id
             )
+            // A keystroke into a flagged surface is the operator answering the
+            // flag: lower it immediately. Guarded no-op when nothing is raised.
+            _ = try? SurfaceAttentionService.shared.lowerIfFlagged(
+                workspaceId: terminalSurface.tabId,
+                surfaceId: terminalSurface.id,
+                by: .operator
+            )
             let submitFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             if !event.isARepeat,
                (event.keyCode == 36 || event.keyCode == 76),
@@ -6826,6 +6833,8 @@ private struct SurfaceFlagBanner: View {
     let reason: String
     let onDismiss: () -> Void
 
+    @State private var isDismissHovered = false
+
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "flag.fill")
@@ -6836,15 +6845,23 @@ private struct SurfaceFlagBanner: View {
             Spacer(minLength: 4)
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
+                    .frame(width: 20, height: 20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(isDismissHovered ? Color.black.opacity(0.16) : Color.clear)
+                    )
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .onHover { isDismissHovered = $0 }
+            .animation(.easeInOut(duration: 0.12), value: isDismissHovered)
             .accessibilityLabel(Text(String(
-                localized: "surface.flag.dismiss.accessibility",
-                defaultValue: "Dismiss agent flag"
+                localized: "common.close",
+                defaultValue: "Close"
             )))
             .help(String(
-                localized: "surface.flag.dismiss.help",
-                defaultValue: "Dismiss this flag"
+                localized: "common.close",
+                defaultValue: "Close"
             ))
         }
         .font(.system(size: 12, weight: .semibold))

@@ -12676,52 +12676,37 @@ extension Workspace: BonsplitDelegate {
         syncSurfaceTabActivityStateForPanel(surfaceId)
     }
 
-    func splitTabBar(_ controller: BonsplitController, menuItemsForNewTabKind kind: String, inPane pane: PaneID) -> [BonsplitNewTabMenuItem] {
-        guard kind == "agent" else { return [] }
+    func splitTabBar(_ controller: BonsplitController, didRightClickNewTabButton kind: String, inPane pane: PaneID, buttonScreenRect: CGRect) {
         // C11-181: a right-click on the A button opens the rich launch picker
-        // popover instead of a native menu — the picker replaces both the old
-        // 9-harness menu AND its click-sets-default gesture (design §5/§8.8). We
-        // reuse bonsplit's existing `.contextMenu` trigger with ZERO vendor edits:
-        // open the popover as a side-effect and return `[]` so no native menu is
-        // shown. Guard on a genuine right-mouse event so a SwiftUI eager
-        // menu-content diff (no right-click in flight) can't spuriously open it.
-        if let event = NSApp.currentEvent,
-           event.type == .rightMouseDown || event.type == .rightMouseUp {
-            let location = NSEvent.mouseLocation
-            let window = event.window
-            DispatchQueue.main.async { [weak self] in
-                self?.presentAgentPicker(inPane: pane, window: window, at: location)
-            }
-        }
-        return []
-    }
-
-    func splitTabBar(_ controller: BonsplitController, didSelectNewTabMenuItem itemId: String, forKind kind: String, inPane pane: PaneID) {
-        // C11-181: unreachable — `menuItemsForNewTabKind` now returns `[]` and
-        // routes the right-click to the picker popover, which owns launch + pin.
-        // Kept for delegate conformance; no-op by design.
+        // popover — it replaces both the old 9-harness menu AND its
+        // click-sets-default gesture (design §5/§8.8). The delegate fires
+        // synchronously inside the right-click's own dispatch, so the current
+        // event's window is the button's window.
+        guard kind == "agent" else { return }
+        presentAgentPicker(inPane: pane, window: NSApp.currentEvent?.window, anchoringTo: buttonScreenRect)
     }
 
     /// Present the tier-1 agent launch picker popover anchored to the A button
-    /// (design §5.1). `screenPoint` anchors under the right-clicked button; `nil`
-    /// (⌘⇧A / menu) anchors at the window's top-trailing corner. Row click =
-    /// launch now; pin / ⌥-click = set default without launching (C11-181).
+    /// (design §5.1). `anchorScreenRect` is the right-clicked button's frame;
+    /// `nil` (⌘⇧A / menu) anchors at the window's top-trailing corner. Row click
+    /// = launch now; pin / ⌥-click = set default without launching (C11-181).
     func presentAgentPicker(
         inPane pane: PaneID,
         window requestedWindow: NSWindow? = nil,
-        at screenPoint: NSPoint? = nil
+        anchoringTo anchorScreenRect: NSRect? = nil
     ) {
         guard let window = requestedWindow ?? NSApp.keyWindow ?? NSApp.mainWindow else { return }
-
-        // The A button belongs to a pane. Make that pane the launch target before
-        // building the picker so a right-click in an unfocused pane cannot create
-        // the selected agent as a hidden/background tab.
-        bonsplitController.focusPane(pane)
 
         let controller = AgentPickerController(model: makeAgentPickerModel())
         controller.rebuild = { [weak self] in self?.makeAgentPickerModel() }
         controller.onLaunch = { [weak self] config in
-            self?.launchAgentSurface(inPane: pane, explicitConfig: config, source: .aButton)
+            guard let self else { return }
+            // The A button belongs to a pane. Focus it at launch time so the
+            // new agent cannot land as a hidden/background tab — but not at
+            // popover-open time, so peeking at the picker from an unfocused
+            // pane and pressing Esc doesn't steal the pane focus.
+            self.bonsplitController.focusPane(pane)
+            self.launchAgentSurface(inPane: pane, explicitConfig: config, source: .aButton)
         }
         controller.onPin = { [weak self] config in
             try? AgentConfigLibraryStore.shared.setDefault(configId: config.id)
@@ -12739,7 +12724,7 @@ extension Workspace: BonsplitDelegate {
         let armEditorReturn = { [weak self, weak window] in
             AgentPickerPresenter.shared.armReturnToPicker {
                 guard let self, let window else { return }
-                self.presentAgentPicker(inPane: pane, window: window, at: nil)
+                self.presentAgentPicker(inPane: pane, window: window, anchoringTo: nil)
             }
         }
         controller.onViewAll = {
@@ -12754,7 +12739,7 @@ extension Workspace: BonsplitDelegate {
         }
         controller.onNotInstalledHint = { _ in NSSound.beep() }
 
-        AgentPickerPresenter.shared.present(controller: controller, in: window, at: screenPoint)
+        AgentPickerPresenter.shared.present(controller: controller, in: window, anchoringTo: anchorScreenRect)
     }
 
     /// Build the picker view-model from the current library, registry, a cached

@@ -646,16 +646,29 @@ final class AgentPickerPresenter: NSObject, NSPopoverDelegate {
         returnToPicker = action
     }
 
-    /// Present the picker. `screenPoint` anchors under the right-clicked A button
-    /// (pointer path); `nil` anchors at the window's top-trailing corner (⌘⇧A / menu).
+    /// When a transient popover dismissed itself because of this incoming click,
+    /// AppKit tears it down *before* the click reaches the A button's catcher —
+    /// so by the time `present` runs, `popover` is already nil and a plain
+    /// re-present would flicker the picker straight back open. A close this
+    /// recent can only mean "the user clicked while it was open": treat the
+    /// pointer re-present as the closing half of a toggle.
+    private var lastTransientCloseAt: Date?
+    private static let toggleGraceInterval: TimeInterval = 0.25
+
+    /// Present the picker. `screenRect` (the A button's frame in screen
+    /// coordinates) anchors the popover under the button (pointer path); `nil`
+    /// anchors at the window's top-trailing corner (⌘⇧A / menu).
     ///
-    /// Re-entry policy: only the keyboard path (nil `screenPoint`) toggles closed —
-    /// pressing ⌘⇧A again dismisses. The pointer path is idempotent: if the popover
-    /// is already shown, a repeat present is a no-op, so a double-evaluated
-    /// `.contextMenu` builder within one right-click can't open-then-close (flicker).
-    func present(controller: AgentPickerController, in window: NSWindow, at screenPoint: NSPoint?) {
+    /// Re-entry policy: both paths toggle. ⌘⇧A while shown dismisses directly;
+    /// a right-click while shown arrives just after the transient popover
+    /// auto-closed for that same click, so the grace window above absorbs it.
+    func present(controller: AgentPickerController, in window: NSWindow, anchoringTo screenRect: NSRect?) {
         if let p = popover, p.isShown {
-            if screenPoint == nil { dismiss() }
+            dismiss()
+            return
+        }
+        if screenRect != nil, let closedAt = lastTransientCloseAt,
+           Date().timeIntervalSince(closedAt) < Self.toggleGraceInterval {
             return
         }
         guard let contentView = window.contentView else { return }
@@ -677,10 +690,11 @@ final class AgentPickerPresenter: NSObject, NSPopoverDelegate {
         self.popover = pop
 
         let rect: NSRect
-        if let sp = screenPoint {
-            let winPt = window.convertPoint(fromScreen: sp)
-            let cvPt = contentView.convert(winPt, from: nil)
-            rect = NSRect(x: cvPt.x, y: cvPt.y, width: 1, height: 1)
+        if let sr = screenRect {
+            // Anchor to the A button's own frame so the popover drops from the
+            // button, wherever the pointer has drifted by presentation time.
+            let winRect = window.convertFromScreen(sr)
+            rect = contentView.convert(winRect, from: nil)
         } else {
             let b = contentView.bounds
             // Top-trailing corner (contentView is a flipped NSHostingView: minY = top).
@@ -697,16 +711,23 @@ final class AgentPickerPresenter: NSObject, NSPopoverDelegate {
 
     func dismiss() {
         removeKeyMonitor()
-        popover?.performClose(nil)
+        // Nil the reference before performClose so the delegate callback's
+        // identity guard filters this programmatic close — only transient
+        // (outside-click) closes stamp `lastTransientCloseAt`.
+        let closing = popover
         popover = nil
         controller = nil
+        closing?.performClose(nil)
     }
 
     func popoverDidClose(_ notification: Notification) {
         // Ignore a delayed close callback for a popover we've already replaced —
         // otherwise a rapid toggle/reopen inside the close animation would let the
         // stale close tear down the NEW popover's key monitor + presenter state.
+        // (Programmatic `dismiss()` nils `popover` first, so only self-initiated
+        // closes — the transient outside-click path — reach the stamp below.)
         guard (notification.object as? NSPopover) === popover else { return }
+        lastTransientCloseAt = Date()
         removeKeyMonitor()
         popover = nil
         controller = nil

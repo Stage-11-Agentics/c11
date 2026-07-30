@@ -236,6 +236,21 @@ final class SurfaceAttentionService {
         )
     }
 
+    /// Typing-hot-path variant of `lower`: a no-op (nil) unless a flag is
+    /// currently raised, so callers can invoke it unconditionally per keystroke.
+    @discardableResult
+    func lowerIfFlagged(
+        workspaceId: UUID,
+        surfaceId: UUID,
+        by actor: SurfaceAttentionActor
+    ) throws -> SurfaceMetadataStore.WriteResult? {
+        guard SurfaceAttentionIndex.shared.snapshot(
+            workspaceId: workspaceId,
+            surfaceId: surfaceId
+        ).isFlagged else { return nil }
+        return try lower(workspaceId: workspaceId, surfaceId: surfaceId, by: actor)
+    }
+
     @discardableResult
     func suppress(
         workspaceId: UUID,

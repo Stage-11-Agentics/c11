@@ -329,11 +329,14 @@ final class EventLogTests: XCTestCase {
         EventEmitter.shared.startForTesting(log: log, instance: "attention-inst")
         let workspace = UUID()
         let surface = UUID()
+        let callerSurface = UUID()
 
         EventEmitter.shared.emitFlagRaised(
             workspace: workspace,
             surface: surface,
-            reason: "Needs schema decision"
+            reason: "Needs schema decision",
+            callerSurfaceId: callerSurface,
+            by: .agent
         )
         EventEmitter.shared.emitFlagLowered(workspace: workspace, surface: surface, by: .operator)
         EventEmitter.shared.emitFlagSuppressed(workspace: workspace, surface: surface, by: .agent)
@@ -349,6 +352,11 @@ final class EventLogTests: XCTestCase {
             (events[0]["payload"] as? [String: Any])?["reason"] as? String,
             "Needs schema decision"
         )
+        XCTAssertEqual(
+            (events[0]["payload"] as? [String: Any])?["caller_surface_id"] as? String,
+            callerSurface.uuidString
+        )
+        XCTAssertEqual((events[0]["payload"] as? [String: Any])?["by"] as? String, "agent")
         XCTAssertEqual((events[1]["payload"] as? [String: Any])?["by"] as? String, "operator")
         XCTAssertEqual((events[2]["payload"] as? [String: Any])?["by"] as? String, "agent")
         XCTAssertEqual((events[3]["payload"] as? [String: Any])?["by"] as? String, "operator")

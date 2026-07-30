@@ -58,6 +58,8 @@ final class AttentionModelTests: XCTestCase {
     func testAttentionTransactionIsStickyAtomicAndPreservesFlagEpoch() throws {
         let workspace = UUID()
         let surface = UUID()
+        let originalCaller = UUID()
+        let revisingCaller = UUID()
         defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
         let raisedAt = Date(timeIntervalSince1970: 1_000)
 
@@ -66,10 +68,12 @@ final class AttentionModelTests: XCTestCase {
             surfaceId: surface,
             flag: .raise("Needs review"),
             suppression: .suppress,
+            callerSurfaceId: originalCaller,
             now: raisedAt
         )
         XCTAssertEqual(raised.after.flagReason, "Needs review")
         XCTAssertEqual(raised.after.flagRaisedAt, raisedAt)
+        XCTAssertEqual(raised.after.flagCallerSurfaceId, originalCaller)
         XCTAssertTrue(raised.after.suppressed)
         XCTAssertEqual(raised.result.applied[MetadataKey.flag], true)
         XCTAssertEqual(raised.result.applied[MetadataKey.suppressed], true)
@@ -78,10 +82,16 @@ final class AttentionModelTests: XCTestCase {
             workspaceId: workspace,
             surfaceId: surface,
             flag: .raise("Needs operator decision"),
+            callerSurfaceId: revisingCaller,
             now: Date(timeIntervalSince1970: 2_000)
         )
         XCTAssertEqual(revised.after.flagReason, "Needs operator decision")
         XCTAssertEqual(revised.after.flagRaisedAt, raisedAt)
+        XCTAssertEqual(
+            revised.after.flagCallerSurfaceId,
+            originalCaller,
+            "Reason revisions must retain the caller that opened the active flag epoch"
+        )
         XCTAssertTrue(revised.after.suppressed)
 
         let noOp = try store.mutateAttention(
@@ -100,13 +110,16 @@ final class AttentionModelTests: XCTestCase {
             now: Date(timeIntervalSince1970: 3_000)
         )
         XCTAssertNil(lowered.after.flagRaisedAt)
+        XCTAssertNil(lowered.after.flagCallerSurfaceId)
         let reraised = try store.mutateAttention(
             workspaceId: workspace,
             surfaceId: surface,
             flag: .raise("New epoch"),
+            callerSurfaceId: revisingCaller,
             now: Date(timeIntervalSince1970: 4_000)
         )
         XCTAssertEqual(reraised.after.flagRaisedAt, Date(timeIntervalSince1970: 4_000))
+        XCTAssertEqual(reraised.after.flagCallerSurfaceId, revisingCaller)
         XCTAssertNotEqual(
             TerminalNotificationStore.flagNotificationIdentifier(
                 workspaceId: workspace,
@@ -191,25 +204,40 @@ final class AttentionModelTests: XCTestCase {
         let surface = UUID()
         defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
         let raisedAt: Double = 1_725_000_123
+        let caller = UUID()
 
         store.restoreFromSnapshot(
             workspaceId: workspace,
             surfaceId: surface,
             values: [
                 MetadataKey.flag: "Need a deployment decision",
+                MetadataKey.flagCallerSurfaceId: caller.uuidString,
                 MetadataKey.suppressed: true,
             ],
             sources: [
                 MetadataKey.flag: .init(source: .explicit, ts: raisedAt),
+                MetadataKey.flagCallerSurfaceId: .init(
+                    source: .heuristic,
+                    ts: raisedAt + 99
+                ),
                 MetadataKey.suppressed: .init(source: .explicit, ts: raisedAt + 1),
             ]
         )
         let snapshot = store.attentionSnapshot(workspaceId: workspace, surfaceId: surface)
         XCTAssertEqual(snapshot.flagReason, "Need a deployment decision")
+        XCTAssertEqual(snapshot.flagCallerSurfaceId, caller)
         XCTAssertTrue(snapshot.suppressed)
         XCTAssertEqual(snapshot.flagRaisedAt?.timeIntervalSince1970, raisedAt)
         XCTAssertEqual(
             store.getSource(workspaceId: workspace, surfaceId: surface, key: MetadataKey.flag),
+            .explicit
+        )
+        XCTAssertEqual(
+            store.getSource(
+                workspaceId: workspace,
+                surfaceId: surface,
+                key: MetadataKey.flagCallerSurfaceId
+            ),
             .explicit
         )
         XCTAssertEqual(
@@ -432,6 +460,7 @@ final class AttentionModelTests: XCTestCase {
         let workspace = UUID()
         let olderSurface = UUID()
         let newerSurface = UUID()
+        let olderCaller = UUID()
         let controller = TerminalController.shared
         SurfaceAttentionIndex.shared.publish(
             SurfaceAttentionSnapshot(
@@ -448,6 +477,7 @@ final class AttentionModelTests: XCTestCase {
                 surfaceId: olderSurface,
                 flagReason: "older",
                 flagRaisedAt: Date(timeIntervalSince1970: 10),
+                flagCallerSurfaceId: olderCaller,
                 suppressed: true
             )
         )
@@ -480,6 +510,41 @@ final class AttentionModelTests: XCTestCase {
         XCTAssertEqual(flags.first?["suppressed"] as? Bool, true)
         XCTAssertEqual(flags.first?["workspace_id"] as? String, workspace.uuidString)
         XCTAssertEqual(flags.first?["surface_id"] as? String, olderSurface.uuidString)
+        XCTAssertEqual(
+            flags.first?["caller_surface_id"] as? String,
+            olderCaller.uuidString
+        )
+    }
+
+    func testAgentFlagRaiseRequiresCallerSurfaceBeforeMainThreadCommit() {
+        let controller = TerminalController.shared
+        let response = AttentionTestBox<String?>(nil)
+        let completed = expectation(description: "flag.raise validation response")
+        DispatchQueue.global(qos: .userInitiated).async {
+            response.set(
+                controller.socketWorkerV2Response(
+                    TerminalController.V2SocketRequest(
+                        id: 18,
+                        method: "flag.raise",
+                        params: [
+                            "surface_id": UUID().uuidString,
+                            "reason": "Needs operator",
+                            "by": "agent",
+                        ]
+                    )
+                )
+            )
+            completed.fulfill()
+        }
+        wait(for: [completed], timeout: 2)
+
+        let data = try! XCTUnwrap(response.get()?.data(using: .utf8))
+        let object = try! XCTUnwrap(
+            try! JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        XCTAssertEqual(object["ok"] as? Bool, false)
+        let error = try! XCTUnwrap(object["error"] as? [String: Any])
+        XCTAssertEqual(error["code"] as? String, "missing_caller_surface")
     }
 
     func testLaunchSequencerStampsIdentityAndAttentionBeforeSendingCommand() {
@@ -632,7 +697,10 @@ final class AttentionModelTests: XCTestCase {
             try store.setMetadata(
                 workspaceId: workspace,
                 surfaceId: surface,
-                partial: [MetadataKey.flag: "Bypass"],
+                partial: [
+                    MetadataKey.flag: "Bypass",
+                    MetadataKey.flagCallerSurfaceId: UUID().uuidString,
+                ],
                 mode: .merge,
                 source: .explicit
             )
@@ -645,6 +713,15 @@ final class AttentionModelTests: XCTestCase {
                 surfaceId: surface,
                 key: MetadataKey.suppressed,
                 value: true,
+                source: .explicit
+            )
+        )
+        XCTAssertFalse(
+            store.setInternal(
+                workspaceId: workspace,
+                surfaceId: surface,
+                key: MetadataKey.flagCallerSurfaceId,
+                value: UUID().uuidString,
                 source: .explicit
             )
         )

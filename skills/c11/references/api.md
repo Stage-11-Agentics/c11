@@ -154,6 +154,16 @@ c11 config launch <name|id> [--pane <id|ref> | --workspace <id|ref> | --new-work
     # `default --pin-current` snapshots the most-recent launch into a new saved config
     # and pins it (optional name overrides the auto label). `--window <N>d` = last N days.
 
+c11 model-costs list [--json]                     # model token-cost catalog (picker $ column)
+c11 model-costs set <model> --in <usd> --out <usd> [--source <url>] [--notes <text>]
+c11 model-costs get <model> [--json] | rm <model>
+c11 model-costs import <path|-> [--replace]       # bulk JSON: {"<model>": {"in_usd": n, "out_usd": n, ...}}
+    # Agent-maintained API list prices ($/Mtok) at the state root (model-costs.json),
+    # file-first like `config` — works with the app down. Feeds the launch picker's
+    # cost column; keys are model ids (short `opus`, full `claude-opus-5`, router
+    # `provider/model`). `set` stamps observed_at; keep `--source` honest so the next
+    # updater has provenance. Prices are relative-magnitude signal, not billing truth.
+
 # Navigate
 c11 select-workspace --workspace <id|ref>
 c11 focus-pane --pane <id|ref>

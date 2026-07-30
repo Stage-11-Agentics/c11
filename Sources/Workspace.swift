@@ -12697,6 +12697,10 @@ extension Workspace: BonsplitDelegate {
     ) {
         guard let window = requestedWindow ?? NSApp.keyWindow ?? NSApp.mainWindow else { return }
 
+        // Re-probe PATH on every open so a harness installed mid-session lights
+        // its rows back up without an app relaunch.
+        AgentHarnessInstallProbe.invalidate()
+
         let controller = AgentPickerController(model: makeAgentPickerModel())
         controller.rebuild = { [weak self] in self?.makeAgentPickerModel() }
         controller.onLaunch = { [weak self] config in
@@ -12737,7 +12741,7 @@ extension Workspace: BonsplitDelegate {
             armEditorReturn()
             AppDelegate.shared?.openAgentConfigEditor(focus: .stats, origin: .popover)
         }
-        controller.onNotInstalledHint = { _ in NSSound.beep() }
+        // Not-installed feedback is the controller's inline notice (no beep).
 
         AgentPickerPresenter.shared.present(controller: controller, in: window, anchoringTo: anchorScreenRect)
     }
@@ -12754,7 +12758,7 @@ extension Workspace: BonsplitDelegate {
             },
             provider: { AgentLaunchStats.provider(harness: $0, model: $1) },
             isInstalled: { AgentHarnessInstallProbe.isInstalled($0) },
-            costFor: { _ in nil }, // token-cost catalog is greenfield (design §5.6) → column omitted
+            costFor: { ModelCostCatalogStore.shared?.cost(forModel: $0) },
             now: Date(),
             statsHeadline: Self.agentPickerStatsHeadline()
         )

@@ -1724,6 +1724,14 @@ struct CMUXCLI {
             return
         }
 
+        // Agent-maintained model token-cost catalog feeding the launch
+        // picker's cost column: file-first like `config`, never needs the
+        // socket.
+        if command == "model-costs" {
+            try runModelCostsCommand(commandArgs: commandArgs)
+            return
+        }
+
         let client = SocketClient(path: resolvedSocketPath)
         if resolvedSocketPath != socketPath {
             cliTelemetry.breadcrumb(
@@ -17273,6 +17281,7 @@ struct CMUXCLI {
           set-agent --type <terminal_type> [--model <id>] [--task <id>] [--role <id>] [--surface <id|ref>] [--workspace <id|ref>]
           default-agent {get | set <type> | launch [--in-surface <id|ref> | --pane <id>] [--agent <type>] [--cwd <path>] [--prompt <text> | --prompt-file <path>]}
           launch-agent --type <kind> [--model <id>] [--effort <tier>] [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] [--task <id>] [--pane <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--title <text>] [--flag <reason>] [--suppressed] [--env K=V ...] [--json]
+          model-costs {list [--json] | get <model> [--json] | set <model> --in <usd> --out <usd> [--source <url>] [--notes <text>] | rm <model> | import <path|-> [--replace]}
           raise-flag --surface <id|ref> "<reason>"
           lower-flag --surface <id|ref>
           suppress --surface <id|ref>

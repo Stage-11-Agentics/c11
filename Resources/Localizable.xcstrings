@@ -1600,6 +1600,53 @@
         }
       }
     },
+    "agentPicker.notice.notInstalled": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ isn't on PATH — install it, or pin the row as default anyway"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ が PATH 上に見つかりません。インストールするか、このままデフォルトとして固定できます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 不在 PATH 中 —— 请安装它，或仍将此行固定为默认"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 不在 PATH 中 —— 請安裝它，或仍將此列固定為預設"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@이(가) PATH에 없습니다 — 설치하거나, 그래도 이 행을 기본값으로 고정할 수 있습니다"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ отсутствует в PATH — установите его или всё равно закрепите строку по умолчанию"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ відсутній у PATH — встановіть його або все одно закріпіть рядок як типовий"
+          }
+        }
+      }
+    },
     "agentPicker.pin.help": {
       "extractionState": "manual",
       "localizations": {

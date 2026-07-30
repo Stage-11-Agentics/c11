@@ -36,6 +36,10 @@ private enum PickerPalette {
 /// wire in. Reference type so the NSEvent key monitor can capture it safely.
 final class AgentPickerController: ObservableObject {
     @Published var model: AgentPickerModel
+    /// Transient inline notice shown above the footer after a plain launch of a
+    /// not-installed row (§5.6). Auto-clears; a newer notice supersedes the timer.
+    @Published var notInstalledNotice: String?
+    private var noticeGeneration = 0
 
     /// Launch a specific config now (row click / ⏎ / 1–9 / recent).
     var onLaunch: (SavedAgentConfig) -> Void = { _ in }
@@ -91,12 +95,28 @@ final class AgentPickerController: ObservableObject {
         switch action {
         case .launch(let c): onLaunch(c); onClose()
         case .pin(let c): pin(c)                     // stays open, ● moves (prototype)
-        case .notInstalled(let c): onNotInstalledHint(c)
+        case .notInstalled(let c): showNotInstalledNotice(for: c); onNotInstalledHint(c)
         case .toggleFollowRecent: toggleFollowRecent()
         case .viewAll: onViewAll(); onClose()
         case .stats: onStats(); onClose()
         case .close: onClose()
         case .none: break
+        }
+    }
+
+    private func showNotInstalledNotice(for config: SavedAgentConfig) {
+        let harness = AgentRegistry.shared.manifest(forKind: config.config.harness)?.displayName
+            ?? AgentType(rawValue: config.config.harness)?.displayName
+            ?? config.config.harness
+        notInstalledNotice = String(
+            localized: "agentPicker.notice.notInstalled",
+            defaultValue: "\(harness) isn't on PATH — install it, or pin the row as default anyway"
+        )
+        noticeGeneration += 1
+        let generation = noticeGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+            guard let self, self.noticeGeneration == generation else { return }
+            self.notInstalledNotice = nil
         }
     }
 
@@ -118,26 +138,27 @@ struct AgentPickerView: View {
 
     private var content: AgentPickerContent { controller.model.content }
 
+    /// Rows visible before the shortlist scrolls (operator call: scroll, don't cap).
+    private static let maxVisibleShortlistRows = 8
+    /// Approximate rendered row height (two fixed text lines + 8pt vertical padding
+    /// + divider); used only to size the scroll viewport, so drift is cosmetic.
+    private static let shortlistRowHeight: CGFloat = 50
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            ForEach(Array(content.shortlist.enumerated()), id: \.element.config.id) { idx, row in
-                PickerRowView(
-                    row: row,
-                    isFocused: controller.model.selectedIndex == idx,
-                    followRecent: content.followRecent,
-                    onClick: { opt in controller.clickRow(row, option: opt) },
-                    onPin: { controller.clickPinGlyph(row) }
-                )
-                Divider().overlay(BrandColors.ruleSwiftUI.opacity(0.55))
-            }
+            shortlistSection
             if let recent = content.recent {
                 sectionRule(String(localized: "agentPicker.recent.section", defaultValue: "recent"))
                 RecentRowView(
                     row: recent,
                     isFocused: controller.model.selectedIndex == content.shortlist.count,
+                    showsCostColumn: showsCostColumn,
                     onClick: { controller.clickRecent() }
                 )
+            }
+            if let notice = controller.notInstalledNotice {
+                noticeBar(notice)
             }
             footer
             hintBar
@@ -152,6 +173,62 @@ struct AgentPickerView: View {
     }
 
     // MARK: Sections
+
+    /// The saved-config rows. Up to 8 render inline; past that the list scrolls
+    /// inside a fixed viewport (with a half-row peek so the overflow is visible)
+    /// and keyboard navigation keeps the focused row in view. Recent, footer,
+    /// and hints stay pinned below the scroll region.
+    @ViewBuilder private var shortlistSection: some View {
+        if content.shortlist.count > Self.maxVisibleShortlistRows {
+            ScrollViewReader { proxy in
+                ScrollView(.vertical) {
+                    VStack(alignment: .leading, spacing: 0) { shortlistRows }
+                }
+                .frame(height: (CGFloat(Self.maxVisibleShortlistRows) + 0.5) * Self.shortlistRowHeight)
+                .onChange(of: controller.model.selectedIndex) { _, idx in
+                    guard idx >= 0, idx < content.shortlist.count else { return }
+                    proxy.scrollTo(content.shortlist[idx].config.id, anchor: .center)
+                }
+            }
+        } else {
+            shortlistRows
+        }
+    }
+
+    /// The `$in/$out` column renders only when at least one visible row has a
+    /// catalog price — an unfilled catalog must not reserve dead trailing space.
+    private var showsCostColumn: Bool {
+        content.shortlist.contains { $0.cost != nil } || content.recent?.cost != nil
+    }
+
+    private var shortlistRows: some View {
+        ForEach(Array(content.shortlist.enumerated()), id: \.element.config.id) { idx, row in
+            PickerRowView(
+                row: row,
+                isFocused: controller.model.selectedIndex == idx,
+                followRecent: content.followRecent,
+                showsCostColumn: showsCostColumn,
+                onClick: { opt in controller.clickRow(row, option: opt) },
+                onPin: { controller.clickPinGlyph(row) }
+            )
+            .id(row.config.id)
+            Divider().overlay(BrandColors.ruleSwiftUI.opacity(0.55))
+        }
+    }
+
+    private func noticeBar(_ text: String) -> some View {
+        HStack(spacing: 0) {
+            Text(text)
+                .font(.system(size: 10.5, design: .monospaced))
+                .foregroundStyle(BrandColors.goldSwiftUI)
+                .lineLimit(2)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(PickerPalette.goldGhost)
+        .overlay(alignment: .top) { ruleLine }
+    }
 
     private var header: some View {
         HStack {
@@ -243,6 +320,7 @@ private struct PickerRowView: View {
     let row: AgentPickerRow
     let isFocused: Bool
     let followRecent: Bool
+    let showsCostColumn: Bool
     let onClick: (Bool) -> Void
     let onPin: () -> Void
 
@@ -274,11 +352,19 @@ private struct PickerRowView: View {
             HStack(spacing: 7) {
                 if let sys = row.sysChip { SysChipView(sys) }
                 if let effort = row.effortChip { EffortChipView(effort) }
-                Text(row.cost ?? "")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.68))
-                    .frame(minWidth: 82, alignment: .trailing)
-                KeyCap("\(row.keyBadge)").frame(width: 16)
+                if showsCostColumn {
+                    Text(row.cost ?? "")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.68))
+                        .frame(minWidth: 82, alignment: .trailing)
+                }
+                // Digit launch badges exist for the first nine rows only; rows
+                // past 9 keep the empty slot so trailing columns stay aligned.
+                if row.keyBadge <= 9 {
+                    KeyCap("\(row.keyBadge)").frame(width: 16)
+                } else {
+                    Color.clear.frame(width: 16, height: 1)
+                }
             }
         }
         .padding(.leading, 10)
@@ -311,6 +397,7 @@ private struct PickerRowView: View {
 private struct RecentRowView: View {
     let row: AgentPickerRecentRow
     let isFocused: Bool
+    let showsCostColumn: Bool
     let onClick: () -> Void
 
     @State private var hovering = false
@@ -341,10 +428,12 @@ private struct RecentRowView: View {
             Spacer(minLength: 6)
             HStack(spacing: 7) {
                 if row.showLiveHint { LiveHintBadge(harness: row.harnessDisplayName) }
-                Text(row.cost ?? "")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.68))
-                    .frame(minWidth: 82, alignment: .trailing)
+                if showsCostColumn {
+                    Text(row.cost ?? "")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(BrandColors.whiteSwiftUI.opacity(0.68))
+                        .frame(minWidth: 82, alignment: .trailing)
+                }
                 // Empty key-cap slot so the recent cost aligns with shortlist costs.
                 Color.clear.frame(width: 16, height: 1)
             }
@@ -583,6 +672,14 @@ enum AgentHarnessInstallProbe {
         let result = probe(harnessKind)
         cache[harnessKind] = result
         return result
+    }
+
+    /// Drop the cached probe results so the next lookup re-checks PATH. Called
+    /// on every picker open — a harness installed mid-session should light its
+    /// row back up on the next right-click, not after an app relaunch.
+    static func invalidate() {
+        lock.lock(); defer { lock.unlock() }
+        cache.removeAll()
     }
 
     private static func probe(_ harnessKind: String) -> Bool {

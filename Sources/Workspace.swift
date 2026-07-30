@@ -5625,6 +5625,7 @@ final class Workspace: Identifiable, ObservableObject {
             newAgent: DefaultAgentResolver.resolvedDefaultTooltip(
                 userDefault: DefaultAgentConfigStore.shared.current
             ),
+            chooseAgent: String(localized: "workspace.tooltip.chooseAgent", defaultValue: "Choose Agent to Launch…"),
             newTerminal: KeyboardShortcutSettings.Action.newSurface.tooltip(
                 String(localized: "workspace.tooltip.newTerminal", defaultValue: "New Terminal")
             ),
@@ -5823,7 +5824,7 @@ final class Workspace: Identifiable, ObservableObject {
     /// surfaces are untouched — this only governs the spawn affordances.
     func applySurfaceAvailability() {
         let browserOn = SurfaceTypeAvailability.isEnabled(.browser)
-        let markdownOn = SurfaceTypeAvailability.isEnabled(.markdown)
+        let markdownOn = SurfaceTypeAvailability.isMarkdownSpawnButtonVisible()
         var next = bonsplitController.configuration
         guard next.showsBrowserSpawnButton != browserOn
             || next.showsMarkdownSpawnButton != markdownOn else { return }
@@ -6010,7 +6011,7 @@ final class Workspace: Identifiable, ObservableObject {
             // disabled those surface types. `applySurfaceAvailability()` keeps
             // these live as the toggles change.
             showsBrowserSpawnButton: SurfaceTypeAvailability.isEnabled(.browser),
-            showsMarkdownSpawnButton: SurfaceTypeAvailability.isEnabled(.markdown),
+            showsMarkdownSpawnButton: SurfaceTypeAvailability.isMarkdownSpawnButtonVisible(),
             appearance: appearance
         )
         self.bonsplitController = BonsplitController(configuration: config)

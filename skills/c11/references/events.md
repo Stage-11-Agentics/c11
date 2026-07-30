@@ -52,7 +52,7 @@ The fifteen taxonomy types below are the closed v1 enum. `workspace` / `surface`
 | `liveness.derived` | workspace + surface | `{state}` | Derived agent activity, `state` ∈ `working`\|`idle`. Emitted on an actual derived working↔idle transition, computed from shell-activity ground truth; a settle back to the absent/unknown state emits nothing. |
 | `waiting.entered` | workspace (= tabId) + surface? | — | The "agent is waiting" edge — the unread-notification transition, per tab. |
 | `waiting.left` | workspace (= tabId) + surface? | — | Paired exit edge for `waiting.entered`. |
-| `flag.raised` | workspace + surface | `{reason}` | A sticky flag went up: work has stopped and a human must act. **No `by` field** — `raise-flag` accepts `--by` but does not emit it, so an operator-dispatched flag and an agent-raised one are indistinguishable in the stream. |
+| `flag.raised` | workspace + surface | `{reason, caller_surface_id, by}` | A sticky flag went up. `caller_surface_id` is the UUID of the surface that issued the call (null only for an operator-originated call outside c11); `by` ∈ `operator`\|`agent`. Agent-originated raises without a caller UUID are rejected. |
 | `flag.lowered` | workspace + surface | `{by}` | Flag cleared. `by` ∈ `operator`\|`agent`; operator dismissal without an answer means *seen and deferred*. |
 | `flag.suppressed` | workspace + surface | `{by}` | Routine attention withheld for this surface. `by` ∈ `operator`\|`agent`. **Despite the `flag.` prefix this is a suppression event, not a flag-tier one** — a consumer filtering `flag.*` picks up both concerns. |
 | `flag.unsuppressed` | workspace + surface | `{by}` | Suppression lifted; routine attention signals resume. `by` ∈ `operator`\|`agent`. |

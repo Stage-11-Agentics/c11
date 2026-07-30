@@ -1407,7 +1407,11 @@ extension TerminalController {
             return .err(code: "surface_not_found", message: "Surface not found", data: nil)
         }
 
-        let attentionKeys = Set([MetadataKey.flag, MetadataKey.suppressed])
+        let attentionKeys = Set([
+            MetadataKey.flag,
+            MetadataKey.flagCallerSurfaceId,
+            MetadataKey.suppressed,
+        ])
         let existingAttention = SurfaceMetadataStore.shared.attentionSnapshot(
             workspaceId: resolved.workspaceId,
             surfaceId: resolved.surfaceId
@@ -1416,7 +1420,7 @@ extension TerminalController {
             || (mode == .replace && (existingAttention.isFlagged || existingAttention.suppressed)) {
             return .err(
                 code: "attention_requires_flag_method",
-                message: "flag and suppressed must be changed through the flag.* methods",
+                message: "flag attention metadata must be changed through the flag.* methods",
                 data: nil
             )
         }
@@ -1537,7 +1541,11 @@ extension TerminalController {
             return .err(code: "surface_not_found", message: "Surface not found", data: nil)
         }
 
-        let attentionKeys = Set([MetadataKey.flag, MetadataKey.suppressed])
+        let attentionKeys = Set([
+            MetadataKey.flag,
+            MetadataKey.flagCallerSurfaceId,
+            MetadataKey.suppressed,
+        ])
         let existingAttention = SurfaceMetadataStore.shared.attentionSnapshot(
             workspaceId: resolved.workspaceId,
             surfaceId: resolved.surfaceId
@@ -1546,7 +1554,7 @@ extension TerminalController {
             ?? (existingAttention.isFlagged || existingAttention.suppressed) {
             return .err(
                 code: "attention_requires_flag_method",
-                message: "flag and suppressed must be changed through the flag.* methods",
+                message: "flag attention metadata must be changed through the flag.* methods",
                 data: nil
             )
         }

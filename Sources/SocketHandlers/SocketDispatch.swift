@@ -1011,6 +1011,48 @@ extension TerminalController {
         } else {
             launchFlagReason = nil
         }
+        let launchFlagActor: SurfaceAttentionActor
+        if let rawActor = params["by"] as? String {
+            guard let parsed = SurfaceAttentionActor(rawValue: rawActor) else {
+                return .err(
+                    code: "invalid_params",
+                    message: "by must be one of: operator, agent",
+                    data: nil
+                )
+            }
+            launchFlagActor = parsed
+        } else {
+            launchFlagActor = .operator
+        }
+        let launchCallerSurfaceId: UUID?
+        if let rawCaller = params["caller_surface_id"] as? String {
+            let trimmedCaller = rawCaller.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedCaller.isEmpty, let parsed = UUID(uuidString: trimmedCaller) else {
+                return .err(
+                    code: "invalid_params",
+                    message: "caller_surface_id must be a UUID",
+                    data: nil
+                )
+            }
+            launchCallerSurfaceId = parsed
+        } else if params["caller_surface_id"] != nil {
+            return .err(
+                code: "invalid_params",
+                message: "caller_surface_id must be a UUID",
+                data: nil
+            )
+        } else {
+            launchCallerSurfaceId = nil
+        }
+        if launchFlagReason != nil,
+           launchFlagActor == .agent,
+           launchCallerSurfaceId == nil {
+            return .err(
+                code: "missing_caller_surface",
+                message: "agent-raised flags require caller_surface_id",
+                data: nil
+            )
+        }
         if params["suppressed"] != nil, !(params["suppressed"] is Bool) {
             return .err(code: "invalid_params", message: "suppressed must be a boolean", data: nil)
         }
@@ -1077,6 +1119,19 @@ extension TerminalController {
         let title = v2RawString(params, "title")?.trimmingCharacters(in: .whitespacesAndNewlines)
         var result: V2CallResult = .err(code: "internal_error", message: "Failed to launch agent", data: nil)
         guard v2MainSyncWithDeadline({
+            if launchFlagReason != nil,
+               let launchCallerSurfaceId,
+               AppDelegate.shared?.workspaceContainingPanel(
+                   panelId: launchCallerSurfaceId,
+                   preferredWorkspaceId: nil
+               ) == nil {
+                result = .err(
+                    code: "caller_surface_not_found",
+                    message: "Calling surface not found",
+                    data: nil
+                )
+                return
+            }
             let callerWantsFocus = self.v2Bool(params, "focus") ?? true
             let focus = self.v2FocusAllowed(requested: callerWantsFocus)
 
@@ -1173,6 +1228,8 @@ extension TerminalController {
                                 workspaceId: ws.id,
                                 surfaceId: panel.id,
                                 reason: launchFlagReason,
+                                callerSurfaceId: launchCallerSurfaceId,
+                                by: launchFlagActor,
                                 title: ws.panelTitle(panelId: panel.id) ?? panel.displayTitle
                             )
                         }

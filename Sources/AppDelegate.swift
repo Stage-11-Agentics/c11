@@ -5544,7 +5544,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             .first(where: { $0.tabManager === manager })
             .flatMap { $0.window ?? windowForMainWindowId($0.windowId) }
         guard let window = preferredWindow ?? managerWindow else { return }
-        workspace.presentAgentPicker(inPane: pane, window: window, at: nil)
+        workspace.presentAgentPicker(inPane: pane, window: window, anchoringTo: nil)
     }
 
     private func clearCommandPalettePendingOpen(for window: NSWindow?) {

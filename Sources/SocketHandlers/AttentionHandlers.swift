@@ -35,12 +35,37 @@ extension TerminalController {
         }
 
         var validatedReason: String?
+        var callerSurfaceId: UUID?
         if method == "flag.raise" {
             switch SurfaceAttentionReason.validate(params["reason"]) {
             case .success(let reason):
                 validatedReason = reason
             case .failure(let error):
                 return .err(code: "invalid_params", message: error.message, data: error.detailData)
+            }
+            if let rawCaller = params["caller_surface_id"] as? String {
+                let trimmedCaller = rawCaller.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedCaller.isEmpty, let parsed = UUID(uuidString: trimmedCaller) else {
+                    return .err(
+                        code: "invalid_params",
+                        message: "caller_surface_id must be a UUID",
+                        data: nil
+                    )
+                }
+                callerSurfaceId = parsed
+            } else if params["caller_surface_id"] != nil {
+                return .err(
+                    code: "invalid_params",
+                    message: "caller_surface_id must be a UUID",
+                    data: nil
+                )
+            }
+            if actor == .agent, callerSurfaceId == nil {
+                return .err(
+                    code: "missing_caller_surface",
+                    message: "agent-raised flags require caller_surface_id",
+                    data: nil
+                )
             }
         }
 
@@ -54,6 +79,17 @@ extension TerminalController {
                     )
                 }
                 let preferredWorkspaceId = self.v2UUIDAny(params["workspace_id"])
+                if let callerSurfaceId,
+                   AppDelegate.shared?.workspaceContainingPanel(
+                       panelId: callerSurfaceId,
+                       preferredWorkspaceId: nil
+                   ) == nil {
+                    return .err(
+                        code: "caller_surface_not_found",
+                        message: "Calling surface not found",
+                        data: nil
+                    )
+                }
                 guard let located = AppDelegate.shared?.workspaceContainingPanel(
                     panelId: surfaceId,
                     preferredWorkspaceId: preferredWorkspaceId
@@ -69,6 +105,8 @@ extension TerminalController {
                             workspaceId: workspace.id,
                             surfaceId: surfaceId,
                             reason: validatedReason!,
+                            callerSurfaceId: callerSurfaceId,
+                            by: actor,
                             title: workspace.panelTitle(panelId: surfaceId)
                                 ?? workspace.panels[surfaceId]?.displayTitle
                         )
@@ -104,6 +142,9 @@ extension TerminalController {
                         "surface_ref": self.v2Ref(kind: .surface, uuid: surfaceId),
                         "flag": self.v2OrNull(snapshot.flagReason),
                         "flag_raised_at": self.v2OrNull(snapshot.flagRaisedAt.map(EventEnvelope.formatTimestamp)),
+                        "caller_surface_id": self.v2OrNull(
+                            snapshot.flagCallerSurfaceId?.uuidString
+                        ),
                         "suppressed": snapshot.suppressed,
                         "applied": write.applied
                     ])
@@ -133,6 +174,9 @@ extension TerminalController {
                         "surface_ref": self.v2Ref(kind: .surface, uuid: snapshot.surfaceId),
                         "reason": snapshot.flagReason ?? "",
                         "raised_at": snapshot.flagRaisedAt.map(EventEnvelope.formatTimestamp) ?? "",
+                        "caller_surface_id": self.v2OrNull(
+                            snapshot.flagCallerSurfaceId?.uuidString
+                        ),
                         "suppressed": snapshot.suppressed
                     ]
                 }

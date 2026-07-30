@@ -65,7 +65,7 @@ priority; suppression reroutes routine attention, it never blocks escalation.
 ```bash
 c11 raise-flag --surface "$C11_SURFACE_ID" "Need a call on schema migration vs dual-write"
 c11 lower-flag --surface "$C11_SURFACE_ID"
-c11 launch-agent ... --flag "Watch the migration"   # operator-designated priority mission
+c11 launch-agent ... --flag "Watch the migration" --by operator
 ```
 
 The reason is required — one line, ≤256 chars, surfaced everywhere the flag appears. Write it
@@ -87,6 +87,13 @@ and deferred — re-raise only if the blocker still stands and you can say why t
 doesn't. All four attention verbs accept `--by agent|operator`, defaulting to `agent`; pass
 `--by operator` only when acting on the operator's instruction, so the event trail stays
 honest.
+
+Every raise sent from inside c11 also records the calling surface UUID as
+`flag_caller_surface_id`; agent-originated raises are rejected when c11 cannot identify that
+caller. An operator-originated raise outside c11 may omit it. This is attribution, not a copied
+display identity: resolve the UUID against current surface metadata or conversation state, and
+fall back to the raw UUID after the caller closes. `flag.raised` events carry the same
+`caller_surface_id` plus `by`.
 
 ### Suppression
 
@@ -114,11 +121,11 @@ metadata key, a `send`) and put this contract in its prompt:
 ### Reading attention state
 
 ```bash
-c11 get-metadata --surface surface:12    # flag = <reason> / suppressed = true, when set
+c11 get-metadata --surface surface:12    # flag + flag_caller_surface_id / suppressed, when set
 ```
 
-`tree` and `get-titlebar-state` do not carry attention state; `get-metadata` is the read, and
-both keys are absent rather than empty when unset. Parent-side monitoring patterns:
+`tree` and `get-titlebar-state` do not carry attention state; `get-metadata` is the read.
+`flag` and its caller UUID are absent rather than empty when unset. Parent-side monitoring patterns:
 [references/orchestration.md](references/orchestration.md).
 
 ## What c11 can do — load the reference when you need it

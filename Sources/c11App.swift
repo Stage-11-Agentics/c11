@@ -4429,6 +4429,8 @@ struct SettingsView: View {
     private var internalBrowserEnabled = SurfaceTypeAvailability.defaultEnabled
     @AppStorage(SurfaceTypeAvailability.markdownSurfacesEnabledKey)
     private var markdownSurfacesEnabled = SurfaceTypeAvailability.defaultEnabled
+    @AppStorage(SurfaceTypeAvailability.markdownSpawnButtonVisibleKey)
+    private var markdownSpawnButtonVisible = SurfaceTypeAvailability.defaultEnabled
     @AppStorage(TabOrdinalDisplaySettings.showSurfaceIdsInTabTitlesKey)
     private var showSurfaceIdsInTabTitles = TabOrdinalDisplaySettings.defaultShowSurfaceIds
     @AppStorage(ClaudeCodeIntegrationSettings.hooksEnabledKey)
@@ -5161,6 +5163,21 @@ struct SettingsView: View {
                 Toggle("", isOn: $markdownSurfacesEnabled)
                     .labelsHidden()
                     .controlSize(.small)
+            }
+
+            if markdownSurfacesEnabled {
+                SettingsCardDivider()
+
+                SettingsCardRow(
+                    String(localized: "settings.app.markdownSpawnButton", defaultValue: "Markdown Button in Tab Bar"),
+                    subtitle: markdownSpawnButtonVisible
+                        ? String(localized: "settings.app.markdownSpawnButton.subtitleOn", defaultValue: "The tab bar shows the Markdown spawn button. Turn off to reclaim the slot; markdown surfaces stay available via the CLI and command palette.")
+                        : String(localized: "settings.app.markdownSpawnButton.subtitleOff", defaultValue: "The Markdown spawn button is hidden. Markdown surfaces remain fully available via the CLI and command palette.")
+                ) {
+                    Toggle("", isOn: $markdownSpawnButtonVisible)
+                        .labelsHidden()
+                        .controlSize(.small)
+                }
             }
 
             SettingsCardDivider()

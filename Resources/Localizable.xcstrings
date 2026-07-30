@@ -66649,6 +66649,194 @@
           }
         }
       }
+    },
+    "workspace.tooltip.chooseAgent": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose Agent to Launch…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "起動するエージェントを選択…"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вибрати агента для запуску…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행할 에이전트 선택…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择要启动的代理..."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選擇要啟動的代理..."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выбрать агента для запуска..."
+          }
+        }
+      }
+    },
+    "settings.app.markdownSpawnButton": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown Button in Tab Bar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブバーのマークダウンボタン"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Кнопка Markdown на панелі вкладок"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "탭 바의 마크다운 버튼"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签栏中的 Markdown 按钮"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標籤列中的 Markdown 按鈕"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Кнопка Markdown на панели вкладок"
+          }
+        }
+      }
+    },
+    "settings.app.markdownSpawnButton.subtitleOn": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The tab bar shows the Markdown spawn button. Turn off to reclaim the slot; markdown surfaces stay available via the CLI and command palette."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブバーにマークダウン作成ボタンが表示されます。オフにするとその分のスペースを取り戻せます。マークダウンのサーフェスはCLIとコマンドパレットから引き続き利用できます。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Панель вкладок показує кнопку створення Markdown. Вимкніть, щоб звільнити місце; поверхні Markdown залишаються доступними через CLI та палітру команд."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "탭 바에 마크다운 생성 버튼이 표시됩니다. 끄면 그 자리를 되찾을 수 있습니다. 마크다운 서피스는 CLI와 명령어 팔레트를 통해 계속 사용할 수 있습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签栏显示 Markdown 生成按钮。关闭可腾出该位置；Markdown 界面仍可通过 CLI 和命令面板使用。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標籤列顯示 Markdown 建立按鈕。關閉可騰出該位置；Markdown 介面仍可透過 CLI 和指令面板使用。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Панель вкладок показывает кнопку создания Markdown. Отключите, чтобы освободить место; поверхности Markdown остаются доступны через CLI и палитру команд."
+          }
+        }
+      }
+    },
+    "settings.app.markdownSpawnButton.subtitleOff": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Markdown spawn button is hidden. Markdown surfaces remain fully available via the CLI and command palette."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マークダウン作成ボタンは非表示になります。マークダウンのサーフェスはCLIとコマンドパレットから引き続き完全に利用できます。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Кнопку створення Markdown приховано. Поверхні Markdown залишаються повністю доступними через CLI та палітру команд."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "마크다운 생성 버튼이 숨겨집니다. 마크다운 서피스는 CLI와 명령어 팔레트를 통해 계속 완전히 사용할 수 있습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown 生成按钮已隐藏。Markdown 界面仍可通过 CLI 和命令面板完全使用。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markdown 建立按鈕已隱藏。Markdown 介面仍可透過 CLI 和指令面板完全使用。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Кнопка создания Markdown скрыта. Поверхности Markdown остаются полностью доступны через CLI и палитру команд."
+          }
+        }
+      }
     }
   }
 }

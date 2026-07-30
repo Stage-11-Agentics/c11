@@ -25,6 +25,11 @@ enum SurfaceTypeAvailability {
     static let internalBrowserEnabledKey = "internalBrowserEnabled"
     /// `@AppStorage` key — `true` (or unset) means markdown surfaces can be spawned.
     static let markdownSurfacesEnabledKey = "markdownSurfacesEnabled"
+    /// `@AppStorage` key — `true` (or unset) shows the Markdown spawn button in
+    /// the tab bar. Distinct from `markdownSurfacesEnabledKey`: hiding the
+    /// button keeps markdown surfaces fully available to the CLI, socket, and
+    /// command palette — it only reclaims the toolbar slot.
+    static let markdownSpawnButtonVisibleKey = "markdownSpawnButtonVisible"
 
     /// Truthy in the environment forces the internal browser off (tests/headless).
     static let disableBrowserEnvKey = "C11_DISABLE_BROWSER"
@@ -58,6 +63,18 @@ enum SurfaceTypeAvailability {
                 environment: environment
             )
         }
+    }
+
+    /// Whether the tab bar shows the Markdown spawn button. Requires markdown
+    /// surfaces to be enabled at all; on top of that, the visibility toggle
+    /// (default on) can reclaim the toolbar slot without disabling the surface
+    /// type.
+    static func isMarkdownSpawnButtonVisible(defaults: UserDefaults = .standard) -> Bool {
+        guard isEnabled(.markdown, defaults: defaults) else { return false }
+        if defaults.object(forKey: markdownSpawnButtonVisibleKey) == nil {
+            return defaultEnabled
+        }
+        return defaults.bool(forKey: markdownSpawnButtonVisibleKey)
     }
 
     private static func resolve(
@@ -99,6 +116,7 @@ final class SurfaceAvailabilityObserver: NSObject {
     private static let observedKeys = [
         SurfaceTypeAvailability.internalBrowserEnabledKey,
         SurfaceTypeAvailability.markdownSurfacesEnabledKey,
+        SurfaceTypeAvailability.markdownSpawnButtonVisibleKey,
     ]
     private let defaults: UserDefaults
 

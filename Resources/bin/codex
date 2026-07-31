@@ -60,7 +60,7 @@ if [[ "${1:-}" == "__c11-notify" ]]; then
     [[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
 
     if [[ -n "$socket" && -S "$socket" && -n "$workspace_id" && -n "$surface_id" && -n "$c11_bin" ]]; then
-        CMUX_CODEX_NOTIFY_PAYLOAD_B64="$notify_payload_b64" \
+        C11_CODEX_NOTIFY_PAYLOAD_B64="$notify_payload_b64" \
         CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
             "$c11_bin" --socket "$socket" notify \
             --title "Codex" \

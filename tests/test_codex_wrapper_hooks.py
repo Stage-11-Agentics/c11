@@ -72,7 +72,7 @@ done
             wrapper_dir / "c11",
             """#!/usr/bin/env bash
 set -euo pipefail
-printf '%s timeout=%s payload=%s\\n' "$*" "${CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC-__UNSET__}" "${CMUX_CODEX_NOTIFY_PAYLOAD_B64-__UNSET__}" >> "$FAKE_C11_LOG"
+printf '%s timeout=%s payload=%s\\n' "$*" "${CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC-__UNSET__}" "${C11_CODEX_NOTIFY_PAYLOAD_B64-__UNSET__}" >> "$FAKE_C11_LOG"
 if [[ "${1:-}" == "--socket" ]]; then
   shift 2
 fi

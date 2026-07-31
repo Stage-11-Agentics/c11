@@ -254,6 +254,11 @@ struct WorkspaceContentView: View {
     }
 
     private func syncBonsplitNotificationBadges() {
+        let unreadFromNotifications: Set<UUID> = Set(
+            notificationStore.notifications
+                .filter { $0.tabId == workspace.id && !$0.isRead }
+                .compactMap { $0.surfaceId }
+        )
         let manualUnread = workspace.manualUnreadPanelIds
 
         for paneId in workspace.bonsplitController.allPaneIds {
@@ -262,7 +267,10 @@ struct WorkspaceContentView: View {
                 let expectedKind = panelId.flatMap { workspace.panelKind(panelId: $0) }
                 let expectedPinned = panelId.map { workspace.isPanelPinned($0) } ?? false
                 let expectedActivity = panelId.flatMap {
-                    workspace.resolvedSurfaceTabActivityState(panelId: $0)
+                    workspace.resolvedSurfaceTabActivityState(
+                        panelId: $0,
+                        hasExactSurfaceNotification: unreadFromNotifications.contains($0)
+                    )
                 }
                 let expectedPresentation = panelId.flatMap {
                     workspace.resolvedSurfaceTabActivityPresentation(

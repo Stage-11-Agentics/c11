@@ -4,10 +4,10 @@
 // may also have a copied plugin under ~/.config/opencode/plugins/; keeping this
 // module idempotent preserves compatibility without requiring tenant writes.
 //
-// Mirrors the Claude Code hook contract through canonical attention:
-//   session.idle       → root result-ready episode
-//   permission.asked   → root approval episode
-//   session.error      → root error/result episode
+// Mirrors the Claude Code hook contract:
+//   session.idle       → c11 notify "Waiting for input"  (idle_prompt equivalent)
+//   permission.asked   → c11 notify "Approval needed"     (permission_prompt equivalent)
+//   session.error      → c11 notify "Session error"       (bonus, no Claude equivalent)
 //   session.status     → c11 activity + status metadata
 //
 // The plugin is dependency-free and silently no-ops when c11 is not on
@@ -29,9 +29,10 @@ export const C11NotifyPlugin = async ({ $ }) => {
     }
   };
 
-  const reportAttention = (event, sessionID) => {
-    const args = ["agent-hook", "ingest", "--provider", "opencode", "--event", event];
-    if (sessionID) args.push("--actor-thread", sessionID);
+  const notify = (title, body, subtitle) => {
+    const args = ["notify", "--title", title];
+    if (subtitle) args.push("--subtitle", subtitle);
+    if (body) args.push("--body", body);
     return c11(args);
   };
 
@@ -89,7 +90,7 @@ export const C11NotifyPlugin = async ({ $ }) => {
         }
         case "session.idle":
           await reportActivity("idle");
-          await reportAttention("result-ready", sessionID);
+          await notify("OpenCode", "Waiting for input");
           await c11(["set-metadata", "--key", "status", "--value", "idle"]);
           break;
         case "session.status": {
@@ -105,11 +106,11 @@ export const C11NotifyPlugin = async ({ $ }) => {
           break;
         }
         case "permission.asked":
-          await reportAttention("approval", sessionID);
+          await notify("OpenCode", "Approval needed", "Permission");
           await c11(["set-metadata", "--key", "status", "--value", "Needs input"]);
           break;
         case "session.error":
-          await reportAttention("error", sessionID);
+          await notify("OpenCode", "Session error", "Error");
           break;
       }
     },

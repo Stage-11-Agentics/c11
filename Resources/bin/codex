@@ -40,14 +40,11 @@ set -uo pipefail
 
 # Codex invokes the configured `notify` command after every completed agent
 # turn, even when its own TUI notification is suppressed because the terminal
-# is focused. Route the untouched payload through c11's root-owned attention
-# reducer. Only an exact root turn for the agreeing launch epoch may open a
-# result-ready episode; unread history never creates or clears lifecycle.
+# is focused. Route that exact lifecycle edge back through c11 so the surface
+# becomes an unread "waiting agent" and its underlying activity settles idle.
 # This private callback runs only as a child of the c11-scoped Codex process;
 # it never writes Codex config or changes behavior outside c11.
 if [[ "${1:-}" == "__c11-notify" ]]; then
-    launch_epoch="${2:-}"
-    payload="${3:-}"
     socket="${CMUX_SOCKET_PATH:-${C11_SOCKET_PATH:-}}"
     workspace_id="${CMUX_WORKSPACE_ID:-${C11_WORKSPACE_ID:-}}"
     surface_id="${CMUX_SURFACE_ID:-${C11_SURFACE_ID:-}}"
@@ -55,17 +52,12 @@ if [[ "${1:-}" == "__c11-notify" ]]; then
     c11_bin="$self_dir/c11"
     [[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
 
-    LC_ALL=C
-    payload_bytes=${#payload}
-    if [[ "$launch_epoch" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]] &&
-       [[ "$launch_epoch" == "${C11_CODEX_LAUNCH_EPOCH:-}" ]] &&
-       (( payload_bytes <= 65536 )) &&
-       [[ -n "$socket" && -S "$socket" && -n "$workspace_id" && -n "$surface_id" && -n "$c11_bin" ]]; then
-        printf '%s' "$payload" |
-            CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
-            "$c11_bin" --socket "$socket" agent-hook ingest \
-            --provider codex \
-            --launch-epoch "$launch_epoch" \
+    if [[ -n "$socket" && -S "$socket" && -n "$workspace_id" && -n "$surface_id" && -n "$c11_bin" ]]; then
+        CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
+            "$c11_bin" --socket "$socket" notify \
+            --title "Codex" \
+            --workspace "$workspace_id" \
+            --surface "$surface_id" \
             >/dev/null 2>&1 || true
     fi
     exit 0
@@ -156,18 +148,14 @@ fi
 # into launch latency.
 codex_notify_config=""
 if [[ -n "$c11_bin" ]]; then
-    launch_epoch="$(command -v uuidgen >/dev/null 2>&1 && uuidgen || /usr/bin/python3 -c 'import uuid; print(uuid.uuid4())' 2>/dev/null)"
-    if [[ ! "$launch_epoch" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then
-        launch_epoch=""
-    fi
     boundary_surface="${CMUX_SURFACE_ID:-}"
-    if [[ -n "$launch_epoch" ]] &&
-       [[ "$boundary_surface" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then
+    if [[ "$boundary_surface" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then
         boundary_dir="${CMUX_SOCKET_PATH}.codex-launch-boundaries"
         boundary_tmp="${boundary_dir}/.${boundary_surface}.$$"
+        boundary_token="${boundary_surface}:$$:${RANDOM}"
         if (umask 077 && mkdir -p -- "$boundary_dir" && {
             printf '%s\n%s\n%s\n' \
-                "$(date +%s)" "$EXPECTED_RESUME_ID" "$launch_epoch" \
+                "$(date +%s)" "$EXPECTED_RESUME_ID" "$boundary_token" \
                 > "$boundary_tmp"
         } && mv -f -- "$boundary_tmp" "${boundary_dir}/${boundary_surface}"); then
             :
@@ -184,9 +172,6 @@ if [[ -n "$c11_bin" ]]; then
     disown 2>/dev/null || true
 
     claim_args=(conversation claim --kind codex --cwd "$PWD" --ttl-ms 700)
-    if [[ -n "$launch_epoch" ]]; then
-        claim_args+=(--launch-epoch "$launch_epoch")
-    fi
     if [[ -n "$EXPECTED_RESUME_ID" ]]; then
         claim_args+=(--expected-resume-id "$EXPECTED_RESUME_ID")
     fi
@@ -214,13 +199,10 @@ if [[ -n "$c11_bin" ]]; then
     # explicit `-c notify=...` supplied by the operator later in argv in
     # control, while the normal c11 launch path gains a focus-independent
     # completion signal without touching ~/.codex/config.toml.
-    if [[ -n "$launch_epoch" ]]; then
-        export C11_CODEX_LAUNCH_EPOCH="$launch_epoch"
-        notify_handler="$self_dir/codex"
-        notify_handler="${notify_handler//\\/\\\\}"
-        notify_handler="${notify_handler//\"/\\\"}"
-        codex_notify_config="notify=[\"${notify_handler}\",\"__c11-notify\",\"${launch_epoch}\"]"
-    fi
+    notify_handler="$self_dir/codex"
+    notify_handler="${notify_handler//\\/\\\\}"
+    notify_handler="${notify_handler//\"/\\\"}"
+    codex_notify_config="notify=[\"${notify_handler}\",\"__c11-notify\"]"
 fi
 
 if [[ -n "$codex_notify_config" ]]; then

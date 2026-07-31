@@ -29,10 +29,9 @@ export const C11NotifyPlugin = async ({ $ }) => {
     }
   };
 
-  const notify = (title, body, subtitle) => {
-    const args = ["notify", "--title", title];
-    if (subtitle) args.push("--subtitle", subtitle);
-    if (body) args.push("--body", body);
+  const reportAttention = (event, sessionID) => {
+    const args = ["agent-hook", "ingest", "--provider", "opencode", "--event", event];
+    if (sessionID) args.push("--actor-thread", sessionID);
     return c11(args);
   };
 
@@ -90,7 +89,7 @@ export const C11NotifyPlugin = async ({ $ }) => {
         }
         case "session.idle":
           await reportActivity("idle");
-          await notify("OpenCode", "Waiting for input");
+          await reportAttention("result-ready", sessionID);
           await c11(["set-metadata", "--key", "status", "--value", "idle"]);
           break;
         case "session.status": {
@@ -106,11 +105,11 @@ export const C11NotifyPlugin = async ({ $ }) => {
           break;
         }
         case "permission.asked":
-          await notify("OpenCode", "Approval needed", "Permission");
+          await reportAttention("approval", sessionID);
           await c11(["set-metadata", "--key", "status", "--value", "Needs input"]);
           break;
         case "session.error":
-          await notify("OpenCode", "Session error", "Error");
+          await reportAttention("error", sessionID);
           break;
       }
     },

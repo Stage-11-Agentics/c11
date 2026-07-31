@@ -56,6 +56,41 @@ enum AgentAttentionReason: String, Sendable, CaseIterable {
     case budgetLimited
 }
 
+enum ClaudeHookAttentionClassifier {
+    static func reason(from object: [String: Any]?) -> AgentAttentionReason {
+        guard let object else { return .userInput }
+        let nested = (object["notification"] as? [String: Any])
+            ?? (object["data"] as? [String: Any])
+        let raw = structuredString(
+            object,
+            keys: ["notification_type", "notificationType"]
+        ) ?? nested.flatMap {
+            structuredString(
+                $0,
+                keys: ["notification_type", "notificationType", "type"]
+            )
+        }
+        switch raw?.lowercased() {
+        case "permission_prompt", "permission_request", "approval_required":
+            return .approval
+        default:
+            return .userInput
+        }
+    }
+
+    private static func structuredString(
+        _ object: [String: Any],
+        keys: [String]
+    ) -> String? {
+        for key in keys {
+            guard let value = object[key] as? String else { continue }
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return nil
+    }
+}
+
 enum AgentGoalStatus: String, Sendable, CaseIterable {
     case active
     case paused
@@ -540,5 +575,461 @@ struct AgentAttentionReducer {
             disposition: disposition,
             priorEpisode: priorEpisode
         )
+    }
+}
+
+struct AgentAttentionSurfaceSnapshot: Sendable, Equatable {
+    let runState: AgentRunState
+    let episode: AgentAttentionEpisode?
+}
+
+struct AgentAttentionOwnershipSnapshot: Sendable, Equatable {
+    let workspaceID: UUID
+    let surfaceID: UUID
+    let launchEpoch: UUID
+    let rootThreadID: String?
+}
+
+struct AgentHookIngestResult: Sendable, Equatable {
+    let ownership: AgentOwnershipClassification
+    let disposition: AgentReducerDisposition
+    let snapshot: AgentAttentionSurfaceSnapshot
+    let shouldCreateSignalNotification: Bool
+    let shouldCreateHistoryOnlyNotification: Bool
+}
+
+enum AgentHookPayloadError: Error, Equatable {
+    case payloadTooLarge
+    case malformedPayload
+    case unsupportedProvider
+    case unsupportedVersion
+    case unsupportedEvent
+}
+
+/// Process-wide serialization point for provider lifecycle truth. Provider
+/// adapters normalize here; notification history and UI projection are
+/// downstream effects and never feed state back into this coordinator.
+final class AgentAttentionCoordinator: @unchecked Sendable {
+    static let shared = AgentAttentionCoordinator()
+    static let maximumPayloadBytes = 64 * 1_024
+
+    private struct SurfaceKey: Hashable {
+        let workspaceID: UUID
+        let surfaceID: UUID
+    }
+
+    private let queue = DispatchQueue(label: "com.stage11.c11.agent-attention")
+    private var states: [SurfaceKey: AgentAttentionState] = [:]
+    private var compatibilityEpochs: [SurfaceKey: UUID] = [:]
+    private var diagnosticCounts: [String: Int] = [:]
+
+    private init() {}
+
+    func snapshot(
+        workspaceID: UUID,
+        surfaceID: UUID
+    ) -> AgentAttentionSurfaceSnapshot? {
+        queue.sync {
+            states[SurfaceKey(workspaceID: workspaceID, surfaceID: surfaceID)].map {
+                AgentAttentionSurfaceSnapshot(
+                    runState: $0.runState,
+                    episode: $0.attentionEpisode
+                )
+            }
+        }
+    }
+
+    func diagnosticSnapshot() -> [String: Int] {
+        queue.sync { diagnosticCounts }
+    }
+
+    /// Normalize the existing provider lifecycle rail into the same reducer.
+    /// Providers without a launch-epoch transport receive one process-local
+    /// compatibility epoch per exact surface. This can establish working/idle
+    /// truth, but attention is created only by the root-owned methods below.
+    @discardableResult
+    func applyCompatibilityLifecycle(
+        provider: AgentProvider,
+        workspaceID: UUID,
+        surfaceID: UUID,
+        activity: SidebarActivityState,
+        occurredAt: Date = Date()
+    ) -> AgentAttentionSurfaceSnapshot {
+        queue.sync {
+            let key = SurfaceKey(workspaceID: workspaceID, surfaceID: surfaceID)
+            let epoch = compatibilityEpochs[key] ?? UUID()
+            compatibilityEpochs[key] = epoch
+            var state = states[key] ?? AgentAttentionState(
+                workspaceID: workspaceID,
+                surfaceID: surfaceID,
+                launchEpoch: epoch
+            )
+            let root = state.rootThreadID ?? "provider-root:\(provider.rawValue):\(surfaceID.uuidString)"
+            _ = state.bindRootThread(root)
+            let kind: AgentLifecycleEventKind = activity == .working
+                ? .runStarted(resumesAttention: true)
+                : .runBecameIdle
+            let envelope = AgentLifecycleEnvelope(
+                eventID: "compat:\(provider.rawValue):\(UUID().uuidString)",
+                workspaceID: workspaceID,
+                surfaceID: surfaceID,
+                provider: provider,
+                launchEpoch: epoch,
+                rootThreadID: root,
+                actorThreadID: root,
+                kind: kind,
+                authority: .providerLifecycle,
+                occurredAt: occurredAt
+            )
+            let reduction = AgentAttentionReducer.reduce(state: state, envelope: envelope)
+            states[key] = reduction.state
+            record(reduction)
+            return AgentAttentionSurfaceSnapshot(
+                runState: reduction.state.runState,
+                episode: reduction.state.attentionEpisode
+            )
+        }
+    }
+
+    /// Provider-owned completion/waiting rail for adapters that already prove
+    /// their root session before calling c11 (Claude hooks and OpenCode's
+    /// root-session-filtering plugin).
+    @discardableResult
+    func applyOwnedAttention(
+        provider: AgentProvider,
+        workspaceID: UUID,
+        surfaceID: UUID,
+        reason: AgentAttentionReason,
+        eventID: String = UUID().uuidString,
+        occurredAt: Date = Date()
+    ) -> AgentHookIngestResult {
+        queue.sync {
+            let key = SurfaceKey(workspaceID: workspaceID, surfaceID: surfaceID)
+            let epoch = states[key]?.launchEpoch
+                ?? compatibilityEpochs[key]
+                ?? UUID()
+            compatibilityEpochs[key] = epoch
+            var state = states[key] ?? AgentAttentionState(
+                workspaceID: workspaceID,
+                surfaceID: surfaceID,
+                launchEpoch: epoch
+            )
+            let root = state.rootThreadID ?? "provider-root:\(provider.rawValue):\(surfaceID.uuidString)"
+            _ = state.bindRootThread(root)
+            let kind: AgentLifecycleEventKind = reason == .resultReady
+                ? .rootResultReady
+                : .rootWaiting(reason)
+            let envelope = AgentLifecycleEnvelope(
+                eventID: eventID,
+                workspaceID: workspaceID,
+                surfaceID: surfaceID,
+                provider: provider,
+                launchEpoch: epoch,
+                rootThreadID: root,
+                actorThreadID: root,
+                kind: kind,
+                authority: reason == .resultReady ? .exactRootCompletion : .structuredProvider,
+                occurredAt: occurredAt
+            )
+            let reduction = AgentAttentionReducer.reduce(state: state, envelope: envelope)
+            states[key] = reduction.state
+            record(reduction)
+            return ingestResult(
+                reduction,
+                historyOnly: false
+            )
+        }
+    }
+
+    func ingestLegacyCodex(
+        rawPayload: Data,
+        ownership: AgentAttentionOwnershipSnapshot?,
+        workspaceID: UUID,
+        surfaceID: UUID,
+        launchEpoch: UUID,
+        callbackEnvironmentRootThreadID: String?,
+        occurredAt: Date = Date()
+    ) throws -> AgentHookIngestResult {
+        guard rawPayload.count <= Self.maximumPayloadBytes else {
+            throw AgentHookPayloadError.payloadTooLarge
+        }
+        guard let object = try? JSONSerialization.jsonObject(with: rawPayload),
+              let payload = object as? [String: Any] else {
+            throw AgentHookPayloadError.malformedPayload
+        }
+        let version = (payload["version"] as? NSNumber)?.intValue ?? 1
+        guard version == 1 else { throw AgentHookPayloadError.unsupportedVersion }
+        guard payload["type"] as? String == "agent-turn-complete" else {
+            throw AgentHookPayloadError.unsupportedEvent
+        }
+        let actorThreadID = normalizedUUIDString(payload["thread-id"] as? String)
+        let turnID = (payload["turn-id"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let callbackRoot = normalizedUUIDString(callbackEnvironmentRootThreadID)
+
+        return queue.sync {
+            let key = SurfaceKey(workspaceID: workspaceID, surfaceID: surfaceID)
+            let activeEpoch = ownership?.launchEpoch
+            guard activeEpoch == launchEpoch else {
+                let existing = states[key] ?? AgentAttentionState(
+                    workspaceID: workspaceID,
+                    surfaceID: surfaceID,
+                    launchEpoch: activeEpoch ?? launchEpoch
+                )
+                increment("ownership.staleEpoch")
+                return AgentHookIngestResult(
+                    ownership: .staleEpoch,
+                    disposition: .ignoredStaleEpoch,
+                    snapshot: AgentAttentionSurfaceSnapshot(
+                        runState: existing.runState,
+                        episode: existing.attentionEpisode
+                    ),
+                    shouldCreateSignalNotification: false,
+                    shouldCreateHistoryOnlyNotification: false
+                )
+            }
+
+            var state = states[key]
+            if state?.launchEpoch != launchEpoch {
+                state = AgentAttentionState(
+                    workspaceID: workspaceID,
+                    surfaceID: surfaceID,
+                    launchEpoch: launchEpoch
+                )
+            }
+            var current = state!
+            let claimedRoot = ownership?.rootThreadID
+            let effectiveRoot = claimedRoot ?? callbackRoot
+            if let effectiveRoot {
+                _ = current.bindRootThread(effectiveRoot)
+            }
+
+            let classification: AgentOwnershipClassification
+            if let claimedRoot, let callbackRoot, claimedRoot != callbackRoot {
+                classification = .mismatched
+            } else if let effectiveRoot, let actorThreadID {
+                classification = actorThreadID == effectiveRoot ? .root : .child
+            } else {
+                classification = .unknown
+            }
+
+            guard classification == .root, let effectiveRoot, let actorThreadID else {
+                states[key] = current
+                let disposition: AgentReducerDisposition
+                switch classification {
+                case .child: disposition = .ignoredChild
+                case .mismatched: disposition = .ignoredMismatch
+                case .unknown: disposition = .ignoredUnknown
+                case .staleEpoch: disposition = .ignoredStaleEpoch
+                case .root: disposition = .ignoredUnknown
+                }
+                increment("ownership.\(classification.rawValue)")
+                return AgentHookIngestResult(
+                    ownership: classification,
+                    disposition: disposition,
+                    snapshot: AgentAttentionSurfaceSnapshot(
+                        runState: current.runState,
+                        episode: current.attentionEpisode
+                    ),
+                    shouldCreateSignalNotification: false,
+                    shouldCreateHistoryOnlyNotification: classification == .unknown
+                )
+            }
+
+            let eventID = "codex-legacy:\(turnID?.isEmpty == false ? turnID! : actorThreadID)"
+            let envelope = AgentLifecycleEnvelope(
+                eventID: eventID,
+                workspaceID: workspaceID,
+                surfaceID: surfaceID,
+                provider: .codex,
+                launchEpoch: launchEpoch,
+                rootThreadID: effectiveRoot,
+                actorThreadID: actorThreadID,
+                turnID: turnID,
+                kind: .rootResultReady,
+                authority: .exactRootCompletion,
+                occurredAt: occurredAt
+            )
+            let reduction = AgentAttentionReducer.reduce(state: current, envelope: envelope)
+            states[key] = reduction.state
+            record(reduction)
+            return ingestResult(reduction, historyOnly: false)
+        }
+    }
+
+    private func ingestResult(
+        _ reduction: AgentAttentionReduction,
+        historyOnly: Bool
+    ) -> AgentHookIngestResult {
+        AgentHookIngestResult(
+            ownership: reduction.ownership,
+            disposition: reduction.disposition,
+            snapshot: AgentAttentionSurfaceSnapshot(
+                runState: reduction.state.runState,
+                episode: reduction.state.attentionEpisode
+            ),
+            shouldCreateSignalNotification: reduction.enteredAttention,
+            shouldCreateHistoryOnlyNotification: historyOnly
+        )
+    }
+
+    private func record(_ reduction: AgentAttentionReduction) {
+        increment("ownership.\(reduction.ownership.rawValue)")
+        increment("disposition.\(reduction.disposition.rawValue)")
+    }
+
+    private func increment(_ key: String) {
+        diagnosticCounts[key, default: 0] += 1
+    }
+
+    private func normalizedUUIDString(_ raw: String?) -> String? {
+        guard let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              UUID(uuidString: value) != nil else {
+            return nil
+        }
+        return value.lowercased()
+    }
+}
+
+extension TerminalController {
+    nonisolated func v2AgentIngest(params: [String: Any]) -> V2CallResult {
+        guard (params["version"] as? NSNumber)?.intValue == 1 else {
+            return .err(code: "unsupported_version", message: "agent ingest version must be 1", data: nil)
+        }
+        guard let providerRaw = v2String(params, "provider"),
+              let provider = AgentProvider(rawValue: providerRaw),
+              provider == .codex || provider == .opencode || provider == .claude else {
+            return .err(code: "unsupported_provider", message: "unsupported agent ingest provider", data: nil)
+        }
+        guard let workspaceRaw = v2String(params, "workspace_id"),
+              let workspaceID = UUID(uuidString: workspaceRaw),
+              let surfaceRaw = v2String(params, "surface_id"),
+              let surfaceID = UUID(uuidString: surfaceRaw) else {
+            return .err(
+                code: "invalid_scope",
+                message: "workspace_id and surface_id must be UUIDs",
+                data: nil
+            )
+        }
+
+        let result: AgentHookIngestResult
+        if provider == .codex {
+            guard let rawEpoch = v2String(params, "launch_epoch"),
+                  let launchEpoch = UUID(uuidString: rawEpoch),
+                  let rawPayload = params["raw_payload"] as? String,
+                  let payload = rawPayload.data(using: .utf8) else {
+                return .err(
+                    code: "invalid_payload",
+                    message: "codex ingest requires launch_epoch and UTF-8 raw_payload",
+                    data: nil
+                )
+            }
+            guard payload.count <= AgentAttentionCoordinator.maximumPayloadBytes else {
+                return .err(code: "payload_too_large", message: "payload exceeds 64 KiB", data: nil)
+            }
+            let ownership = conversationStoreSync { store in
+                await store.attentionOwnershipSnapshot(
+                    workspaceID: workspaceID,
+                    surfaceID: surfaceID
+                )
+            } ?? nil
+            do {
+                result = try AgentAttentionCoordinator.shared.ingestLegacyCodex(
+                    rawPayload: payload,
+                    ownership: ownership,
+                    workspaceID: workspaceID,
+                    surfaceID: surfaceID,
+                    launchEpoch: launchEpoch,
+                    callbackEnvironmentRootThreadID: v2String(
+                        params,
+                        "callback_root_thread_id"
+                    )
+                )
+            } catch AgentHookPayloadError.payloadTooLarge {
+                return .err(code: "payload_too_large", message: "payload exceeds 64 KiB", data: nil)
+            } catch AgentHookPayloadError.unsupportedVersion {
+                return .err(code: "unsupported_version", message: "unsupported payload version", data: nil)
+            } catch AgentHookPayloadError.unsupportedEvent {
+                return .err(code: "unsupported_event", message: "unsupported Codex callback event", data: nil)
+            } catch {
+                return .err(code: "malformed_payload", message: "malformed Codex callback payload", data: nil)
+            }
+        } else {
+            guard let event = v2String(params, "event") else {
+                return .err(code: "invalid_event", message: "OpenCode event required", data: nil)
+            }
+            let reason: AgentAttentionReason
+            switch event {
+            case "result-ready": reason = .resultReady
+            case "approval": reason = .approval
+            case "user-input": reason = .userInput
+            case "error": reason = .resultReady
+            default:
+                return .err(code: "unsupported_event", message: "unsupported OpenCode event", data: nil)
+            }
+            result = AgentAttentionCoordinator.shared.applyOwnedAttention(
+                provider: provider,
+                workspaceID: workspaceID,
+                surfaceID: surfaceID,
+                reason: reason,
+                eventID: "opencode:\(v2String(params, "actor_thread_id") ?? UUID().uuidString):\(event)"
+            )
+        }
+
+        publishAgentAttentionEffect(
+            result,
+            provider: provider,
+            workspaceID: workspaceID,
+            surfaceID: surfaceID
+        )
+        return .ok([
+            "status": "OK",
+            "ownership": result.ownership.rawValue,
+            "disposition": result.disposition.rawValue,
+            "run_state": result.snapshot.runState.rawValue,
+            "attention_reason": result.snapshot.episode?.reason.rawValue as Any,
+        ])
+    }
+
+    private nonisolated func publishAgentAttentionEffect(
+        _ result: AgentHookIngestResult,
+        provider: AgentProvider,
+        workspaceID: UUID,
+        surfaceID: UUID
+    ) {
+        let activity: SidebarActivityState = result.snapshot.runState == .working
+            ? .working
+            : .idle
+        SurfaceLivenessDeriver.onAgentLifecycleChanged(
+            surfaceId: surfaceID,
+            workspaceId: workspaceID,
+            activity: activity
+        )
+        guard result.shouldCreateSignalNotification
+                || result.shouldCreateHistoryOnlyNotification else {
+            return
+        }
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                let providerTitle: String
+                switch provider {
+                case .codex: providerTitle = "Codex"
+                case .claude: providerTitle = "Claude Code"
+                case .opencode: providerTitle = "OpenCode"
+                default: providerTitle = "Agent"
+                }
+                let subtitle = result.shouldCreateHistoryOnlyNotification
+                    ? "Unverified completion"
+                    : (result.snapshot.episode?.reason.rawValue ?? "Result ready")
+                TerminalNotificationStore.shared.addNotification(
+                    tabId: workspaceID,
+                    surfaceId: surfaceID,
+                    title: providerTitle,
+                    subtitle: subtitle,
+                    body: "",
+                    attentionEligible: result.shouldCreateSignalNotification
+                )
+            }
+        }
     }
 }

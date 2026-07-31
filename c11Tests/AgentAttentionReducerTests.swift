@@ -417,4 +417,40 @@ final class AgentAttentionReducerTests: XCTestCase {
         XCTAssertEqual(result.disposition, .outOfOrder)
         XCTAssertEqual(state.attentionEpisode?.reason, .userInput)
     }
+
+    func testClaudeApprovalRequiresStructuredNotificationType() {
+        XCTAssertEqual(
+            ClaudeHookAttentionClassifier.reason(
+                from: ["notification_type": "permission_prompt"]
+            ),
+            .approval
+        )
+        XCTAssertEqual(
+            ClaudeHookAttentionClassifier.reason(
+                from: [
+                    "notification": [
+                        "type": "permission_request",
+                        "message": "arbitrary content",
+                    ],
+                ]
+            ),
+            .approval
+        )
+    }
+
+    func testClaudeContentCannotClaimApprovalAuthority() {
+        XCTAssertEqual(
+            ClaudeHookAttentionClassifier.reason(
+                from: [
+                    "type": "notification",
+                    "message": "Please approve this permission",
+                ]
+            ),
+            .userInput
+        )
+        XCTAssertEqual(
+            ClaudeHookAttentionClassifier.reason(from: nil),
+            .userInput
+        )
+    }
 }

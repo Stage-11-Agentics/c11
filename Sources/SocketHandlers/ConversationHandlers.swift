@@ -102,6 +102,19 @@ extension TerminalController {
                 )
             }
         }
+        let launchEpoch: UUID?
+        if let rawLaunchEpoch = v2String(params, "launch_epoch") {
+            guard kind == "codex", let parsed = UUID(uuidString: rawLaunchEpoch) else {
+                return .err(
+                    code: "invalid_launch_epoch",
+                    message: "launch_epoch is supported only for codex UUIDs",
+                    data: nil
+                )
+            }
+            launchEpoch = parsed
+        } else {
+            launchEpoch = nil
+        }
 
         let expiresAt: Date?
         if params["expires_at_epoch_ms"] != nil {
@@ -135,6 +148,7 @@ extension TerminalController {
                     cwd: cwd,
                     placeholderId: placeholder,
                     expectedResumeId: expectedResumeId,
+                    launchEpoch: launchEpoch,
                     expiresAt: expiresAt
                 )
             }
@@ -158,7 +172,8 @@ extension TerminalController {
                     kind: kind,
                     cwd: cwd,
                     placeholderId: placeholder,
-                    expectedResumeId: expectedResumeId
+                    expectedResumeId: expectedResumeId,
+                    launchEpoch: launchEpoch
                 )
             }) else {
                 return .err(code: "internal_error", message: "store timeout", data: nil)

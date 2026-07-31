@@ -1988,6 +1988,7 @@ class TerminalController {
         "flag.list",
         "flag.suppress",
         "flag.unsuppress",
+        "agent.ingest",
     ]
 
     // C11-4: v1 telemetry commands the worker is allowed to handle off-main.
@@ -3700,7 +3701,7 @@ class TerminalController {
     ///
     /// Bounded timeout (2 s); the actor never blocks on I/O so a hang
     /// here would mean a deadlock somewhere unrelated.
-    func conversationStoreSync<T: Sendable>(
+    nonisolated func conversationStoreSync<T: Sendable>(
         _ body: @escaping @Sendable (ConversationStore) async -> T
     ) -> T? {
         // C11-24: `Task.detached` so the spawned task does not inherit

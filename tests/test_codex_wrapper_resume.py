@@ -106,6 +106,12 @@ exit 0
     def argv_lines(self) -> list[str]:
         return self.argv.read_text().splitlines() if self.argv.exists() else []
 
+    def original_argv_lines(self) -> list[str]:
+        lines = self.argv_lines()
+        if len(lines) >= 2 and lines[0] == "-c" and lines[1].startswith("notify=["):
+            return lines[2:]
+        return lines
+
     def boundary_file(self) -> Path:
         return Path(
             str(self.socket_path)
@@ -130,7 +136,7 @@ def main() -> int:
             proc = fixture.run(argv, FAKE_CLAIM_MODE="delay")
             lines = fixture.event_lines()
             expect(proc.returncode == 0, f"ordered launch failed: {proc.stderr}", failures)
-            expect(fixture.argv_lines() == argv, f"argv changed: {fixture.argv_lines()}", failures)
+            expect(fixture.original_argv_lines() == argv, f"argv changed: {fixture.argv_lines()}", failures)
             expect("claim-committed" in lines and "real-start" in lines and lines.index("claim-committed") < lines.index("real-start"), f"claim was not committed before exec: {lines}", failures)
             claim_line = next((line for line in lines if line.startswith("claim-start")), "")
             expect("--ttl-ms 700" in claim_line and "timeout=0.75" in claim_line, f"claim was not expiry-bounded: {claim_line}", failures)
@@ -155,7 +161,7 @@ def main() -> int:
         fixture = Fixture(tmp / "failure")
         try:
             proc = fixture.run(["--search", "prompt"], FAKE_CLAIM_MODE="fail")
-            expect(proc.returncode == 0 and fixture.argv_lines() == ["--search", "prompt"], f"claim failure blocked or changed Codex: {proc.stderr}", failures)
+            expect(proc.returncode == 0 and fixture.original_argv_lines() == ["--search", "prompt"], f"claim failure blocked or changed Codex: {proc.stderr}", failures)
             plain_claim = next((line for line in fixture.event_lines() if line.startswith("claim-start")), "")
             expect("--expected-resume-id" not in plain_claim, f"plain launch forged resume intent: {plain_claim}", failures)
             marker = fixture.boundary_file()
@@ -166,9 +172,7 @@ def main() -> int:
                     len(marker_lines) >= 3
                     and marker_lines[0].isdigit()
                     and marker_lines[1] == ""
-                    and marker_lines[2].startswith(
-                        fixture.env()["CMUX_SURFACE_ID"] + ":"
-                    ),
+                    and len(marker_lines[2]) == 36,
                     f"invalid boundary marker: {marker_lines}",
                     failures,
                 )
@@ -212,7 +216,7 @@ def main() -> int:
         try:
             argv = ["resume", "thread-id"]
             proc = fixture.run(argv)
-            expect(proc.returncode == 0 and fixture.argv_lines() == argv, f"missing-socket passthrough failed: {proc.stderr}", failures)
+            expect(proc.returncode == 0 and fixture.original_argv_lines() == argv, f"missing-socket passthrough failed: {proc.stderr}", failures)
             expect(not any(line.startswith("claim-start") for line in fixture.event_lines()), f"missing socket attempted claim: {fixture.event_lines()}", failures)
             expect(not fixture.boundary_file().exists(), "unavailable-socket passthrough wrote a marker outside the live-socket gate", failures)
         finally:

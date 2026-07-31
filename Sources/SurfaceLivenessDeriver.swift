@@ -3,14 +3,14 @@ import Bonsplit
 
 enum SurfaceTabActivityResolver {
     static func resolve(
-        hasExactSurfaceNotification: Bool,
+        hasCanonicalAttention: Bool,
         derivedActivity: SidebarActivityState?,
         isCold: Bool = false,
         terminalType: String?,
         flagged: Bool = false,
         suppressed: Bool = false
     ) -> BonsplitTabActivityState? {
-        if hasExactSurfaceNotification {
+        if hasCanonicalAttention {
             if suppressed && !flagged { return .idle }
             return .waiting
         }
@@ -157,6 +157,12 @@ enum SurfaceLivenessDeriver {
         workspaceId: UUID,
         activity: SidebarActivityState
     ) {
+        _ = AgentAttentionCoordinator.shared.applyCompatibilityLifecycle(
+            provider: .unknown,
+            workspaceID: workspaceId,
+            surfaceID: surfaceId,
+            activity: activity
+        )
         SurfaceActivityTracker.shared.recordActivity(surfaceId: surfaceId.uuidString)
         queue.async {
             let prior = currentActivityRaw(workspaceId: workspaceId, surfaceId: surfaceId)

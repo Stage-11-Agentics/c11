@@ -90,7 +90,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
     func testSurfaceTabResolverMapsRecognizedAgentStates() {
         XCTAssertEqual(
             SurfaceTabActivityResolver.resolve(
-                hasExactSurfaceNotification: false,
+                hasCanonicalAttention: false,
                 derivedActivity: .working,
                 terminalType: "codex"
             ),
@@ -98,7 +98,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         )
         XCTAssertEqual(
             SurfaceTabActivityResolver.resolve(
-                hasExactSurfaceNotification: false,
+                hasCanonicalAttention: false,
                 derivedActivity: .idle,
                 isCold: true,
                 terminalType: "claude-code"
@@ -107,7 +107,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         )
         XCTAssertEqual(
             SurfaceTabActivityResolver.resolve(
-                hasExactSurfaceNotification: false,
+                hasCanonicalAttention: false,
                 derivedActivity: .idle,
                 terminalType: "claude-code"
             ),
@@ -115,7 +115,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         )
         XCTAssertEqual(
             SurfaceTabActivityResolver.resolve(
-                hasExactSurfaceNotification: false,
+                hasCanonicalAttention: false,
                 derivedActivity: nil,
                 terminalType: "opencode-run"
             ),
@@ -127,7 +127,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         for activity in [SidebarActivityState.working, .idle, nil] {
             XCTAssertEqual(
                 SurfaceTabActivityResolver.resolve(
-                    hasExactSurfaceNotification: true,
+                    hasCanonicalAttention: true,
                     derivedActivity: activity,
                     terminalType: "codex"
                 ),
@@ -139,7 +139,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
     func testSurfaceTabResolverDoesNotManufactureWaitingFromWorkspaceOrManualUnread() {
         XCTAssertEqual(
             SurfaceTabActivityResolver.resolve(
-                hasExactSurfaceNotification: false,
+                hasCanonicalAttention: false,
                 derivedActivity: .idle,
                 terminalType: "codex"
             ),
@@ -147,7 +147,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         )
         XCTAssertEqual(
             SurfaceTabActivityResolver.resolve(
-                hasExactSurfaceNotification: false,
+                hasCanonicalAttention: false,
                 derivedActivity: nil,
                 terminalType: "codex"
             ),
@@ -157,17 +157,17 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
 
     func testSurfaceTabResolverOmitsNonAgentActivity() {
         XCTAssertNil(SurfaceTabActivityResolver.resolve(
-            hasExactSurfaceNotification: false,
+            hasCanonicalAttention: false,
             derivedActivity: .working,
             terminalType: "terminal"
         ))
         XCTAssertNil(SurfaceTabActivityResolver.resolve(
-            hasExactSurfaceNotification: false,
+            hasCanonicalAttention: false,
             derivedActivity: .idle,
             terminalType: nil
         ))
         XCTAssertNil(SurfaceTabActivityResolver.resolve(
-            hasExactSurfaceNotification: false,
+            hasCanonicalAttention: false,
             derivedActivity: .idle,
             isCold: true,
             terminalType: "shell"
@@ -269,7 +269,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 20_000)
         XCTAssertEqual(
             SurfaceTabActivityResolver.resolve(
-                hasExactSurfaceNotification: true,
+                hasCanonicalAttention: true,
                 derivedActivity: .idle,
                 terminalType: "codex",
                 flagged: false,
@@ -329,7 +329,7 @@ final class SurfaceLivenessDeriverTests: XCTestCase {
         for terminalType in ["codex", "claude-code", "opencode", "omp", "pi"] {
             XCTAssertEqual(
                 SurfaceTabActivityResolver.resolve(
-                    hasExactSurfaceNotification: false,
+                    hasCanonicalAttention: false,
                     derivedActivity: .working,
                     terminalType: terminalType
                 ),

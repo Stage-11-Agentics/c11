@@ -8648,10 +8648,10 @@ struct VerticalTabsSidebar: View {
                                         }
                                         let resolved = tab.resolvedSurfaceTabActivityState(
                                             panelId: panelId,
-                                            hasExactSurfaceNotification: notificationStore.hasUnreadNotification(
-                                                forTabId: tab.id,
-                                                surfaceId: panelId
-                                            ),
+                                            hasCanonicalAttention: AgentAttentionCoordinator.shared.snapshot(
+                                                workspaceID: tab.id,
+                                                surfaceID: panelId
+                                            )?.episode != nil,
                                             terminalKind: .some(terminalKind)
                                         )
                                         let pulseState: WorkspacePulseState

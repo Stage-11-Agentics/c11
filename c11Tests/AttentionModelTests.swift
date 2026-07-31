@@ -354,7 +354,7 @@ final class AttentionModelTests: XCTestCase {
     func testSurfaceTabResolverUsesSuppressionOnlyForExactUnreadDemand() {
         XCTAssertEqual(
             SurfaceTabActivityResolver.resolve(
-                hasExactSurfaceNotification: true,
+                hasCanonicalAttention: true,
                 derivedActivity: .working,
                 terminalType: "codex",
                 flagged: false,
@@ -364,7 +364,7 @@ final class AttentionModelTests: XCTestCase {
         )
         XCTAssertEqual(
             SurfaceTabActivityResolver.resolve(
-                hasExactSurfaceNotification: true,
+                hasCanonicalAttention: true,
                 derivedActivity: .idle,
                 terminalType: "codex",
                 flagged: true,
@@ -374,7 +374,7 @@ final class AttentionModelTests: XCTestCase {
         )
         XCTAssertEqual(
             SurfaceTabActivityResolver.resolve(
-                hasExactSurfaceNotification: false,
+                hasCanonicalAttention: false,
                 derivedActivity: .working,
                 terminalType: "codex",
                 flagged: false,

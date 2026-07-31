@@ -42,6 +42,10 @@ await hooks.event({
   },
 });
 assert(calls.some(({ args }) => args.join(" ") === "agent-hook idle"));
+assert(calls.some(({ args }) =>
+  args.join(" ") ===
+  "agent-hook ingest --provider opencode --event result-ready --actor-thread ses_root"
+));
 
 await hooks.event({
   event: {

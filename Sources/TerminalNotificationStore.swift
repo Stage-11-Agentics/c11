@@ -645,6 +645,7 @@ struct TerminalNotification: Identifiable, Hashable {
     let subtitle: String
     let body: String
     let createdAt: Date
+    let attentionEligible: Bool
     var isRead: Bool
 
     init(
@@ -656,6 +657,7 @@ struct TerminalNotification: Identifiable, Hashable {
         subtitle: String,
         body: String,
         createdAt: Date,
+        attentionEligible: Bool = true,
         isRead: Bool
     ) {
         self.id = id
@@ -666,6 +668,7 @@ struct TerminalNotification: Identifiable, Hashable {
         self.subtitle = subtitle
         self.body = body
         self.createdAt = createdAt
+        self.attentionEligible = attentionEligible
         self.isRead = isRead
     }
 }
@@ -714,7 +717,7 @@ final class TerminalNotificationStore: ObservableObject {
                 for: notifications,
                 signalEligible: Self.isSignalEligible
             )
-            emitWaitingEdges(previous: previousUnreadByTab, current: indexes.unreadCountByTabId)
+            _ = previousUnreadByTab
         }
     }
     @Published private(set) var authorizationState: NotificationAuthorizationState = .unknown
@@ -957,7 +960,7 @@ final class TerminalNotificationStore: ObservableObject {
         }
         objectWillChange.send()
         indexes = next
-        emitWaitingEdges(previous: previous, current: indexes.unreadCountByTabId)
+        _ = previous
         for workspaceId in Set(previous.keys).union(indexes.unreadCountByTabId.keys) {
             AppDelegate.shared?.tabManagerFor(tabId: workspaceId)?
                 .tabs.first(where: { $0.id == workspaceId })?
@@ -969,7 +972,14 @@ final class TerminalNotificationStore: ObservableObject {
         indexes.latestUnreadByTabId[tabId] ?? indexes.latestByTabId[tabId]
     }
 
-    func addNotification(tabId: UUID, surfaceId: UUID?, title: String, subtitle: String, body: String) {
+    func addNotification(
+        tabId: UUID,
+        surfaceId: UUID?,
+        title: String,
+        subtitle: String,
+        body: String,
+        attentionEligible: Bool = false
+    ) {
         var updated = notifications
         var idsToClear: [String] = []
         updated.removeAll { existing in
@@ -988,19 +998,6 @@ final class TerminalNotificationStore: ObservableObject {
         } ?? false
         let shouldSuppressExternalDelivery = (isAppFocused && isFocusedPanel) || attentionSuppressed
 
-        // An agent notification is a lifecycle boundary: the turn either
-        // completed or paused for operator input. Waiting still dominates the
-        // card while unread; once the operator opens it, the underlying state
-        // must settle to idle instead of snapping back to the outer shell's
-        // misleading long-running-TUI "working" state.
-        if let surfaceId {
-            SurfaceLivenessDeriver.onAgentLifecycleChanged(
-                surfaceId: surfaceId,
-                workspaceId: tabId,
-                activity: .idle
-            )
-        }
-
         if WorkspaceAutoReorderSettings.isEnabled() {
             AppDelegate.shared?.tabManager?.moveTabToTopForNotification(tabId)
         }
@@ -1013,6 +1010,7 @@ final class TerminalNotificationStore: ObservableObject {
             subtitle: subtitle,
             body: body,
             createdAt: Date(),
+            attentionEligible: attentionEligible,
             isRead: false
         )
         updated.insert(notification, at: 0)
@@ -1576,6 +1574,7 @@ final class TerminalNotificationStore: ObservableObject {
     }
 
     private static func isSignalEligible(_ notification: TerminalNotification) -> Bool {
+        guard notification.attentionEligible else { return false }
         guard let surfaceId = notification.surfaceId else { return true }
         return SurfaceAttentionIndex.shared.snapshot(
             workspaceId: notification.tabId,

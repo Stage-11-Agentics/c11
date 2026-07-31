@@ -60,6 +60,8 @@
 		3D7DB8FD9FE7DECBA43949B6 /* MailboxLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7101BF1A1B2C3D4E5F60718 /* MailboxLayoutTests.swift */; };
 		4378399A7C0245EF8186F306 /* OmnibarAndToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B09C007F42697761B5F1A2AB /* OmnibarAndToolsTests.swift */; };
 		442C70C79A00A668A6B29640 /* SurfaceLivenessDeriver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 794F848890115B4BEF8AA94B /* SurfaceLivenessDeriver.swift */; };
+		C11880000000000000000001 /* AgentAttentionReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11880000000000000000011 /* AgentAttentionReducer.swift */; };
+		C11880000000000000000002 /* AgentAttentionReducerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11880000000000000000012 /* AgentAttentionReducerTests.swift */; };
 		4528F16BF93B876E054DC319 /* TomlSubsetParserFuzzTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5F1002001A1B2C3D4E5F004 /* TomlSubsetParserFuzzTests.swift */; };
 		46044A577BB8C602B02EF327 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6068E3FCA0467699A1ADD6FD /* Cocoa.framework */; };
 		46F6AC15863EC84DCD3770A2 /* TerminalAndGhosttyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02FC74F2C27127CC565B3E8C /* TerminalAndGhosttyTests.swift */; };
@@ -566,6 +568,8 @@
 		76375733F860DAB840D28800 /* DefaultAgentProjectConfig.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DefaultAgentProjectConfig.swift; sourceTree = "<group>"; };
 		7891BA9C4B16E7F32F658152 /* ThemeHandlers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ThemeHandlers.swift; sourceTree = "<group>"; };
 		794F848890115B4BEF8AA94B /* SurfaceLivenessDeriver.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SurfaceLivenessDeriver.swift; sourceTree = "<group>"; };
+		C11880000000000000000011 /* AgentAttentionReducer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentAttentionReducer.swift; sourceTree = "<group>"; };
+		C11880000000000000000012 /* AgentAttentionReducerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentAttentionReducerTests.swift; sourceTree = "<group>"; };
 		7B4202C77B3590FB8D760708 /* AgentDetectorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentDetectorTests.swift; sourceTree = "<group>"; };
 		7B69B687B665752E5EAC57D4 /* Store.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Store.swift; path = Conversation/Store.swift; sourceTree = "<group>"; };
 		7CC7DA94810490BDE375738E /* ConversationScraperTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConversationScraperTests.swift; sourceTree = "<group>"; };
@@ -1235,6 +1239,7 @@
 				490D9000BC1B0741D6E2CF06 /* SidebarStalenessSettings.swift */,
 				D8F4243F7A7CB36FB59072E8 /* SidebarDecayClock.swift */,
 				794F848890115B4BEF8AA94B /* SurfaceLivenessDeriver.swift */,
+				C11880000000000000000011 /* AgentAttentionReducer.swift */,
 				A025E12149FF4103C2397072 /* SocketSurfaceRefValidator.swift */,
 				CFBB43D8FE36F0283DA24983 /* EventLogLayout.swift */,
 				64628D6D2B44E2D7DCDCB79E /* EventEnvelope.swift */,
@@ -1453,6 +1458,7 @@
 				8D79AA02822FFBE8B15FA2B6 /* OmpConversationTests.swift */,
 				5722C355F6B94E193AEC96B1 /* MetadataSourceTimestampTests.swift */,
 				20BC9700748D344154CAF30D /* SurfaceLivenessDeriverTests.swift */,
+				C11880000000000000000012 /* AgentAttentionReducerTests.swift */,
 				9A99FEE21A45CCAB920CC627 /* WorkspaceDerivedActivityTests.swift */,
 				C5E34AD8B3A4814F5DDD4B2D /* SidebarStalenessSettingsTests.swift */,
 				0054553DCE5D3CED90037B0C /* SidebarActivityProjectorTests.swift */,
@@ -1799,6 +1805,7 @@
 				D49911F30C44874C90103A16 /* OmpConversationTests.swift in Sources */,
 				74E85E0F622B71329F48271F /* MetadataSourceTimestampTests.swift in Sources */,
 				184473838C930BCC99D9E3FB /* SurfaceLivenessDeriverTests.swift in Sources */,
+				C11880000000000000000002 /* AgentAttentionReducerTests.swift in Sources */,
 				9E41ED7321B6C6644A698D8C /* WorkspaceDerivedActivityTests.swift in Sources */,
 				3A4B80EACD78ED4A40F5BB6E /* SidebarStalenessSettingsTests.swift in Sources */,
 				592E7B94FECC0B5AAB3B53B4 /* SidebarActivityProjectorTests.swift in Sources */,
@@ -2016,6 +2023,7 @@
 				6A0C33F6E77CC3ACF487BAF9 /* SidebarStalenessSettings.swift in Sources */,
 				8CAB6EE26E1CF4530AB6A400 /* SidebarDecayClock.swift in Sources */,
 				442C70C79A00A668A6B29640 /* SurfaceLivenessDeriver.swift in Sources */,
+				C11880000000000000000001 /* AgentAttentionReducer.swift in Sources */,
 				81D13A7720F86B5F0EF02A37 /* SidebarActivityProjector.swift in Sources */,
 				78C88F1B4EB9C6CC9C5C6272 /* SocketSurfaceRefValidator.swift in Sources */,
 				A87C6868ACAA0B563E1593CE /* EventLogLayout.swift in Sources */,

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-31T18:20:43Z",
+  "created_by": "agent:c11-189-reviewer",
+  "custom_fields": {},
+  "id": "art_01KYWPGESTK1X6F5Q5YHK7VDVB",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KYWPGESTK1X6F5Q5YHK7VDVB.md",
+    "size_bytes": 8853
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "code-review (review)",
+  "token_usage": null,
+  "type": "file"
+}

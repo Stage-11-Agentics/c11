@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-30T20:06:28Z",
+  "created_by": "agent:codex-merge",
+  "custom_fields": {},
+  "id": "art_01KYTA5BQ75HC94K9GP4VQS0C6",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KYTA5BQ75HC94K9GP4VQS0C6.md",
+    "size_bytes": 550
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Operator explicitly directed merge; the approval-gated screenshot pass was waived, not performed.",
+  "tags": [],
+  "title": "Operator-authorized merge without visible hover automation",
+  "token_usage": null,
+  "type": "note"
+}

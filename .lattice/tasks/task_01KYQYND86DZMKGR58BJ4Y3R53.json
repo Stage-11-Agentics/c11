@@ -1,0 +1,94 @@
+{
+  "assigned_to": "agent:codex-c11-185",
+  "branch_links": [
+    {
+      "branch": "feat/c11-185-agent-activity-details",
+      "linked_at": "2026-07-29T22:26:12Z",
+      "linked_by": "agent:codex-c11-185",
+      "repo": null
+    }
+  ],
+  "comment_count": 3,
+  "complexity": "high",
+  "created_at": "2026-07-29T22:07:02Z",
+  "created_by": "agent:codex-ticket-author",
+  "custom_fields": {},
+  "description": "## Summary\n\nTeach the new agent lifecycle marks everywhere they appear, and make Surface Details the authoritative expanded view of the same activity truth. Hovering an agent mark in a top surface tab or either sidebar mark location shows the presented lifecycle state, an accurate duration when c11 has trustworthy evidence, and flagged or suppressed modifiers. Right-click -> Surface Details shows the same state duration plus persistent Created and Last activity timestamps.\n\nThis is a follow-on to C11-183 and C11-184. It must reuse their shared state and attention projection rather than derive independent strings in each renderer.\n\n## Locked user-facing contract\n\n### Tooltips\n\n- Attach a native tooltip to the padded mark hit area in the top surface tab, sidebar summary rows, and sidebar census mark row. Do not attach it to the aggregate composition rail.\n- Lifecycle is primary; flag and suppression are modifiers. Example shapes of the copy:\n  - `Working for 2 minutes`\n  - `Waiting for your response`\n  - `Idle for 7 minutes`\n  - `Cold for 3 minutes`\n  - `Idle for 7 minutes\\nFlagged: Need a decision on schema migration`\n  - `Idle for 7 minutes\\nSuppressed`\n- Flagged plus suppressed shows both modifiers. Flag remains the stronger attention signal, but neither modifier erases the presented lifecycle.\n- If no trustworthy state-start timestamp exists, show the localized state alone. Never fabricate `0 minutes`.\n\n### Duration semantics\n\n- Working and idle use the c11-observed lifecycle or input boundary recorded by `SurfaceActivityTracker`.\n- Cold begins when last activity plus `SidebarAgentColdSettings.thresholdSeconds()` is crossed. `Cold for` must not mean total idle time.\n- Waiting uses the exact surface unread-notification creation time when available; otherwise it has no duration.\n- A flag may use existing `flagRaisedAt` for flag age if the final copy includes it.\n- Suppression has no canonical start time and therefore receives no duration.\n- Relative duration formatting is locale-aware and plural-safe.\n\n### Surface Details\n\nAdd an always-visible activity/timing group to the existing Surface Details panel, for example:\n\n```text\nActivity        Idle for 7 minutes\nCreated         2026-07-29 14:31:05 EDT\nLast activity   2026-07-29 15:02:18 EDT - 7 minutes ago\n```\n\n- Use the label `Last activity`, not `Last action`. The timestamp means the latest activity c11 actually observed: terminal input, conversation claim, or agent lifecycle transition. It does not claim to observe every agent tool call, subprocess action, output byte, browser event, or filesystem mutation.\n- Created means logical surface creation, not Surface Details capture time, latest app launch, current Ghostty runtime creation, or metadata write time.\n- Created persists across app restart and restore for terminal, browser, and markdown panels. Legacy snapshots without the new field decode successfully and display `Not recorded`; do not invent an original creation time.\n- Last activity uses the persisted activity tracker floor where present. Missing evidence displays `Not recorded`.\n- Absolute timestamps include timezone, remain selectable, and offer an unambiguous copy value. Relative age appears alongside absolute time.\n- The existing Captured row remains separate and continues to mean when the Surface Details snapshot was read.\n- Refresh rereads absolute activity truth. Relative state duration and age stay current on the existing coarse shared clock or an equally bounded leaf-only mechanism.\n\n## Architecture\n\n1. Add one pure c11-owned agent activity help/details projection containing presented lifecycle, optional state-start time, optional last-activity time, flag reason and raised time, and suppression. Tooltips and Surface Details consume this same projection.\n2. Keep `SurfaceLivenessDeriver -> derived activity metadata -> top tabs/sidebar cards` as the state pipeline. No renderer may independently infer lifecycle.\n3. Extend `WorkspacePulseAgent` with the immutable activity-help payload used by sidebar renderers.\n4. Extend the host-owned `BonsplitTabActivityPresentation` with generic help data needed to render the top-tab tooltip. Bonsplit renders supplied presentation; c11 continues to own product semantics such as flagged and suppressed.\n5. Promote logical `createdAt` to a first-class panel/session property for terminal, browser, and markdown surfaces. Add a backward-compatible optional `created_at` field to `SessionPanelSnapshot` and pass it through every fresh-create and restore path. Do not use the terminal-only private debug creation timestamp as the canonical value.\n6. Surface Details captures structured activity details separately from mutable metadata JSON. Do not write derived UI facts into `SurfaceMetadataStore` merely to display them.\n\n## Performance and interaction guardrails\n\n- Do not read `SurfaceMetadataStore`, `SurfaceActivityTracker`, notification indexes, or perform date formatting inside the typing-hot `ContentView.TabItemView` body or `WindowTerminalHostView.hitTest()`. Precompute immutable payloads in the existing parent/state-sync paths.\n- No per-agent repeating timers. Refresh tooltip copy on hover entry; use the existing coarse clock only in leaf views that visibly age while open. Animation settings and Reduce Motion behavior are unchanged.\n- The top tooltip target may include the mark padding so a 9pt glyph remains practically hoverable, but must not change layout, tab selection, context menus, or close behavior.\n- Preserve user-owned changes in the current dirty checkout by implementing from an isolated worktree.\n- Any Bonsplit change must be committed and pushed to `Stage-11-Agentics/bonsplit` main before the parent submodule pointer is committed. Flag the generic tooltip capability as an upstream candidate.\n\n## Localization and accessibility\n\n- All new c11 copy uses `String(localized:defaultValue:)`; translate the final English into ja, uk, ko, zh-Hans, zh-Hant, and ru through the required translator pass.\n- Bonsplit activity labels remain localized in all seven `.lproj` catalogs.\n- VoiceOver receives lifecycle, duration, modifiers, and flag reason in the same semantic order as the tooltip, without duplicating values already exposed by the tab.\n- Validate `Resources/Localizable.xcstrings` with `jq`, not `plutil`, and verify interpolation tokens across every locale.\n\n## Likely code surfaces\n\n- `Sources/Sidebar/SidebarActivityProjector.swift`\n- `Sources/ContentView.swift`\n- `Sources/Workspace.swift`\n- `Sources/Conversation/SurfaceActivity.swift`\n- `Sources/SurfaceManifestView.swift`\n- `Sources/SurfaceManifestViewerWindowController.swift` and/or `Sources/TerminalController.swift`\n- `Sources/Panels/Panel.swift`, `TerminalPanel.swift`, `BrowserPanel.swift`, `MarkdownPanel.swift`\n- `Sources/SessionPersistence.swift` plus restore/create call sites\n- `vendor/bonsplit/Sources/Bonsplit/Public/BonsplitActivityAnimationClock.swift`\n- `vendor/bonsplit/Sources/Bonsplit/Internal/Views/TabItemView.swift`\n- `Resources/Localizable.xcstrings` and Bonsplit localization catalogs\n\n## Acceptance criteria\n\n1. Hovering every individual agent mark in the top surface tab and both sidebar mark locations shows a localized tooltip with the same presented lifecycle semantics.\n2. Working, idle, cold, and waiting durations use the sources and fallback rules above; cold duration begins at threshold crossing.\n3. Flagged, suppressed, and flagged plus suppressed tooltips preserve lifecycle and display the applicable modifier details.\n4. Tooltip hit areas are usable without changing mark geometry, layout, selection, context-menu, overflow, or close behavior.\n5. Surface Details shows Activity, Created, Last activity, and Captured as distinct values. State duration agrees with the tooltip for the same surface at the same clock instant.\n6. New terminal, browser, and markdown surfaces receive logical creation timestamps, which survive session snapshot round-trip and restore. Legacy snapshots decode and show `Not recorded` rather than a fabricated creation time.\n7. Last activity survives restart where the existing activity floor is persisted; missing activity evidence is represented honestly.\n8. Pure tests cover duration boundaries, missing timestamps, cold-threshold arithmetic, suppressed waiting projecting as idle, flag plus suppression composition, created-at snapshot round-trip, and legacy decoding. Bonsplit tests cover the generic help payload and rendered accessibility composition through executable paths.\n9. No source-text or project-file assertion tests are added.\n10. English and all six translations are complete and token-safe; `jq . Resources/Localizable.xcstrings` and Bonsplit catalog validation pass.\n11. Relevant c11 logic and host-required tests pass. The implementation is exercised in a tagged QA build through actual hover and Surface Details flows, with screenshots or equivalent visible evidence for top tab, sidebar, and details panel. Obtain scoped computer-use approval before that validation.\n12. Bonsplit commit is reachable from its remote main before the parent pointer lands; parent diff is clean, scoped, and does not absorb unrelated dirty-worktree changes.\n\n## Out of scope\n\n- Claiming observation of individual agent tool calls or output activity.\n- Adding new CLI or socket API fields solely for this UI change.\n- Changing lifecycle colors, shapes, motion, cold threshold, flag behavior, or suppression signal eligibility.\n- Redesigning the Surface Details panel beyond the new activity/timing group.",
+  "done_at": "2026-07-30T20:06:28Z",
+  "evidence_refs": [
+    {
+      "id": "art_01KYR100RJCR2A70T7DRQZRBD1",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KYR1CBRPV67WDCR3YHB6HDK6",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KYR1KDKS6CBT07SE6FQCTAZ6",
+      "role": null,
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KYR1KDPNPE3V2X3FVDK4G12E",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KYTA5BQ75HC94K9GP4VQS0C6",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01KYTA5CAJ8EV1V45B65KCGDB7",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KYTA5CAJ8EV1V45B65KCGDB6",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KYQYND86DZMKGR58BJ4Y3R53",
+  "last_event_id": "ev_01KYTA5CAKDB24HEHVY93MF57T",
+  "last_status_changed_at": "2026-07-30T20:06:28Z",
+  "linked_files": [],
+  "needs_human": null,
+  "priority": "medium",
+  "relationships_out": [
+    {
+      "created_at": "2026-07-29T22:07:15Z",
+      "created_by": "agent:codex-ticket-author",
+      "note": null,
+      "target_task_id": "task_01KYMTXQVWCXCF0TGN5ZWG341E",
+      "type": "related_to"
+    },
+    {
+      "created_at": "2026-07-29T22:07:20Z",
+      "created_by": "agent:codex-ticket-author",
+      "note": null,
+      "target_task_id": "task_01KYMTWW3VVZSR308G0X3YE79H",
+      "type": "related_to"
+    }
+  ],
+  "reopened_count": 2,
+  "schema_version": 1,
+  "short_id": "C11-185",
+  "status": "done",
+  "tags": [
+    "ui",
+    "agents",
+    "activity",
+    "surface-details",
+    "orchestration",
+    "localization",
+    "bonsplit"
+  ],
+  "title": "Agent-state tooltips and persistent Surface Details activity timestamps",
+  "type": "task",
+  "updated_at": "2026-07-30T20:06:28Z",
+  "urgency": "normal"
+}

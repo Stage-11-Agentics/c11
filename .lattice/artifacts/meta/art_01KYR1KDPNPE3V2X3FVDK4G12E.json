@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-29T22:58:23Z",
+  "created_by": "agent:codex-c11-185",
+  "custom_fields": {},
+  "id": "art_01KYR1KDPNPE3V2X3FVDK4G12E",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KYR1KDPNPE3V2X3FVDK4G12E.md",
+    "size_bytes": 544
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Tagged build/launch and socket identity passed; UI evidence remains approval-gated",
+  "tags": [],
+  "title": "Tagged runtime preparation \u2014 visible validation pending approval",
+  "token_usage": null,
+  "type": "note"
+}

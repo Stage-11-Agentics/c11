@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-28T17:48:49Z",
+  "created_by": "agent:trident-pane-C11-183",
+  "custom_fields": {},
+  "id": "art_01KYMXFWTHW25BHSS1TZRDF3NA",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KYMXFWTHW25BHSS1TZRDF3NA.md",
+    "size_bytes": 57525
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Merged verdict from 9-agent trident plan review. 4 blockers, 10 important, 13 mediums, 1 clear win applied to plan rev 2; 9 items surfaced. Full pack: notes/trident-review-C11-183-plan-pack-20260728-1327/",
+  "tags": [],
+  "title": "Trident plan review: action synthesis (revise-then-proceed)",
+  "token_usage": null,
+  "type": "file"
+}

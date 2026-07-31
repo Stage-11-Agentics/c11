@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-07-29T22:58:22Z",
+  "created_by": "agent:codex-c11-185",
+  "custom_fields": {
+    "url": "https://github.com/Stage-11-Agentics/c11/pull/394"
+  },
+  "id": "art_01KYR1KDKS6CBT07SE6FQCTAZ6",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": null,
+    "size_bytes": null
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "C11-185 implementation at 5e6360bb5",
+  "tags": [],
+  "title": "Draft PR #394",
+  "token_usage": null,
+  "type": "reference"
+}

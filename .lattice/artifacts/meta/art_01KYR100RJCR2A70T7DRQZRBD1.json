@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-29T22:47:47Z",
+  "created_by": "agent:trident-pane-C11-185",
+  "custom_fields": {},
+  "id": "art_01KYR100RJCR2A70T7DRQZRBD1",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KYR100RJCR2A70T7DRQZRBD1.md",
+    "size_bytes": 47119
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Verdict: rework-then-rereview (plan-level). 8 blockers, 9 important, 6 mediums, 1 clear win applied to plan; 10 items surfaced. Full 14-file pack: .lattice/plans/c11-185-plan-review-pack-2026-07-29T1828/",
+  "tags": [],
+  "title": "Trident plan review C11-185: action-ready synthesis",
+  "token_usage": null,
+  "type": "file"
+}

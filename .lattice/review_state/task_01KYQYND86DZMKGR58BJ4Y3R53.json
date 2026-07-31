@@ -1,0 +1,18 @@
+{
+  "task_id": "task_01KYQYND86DZMKGR58BJ4Y3R53",
+  "mode": "triple",
+  "review_type": "plan-review",
+  "started_at": "2026-07-29T22:27:15.064089+00:00",
+  "started_by_pid": 51226,
+  "started_by_actor": "agent:lattice-auto-review",
+  "auto_fired": false,
+  "pane_ref": "surface:38",
+  "agents": [
+    {
+      "name": "trident-pane",
+      "status": "running",
+      "started_at": "2026-07-29T22:27:15.064089+00:00",
+      "pane_ref": "surface:38"
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "assigned_to": "agent:codex-mark-delegator",
+  "branch_links": [],
+  "comment_count": 13,
+  "complexity": "medium",
+  "created_at": "2026-07-28T17:03:29Z",
+  "created_by": "human:atin",
+  "custom_fields": {},
+  "description": "Rebuild the four lifecycle marks so every state is distinguishable by SHAPE alone, with no reliance on color or opacity.\n\nSpec: docs/c11-mark-vocabulary.md\nLive mock: scratchpad/mark-vocabulary-candidates.html\n\n## Why\n\nWorking and waiting are both solid squares today, separated by hue alone. The in-code comment at vendor/bonsplit/.../TabItemView.swift:160 claims the set \"survives greyscale and a color-blind reader\"; that claim is false for exactly that pair. A real accessibility defect independent of any feature.\n\nIt also blocks the flagged/suppressed agents ticket, which needs the color channel free for a violet recolor.\n\n## The set\n\n- working = 3x3 dot grid over a faint base square\n- waiting (needs attention) = 1.5pt heavy frame holding a 4pt solid core\n- idle = 1pt thin empty frame\n- cold = flat 2pt line\n\nMarks pin to 9pt always. The sidebar's min(9, slot) compression to 8pt is removed; the mark row's slot floors at 9pt and the row yields width instead.\n\n## Motion\n\nBase motion ON by default, with a \"Static marks\" opt-out in Settings. Working dots tick in typewriter order (~4s cycle); needs-attention core dips (1.2s). Idle and cold never animate.\n\n## Call sites\n\n1. vendor/bonsplit/Sources/Bonsplit/Internal/Views/TabItemView.swift - TabActivityMark + TabActivityMarkMetrics. Keep this change PURE SHAPE VOCABULARY with no c11-specific concepts: it is a clean accessibility fix to offer upstream (almonk/bonsplit via manaflow-ai/cmux). Flag for upstream when the PR opens.\n2. Sources/ContentView.swift - workspacePulseMark, plus the sidebar sizing rule at ~line 11324.\n\nColors (Sources/Workspace.swift) untouched.\n\n## Performance contract (HARD SHIP BLOCKER)\n\nMotion is default-on, so the typing-latency gate blocks merge.\n\n1. MEASURE AT FLEET SCALE. Every working agent animates in TWO renderers at once (tab chip + sidebar mark row). A 20-agent fleet is 40+ animating leaf views. A single-mark test proves nothing.\n2. ONE SHARED CLOCK, per-mark phase offset by a stable hash of surface id. Not N independent timers.\n3. PAUSE OFF-SCREEN AND IN BACKGROUND. Unselected workspaces, collapsed panes, tabs scrolled out of the tab bar, app not active. SwiftUI does not do this for you.\n4. VALIDATE THE LADDER ORDER EMPIRICALLY. Stated degradation is dip-only default, then static default. Probably correct because the dip is a pure opacity change the render server can composite without re-evaluating body, while the dot fill changes which shapes are drawn and forces body re-evaluation. Probably, not certainly. Measure both independently.\n\nEach animated mark leaf-isolated with its own @State so repaints cannot invalidate the tab row or workspace card (TabItemView relies on Equatable + .equatable() to skip body re-evaluation during typing).\n\nReduce Motion (NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) is a hard override: no mark animates when true, regardless of settings.\n\n## Done when\n\n- Both renderers draw the new set and agree\n- All four states distinguishable in greyscale\n- Marks hold at 9pt with no compression\n- Static marks opt-out works\n- Typing-latency gate passes at fleet scale on a tagged build, or the ladder is applied and the outcome recorded\n- bonsplit change flagged for upstream",
+  "done_at": "2026-07-28T19:52:40Z",
+  "evidence_refs": [
+    {
+      "id": "art_01KYMXFWTHW25BHSS1TZRDF3NA",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01KYMXRHRJY5PWB6X4H9S9P1W9",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01KYMYKJ59E4HJTE8W8TAGN8RR",
+      "role": "review-individual",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01KYMYVWG3MWYVDXJXJH324EZW",
+      "role": "review-individual",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KYMZ7FDBBNS08XY6XRR2MMQH",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01KYMZ978A8ZR713RSNAR04TCW",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01KYN4JN1GB9RSS860D3NTM9T5",
+      "role": "validation",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01KYMTWW3VVZSR308G0X3YE79H",
+  "last_event_id": "ev_01KYN4JN4SB1NJ79H5DXY23P8P",
+  "last_status_changed_at": "2026-07-28T19:52:40Z",
+  "linked_files": [],
+  "needs_human": null,
+  "priority": "high",
+  "relationships_out": [],
+  "reopened_count": 2,
+  "schema_version": 1,
+  "short_id": "C11-183",
+  "status": "done",
+  "tags": null,
+  "title": "Rebuild agent-state mark vocabulary: lifecycle in shape alone",
+  "type": "task",
+  "updated_at": "2026-07-28T19:52:40Z",
+  "urgency": null
+}

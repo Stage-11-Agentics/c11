@@ -1,0 +1,79 @@
+{
+  "assigned_to": "agent:codex-c11-184-delegator",
+  "branch_links": [],
+  "c11_surface": "FEA01258-3A9E-4A13-B8C2-4A2AAE191097",
+  "c11_workspace": "7B4D2337-7CE2-4C91-A460-9633F016C8BC",
+  "comment_count": 21,
+  "complexity": "high",
+  "created_at": "2026-07-28T17:03:57Z",
+  "created_by": "human:atin",
+  "custom_fields": {},
+  "description": "Two orthogonal modifiers over the existing lifecycle: FLAGGED agents that explicitly request human involvement and jump the queue, and SUPPRESSED agents that reach the operator through no channel at all.\n\nSpec: docs/c11-flagged-agent-plan.md\nStaged skill section: docs/c11-attention-model-skill-section.md\n\n## DEPENDS ON C11-183 (mark vocabulary rebuild)\n\nC11-183 must merge first. Every glyph claim here assumes the rebuilt vocabulary, which frees the color channel for the violet recolor. Do not start this before it lands.\n\n## Flagged\n\n- c11 raise-flag --surface <s> \"<reason>\" / c11 lower-flag --surface <s>; c11 launch-agent --flag \"<reason>\" for operator-at-dispatch\n- Socket: flag.raise, flag.lower, flag.list. Reason REQUIRED on raise (invalid_params if missing).\n- Canonical metadata key at the explicit tier in SurfaceMetadataStore, persisting on the existing path.\n- Sticky: clears only on operator dismissal or agent lower. Never on read.\n- Does NOT write to TerminalNotificationStore (would double-count against the pulse). System notification delivered directly off the raise.\n- Arrives from either side, round-trips (violet while up, normal lifecycle colors when lowered), scopes to a moment or a whole mission. Target rarity: at least 9 in 10 agents never flagged.\n- Visual: existing mark vocabulary recolored violet, all four states still distinguishable. Flagged+waiting = core-only violet/white hard square wave, 0.4s, inside a steady violet frame. Other flagged states breathe. Flag-tier motion runs regardless of the Static marks setting; Reduce Motion still overrides. Fallback if it fails the latency gate: static violet.\n\n## Suppressed\n\n- c11 suppress / c11 unsuppress --surface <s>; c11 launch-agent --suppressed\n- Socket: flag.suppress, flag.unsuppress. Same canonical-metadata path.\n- A suppressed surface NEVER enters the waiting state. Lifecycle restricted to working/idle/cold; reads idle on stop.\n- NO visual treatment of its own: normal lifecycle colors, no dimming, no badge. Suppression is expressed by which states are reachable.\n- Excluded from: waiting count, Waiting Agent button, option-V, system notification, waiting.entered event.\n- Notification record IS still written and readable in the notifications list.\n- Known cost accepted: a suppressed agent that finished and one that stalled both read as idle.\n- Serves the orchestrator/subagent pattern: suppress the children so the orchestrator's signal is the one that reaches the operator.\n\n## Flag overrides suppression outright\n\nA suppressed agent that flags reaches needs-attention and shows the full core-only alarm flash, undimmed, no state restriction, no motion suppression. This is the headline case: \"do not tell me when you finish, do tell me if you get stuck.\"\n\n## Surfaces\n\n1. Flagged Agents sidebar row above Waiting Agent, appearing ONLY when a flag is up. Violet fill, void content, no motion.\n2. option-V keeps its binding, gains a priority phase: oldest unlowered flag first (flags are a queue), else latest signal-eligible unread (stack, today's behavior). Do NOT add a second shortcut.\n3. In-surface banner with the reason and an X to dismiss. MUST mount in the AppKit portal overlay layer (pattern: NSHostingView<SurfaceSearchOverlay> from GhosttySurfaceScrollView, GhosttyTerminalView.swift:6824). A banner in the layout flow resizes the PTY on every raise/lower and garbles TUI rendering in Claude Code and codex mid-run.\n4. System notification on raise: surface title + reason body.\n\n## Projector\n\nFlagged and suppressed become modifier fields on WorkspacePulseAgent, NOT new WorkspacePulseState cases. Renderer receives (state, flagged, suppressed) and composes. WorkspacePulseSummary gains flaggedCount; dominant puts flagged above waiting. Suppressed never resolves to .waiting. Pure functions, covered by c11-logic tests.\n\n## Notification store\n\n- Signal-eligible unread count distinct from raw unread, computed in buildIndexes (TerminalNotificationStore.swift:638)\n- emitWaitingEdges fires on the signal-eligible edge\n- jumpToLatestUnread (AppDelegate.swift:10361) skips suppressed surfaces\n\n## Events (v1 taxonomy, EventEnvelope.swift:51)\n\nflag.raised {reason}, flag.lowered {by}, flag.suppressed {by}, flag.unsuppressed {by}\n\nThe by field distinguishes \"seen and deferred\" from \"nobody looked\" so a dismissed agent can decide whether to re-raise.\n\n## Skill\n\nLand docs/c11-attention-model-skill-section.md into skills/c11/SKILL.md IN THIS PR. Per CLAUDE.md hard rule, not done until scripts/sync-installed-skills.sh c11 has run.\n\n## Localization\n\nAll new user-facing strings via String(localized:) with English defaultValue only. Spawn a translator pass for the other six locales after the English strings settle.",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "art_01KYN9SNFK5HGZNSXACWCN797D",
+      "role": "plan-review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "art_01KYN9WNAWBQ0JMTQ8K1JN5MV2",
+      "role": "plan-review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01KYNCVKC4DTN8VHK8MSTVWZ8N",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01KYNEPP1QK1ESMR1NGJZ3MR3R",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01KYNEQFDDEZB8MJE2XQJDV26C",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01KYNFG544W66HVF974BZ48QQ6",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01KYNM167WBX373G33XSE5M504",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "ev_01KYNMJN0RYCV5SGKR2SXCA6QB",
+      "role": "validation",
+      "source_type": "comment"
+    }
+  ],
+  "id": "task_01KYMTXQVWCXCF0TGN5ZWG341E",
+  "last_event_id": "ev_01KYNMJVY9N1N2KA0SBRFFEE1J",
+  "last_status_changed_at": "2026-07-29T00:32:24Z",
+  "linked_files": [],
+  "needs_human": null,
+  "priority": "high",
+  "relationships_out": [
+    {
+      "created_at": "2026-07-28T17:19:31Z",
+      "created_by": "agent:codex-mark-orchestrator",
+      "note": null,
+      "target_task_id": "task_01KYMTWW3VVZSR308G0X3YE79H",
+      "type": "depends_on"
+    }
+  ],
+  "reopened_count": 3,
+  "schema_version": 1,
+  "short_id": "C11-184",
+  "status": "pr_open",
+  "tags": null,
+  "title": "Flagged and suppressed agents: the attention model",
+  "type": "task",
+  "updated_at": "2026-07-29T00:32:24Z",
+  "urgency": null
+}

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-30T20:06:28Z",
+  "created_by": "agent:codex-merge",
+  "custom_fields": {},
+  "id": "art_01KYTA5CAJ8EV1V45B65KCGDB6",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KYTA5CAJ8EV1V45B65KCGDB6.md",
+    "size_bytes": 804
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Merged PR #394. Feature head 5e6360bb5239e108eba3652c5075bcb25f886978 merged as 69a7b3ca278c42fbad79961b2e8430af8e5a4fe4 and is an ancestor of current origin/main. Merge commit records Bonsplit a21966",
+  "tags": [],
+  "title": "Review findings",
+  "token_usage": null,
+  "type": "note"
+}

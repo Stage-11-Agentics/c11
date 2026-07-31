@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-07-29T22:54:31Z",
+  "created_by": "agent:codex-c11-185",
+  "custom_fields": {},
+  "id": "art_01KYR1CBRPV67WDCR3YHB6HDK6",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KYR1CBRPV67WDCR3YHB6HDK6.md",
+    "size_bytes": 865
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "PASS at 5e6360bb5",
+  "tags": [],
+  "title": "C11-185 focused self-review",
+  "token_usage": null,
+  "type": "note"
+}

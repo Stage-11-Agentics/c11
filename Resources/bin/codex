@@ -40,8 +40,9 @@ set -uo pipefail
 
 # Codex invokes the configured `notify` command after every completed agent
 # turn, even when its own TUI notification is suppressed because the terminal
-# is focused. Route that exact lifecycle edge back through c11 so the surface
-# becomes an unread "waiting agent" and its underlying activity settles idle.
+# is focused. Route the untouched payload through c11's root-owned attention
+# reducer. Only an exact root turn for the agreeing launch epoch may open a
+# result-ready episode; unread history never creates or clears lifecycle.
 # This private callback runs only as a child of the c11-scoped Codex process;
 # it never writes Codex config or changes behavior outside c11.
 if [[ "${1:-}" == "__c11-notify" ]]; then

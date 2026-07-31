@@ -453,4 +453,472 @@ final class AgentAttentionReducerTests: XCTestCase {
             .userInput
         )
     }
+
+    func testCodexIngressClassifiesOwnedRootChildMismatchStaleAndUnknown() throws {
+        let coordinator = AgentAttentionCoordinator.shared
+        let epoch = UUID()
+        let staleEpoch = UUID()
+        let root = UUID().uuidString.lowercased()
+        let child = UUID().uuidString.lowercased()
+
+        func ownership(workspace: UUID, surface: UUID, root: String?) -> AgentAttentionOwnershipSnapshot {
+            AgentAttentionOwnershipSnapshot(
+                workspaceID: workspace,
+                surfaceID: surface,
+                launchEpoch: epoch,
+                rootThreadID: root
+            )
+        }
+
+        func payload(thread: String?, turn: String? = UUID().uuidString) throws -> Data {
+            var object: [String: Any] = [
+                "version": 1,
+                "type": "agent-turn-complete",
+            ]
+            object["thread-id"] = thread
+            object["turn-id"] = turn
+            return try JSONSerialization.data(withJSONObject: object)
+        }
+
+        let exactWorkspace = UUID()
+        let exactSurface = UUID()
+        let exact = try coordinator.ingestLegacyCodex(
+            rawPayload: payload(thread: root, turn: "turn-exact"),
+            ownership: ownership(workspace: exactWorkspace, surface: exactSurface, root: root),
+            markerLaunchEpoch: epoch,
+            workspaceID: exactWorkspace,
+            surfaceID: exactSurface,
+            launchEpoch: epoch
+        )
+        XCTAssertEqual(exact.ownership, .root)
+        XCTAssertTrue(exact.shouldCreateSignalNotification)
+
+        let childWorkspace = UUID()
+        let childSurface = UUID()
+        let childResult = try coordinator.ingestLegacyCodex(
+            rawPayload: payload(thread: child),
+            ownership: ownership(workspace: childWorkspace, surface: childSurface, root: root),
+            markerLaunchEpoch: epoch,
+            workspaceID: childWorkspace,
+            surfaceID: childSurface,
+            launchEpoch: epoch
+        )
+        XCTAssertEqual(childResult.ownership, .child)
+        XCTAssertFalse(childResult.shouldCreateSignalNotification)
+        XCTAssertFalse(childResult.shouldCreateHistoryOnlyNotification)
+
+        let mismatchWorkspace = UUID()
+        let mismatchSurface = UUID()
+        let mismatch = try coordinator.ingestLegacyCodex(
+            rawPayload: payload(thread: root),
+            ownership: ownership(workspace: UUID(), surface: mismatchSurface, root: root),
+            markerLaunchEpoch: epoch,
+            workspaceID: mismatchWorkspace,
+            surfaceID: mismatchSurface,
+            launchEpoch: epoch
+        )
+        XCTAssertEqual(mismatch.ownership, .mismatched)
+        XCTAssertFalse(mismatch.shouldPublishLifecycle)
+        XCTAssertFalse(mismatch.shouldCreateSignalNotification)
+
+        let markerMismatchWorkspace = UUID()
+        let markerMismatchSurface = UUID()
+        let markerMismatch = try coordinator.ingestLegacyCodex(
+            rawPayload: payload(thread: root),
+            ownership: ownership(
+                workspace: markerMismatchWorkspace,
+                surface: markerMismatchSurface,
+                root: root
+            ),
+            markerLaunchEpoch: staleEpoch,
+            workspaceID: markerMismatchWorkspace,
+            surfaceID: markerMismatchSurface,
+            launchEpoch: epoch
+        )
+        XCTAssertEqual(markerMismatch.ownership, .staleEpoch)
+        XCTAssertFalse(markerMismatch.shouldPublishLifecycle)
+        XCTAssertFalse(markerMismatch.shouldCreateSignalNotification)
+
+        let missingMarkerWorkspace = UUID()
+        let missingMarkerSurface = UUID()
+        let missingMarker = try coordinator.ingestLegacyCodex(
+            rawPayload: payload(thread: root),
+            ownership: ownership(
+                workspace: missingMarkerWorkspace,
+                surface: missingMarkerSurface,
+                root: root
+            ),
+            markerLaunchEpoch: nil,
+            workspaceID: missingMarkerWorkspace,
+            surfaceID: missingMarkerSurface,
+            launchEpoch: epoch
+        )
+        XCTAssertEqual(missingMarker.ownership, .staleEpoch)
+        XCTAssertFalse(missingMarker.shouldPublishLifecycle)
+
+        let missingRootWorkspace = UUID()
+        let missingRootSurface = UUID()
+        let missingRoot = try coordinator.ingestLegacyCodex(
+            rawPayload: payload(thread: root, turn: "turn-missing-root"),
+            ownership: ownership(
+                workspace: missingRootWorkspace,
+                surface: missingRootSurface,
+                root: nil
+            ),
+            markerLaunchEpoch: epoch,
+            workspaceID: missingRootWorkspace,
+            surfaceID: missingRootSurface,
+            launchEpoch: epoch
+        )
+        XCTAssertEqual(missingRoot.ownership, .unknown)
+        XCTAssertFalse(missingRoot.shouldPublishLifecycle)
+        XCTAssertTrue(missingRoot.shouldCreateHistoryOnlyNotification)
+
+        XCTAssertFalse(markerMismatch.shouldCreateHistoryOnlyNotification)
+
+        let staleWorkspace = UUID()
+        let staleSurface = UUID()
+        let stale = try coordinator.ingestLegacyCodex(
+            rawPayload: payload(thread: root),
+            ownership: ownership(workspace: staleWorkspace, surface: staleSurface, root: root),
+            markerLaunchEpoch: epoch,
+            workspaceID: staleWorkspace,
+            surfaceID: staleSurface,
+            launchEpoch: staleEpoch
+        )
+        XCTAssertEqual(stale.ownership, .staleEpoch)
+        XCTAssertFalse(stale.shouldCreateSignalNotification)
+        XCTAssertFalse(stale.shouldCreateHistoryOnlyNotification)
+
+        let incompleteEvents: [(String?, String?)] = [
+            (nil, UUID().uuidString),
+            (root, nil),
+        ]
+        for (thread, turn) in incompleteEvents {
+            let unknownWorkspace = UUID()
+            let unknownSurface = UUID()
+            let unknown = try coordinator.ingestLegacyCodex(
+                rawPayload: payload(thread: thread, turn: turn),
+                ownership: ownership(
+                    workspace: unknownWorkspace,
+                    surface: unknownSurface,
+                    root: root
+                ),
+                markerLaunchEpoch: epoch,
+                workspaceID: unknownWorkspace,
+                surfaceID: unknownSurface,
+                launchEpoch: epoch
+            )
+            XCTAssertEqual(unknown.ownership, .unknown)
+            XCTAssertFalse(unknown.shouldCreateSignalNotification)
+            XCTAssertTrue(unknown.shouldCreateHistoryOnlyNotification)
+        }
+    }
+
+    func testCodexIngressDeduplicatesTurnsAndCompatibilityLifecycleReusesLaunchEpoch() throws {
+        let coordinator = AgentAttentionCoordinator.shared
+        let workspace = UUID()
+        let surface = UUID()
+        let epoch = UUID()
+        let root = UUID().uuidString.lowercased()
+        let firstPayload = try JSONSerialization.data(
+            withJSONObject: [
+                "version": 1,
+                "type": "agent-turn-complete",
+                "thread-id": root,
+                "turn-id": "turn-1",
+                "last-assistant-message": "First structured result",
+            ]
+        )
+        let ownership = AgentAttentionOwnershipSnapshot(
+            workspaceID: workspace,
+            surfaceID: surface,
+            launchEpoch: epoch,
+            rootThreadID: root
+        )
+
+        let first = try coordinator.ingestLegacyCodex(
+            rawPayload: firstPayload,
+            ownership: ownership,
+            markerLaunchEpoch: epoch,
+            workspaceID: workspace,
+            surfaceID: surface,
+            launchEpoch: epoch
+        )
+        let duplicate = try coordinator.ingestLegacyCodex(
+            rawPayload: firstPayload,
+            ownership: ownership,
+            markerLaunchEpoch: epoch,
+            workspaceID: workspace,
+            surfaceID: surface,
+            launchEpoch: epoch
+        )
+        XCTAssertTrue(first.shouldCreateSignalNotification)
+        XCTAssertEqual(first.notificationBody, "First structured result")
+        XCTAssertEqual(duplicate.disposition, .duplicate)
+        XCTAssertFalse(duplicate.shouldCreateSignalNotification)
+
+        let resumed = coordinator.applyCompatibilityLifecycle(
+            provider: .codex,
+            workspaceID: workspace,
+            surfaceID: surface,
+            activity: .working
+        )
+        XCTAssertEqual(resumed.runState, .working)
+        XCTAssertNil(resumed.episode)
+
+        let secondPayload = try JSONSerialization.data(
+            withJSONObject: [
+                "version": 1,
+                "type": "agent-turn-complete",
+                "thread-id": root,
+                "turn-id": "turn-2",
+                "last-assistant-message": "Second structured result",
+            ]
+        )
+        let second = try coordinator.ingestLegacyCodex(
+            rawPayload: secondPayload,
+            ownership: ownership,
+            markerLaunchEpoch: epoch,
+            workspaceID: workspace,
+            surfaceID: surface,
+            launchEpoch: epoch
+        )
+        XCTAssertTrue(second.shouldCreateSignalNotification)
+        XCTAssertEqual(second.snapshot.episode?.reason, .resultReady)
+        XCTAssertEqual(second.notificationBody, "Second structured result")
+    }
+
+    func testClaudeAndOpenCodeUseTurnScopedIdempotencyAcrossTwoEpisodes() {
+        let coordinator = AgentAttentionCoordinator.shared
+
+        for provider in [AgentProvider.claude, .opencode] {
+            let workspace = UUID()
+            let surface = UUID()
+            let stableOccurrence = "root-session:\(provider.rawValue):result-ready"
+
+            _ = coordinator.applyCompatibilityLifecycle(
+                provider: provider,
+                workspaceID: workspace,
+                surfaceID: surface,
+                activity: .working
+            )
+            let first = coordinator.applyOwnedAttention(
+                provider: provider,
+                workspaceID: workspace,
+                surfaceID: surface,
+                reason: .resultReady,
+                eventID: stableOccurrence,
+                notificationSubtitle: "Completed",
+                notificationBody: "First episode"
+            )
+            let firstDuplicate = coordinator.applyOwnedAttention(
+                provider: provider,
+                workspaceID: workspace,
+                surfaceID: surface,
+                reason: .resultReady,
+                eventID: stableOccurrence,
+                notificationSubtitle: "Completed",
+                notificationBody: "First episode"
+            )
+            XCTAssertTrue(first.shouldCreateSignalNotification, provider.rawValue)
+            XCTAssertEqual(firstDuplicate.disposition, .duplicate, provider.rawValue)
+            XCTAssertFalse(firstDuplicate.shouldPublishLifecycle, provider.rawValue)
+
+            let resumed = coordinator.applyCompatibilityLifecycle(
+                provider: provider,
+                workspaceID: workspace,
+                surfaceID: surface,
+                activity: .working
+            )
+            XCTAssertNil(resumed.episode, provider.rawValue)
+
+            let second = coordinator.applyOwnedAttention(
+                provider: provider,
+                workspaceID: workspace,
+                surfaceID: surface,
+                reason: .resultReady,
+                eventID: stableOccurrence,
+                notificationSubtitle: "Completed",
+                notificationBody: "Second episode"
+            )
+            let secondDuplicate = coordinator.applyOwnedAttention(
+                provider: provider,
+                workspaceID: workspace,
+                surfaceID: surface,
+                reason: .resultReady,
+                eventID: stableOccurrence,
+                notificationSubtitle: "Completed",
+                notificationBody: "Second episode"
+            )
+            XCTAssertTrue(second.shouldCreateSignalNotification, provider.rawValue)
+            XCTAssertEqual(secondDuplicate.disposition, .duplicate, provider.rawValue)
+            XCTAssertFalse(secondDuplicate.shouldCreateSignalNotification, provider.rawValue)
+        }
+    }
+
+    func testCanonicalWaitingEdgesCarryExactSurfaceReasonAndEpisode() {
+        let coordinator = AgentAttentionCoordinator.shared
+        let workspace = UUID()
+        let surface = UUID()
+        var edges: [AgentWaitingEdge] = []
+        coordinator.configureWaitingEdgeHandlerForTesting { edge in
+            if edge.workspaceID == workspace, edge.surfaceID == surface {
+                edges.append(edge)
+            }
+        }
+        defer { coordinator.resetWaitingEdgeHandlerForTesting() }
+
+        _ = coordinator.applyCompatibilityLifecycle(
+            provider: .claude,
+            workspaceID: workspace,
+            surfaceID: surface,
+            activity: .working
+        )
+        let attention = coordinator.applyOwnedAttention(
+            provider: .claude,
+            workspaceID: workspace,
+            surfaceID: surface,
+            reason: .approval,
+            eventID: "permission-1",
+            notificationSubtitle: "Permission",
+            notificationBody: "Claude Code needs approval."
+        )
+        _ = coordinator.applyCompatibilityLifecycle(
+            provider: .claude,
+            workspaceID: workspace,
+            surfaceID: surface,
+            activity: .working
+        )
+
+        let episodeID = attention.snapshot.episode?.id
+        XCTAssertNotNil(episodeID)
+        XCTAssertEqual(edges.count, 2)
+        XCTAssertEqual(edges.map(\.entered), [true, false])
+        XCTAssertEqual(edges.map(\.workspaceID), [workspace, workspace])
+        XCTAssertEqual(edges.map(\.surfaceID), [surface, surface])
+        XCTAssertEqual(edges.map(\.episode.reason), [.approval, .approval])
+        XCTAssertEqual(
+            edges.map(\.episode.id),
+            Array(repeating: episodeID ?? "", count: 2)
+        )
+    }
+
+    func testGAF13ChildCallbacksPublishNoLifecycleNotificationOrWaitingEdges() throws {
+        let coordinator = AgentAttentionCoordinator.shared
+        let workspace = UUID()
+        let surface = UUID()
+        let epoch = UUID()
+        let root = UUID().uuidString.lowercased()
+        let ownership = AgentAttentionOwnershipSnapshot(
+            workspaceID: workspace,
+            surfaceID: surface,
+            launchEpoch: epoch,
+            rootThreadID: root
+        )
+        func payload(thread: String, turn: String) throws -> Data {
+            try JSONSerialization.data(
+                withJSONObject: [
+                    "version": 1,
+                    "type": "agent-turn-complete",
+                    "thread-id": thread,
+                    "turn-id": turn,
+                ]
+            )
+        }
+
+        _ = try coordinator.ingestLegacyCodex(
+            rawPayload: payload(thread: root, turn: "setup-root"),
+            ownership: ownership,
+            markerLaunchEpoch: epoch,
+            workspaceID: workspace,
+            surfaceID: surface,
+            launchEpoch: epoch
+        )
+        _ = coordinator.applyCompatibilityLifecycle(
+            provider: .codex,
+            workspaceID: workspace,
+            surfaceID: surface,
+            activity: .working
+        )
+
+        var childEdges: [AgentWaitingEdge] = []
+        coordinator.configureWaitingEdgeHandlerForTesting { edge in
+            if edge.workspaceID == workspace, edge.surfaceID == surface {
+                childEdges.append(edge)
+            }
+        }
+        defer { coordinator.resetWaitingEdgeHandlerForTesting() }
+
+        for index in 0..<4 {
+            let child = UUID().uuidString.lowercased()
+            let result = try coordinator.ingestLegacyCodex(
+                rawPayload: payload(thread: child, turn: "child-\(index)"),
+                ownership: ownership,
+                markerLaunchEpoch: epoch,
+                workspaceID: workspace,
+                surfaceID: surface,
+                launchEpoch: epoch
+            )
+            XCTAssertEqual(result.ownership, .child)
+            XCTAssertFalse(result.shouldPublishLifecycle)
+            XCTAssertFalse(result.shouldCreateSignalNotification)
+            XCTAssertFalse(result.shouldCreateHistoryOnlyNotification)
+        }
+        XCTAssertTrue(childEdges.isEmpty)
+        XCTAssertEqual(
+            coordinator.snapshot(workspaceID: workspace, surfaceID: surface)?.runState,
+            .working
+        )
+        XCTAssertNil(
+            coordinator.snapshot(workspaceID: workspace, surfaceID: surface)?.episode
+        )
+    }
+
+    func testSocketIngestReturnsOnlyAfterHistoryCommitIsObservable() async {
+        let workspace = UUID()
+        let surface = UUID()
+        let controller = TerminalController.shared
+        let originalNotifications = await MainActor.run {
+            let original = TerminalNotificationStore.shared.notifications
+            TerminalNotificationStore.shared.replaceNotificationsForTesting([])
+            AppFocusState.overrideIsFocused = false
+            return original
+        }
+
+        let response = await Task.detached {
+            controller.v2AgentIngest(params: [
+                "version": 1,
+                "provider": "claude",
+                "workspace_id": workspace.uuidString,
+                "surface_id": surface.uuidString,
+                "event": "result-ready",
+                "actor_thread_id": "claude-root",
+                "notification_subtitle": "Completed",
+                "notification_body": "Committed before response",
+            ])
+        }.value
+
+        switch response {
+        case .ok:
+            break
+        case .err(let code, let message, _):
+            XCTFail("unexpected socket error \(code): \(message)")
+        }
+
+        let committed = await MainActor.run {
+            TerminalNotificationStore.shared.notifications.first {
+                $0.tabId == workspace && $0.surfaceId == surface
+            }
+        }
+        XCTAssertEqual(committed?.body, "Committed before response")
+        XCTAssertTrue(committed?.attentionEligible == true)
+
+        await MainActor.run {
+            TerminalNotificationStore.shared.replaceNotificationsForTesting(
+                originalNotifications
+            )
+            AppFocusState.overrideIsFocused = nil
+        }
+    }
 }

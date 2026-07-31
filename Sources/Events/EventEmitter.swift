@@ -135,8 +135,26 @@ final class EventEmitter {
         emit(.metadataChanged, workspace: workspace, surface: surface, payload: payload)
     }
 
-    func emitWaiting(entered: Bool, workspace tabId: UUID, surface: UUID?) {
-        emit(entered ? .waitingEntered : .waitingLeft, workspace: tabId, surface: surface)
+    func emitWaiting(
+        entered: Bool,
+        workspace tabId: UUID,
+        surface: UUID?,
+        reason: String? = nil,
+        episodeID: String? = nil,
+        startedAt: Date? = nil
+    ) {
+        var payload: [String: Any] = [:]
+        if let reason { payload["reason"] = reason }
+        if let episodeID { payload["episode_id"] = episodeID }
+        if let startedAt {
+            payload["episode_started_at"] = EventEnvelope.formatTimestamp(startedAt)
+        }
+        emit(
+            entered ? .waitingEntered : .waitingLeft,
+            workspace: tabId,
+            surface: surface,
+            payload: payload
+        )
     }
 
     func emitFlagRaised(

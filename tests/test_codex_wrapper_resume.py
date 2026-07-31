@@ -155,6 +155,19 @@ def main() -> int:
                     f"acknowledged resume marker lost exact intent: {marker_lines}",
                     failures,
                 )
+                if len(marker_lines) >= 3:
+                    marker_epoch = marker_lines[2]
+                    expect(
+                        f"--launch-epoch {marker_epoch}" in claim_line,
+                        f"store claim epoch disagrees with marker: claim={claim_line} marker={marker_lines}",
+                        failures,
+                    )
+                    injected_config = fixture.argv_lines()[1] if len(fixture.argv_lines()) > 1 else ""
+                    expect(
+                        f'","{marker_epoch}"]' in injected_config,
+                        f"notify argv epoch disagrees with marker: config={injected_config} marker={marker_lines}",
+                        failures,
+                    )
         finally:
             fixture.close()
 

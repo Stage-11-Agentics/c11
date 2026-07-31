@@ -16002,10 +16002,6 @@ struct CMUXCLI {
                 }
                 params["launch_epoch"] = epoch.uuidString.lowercased()
                 params["raw_payload"] = rawPayload
-                if let callbackRoot = environment["CODEX_THREAD_ID"],
-                   UUID(uuidString: callbackRoot) != nil {
-                    params["callback_root_thread_id"] = callbackRoot.lowercased()
-                }
             } else {
                 guard let event = optionValue(hookArgs, name: "--event"),
                       ["result-ready", "approval", "user-input", "error"].contains(event) else {
@@ -16211,19 +16207,16 @@ struct CMUXCLI {
                 )
             }
 
-            if completion != nil {
-                let resolvedSurface = try resolveSurfaceIdForClaudeHook(
-                    surfaceId,
-                    workspaceId: workspaceId,
-                    client: client
-                )
+            if let resolvedLifecycleSurface {
                 _ = try? reportOwnedAgentAttention(
                     client: client,
                     provider: "claude",
                     workspaceId: workspaceId,
-                    surfaceId: resolvedSurface,
+                    surfaceId: resolvedLifecycleSurface,
                     event: "result-ready",
-                    actorThreadId: parsedInput.sessionId
+                    actorThreadId: parsedInput.sessionId,
+                    notificationSubtitle: completion?.subtitle ?? "Completed",
+                    notificationBody: completion?.body ?? "Claude completed a root session turn."
                 )
             }
 
@@ -16317,7 +16310,9 @@ struct CMUXCLI {
                 workspaceId: workspaceId,
                 surfaceId: surfaceId,
                 event: event,
-                actorThreadId: parsedInput.sessionId
+                actorThreadId: parsedInput.sessionId,
+                notificationSubtitle: summary.subtitle,
+                notificationBody: summary.body
             )
             _ = try? setClaudeStatus(
                 client: client,
@@ -16528,7 +16523,9 @@ struct CMUXCLI {
         workspaceId: String,
         surfaceId: String,
         event: String,
-        actorThreadId: String?
+        actorThreadId: String?,
+        notificationSubtitle: String,
+        notificationBody: String
     ) throws {
         var params: [String: Any] = [
             "version": 1,
@@ -16540,6 +16537,12 @@ struct CMUXCLI {
         if let actorThreadId, !actorThreadId.isEmpty {
             params["actor_thread_id"] = actorThreadId
         }
+        params["notification_subtitle"] = sanitizeNotificationField(
+            truncate(notificationSubtitle, maxLength: 120)
+        )
+        params["notification_body"] = sanitizeNotificationField(
+            truncate(notificationBody, maxLength: 240)
+        )
         _ = try client.sendV2(method: "agent.ingest", params: params)
     }
 

@@ -4,10 +4,10 @@
 // may also have a copied plugin under ~/.config/opencode/plugins/; keeping this
 // module idempotent preserves compatibility without requiring tenant writes.
 //
-// Mirrors the Claude Code hook contract:
-//   session.idle       → c11 notify "Waiting for input"  (idle_prompt equivalent)
-//   permission.asked   → c11 notify "Approval needed"     (permission_prompt equivalent)
-//   session.error      → c11 notify "Session error"       (bonus, no Claude equivalent)
+// Mirrors the Claude Code hook contract through canonical attention:
+//   session.idle       → root result-ready episode
+//   permission.asked   → root approval episode
+//   session.error      → root error/result episode
 //   session.status     → c11 activity + status metadata
 //
 // The plugin is dependency-free and silently no-ops when c11 is not on

@@ -673,6 +673,20 @@ struct TerminalNotification: Identifiable, Hashable {
     }
 }
 
+struct TerminalNotificationInsertionPolicy: Sendable, Equatable {
+    let replacesSameSurfaceHistory: Bool
+    let mayDeliverExternally: Bool
+    let mayReorderWorkspace: Bool
+
+    static func resolve(attentionEligible: Bool) -> Self {
+        Self(
+            replacesSameSurfaceHistory: attentionEligible,
+            mayDeliverExternally: attentionEligible,
+            mayReorderWorkspace: attentionEligible
+        )
+    }
+}
+
 @MainActor
 final class TerminalNotificationStore: ObservableObject {
     struct TabSurfaceKey: Hashable {
@@ -710,14 +724,10 @@ final class TerminalNotificationStore: ObservableObject {
 
     @Published private(set) var notifications: [TerminalNotification] = [] {
         didSet {
-            // C11-163: capture the prior per-tab unread counts before the
-            // rebuild so waiting-agent edges can be detected (amendment H).
-            let previousUnreadByTab = indexes.unreadCountByTabId
             indexes = Self.buildIndexes(
                 for: notifications,
                 signalEligible: Self.isSignalEligible
             )
-            _ = previousUnreadByTab
         }
     }
     @Published private(set) var authorizationState: NotificationAuthorizationState = .unknown
@@ -763,7 +773,6 @@ final class TerminalNotificationStore: ObservableObject {
     /// lower/close/prune remove the generation before cancellation.
     private var directFlagDeliveryTokens: [String: DirectFlagDeliveryToken] = [:]
 #if DEBUG
-    private var waitingEdgeHandlerForTesting: ((Bool, UUID) -> Void)?
     private var flagNotificationReplacementHandlerForTesting:
         ((_ identifier: String, _ add: @escaping @MainActor () -> Void) -> Void)?
     private var directFlagAuthorizationHandlerForTesting:
@@ -774,31 +783,6 @@ final class TerminalNotificationStore: ObservableObject {
         ((_ notification: TerminalNotification) -> Void)?
 #endif
     private var indexes = NotificationIndexes()
-
-    /// C11-163: emit waiting.entered / waiting.left on the per-tab unread
-    /// 0↔1 edge. "Agent is waiting" == the tab has an unread notification;
-    /// this fires through the single `notifications` didSet, covering every
-    /// caller (addNotification / markRead* / markUnread / markAllRead). The
-    /// waiting signal is a TEL-6 seam — if the waiting-agent cluster plan
-    /// redefines "attention demand", rewire the source here.
-    private func emitWaitingEdges(previous: [UUID: Int], current: [UUID: Int]) {
-        let tabs = Set(previous.keys).union(current.keys)
-        for tab in tabs {
-            let before = previous[tab] ?? 0
-            let after = current[tab] ?? 0
-            if before == 0, after > 0 {
-                EventEmitter.shared.emitWaiting(entered: true, workspace: tab, surface: nil)
-#if DEBUG
-                waitingEdgeHandlerForTesting?(true, tab)
-#endif
-            } else if before > 0, after == 0 {
-                EventEmitter.shared.emitWaiting(entered: false, workspace: tab, surface: nil)
-#if DEBUG
-                waitingEdgeHandlerForTesting?(false, tab)
-#endif
-            }
-        }
-    }
 
     private init(systemNotificationsEnabled: Bool) {
         self.systemNotificationsEnabled = systemNotificationsEnabled
@@ -980,25 +964,47 @@ final class TerminalNotificationStore: ObservableObject {
         body: String,
         attentionEligible: Bool = false
     ) {
+        let insertionPolicy = TerminalNotificationInsertionPolicy.resolve(
+            attentionEligible: attentionEligible
+        )
         var updated = notifications
         var idsToClear: [String] = []
-        updated.removeAll { existing in
-            guard existing.tabId == tabId, existing.surfaceId == surfaceId else { return false }
-            idsToClear.append(existing.id.uuidString)
-            return true
+        if insertionPolicy.replacesSameSurfaceHistory {
+            updated.removeAll { existing in
+                guard existing.tabId == tabId, existing.surfaceId == surfaceId else { return false }
+                idsToClear.append(existing.id.uuidString)
+                return true
+            }
+        } else {
+            // Keep one bounded diagnostic record without allowing history-only
+            // ingress to replace or withdraw a legitimate attention signal.
+            updated.removeAll { existing in
+                existing.tabId == tabId
+                    && existing.surfaceId == surfaceId
+                    && !existing.attentionEligible
+            }
         }
 
-        let isActiveTab = AppDelegate.shared?.tabManager?.selectedTabId == tabId
-        let focusedSurfaceId = AppDelegate.shared?.tabManager?.focusedSurfaceId(for: tabId)
-        let isFocusedSurface = surfaceId == nil || focusedSurfaceId == surfaceId
-        let isFocusedPanel = isActiveTab && isFocusedSurface
-        let isAppFocused = AppFocusState.isAppFocused()
-        let attentionSuppressed = surfaceId.map {
-            SurfaceAttentionIndex.shared.snapshot(workspaceId: tabId, surfaceId: $0).suppressed
-        } ?? false
-        let shouldSuppressExternalDelivery = (isAppFocused && isFocusedPanel) || attentionSuppressed
+        let shouldSuppressExternalDelivery: Bool
+        if insertionPolicy.mayDeliverExternally {
+            let isActiveTab = AppDelegate.shared?.tabManager?.selectedTabId == tabId
+            let focusedSurfaceId = AppDelegate.shared?.tabManager?.focusedSurfaceId(for: tabId)
+            let isFocusedSurface = surfaceId == nil || focusedSurfaceId == surfaceId
+            let isFocusedPanel = isActiveTab && isFocusedSurface
+            let attentionSuppressed = surfaceId.map {
+                SurfaceAttentionIndex.shared.snapshot(
+                    workspaceId: tabId,
+                    surfaceId: $0
+                ).suppressed
+            } ?? false
+            shouldSuppressExternalDelivery = (AppFocusState.isAppFocused() && isFocusedPanel)
+                || attentionSuppressed
+        } else {
+            shouldSuppressExternalDelivery = true
+        }
 
-        if WorkspaceAutoReorderSettings.isEnabled() {
+        if insertionPolicy.mayReorderWorkspace
+            && WorkspaceAutoReorderSettings.isEnabled() {
             AppDelegate.shared?.tabManager?.moveTabToTopForNotification(tabId)
         }
 
@@ -1648,14 +1654,6 @@ final class TerminalNotificationStore: ObservableObject {
         notificationDeliveryHandler = { store, notification in
             store.scheduleUserNotification(notification)
         }
-    }
-
-    func configureWaitingEdgeHandlerForTesting(_ handler: @escaping (Bool, UUID) -> Void) {
-        waitingEdgeHandlerForTesting = handler
-    }
-
-    func resetWaitingEdgeHandlerForTesting() {
-        waitingEdgeHandlerForTesting = nil
     }
 
     func configureFlagNotificationReplacementHandlerForTesting(

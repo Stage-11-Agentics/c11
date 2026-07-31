@@ -583,6 +583,58 @@ final class AttentionModelTests: XCTestCase {
         )
     }
 
+    func testGenericNotificationCreatesUnreadHistoryWithoutSignalOrExternalDelivery() {
+        let workspace = UUID()
+        let surface = UUID()
+        let notificationStore = TerminalNotificationStore.shared
+        let originalNotifications = notificationStore.notifications
+        let legitimateSignal = notification(workspace: workspace, surface: surface)
+        var delivered: [TerminalNotification] = []
+        notificationStore.replaceNotificationsForTesting([legitimateSignal])
+        notificationStore.configureNotificationDeliveryHandlerForTesting { _, notification in
+            delivered.append(notification)
+        }
+        defer {
+            notificationStore.resetNotificationDeliveryHandlerForTesting()
+            notificationStore.replaceNotificationsForTesting(originalNotifications)
+        }
+
+        notificationStore.addNotification(
+            tabId: workspace,
+            surfaceId: surface,
+            title: "History",
+            subtitle: "First",
+            body: ""
+        )
+        notificationStore.addNotification(
+            tabId: workspace,
+            surfaceId: surface,
+            title: "History",
+            subtitle: "Latest",
+            body: ""
+        )
+
+        XCTAssertEqual(notificationStore.rawUnreadCount, 2)
+        XCTAssertEqual(notificationStore.unreadCount, 1)
+        XCTAssertTrue(notificationStore.notifications.contains(legitimateSignal))
+        XCTAssertEqual(
+            notificationStore.notifications.filter { !$0.attentionEligible }.map(\.subtitle),
+            ["Latest"]
+        )
+        XCTAssertTrue(delivered.isEmpty)
+    }
+
+    func testHistoryOnlyInsertionPolicyCannotReplaceDeliverOrReorder() {
+        XCTAssertEqual(
+            TerminalNotificationInsertionPolicy.resolve(attentionEligible: false),
+            TerminalNotificationInsertionPolicy(
+                replacesSameSurfaceHistory: false,
+                mayDeliverExternally: false,
+                mayReorderWorkspace: false
+            )
+        )
+    }
+
     func testLowerIfFlaggedNoopsWhenUnflaggedAndLowersRaisedFlag() throws {
         let workspace = UUID()
         let surface = UUID()
@@ -627,18 +679,13 @@ final class AttentionModelTests: XCTestCase {
         )
     }
 
-    func testSuppressionEdgesRetainRawHistoryWhileTogglingSignalDemand() throws {
+    func testSuppressionRetainsRawHistoryWhileTogglingSignalDemand() throws {
         let workspace = UUID()
         let surface = UUID()
         let notificationStore = TerminalNotificationStore.shared
         let originalNotifications = notificationStore.notifications
-        var edges: [Bool] = []
         notificationStore.replaceNotificationsForTesting([])
-        notificationStore.configureWaitingEdgeHandlerForTesting { entered, tabId in
-            if tabId == workspace { edges.append(entered) }
-        }
         defer {
-            notificationStore.resetWaitingEdgeHandlerForTesting()
             notificationStore.replaceNotificationsForTesting(originalNotifications)
             SurfaceAttentionService.shared.remove(workspaceId: workspace, surfaceId: surface)
         }
@@ -660,7 +707,6 @@ final class AttentionModelTests: XCTestCase {
         )
         XCTAssertEqual(notificationStore.rawUnreadCount, 1)
         XCTAssertEqual(notificationStore.unreadCount, 1)
-        XCTAssertEqual(edges, [true, false, true])
     }
 
     func testRemoveAndPruneClearHistoryBeforeDroppingSuppressionProjection() {
@@ -669,13 +715,8 @@ final class AttentionModelTests: XCTestCase {
         let prunedSurface = UUID()
         let notificationStore = TerminalNotificationStore.shared
         let originalNotifications = notificationStore.notifications
-        var edges: [Bool] = []
         notificationStore.replaceNotificationsForTesting([])
-        notificationStore.configureWaitingEdgeHandlerForTesting { entered, tabId in
-            if tabId == workspace { edges.append(entered) }
-        }
         defer {
-            notificationStore.resetWaitingEdgeHandlerForTesting()
             notificationStore.replaceNotificationsForTesting(originalNotifications)
             SurfaceAttentionService.shared.remove(workspaceId: workspace, surfaceId: removedSurface)
             SurfaceAttentionService.shared.remove(workspaceId: workspace, surfaceId: prunedSurface)
@@ -695,12 +736,10 @@ final class AttentionModelTests: XCTestCase {
         ])
         XCTAssertEqual(notificationStore.rawUnreadCount, 1)
         XCTAssertEqual(notificationStore.unreadCount, 0)
-        edges.removeAll()
 
         SurfaceAttentionService.shared.remove(workspaceId: workspace, surfaceId: removedSurface)
         XCTAssertEqual(notificationStore.rawUnreadCount, 0)
         XCTAssertEqual(notificationStore.unreadCount, 0)
-        XCTAssertTrue(edges.isEmpty, "Close must not manufacture waiting.entered/left edges")
         XCTAssertFalse(
             SurfaceAttentionIndex.shared.snapshot(
                 workspaceId: workspace,
@@ -720,10 +759,8 @@ final class AttentionModelTests: XCTestCase {
         notificationStore.replaceNotificationsForTesting([
             notification(workspace: workspace, surface: prunedSurface)
         ])
-        edges.removeAll()
         SurfaceAttentionService.shared.prune(workspaceId: workspace, validSurfaceIds: [])
         XCTAssertEqual(notificationStore.rawUnreadCount, 0)
-        XCTAssertTrue(edges.isEmpty, "Prune must not expose invalid-surface demand transiently")
         XCTAssertFalse(
             SurfaceAttentionIndex.shared.snapshot(
                 workspaceId: workspace,

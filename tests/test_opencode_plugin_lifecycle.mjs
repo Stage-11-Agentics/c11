@@ -46,6 +46,21 @@ assert(calls.some(({ args }) =>
   args.join(" ") ===
   "agent-hook ingest --provider opencode --event result-ready --actor-thread ses_root"
 ));
+await hooks["chat.message"]({ sessionID: "ses_root" });
+await hooks.event({
+  event: {
+    type: "session.idle",
+    properties: { sessionID: "ses_root" },
+  },
+});
+assert.equal(
+  calls.filter(({ args }) =>
+    args.join(" ") ===
+    "agent-hook ingest --provider opencode --event result-ready --actor-thread ses_root"
+  ).length,
+  2,
+  "two root resume cycles must each report a result-ready occurrence",
+);
 
 await hooks.event({
   event: {

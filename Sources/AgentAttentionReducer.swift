@@ -594,8 +594,18 @@ struct AgentHookIngestResult: Sendable, Equatable {
     let ownership: AgentOwnershipClassification
     let disposition: AgentReducerDisposition
     let snapshot: AgentAttentionSurfaceSnapshot
+    let shouldPublishLifecycle: Bool
     let shouldCreateSignalNotification: Bool
     let shouldCreateHistoryOnlyNotification: Bool
+    let notificationSubtitle: String
+    let notificationBody: String
+}
+
+struct AgentWaitingEdge: Sendable, Equatable {
+    let entered: Bool
+    let workspaceID: UUID
+    let surfaceID: UUID
+    let episode: AgentAttentionEpisode
 }
 
 enum AgentHookPayloadError: Error, Equatable {
@@ -621,7 +631,11 @@ final class AgentAttentionCoordinator: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.stage11.c11.agent-attention")
     private var states: [SurfaceKey: AgentAttentionState] = [:]
     private var compatibilityEpochs: [SurfaceKey: UUID] = [:]
+    private var turnGenerations: [SurfaceKey: UInt64] = [:]
     private var diagnosticCounts: [String: Int] = [:]
+#if DEBUG
+    private var waitingEdgeHandlerForTesting: ((AgentWaitingEdge) -> Void)?
+#endif
 
     private init() {}
 
@@ -657,13 +671,19 @@ final class AgentAttentionCoordinator: @unchecked Sendable {
     ) -> AgentAttentionSurfaceSnapshot {
         queue.sync {
             let key = SurfaceKey(workspaceID: workspaceID, surfaceID: surfaceID)
-            let epoch = compatibilityEpochs[key] ?? UUID()
+            let epoch = states[key]?.launchEpoch
+                ?? compatibilityEpochs[key]
+                ?? UUID()
             compatibilityEpochs[key] = epoch
             var state = states[key] ?? AgentAttentionState(
                 workspaceID: workspaceID,
                 surfaceID: surfaceID,
                 launchEpoch: epoch
             )
+            if activity == .working,
+               state.runState != .working || state.attentionEpisode != nil {
+                turnGenerations[key, default: 0] += 1
+            }
             let root = state.rootThreadID ?? "provider-root:\(provider.rawValue):\(surfaceID.uuidString)"
             _ = state.bindRootThread(root)
             let kind: AgentLifecycleEventKind = activity == .working
@@ -701,6 +721,8 @@ final class AgentAttentionCoordinator: @unchecked Sendable {
         surfaceID: UUID,
         reason: AgentAttentionReason,
         eventID: String = UUID().uuidString,
+        notificationSubtitle: String,
+        notificationBody: String,
         occurredAt: Date = Date()
     ) -> AgentHookIngestResult {
         queue.sync {
@@ -719,8 +741,9 @@ final class AgentAttentionCoordinator: @unchecked Sendable {
             let kind: AgentLifecycleEventKind = reason == .resultReady
                 ? .rootResultReady
                 : .rootWaiting(reason)
+            let turnGeneration = turnGenerations[key, default: 0]
             let envelope = AgentLifecycleEnvelope(
-                eventID: eventID,
+                eventID: "\(provider.rawValue):turn:\(turnGeneration):\(eventID)",
                 workspaceID: workspaceID,
                 surfaceID: surfaceID,
                 provider: provider,
@@ -736,7 +759,10 @@ final class AgentAttentionCoordinator: @unchecked Sendable {
             record(reduction)
             return ingestResult(
                 reduction,
-                historyOnly: false
+                priorState: state,
+                historyOnly: false,
+                notificationSubtitle: notificationSubtitle,
+                notificationBody: notificationBody
             )
         }
     }
@@ -744,10 +770,10 @@ final class AgentAttentionCoordinator: @unchecked Sendable {
     func ingestLegacyCodex(
         rawPayload: Data,
         ownership: AgentAttentionOwnershipSnapshot?,
+        markerLaunchEpoch: UUID?,
         workspaceID: UUID,
         surfaceID: UUID,
         launchEpoch: UUID,
-        callbackEnvironmentRootThreadID: String?,
         occurredAt: Date = Date()
     ) throws -> AgentHookIngestResult {
         guard rawPayload.count <= Self.maximumPayloadBytes else {
@@ -763,14 +789,47 @@ final class AgentAttentionCoordinator: @unchecked Sendable {
             throw AgentHookPayloadError.unsupportedEvent
         }
         let actorThreadID = normalizedUUIDString(payload["thread-id"] as? String)
-        let turnID = (payload["turn-id"] as? String)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let callbackRoot = normalizedUUIDString(callbackEnvironmentRootThreadID)
+        let turnID: String? = {
+            guard let value = (payload["turn-id"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                !value.isEmpty else {
+                return nil
+            }
+            return value
+        }()
+        let notificationBody = safeNotificationText(
+            payload["last-assistant-message"] as? String,
+            fallback: "Codex completed a root turn."
+        )
 
         return queue.sync {
             let key = SurfaceKey(workspaceID: workspaceID, surfaceID: surfaceID)
             let activeEpoch = ownership?.launchEpoch
-            guard activeEpoch == launchEpoch else {
+            let scopeAgrees = ownership?.workspaceID == workspaceID
+                && ownership?.surfaceID == surfaceID
+            if ownership != nil, !scopeAgrees {
+                let existing = states[key] ?? AgentAttentionState(
+                    workspaceID: workspaceID,
+                    surfaceID: surfaceID,
+                    launchEpoch: launchEpoch
+                )
+                increment("ownership.mismatched")
+                return AgentHookIngestResult(
+                    ownership: .mismatched,
+                    disposition: .ignoredMismatch,
+                    snapshot: AgentAttentionSurfaceSnapshot(
+                        runState: existing.runState,
+                        episode: existing.attentionEpisode
+                    ),
+                    shouldPublishLifecycle: false,
+                    shouldCreateSignalNotification: false,
+                    shouldCreateHistoryOnlyNotification: false,
+                    notificationSubtitle: "Unverified completion",
+                    notificationBody: notificationBody
+                )
+            }
+            guard activeEpoch == launchEpoch,
+                  markerLaunchEpoch == launchEpoch else {
                 let existing = states[key] ?? AgentAttentionState(
                     workspaceID: workspaceID,
                     surfaceID: surfaceID,
@@ -784,8 +843,11 @@ final class AgentAttentionCoordinator: @unchecked Sendable {
                         runState: existing.runState,
                         episode: existing.attentionEpisode
                     ),
+                    shouldPublishLifecycle: false,
                     shouldCreateSignalNotification: false,
-                    shouldCreateHistoryOnlyNotification: false
+                    shouldCreateHistoryOnlyNotification: false,
+                    notificationSubtitle: "Unverified completion",
+                    notificationBody: notificationBody
                 )
             }
 
@@ -799,21 +861,21 @@ final class AgentAttentionCoordinator: @unchecked Sendable {
             }
             var current = state!
             let claimedRoot = ownership?.rootThreadID
-            let effectiveRoot = claimedRoot ?? callbackRoot
-            if let effectiveRoot {
-                _ = current.bindRootThread(effectiveRoot)
+            if let claimedRoot {
+                _ = current.bindRootThread(claimedRoot)
             }
 
-            let classification: AgentOwnershipClassification
-            if let claimedRoot, let callbackRoot, claimedRoot != callbackRoot {
-                classification = .mismatched
-            } else if let effectiveRoot, let actorThreadID {
-                classification = actorThreadID == effectiveRoot ? .root : .child
+            var classification: AgentOwnershipClassification
+            if let claimedRoot, let actorThreadID {
+                classification = actorThreadID == claimedRoot ? .root : .child
             } else {
                 classification = .unknown
             }
+            if classification == .root, turnID == nil {
+                classification = .unknown
+            }
 
-            guard classification == .root, let effectiveRoot, let actorThreadID else {
+            guard classification == .root, let claimedRoot, let actorThreadID else {
                 states[key] = current
                 let disposition: AgentReducerDisposition
                 switch classification {
@@ -831,19 +893,22 @@ final class AgentAttentionCoordinator: @unchecked Sendable {
                         runState: current.runState,
                         episode: current.attentionEpisode
                     ),
+                    shouldPublishLifecycle: false,
                     shouldCreateSignalNotification: false,
-                    shouldCreateHistoryOnlyNotification: classification == .unknown
+                    shouldCreateHistoryOnlyNotification: classification == .unknown,
+                    notificationSubtitle: "Unverified completion",
+                    notificationBody: notificationBody
                 )
             }
 
-            let eventID = "codex-legacy:\(turnID?.isEmpty == false ? turnID! : actorThreadID)"
+            let eventID = "codex-legacy:\(turnID!)"
             let envelope = AgentLifecycleEnvelope(
                 eventID: eventID,
                 workspaceID: workspaceID,
                 surfaceID: surfaceID,
                 provider: .codex,
                 launchEpoch: launchEpoch,
-                rootThreadID: effectiveRoot,
+                rootThreadID: claimedRoot,
                 actorThreadID: actorThreadID,
                 turnID: turnID,
                 kind: .rootResultReady,
@@ -853,13 +918,22 @@ final class AgentAttentionCoordinator: @unchecked Sendable {
             let reduction = AgentAttentionReducer.reduce(state: current, envelope: envelope)
             states[key] = reduction.state
             record(reduction)
-            return ingestResult(reduction, historyOnly: false)
+            return ingestResult(
+                reduction,
+                priorState: current,
+                historyOnly: false,
+                notificationSubtitle: "Completed",
+                notificationBody: notificationBody
+            )
         }
     }
 
     private func ingestResult(
         _ reduction: AgentAttentionReduction,
-        historyOnly: Bool
+        priorState: AgentAttentionState,
+        historyOnly: Bool,
+        notificationSubtitle: String,
+        notificationBody: String
     ) -> AgentHookIngestResult {
         AgentHookIngestResult(
             ownership: reduction.ownership,
@@ -868,14 +942,43 @@ final class AgentAttentionCoordinator: @unchecked Sendable {
                 runState: reduction.state.runState,
                 episode: reduction.state.attentionEpisode
             ),
+            shouldPublishLifecycle: reduction.disposition == .applied
+                && (priorState.runState != reduction.state.runState
+                    || priorState.attentionEpisode != reduction.state.attentionEpisode),
             shouldCreateSignalNotification: reduction.enteredAttention,
-            shouldCreateHistoryOnlyNotification: historyOnly
+            shouldCreateHistoryOnlyNotification: historyOnly,
+            notificationSubtitle: notificationSubtitle,
+            notificationBody: notificationBody
         )
     }
 
     private func record(_ reduction: AgentAttentionReduction) {
         increment("ownership.\(reduction.ownership.rawValue)")
         increment("disposition.\(reduction.disposition.rawValue)")
+        guard reduction.disposition == .applied,
+              reduction.attentionChanged else {
+            return
+        }
+        if let priorEpisode = reduction.priorEpisode {
+            emitWaitingEdge(
+                AgentWaitingEdge(
+                    entered: false,
+                    workspaceID: reduction.state.workspaceID,
+                    surfaceID: reduction.state.surfaceID,
+                    episode: priorEpisode
+                )
+            )
+        }
+        if let episode = reduction.state.attentionEpisode {
+            emitWaitingEdge(
+                AgentWaitingEdge(
+                    entered: true,
+                    workspaceID: reduction.state.workspaceID,
+                    surfaceID: reduction.state.surfaceID,
+                    episode: episode
+                )
+            )
+        }
     }
 
     private func increment(_ key: String) {
@@ -889,6 +992,44 @@ final class AgentAttentionCoordinator: @unchecked Sendable {
         }
         return value.lowercased()
     }
+
+    private func safeNotificationText(_ raw: String?, fallback: String) -> String {
+        let collapsed = (raw ?? "")
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !collapsed.isEmpty else { return fallback }
+        return String(collapsed.prefix(240))
+    }
+
+    private func emitWaitingEdge(_ edge: AgentWaitingEdge) {
+        EventEmitter.shared.emitWaiting(
+            entered: edge.entered,
+            workspace: edge.workspaceID,
+            surface: edge.surfaceID,
+            reason: edge.episode.reason.rawValue,
+            episodeID: edge.episode.id,
+            startedAt: edge.episode.startedAt
+        )
+#if DEBUG
+        waitingEdgeHandlerForTesting?(edge)
+#endif
+    }
+
+#if DEBUG
+    func configureWaitingEdgeHandlerForTesting(
+        _ handler: @escaping (AgentWaitingEdge) -> Void
+    ) {
+        queue.sync {
+            waitingEdgeHandlerForTesting = handler
+        }
+    }
+
+    func resetWaitingEdgeHandlerForTesting() {
+        queue.sync {
+            waitingEdgeHandlerForTesting = nil
+        }
+    }
+#endif
 }
 
 extension TerminalController {
@@ -933,17 +1074,20 @@ extension TerminalController {
                     surfaceID: surfaceID
                 )
             } ?? nil
+            let markerEpoch = CodexLaunchBoundaryMarkerStore.load(
+                socketPath: activeSocketPath(preferredPath: "")
+            )
+            .filter { UUID(uuidString: $0.surfaceId) == surfaceID }
+            .max(by: { $0.boundaryAt < $1.boundaryAt })?
+            .launchEpoch
             do {
                 result = try AgentAttentionCoordinator.shared.ingestLegacyCodex(
                     rawPayload: payload,
                     ownership: ownership,
+                    markerLaunchEpoch: markerEpoch,
                     workspaceID: workspaceID,
                     surfaceID: surfaceID,
-                    launchEpoch: launchEpoch,
-                    callbackEnvironmentRootThreadID: v2String(
-                        params,
-                        "callback_root_thread_id"
-                    )
+                    launchEpoch: launchEpoch
                 )
             } catch AgentHookPayloadError.payloadTooLarge {
                 return .err(code: "payload_too_large", message: "payload exceeds 64 KiB", data: nil)
@@ -972,45 +1116,84 @@ extension TerminalController {
                 workspaceID: workspaceID,
                 surfaceID: surfaceID,
                 reason: reason,
-                eventID: "opencode:\(v2String(params, "actor_thread_id") ?? UUID().uuidString):\(event)"
+                eventID: "\(v2String(params, "actor_thread_id") ?? "unknown-root"):\(event)",
+                notificationSubtitle: safeAgentNotificationText(
+                    v2String(params, "notification_subtitle"),
+                    fallback: defaultNotificationSubtitle(event: event)
+                ),
+                notificationBody: safeAgentNotificationText(
+                    v2String(params, "notification_body"),
+                    fallback: defaultNotificationBody(provider: provider, event: event)
+                )
             )
         }
 
-        publishAgentAttentionEffect(
+        if let commitError = commitAgentAttentionEffect(
             result,
             provider: provider,
             workspaceID: workspaceID,
             surfaceID: surfaceID
-        )
+        ) {
+            return commitError
+        }
+        let attentionReason: Any = result.snapshot.episode?.reason.rawValue ?? NSNull()
         return .ok([
             "status": "OK",
             "ownership": result.ownership.rawValue,
             "disposition": result.disposition.rawValue,
             "run_state": result.snapshot.runState.rawValue,
-            "attention_reason": result.snapshot.episode?.reason.rawValue as Any,
+            "attention_reason": attentionReason,
         ])
     }
 
-    private nonisolated func publishAgentAttentionEffect(
+    /// Applies every downstream effect behind bounded serialized barriers.
+    /// Ignored dispositions never reach this path, and the caller cannot
+    /// observe socket success until liveness, Workspace projection, and
+    /// notification history have all committed.
+    private nonisolated func commitAgentAttentionEffect(
         _ result: AgentHookIngestResult,
         provider: AgentProvider,
         workspaceID: UUID,
         surfaceID: UUID
-    ) {
-        let activity: SidebarActivityState = result.snapshot.runState == .working
-            ? .working
-            : .idle
-        SurfaceLivenessDeriver.onAgentLifecycleChanged(
-            surfaceId: surfaceID,
-            workspaceId: workspaceID,
-            activity: activity
-        )
-        guard result.shouldCreateSignalNotification
-                || result.shouldCreateHistoryOnlyNotification else {
-            return
+    ) -> V2CallResult? {
+        var canonicalCommit: SurfaceLivenessDeriver.CanonicalCommit?
+        if result.shouldPublishLifecycle {
+            let activity: SidebarActivityState = result.snapshot.runState == .working
+                ? .working
+                : .idle
+            guard let committed = SurfaceLivenessDeriver.commitCanonicalLifecycle(
+                surfaceId: surfaceID,
+                workspaceId: workspaceID,
+                activity: activity
+            ) else {
+                return .err(
+                    code: "liveness_commit_timeout",
+                    message: "canonical liveness commit did not begin before the deadline",
+                    data: nil
+                )
+            }
+            canonicalCommit = committed
         }
-        DispatchQueue.main.async {
+
+        let shouldWriteHistory = result.shouldCreateSignalNotification
+            || result.shouldCreateHistoryOnlyNotification
+        guard canonicalCommit != nil || shouldWriteHistory else {
+            return nil
+        }
+
+        let gate = FailClosedCommitGate<Bool> {
             MainActor.assumeIsolated {
+                if let canonicalCommit,
+                   let tabManager = AppDelegate.shared?.tabManagerFor(tabId: workspaceID),
+                   let workspace = tabManager.tabs.first(where: { $0.id == workspaceID }) {
+                    workspace.setAgentCold(false, forSurface: surfaceID)
+                    workspace.setDerivedActivity(
+                        canonicalCommit.mirroredActivity,
+                        forSurface: surfaceID
+                    )
+                    workspace.syncSurfaceTabActivityStateForPanel(surfaceID)
+                }
+                guard shouldWriteHistory else { return true }
                 let providerTitle: String
                 switch provider {
                 case .codex: providerTitle = "Codex"
@@ -1020,16 +1203,59 @@ extension TerminalController {
                 }
                 let subtitle = result.shouldCreateHistoryOnlyNotification
                     ? "Unverified completion"
-                    : (result.snapshot.episode?.reason.rawValue ?? "Result ready")
+                    : result.notificationSubtitle
                 TerminalNotificationStore.shared.addNotification(
                     tabId: workspaceID,
                     surfaceId: surfaceID,
                     title: providerTitle,
                     subtitle: subtitle,
-                    body: "",
+                    body: result.notificationBody,
                     attentionEligible: result.shouldCreateSignalNotification
                 )
+                return true
             }
+        }
+        gate.enqueueOnMain()
+        guard gate.wait(timeout: 8) != nil else {
+            return .err(
+                code: "main_thread_timeout",
+                message: "main thread did not begin the agent attention commit before the deadline",
+                data: nil
+            )
+        }
+        return nil
+    }
+
+    private nonisolated func safeAgentNotificationText(
+        _ raw: String?,
+        fallback: String
+    ) -> String {
+        let collapsed = (raw ?? "")
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !collapsed.isEmpty else { return fallback }
+        return String(collapsed.prefix(240))
+    }
+
+    private nonisolated func defaultNotificationSubtitle(event: String) -> String {
+        switch event {
+        case "approval": return "Permission"
+        case "user-input": return "Waiting"
+        case "error": return "Error"
+        default: return "Completed"
+        }
+    }
+
+    private nonisolated func defaultNotificationBody(
+        provider: AgentProvider,
+        event: String
+    ) -> String {
+        let name = provider == .claude ? "Claude Code" : "OpenCode"
+        switch event {
+        case "approval": return "\(name) needs approval."
+        case "user-input": return "\(name) needs input."
+        case "error": return "\(name) reported a session error."
+        default: return "\(name) completed a root session turn."
         }
     }
 }

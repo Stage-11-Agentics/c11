@@ -65,6 +65,10 @@ enum SurfaceActivityTerminalKindResolver {
 /// `DispatchQueue.main.async` + `MainActor.assumeIsolated`. Nothing here ever
 /// runs on the typing hot paths.
 enum SurfaceLivenessDeriver {
+    struct CanonicalCommit: Sendable {
+        let mirroredActivity: SidebarActivityState?
+    }
+
 
     /// Off-main compute queue for the realtime transition path. Keeps the
     /// caller's thread (which may be the main actor, since
@@ -192,6 +196,51 @@ enum SurfaceLivenessDeriver {
                 }
             }
         }
+    }
+
+    /// Commit canonical reducer output to the serialized liveness store before
+    /// a socket response is released. This deliberately stops before the main
+    /// actor; the caller performs the Workspace/history projection through its
+    /// own bounded main-actor gate.
+    static func commitCanonicalLifecycle(
+        surfaceId: UUID,
+        workspaceId: UUID,
+        activity: SidebarActivityState,
+        timeout: TimeInterval = 8
+    ) -> CanonicalCommit? {
+        let gate = FailClosedCommitGate<CanonicalCommit> {
+            SurfaceActivityTracker.shared.recordActivity(
+                surfaceId: surfaceId.uuidString
+            )
+            let prior = currentActivityRaw(
+                workspaceId: workspaceId,
+                surfaceId: surfaceId
+            )
+            applyToStore(
+                derived: activity,
+                workspaceId: workspaceId,
+                surfaceId: surfaceId
+            )
+            let after = currentActivityRaw(
+                workspaceId: workspaceId,
+                surfaceId: surfaceId
+            )
+            if prior != after {
+                emitLivenessTransition(
+                    from: prior,
+                    to: after,
+                    surfaceId: surfaceId,
+                    workspaceId: workspaceId
+                )
+            }
+            return CanonicalCommit(
+                mirroredActivity: after.flatMap(SidebarActivityState.init(rawValue:))
+            )
+        }
+        gate.enqueue { work in
+            queue.async(execute: work)
+        }
+        return gate.wait(timeout: timeout)
     }
 
     // MARK: - Coarse reconcile (TEL-4/5)

@@ -42,6 +42,7 @@ def run_wrapper(
     socket_state: str,
     argv: list[str],
     callback: bool = False,
+    callback_environment_epoch: str | None = None,
 ) -> tuple[int, list[str], list[str], str, str]:
     with tempfile.TemporaryDirectory(prefix="c11-codex-wrapper-test-") as td:
         tmp = Path(td)
@@ -99,8 +100,7 @@ fi
         env["FAKE_C11_LOG"] = str(c11_log)
         env["FAKE_C11_PING_OK"] = "1" if socket_state == "live" else "0"
         callback_epoch = "55555555-5555-4555-8555-555555555555"
-        env["C11_CODEX_LAUNCH_EPOCH"] = callback_epoch
-        env["CODEX_THREAD_ID"] = "66666666-6666-4666-8666-666666666666"
+        env["C11_CODEX_LAUNCH_EPOCH"] = callback_environment_epoch or callback_epoch
 
         command = [str(wrapper)]
         if callback:
@@ -189,6 +189,22 @@ def test_completion_callback_preserves_raw_json(failures: list[str]) -> None:
     )
 
 
+def test_callback_epoch_mismatch_fails_closed(failures: list[str]) -> None:
+    code, real_argv, c11_log, _, stderr = run_wrapper(
+        socket_state="live",
+        argv=[],
+        callback=True,
+        callback_environment_epoch="77777777-7777-4777-8777-777777777777",
+    )
+    expect(code == 0, f"epoch mismatch: wrapper exited {code}: {stderr}", failures)
+    expect(real_argv == [], f"epoch mismatch launched real Codex: {real_argv}", failures)
+    expect(
+        not any("agent-hook ingest" in line for line in c11_log),
+        f"epoch mismatch reached structured ingest: {c11_log}",
+        failures,
+    )
+
+
 def test_missing_socket_is_unchanged_passthrough(failures: list[str]) -> None:
     code, real_argv, c11_log, _, stderr = run_wrapper(
         socket_state="missing",
@@ -213,6 +229,7 @@ def main() -> int:
     failures: list[str] = []
     test_live_socket_injects_completion_callback(failures)
     test_completion_callback_preserves_raw_json(failures)
+    test_callback_epoch_mismatch_fails_closed(failures)
     test_missing_socket_is_unchanged_passthrough(failures)
     test_explicit_notify_override_remains_later_in_argv(failures)
 

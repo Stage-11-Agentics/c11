@@ -42,7 +42,6 @@ def run_wrapper(
     socket_state: str,
     argv: list[str],
     callback: bool = False,
-    callback_environment_epoch: str | None = None,
 ) -> tuple[int, list[str], list[str], str, str]:
     with tempfile.TemporaryDirectory(prefix="c11-codex-wrapper-test-") as td:
         tmp = Path(td)
@@ -73,10 +72,6 @@ done
             """#!/usr/bin/env bash
 set -euo pipefail
 printf '%s timeout=%s\\n' "$*" "${CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC-__UNSET__}" >> "$FAKE_C11_LOG"
-if [[ "$*" == *"agent-hook ingest"* ]]; then
-  payload="$(cat)"
-  printf 'stdin=%s\\n' "$payload" >> "$FAKE_C11_LOG"
-fi
 if [[ "${1:-}" == "--socket" ]]; then
   shift 2
 fi
@@ -99,16 +94,11 @@ fi
         env["FAKE_REAL_ARGS_LOG"] = str(real_args_log)
         env["FAKE_C11_LOG"] = str(c11_log)
         env["FAKE_C11_PING_OK"] = "1" if socket_state == "live" else "0"
-        callback_epoch = "55555555-5555-4555-8555-555555555555"
-        env["C11_CODEX_LAUNCH_EPOCH"] = callback_environment_epoch or callback_epoch
 
         command = [str(wrapper)]
         if callback:
             command.append("__c11-notify")
-            command.append(callback_epoch)
-            command.append(
-                '{"type":"agent-turn-complete","thread-id":"66666666-6666-4666-8666-666666666666","turn-id":"turn-1"}'
-            )
+            command.append('{"type":"agent-turn-complete"}')
         else:
             command.extend(argv)
 
@@ -123,7 +113,7 @@ fi
             )
             c11_lines = wait_for_line(
                 c11_log,
-                "agent-hook ingest" if callback else " agent-hook idle",
+                " notify " if callback else " agent-hook idle",
             )
         finally:
             if test_socket is not None:
@@ -153,8 +143,7 @@ def test_live_socket_injects_completion_callback(failures: list[str]) -> None:
     expect(
         len(real_argv) >= 3
         and real_argv[1].startswith('notify=["')
-        and '","__c11-notify","' in real_argv[1]
-        and real_argv[1].endswith('"]'),
+        and real_argv[1].endswith('","__c11-notify"]'),
         f"live socket: malformed completion notify config: {real_argv}",
         failures,
     )
@@ -162,7 +151,7 @@ def test_live_socket_injects_completion_callback(failures: list[str]) -> None:
     expect(any(" agent-hook idle" in line for line in c11_log), f"missing initial idle seed: {c11_log}", failures)
 
 
-def test_completion_callback_preserves_raw_json(failures: list[str]) -> None:
+def test_completion_callback_creates_surface_notification(failures: list[str]) -> None:
     code, real_argv, c11_log, _, stderr = run_wrapper(
         socket_state="live",
         argv=[],
@@ -170,39 +159,22 @@ def test_completion_callback_preserves_raw_json(failures: list[str]) -> None:
     )
     expect(code == 0, f"callback: wrapper exited {code}: {stderr}", failures)
     expect(real_argv == [], f"callback: real Codex must not launch: {real_argv}", failures)
-    ingest_lines = [line for line in c11_log if "agent-hook ingest" in line]
-    expect(len(ingest_lines) == 1, f"callback: expected one structured ingest: {c11_log}", failures)
-    if ingest_lines:
-        line = ingest_lines[0]
-        expect("--provider codex" in line, f"callback: missing provider: {line}", failures)
+    notify_lines = [line for line in c11_log if " notify " in line]
+    expect(len(notify_lines) == 1, f"callback: expected one c11 notification: {c11_log}", failures)
+    if notify_lines:
+        line = notify_lines[0]
+        expect("--title Codex" in line, f"callback: missing Codex title: {line}", failures)
         expect(
-            "--launch-epoch 55555555-5555-4555-8555-555555555555" in line,
-            f"callback: missing launch epoch: {line}",
+            "--workspace 11111111-1111-1111-1111-111111111111" in line,
+            f"callback: missing workspace scope: {line}",
             failures,
         )
-        expect("timeout=0.75" in line, f"callback: ingest call is not bounded: {line}", failures)
-    expect(
-        'stdin={"type":"agent-turn-complete","thread-id":"66666666-6666-4666-8666-666666666666","turn-id":"turn-1"}'
-        in c11_log,
-        f"callback: raw provider JSON changed before stdin: {c11_log}",
-        failures,
-    )
-
-
-def test_callback_epoch_mismatch_fails_closed(failures: list[str]) -> None:
-    code, real_argv, c11_log, _, stderr = run_wrapper(
-        socket_state="live",
-        argv=[],
-        callback=True,
-        callback_environment_epoch="77777777-7777-4777-8777-777777777777",
-    )
-    expect(code == 0, f"epoch mismatch: wrapper exited {code}: {stderr}", failures)
-    expect(real_argv == [], f"epoch mismatch launched real Codex: {real_argv}", failures)
-    expect(
-        not any("agent-hook ingest" in line for line in c11_log),
-        f"epoch mismatch reached structured ingest: {c11_log}",
-        failures,
-    )
+        expect(
+            "--surface 22222222-2222-2222-2222-222222222222" in line,
+            f"callback: missing surface scope: {line}",
+            failures,
+        )
+        expect("timeout=0.75" in line, f"callback: notification call is not bounded: {line}", failures)
 
 
 def test_missing_socket_is_unchanged_passthrough(failures: list[str]) -> None:
@@ -228,8 +200,7 @@ def test_explicit_notify_override_remains_later_in_argv(failures: list[str]) -> 
 def main() -> int:
     failures: list[str] = []
     test_live_socket_injects_completion_callback(failures)
-    test_completion_callback_preserves_raw_json(failures)
-    test_callback_epoch_mismatch_fails_closed(failures)
+    test_completion_callback_creates_surface_notification(failures)
     test_missing_socket_is_unchanged_passthrough(failures)
     test_explicit_notify_override_remains_later_in_argv(failures)
 

@@ -74,8 +74,6 @@ extension TerminalController {
                 id: request.id,
                 self.v2FlagWorker(method: request.method, params: request.params)
             )
-        case "agent.ingest":
-            return v2Result(id: request.id, self.v2AgentIngest(params: request.params))
         default:
             return v2Error(id: request.id, code: "method_not_found", message: "Unknown method")
         }

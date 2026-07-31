@@ -30,23 +30,6 @@ struct CodexLaunchBoundaryMarker: Sendable, Equatable {
     let surfaceId: String
     let boundaryAt: Date
     let expectedResumeId: String?
-    let launchEpoch: UUID
-
-    init(
-        surfaceId: String,
-        boundaryAt: Date,
-        expectedResumeId: String?,
-        launchEpoch: UUID? = nil
-    ) {
-        self.surfaceId = surfaceId
-        self.boundaryAt = boundaryAt
-        self.expectedResumeId = expectedResumeId
-        // Deterministic fallback keeps older in-process fixtures source
-        // compatible. Files loaded from disk must carry an explicit UUID.
-        self.launchEpoch = launchEpoch
-            ?? UUID(uuidString: surfaceId)
-            ?? UUID(uuidString: "00000000-0000-4000-8000-000000000000")!
-    }
 }
 
 enum CodexLaunchBoundaryMarkerStore {
@@ -106,10 +89,6 @@ enum CodexLaunchBoundaryMarkerStore {
             let expectedResumeId = UUID(uuidString: rawExpected) != nil
                 ? rawExpected
                 : nil
-            guard lines.count > 2,
-                  let launchEpoch = UUID(uuidString: String(lines[2])) else {
-                return nil
-            }
             return CodexLaunchBoundaryMarker(
                 surfaceId: surfaceId,
                 // The wrapper's portable `date +%s` payload is a readable
@@ -118,8 +97,7 @@ enum CodexLaunchBoundaryMarkerStore {
                 // capture at second N + .1 before a launch at N + .9.
                 boundaryAt: resourceValues.contentModificationDate
                     ?? Date(timeIntervalSince1970: epochSeconds),
-                expectedResumeId: expectedResumeId,
-                launchEpoch: launchEpoch
+                expectedResumeId: expectedResumeId
             )
         }
     }
@@ -285,7 +263,6 @@ struct ScrapeCaptureCommitResult: Sendable, Equatable {
 actor ConversationStore {
     /// Per-surface mapping. v1 uses one active ref + empty history.
     private var bySurface: [String: SurfaceConversations] = [:]
-    private var codexLaunchEpochBySurface: [String: UUID] = [:]
 
     init() {}
 
@@ -334,35 +311,6 @@ extension ConversationStore {
         bySurface
     }
 
-    func attentionOwnershipSnapshot(
-        workspaceID: UUID,
-        surfaceID: UUID
-    ) -> AgentAttentionOwnershipSnapshot? {
-        let surfaceKey = surfaceID.uuidString
-        guard let launchEpoch = codexLaunchEpochBySurface[surfaceKey] else {
-            return nil
-        }
-        let active = bySurface[surfaceKey]?.active
-        let rootThreadID: String?
-        if let active,
-           active.kind == "codex",
-           !active.placeholder,
-           active.state != .tombstoned,
-           active.state != .unsupported,
-           !active.isQuarantined,
-           UUID(uuidString: active.id) != nil {
-            rootThreadID = active.id.lowercased()
-        } else {
-            rootThreadID = nil
-        }
-        return AgentAttentionOwnershipSnapshot(
-            workspaceID: workspaceID,
-            surfaceID: surfaceID,
-            launchEpoch: launchEpoch,
-            rootThreadID: rootThreadID
-        )
-    }
-
     /// Fail-close any unacknowledged Codex launch boundary before scrape,
     /// suspension, or persistence can trust an owner from the prior process.
     ///
@@ -382,7 +330,6 @@ extension ConversationStore {
             }
             return $0.boundaryAt < $1.boundaryAt
         }) {
-            codexLaunchEpochBySurface[marker.surfaceId] = marker.launchEpoch
             let existing = bySurface[marker.surfaceId]?.active
             if let existing, existing.capturedAt >= marker.boundaryAt {
                 continue
@@ -445,8 +392,7 @@ extension ConversationStore {
         placeholderId: String,
         capturedAt: Date = Date(),
         diagnosticReason: String? = nil,
-        expectedResumeId: String? = nil,
-        launchEpoch: UUID? = nil
+        expectedResumeId: String? = nil
     ) -> ConversationRef {
         switch claim(
             surfaceId: surfaceId,
@@ -456,7 +402,6 @@ extension ConversationStore {
             capturedAt: capturedAt,
             diagnosticReason: diagnosticReason,
             expectedResumeId: expectedResumeId,
-            launchEpoch: launchEpoch,
             expiresAt: nil
         ) {
         case .accepted(let ref):
@@ -489,7 +434,6 @@ extension ConversationStore {
         capturedAt: Date = Date(),
         diagnosticReason: String? = nil,
         expectedResumeId: String? = nil,
-        launchEpoch: UUID? = nil,
         expiresAt: Date?
     ) -> ConversationClaimResult {
         if let expiresAt, expiresAt <= Date() {
@@ -497,9 +441,6 @@ extension ConversationStore {
         }
 
         let existing = bySurface[surfaceId]?.active
-        if kind == "codex", let launchEpoch {
-            codexLaunchEpochBySurface[surfaceId] = launchEpoch
-        }
 
         var payload: [String: PersistedJSONValue]? = nil
         if kind == "codex" {
@@ -832,7 +773,6 @@ extension ConversationStore {
     /// (`c11 conversation clear`).
     func clear(surfaceId: String) {
         bySurface.removeValue(forKey: surfaceId)
-        codexLaunchEpochBySurface.removeValue(forKey: surfaceId)
     }
 
     /// Process-wide ownership audit. Called after snapshot seed and every

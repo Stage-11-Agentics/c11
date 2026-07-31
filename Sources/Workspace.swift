@@ -6734,11 +6734,8 @@ final class Workspace: Identifiable, ObservableObject {
         }
     }
 
-    private func hasCanonicalAttention(panelId: UUID) -> Bool {
-        AgentAttentionCoordinator.shared.snapshot(
-            workspaceID: id,
-            surfaceID: panelId
-        )?.episode != nil
+    private func hasUnreadNotification(panelId: UUID) -> Bool {
+        AppDelegate.shared?.notificationStore?.hasUnreadNotification(forTabId: id, surfaceId: panelId) ?? false
     }
 
     func attentionSnapshot(panelId: UUID) -> SurfaceAttentionSnapshot {
@@ -6769,12 +6766,12 @@ final class Workspace: Identifiable, ObservableObject {
     /// otherwise pay for the same lookup twice per surface, per evaluation.
     func resolvedSurfaceTabActivityState(
         panelId: UUID,
-        hasCanonicalAttention: Bool? = nil,
+        hasExactSurfaceNotification: Bool? = nil,
         terminalKind: String?? = nil
     ) -> BonsplitTabActivityState? {
         let attention = attentionSnapshot(panelId: panelId)
         return SurfaceTabActivityResolver.resolve(
-            hasCanonicalAttention: hasCanonicalAttention ?? self.hasCanonicalAttention(panelId: panelId),
+            hasExactSurfaceNotification: hasExactSurfaceNotification ?? hasUnreadNotification(panelId: panelId),
             derivedActivity: derivedActivityBySurface[panelId],
             isCold: coldAgentSurfaceIds.contains(panelId),
             terminalType: terminalKind ?? surfaceActivityTerminalKind(panelId: panelId),
@@ -6826,10 +6823,10 @@ final class Workspace: Identifiable, ObservableObject {
             for: panelId.uuidString
         )
         let waitingStartedAt = state == .waiting
-            ? AgentAttentionCoordinator.shared.snapshot(
-                workspaceID: id,
-                surfaceID: panelId
-            )?.episode?.startedAt
+            ? AppDelegate.shared?.notificationStore?.unreadNotificationCreatedAt(
+                forTabId: id,
+                surfaceId: panelId
+            )
             : nil
         return AgentActivityHelpProjection.project(
             state: state,
@@ -6860,14 +6857,14 @@ final class Workspace: Identifiable, ObservableObject {
 
     func syncSurfaceTabActivityStateForPanel(
         _ panelId: UUID,
-        hasCanonicalAttention: Bool? = nil
+        hasExactSurfaceNotification: Bool? = nil
     ) {
         guard let tabId = surfaceIdFromPanelId(panelId),
               let existing = bonsplitController.tab(tabId) else { return }
-        let hasAttention = hasCanonicalAttention ?? self.hasCanonicalAttention(panelId: panelId)
+        let hasExact = hasExactSurfaceNotification ?? hasUnreadNotification(panelId: panelId)
         let activityState = resolvedSurfaceTabActivityState(
             panelId: panelId,
-            hasCanonicalAttention: hasAttention
+            hasExactSurfaceNotification: hasExact
         )
         let activityPresentation = resolvedSurfaceTabActivityPresentation(
             panelId: panelId,
@@ -11932,7 +11929,8 @@ extension Workspace: BonsplitDelegate {
                 isAgentCold: coldAgentSurfaceIds.contains(panelId),
                 detectedTerminalType: detectedTerminalTypesBySurface[panelId],
                 activityState: resolvedSurfaceTabActivityState(
-                    panelId: panelId
+                    panelId: panelId,
+                    hasExactSurfaceNotification: false
                 ),
                 attention: attentionSnapshot(panelId: panelId)
             )

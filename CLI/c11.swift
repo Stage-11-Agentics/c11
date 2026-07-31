@@ -12227,12 +12227,6 @@ struct CMUXCLI {
             }
             params["expected_resume_id"] = expectedResumeId
         }
-        if let launchEpoch = optionValue(subArgs, name: "--launch-epoch") {
-            guard let epoch = UUID(uuidString: launchEpoch) else {
-                throw CLIError(message: "--launch-epoch must be a UUID")
-            }
-            params["launch_epoch"] = epoch.uuidString.lowercased()
-        }
         if subArgs.contains("--ttl-ms") {
             guard let rawTTL = optionValue(subArgs, name: "--ttl-ms"),
                   let ttlMilliseconds = Int64(rawTTL), ttlMilliseconds > 0 else {
@@ -15956,73 +15950,9 @@ struct CMUXCLI {
         commandArgs: [String],
         client: SocketClient
     ) throws {
-        let subcommand = commandArgs.first?.lowercased() ?? ""
-        if subcommand == "ingest" {
-            let hookArgs = Array(commandArgs.dropFirst())
-            guard let provider = optionValue(hookArgs, name: "--provider")?.lowercased(),
-                  provider == "codex" || provider == "opencode" else {
-                throw CLIError(message: "\(commandName) ingest requires --provider codex|opencode")
-            }
-            let environment = ProcessInfo.processInfo.environment
-            guard let workspaceId = environment["CMUX_WORKSPACE_ID"] ?? environment["C11_WORKSPACE_ID"],
-                  UUID(uuidString: workspaceId) != nil else {
-                throw CLIError(message: "\(commandName) ingest requires a c11 workspace id")
-            }
-            guard let surfaceId = environment["CMUX_SURFACE_ID"] ?? environment["C11_SURFACE_ID"],
-                  UUID(uuidString: surfaceId) != nil else {
-                throw CLIError(message: "\(commandName) ingest requires a c11 surface id")
-            }
-
-            var params: [String: Any] = [
-                "version": 1,
-                "provider": provider,
-                "workspace_id": workspaceId,
-                "surface_id": surfaceId,
-            ]
-            if provider == "codex" {
-                guard let rawEpoch = optionValue(hookArgs, name: "--launch-epoch"),
-                      let epoch = UUID(uuidString: rawEpoch) else {
-                    throw CLIError(message: "\(commandName) ingest codex requires a UUID --launch-epoch")
-                }
-                let maxBytes = 64 * 1_024
-                var payload = Data()
-                while true {
-                    let remaining = maxBytes + 1 - payload.count
-                    guard remaining > 0 else {
-                        throw CLIError(message: "payload_too_large: agent hook payload exceeds 64 KiB")
-                    }
-                    let chunk = try FileHandle.standardInput.read(
-                        upToCount: min(8_192, remaining)
-                    ) ?? Data()
-                    if chunk.isEmpty { break }
-                    payload.append(chunk)
-                }
-                guard let rawPayload = String(data: payload, encoding: .utf8) else {
-                    throw CLIError(message: "invalid_utf8: agent hook payload must be UTF-8")
-                }
-                params["launch_epoch"] = epoch.uuidString.lowercased()
-                params["raw_payload"] = rawPayload
-            } else {
-                guard let event = optionValue(hookArgs, name: "--event"),
-                      ["result-ready", "approval", "user-input", "error"].contains(event) else {
-                    throw CLIError(
-                        message: "\(commandName) ingest opencode requires --event result-ready|approval|user-input|error"
-                    )
-                }
-                params["event"] = event
-                if let actorThread = optionValue(hookArgs, name: "--actor-thread"),
-                   !actorThread.isEmpty {
-                    params["actor_thread_id"] = actorThread
-                }
-            }
-            let response = try client.sendV2(method: "agent.ingest", params: params)
-            print((response["status"] as? String) ?? "OK")
-            return
-        }
-
         guard let rawActivity = commandArgs.first?.lowercased(),
               rawActivity == "working" || rawActivity == "idle" else {
-            throw CLIError(message: "\(commandName) requires working, idle, or ingest")
+            throw CLIError(message: "\(commandName) requires working or idle")
         }
         let environment = ProcessInfo.processInfo.environment
         guard let workspaceId = environment["CMUX_WORKSPACE_ID"] ?? environment["C11_WORKSPACE_ID"],
@@ -16207,17 +16137,17 @@ struct CMUXCLI {
                 )
             }
 
-            if let resolvedLifecycleSurface {
-                _ = try? reportOwnedAgentAttention(
-                    client: client,
-                    provider: "claude",
+            if let completion {
+                let resolvedSurface = try resolveSurfaceIdForClaudeHook(
+                    surfaceId,
                     workspaceId: workspaceId,
-                    surfaceId: resolvedLifecycleSurface,
-                    event: "result-ready",
-                    actorThreadId: parsedInput.sessionId,
-                    notificationSubtitle: completion?.subtitle ?? "Completed",
-                    notificationBody: completion?.body ?? "Claude completed a root session turn."
+                    client: client
                 )
+                let title = "Claude Code"
+                let subtitle = sanitizeNotificationField(completion.subtitle)
+                let body = sanitizeNotificationField(completion.body)
+                let payload = "\(title)|\(subtitle)|\(body)"
+                _ = try? sendV1Command("notify_target \(workspaceId) \(resolvedSurface) \(payload)", client: client)
             }
 
             try setClaudeStatus(
@@ -16292,6 +16222,11 @@ struct CMUXCLI {
                 activity: "idle"
             )
 
+            let title = "Claude Code"
+            let subtitle = sanitizeNotificationField(summary.subtitle)
+            let body = sanitizeNotificationField(summary.body)
+            let payload = "\(title)|\(subtitle)|\(body)"
+
             if let sessionId = parsedInput.sessionId {
                 try? sessionStore.upsert(
                     sessionId: sessionId,
@@ -16303,17 +16238,7 @@ struct CMUXCLI {
                 )
             }
 
-            let event = claudeAttentionEvent(from: parsedInput.object)
-            try reportOwnedAgentAttention(
-                client: client,
-                provider: "claude",
-                workspaceId: workspaceId,
-                surfaceId: surfaceId,
-                event: event,
-                actorThreadId: parsedInput.sessionId,
-                notificationSubtitle: summary.subtitle,
-                notificationBody: summary.body
-            )
+            let response = try client.send(command: "notify_target \(workspaceId) \(surfaceId) \(payload)")
             _ = try? setClaudeStatus(
                 client: client,
                 workspaceId: workspaceId,
@@ -16321,7 +16246,7 @@ struct CMUXCLI {
                 icon: "bell.fill",
                 color: "#4C8DFF"
             )
-            print("OK")
+            print(response)
 
         case "session-end":
             telemetry.breadcrumb("claude-hook.session-end")
@@ -16517,35 +16442,6 @@ struct CMUXCLI {
         )
     }
 
-    private func reportOwnedAgentAttention(
-        client: SocketClient,
-        provider: String,
-        workspaceId: String,
-        surfaceId: String,
-        event: String,
-        actorThreadId: String?,
-        notificationSubtitle: String,
-        notificationBody: String
-    ) throws {
-        var params: [String: Any] = [
-            "version": 1,
-            "provider": provider,
-            "workspace_id": workspaceId,
-            "surface_id": surfaceId,
-            "event": event,
-        ]
-        if let actorThreadId, !actorThreadId.isEmpty {
-            params["actor_thread_id"] = actorThreadId
-        }
-        params["notification_subtitle"] = sanitizeNotificationField(
-            truncate(notificationSubtitle, maxLength: 120)
-        )
-        params["notification_body"] = sanitizeNotificationField(
-            truncate(notificationBody, maxLength: 240)
-        )
-        _ = try client.sendV2(method: "agent.ingest", params: params)
-    }
-
     private func clearClaudeStatus(client: SocketClient, workspaceId: String) throws {
         _ = try client.send(command: "clear_status claude_code --tab=\(workspaceId)")
     }
@@ -16725,27 +16621,6 @@ struct CMUXCLI {
             return cwd
         }
         return nil
-    }
-
-    /// Attention authority comes only from the provider's structured hook
-    /// discriminator. User-visible message text is content, never lifecycle
-    /// evidence. Unknown notification shapes conservatively request input.
-    private func claudeAttentionEvent(from object: [String: Any]?) -> String {
-        guard let object else { return "user-input" }
-        let nested = (object["notification"] as? [String: Any])
-            ?? (object["data"] as? [String: Any])
-        let structuredType = firstString(
-            in: object,
-            keys: ["notification_type", "notificationType"]
-        ) ?? nested.flatMap {
-            firstString(in: $0, keys: ["notification_type", "notificationType", "type"])
-        }
-        switch structuredType?.lowercased() {
-        case "permission_prompt", "permission_request", "approval_required":
-            return "approval"
-        default:
-            return "user-input"
-        }
     }
 
     /// C11-24: query `is_terminating_app` on `system.ping` with a 250 ms

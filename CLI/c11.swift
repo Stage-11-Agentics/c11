@@ -2804,6 +2804,10 @@ struct CMUXCLI {
             let surfaceArg = optionValue(commandArgs, name: "--surface") ?? (notifyWsFlag == nil && windowId == nil ? ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"] : nil)
 
             var params: [String: Any] = ["title": title, "subtitle": subtitle, "body": body]
+            if let payload = nonEmptyEnv("CMUX_CODEX_NOTIFY_PAYLOAD_B64")
+                ?? nonEmptyEnv("C11_CODEX_NOTIFY_PAYLOAD_B64") {
+                params["legacy_codex_notify_payload_b64"] = payload
+            }
             let wsId = try normalizeWorkspaceHandle(workspaceArg, client: client)
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceArg, client: client, workspaceHandle: wsId)

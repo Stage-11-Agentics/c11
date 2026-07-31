@@ -5,9 +5,43 @@ import Foundation
 import Bonsplit
 import WebKit
 
+private enum LegacyCodexNotifyGuard {
+    static let payloadKey = "legacy_codex_notify_payload_b64"
+}
+
 // C11-159: per-domain socket handler unit extracted verbatim from
 // TerminalController.swift. Mechanical relocation, zero behavior change.
 extension TerminalController {
+    private func shouldDeliverLegacyCodexNotification(
+        params: [String: Any],
+        surfaceId: UUID
+    ) -> Bool {
+        guard let payloadB64 = params[LegacyCodexNotifyGuard.payloadKey] as? String else {
+            return true
+        }
+
+        let capturedRootThreadId: String?? = conversationStoreSync { store in
+            guard let active = await store.active(for: surfaceId.uuidString),
+                  active.kind == "codex",
+                  active.capturedVia == .runtimeEnv,
+                  active.state == .alive,
+                  !active.placeholder else {
+                return nil
+            }
+            return active.id
+        }
+        guard let capturedRootThreadId else { return true }
+        guard let rootThreadId = capturedRootThreadId else { return true }
+        guard let payloadData = Data(base64Encoded: payloadB64),
+              let payloadObject = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any],
+              let callbackThreadId = (payloadObject["thread-id"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !callbackThreadId.isEmpty else {
+            return false
+        }
+        return callbackThreadId == rootThreadId
+    }
+
     /// v2 dispatch slice for the `notification.*` domain(s).
     /// Byte-identical routing and wire responses to the original processV2Command cases.
     func v2DispatchNotification(_ method: String, id: Any?, params: [String: Any]) -> String {
@@ -43,6 +77,11 @@ extension TerminalController {
                 return
             }
             let surfaceId = ws.focusedPanelId
+            if let surfaceId,
+               !shouldDeliverLegacyCodexNotification(params: params, surfaceId: surfaceId) {
+                result = .ok(["workspace_id": ws.id.uuidString, "surface_id": surfaceId.uuidString])
+                return
+            }
             TerminalNotificationStore.shared.addNotification(
                 tabId: ws.id,
                 surfaceId: surfaceId,
@@ -75,6 +114,10 @@ extension TerminalController {
             }
             guard ws.panels[surfaceId] != nil else {
                 result = .err(code: "not_found", message: "Surface not found", data: ["surface_id": surfaceId.uuidString])
+                return
+            }
+            if !shouldDeliverLegacyCodexNotification(params: params, surfaceId: surfaceId) {
+                result = .ok(["workspace_id": ws.id.uuidString, "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id), "surface_id": surfaceId.uuidString, "surface_ref": v2Ref(kind: .surface, uuid: surfaceId), "window_id": v2OrNull(v2ResolveWindowId(tabManager: tabManager)?.uuidString), "window_ref": v2Ref(kind: .window, uuid: v2ResolveWindowId(tabManager: tabManager))])
                 return
             }
             TerminalNotificationStore.shared.addNotification(
@@ -112,6 +155,10 @@ extension TerminalController {
             }
             guard ws.panels[surfaceId] != nil else {
                 result = .err(code: "not_found", message: "Surface not found", data: ["surface_id": surfaceId.uuidString])
+                return
+            }
+            if !shouldDeliverLegacyCodexNotification(params: params, surfaceId: surfaceId) {
+                result = .ok(["workspace_id": ws.id.uuidString, "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id), "surface_id": surfaceId.uuidString, "surface_ref": v2Ref(kind: .surface, uuid: surfaceId), "window_id": v2OrNull(v2ResolveWindowId(tabManager: tabManager)?.uuidString), "window_ref": v2Ref(kind: .window, uuid: v2ResolveWindowId(tabManager: tabManager))])
                 return
             }
             TerminalNotificationStore.shared.addNotification(

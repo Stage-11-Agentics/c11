@@ -48,11 +48,19 @@ if [[ "${1:-}" == "__c11-notify" ]]; then
     socket="${CMUX_SOCKET_PATH:-${C11_SOCKET_PATH:-}}"
     workspace_id="${CMUX_WORKSPACE_ID:-${C11_WORKSPACE_ID:-}}"
     surface_id="${CMUX_SURFACE_ID:-${C11_SURFACE_ID:-}}"
+    # Preserve the fact that this was the legacy Codex notify path even when
+    # Codex omits or empties the callback payload; the ingest guard must be
+    # able to treat missing `thread-id` as "do not mutate attention".
+    notify_payload_b64="e30="
+    if [[ -n "${2:-}" ]]; then
+        notify_payload_b64="$(printf '%s' "$2" | /usr/bin/base64 | tr -d '\n')"
+    fi
     self_dir="$(cd "$(dirname "$0")" && pwd)"
     c11_bin="$self_dir/c11"
     [[ -x "$c11_bin" ]] || c11_bin="$(command -v c11 || true)"
 
     if [[ -n "$socket" && -S "$socket" && -n "$workspace_id" && -n "$surface_id" && -n "$c11_bin" ]]; then
+        CMUX_CODEX_NOTIFY_PAYLOAD_B64="$notify_payload_b64" \
         CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=0.75 \
             "$c11_bin" --socket "$socket" notify \
             --title "Codex" \

@@ -34,6 +34,33 @@ final class NotificationAndMenuBarTests: XCTestCase {
         }
     }
 
+    private func waitUntil(
+        timeout: TimeInterval = 2.0,
+        _ condition: () -> Bool
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        return condition()
+    }
+
+    private func legacyCodexNotifyPayload(threadId: String) throws -> String {
+        let data = try JSONSerialization.data(
+            withJSONObject: [
+                "type": "agent-turn-complete",
+                "thread-id": threadId,
+                "turn-id": UUID().uuidString,
+            ]
+        )
+        return data.base64EncodedString()
+    }
+
+    private var legacyCodexNotifyPayloadKey: String {
+        "legacy_codex_notify_payload_b64"
+    }
+
     override func tearDown() {
         TerminalNotificationStore.shared.resetNotificationSettingsPromptHooksForTesting()
         TerminalNotificationStore.shared.replaceNotificationsForTesting([])
@@ -183,6 +210,205 @@ final class NotificationAndMenuBarTests: XCTestCase {
 
         defaults.set(NotificationSoundSettings.customFileValue, forKey: NotificationSoundSettings.key)
         XCTAssertTrue(NotificationSoundSettings.isCustomFileSelected(defaults: defaults))
+    }
+
+    func testLegacyCodexNotifyMismatchDoesNotMutateAttention() async throws {
+        let appDelegate = AppDelegate.shared ?? AppDelegate()
+        let manager = TabManager()
+        let store = TerminalNotificationStore.shared
+        let controller = TerminalController.shared
+        let originalTabManager = appDelegate.tabManager
+        let originalNotificationStore = appDelegate.notificationStore
+        let originalControllerTabManager = controller.tabManager
+        let originalNotifications = store.notifications
+        let originalAppFocusOverride = AppFocusState.overrideIsFocused
+        var waitingEdges: [Bool] = []
+
+        store.replaceNotificationsForTesting([])
+        store.configureNotificationDeliveryHandlerForTesting { _, _ in }
+        store.configureWaitingEdgeHandlerForTesting { entered, _ in waitingEdges.append(entered) }
+        appDelegate.tabManager = manager
+        appDelegate.notificationStore = store
+        controller.tabManager = manager
+        AppFocusState.overrideIsFocused = false
+
+        defer {
+            store.resetWaitingEdgeHandlerForTesting()
+            store.resetNotificationDeliveryHandlerForTesting()
+            store.replaceNotificationsForTesting(originalNotifications)
+            appDelegate.tabManager = originalTabManager
+            appDelegate.notificationStore = originalNotificationStore
+            controller.tabManager = originalControllerTabManager
+            AppFocusState.overrideIsFocused = originalAppFocusOverride
+        }
+
+        guard let workspace = manager.selectedWorkspace,
+              let terminalPanel = workspace.focusedTerminalPanel else {
+            return XCTFail("Expected initial focused terminal panel")
+        }
+
+        let rootThreadId = UUID().uuidString.lowercased()
+        let childThreadId = UUID().uuidString.lowercased()
+        _ = await ConversationStore.shared.captureRuntimeEnv(
+            surfaceId: terminalPanel.id.uuidString,
+            id: rootThreadId,
+            cwd: nil
+        )
+        SurfaceLivenessDeriver.onAgentLifecycleChanged(
+            surfaceId: terminalPanel.id,
+            workspaceId: workspace.id,
+            activity: .working
+        )
+        XCTAssertTrue(waitUntil {
+            SurfaceMetadataStore.shared.getMetadata(
+                workspaceId: workspace.id,
+                surfaceId: terminalPanel.id
+            ).metadata[MetadataKey.activity] as? String == SidebarActivityState.working.rawValue
+        })
+
+        let response = controller.v2DispatchNotification(
+            "notification.create_for_surface",
+            id: 1,
+            params: [
+                "workspace_id": workspace.id.uuidString,
+                "surface_id": terminalPanel.id.uuidString,
+                "title": "Codex",
+                legacyCodexNotifyPayloadKey: try legacyCodexNotifyPayload(threadId: childThreadId),
+            ]
+        )
+        XCTAssertTrue(response.contains("\"ok\":true"), "expected success response, got \(response)")
+        XCTAssertFalse(store.hasUnreadNotification(forTabId: workspace.id, surfaceId: terminalPanel.id))
+        XCTAssertTrue(waitUntil {
+            SurfaceMetadataStore.shared.getMetadata(
+                workspaceId: workspace.id,
+                surfaceId: terminalPanel.id
+            ).metadata[MetadataKey.activity] as? String == SidebarActivityState.working.rawValue
+        })
+        XCTAssertEqual(waitingEdges, [])
+    }
+
+    func testLegacyCodexNotifyMatchKeepsCurrentCompletionBehavior() async throws {
+        let appDelegate = AppDelegate.shared ?? AppDelegate()
+        let manager = TabManager()
+        let store = TerminalNotificationStore.shared
+        let controller = TerminalController.shared
+        let originalTabManager = appDelegate.tabManager
+        let originalNotificationStore = appDelegate.notificationStore
+        let originalControllerTabManager = controller.tabManager
+        let originalNotifications = store.notifications
+        let originalAppFocusOverride = AppFocusState.overrideIsFocused
+        var waitingEdges: [Bool] = []
+
+        store.replaceNotificationsForTesting([])
+        store.configureNotificationDeliveryHandlerForTesting { _, _ in }
+        store.configureWaitingEdgeHandlerForTesting { entered, _ in waitingEdges.append(entered) }
+        appDelegate.tabManager = manager
+        appDelegate.notificationStore = store
+        controller.tabManager = manager
+        AppFocusState.overrideIsFocused = false
+
+        defer {
+            store.resetWaitingEdgeHandlerForTesting()
+            store.resetNotificationDeliveryHandlerForTesting()
+            store.replaceNotificationsForTesting(originalNotifications)
+            appDelegate.tabManager = originalTabManager
+            appDelegate.notificationStore = originalNotificationStore
+            controller.tabManager = originalControllerTabManager
+            AppFocusState.overrideIsFocused = originalAppFocusOverride
+        }
+
+        guard let workspace = manager.selectedWorkspace,
+              let terminalPanel = workspace.focusedTerminalPanel else {
+            return XCTFail("Expected initial focused terminal panel")
+        }
+
+        let rootThreadId = UUID().uuidString.lowercased()
+        _ = await ConversationStore.shared.captureRuntimeEnv(
+            surfaceId: terminalPanel.id.uuidString,
+            id: rootThreadId,
+            cwd: nil
+        )
+        SurfaceLivenessDeriver.onAgentLifecycleChanged(
+            surfaceId: terminalPanel.id,
+            workspaceId: workspace.id,
+            activity: .working
+        )
+        XCTAssertTrue(waitUntil {
+            SurfaceMetadataStore.shared.getMetadata(
+                workspaceId: workspace.id,
+                surfaceId: terminalPanel.id
+            ).metadata[MetadataKey.activity] as? String == SidebarActivityState.working.rawValue
+        })
+
+        let response = controller.v2DispatchNotification(
+            "notification.create_for_surface",
+            id: 2,
+            params: [
+                "workspace_id": workspace.id.uuidString,
+                "surface_id": terminalPanel.id.uuidString,
+                "title": "Codex",
+                legacyCodexNotifyPayloadKey: try legacyCodexNotifyPayload(threadId: rootThreadId),
+            ]
+        )
+        XCTAssertTrue(response.contains("\"ok\":true"), "expected success response, got \(response)")
+        XCTAssertTrue(store.hasUnreadNotification(forTabId: workspace.id, surfaceId: terminalPanel.id))
+        XCTAssertEqual(waitingEdges, [true])
+        XCTAssertTrue(waitUntil {
+            SurfaceMetadataStore.shared.getMetadata(
+                workspaceId: workspace.id,
+                surfaceId: terminalPanel.id
+            ).metadata[MetadataKey.activity] as? String == SidebarActivityState.idle.rawValue
+        })
+    }
+
+    func testLegacyCodexNotifyWithoutRuntimeCaptureFallsBackToCurrentBehavior() throws {
+        let appDelegate = AppDelegate.shared ?? AppDelegate()
+        let manager = TabManager()
+        let store = TerminalNotificationStore.shared
+        let controller = TerminalController.shared
+        let originalTabManager = appDelegate.tabManager
+        let originalNotificationStore = appDelegate.notificationStore
+        let originalControllerTabManager = controller.tabManager
+        let originalNotifications = store.notifications
+        let originalAppFocusOverride = AppFocusState.overrideIsFocused
+        var waitingEdges: [Bool] = []
+
+        store.replaceNotificationsForTesting([])
+        store.configureNotificationDeliveryHandlerForTesting { _, _ in }
+        store.configureWaitingEdgeHandlerForTesting { entered, _ in waitingEdges.append(entered) }
+        appDelegate.tabManager = manager
+        appDelegate.notificationStore = store
+        controller.tabManager = manager
+        AppFocusState.overrideIsFocused = false
+
+        defer {
+            store.resetWaitingEdgeHandlerForTesting()
+            store.resetNotificationDeliveryHandlerForTesting()
+            store.replaceNotificationsForTesting(originalNotifications)
+            appDelegate.tabManager = originalTabManager
+            appDelegate.notificationStore = originalNotificationStore
+            controller.tabManager = originalControllerTabManager
+            AppFocusState.overrideIsFocused = originalAppFocusOverride
+        }
+
+        guard let workspace = manager.selectedWorkspace,
+              let terminalPanel = workspace.focusedTerminalPanel else {
+            return XCTFail("Expected initial focused terminal panel")
+        }
+
+        let response = controller.v2DispatchNotification(
+            "notification.create_for_surface",
+            id: 3,
+            params: [
+                "workspace_id": workspace.id.uuidString,
+                "surface_id": terminalPanel.id.uuidString,
+                "title": "Codex",
+                legacyCodexNotifyPayloadKey: try legacyCodexNotifyPayload(threadId: UUID().uuidString.lowercased()),
+            ]
+        )
+        XCTAssertTrue(response.contains("\"ok\":true"), "expected success response, got \(response)")
+        XCTAssertTrue(store.hasUnreadNotification(forTabId: workspace.id, surfaceId: terminalPanel.id))
+        XCTAssertEqual(waitingEdges, [true])
     }
 
     func testNotificationCustomStagingPreservesSourceFileWithCmuxPrefix() {

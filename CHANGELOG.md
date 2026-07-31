@@ -6,13 +6,31 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+## [0.63.0] - 2026-07-31
+
+Headline: **The A button becomes a real agent launcher, and fleet attention stays truthful.** Launch the default agent in one click or open a keyboard-ready picker for saved configurations, while root-owned lifecycle truth prevents child-agent activity from pulling the wrong surface into Waiting.
+
+### Added
+
+- **The A button is now a split agent launcher.** Click the main zone to launch the effective default, or use press-and-hold, right-click, or the new caret to open a keyboard-ready picker for saved configurations, recent launches, and launch stats. The picker stays anchored to the button, scrolls long shortlists, explains unavailable harnesses inline, and keeps digit launch shortcuts aligned. ([#355](https://github.com/Stage-11-Agentics/c11/pull/355), [#357](https://github.com/Stage-11-Agentics/c11/pull/357), [#395](https://github.com/Stage-11-Agentics/c11/pull/395), [#396](https://github.com/Stage-11-Agentics/c11/pull/396), [#397](https://github.com/Stage-11-Agentics/c11/pull/397)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **Agent model prices can appear directly in the picker.** The new file-first `c11 model-costs` commands let agents maintain a provenance-stamped API-price catalog without launching the app; the cost column reads it fresh on every open and disappears completely when no prices are available. ([#396](https://github.com/Stage-11-Agentics/c11/pull/396)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **Agent-state marks explain themselves.** Hover help, accessibility copy, and Surface Details now describe Working, Waiting, Idle, and Cold in plain language, including trustworthy locale-aware durations and flagged or suppressed modifiers. ([#394](https://github.com/Stage-11-Agentics/c11/pull/394)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+
 ### Changed
 
-- **Kimi launches fully autonomous.** `--yolo` auto-approves tool calls but still lets Kimi stop to ask questions; `--auto` is its fully autonomous permission mode, which is the posture c11 wants for an agent it dispatches. Launch and resume rails both moved.
+- **Kimi launches fully autonomous.** `--yolo` auto-approves tool calls but still lets Kimi stop to ask questions; `--auto` is its fully autonomous permission mode, which is the posture c11 wants for an agent it dispatches. Launch and resume rails both moved. ([#393](https://github.com/Stage-11-Agentics/c11/pull/393)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **The sidebar footer floats cleanly over the workspace rail.** Cards fade beneath a bottom blur scrim, the Waiting Agents cluster has balanced margins, card spacing is roomier, and the little-used previous/next arrow row is gone; keyboard workspace navigation is unchanged. The sidebar also suppresses the phantom system scroll indicator without disabling scrolling. ([#391](https://github.com/Stage-11-Agentics/c11/pull/391), [#392](https://github.com/Stage-11-Agentics/c11/pull/392)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **The Markdown tab-bar button can be hidden without disabling Markdown surfaces.** A dedicated setting reclaims the toolbar slot while leaving markdown available through the CLI, socket, and command palette. ([#397](https://github.com/Stage-11-Agentics/c11/pull/397)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
 
 ### Fixed
 
-- **A launch command from an older release no longer sticks forever.** The launch rails compose from the operator's saved per-agent command, and editing any one agent in Settings pickles every agent's then-current factory default into UserDefaults — so a factory command that later gained a flag left existing operators launching the old line, silently, on every launch. Kimi went bare → `--yolo` → `--auto` and OpenCode bare → `--auto` this way; a saved command that still exactly matches a previous release's default is now carried forward, while anything hand-edited is left untouched.
+- **A launch command from an older release no longer sticks forever.** The launch rails compose from the operator's saved per-agent command, and editing any one agent in Settings pickles every agent's then-current factory default into UserDefaults — so a factory command that later gained a flag left existing operators launching the old line, silently, on every launch. Kimi went bare → `--yolo` → `--auto` and OpenCode bare → `--auto` this way; a saved command that still exactly matches a previous release's default is now carried forward, while anything hand-edited is left untouched. ([#393](https://github.com/Stage-11-Agentics/c11/pull/393)) — thanks [@BenevolentFutures](https://github.com/BenevolentFutures)!
+- **Child-agent completions no longer make an active parent look Waiting.** Codex and OpenCode lifecycle events now reduce through root-owned attention truth, rejecting child, stale, duplicated, or mismatched completion signals instead of letting notification history drive the surface state.
+- **Replying to a flagged surface clears its flag on the first keystroke.** Flag events also retain the raising surface's identity, and the banner dismiss control now has the same clear hover, tooltip, and accessibility treatment as a tab close button.
+
+### Thanks to 1 contributor!
+
+- [@BenevolentFutures](https://github.com/BenevolentFutures)
 
 ## [0.61.0] - 2026-07-29
 

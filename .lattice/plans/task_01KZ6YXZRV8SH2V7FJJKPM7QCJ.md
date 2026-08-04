@@ -1,0 +1,15 @@
+# C11-190: Sentry error monitoring was blind for a week — verify it resumes after the 2026-08-24 quota reset
+
+Found while finishing Acetate's ACE-801 (Sentry rollout on the same org).
+
+WHAT HAPPENED. c11's Sentry project was fine. The ORG's quota was not. `stage-11-kl` is on the free Developer plan — 5,000 errors/month, shared across every project — and the retired `demo-project` (id 4511028453900288, retired April 2026) still had an ACTIVE client key. Old c11 builds in the wild kept sending to that retired DSN. Over 30 days it consumed 3,735 of the 5,000 errors and had 1,121,397 more rejected. Its top issues are another user's installs (`c11_cli.CLIError: Socket not found at /Users/<someone-else>/...`) and `App Hanging ... 2000 ms` at a threshold c11 has since changed — entirely stale traffic.
+
+CONSEQUENCE FOR c11: 11,700 error events DROPPED in that window (30d: accepted 1,466, rate_limited 11,700). c11 production error monitoring was effectively blind for at least a week, and nothing surfaced it — quota exhaustion is silent to the sender. Events are accepted at the edge with HTTP 200 and a real event id, then discarded server-side as `outcome=rate_limited`. Only `stats_v2` can see it.
+
+WHAT I DID, 2026-08-04: deactivated `demo-project`'s client key (key id ce836c6e3462a139dcd469f5e4d3ceec, isActive: false). The project is intact, not deleted; one PUT reverses it. c11's own key was verified untouched and active. Full write-up + the two diagnostic curl calls are in platform/sentry.md § 'The quota incident (2026-08-04)'.
+
+WHAT REMAINS (this ticket). Consumed quota is not refundable: the billing period runs to 2026-08-24 with onDemandMaxSpend 0 and no trial left, so the org stays blocked until then and c11 is still blind right now.
+
+  1. After 2026-08-24, confirm c11 events are actually being STORED again — check outcome=accepted, not just that the SDK returns an event id. The whole lesson here is that those two are not the same thing.
+  2. Decide the budget question. c11 alone used ~1,466 accepted errors in 30d against a 5,000 org cap, and Acetate is about to become a second reporting client on the same cap. Per-key rate limits do NOT exist on this plan (the `rate-limits` feature is absent from the org — a PUT with a rateLimit body returns null and silently does nothing, verified). So the only fences are a paid plan or an on-demand budget. Billing = operator decision.
+  3. Consider whether any shipped c11 build still points at the retired DSN. Deactivating the key means those installs now report nowhere at all — which is strictly better than eating the org's quota, but it is worth knowing if a supported version is affected.

@@ -58,11 +58,11 @@ private final class CLISocketSentryTelemetry {
     private let workspaceId: String?
     private let surfaceId: String?
     private let disabledByEnv: Bool
+    private let configuredDSN: String?
 
 #if canImport(Sentry)
     private static let startupLock = NSLock()
     private static var started = false
-    private static let dsn = "https://ce836c6e3462a139dcd469f5e4d3ceec@o4511028450295808.ingest.us.sentry.io/4511028453900288"
 
     private static func currentSentryReleaseName() -> String? {
         guard let bundleIdentifier = currentSentryBundleIdentifier(),
@@ -171,12 +171,31 @@ private final class CLISocketSentryTelemetry {
         self.disabledByEnv =
             processEnv["CMUX_CLI_SENTRY_DISABLED"] == "1" ||
             processEnv["CMUX_CLAUDE_HOOK_SENTRY_DISABLED"] == "1"
+        self.configuredDSN = Self.resolveDSN(processEnv)
+    }
+
+    /// CLI error reporting is **opt-in**, and there is no compiled-in DSN.
+    ///
+    /// The CLI runs on every shell prompt, every agent tool call, and every
+    /// Claude hook. When the socket is unreachable, each of those invocations
+    /// captured one Sentry event: over 30 days that produced 1.12M events
+    /// against an org-wide error quota shared with every other Stage 11
+    /// project. The events also carried absolute home-directory paths.
+    ///
+    /// Set `C11_CLI_SENTRY_DSN` to re-enable it for a debugging session.
+    private static func resolveDSN(_ processEnv: [String: String]) -> String? {
+        let raw = processEnv["C11_CLI_SENTRY_DSN"] ?? processEnv["CMUX_CLI_SENTRY_DSN"]
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty
+        else { return nil }
+        return trimmed
     }
 
     func breadcrumb(_ message: String, data: [String: Any] = [:]) {
         guard shouldEmit else { return }
 #if canImport(Sentry)
-        Self.ensureStarted()
+        guard let dsn = configuredDSN else { return }
+        Self.ensureStarted(dsn: dsn)
         var payload = baseContext()
         for (key, value) in data {
             payload[key] = value
@@ -191,7 +210,8 @@ private final class CLISocketSentryTelemetry {
     func captureError(stage: String, error: Error) {
         guard shouldEmit else { return }
 #if canImport(Sentry)
-        Self.ensureStarted()
+        guard let dsn = configuredDSN else { return }
+        Self.ensureStarted(dsn: dsn)
         var context = baseContext()
         context["stage"] = stage
         context["error"] = String(describing: error)
@@ -212,7 +232,7 @@ private final class CLISocketSentryTelemetry {
     }
 
     private var shouldEmit: Bool {
-        !disabledByEnv
+        !disabledByEnv && configuredDSN != nil
     }
 
     private func baseContext() -> [String: Any] {
@@ -303,7 +323,7 @@ private final class CLISocketSentryTelemetry {
     }
 
 #if canImport(Sentry)
-    private static func ensureStarted() {
+    private static func ensureStarted(dsn: String) {
         startupLock.lock()
         defer { startupLock.unlock() }
         guard !started else { return }
@@ -316,7 +336,9 @@ private final class CLISocketSentryTelemetry {
             options.environment = "production-cli"
 #endif
             options.debug = false
-            options.sendDefaultPii = true
+            // Absolute home-directory paths from other people's machines used to
+            // land in issue titles here. The CLI's diagnostics do not need PII.
+            options.sendDefaultPii = false
             options.attachStacktrace = true
             options.tracesSampleRate = 0.0
         }

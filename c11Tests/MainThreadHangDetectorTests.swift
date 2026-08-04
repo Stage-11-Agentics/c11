@@ -110,6 +110,176 @@ final class MainThreadHangDetectorTests: XCTestCase {
     }
 }
 
+/// Pure, in-process tests for `MainThreadHangSignature` — the grouping key the
+/// watchdog attaches to every outbound hang report.
+///
+/// Fixtures are verbatim `backtrace_symbols` lines from real production reports
+/// on `com.stage11.c11@0.58.0+116`, so these exercise the parser against the
+/// exact text it will see rather than a tidied-up approximation.
+final class MainThreadHangSignatureTests: XCTestCase {
+
+    private func describe(_ stack: [String], ownModule: String = "c11") -> MainThreadHangDescriptor {
+        MainThreadHangSignature.describe(stack: stack, ownModule: ownModule)
+    }
+
+    // MARK: - Frame parsing
+
+    func testParseDropsFrameIndexAddressAndOffset() {
+        let frame = MainThreadHangSignature.parse(
+            "9   AppKit                              0x000000018c43c35c _DPSBlockUntilNextEventMatchingListInMode + 228"
+        )
+        XCTAssertEqual(frame, MainThreadHangSignature.Frame(
+            module: "AppKit", symbol: "_DPSBlockUntilNextEventMatchingListInMode"
+        ))
+    }
+
+    func testParseKeepsSymbolsThatCarryNoOffset() {
+        let frame = MainThreadHangSignature.parse("0   c11   0x0000000100371b98 main")
+        XCTAssertEqual(frame, MainThreadHangSignature.Frame(module: "c11", symbol: "main"))
+    }
+
+    func testParseRejectsGarbage() {
+        XCTAssertNil(MainThreadHangSignature.parse(""))
+        XCTAssertNil(MainThreadHangSignature.parse("   "))
+        // Module with no symbol column carries nothing worth grouping on.
+        XCTAssertNil(MainThreadHangSignature.parse("3   SwiftUI   0x00000001b6d4ad7c"))
+    }
+
+    // MARK: - Cause classification
+
+    func testSynchronousXPCWaitOutranksTheLibraryThatAskedForIt() {
+        // Main is parked in mach_msg, but the reason is a blocking XPC round
+        // trip to LaunchServices — grouping it as "idle in mach_msg" would hide
+        // the real defect.
+        let d = describe([
+            "0   libsystem_kernel.dylib   0x0000000180e03c34 mach_msg2_trap + 8",
+            "1   libsystem_kernel.dylib   0x0000000180e0c9c0 mach_msg_overwrite + 480",
+            "2   libsystem_kernel.dylib   0x0000000180e03fc0 mach_msg + 24",
+            "3   libdispatch.dylib   0x0000000180ca7c64 _dispatch_mach_send_and_wait_for_reply + 548",
+            "4   libdispatch.dylib   0x0000000180ca8004 dispatch_mach_send_with_result_and_wait_for_reply + 60",
+            "5   libxpc.dylib   0x0000000180b21eb0 xpc_connection_send_message_with_reply_sync + 284",
+            "6   LaunchServices   0x00000001813ec0b4 _ZN26LSClientToServerConnection13sendWithReplyEPv + 68",
+        ])
+        XCTAssertEqual(d.cause, "xpc-sync-wait")
+        XCTAssertNil(d.phase)
+        XCTAssertEqual(d.label, "xpc-sync-wait")
+    }
+
+    func testGenericMetadataInstantiationIsItsOwnCause() {
+        // The stack C11-192 was filed on: the Swift runtime building metadata
+        // for an opaque `some View` under SwiftUI.Button.body.
+        let d = describe([
+            "0   libswiftCore.dylib   0x0000000194571728 _ZL24_gatherGenericParametersPKN5swift23TargetContextDescriptorINS_9InProcessEEE + 1548",
+            "1   libswiftCore.dylib   0x000000019457e5a4 _ZNK12_GLOBAL__N_122DecodedMetadataBuilder22createBoundGenericTypeE + 264",
+            "6   libswiftCore.dylib   0x000000019456d874 swift_getTypeByMangledName + 336",
+            "7   libswiftCore.dylib   0x0000000194570604 _ZL31swift_getOpaqueTypeMetadataImplN5swift15MetadataRequestE + 384",
+            "8   SwiftUI   0x00000001b6d4ad7c $s7SwiftUI6ButtonV4bodyQrvg + 304",
+            "9   SwiftUICore   0x000000022d9b1aa8 $s7SwiftUI16ViewBodyAccessorV06updateD02of7changedyx_SbtFyyScMYcXEfU_ + 1152",
+        ])
+        // SwiftUI frames are present and would otherwise win; the runtime work
+        // is the actionable classification, so it has to outrank them.
+        XCTAssertEqual(d.cause, "generic-metadata")
+        XCTAssertNil(d.phase, "phase only narrows the swiftui-update bucket")
+        XCTAssertTrue(d.topSymbol?.hasPrefix("_ZL24_gatherGenericParameters") == true)
+    }
+
+    func testIdleRunLoopIsSeparatedFromAWedgeInCompute() {
+        let d = describe([
+            "0   libsystem_kernel.dylib   0x0000000187861c34 mach_msg2_trap + 8",
+            "1   libsystem_kernel.dylib   0x000000018786a9c0 mach_msg_overwrite + 480",
+            "2   libsystem_kernel.dylib   0x0000000187861fc0 mach_msg + 24",
+            "3   CoreFoundation   0x00000001879630d8 __CFRunLoopServiceMachPort + 160",
+            "4   CoreFoundation   0x00000001879619c4 __CFRunLoopRun + 1188",
+            "9   AppKit   0x000000018c43c35c _DPSBlockUntilNextEventMatchingListInMode + 228",
+        ])
+        XCTAssertEqual(d.cause, "runloop-idle")
+    }
+
+    func testSwiftUIGraphWorkIsNarrowedByHostPhase() {
+        let layout = describe([
+            "0   AttributeGraph   0x00000001b73c6384 _ZN2AG5Graph11UpdateStack6updateEv + 496",
+            "1   AttributeGraph   0x00000001b73c6aec _ZN2AG5Graph16update_attributeE + 352",
+            "2   SwiftUICore   0x000000022e87ed7c $s7SwiftUI25ViewGraphRootValueUpdaterPAAE6render8interval + 872",
+            "3   SwiftUI   0x00000001b64e46b0 $s7SwiftUI13NSHostingViewC6layoutyyF + 480",
+        ])
+        XCTAssertEqual(layout.cause, "swiftui-update")
+        XCTAssertEqual(layout.phase, "hosting-layout")
+        XCTAssertEqual(layout.label, "swiftui-update/hosting-layout")
+
+        let transaction = describe([
+            "0   AttributeGraph   0x00000001b73c6384 _ZN2AG8Subgraph6updateEj + 668",
+            "1   SwiftUICore   0x0000000236eb37a0 $s7SwiftUI9GraphHostC17flushTransactionsyyF + 180",
+            "2   SwiftUI   0x00000001bf07a2dc $s7SwiftUI13NSHostingViewC16beginTransactionyyFyycfU_ + 24",
+        ])
+        XCTAssertEqual(transaction.phase, "hosting-begin-transaction")
+
+        // The two must not collapse together — they are different bugs.
+        XCTAssertNotEqual(layout.fingerprint, transaction.fingerprint)
+    }
+
+    func testUnrelatedCausesNeverShareAFingerprint() {
+        let stacks: [[String]] = [
+            ["0   libsystem_kernel.dylib   0x1 mach_msg2_trap + 8",
+             "3   libdispatch.dylib   0x2 _dispatch_mach_send_and_wait_for_reply + 548"],
+            ["0   libswiftCore.dylib   0x3 swift_getTypeByMangledName + 336"],
+            ["0   libsystem_kernel.dylib   0x4 psynch_mutexwait + 8"],
+            ["0   CoreText   0x5 _ZN5TFont8SetFlagsEjPK18__CTFontDescriptor + 380",
+             "1   AppKit   0x6 -[NSView layout] + 96"],
+            ["0   libsystem_kernel.dylib   0x7 mach_msg2_trap + 8",
+             "3   CoreFoundation   0x8 __CFRunLoopServiceMachPort + 160"],
+        ]
+        let fingerprints = stacks.map { describe($0).fingerprint }
+        XCTAssertEqual(Set(fingerprints.map { $0.joined(separator: "|") }).count, stacks.count)
+        // Every fingerprint stays namespaced so hang issues are recognizable.
+        for fingerprint in fingerprints {
+            XCTAssertEqual(fingerprint.first, "main-thread-hang")
+        }
+    }
+
+    // MARK: - Culprit
+
+    func testCulpritIsTheDeepestOwnedFrameAndSkipsMain() {
+        let d = describe([
+            "0   libobjc.A.dylib   0x0000000197145844 objc_msgSend + 68",
+            "1   CoreText   0x000000019a47b798 _ZN5TFont8SetFlagsEj + 380",
+            "2   c11   0x0000000101728028 $s8Bonsplit11TabItemViewV17shortcutHintWidth + 1136",
+            "3   c11   0x000000010171fc20 $s8Bonsplit11TabItemViewV4bodyQrvg + 3892",
+            "4   c11   0x0000000100371b98 main + 64",
+        ])
+        XCTAssertEqual(d.culprit, "$s8Bonsplit11TabItemViewV17shortcutHintWidth")
+    }
+
+    func testCulpritIsAbsentWhenTheCaptureNeverReachesOurCode() {
+        let d = describe([
+            "0   libsystem_kernel.dylib   0x1 mach_msg2_trap + 8",
+            "1   CoreFoundation   0x2 __CFRunLoopServiceMachPort + 160",
+        ])
+        XCTAssertNil(d.culprit)
+    }
+
+    func testOwnModuleTracksTheRunningExecutableName() {
+        let stack = ["0   c11 DEV   0x1 $s3c1110TabManagerC26sessionAutosaveFingerprintSiyF + 12"]
+        XCTAssertNil(describe(stack, ownModule: "c11").culprit)
+        // A DEV build's image name differs; the caller supplies it so the
+        // culprit tag keeps working outside the shipped bundle.
+        XCTAssertEqual(
+            describe(stack, ownModule: "c11 DEV").culprit,
+            "$s3c1110TabManagerC26sessionAutosaveFingerprintSiyF"
+        )
+    }
+
+    // MARK: - Degenerate input
+
+    func testEmptyOrUnparseableCaptureStillYieldsAStableFingerprint() {
+        for stack in [[], ["<no frames captured>"], ["<thread_suspend failed>"]] as [[String]] {
+            let d = describe(stack)
+            XCTAssertFalse(d.fingerprint.isEmpty)
+            XCTAssertEqual(d.fingerprint.first, "main-thread-hang")
+        }
+        XCTAssertEqual(describe([]).cause, "unknown")
+    }
+}
+
 /// Pure, in-process tests for `SentryEventBudget` — the client-side ceiling on
 /// outbound Sentry events. The org's error quota is shared across projects and
 /// this plan offers no server-side per-key rate limits, so this policy is the

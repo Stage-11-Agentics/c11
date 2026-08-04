@@ -2,6 +2,178 @@ import AppKit
 import Darwin
 import Foundation
 
+/// What a captured main-thread backtrace says the wedge actually is.
+///
+/// `cause` answers "what is main blocked on" and `phase` narrows the largest
+/// cause (SwiftUI graph work) to the host operation driving it. Together they
+/// form the Sentry fingerprint. `culprit` and `topSymbol` are per-report detail
+/// that rides along as tags — searchable inside an issue without splitting it.
+struct MainThreadHangDescriptor: Equatable {
+    let cause: String
+    let phase: String?
+    /// Deepest frame belonging to this app's own binary, if the captured window
+    /// reached one. Mangled — run it through `swift demangle`.
+    let culprit: String?
+    let topSymbol: String?
+
+    /// Human-readable signature, used as the Sentry message so an issue's title
+    /// names its cause instead of whichever stall duration happened to be first.
+    var label: String {
+        guard let phase else { return cause }
+        return "\(cause)/\(phase)"
+    }
+
+    var fingerprint: [String] {
+        var parts = ["main-thread-hang", cause]
+        if let phase { parts.append(phase) }
+        return parts
+    }
+}
+
+/// Reduces a captured main-thread backtrace to a stable grouping signature.
+///
+/// Sentry groups message events by the stack of the thread that *reported*
+/// them. For hang reports that is always the watchdog's own loop, byte-identical
+/// every time, so every main-thread hang — whatever wedged main — collapses into
+/// one issue. Fingerprinting on the wedged stack instead is what makes causes
+/// separable at all.
+///
+/// Deliberately coarse. The capture is a single sample of a moving thread, so
+/// fingerprinting on leaf frames splits one cause across hundreds of issues:
+/// over 875 real reports, a top-5-frame fingerprint produced 645 groups, 607 of
+/// them singletons. Classifying *what main is blocked on* produced a handful of
+/// durable buckets instead.
+enum MainThreadHangSignature {
+
+    /// One parsed `backtrace_symbols` line: `"12  AppKit  0x1854  -[NSView layout] + 96"`.
+    struct Frame: Equatable {
+        let module: String
+        let symbol: String
+    }
+
+    // Ordered: the first match wins, so a blocking wait outranks whatever
+    // library asked for it. A thread parked in a semaphore is a lock problem
+    // no matter how pretty the frames above it look.
+    private static let causeRules: [(cause: String, needles: [String])] = [
+        ("xpc-sync-wait", [
+            "_dispatch_mach_send_and_wait_for_reply",
+            "xpc_connection_send_message_with_reply_sync",
+            "CFXPCSendMessageWithReply",
+        ]),
+        ("lock-wait", [
+            "psynch_mutexwait", "psynch_cvwait", "semaphore_wait",
+            "semaphore_timedwait", "ulock_wait", "_pthread_cond_wait",
+        ]),
+        ("generic-metadata", [
+            "swift_getTypeByMangledName", "_gatherGenericParameters",
+            "swift_getOpaqueTypeMetadata", "instantiateGenericMetadata",
+            "_swift_getGenericMetadata", "MetadataCacheKey",
+        ]),
+    ]
+
+    private static let swiftUIModules: Set<String> = [
+        "SwiftUI", "SwiftUICore", "AttributeGraph",
+    ]
+
+    private static let renderingModules: Set<String> = [
+        "AppKit", "QuartzCore", "CoreGraphics", "CoreText", "HIToolbox",
+    ]
+
+    /// SwiftUI host operations, most specific first — these say *which* graph
+    /// pass is running, which is the difference between a layout bug and a
+    /// transaction-flush bug.
+    ///
+    /// Only `swiftui-update` is narrowed by phase (see `describe`). Every other
+    /// cause already names something more actionable than the host operation
+    /// above it, and splitting them by phase would fragment the small buckets
+    /// that matter most: applied to all causes on the same corpora, this splits
+    /// `generic-metadata` three ways for no diagnostic gain.
+    private static let phaseRules: [(phase: String, needle: String)] = [
+        ("hosting-begin-transaction", "NSHostingViewC16beginTransaction"),
+        ("hosting-layout", "NSHostingViewC6layout"),
+        ("display-list-render", "ViewGraphRootValueUpdaterPAAE6render"),
+        ("preferences", "updatePreferences"),
+    ]
+
+    /// How far down the stack the cause rules look. Blocking waits and metadata
+    /// instantiation sit near the leaf; searching the whole 96-frame capture
+    /// would let an unrelated deep frame decide the bucket.
+    private static let causeWindow = 16
+    /// How far down "which module is main working in" is decided.
+    private static let moduleWindow = 8
+
+    /// `backtrace_symbols` emits `"%-4d%-35s 0x%016lx %s + %lu"`. The load
+    /// address is the only reliable delimiter: image names may contain spaces
+    /// (`c11 DEV`), so splitting on whitespace alone mis-parses dev builds.
+    static func parse(_ line: String) -> Frame? {
+        var tokens = line.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+        if let first = tokens.first, Int(first) != nil { tokens.removeFirst() }
+        guard let addressIndex = tokens.firstIndex(where: { $0.hasPrefix("0x") }) else { return nil }
+
+        let module = tokens[tokens.startIndex..<addressIndex].joined(separator: " ")
+        var rest = Array(tokens[tokens.index(after: addressIndex)...])
+        // Trailing "+ <offset>" moves with every build; it is noise for grouping.
+        if rest.count >= 2, rest[rest.count - 2] == "+", Int(rest[rest.count - 1]) != nil {
+            rest.removeLast(2)
+        }
+        let symbol = rest.joined(separator: " ")
+        guard !module.isEmpty, !symbol.isEmpty else { return nil }
+        return Frame(module: module, symbol: symbol)
+    }
+
+    static func describe(stack: [String], ownModule: String) -> MainThreadHangDescriptor {
+        let frames = stack.compactMap(parse)
+        guard !frames.isEmpty else {
+            return MainThreadHangDescriptor(
+                cause: "unknown", phase: nil, culprit: nil, topSymbol: nil
+            )
+        }
+
+        let cause = self.cause(frames)
+        return MainThreadHangDescriptor(
+            cause: cause,
+            phase: cause == "swiftui-update" ? phase(frames) : nil,
+            culprit: culprit(frames, ownModule: ownModule),
+            topSymbol: frames[0].symbol
+        )
+    }
+
+    static func cause(_ frames: [Frame]) -> String {
+        guard let leaf = frames.first else { return "unknown" }
+        let window = frames.prefix(causeWindow)
+        for rule in causeRules where window.contains(where: { frame in
+            rule.needles.contains { frame.symbol.contains($0) }
+        }) {
+            return rule.cause
+        }
+        // Parked at the top of the run loop waiting for work: main is idle, and
+        // the watchdog's heartbeat should have been serviced. Its own bucket so
+        // it can be judged separately from a thread wedged in compute.
+        if leaf.symbol.contains("mach_msg2_trap"),
+           window.contains(where: { $0.symbol.contains("CFRunLoopServiceMachPort") }) {
+            return "runloop-idle"
+        }
+        let modules = frames.prefix(moduleWindow).map(\.module)
+        if modules.contains(where: swiftUIModules.contains) { return "swiftui-update" }
+        if modules.contains(where: renderingModules.contains) { return "appkit" }
+        return "other"
+    }
+
+    static func phase(_ frames: [Frame]) -> String? {
+        for rule in phaseRules where frames.contains(where: { $0.symbol.contains(rule.needle) }) {
+            return rule.phase
+        }
+        return nil
+    }
+
+    static func culprit(_ frames: [Frame], ownModule: String) -> String? {
+        // `main` is in every capture and names nothing; skip it so the tag
+        // stays empty rather than useless when nothing else of ours is on the
+        // stack.
+        frames.first { $0.module == ownModule && $0.symbol != "main" }?.symbol
+    }
+}
+
 /// Pure decision core for main-thread hang detection.
 ///
 /// Split out from `MainThreadHangMonitor` so the stall/recovery state machine
@@ -272,15 +444,33 @@ final class MainThreadHangMonitor: @unchecked Sendable {
             .map { "\($0.offset)\t\($0.element)" }
             .joined(separator: "\n")
         if shouldReportHangToSentry(gapMs: gapMs) {
+            // `processName` is the "own binary" match for culprit extraction:
+            // it equals the Mach-O image name `backtrace_symbols` reports for
+            // both the shipped bundle (`c11`) and dev builds (`c11 DEV`). The
+            // tag is best-effort anyway — absent whenever the capture window
+            // never reaches our code — so a mismatch degrades to no tag.
+            let signature = MainThreadHangSignature.describe(
+                stack: stack,
+                ownModule: ProcessInfo.processInfo.processName
+            )
+            var tags = ["hang.cause": signature.cause, "hang.recapture": recapture ? "true" : "false"]
+            tags["hang.phase"] = signature.phase
+            tags["hang.culprit"] = signature.culprit
+            tags["hang.top_symbol"] = signature.topSymbol
+            // The duration is not the grouping key, so it does not belong in
+            // the title: the message names the cause and `stalled_ms` stays in
+            // the event context.
             sentryCaptureWarning(
-                "main thread hang \(Int(gapMs))ms\(recapture ? " (persist)" : "")",
+                "main thread hang (\(signature.label))",
                 category: "hang",
                 data: [
                     "stalled_ms": Int(gapMs),
                     "recapture": recapture,
                     "stack": top,
                 ],
-                contextKey: "hang"
+                contextKey: "hang",
+                fingerprint: signature.fingerprint,
+                tags: tags
             )
         }
         PostHogAnalytics.shared.captureMainThreadHang(

@@ -211,12 +211,18 @@ func sentryBreadcrumb(_ message: String, category: String = "ui", data: [String:
     SentrySDK.addBreadcrumb(crumb)
 }
 
+/// Sentry caps tag values; anything longer is rejected outright rather than
+/// truncated, which would silently drop the tag we most want to facet on.
+private let sentryTagValueLimit = 190
+
 private func sentryCaptureMessage(
     _ message: String,
     level: SentryLevel,
     category: String,
     data: [String: Any]?,
-    contextKey: String?
+    contextKey: String?,
+    fingerprint: [String]?,
+    tags: [String: String]?
 ) {
     guard TelemetrySettings.enabledForCurrentLaunch else { return }
     _ = SentrySDK.capture(message: message) { scope in
@@ -225,6 +231,16 @@ private func sentryCaptureMessage(
         if let data {
             scope.setContext(value: data, key: contextKey ?? category)
         }
+        // Without an explicit fingerprint Sentry groups a message event by the
+        // stack of the thread that captured it. For anything reported from a
+        // dedicated worker (the hang watchdog) that stack is identical every
+        // time, so unrelated events pile into one issue.
+        if let fingerprint, !fingerprint.isEmpty {
+            scope.setFingerprint(fingerprint)
+        }
+        for (key, value) in tags ?? [:] where !value.isEmpty {
+            scope.setTag(value: String(value.prefix(sentryTagValueLimit)), key: key)
+        }
     }
 }
 
@@ -232,18 +248,38 @@ func sentryCaptureWarning(
     _ message: String,
     category: String = "ui",
     data: [String: Any]? = nil,
-    contextKey: String? = nil
+    contextKey: String? = nil,
+    fingerprint: [String]? = nil,
+    tags: [String: String]? = nil
 ) {
-    sentryCaptureMessage(message, level: .warning, category: category, data: data, contextKey: contextKey)
+    sentryCaptureMessage(
+        message,
+        level: .warning,
+        category: category,
+        data: data,
+        contextKey: contextKey,
+        fingerprint: fingerprint,
+        tags: tags
+    )
 }
 
 func sentryCaptureError(
     _ message: String,
     category: String = "ui",
     data: [String: Any]? = nil,
-    contextKey: String? = nil
+    contextKey: String? = nil,
+    fingerprint: [String]? = nil,
+    tags: [String: String]? = nil
 ) {
-    sentryCaptureMessage(message, level: .error, category: category, data: data, contextKey: contextKey)
+    sentryCaptureMessage(
+        message,
+        level: .error,
+        category: category,
+        data: data,
+        contextKey: contextKey,
+        fingerprint: fingerprint,
+        tags: tags
+    )
 }
 
 /// Telemetry-independent launch sentinel. Catches Force Quit, SIGKILL, jetsam,

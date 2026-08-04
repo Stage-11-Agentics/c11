@@ -109,3 +109,86 @@ final class MainThreadHangDetectorTests: XCTestCase {
         XCTAssertEqual(d.evaluate(nowUptime: 100.1, lastAckUptime: 100.0), .none)
     }
 }
+
+/// Pure, in-process tests for `SentryEventBudget` — the client-side ceiling on
+/// outbound Sentry events. The org's error quota is shared across projects and
+/// this plan offers no server-side per-key rate limits, so this policy is the
+/// only fence; it is worth testing as behavior rather than trusting by reading.
+final class SentryEventBudgetTests: XCTestCase {
+
+    func testCrashesAreNeverThrottled() {
+        var budget = SentryEventBudget(
+            globalPerHour: 1, globalPerDay: 1, hangsPerHour: 1, hangsPerDay: 1
+        )
+        // Burn the whole non-crash budget first.
+        XCTAssertTrue(budget.allow(.other, now: 100))
+        XCTAssertFalse(budget.allow(.other, now: 101))
+        // Crashes still get through, unbounded, and cost no budget.
+        for i in 0..<50 {
+            XCTAssertTrue(budget.allow(.crash, now: 102 + Double(i)))
+        }
+        XCTAssertEqual(budget.droppedTotal, 1)
+    }
+
+    func testHangStormIsCappedPerHour() {
+        var budget = SentryEventBudget(
+            globalPerHour: 100, globalPerDay: 500, hangsPerHour: 3, hangsPerDay: 15
+        )
+        // A wedged app recaptures every 5s: 60 attempts inside one hour.
+        var allowed = 0
+        for i in 0..<60 where budget.allow(.hang, now: 100 + Double(i) * 5) {
+            allowed += 1
+        }
+        XCTAssertEqual(allowed, 3)
+        XCTAssertEqual(budget.droppedHangs, 57)
+    }
+
+    func testHangBudgetRefillsAfterTheWindowSlides() {
+        var budget = SentryEventBudget(
+            globalPerHour: 100, globalPerDay: 500, hangsPerHour: 2, hangsPerDay: 15
+        )
+        XCTAssertTrue(budget.allow(.hang, now: 100))
+        XCTAssertTrue(budget.allow(.hang, now: 200))
+        XCTAssertFalse(budget.allow(.hang, now: 300))
+        // Just past an hour after the first two, capacity is back.
+        XCTAssertTrue(budget.allow(.hang, now: 3701))
+    }
+
+    func testDailyCapBoundsAWholeDayOfHourlyRefills() {
+        var budget = SentryEventBudget(
+            globalPerHour: 100, globalPerDay: 500, hangsPerHour: 3, hangsPerDay: 15
+        )
+        // One attempt per minute for 24h — hourly capacity keeps refilling, so
+        // only the daily cap can bound the total.
+        var allowed = 0
+        for minute in 0..<(24 * 60) where budget.allow(.hang, now: Double(minute) * 60) {
+            allowed += 1
+        }
+        XCTAssertEqual(allowed, 15)
+    }
+
+    func testHangsAlsoConsumeTheGlobalBudget() {
+        var budget = SentryEventBudget(
+            globalPerHour: 2, globalPerDay: 100, hangsPerHour: 10, hangsPerDay: 100
+        )
+        XCTAssertTrue(budget.allow(.hang, now: 100))
+        XCTAssertTrue(budget.allow(.hang, now: 110))
+        // Hang budget still has room, but the global ceiling is spent — and it
+        // must apply to every kind, or one category could starve the others.
+        XCTAssertFalse(budget.allow(.hang, now: 120))
+        XCTAssertFalse(budget.allow(.other, now: 130))
+    }
+
+    func testDeniedEventsDoNotConsumeBudget() {
+        var budget = SentryEventBudget(
+            globalPerHour: 10, globalPerDay: 100, hangsPerHour: 1, hangsPerDay: 1
+        )
+        XCTAssertTrue(budget.allow(.hang, now: 100))
+        // The hang allowance is now spent. Ten further hang attempts are denied,
+        // and those denials must not spend the global allowance — otherwise a
+        // storm in one category silently starves every other event kind.
+        for i in 0..<10 { XCTAssertFalse(budget.allow(.hang, now: 200 + Double(i))) }
+        for i in 0..<9 { XCTAssertTrue(budget.allow(.other, now: 300 + Double(i))) }
+        XCTAssertFalse(budget.allow(.other, now: 400))
+    }
+}

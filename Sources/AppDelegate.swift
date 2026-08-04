@@ -2609,6 +2609,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 options.attachStacktrace = true
                 // Avoid recursively capturing failed requests from Sentry's own ingestion endpoint.
                 options.enableCaptureFailedRequests = false
+                // Client-side ceiling on outbound events. The org's error quota is
+                // shared across every Stage 11 project and this plan has no
+                // server-side per-key rate limits, so one wedged install looping on
+                // a single issue can exhaust the quota and blind everything else.
+                // Crashes (fatal) are never throttled.
+                options.beforeSend = { event in
+                    let kind: SentryEventBudget.Kind = event.level == .fatal ? .crash : .other
+                    guard SentryEventBudgetGate.shared.allow(kind) else { return nil }
+                    return event
+                }
             }
         }
 

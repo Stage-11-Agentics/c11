@@ -85,7 +85,12 @@ final class MainThreadHangMonitor: @unchecked Sendable {
 
     private let tickIntervalMs: Double = 250
     private let maxFrames = 96
+    /// A stall must reach this before it is worth an outbound Sentry event.
+    /// Detection (and the local log) still start at the detector's 2s threshold.
+    private let sentryReportThresholdMs: Double = 5000
     private var detector = MainThreadHangDetector()
+    /// Watchdog-thread-only: has this episode already produced a Sentry event?
+    private var reportedCurrentEpisode = false
 
     private let lock = NSLock()
     private var lastAckUptime: TimeInterval = 0
@@ -183,6 +188,7 @@ final class MainThreadHangMonitor: @unchecked Sendable {
     // MARK: Hang handling
 
     private func handleHang(gapMs: Double, recapture: Bool) {
+        if !recapture { reportedCurrentEpisode = false }
         let stack = captureMainBacktrace()
         let kind = recapture ? "hang.persist" : "hang.begin"
 
@@ -202,7 +208,12 @@ final class MainThreadHangMonitor: @unchecked Sendable {
     }
 
     private func handleRecovery(durationMs: Double) {
-        appendToLog("=== c11 hang.end \(Self.timestamp()) totalMs=\(Int(durationMs)) pid=\(getpid()) ===\n\n")
+        reportedCurrentEpisode = false
+        let dropped = SentryEventBudgetGate.shared.dropped
+        appendToLog(
+            "=== c11 hang.end \(Self.timestamp()) totalMs=\(Int(durationMs)) pid=\(getpid()) "
+                + "sentrySuppressed=\(dropped.hangs)/\(dropped.total) ===\n\n"
+        )
     }
 
     // MARK: Backtrace capture
@@ -260,21 +271,42 @@ final class MainThreadHangMonitor: @unchecked Sendable {
         let top = stack.prefix(24).enumerated()
             .map { "\($0.offset)\t\($0.element)" }
             .joined(separator: "\n")
-        sentryCaptureWarning(
-            "main thread hang \(Int(gapMs))ms\(recapture ? " (persist)" : "")",
-            category: "hang",
-            data: [
-                "stalled_ms": Int(gapMs),
-                "recapture": recapture,
-                "stack": top,
-            ],
-            contextKey: "hang"
-        )
+        if shouldReportHangToSentry(gapMs: gapMs) {
+            sentryCaptureWarning(
+                "main thread hang \(Int(gapMs))ms\(recapture ? " (persist)" : "")",
+                category: "hang",
+                data: [
+                    "stalled_ms": Int(gapMs),
+                    "recapture": recapture,
+                    "stack": top,
+                ],
+                contextKey: "hang"
+            )
+        }
         PostHogAnalytics.shared.captureMainThreadHang(
             stalledMs: gapMs,
             recapture: recapture,
             topFrame: stack.first ?? ""
         )
+    }
+
+    /// At most one Sentry event per hang episode, and only for episodes that
+    /// actually reach `sentryReportThresholdMs`.
+    ///
+    /// The local hang log still records every capture — it never leaves the
+    /// machine and it is where a full episode timeline is read. Sentry only
+    /// needs to know the episode happened, to whom, and with what stack:
+    /// re-sending the same wedge every 5s for the length of a beachball was
+    /// ~98% of c11's entire event volume and bought nothing, because Sentry
+    /// groups them into a single issue anyway.
+    ///
+    /// Called only from the watchdog thread, which captures serially.
+    private func shouldReportHangToSentry(gapMs: Double) -> Bool {
+        guard gapMs >= sentryReportThresholdMs else { return false }
+        guard !reportedCurrentEpisode else { return false }
+        guard SentryEventBudgetGate.shared.allow(.hang) else { return false }
+        reportedCurrentEpisode = true
+        return true
     }
 
     // MARK: Local log

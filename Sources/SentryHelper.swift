@@ -80,6 +80,128 @@ final class CrashDiagnostics: NSObject, MXMetricManagerSubscriber {
     }
 }
 
+// MARK: - Outbound event budget
+
+/// Pure sliding-window counter with an injected clock, so the budget policy can
+/// be unit-tested without threads or a wall clock.
+///
+/// Timestamps are recorded monotonically (callers pass `systemUptime`), so the
+/// window can be pruned from the front.
+struct SlidingWindowCounter {
+    let limit: Int
+    let windowSeconds: Double
+
+    private var stamps: [Double] = []
+
+    init(limit: Int, windowSeconds: Double) {
+        self.limit = limit
+        self.windowSeconds = windowSeconds
+    }
+
+    /// True when another event fits in the window. Prunes expired stamps.
+    mutating func hasCapacity(now: Double) -> Bool {
+        let cutoff = now - windowSeconds
+        if let first = stamps.firstIndex(where: { $0 > cutoff }) {
+            if first > 0 { stamps.removeFirst(first) }
+        } else {
+            stamps.removeAll(keepingCapacity: true)
+        }
+        return stamps.count < limit
+    }
+
+    mutating func record(now: Double) { stamps.append(now) }
+
+    /// Test-only introspection.
+    var count: Int { stamps.count }
+}
+
+/// Client-side ceiling on what this process sends to Sentry.
+///
+/// The org's error quota is shared across every Stage 11 project and there are
+/// no server-side per-key rate limits on this plan, so a single wedged install
+/// looping on one issue can blind every other project. This budget is the only
+/// fence. Crashes are exempt: they are rare, they are the reason the SDK is
+/// here, and losing one to a noisy neighbour is the failure mode we are fixing.
+struct SentryEventBudget {
+    enum Kind {
+        /// Fatal / unhandled. Never throttled.
+        case crash
+        /// Main-thread hang reports — historically ~98% of c11's event volume.
+        case hang
+        /// Everything else (captured warnings and handled errors).
+        case other
+    }
+
+    private var globalHourly: SlidingWindowCounter
+    private var globalDaily: SlidingWindowCounter
+    private var hangHourly: SlidingWindowCounter
+    private var hangDaily: SlidingWindowCounter
+
+    private(set) var droppedTotal = 0
+    private(set) var droppedHangs = 0
+
+    init(
+        globalPerHour: Int = 20,
+        globalPerDay: Int = 50,
+        hangsPerHour: Int = 3,
+        hangsPerDay: Int = 15
+    ) {
+        globalHourly = SlidingWindowCounter(limit: globalPerHour, windowSeconds: 3600)
+        globalDaily = SlidingWindowCounter(limit: globalPerDay, windowSeconds: 86_400)
+        hangHourly = SlidingWindowCounter(limit: hangsPerHour, windowSeconds: 3600)
+        hangDaily = SlidingWindowCounter(limit: hangsPerDay, windowSeconds: 86_400)
+    }
+
+    /// Decide whether one event may be sent, consuming budget only when it may.
+    mutating func allow(_ kind: Kind, now: Double) -> Bool {
+        guard kind != .crash else { return true }
+
+        if kind == .hang {
+            guard hangHourly.hasCapacity(now: now), hangDaily.hasCapacity(now: now) else {
+                droppedHangs += 1
+                droppedTotal += 1
+                return false
+            }
+        }
+
+        guard globalHourly.hasCapacity(now: now), globalDaily.hasCapacity(now: now) else {
+            droppedTotal += 1
+            return false
+        }
+
+        if kind == .hang {
+            hangHourly.record(now: now)
+            hangDaily.record(now: now)
+        }
+        globalHourly.record(now: now)
+        globalDaily.record(now: now)
+        return true
+    }
+}
+
+/// Process-wide, thread-safe holder for `SentryEventBudget`. Consulted from
+/// `beforeSend` (any thread the SDK dispatches on) and from the hang watchdog
+/// thread.
+final class SentryEventBudgetGate: @unchecked Sendable {
+    static let shared = SentryEventBudgetGate()
+
+    private let lock = NSLock()
+    private var budget = SentryEventBudget()
+
+    func allow(_ kind: SentryEventBudget.Kind) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return budget.allow(kind, now: ProcessInfo.processInfo.systemUptime)
+    }
+
+    /// Counts of events this process suppressed, for the local hang log.
+    var dropped: (total: Int, hangs: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (budget.droppedTotal, budget.droppedHangs)
+    }
+}
+
 /// Add a Sentry breadcrumb for user-action context in hang/crash reports.
 func sentryBreadcrumb(_ message: String, category: String = "ui", data: [String: Any]? = nil) {
     guard TelemetrySettings.enabledForCurrentLaunch else { return }

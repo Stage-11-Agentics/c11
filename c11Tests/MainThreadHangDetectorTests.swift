@@ -349,6 +349,48 @@ final class SentryEventBudgetTests: XCTestCase {
         XCTAssertFalse(budget.allow(.other, now: 130))
     }
 
+    func testClassificationDrivesWhichAllowanceAnEventSpends() {
+        // `beforeSend` sees only the level and the tags, so the whole policy
+        // rests on this mapping being right.
+        XCTAssertEqual(
+            SentryEventBudget.Kind.classify(isFatal: true, categoryTag: nil), .crash
+        )
+        // A fatal event stays exempt whatever else it is tagged as.
+        XCTAssertEqual(
+            SentryEventBudget.Kind.classify(isFatal: true, categoryTag: sentryHangCategory), .crash
+        )
+        XCTAssertEqual(
+            SentryEventBudget.Kind.classify(isFatal: false, categoryTag: sentryHangCategory), .hang
+        )
+        XCTAssertEqual(
+            SentryEventBudget.Kind.classify(isFatal: false, categoryTag: "socket"), .other
+        )
+        XCTAssertEqual(
+            SentryEventBudget.Kind.classify(isFatal: false, categoryTag: nil), .other
+        )
+    }
+
+    func testAHangReportSpendsExactlyOneSlotOfTheGlobalAllowance() {
+        // Regression for a double-charge found by running the real app (C11-190):
+        // the hang watchdog consulted the budget and then `beforeSend` consulted
+        // it again for the same event, so three hang reports quietly cost six of
+        // the twenty hourly slots and the ceiling behaved as 17.
+        var budget = SentryEventBudget(
+            globalPerHour: 20, globalPerDay: 100, hangsPerHour: 3, hangsPerDay: 15
+        )
+        var allowed = 0
+        // Three hangs, then non-hang events until the global ceiling refuses one.
+        for i in 0..<3 where budget.allow(.hang, now: Double(i)) { allowed += 1 }
+        XCTAssertEqual(allowed, 3)
+        for i in 0..<17 {
+            XCTAssertTrue(
+                budget.allow(.other, now: Double(100 + i)),
+                "global allowance exhausted early at event \(allowed + i + 1) of 20"
+            )
+        }
+        XCTAssertFalse(budget.allow(.other, now: 200))
+    }
+
     func testDeniedEventsDoNotConsumeBudget() {
         var budget = SentryEventBudget(
             globalPerHour: 10, globalPerDay: 100, hangsPerHour: 1, hangsPerDay: 1

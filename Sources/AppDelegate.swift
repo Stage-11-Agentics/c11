@@ -2621,7 +2621,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 // a single issue can exhaust the quota and blind everything else.
                 // Crashes (fatal) are never throttled.
                 options.beforeSend = { event in
-                    let kind: SentryEventBudget.Kind = event.level == .fatal ? .crash : .other
+                    let kind = SentryEventBudget.Kind.classify(
+                        isFatal: event.level == .fatal,
+                        categoryTag: event.tags?["category"]
+                    )
                     guard SentryEventBudgetGate.shared.allow(kind) else { return nil }
                     return event
                 }

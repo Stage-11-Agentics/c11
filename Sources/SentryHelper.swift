@@ -115,6 +115,10 @@ struct SlidingWindowCounter {
     var count: Int { stamps.count }
 }
 
+/// The `category` tag hang reports carry. `beforeSend` reads it to charge a hang
+/// against the hang sub-budget rather than the general allowance.
+let sentryHangCategory = "hang"
+
 /// Client-side ceiling on what this process sends to Sentry.
 ///
 /// The org's error quota is shared across every Stage 11 project and there are
@@ -130,6 +134,19 @@ struct SentryEventBudget {
         case hang
         /// Everything else (captured warnings and handled errors).
         case other
+
+        /// Classify an outbound event from the only two facts `beforeSend` has.
+        ///
+        /// The budget is consulted in exactly one place — `beforeSend` — because
+        /// it is the single egress every event passes through. A second gate on
+        /// the producing side would charge the same event twice against the
+        /// global ceiling, which silently shrinks the allowance for everything
+        /// else in proportion to how much the app is hanging.
+        static func classify(isFatal: Bool, categoryTag: String?) -> Kind {
+            if isFatal { return .crash }
+            if categoryTag == sentryHangCategory { return .hang }
+            return .other
+        }
     }
 
     private var globalHourly: SlidingWindowCounter

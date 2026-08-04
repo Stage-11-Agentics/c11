@@ -462,7 +462,7 @@ final class MainThreadHangMonitor: @unchecked Sendable {
             // the event context.
             sentryCaptureWarning(
                 "main thread hang (\(signature.label))",
-                category: "hang",
+                category: sentryHangCategory,
                 data: [
                     "stalled_ms": Int(gapMs),
                     "recapture": recapture,
@@ -490,11 +490,15 @@ final class MainThreadHangMonitor: @unchecked Sendable {
     /// ~98% of c11's entire event volume and bought nothing, because Sentry
     /// groups them into a single issue anyway.
     ///
+    /// This is a shape filter, not the budget. The outbound ceiling is applied
+    /// once, in `beforeSend`, which classifies the event by its `category` tag;
+    /// charging it here as well would spend two slots of the global allowance
+    /// on every hang report.
+    ///
     /// Called only from the watchdog thread, which captures serially.
     private func shouldReportHangToSentry(gapMs: Double) -> Bool {
         guard gapMs >= sentryReportThresholdMs else { return false }
         guard !reportedCurrentEpisode else { return false }
-        guard SentryEventBudgetGate.shared.allow(.hang) else { return false }
         reportedCurrentEpisode = true
         return true
     }

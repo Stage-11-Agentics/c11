@@ -2579,7 +2579,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 #endif
 
-        if telemetryEnabled {
+        // XCTest hosts are excluded: a test-harness assertion failure arrives as a
+        // `fatal` event, which the outbound budget deliberately never throttles, so
+        // it reads as a production crash and spends quota shared with every other
+        // Stage 11 project. `Index out of range` in `ContiguousArrayBuffer` — 24
+        // events across 5 "users" — was entirely `c11Tests` under XCTestCore.
+        // PostHog and MainThreadHangMonitor already opt out the same way.
+        if telemetryEnabled && !isRunningUnderXCTest {
             // Pre-warm locale before Sentry to avoid a startup data race.
             // Locale initialization (os.locale.ensureLocale / NSLocale._preferredLanguages)
             // on the main thread can race with Sentry's background init thread

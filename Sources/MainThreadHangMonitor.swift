@@ -448,9 +448,9 @@ final class MainThreadHangMonitor: @unchecked Sendable {
             tags["hang.phase"] = signature.phase
             tags["hang.culprit"] = signature.culprit
             tags["hang.top_symbol"] = signature.topSymbol
-            // The stall duration belongs in the message only if it is not the
-            // grouping key — it isn't, so the title names the cause and the
-            // duration stays a searchable tag/context value.
+            // The duration is not the grouping key, so it does not belong in
+            // the title: the message names the cause and `stalled_ms` stays in
+            // the event context.
             sentryCaptureWarning(
                 "main thread hang (\(signature.label))",
                 category: "hang",

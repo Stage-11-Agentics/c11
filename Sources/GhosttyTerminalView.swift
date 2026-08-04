@@ -3028,6 +3028,13 @@ final class TerminalSurface: Identifiable, ObservableObject {
         ghostty_surface_set_display_id(surface, displayID)
     }
 
+    /// Forget the last display id handed to the runtime, so the next `force: false`
+    /// push reaches it. For callers that know the renderer's display-link state may
+    /// have moved underneath us without the id changing.
+    func invalidateDisplayIDMemo() {
+        displayIDGate.invalidate()
+    }
+
     private static func mergedNormalizedEnvironment(
         base: [String: String],
         overrides: [String: String]
@@ -4588,7 +4595,15 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             "pending=\(String(format: "%.1fx%.1f", pendingSurfaceSize?.width ?? 0, pendingSurfaceSize?.height ?? 0))"
         )
 #endif
-        guard let window else { return }
+        guard let window else {
+            // The view just left its window — split-close restructuring, workspace
+            // teardown, a portal handoff. Ghostty's display link can be left stopped
+            // by that, and the recovery is a display-id re-assert. Drop the memo so
+            // the next one gets through even if the view comes back to the same
+            // screen and no `force: true` site fires.
+            terminalSurface?.invalidateDisplayIDMemo()
+            return
+        }
 
         // If the surface creation was deferred while detached, create/attach it now.
         terminalSurface?.attachToView(self)

@@ -82,13 +82,17 @@ enum MainThreadHangSignature {
     /// SwiftUI host operations, most specific first — these say *which* graph
     /// pass is running, which is the difference between a layout bug and a
     /// transaction-flush bug.
+    ///
+    /// Only `swiftui-update` is narrowed by phase (see `describe`). Every other
+    /// cause already names something more actionable than the host operation
+    /// above it, and splitting them by phase would fragment the small buckets
+    /// that matter most: applied to all causes on the same corpora, this splits
+    /// `generic-metadata` three ways for no diagnostic gain.
     private static let phaseRules: [(phase: String, needle: String)] = [
         ("hosting-begin-transaction", "NSHostingViewC16beginTransaction"),
         ("hosting-layout", "NSHostingViewC6layout"),
         ("display-list-render", "ViewGraphRootValueUpdaterPAAE6render"),
         ("preferences", "updatePreferences"),
-        ("nsview-layout", "_layoutSubtreeWithOldSize"),
-        ("menu", "NSMenu"),
     ]
 
     /// How far down the stack the cause rules look. Blocking waits and metadata
@@ -440,6 +444,11 @@ final class MainThreadHangMonitor: @unchecked Sendable {
             .map { "\($0.offset)\t\($0.element)" }
             .joined(separator: "\n")
         if shouldReportHangToSentry(gapMs: gapMs) {
+            // `processName` is the "own binary" match for culprit extraction:
+            // it equals the Mach-O image name `backtrace_symbols` reports for
+            // both the shipped bundle (`c11`) and dev builds (`c11 DEV`). The
+            // tag is best-effort anyway — absent whenever the capture window
+            // never reaches our code — so a mismatch degrades to no tag.
             let signature = MainThreadHangSignature.describe(
                 stack: stack,
                 ownModule: ProcessInfo.processInfo.processName

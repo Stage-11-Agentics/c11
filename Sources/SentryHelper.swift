@@ -80,6 +80,145 @@ final class CrashDiagnostics: NSObject, MXMetricManagerSubscriber {
     }
 }
 
+// MARK: - Outbound event budget
+
+/// Pure sliding-window counter with an injected clock, so the budget policy can
+/// be unit-tested without threads or a wall clock.
+///
+/// Timestamps are recorded monotonically (callers pass `systemUptime`), so the
+/// window can be pruned from the front.
+struct SlidingWindowCounter {
+    let limit: Int
+    let windowSeconds: Double
+
+    private var stamps: [Double] = []
+
+    init(limit: Int, windowSeconds: Double) {
+        self.limit = limit
+        self.windowSeconds = windowSeconds
+    }
+
+    /// True when another event fits in the window. Prunes expired stamps.
+    mutating func hasCapacity(now: Double) -> Bool {
+        let cutoff = now - windowSeconds
+        if let first = stamps.firstIndex(where: { $0 > cutoff }) {
+            if first > 0 { stamps.removeFirst(first) }
+        } else {
+            stamps.removeAll(keepingCapacity: true)
+        }
+        return stamps.count < limit
+    }
+
+    mutating func record(now: Double) { stamps.append(now) }
+
+    /// Test-only introspection.
+    var count: Int { stamps.count }
+}
+
+/// The `category` tag hang reports carry. `beforeSend` reads it to charge a hang
+/// against the hang sub-budget rather than the general allowance.
+let sentryHangCategory = "hang"
+
+/// Client-side ceiling on what this process sends to Sentry.
+///
+/// The org's error quota is shared across every Stage 11 project and there are
+/// no server-side per-key rate limits on this plan, so a single wedged install
+/// looping on one issue can blind every other project. This budget is the only
+/// fence. Crashes are exempt: they are rare, they are the reason the SDK is
+/// here, and losing one to a noisy neighbour is the failure mode we are fixing.
+struct SentryEventBudget {
+    enum Kind {
+        /// Fatal / unhandled. Never throttled.
+        case crash
+        /// Main-thread hang reports — historically ~98% of c11's event volume.
+        case hang
+        /// Everything else (captured warnings and handled errors).
+        case other
+
+        /// Classify an outbound event from the only two facts `beforeSend` has.
+        ///
+        /// The budget is consulted in exactly one place — `beforeSend` — because
+        /// it is the single egress every event passes through. A second gate on
+        /// the producing side would charge the same event twice against the
+        /// global ceiling, which silently shrinks the allowance for everything
+        /// else in proportion to how much the app is hanging.
+        static func classify(isFatal: Bool, categoryTag: String?) -> Kind {
+            if isFatal { return .crash }
+            if categoryTag == sentryHangCategory { return .hang }
+            return .other
+        }
+    }
+
+    private var globalHourly: SlidingWindowCounter
+    private var globalDaily: SlidingWindowCounter
+    private var hangHourly: SlidingWindowCounter
+    private var hangDaily: SlidingWindowCounter
+
+    private(set) var droppedTotal = 0
+    private(set) var droppedHangs = 0
+
+    init(
+        globalPerHour: Int = 20,
+        globalPerDay: Int = 50,
+        hangsPerHour: Int = 3,
+        hangsPerDay: Int = 15
+    ) {
+        globalHourly = SlidingWindowCounter(limit: globalPerHour, windowSeconds: 3600)
+        globalDaily = SlidingWindowCounter(limit: globalPerDay, windowSeconds: 86_400)
+        hangHourly = SlidingWindowCounter(limit: hangsPerHour, windowSeconds: 3600)
+        hangDaily = SlidingWindowCounter(limit: hangsPerDay, windowSeconds: 86_400)
+    }
+
+    /// Decide whether one event may be sent, consuming budget only when it may.
+    mutating func allow(_ kind: Kind, now: Double) -> Bool {
+        guard kind != .crash else { return true }
+
+        if kind == .hang {
+            guard hangHourly.hasCapacity(now: now), hangDaily.hasCapacity(now: now) else {
+                droppedHangs += 1
+                droppedTotal += 1
+                return false
+            }
+        }
+
+        guard globalHourly.hasCapacity(now: now), globalDaily.hasCapacity(now: now) else {
+            droppedTotal += 1
+            return false
+        }
+
+        if kind == .hang {
+            hangHourly.record(now: now)
+            hangDaily.record(now: now)
+        }
+        globalHourly.record(now: now)
+        globalDaily.record(now: now)
+        return true
+    }
+}
+
+/// Process-wide, thread-safe holder for `SentryEventBudget`. Consulted from
+/// `beforeSend` (any thread the SDK dispatches on) and from the hang watchdog
+/// thread.
+final class SentryEventBudgetGate: @unchecked Sendable {
+    static let shared = SentryEventBudgetGate()
+
+    private let lock = NSLock()
+    private var budget = SentryEventBudget()
+
+    func allow(_ kind: SentryEventBudget.Kind) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return budget.allow(kind, now: ProcessInfo.processInfo.systemUptime)
+    }
+
+    /// Counts of events this process suppressed, for the local hang log.
+    var dropped: (total: Int, hangs: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (budget.droppedTotal, budget.droppedHangs)
+    }
+}
+
 /// Add a Sentry breadcrumb for user-action context in hang/crash reports.
 func sentryBreadcrumb(_ message: String, category: String = "ui", data: [String: Any]? = nil) {
     guard TelemetrySettings.enabledForCurrentLaunch else { return }
@@ -89,12 +228,18 @@ func sentryBreadcrumb(_ message: String, category: String = "ui", data: [String:
     SentrySDK.addBreadcrumb(crumb)
 }
 
+/// Sentry caps tag values; anything longer is rejected outright rather than
+/// truncated, which would silently drop the tag we most want to facet on.
+private let sentryTagValueLimit = 190
+
 private func sentryCaptureMessage(
     _ message: String,
     level: SentryLevel,
     category: String,
     data: [String: Any]?,
-    contextKey: String?
+    contextKey: String?,
+    fingerprint: [String]?,
+    tags: [String: String]?
 ) {
     guard TelemetrySettings.enabledForCurrentLaunch else { return }
     _ = SentrySDK.capture(message: message) { scope in
@@ -103,6 +248,16 @@ private func sentryCaptureMessage(
         if let data {
             scope.setContext(value: data, key: contextKey ?? category)
         }
+        // Without an explicit fingerprint Sentry groups a message event by the
+        // stack of the thread that captured it. For anything reported from a
+        // dedicated worker (the hang watchdog) that stack is identical every
+        // time, so unrelated events pile into one issue.
+        if let fingerprint, !fingerprint.isEmpty {
+            scope.setFingerprint(fingerprint)
+        }
+        for (key, value) in tags ?? [:] where !value.isEmpty {
+            scope.setTag(value: String(value.prefix(sentryTagValueLimit)), key: key)
+        }
     }
 }
 
@@ -110,18 +265,38 @@ func sentryCaptureWarning(
     _ message: String,
     category: String = "ui",
     data: [String: Any]? = nil,
-    contextKey: String? = nil
+    contextKey: String? = nil,
+    fingerprint: [String]? = nil,
+    tags: [String: String]? = nil
 ) {
-    sentryCaptureMessage(message, level: .warning, category: category, data: data, contextKey: contextKey)
+    sentryCaptureMessage(
+        message,
+        level: .warning,
+        category: category,
+        data: data,
+        contextKey: contextKey,
+        fingerprint: fingerprint,
+        tags: tags
+    )
 }
 
 func sentryCaptureError(
     _ message: String,
     category: String = "ui",
     data: [String: Any]? = nil,
-    contextKey: String? = nil
+    contextKey: String? = nil,
+    fingerprint: [String]? = nil,
+    tags: [String: String]? = nil
 ) {
-    sentryCaptureMessage(message, level: .error, category: category, data: data, contextKey: contextKey)
+    sentryCaptureMessage(
+        message,
+        level: .error,
+        category: category,
+        data: data,
+        contextKey: contextKey,
+        fingerprint: fingerprint,
+        tags: tags
+    )
 }
 
 /// Telemetry-independent launch sentinel. Catches Force Quit, SIGKILL, jetsam,

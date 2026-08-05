@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import shutil
 import socket
@@ -71,7 +72,7 @@ done
             wrapper_dir / "c11",
             """#!/usr/bin/env bash
 set -euo pipefail
-printf '%s timeout=%s\\n' "$*" "${CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC-__UNSET__}" >> "$FAKE_C11_LOG"
+printf '%s timeout=%s payload=%s\\n' "$*" "${CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC-__UNSET__}" "${C11_CODEX_NOTIFY_PAYLOAD_B64-__UNSET__}" >> "$FAKE_C11_LOG"
 if [[ "${1:-}" == "--socket" ]]; then
   shift 2
 fi
@@ -174,6 +175,15 @@ def test_completion_callback_creates_surface_notification(failures: list[str]) -
             f"callback: missing surface scope: {line}",
             failures,
         )
+        encoded_payload = line.split("payload=", 1)[1].split()[0]
+        expect(encoded_payload != "__UNSET__", f"callback: missing forwarded payload: {line}", failures)
+        if encoded_payload != "__UNSET__":
+            decoded_payload = base64.b64decode(encoded_payload).decode("utf-8")
+            expect(
+                decoded_payload == '{"type":"agent-turn-complete"}',
+                f"callback: wrong forwarded payload: {decoded_payload}",
+                failures,
+            )
         expect("timeout=0.75" in line, f"callback: notification call is not bounded: {line}", failures)
 
 

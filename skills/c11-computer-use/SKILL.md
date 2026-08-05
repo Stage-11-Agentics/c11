@@ -42,6 +42,26 @@ Use the tagged build's socket (`C11_SOCKET=/tmp/c11-debug-<tag>.sock`) to build 
 - Suppress the startup dialogs for automation: `C11_QA_LAUNCH=fresh` (the skills-install and resume-picker sheets otherwise block coordinate-driven UI). `reload.sh --tag` does **not** set it; export it yourself or use `launch-tagged-automation.sh --qa`.
 - Quit only **your** build when done — `kill <your-pid>`, never a blanket match on `c11`.
 
+## Reading what the app actually did
+
+- **Capture stdout by launching the binary directly.** `open` sends it nowhere, and libraries that
+  log with `print`/`fputs` rather than `os_log` are then invisible to `log stream` too. Run
+  `"<app>/Contents/MacOS/c11" > /tmp/<tag>-stdout.log 2>&1 &` with the same env
+  `launch-tagged-automation.sh` sets (`C11_SOCKET_MODE`, `C11_SOCKET_PATH`, `CMUXD_UNIX_PATH`,
+  `C11_DEBUG_LOG`, `C11_QA_LAUNCH`), unsetting the inherited `C11_*`/`CMUX_*` vars first. This is how
+  you read an SDK's own debug output instead of inferring it.
+- **Wedge the main thread from outside, with no code seam**, when you need a real beachball:
+
+  ```bash
+  lldb -p <pid> -b \
+    -o 'expr -l objc -- (void)[[NSThread class] performSelectorOnMainThread:@selector(sleepUntilDate:) withObject:[NSDate dateWithTimeIntervalSinceNow:12.0] waitUntilDone:NO]' \
+    -o detach
+  ```
+
+  lldb stops every thread while attached, so no watchdog sees a false hang; the block runs only once
+  the process resumes. Note the stall the watchdog measures includes the attach time, and the
+  attach gets slower as you repeat it — pace episodes rather than firing them back to back.
+
 ## Prove it, don't assert it
 
 - Capture before/after artifacts for any claim about visible behavior. For size/layout changes, seed terminals with distinctive, size-revealing content so the delta is unmistakable across panes.

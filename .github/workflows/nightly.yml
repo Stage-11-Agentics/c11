@@ -462,7 +462,7 @@ jobs:
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: stage-11-kl
-          SENTRY_PROJECT: stage11-c11
+          SENTRY_PROJECT: c11
         run: |
           if [ -z "$SENTRY_AUTH_TOKEN" ]; then
             echo "SENTRY_AUTH_TOKEN not set, skipping dSYM upload"

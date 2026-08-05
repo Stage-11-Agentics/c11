@@ -2579,7 +2579,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 #endif
 
-        if telemetryEnabled {
+        // XCTest hosts are excluded: a test-harness assertion failure arrives as a
+        // `fatal` event, which the outbound budget deliberately never throttles, so
+        // it reads as a production crash and spends quota shared with every other
+        // Stage 11 project. `Index out of range` in `ContiguousArrayBuffer` — 24
+        // events across 5 "users" — was entirely `c11Tests` under XCTestCore.
+        // PostHog and MainThreadHangMonitor already opt out the same way.
+        if telemetryEnabled && !isRunningUnderXCTest {
             // Pre-warm locale before Sentry to avoid a startup data race.
             // Locale initialization (os.locale.ensureLocale / NSLocale._preferredLanguages)
             // on the main thread can race with Sentry's background init thread
@@ -2609,6 +2615,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 options.attachStacktrace = true
                 // Avoid recursively capturing failed requests from Sentry's own ingestion endpoint.
                 options.enableCaptureFailedRequests = false
+                // Client-side ceiling on outbound events. The org's error quota is
+                // shared across every Stage 11 project and this plan has no
+                // server-side per-key rate limits, so one wedged install looping on
+                // a single issue can exhaust the quota and blind everything else.
+                // Crashes (fatal) are never throttled.
+                options.beforeSend = { event in
+                    let kind = SentryEventBudget.Kind.classify(
+                        isFatal: event.level == .fatal,
+                        categoryTag: event.tags?["category"]
+                    )
+                    guard SentryEventBudgetGate.shared.allow(kind) else { return nil }
+                    return event
+                }
             }
         }
 

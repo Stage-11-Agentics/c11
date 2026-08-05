@@ -113,10 +113,15 @@ jobs:
         run: |
           set -euo pipefail
           TAG="xcframework-${{ steps.ghostty-sha.outputs.sha }}"
+          # Must never become the repo's "latest" release: Sparkle's feed URL is
+          # releases/latest/download/appcast.xml, and a build-artifact release
+          # holding the latest slot 404s that path for every shipped client.
           gh release create "$TAG" \
             --repo Stage-11-Agentics/c11 \
             --title "GhosttyKit xcframework (${{ steps.ghostty-sha.outputs.sha }})" \
             --notes "Pre-built GhosttyKit.xcframework for commit ${{ steps.ghostty-sha.outputs.sha }}" \
+            --prerelease \
+            --latest=false \
             GhosttyKit.xcframework.tar.gz
           echo "Published release $TAG"
 

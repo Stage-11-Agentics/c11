@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-04T20:13:55Z",
+  "created_by": "agent:trident-pane-C11-190",
+  "custom_fields": {},
+  "id": "art_01KZ76JKEZ5CEPQ1ZCYQ4QZ9KR",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KZ76JKEZ5CEPQ1ZCYQ4QZ9KR.md",
+    "size_bytes": 40113
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Verdict: rework-then-rereview (FAIL plan-level). 5 blockers, 5 important, 4 mediums applied to the plan; 13 items surfaced for operator; 3 evolutionary skipped. Full 13-file pack: notes/trident-review-C11-190-plan-pack-20260804-1559/",
+  "tags": [],
+  "title": "Trident plan review C11-190 \u2014 action synthesis",
+  "token_usage": null,
+  "type": "file"
+}

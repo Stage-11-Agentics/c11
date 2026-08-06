@@ -1120,6 +1120,11 @@ extension TerminalController {
                 }
                 let fallbackWorkspace: Workspace? = {
                     if newWorkspace {
+                        // A background caller may live outside the selected
+                        // workspace. Its workspace root is the inherited
+                        // launch context; selected is only the no-caller
+                        // compatibility fallback.
+                        if let callerWorkspace { return callerWorkspace }
                         guard let selectedId = tabManager.selectedTabId else { return nil }
                         return tabManager.tabs.first(where: { $0.id == selectedId })
                     }
@@ -1128,7 +1133,6 @@ extension TerminalController {
                 // The target workspace owns the stable root. The actual calling
                 // surface owns the compatibility fallback when one is available.
                 let workspaceRoot = fallbackWorkspace?.rootDirectory
-                    ?? (newWorkspace ? callerWorkspace?.rootDirectory : nil)
                 let launchingWorkspace = callerWorkspace ?? fallbackWorkspace
                 let launchingSurfaceCwd = launchingWorkspace?.inheritedCwdForAgentLaunch(
                     callerSurfaceId: callerWorkspace == nil ? nil : launchCallerSurfaceId

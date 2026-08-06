@@ -2616,6 +2616,52 @@ enum GlobalTerminalFontSize {
     }
 }
 
+// MARK: - Display ID gate
+
+/// Decides whether a display id is worth handing to `ghostty_surface_set_display_id`.
+///
+/// That call is not a cheap setter. It posts a message to the surface's renderer
+/// thread through a bounded 64-slot blocking queue, and it blocks the *calling*
+/// thread — always the main thread here — for as long as the queue stays full.
+/// When a renderer thread stops draining, the queue fills and the main thread
+/// parks in `__ulock_wait2` with no timeout: C11-191 caught exactly that in the
+/// field as a 13h58m main-thread wedge under `GhosttyNSView.attachSurface`.
+///
+/// SwiftUI re-enters `updateNSView` → `attachSurface` for ordinary state
+/// propagation (typing, activity marks, workspace switches), so those callers
+/// pass `force: false` and the gate collapses the repeats down to the transitions
+/// that actually move the id.
+///
+/// `force: true` is reserved for the sites that re-assert an *unchanged* id
+/// deliberately — surface creation, focus gain, split/topology churn, and window
+/// or screen moves. `renderer.setMacOSDisplayID` restarts a stalled CVDisplayLink
+/// on every message it receives, which is how c11 recovers a stuck-vsync surface;
+/// suppressing those would trade a hang for a frozen terminal.
+struct GhosttyDisplayIDGate: Equatable {
+    /// The last id admitted, or nil if none has been (or the surface it described
+    /// is gone).
+    private(set) var applied: UInt32?
+
+    /// Whether `displayID` should be pushed, recording it when it should.
+    ///
+    /// A zero display id is never pushed: it is the "no display" sentinel
+    /// `NSScreen.displayID` yields for a screen AppKit cannot resolve, and Ghostty
+    /// has nothing useful to do with it.
+    mutating func admit(_ displayID: UInt32, force: Bool) -> Bool {
+        guard displayID != 0 else { return false }
+        if !force, applied == displayID { return false }
+        applied = displayID
+        return true
+    }
+
+    /// Forget the recorded id, so the next push reaches the runtime regardless.
+    /// Called whenever the underlying `ghostty_surface_t` changes: a new surface
+    /// has a new renderer thread and knows nothing of what the old one was told.
+    mutating func invalidate() {
+        applied = nil
+    }
+}
+
 // MARK: - Terminal Surface (owns the ghostty_surface_t lifecycle)
 
 final class TerminalSurface: Identifiable, ObservableObject {
@@ -2631,7 +2677,16 @@ final class TerminalSurface: Identifiable, ObservableObject {
         }
     }
 
-    private(set) var surface: ghostty_surface_t?
+    private(set) var surface: ghostty_surface_t? {
+        didSet {
+            // A different runtime surface has its own renderer thread and its own
+            // display-link state, so nothing we told the old one carries over.
+            displayIDGate.invalidate()
+        }
+    }
+    /// Collapses redundant `ghostty_surface_set_display_id` traffic. See
+    /// `GhosttyDisplayIDGate` for why an unnecessary push is not free.
+    private var displayIDGate = GhosttyDisplayIDGate()
     private weak var attachedView: GhosttyNSView?
     /// The user-facing window backing the hosted view. Returns `nil` when the view is
     /// only parented to the internal headless bootstrap window used to start a Ghostty
@@ -2943,10 +2998,41 @@ final class TerminalSurface: Identifiable, ObservableObject {
         guard attachedView === view else { return }
         releaseHeadlessStartupWindowIfNeeded(for: view)
         guard let screen = view.window?.screen ?? NSScreen.main,
-              let displayID = screen.displayID,
-              displayID != 0 else { return }
-        guard let s = self.surface else { return }
-        ghostty_surface_set_display_id(s, displayID)
+              let displayID = screen.displayID else { return }
+        // Reached from `updateNSView` on every SwiftUI update, so it must not
+        // re-push an id the renderer already has. See `GhosttyDisplayIDGate`.
+        applyDisplayID(displayID, force: false)
+    }
+
+    /// Hand a display id to the Ghostty renderer, subject to `displayIDGate`.
+    ///
+    /// Pass `force: true` only from the sites that re-assert an *unchanged* id on
+    /// purpose — surface creation, focus gain, split/topology churn, window and
+    /// screen moves. Everything reached from `updateNSView` passes `force: false`.
+    func applyDisplayID(_ displayID: UInt32, force: Bool) {
+        guard let surface else { return }
+        guard displayIDGate.admit(displayID, force: force) else {
+#if DEBUG
+            // `push + skip` over a session is what the pre-gate code sent to the
+            // renderer mailbox; `push` alone is what this code sends.
+            dlog("surface.displayId.skip surface=\(id.uuidString.prefix(5)) display=\(displayID)")
+#endif
+            return
+        }
+#if DEBUG
+        dlog(
+            "surface.displayId.push surface=\(id.uuidString.prefix(5)) " +
+            "display=\(displayID) force=\(force ? 1 : 0)"
+        )
+#endif
+        ghostty_surface_set_display_id(surface, displayID)
+    }
+
+    /// Forget the last display id handed to the runtime, so the next `force: false`
+    /// push reaches it. For callers that know the renderer's display-link state may
+    /// have moved underneath us without the id changing.
+    func invalidateDisplayIDMemo() {
+        displayIDGate.invalidate()
     }
 
     private static func mergedNormalizedEnvironment(
@@ -3275,13 +3361,15 @@ final class TerminalSurface: Identifiable, ObservableObject {
 #endif
 
         // If already attached to this view, nothing to do.
-        // Still re-assert the display id: during split close tree restructuring, the view can be
+        // Still track the display id: during split close tree restructuring, the view can be
         // removed/re-added (or briefly have window/screen nil) without recreating the surface.
         // Ghostty's vsync-driven renderer depends on having a valid display id; if it is missing
         // or stale, the surface can appear visually frozen until a focus/visibility change.
         // SwiftUI also re-enters this path for ordinary state propagation (drag hover, active
         // markers, visibility flags), so avoid forcing a geometry refresh when the attachment
-        // itself is unchanged.
+        // itself is unchanged — and route the id through the gate rather than re-pushing it on
+        // every update. The focus/topology sites below still re-assert unconditionally, which is
+        // what actually restarts a stalled display link.
         if attachedView === view && surface != nil {
             MainActor.assumeIsolated {
                 releaseHeadlessStartupWindowIfNeeded(for: view)
@@ -3290,10 +3378,9 @@ final class TerminalSurface: Identifiable, ObservableObject {
             dlog("surface.attach.reuse surface=\(id.uuidString.prefix(5)) view=\(Unmanaged.passUnretained(view).toOpaque())")
 #endif
             if let screen = view.window?.screen ?? NSScreen.main,
-               let displayID = screen.displayID,
-               displayID != 0,
-               let s = surface {
-                ghostty_surface_set_display_id(s, displayID)
+               let displayID = screen.displayID {
+                // Hot path: SwiftUI re-enters here on every `updateNSView`.
+                applyDisplayID(displayID, force: false)
             }
             return
         }
@@ -3336,11 +3423,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
             dlog("surface.attach.create.done surface=\(id.uuidString.prefix(5)) hasSurface=\(surface != nil ? 1 : 0)")
 #endif
         } else if let screen = view.window?.screen ?? NSScreen.main,
-                  let displayID = screen.displayID,
-                  displayID != 0,
-                  let s = surface {
+                  let displayID = screen.displayID {
             // Surface exists but we're (re)attaching after a view hierarchy move; ensure display id.
-            ghostty_surface_set_display_id(s, displayID)
+            // A real attachment change, not a SwiftUI re-entry, so re-assert unconditionally.
+            applyDisplayID(displayID, force: true)
 #if DEBUG
             dlog("surface.attach.displayId surface=\(id.uuidString.prefix(5)) display=\(displayID)")
 #endif
@@ -3655,9 +3741,8 @@ final class TerminalSurface: Identifiable, ObservableObject {
         // `view.window?.screen` can be transiently nil during early attachment; fall back to the
         // primary screen so we always set *some* display ID, then update again on screen changes.
         if let screen = view.window?.screen ?? NSScreen.main,
-           let displayID = screen.displayID,
-           displayID != 0 {
-            ghostty_surface_set_display_id(createdSurface, displayID)
+           let displayID = screen.displayID {
+            applyDisplayID(displayID, force: true)
         }
 
         ghostty_surface_set_content_scale(createdSurface, scaleFactors.x, scaleFactors.y)
@@ -3792,7 +3877,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
               view.bounds.height > 0 else {
             return
         }
-        guard let currentSurface = self.surface else { return }
+        guard self.surface != nil else { return }
 
         // Re-read self.surface before each ghostty call to guard against the surface
         // being freed during wake-from-sleep geometry reconciliation (issue #432).
@@ -3802,9 +3887,8 @@ final class TerminalSurface: Identifiable, ObservableObject {
         // Reassert display id on topology churn (split close/reparent) before forcing a refresh.
         // This avoids a first-run stuck-vsync state where Ghostty believes vsync is active
         // but callbacks have not resumed for the current display.
-        if let displayID = (window.screen ?? NSScreen.main)?.displayID,
-           displayID != 0 {
-            ghostty_surface_set_display_id(currentSurface, displayID)
+        if let displayID = (window.screen ?? NSScreen.main)?.displayID {
+            applyDisplayID(displayID, force: true)
         }
 
         view.forceRefreshSurface()
@@ -3830,9 +3914,8 @@ final class TerminalSurface: Identifiable, ObservableObject {
         // display id *after* focusing lets Ghostty restart the display link when needed.
         if focused {
             if let view = attachedView,
-               let displayID = (view.window?.screen ?? NSScreen.main)?.displayID,
-               displayID != 0 {
-                ghostty_surface_set_display_id(surface, displayID)
+               let displayID = (view.window?.screen ?? NSScreen.main)?.displayID {
+                applyDisplayID(displayID, force: true)
             }
         }
     }
@@ -4512,7 +4595,15 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             "pending=\(String(format: "%.1fx%.1f", pendingSurfaceSize?.width ?? 0, pendingSurfaceSize?.height ?? 0))"
         )
 #endif
-        guard let window else { return }
+        guard let window else {
+            // The view just left its window — split-close restructuring, workspace
+            // teardown, a portal handoff. Ghostty's display link can be left stopped
+            // by that, and the recovery is a display-id re-assert. Drop the memo so
+            // the next one gets through even if the view comes back to the same
+            // screen and no `force: true` site fires.
+            terminalSurface?.invalidateDisplayIDMemo()
+            return
+        }
 
         // If the surface creation was deferred while detached, create/attach it now.
         terminalSurface?.attachToView(self)
@@ -4535,10 +4626,8 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             self?.windowDidChangeScreen(notification)
         }
 
-        if let surface = terminalSurface?.surface,
-           let displayID = window.screen?.displayID,
-           displayID != 0 {
-            ghostty_surface_set_display_id(surface, displayID)
+        if let displayID = window.screen?.displayID {
+            terminalSurface?.applyDisplayID(displayID, force: true)
         }
 
         // Recompute from current bounds after layout. Pending size is only a fallback
@@ -5258,8 +5347,8 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             // and get its display id set *before* it becomes first responder; in that case, the
             // renderer can remain stuck until some later screen/focus transition. Reassert the
             // display id now that we're focused to ensure the renderer is running.
-            if let displayID = window?.screen?.displayID, displayID != 0 {
-                ghostty_surface_set_display_id(surface, displayID)
+            if let displayID = window?.screen?.displayID {
+                terminalSurface?.applyDisplayID(displayID, force: true)
             }
         }
         return result
@@ -6613,11 +6702,9 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         guard let window else { return }
         guard let object = notification.object as? NSWindow, window == object else { return }
         guard let screen = window.screen else { return }
-        guard let surface = terminalSurface?.surface else { return }
 
-        if let displayID = screen.displayID,
-           displayID != 0 {
-            ghostty_surface_set_display_id(surface, displayID)
+        if let displayID = screen.displayID {
+            terminalSurface?.applyDisplayID(displayID, force: true)
         }
 
         DispatchQueue.main.async { [weak self] in

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-06T17:05:18Z",
+  "created_by": "agent:codex-c11-launch-cwd",
+  "custom_fields": {},
+  "id": "art_01KZC0JNQ8JMK2GQ8THRBQF1P0",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KZC0JNQ8JMK2GQ8THRBQF1P0.md",
+    "size_bytes": 388
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Inline code review: main...d7c21ef4c",
+  "token_usage": null,
+  "type": "note"
+}

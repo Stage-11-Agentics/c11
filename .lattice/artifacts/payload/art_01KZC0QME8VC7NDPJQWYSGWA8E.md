@@ -1,0 +1,1 @@
+Final-head validation at d7c21ef4c: list-workspaces --json and identify --json returned the set root; launch reported cwd_source=workspace_root; clearing restored cwd_source=launching_surface; new-workspace --root set both current_directory and root_directory. Tagged CLI returned PONG and the panes remained readable.

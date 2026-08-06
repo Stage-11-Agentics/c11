@@ -1,0 +1,65 @@
+{
+  "assigned_to": "agent:codex-c11-launch-cwd",
+  "branch_links": [
+    {
+      "branch": "fix/C11-193-launch-agent-cwd",
+      "linked_at": "2026-08-06T17:02:33Z",
+      "linked_by": "agent:codex-c11-launch-cwd",
+      "repo": null
+    }
+  ],
+  "comment_count": 3,
+  "complexity": null,
+  "created_at": "2026-08-06T06:10:21Z",
+  "created_by": "agent:ace791-implementer",
+  "custom_fields": {},
+  "description": "OPERATOR PROPOSAL, 2026-08-05: \"I feel like it'd probably be good just to take the workspace\ndirectory... because we're often using worktrees and that is really annoying when that\nhappens.\"\n\nTODAY `c11 launch-agent` resolves the child's cwd from the LAUNCHING SURFACE. Combined with a\nworktree fleet, the default lands a new agent inside its parent's active branch \u2014 the single\nmost dangerous directory available (see the sibling guard ticket for the incident).\n\n`--cwd <path>` already exists and is the correct explicit escape hatch. This ticket is about\nthe DEFAULT, which is what gets used when someone is moving fast.\n\nPROPOSAL: a workspace carries a root directory, and `launch-agent` defaults the child's cwd\nto it.\n\nWHY THE WORKSPACE ROOT IS THE RIGHT DEFAULT, not merely a safer one:\n  * It matches c11's own mental model \u2014 the skill already teaches \"workspace ~= project,\n    panes ~= concerns, surfaces ~= agents\".\n  * The project root is where `git worktree add` is RUN FROM, so a child that needs its own\n    tree is already standing in the right place. Inheriting a sibling's worktree puts it in\n    the one directory from which that is awkward.\n  * It is stable across the parent's own movements. A parent that cd's around mid-session\n    currently changes where its children are born, which nothing communicates to anyone.\n\nBLOCKER / SCOPE: workspaces do not appear to carry a path today. `c11 list-workspaces`\nreturns names only:\n\n    workspace:2  acetate\n    workspace:3  acetate stems\n    workspace:4  c11\n\nSo this is: add a root dir to the workspace model (settable at creation, editable after,\nsurfaced in `list-workspaces --json` and `identify --json`), then have `launch-agent` use it.\n\nRESOLUTION ORDER, most specific wins:\n    1. explicit --cwd\n    2. workspace root, if set\n    3. launching surface's cwd  (status quo fallback, so nothing breaks for workspaces\n       that never set one)\n\nStep 3 keeps this backwards-compatible: a workspace with no root behaves exactly as today.\n\nNOT A SUBSTITUTE FOR THE GUARD. A default cannot stop someone launching from inside a\nworktree \u2014 it only changes where they usually land. The sibling ticket refuses the case that\nmust never happen quietly. These ship well together and neither makes the other redundant.",
+  "done_at": null,
+  "evidence_refs": [
+    {
+      "id": "ev_01KZC0DZ16RZ9E703HYRP54KKF",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KZC0E6R81X0F3Z2SZHQ0VD2M",
+      "role": "validation",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01KZC0JNPX58EDE343MRDE186J",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KZC0JNQ2963HFF79ZTK85X0Q",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01KZC0QCT4HVT47WKQWQ3CJ2ZQ",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KZC0QME8VC7NDPJQWYSGWA8E",
+      "role": "validation",
+      "source_type": "artifact"
+    }
+  ],
+  "id": "task_01KZAV3DFHX3WHKJG4F5075C66",
+  "last_event_id": "ev_01KZC0QSCYDM3DACX093GDEV9H",
+  "last_status_changed_at": "2026-08-06T17:08:06Z",
+  "linked_files": [],
+  "priority": "medium",
+  "relationships_out": [],
+  "reopened_count": 0,
+  "schema_version": 1,
+  "short_id": "C11-194",
+  "status": "pr_open",
+  "tags": null,
+  "title": "Workspaces carry a root directory, and launch-agent defaults to it",
+  "type": "task",
+  "updated_at": "2026-08-06T17:08:06Z",
+  "urgency": null
+}

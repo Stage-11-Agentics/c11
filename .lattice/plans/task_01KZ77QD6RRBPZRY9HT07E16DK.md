@@ -1,0 +1,3 @@
+# C11-198: Decide whether runloop-idle hang captures should report at all
+
+The C11-192 classifier gives 'runloop-idle' its own bucket: main parked at the top of the run loop in mach_msg2_trap/CFRunLoopServiceMachPort while the watchdog heartbeat went unserviced (10 of 875 captures, pre-#401 counts). If main is genuinely idle, the heartbeat should have been serviced, so these are either a watchdog false positive (e.g. clock jump, App Nap, machine sleep race) or a real scheduling starvation worth knowing about. Deliverable: a decision, recorded on this ticket, of whether runloop-idle events keep reporting to Sentry, report with a distinguishing tag, or are suppressed as known-benign, plus the one-line code change if suppression/tagging is chosen.

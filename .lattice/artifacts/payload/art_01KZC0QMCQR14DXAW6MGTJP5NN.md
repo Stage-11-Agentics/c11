@@ -1,0 +1,1 @@
+Final-head validation at d7c21ef4c: tagged launch-cwd build succeeded. In a real temporary linked worktree on branch feature/final-runtime-guard, inherited launch exited 1 with linked_worktree_cwd and the branch name; explicit --cwd launched and emitted exactly one warning; the surface closed cleanly and tagged CLI returned PONG.

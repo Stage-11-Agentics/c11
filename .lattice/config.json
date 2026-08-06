@@ -9,7 +9,7 @@
   "done_display": "grouped",
   "instance_id": "inst_01KPH28QX7HQY25DPM40E9NFP2",
   "plan_approval": "auto",
-  "plan_review_mode": "triple",
+  "plan_review_mode": "single",
   "project_code": "C11",
   "project_name": "c11",
   "review_mode": "inline",

@@ -280,6 +280,76 @@ func sentryCaptureWarning(
     )
 }
 
+/// Report a main-thread hang as a structured event carrying the **wedged main
+/// thread** as its stacktrace.
+///
+/// The watchdog reports from its own thread, so an ordinary `capture(message:)`
+/// hands Sentry the watchdog's loop as the thread of interest: the stack panel
+/// shows the reporter rather than the wedge, and the captured stack survives
+/// only as a text blob in context. Synthesizing the threads payload puts the
+/// real stack where Sentry expects one — rendered, symbolicated server-side
+/// against the uploaded dSYMs, and reachable by server-side fingerprint rules.
+///
+/// Grouping stays on the explicit `fingerprint`. Handing Sentry's own grouper
+/// these stacks would shatter one cause across hundreds of issues, because each
+/// capture is a single sample of a moving thread — measured on 875 real reports:
+/// 645 groups, 607 of them singletons.
+func sentryCaptureMainThreadHang(
+    _ message: String,
+    data: [String: Any],
+    fingerprint: [String],
+    tags: [String: String],
+    frames: [MainThreadBacktrace.Frame],
+    threadId: UInt64
+) {
+    guard TelemetrySettings.enabledForCurrentLaunch else { return }
+
+    let event = Event(level: .warning)
+    event.message = SentryMessage(formatted: message)
+    event.fingerprint = fingerprint
+    event.context = ["hang": data]
+
+    var allTags = tags
+    // `beforeSend` reads this tag to charge the event against the hang
+    // sub-budget rather than the general allowance. Losing it would let a
+    // wedged install spend the whole org's quota.
+    allTags["category"] = sentryHangCategory
+    event.tags = allTags.compactMapValues { value in
+        value.isEmpty ? nil : String(value.prefix(sentryTagValueLimit))
+    }
+
+    if !frames.isEmpty {
+        let thread = SentryThread(threadId: NSNumber(value: threadId))
+        thread.isMain = true
+        // `current` is what Sentry renders as the thread of interest. Nothing
+        // crashed, so `crashed` stays false — this is a live, recovered process.
+        thread.current = true
+        thread.crashed = false
+        thread.name = "main"
+        // Sentry orders frames caller-to-callee (oldest first); the unwinder
+        // produces them leaf-first. Reversing is not cosmetic — get it wrong and
+        // every stack renders upside down.
+        thread.stacktrace = SentryStacktrace(
+            frames: frames.reversed().map { frame in
+                let out = Frame()
+                out.instructionAddress = String(format: "0x%016llx", UInt64(frame.instructionAddress))
+                if let imageAddress = frame.imageAddress {
+                    out.imageAddress = String(format: "0x%016llx", UInt64(imageAddress))
+                }
+                return out
+            },
+            registers: [:]
+        )
+        event.threads = [thread]
+    }
+
+    // The SDK leaves a caller-supplied `threads` alone and derives `debugMeta`
+    // from it, so the frames above are what gets symbolicated. That is also why
+    // every frame carries `imageAddress`: the debug-image list is built purely
+    // from those values.
+    SentrySDK.capture(event: event)
+}
+
 func sentryCaptureError(
     _ message: String,
     category: String = "ui",

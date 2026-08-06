@@ -23,14 +23,10 @@
     }
   ],
   "id": "task_01KZ733HRN64WS7YSVCTT6WWRP",
-  "last_event_id": "ev_01KZ78HYZ6F1NYP6VKQ3P1JPQW",
+  "last_event_id": "ev_01KZC3NEMBY4W6V2YETB43JMMC",
   "last_status_changed_at": "2026-08-04T20:37:00Z",
   "linked_files": [],
-  "needs_human": {
-    "flagged_by": "agent:trident-pane-C11-192",
-    "reason": "Trident review requires two operator calls: (1) S1 ticket disposition \u2014 the ticket title ('Button metadata hang'), branch name, and PR #402 (hang classifier) now describe different things; choose retitle C11-192 / close-as-invalid + new ID / split (C11-199 already holds the original performance question). (2) S4 design fork \u2014 keep the client-side classifier (current PR) or synthesize a Sentry 'threads' payload with wedged-main-as-current, which fixes grouping AND the misleading stack display at once and would obsolete parts of the classifier; S3/I4 fold into this call. Details in artifact art_01KZ77VRS97G3J1R5R7DKND152. Rework on PR #402 can proceed in parallel; neither question blocks the checklist items.",
-    "since": "2026-08-04T20:36:51Z"
-  },
+  "needs_human": null,
   "priority": "high",
   "relationships_out": [],
   "reopened_count": 1,
@@ -45,6 +41,6 @@
   ],
   "title": "Main thread wedges 10s in swift_getTypeByMangledName under SwiftUI.Button.body (875 Sentry events, 7 users)",
   "type": "bug",
-  "updated_at": "2026-08-04T20:48:31Z",
+  "updated_at": "2026-08-06T17:59:15Z",
   "urgency": null
 }

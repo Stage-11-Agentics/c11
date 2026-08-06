@@ -16,14 +16,10 @@
     }
   ],
   "id": "task_01KZ732X0HCW7C324718YBZFTR",
-  "last_event_id": "ev_01KZ79M8F4SGKTDFSW5J8WJB1P",
+  "last_event_id": "ev_01KZC3NEH9PMEW5TZXTV4C763T",
   "last_status_changed_at": "2026-08-04T20:32:10Z",
   "linked_files": [],
-  "needs_human": {
-    "flagged_by": "agent:trident-pane-C11-191",
-    "reason": "S1: does this plan fix C11-191 at all? 4 reviewers say the Sentry hang (0.58.0+116, 941 events/11 users, bounded 2335ms, no libsystem_kernel leaf) is NOT the local attachSurface futex deadlock (0.60.1, 1 pid, 13h58m, __ulock_wait2 leaf) - the plan's own module-attribution rule contradicts its correction, and the ticket's TabBarView preference-storm signature exists locally symbolicated in ~32 episodes/10+ pids (candidate fix: vendor/bonsplit TabBarView.swift 730-749/794-809 unguarded onPreferenceChange->@State->frame(width:) loop). 2 reviewers accept the correction. Decisive sub-hour check: resolve one real 0.58.0+116 Sentry event frame-0 offset against that binary. Recommended: split - file the deadlock as its own P0 (real, disassembly-verified, force-quit-only) and keep C11-191 on the Sentry signature. Need your call on scope + acceptance criteria before plan rework resumes.",
-    "since": "2026-08-04T20:32:11Z"
-  },
+  "needs_human": null,
   "priority": "high",
   "relationships_out": [],
   "reopened_count": 1,
@@ -38,6 +34,6 @@
   ],
   "title": "Main thread wedges ~2.3s in the tab bar's SwiftUI preference pass (941 Sentry events, 11 users)",
   "type": "bug",
-  "updated_at": "2026-08-04T21:07:15Z",
+  "updated_at": "2026-08-06T17:59:15Z",
   "urgency": null
 }

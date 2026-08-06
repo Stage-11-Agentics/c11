@@ -1,7 +1,7 @@
 {
   "assigned_to": "agent:codex-c11-launch-cwd",
   "branch_links": [],
-  "comment_count": 4,
+  "comment_count": 5,
   "complexity": null,
   "created_at": "2026-08-06T06:10:02Z",
   "created_by": "agent:ace791-implementer",
@@ -46,7 +46,7 @@
     }
   ],
   "id": "task_01KZAV2VHK2TPFPXE8C7S1YNQ8",
-  "last_event_id": "ev_01KZC0QSD8AC0RSAV60F8CXHB2",
+  "last_event_id": "ev_01KZC3P8G4CCVP6Y3A56WADTJ5",
   "last_status_changed_at": "2026-08-06T17:08:06Z",
   "linked_files": [],
   "needs_human": null,
@@ -67,6 +67,6 @@
   "tags": null,
   "title": "launch-agent: refuse to start an agent in another agent's linked worktree",
   "type": "task",
-  "updated_at": "2026-08-06T17:08:06Z",
+  "updated_at": "2026-08-06T17:59:41Z",
   "urgency": null
 }

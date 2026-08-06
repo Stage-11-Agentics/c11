@@ -26,14 +26,10 @@
     }
   ],
   "id": "task_01KZ6YXZRV8SH2V7FJJKPM7QCJ",
-  "last_event_id": "ev_01KZ7AD53TVP2WZ3GEWP6FJQ22",
+  "last_event_id": "ev_01KZC3P8K0RT7FJ1RSGP3E4MK7",
   "last_status_changed_at": "2026-08-04T21:20:41Z",
   "linked_files": [],
-  "needs_human": {
-    "flagged_by": "agent:trident-pane-C11-190",
-    "reason": "Plan review passed FAIL plan-level; plan reworked inline but 6 operator calls gate re-entry: (1) release vehicle for #401 \u2014 cherry-pick 42ce4c919 onto release/v0.63.0 or defer to v0.64.0 (verification is unrunnable until it ships); (2) recurrence detector in C11-190 or sibling ticket; (3) IP/geo privacy fix (c11 project stores IP+city today, scrubIPAddresses:false) fold-vs-split, org-vs-project level; (4) #401 fence deviations fix-now-vs-file (hang double-charge, SDK app-hang bypass, per-process reset); (5) c11's declared share of the 50k org pool (~34 noisy installs can eat the daily allowance); (6) demo-project key delete-vs-deactivate. Sharpest surfaced extra: release.yml/nightly.yml set SENTRY_PROJECT stage11-c11 but the slug is c11 \u2014 dSYMs may be landing in the wrong project. Details: synthesis-action.md (art_01KZ76JKEZ5CEPQ1ZCYQ4QZ9KR).",
-    "since": "2026-08-04T20:14:21Z"
-  },
+  "needs_human": null,
   "priority": "medium",
   "relationships_out": [],
   "reopened_count": 1,
@@ -43,6 +39,6 @@
   "tags": null,
   "title": "Sentry: verify c11 events are stored again and bounded once #401 ships",
   "type": "task",
-  "updated_at": "2026-08-04T21:20:51Z",
+  "updated_at": "2026-08-06T17:59:41Z",
   "urgency": null
 }

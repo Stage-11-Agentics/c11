@@ -55,13 +55,20 @@ DROP_OUTCOMES = {"rate_limited", "invalid", "abuse", "cardinality_limited"}
 # than by Sentry — the point is to catch a client eating the pool *before* it
 # starves its neighbours, not to divide the pool exactly.
 #
-# c11's 20,000 is sized against measurement, not taste: unfenced installs ran at
-# ~986 events/day (~29,600/month, 59% of the org) and 99% of that was
-# main-thread-hang reports, which the client budget caps at 15/day/process. The
-# fenced projection is roughly 1,000-9,000/month, so 20,000 is about 2x the
-# pessimistic case — loose enough that ordinary growth in installs does not page
-# anyone, tight enough that a regression to unfenced behaviour trips long before
+# c11's 20,000 is sized against measurement, not taste. Unfenced, 15 distinct
+# installs sent ~986 events/day (~29,600/month, 59% of the org), and 99% of that
+# was main-thread-hang reports — the stream the client budget caps at 15/day per
+# *process*. Fenced, that puts the fleet near 7,000-9,000/month, so 20,000 is
+# roughly 2x the pessimistic case: loose enough not to page on ordinary growth in
+# installs, tight enough to catch a regression to unfenced behaviour long before
 # the org is threatened.
+#
+# The caveat in "per process" is real and this number does not hide it: the
+# budget resets on every launch, and c11 gets relaunched often. An install
+# restarted five times a day can legitimately spend five times its daily hang
+# allowance, which would put 15 installs past this share. That is precisely the
+# case the share check exists to surface — if it fires for that reason rather
+# than a regression, the fix is a persisted budget, not a bigger number here.
 DECLARED_SHARES = {
     "c11": {"monthly": 20_000, "expect_reporting": True},
     "acetate": {"monthly": 5_000, "expect_reporting": False},

@@ -6,8 +6,15 @@ import Foundation
 ///
 /// `cause` answers "what is main blocked on" and `phase` narrows the largest
 /// cause (SwiftUI graph work) to the host operation driving it. Together they
-/// form the Sentry fingerprint. `culprit` and `topSymbol` are per-report detail
-/// that rides along as tags — searchable inside an issue without splitting it.
+/// form the Sentry fingerprint. `culprit` rides along as a tag — searchable
+/// inside an issue without splitting it, and the one thing Sentry cannot
+/// aggregate from the stacktrace itself.
+///
+/// `topSymbol` is not emitted: the event now carries the wedged stack as a
+/// structured, server-symbolicated stacktrace, so the leaf frame is visible
+/// natively. Tagging it would only add an unbounded indexed dimension —
+/// unresolved frames symbolicate to a raw address, minting a fresh tag value
+/// every launch.
 struct MainThreadHangDescriptor: Equatable {
     let cause: String
     let phase: String?
@@ -172,6 +179,27 @@ enum MainThreadHangSignature {
         // stack.
         frames.first { $0.module == ownModule && $0.symbol != "main" }?.symbol
     }
+}
+
+/// One capture of the wedged main thread, in the two shapes its consumers need.
+///
+/// `symbols` is what the local hang log prints and what the classifier reads.
+/// `frames` carries the raw addresses Sentry needs to symbolicate server-side —
+/// the same unwind, unsymbolicated, so the Sentry UI can render a real
+/// stacktrace instead of a text blob.
+struct MainThreadBacktrace {
+    struct Frame {
+        let instructionAddress: UInt
+        /// Load address of the containing Mach-O image. The Sentry SDK builds
+        /// the event's debug-image list purely from these, so a nil here costs
+        /// symbolication for the whole frame.
+        let imageAddress: UInt?
+    }
+
+    let symbols: [String]
+    let frames: [Frame]
+
+    static let empty = MainThreadBacktrace(symbols: [], frames: [])
 }
 
 /// Pure decision core for main-thread hang detection.
@@ -361,7 +389,8 @@ final class MainThreadHangMonitor: @unchecked Sendable {
 
     private func handleHang(gapMs: Double, recapture: Bool) {
         if !recapture { reportedCurrentEpisode = false }
-        let stack = captureMainBacktrace()
+        let backtrace = captureMainBacktrace()
+        let stack = backtrace.symbols
         let kind = recapture ? "hang.persist" : "hang.begin"
 
         var lines: [String] = []
@@ -376,7 +405,7 @@ final class MainThreadHangMonitor: @unchecked Sendable {
         lines.append("")
         appendToLog(lines.joined(separator: "\n") + "\n")
 
-        reportTelemetry(gapMs: gapMs, recapture: recapture, stack: stack)
+        reportTelemetry(gapMs: gapMs, recapture: recapture, backtrace: backtrace)
     }
 
     private func handleRecovery(durationMs: Double) {
@@ -399,25 +428,46 @@ final class MainThreadHangMonitor: @unchecked Sendable {
     /// stripping, which isn't exposed to Swift; `backtrace_from_fp` is unusable
     /// here because it validates the FP against the *calling* thread's stack and so
     /// can't read another thread's frames.
-    private func captureMainBacktrace() -> [String] {
-        guard mainThread != mach_port_t(MACH_PORT_NULL) else { return [] }
+    private func captureMainBacktrace() -> MainThreadBacktrace {
+        guard mainThread != mach_port_t(MACH_PORT_NULL) else { return .empty }
 
         // Nothing inside the suspend window may allocate or take an app-level
         // lock: if main is suspended while holding (e.g.) the malloc lock, any
         // allocation here would block forever and wedge the process. The buffer
         // is preallocated; the C unwinder only reads memory via mach_vm calls.
         guard thread_suspend(mainThread) == KERN_SUCCESS else {
-            return ["<thread_suspend failed>"]
+            return MainThreadBacktrace(symbols: ["<thread_suspend failed>"], frames: [])
         }
         let frameCount = frameBuffer.withUnsafeMutableBufferPointer { buffer -> Int in
             Int(c11_capture_thread_backtrace(mainThread, buffer.baseAddress!, Int32(maxFrames)))
         }
         thread_resume(mainThread)
 
-        guard frameCount > 0 else { return ["<no frames captured>"] }
-        // Symbolication (which allocates and can take locks the suspended thread
-        // may have held) happens only after resume.
-        return symbolicate((0..<frameCount).map { UnsafeMutableRawPointer(bitPattern: frameBuffer[$0]) })
+        guard frameCount > 0 else {
+            return MainThreadBacktrace(symbols: ["<no frames captured>"], frames: [])
+        }
+        // Everything below allocates and takes locks the suspended thread may
+        // have held, so it runs only after resume.
+        let addresses = (0..<frameCount).map { frameBuffer[$0] }
+        return MainThreadBacktrace(
+            symbols: symbolicate(addresses.map { UnsafeMutableRawPointer(bitPattern: $0) }),
+            frames: addresses.map { address in
+                // Sentry symbolicates server-side from (instruction address,
+                // image load address) against the dSYMs uploaded by
+                // release.yml/nightly.yml. `imageAddress` is not optional
+                // polish: the SDK derives the event's whole debug-image list
+                // from these values, so leaving it nil yields an empty
+                // `debugMeta` and a stack that renders as bare addresses.
+                var info = Dl_info()
+                let resolved = UnsafeRawPointer(bitPattern: address).map {
+                    dladdr($0, &info) != 0
+                } ?? false
+                return MainThreadBacktrace.Frame(
+                    instructionAddress: address,
+                    imageAddress: resolved ? UInt(bitPattern: info.dli_fbase) : nil
+                )
+            }
+        )
     }
 
     private func symbolicate(_ addrs: [UnsafeMutableRawPointer?]) -> [String] {
@@ -439,7 +489,11 @@ final class MainThreadHangMonitor: @unchecked Sendable {
 
     // MARK: Telemetry
 
-    private func reportTelemetry(gapMs: Double, recapture: Bool, stack: [String]) {
+    private func reportTelemetry(gapMs: Double, recapture: Bool, backtrace: MainThreadBacktrace) {
+        let stack = backtrace.symbols
+        // Kept as a fallback: if a build's dSYMs never reached Sentry, the
+        // structured stacktrace renders as bare addresses and this text is the
+        // only readable copy.
         let top = stack.prefix(24).enumerated()
             .map { "\($0.offset)\t\($0.element)" }
             .joined(separator: "\n")
@@ -453,24 +507,41 @@ final class MainThreadHangMonitor: @unchecked Sendable {
                 stack: stack,
                 ownModule: ProcessInfo.processInfo.processName
             )
-            var tags = ["hang.cause": signature.cause, "hang.recapture": recapture ? "true" : "false"]
-            tags["hang.phase"] = signature.phase
+            var tags = [
+                "hang.cause": signature.cause,
+                "hang.recapture": recapture ? "true" : "false",
+                // Bucketed, never raw: a tag is an indexed dimension, and
+                // per-millisecond values would mint one for every report. The
+                // exact figure stays in context below.
+                "hang.duration_bucket": Self.durationBucket(ms: gapMs),
+                // Explicit "none" rather than an omitted key, so the rate of
+                // unclassified SwiftUI hangs is a measurable number. A silently
+                // absent tag is how a classifier rots without anyone noticing:
+                // Apple rotates a private symbol, phase goes nil fleet-wide, the
+                // issue forks, and the reset trend reads as "the fix worked".
+                "hang.phase": signature.cause == "swiftui-update"
+                    ? (signature.phase ?? "none")
+                    : "n/a",
+            ]
+            // Truncated for the tag (Sentry rejects values past its limit) and
+            // repeated untruncated in context, because a clipped mangled symbol
+            // will not demangle — on exactly the field that points at our code.
             tags["hang.culprit"] = signature.culprit
-            tags["hang.top_symbol"] = signature.topSymbol
             // The duration is not the grouping key, so it does not belong in
             // the title: the message names the cause and `stalled_ms` stays in
             // the event context.
-            sentryCaptureWarning(
+            sentryCaptureMainThreadHang(
                 "main thread hang (\(signature.label))",
-                category: sentryHangCategory,
                 data: [
                     "stalled_ms": Int(gapMs),
                     "recapture": recapture,
+                    "culprit": signature.culprit ?? "",
                     "stack": top,
                 ],
-                contextKey: "hang",
                 fingerprint: signature.fingerprint,
-                tags: tags
+                tags: tags,
+                frames: backtrace.frames,
+                threadId: UInt64(mainThread)
             )
         }
         PostHogAnalytics.shared.captureMainThreadHang(
@@ -478,6 +549,19 @@ final class MainThreadHangMonitor: @unchecked Sendable {
             recapture: recapture,
             topFrame: stack.first ?? ""
         )
+    }
+
+    /// Coarse severity band for the issue list. Dropping the duration from the
+    /// message made every hang the same row; without this a 2s stutter and a
+    /// 600s wedge are indistinguishable until you open an event.
+    static func durationBucket(ms: Double) -> String {
+        switch ms {
+        case ..<5_000: return "2-5s"
+        case ..<15_000: return "5-15s"
+        case ..<60_000: return "15-60s"
+        case ..<300_000: return "1-5m"
+        default: return "5m+"
+        }
     }
 
     /// At most one Sentry event per hang episode, and only for episodes that

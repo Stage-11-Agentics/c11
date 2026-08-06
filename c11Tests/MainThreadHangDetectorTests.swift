@@ -268,6 +268,35 @@ final class MainThreadHangSignatureTests: XCTestCase {
         )
     }
 
+    // MARK: - Severity banding
+
+    func testDurationBucketsCoverTheObservedRangeAndAreOrdered() {
+        // Real reports span 2s (the detector's floor) to 604s. Every band must
+        // be reachable, or the issue list cannot distinguish a stutter from a
+        // ten-minute wedge — the reason duration left the message.
+        let observed: [(Double, String)] = [
+            (2_016, "2-5s"),      // shortest real report
+            (4_999, "2-5s"),
+            (5_000, "5-15s"),     // boundary is inclusive-low
+            (10_422, "5-15s"),    // the stall C11-192 was filed on
+            (14_653, "5-15s"),    // production p50
+            (15_000, "15-60s"),
+            (75_000, "1-5m"),     // production p90
+            (300_000, "5m+"),
+            (604_040, "5m+"),     // longest real report
+        ]
+        for (ms, expected) in observed {
+            XCTAssertEqual(
+                MainThreadHangMonitor.durationBucket(ms: ms), expected,
+                "\(ms)ms should band as \(expected)"
+            )
+        }
+        // A bounded set: this is an indexed Sentry dimension, not a measurement.
+        let distinct = Set(stride(from: 0.0, through: 900_000.0, by: 137.0)
+            .map(MainThreadHangMonitor.durationBucket(ms:)))
+        XCTAssertEqual(distinct.count, 5)
+    }
+
     // MARK: - Degenerate input
 
     func testEmptyOrUnparseableCaptureStillYieldsAStableFingerprint() {

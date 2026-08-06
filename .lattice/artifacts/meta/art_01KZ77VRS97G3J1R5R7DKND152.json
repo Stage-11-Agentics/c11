@@ -11,7 +11,7 @@
   },
   "schema_version": 1,
   "sensitive": false,
-  "summary": "Verdict: revise-then-proceed (7 of 9 reviewers: needs revision or worse; engineering direction endorsed 6 of 9). 5 blockers, 7 importants, 6 mediums, 1 evolutionary clear win applied to the plan; follow-up tickets C11-193..C11-196 filed; 8 items surfaced to operator (S1 disposition question on needs_human); 3 evolutionary ideas skipped. Full 13-file pack: notes/trident-review-C11-192-plan-pack-20260804-1618/",
+  "summary": "Verdict: revise-then-proceed (7 of 9 reviewers: needs revision or worse; engineering direction endorsed 6 of 9). 5 blockers, 7 importants, 6 mediums, 1 evolutionary clear win applied to the plan; follow-up tickets C11-196..C11-199 filed; 8 items surfaced to operator (S1 disposition question on needs_human); 3 evolutionary ideas skipped. Full 13-file pack: notes/trident-review-C11-192-plan-pack-20260804-1618/",
   "tags": [],
   "title": "Trident plan review C11-192 \u2014 action synthesis",
   "token_usage": null,

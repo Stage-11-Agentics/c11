@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-08-06T17:02:52Z",
+  "created_by": "agent:codex-c11-launch-cwd",
+  "custom_fields": {
+    "url": "https://github.com/Stage-11-Agentics/c11/pull/407"
+  },
+  "id": "art_01KZC0E6R81X0F3Z2SZHQ0VD2M",
+  "model": null,
+  "payload": {
+    "content_type": null,
+    "file": null,
+    "size_bytes": null
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Commit 20594b96b: worktree-safe inherited launch cwd and workspace roots.",
+  "tags": [],
+  "title": "Draft PR #407",
+  "token_usage": null,
+  "type": "reference"
+}

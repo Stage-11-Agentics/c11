@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-06T16:53:56Z",
+  "created_by": "agent:trident-pane-C11-193",
+  "custom_fields": {},
+  "id": "art_01KZBZXVRDHEP9G6TJB0Z4BWH1",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KZBZXVRDHEP9G6TJB0Z4BWH1.md",
+    "size_bytes": 38014
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "9-agent trident plan review, merged action contract: 6 blockers + 5 importants + 2 mediums applied to plan rev 2; S1/S2/S4 product calls surfaced",
+  "tags": [],
+  "title": "Trident plan review \u2014 action synthesis (revise-then-proceed)",
+  "token_usage": null,
+  "type": "file"
+}

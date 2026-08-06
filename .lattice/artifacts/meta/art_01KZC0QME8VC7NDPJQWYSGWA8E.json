@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-06T17:08:01Z",
+  "created_by": "agent:codex-c11-launch-cwd",
+  "custom_fields": {},
+  "id": "art_01KZC0QME8VC7NDPJQWYSGWA8E",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KZC0QME8VC7NDPJQWYSGWA8E.md",
+    "size_bytes": 318
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": null,
+  "tags": [],
+  "title": "Tagged runtime validation at d7c21ef4c",
+  "token_usage": null,
+  "type": "note"
+}

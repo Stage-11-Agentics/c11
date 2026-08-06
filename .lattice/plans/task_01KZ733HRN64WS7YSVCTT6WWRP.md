@@ -68,7 +68,7 @@ episode (dedupe by user + episode, or exclude `recapture == true`) and per
 distinct user, and report distinct-user counts alongside every row — in
 particular the per-user spread of the 50 generic-metadata captures, which
 decides whether that class is the smallest or the most widespread
-(see C11-196). The refutation below stands on the two arguments that do not
+(see C11-199). The refutation below stands on the two arguments that do not
 need the table.
 
 Root cause of the misattribution: `attachStacktrace = true` makes the Cocoa SDK
@@ -114,7 +114,7 @@ Disposition of the ticket identity (title, branch name `c11-192-button-metadata`
 and PR #402 currently describe three different things) is an operator call —
 options: (a) retitle C11-192 to the classifier work, (b) close C11-192 as
 invalid and move the work under a new ID, (c) split: keep C11-192 as the
-performance question (now C11-196) and re-home this telemetry work. The
+performance question (now C11-199) and re-home this telemetry work. The
 needs_human flag on this task carries the question. Until answered, work
 proceeds on PR #402 under this ticket.
 
@@ -239,7 +239,7 @@ No view-tree restructuring, and no claim that a metadata hang was fixed —
 explicitly: no `ContentView.swift` or other view-tree work is in scope. 10422ms
 is the stall duration at the moment of a single sample, not time spent in the
 sampled frame. Whether generic-metadata instantiation is worth attacking is
-C11-196's question, answerable once this change ships.
+C11-199's question, answerable once this change ships.
 
 ## Alternatives considered
 
@@ -347,17 +347,17 @@ the first release carrying this change: ≥90% of hang events classify into a
 named cause (not `unknown`/`other`); `generic-metadata` and the
 `swiftui-update/*` phases exist as distinct Sentry issues with independent
 distinct-user counts; the per-bucket weekly event volume is recorded on
-C11-196 (post-#401 throttling may starve trends — that projection is review
+C11-199 (post-#401 throttling may starve trends — that projection is review
 item S7 and decides whether trend-based verdicts are achievable at all). If
 the ≥90% bar fails, this ticket reopens.
 
 ## Follow-ups (filed)
 
-- **C11-193** — synchronous XPC/AppleEvents wedge class (96 captures, up to 604s).
-- **C11-194** — SwiftUI graph-work family: split `hosting-begin-transaction` vs
+- **C11-196** — synchronous XPC/AppleEvents wedge class (96 captures, up to 604s).
+- **C11-197** — SwiftUI graph-work family: split `hosting-begin-transaction` vs
   `hosting-layout`, attack the dominant phase (C11-191 is in this family).
-- **C11-195** — decide whether `runloop-idle` captures should report at all.
-- **C11-196** — is generic-metadata a real user-facing class; owns the per-user
+- **C11-198** — decide whether `runloop-idle` captures should report at all.
+- **C11-199** — is generic-metadata a real user-facing class; owns the per-user
   recount of the 50-capture bucket and the post-classifier trend verdict.
 
 ## Rework checklist for PR #402 (delta between plan and branch)

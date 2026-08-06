@@ -48,6 +48,12 @@ jobs:
       - name: Run drawbridge gate tests
         run: python3 tests/drawbridge/test_gates.py
 
+      # Offline, no token: exercises the alarm paths of the Sentry recurrence
+      # detector, which are otherwise only reachable by actually exhausting a
+      # quota or silencing a real client.
+      - name: Validate Sentry recurrence checks
+        run: ./scripts/telemetry/sentry-position.py --self-test
+
   remote-daemon-tests:
     runs-on: ubuntu-latest
     steps:

@@ -118,8 +118,24 @@ flag renders after `--model`/`--effort` and before the positional prompt.
   the ghostty spawn command — a spawn command execs over the shell, so agent
   exit would kill the surface, and it skips shell rc.
 
-`--cwd <path>` sets the working directory (resolved CLI-side relative to the
-caller, validated server-side). Launches never steal focus or selection — 
+The launch cwd resolves in this order:
+
+1. explicit `--cwd <path>` (resolved CLI-side relative to the caller and
+   validated server-side),
+2. the target workspace's stable root directory, when set,
+3. the launching surface's cwd (the compatibility fallback for rootless
+   workspaces).
+
+Set a root during creation with `c11 new-workspace --root <path>` (or `--cwd`,
+which establishes the same root by default), then edit or clear it with
+`c11 set-workspace-root <path>` / `c11 set-workspace-root --clear`.
+
+An inherited cwd that resolves inside a linked git worktree is rejected with
+`linked_worktree_cwd`: it is likely another agent's active checkout. Passing
+that same path explicitly with `--cwd` is the deliberate override and proceeds
+with one warning.
+
+Launches never steal focus or selection —
 `agent.launch` is not a focus-intent method under the socket focus policy, so
 the new surface is created unfocused regardless of flags (`--no-focus` is
 accepted as a no-op for symmetry with `new-surface`).
@@ -177,6 +193,8 @@ Human-readable by default; `--json` prints one object:
   "workspace_ref": "workspace:4",
   "pane_ref": "pane:9",
   "surface_ref": "surface:341",
+  "cwd": "/path/to/project",
+  "cwd_source": "workspace_root",
   "workspace_id": "…", "pane_id": "…", "surface_id": "…"
 }
 ```
@@ -195,6 +213,7 @@ Errors are structured (`--json` gives `{"ok":false,"error":{"code":…,"message"
 | `system_prompt_unsupported` | a non-inherit `--system-prompt-mode` passed for a kind whose template declares no system-prompt syntax |
 | `invalid_effort` | value outside the template's declared allowed list |
 | `invalid_params` | bad `cwd`, or `new_workspace` combined with `pane_id`/`workspace_id` |
+| `linked_worktree_cwd` | inherited workspace/surface cwd is a linked worktree; pass `--cwd` explicitly to override |
 | `not_found` | target workspace or pane doesn't resolve |
 
 A conflicting `--prompt`/`--prompt-file` pair is rejected CLI-side before the
@@ -202,7 +221,8 @@ socket call. A launch binary that can't be found is a **warning**, not an
 error — the app-process PATH is poorer than the login-shell PATH a pane
 actually gets, so the result carries `"warnings": ["binary '<x>' not found …"]`
 and the launch proceeds (a truly missing binary shows the shell error in the
-pane).
+pane). An explicit linked-worktree override is also reported once in this
+warnings array and on stderr in human-readable mode.
 
 ## Launch templates
 

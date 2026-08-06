@@ -1,5 +1,77 @@
 import Foundation
 
+enum AgentLaunchWorkingDirectorySource: String, Equatable {
+    case explicit
+    case workspaceRoot = "workspace_root"
+    case launchingSurface = "launching_surface"
+}
+
+struct AgentLaunchWorkingDirectoryResolution: Equatable {
+    let path: String?
+    let source: AgentLaunchWorkingDirectorySource?
+}
+
+enum AgentLaunchWorkingDirectoryDecision: Equatable {
+    case allow(warning: String?)
+    case reject(message: String)
+}
+
+/// Pure launch-cwd precedence and linked-worktree policy. Git discovery stays
+/// outside this type so tests can pass a deterministic `ResolvedGitContext`.
+enum AgentLaunchWorkingDirectoryResolver {
+    static func resolve(
+        explicitCwd: String?,
+        workspaceRoot: String?,
+        launchingSurfaceCwd: String?
+    ) -> AgentLaunchWorkingDirectoryResolution {
+        if let explicitCwd = normalized(explicitCwd) {
+            return AgentLaunchWorkingDirectoryResolution(path: explicitCwd, source: .explicit)
+        }
+        if let workspaceRoot = normalized(workspaceRoot) {
+            return AgentLaunchWorkingDirectoryResolution(path: workspaceRoot, source: .workspaceRoot)
+        }
+        if let launchingSurfaceCwd = normalized(launchingSurfaceCwd) {
+            return AgentLaunchWorkingDirectoryResolution(path: launchingSurfaceCwd, source: .launchingSurface)
+        }
+        return AgentLaunchWorkingDirectoryResolution(path: nil, source: nil)
+    }
+
+    static func decision(
+        for resolution: AgentLaunchWorkingDirectoryResolution,
+        gitContext: ResolvedGitContext?
+    ) -> AgentLaunchWorkingDirectoryDecision {
+        guard case .linkedWorktree(_, _, let branch)? = gitContext?.outer else {
+            return .allow(warning: nil)
+        }
+        let branchLabel = displayLabel(for: branch)
+        if resolution.source == .explicit {
+            return .allow(
+                warning: "explicit --cwd selects linked git worktree branch '\(branchLabel)'"
+            )
+        }
+        return .reject(
+            message: "cwd is a linked git worktree on '\(branchLabel)' — this is likely another agent's active tree. Pass --cwd explicitly to override."
+        )
+    }
+
+    private static func normalized(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
+
+    private static func displayLabel(for branch: BranchValue) -> String {
+        switch branch {
+        case .attached(let name):
+            return name
+        case .detached(let shortSHA):
+            return "detached @ \(shortSHA)"
+        case .noBranch:
+            return "no branch"
+        }
+    }
+}
+
 /// The fully-resolved decision for launching an agent into a terminal panel.
 /// `command` is what gets typed into the shell once the panel is ready;
 /// `bareCommand` is the same launcher with no initial-prompt baking, suitable

@@ -162,6 +162,11 @@ final class TerminalControllerTelemetryWorkerTests: XCTestCase {
 
     // MARK: - Allowlist contract
 
+    func testAgentLaunchPlanningUsesSocketWorkerPolicy() {
+        XCTAssertEqual(TerminalController.executionPolicy(forV2Method: "agent.launch"), .socketWorker)
+        XCTAssertEqual(TerminalController.executionPolicy(forV2Method: "config.launch"), .socketWorker)
+    }
+
     /// The worker's allowlist is private to TerminalController, but the
     /// fact that exactly the audit-listed high-frequency telemetry commands
     /// are migrated is part of the C11-4 contract. We verify the contract

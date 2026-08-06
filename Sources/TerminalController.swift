@@ -1966,6 +1966,11 @@ class TerminalController {
         "surface.send_key",
         "surface.read_text",
         "surface.clear_history",
+        // Launch planning reads project config and probes git; keep those
+        // bounded I/O operations off-main, then hop to main only for model/UI
+        // snapshots and the final surface creation.
+        "agent.launch",
+        "config.launch",
         // C11-165 COR-3: these block their caller on a semaphore waiting for a
         // user click / async submission; on the default (main-actor) policy
         // that wait freezes the app. Run them off-main; each hops to main only
@@ -1974,7 +1979,8 @@ class TerminalController {
         "feedback.submit",
         // C11-180: `config.*` reads + mutations are pure state-root file I/O with
         // no AppKit touch → off-main per the socket threading policy. `config.launch`
-        // is deliberately ABSENT (it creates a surface → main actor).
+        // also starts here because it delegates to agent.launch, whose config/git
+        // planning stays off-main before a bounded main-thread creation commit.
         "config.list",
         "config.recent",
         "config.stats",
@@ -2552,7 +2558,7 @@ class TerminalController {
         return nil
     }
 
-    func v2StringMap(_ params: [String: Any], _ key: String) -> [String: String]? {
+    nonisolated func v2StringMap(_ params: [String: Any], _ key: String) -> [String: String]? {
         guard let raw = params[key] else { return nil }
         if let dict = raw as? [String: String] {
             return dict
@@ -2573,7 +2579,7 @@ class TerminalController {
         return action.lowercased().replacingOccurrences(of: "-", with: "_")
     }
 
-    func v2RawString(_ params: [String: Any], _ key: String) -> String? {
+    nonisolated func v2RawString(_ params: [String: Any], _ key: String) -> String? {
         params[key] as? String
     }
 

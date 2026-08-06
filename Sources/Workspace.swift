@@ -250,6 +250,7 @@ extension Workspace {
             customColor: customColor,
             isPinned: isPinned,
             currentDirectory: currentDirectory,
+            rootDirectory: rootDirectory,
             focusedPanelId: focusedPanelId,
             layout: layout,
             panels: panelSnapshots,
@@ -268,6 +269,7 @@ extension Workspace {
         if !normalizedCurrentDirectory.isEmpty {
             currentDirectory = normalizedCurrentDirectory
         }
+        setRootDirectory(snapshot.rootDirectory)
 
         let panelSnapshotsById = Dictionary(uniqueKeysWithValues: snapshot.panels.map { ($0.id, $0) })
         let leafEntries = restoreSessionLayout(snapshot.layout)
@@ -5295,6 +5297,9 @@ final class Workspace: Identifiable, ObservableObject {
     @Published var isPinned: Bool = false
     @Published var customColor: String?  // hex string, e.g. "#C0392B"
     @Published var currentDirectory: String
+    /// Stable project-level cwd used when launching child agents. Unlike
+    /// `currentDirectory`, this does not follow shell navigation.
+    @Published private(set) var rootDirectory: String?
 
     /// Publishes the new `customColor` value whenever it changes via `setCustomColor`.
     /// Used by `WorkspaceContentView` to re-apply bonsplit chrome (divider color, frame
@@ -5950,6 +5955,7 @@ final class Workspace: Identifiable, ObservableObject {
         title: String = "Terminal",
         stableDefaultTitle: String? = nil,
         workingDirectory: String? = nil,
+        rootDirectory: String? = nil,
         portOrdinal: Int = 0,
         configTemplate: ghostty_surface_config_s? = nil,
         initialTerminalCommand: String? = nil,
@@ -5972,6 +5978,7 @@ final class Workspace: Identifiable, ObservableObject {
         self.currentDirectory = hasWorkingDirectory
             ? trimmedWorkingDirectory
             : FileManager.default.homeDirectoryForCurrentUser.path
+        self.rootDirectory = Self.normalizedRootDirectory(rootDirectory)
 
         // Configure bonsplit with keepAllAlive to preserve terminal state
         // and keep split entry instantaneous.
@@ -7139,6 +7146,16 @@ final class Workspace: Identifiable, ObservableObject {
             customTitle = trimmed
             self.title = trimmed
         }
+    }
+
+    func setRootDirectory(_ directory: String?) {
+        rootDirectory = Self.normalizedRootDirectory(directory)
+    }
+
+    nonisolated private static func normalizedRootDirectory(_ directory: String?) -> String? {
+        guard let trimmed = directory?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        return NSString(string: trimmed).standardizingPath
     }
 
     /// Merge operator-authored entries into `metadata` (workspace-scoped).
@@ -8801,6 +8818,29 @@ final class Workspace: Identifiable, ObservableObject {
         let dir = currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
         if !dir.isEmpty { return dir }
         return FileManager.default.currentDirectoryPath
+    }
+
+    /// The cwd inherited by a socket-launched agent. Prefer the exact calling
+    /// surface when the CLI supplied its runtime identity; otherwise use the
+    /// focused terminal. Shell-reported cwd wins over the requested startup cwd,
+    /// with the workspace's last-known directory as the compatibility fallback.
+    func inheritedCwdForAgentLaunch(callerSurfaceId: UUID?) -> String? {
+        let candidateId = callerSurfaceId ?? focusedPanelId
+        if let candidateId {
+            if let reported = panelDirectories[candidateId]?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+               !reported.isEmpty {
+                return reported
+            }
+            if let requested = terminalPanel(for: candidateId)?
+                .requestedWorkingDirectory?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+               !requested.isEmpty {
+                return requested
+            }
+        }
+        let fallback = currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        return fallback.isEmpty ? nil : fallback
     }
 
     /// Create a new browser panel split

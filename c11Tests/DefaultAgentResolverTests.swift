@@ -8,6 +8,110 @@ import XCTest
 
 final class DefaultAgentResolverTests: XCTestCase {
 
+    // MARK: - launch cwd
+
+    func testLaunchCwdPrecedenceExplicitThenWorkspaceThenSurface() {
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.resolve(
+                explicitCwd: "/explicit",
+                workspaceRoot: "/root",
+                launchingSurfaceCwd: "/surface"
+            ),
+            AgentLaunchWorkingDirectoryResolution(path: "/explicit", source: .explicit)
+        )
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.resolve(
+                explicitCwd: nil,
+                workspaceRoot: "/root",
+                launchingSurfaceCwd: "/surface"
+            ),
+            AgentLaunchWorkingDirectoryResolution(path: "/root", source: .workspaceRoot)
+        )
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.resolve(
+                explicitCwd: nil,
+                workspaceRoot: nil,
+                launchingSurfaceCwd: "/surface"
+            ),
+            AgentLaunchWorkingDirectoryResolution(path: "/surface", source: .launchingSurface)
+        )
+    }
+
+    func testInheritedLinkedWorktreeIsRejectedWithBranchAndOverride() {
+        let resolution = AgentLaunchWorkingDirectoryResolution(
+            path: "/tmp/agent-tree",
+            source: .launchingSurface
+        )
+        let context = ResolvedGitContext(
+            outer: .linkedWorktree(
+                basename: "agent-tree",
+                absolutePath: "/tmp/agent-tree",
+                branch: .attached("feature/other-agent")
+            )
+        )
+
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.decision(for: resolution, gitContext: context),
+            .reject(
+                message: "cwd is a linked git worktree on 'feature/other-agent' — this is likely another agent's active tree. Pass --cwd explicitly to override."
+            )
+        )
+    }
+
+    func testWorkspaceRootLinkedWorktreeIsAlsoInheritedAndRejected() {
+        let resolution = AgentLaunchWorkingDirectoryResolution(
+            path: "/tmp/root-tree",
+            source: .workspaceRoot
+        )
+        let context = ResolvedGitContext(
+            outer: .linkedWorktree(
+                basename: "root-tree",
+                absolutePath: "/tmp/root-tree",
+                branch: .attached("feature/root-tree")
+            )
+        )
+
+        guard case .reject(let message) = AgentLaunchWorkingDirectoryResolver.decision(
+            for: resolution,
+            gitContext: context
+        ) else {
+            return XCTFail("expected inherited workspace root to be rejected")
+        }
+        XCTAssertTrue(message.contains("feature/root-tree"))
+        XCTAssertTrue(message.contains("Pass --cwd explicitly"))
+    }
+
+    func testExplicitLinkedWorktreeIsAllowedWithOneWarning() {
+        let resolution = AgentLaunchWorkingDirectoryResolution(
+            path: "/tmp/agent-tree",
+            source: .explicit
+        )
+        let context = ResolvedGitContext(
+            outer: .linkedWorktree(
+                basename: "agent-tree",
+                absolutePath: "/tmp/agent-tree",
+                branch: .detached(shortSHA: "abc1234")
+            )
+        )
+
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.decision(for: resolution, gitContext: context),
+            .allow(warning: "explicit --cwd selects linked git worktree branch 'detached @ abc1234'")
+        )
+    }
+
+    func testMainCheckoutIsAllowedWithoutWarning() {
+        let resolution = AgentLaunchWorkingDirectoryResolution(
+            path: "/tmp/main",
+            source: .launchingSurface
+        )
+        let context = ResolvedGitContext(outer: .mainCheckout(branch: .attached("main")))
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.decision(for: resolution, gitContext: context),
+            .allow(warning: nil)
+        )
+    }
+
     // MARK: - precedence
 
     func testResolvesUserDefaultWhenNoProjectConfig() {

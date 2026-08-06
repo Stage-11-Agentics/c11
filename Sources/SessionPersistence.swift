@@ -485,6 +485,8 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     var customColor: String?
     var isPinned: Bool
     var currentDirectory: String
+    /// Stable workspace project root. Optional so pre-C11-194 snapshots decode.
+    var rootDirectory: String? = nil
     var focusedPanelId: UUID?
     var layout: SessionWorkspaceLayoutSnapshot
     var panels: [SessionPanelSnapshot]

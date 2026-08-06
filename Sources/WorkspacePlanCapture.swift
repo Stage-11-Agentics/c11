@@ -69,7 +69,8 @@ enum WorkspacePlanCapture {
         let spec = WorkspaceSpec(
             title: workspace.customTitle,
             customColor: workspace.customColor,
-            workingDirectory: workspace.currentDirectory.isEmpty ? nil : workspace.currentDirectory,
+            workingDirectory: workspace.rootDirectory
+                ?? (workspace.currentDirectory.isEmpty ? nil : workspace.currentDirectory),
             metadata: workspace.metadata.isEmpty ? nil : workspace.metadata
         )
         return WorkspacePlanCaptureResult(

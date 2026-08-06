@@ -1950,7 +1950,8 @@ struct CMUXCLI {
 
         case "list-workspaces":
             let payload = try client.sendV2(method: "workspace.list")
-            if jsonOutput {
+            let workspaceJSONOut = jsonOutput || commandArgs.contains("--json")
+            if workspaceJSONOut {
                 print(jsonString(formatIDs(payload, mode: idFormat)))
             } else {
                 let workspaces = payload["workspaces"] as? [[String: Any]] ?? []
@@ -2063,15 +2064,19 @@ struct CMUXCLI {
         case "new-workspace":
             let (commandOpt, rem0) = parseOption(commandArgs, name: "--command")
             let (cwdOpt, rem1) = parseOption(rem0, name: "--cwd")
-            let (layoutOpt, rem2) = parseOption(rem1, name: "--layout")
-            let (titleOpt, remaining) = parseOption(rem2, name: "--title")
+            let (rootOpt, rem2) = parseOption(rem1, name: "--root")
+            let (layoutOpt, rem3) = parseOption(rem2, name: "--layout")
+            let (titleOpt, remaining) = parseOption(rem3, name: "--title")
             if let unknown = remaining.first(where: { $0.hasPrefix("--") }) {
-                throw CLIError(message: "new-workspace: unknown flag '\(unknown)'. Known flags: --command <text>, --cwd <path>, --layout <path|name>, --title <text>")
+                throw CLIError(message: "new-workspace: unknown flag '\(unknown)'. Known flags: --command <text>, --cwd <path>, --root <path>, --layout <path|name>, --title <text>")
             }
             var params: [String: Any] = [:]
             if let cwdOpt {
                 let resolved = resolvePath(cwdOpt)
                 params["cwd"] = resolved
+            }
+            if let rootOpt {
+                params["root_directory"] = resolvePath(rootOpt)
             }
             if let titleOpt {
                 let trimmed = titleOpt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2286,6 +2291,12 @@ struct CMUXCLI {
             }
 
             var params: [String: Any] = ["type": agentKind]
+            let callerSurfaceId = try resolveCallingSurface(
+                environment: ProcessInfo.processInfo.environment
+            )
+            if let callerSurfaceId {
+                params["caller_surface_id"] = callerSurfaceId
+            }
             if let flagReason = optionValue(commandArgs, name: "--flag") {
                 params["flag"] = flagReason
                 let actor = optionValue(commandArgs, name: "--by") ?? "operator"
@@ -2293,16 +2304,10 @@ struct CMUXCLI {
                     throw CLIError(message: "launch-agent: --by must be operator or agent")
                 }
                 params["by"] = actor
-                let callerSurfaceId = try resolveCallingSurface(
-                    environment: ProcessInfo.processInfo.environment
-                )
                 if actor == "agent", callerSurfaceId == nil {
                     throw CLIError(
                         message: "launch-agent: agent-raised flags require C11_SURFACE_ID or CMUX_SURFACE_ID"
                     )
-                }
-                if let callerSurfaceId {
-                    params["caller_surface_id"] = callerSurfaceId
                 }
             } else if optionValue(commandArgs, name: "--by") != nil {
                 throw CLIError(message: "launch-agent: --by requires --flag")
@@ -2341,6 +2346,11 @@ struct CMUXCLI {
             // Accept --json in trailing position too (the documented form);
             // the global parser only consumes it before the subcommand.
             let launchJSONOut = jsonOutput || commandArgs.contains("--json")
+            if !launchJSONOut, let warnings = launchPayload["warnings"] as? [String] {
+                for warning in warnings where !warning.isEmpty {
+                    FileHandle.standardError.write(Data(("warning: " + warning + "\n").utf8))
+                }
+            }
             printV2Payload(launchPayload, jsonOutput: launchJSONOut, idFormat: idFormat, fallbackText: v2OKSummary(launchPayload, idFormat: idFormat, kinds: ["surface", "pane", "workspace"]))
 
         case "raise-flag", "lower-flag", "suppress", "unsuppress":
@@ -2671,6 +2681,29 @@ struct CMUXCLI {
             let params: [String: Any] = ["title": title, "workspace_id": wsId]
             let payload = try client.sendV2(method: "workspace.rename", params: params)
             printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["workspace"]))
+
+        case "set-workspace-root":
+            let (wsArg, rem0) = parseOption(commandArgs, name: "--workspace")
+            let clear = rem0.contains("--clear")
+            let pathArgs = rem0.filter { $0 != "--clear" && $0 != "--" }
+            if clear && !pathArgs.isEmpty {
+                throw CLIError(message: "set-workspace-root: --clear is mutually exclusive with a path")
+            }
+            if !clear && pathArgs.count != 1 {
+                throw CLIError(message: "set-workspace-root requires one <path> or --clear")
+            }
+            let workspaceArg = wsArg
+                ?? (windowId == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
+            let wsId = try resolveWorkspaceId(workspaceArg, client: client)
+            var params: [String: Any] = ["workspace_id": wsId]
+            params["root_directory"] = clear ? NSNull() : resolvePath(pathArgs[0])
+            let payload = try client.sendV2(method: "workspace.set_root", params: params)
+            printV2Payload(
+                payload,
+                jsonOutput: jsonOutput,
+                idFormat: idFormat,
+                fallbackText: clear ? "OK cleared workspace root" : "OK \(pathArgs[0])"
+            )
 
         case "current-workspace":
             let response = try sendV1Command("current_workspace", client: client)
@@ -8491,12 +8524,13 @@ struct CMUXCLI {
             """
         case "new-workspace":
             return """
-            Usage: c11 new-workspace [--cwd <path>] [--command <text>] [--title <text>] [--layout <path|name>]
+            Usage: c11 new-workspace [--cwd <path>] [--root <path>] [--command <text>] [--title <text>] [--layout <path|name>]
 
             Create a new workspace.
 
             Flags:
               --cwd <path>           Set the working directory for the new workspace
+              --root <path>          Set its stable agent-launch root (also the cwd when --cwd is omitted)
               --command <text>       Send text+Enter to the new workspace after creation
               --title <text>         Set the workspace title inline (same as a follow-up rename)
               --layout <path|name>   Apply a blueprint plan (file path or blueprint name)
@@ -8504,6 +8538,7 @@ struct CMUXCLI {
             Example:
               c11 new-workspace
               c11 new-workspace --cwd ~/projects/myapp
+              c11 new-workspace --root ~/projects/myapp
               c11 new-workspace --title "Auth refactor"
               c11 new-workspace --cwd . --command "npm test"
               c11 new-workspace --layout my-review-room
@@ -8511,7 +8546,7 @@ struct CMUXCLI {
             """
         case "list-workspaces":
             return """
-            Usage: c11 list-workspaces
+            Usage: c11 list-workspaces [--json]
 
             List workspaces in the current window.
 
@@ -9010,6 +9045,17 @@ struct CMUXCLI {
             Example:
               c11 rename-workspace "backend logs"
               c11 rename-window --workspace workspace:2 "agent run"
+            """
+        case "set-workspace-root":
+            return """
+            Usage: c11 set-workspace-root [--workspace <id|ref|index>] (<path> | --clear)
+
+            Set or clear the workspace's stable root directory. Agent launches
+            without an explicit --cwd use this root before the calling surface cwd.
+
+            Examples:
+              c11 set-workspace-root ~/projects/myapp
+              c11 set-workspace-root --workspace workspace:2 --clear
             """
         case "current-workspace":
             return """
@@ -17256,8 +17302,8 @@ struct CMUXCLI {
           move-workspace-to-window --workspace <id|ref> --window <id|ref>
           reorder-workspace --workspace <id|ref|index> (--index <n> | --before <id|ref|index> | --after <id|ref|index>) [--window <id|ref|index>]
           workspace-action --action <name> [--workspace <id|ref|index>] [--title <text>]
-          list-workspaces
-          new-workspace [--cwd <path>] [--command <text>]
+          list-workspaces [--json]
+          new-workspace [--cwd <path>] [--root <path>] [--command <text>]
           workspace                                        (workspace persistence subcommands)
           workspace apply --file <path|->                  (apply a WorkspaceApplyPlan JSON)
           workspace new [--blueprint <path>]               (create from a blueprint, interactive picker without --blueprint)
@@ -17291,6 +17337,7 @@ struct CMUXCLI {
           close-workspace --workspace <id|ref>
           select-workspace --workspace <id|ref>
           rename-workspace [--workspace <id|ref>] <title>
+          set-workspace-root [--workspace <id|ref>] (<path> | --clear)
           rename-window [--workspace <id|ref>] <title>
           current-workspace
           read-screen [--workspace <id|ref>] [--surface <id|ref>] [--scrollback] [--lines <n>]

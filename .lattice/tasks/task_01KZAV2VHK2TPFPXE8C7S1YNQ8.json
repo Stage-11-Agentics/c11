@@ -1,7 +1,7 @@
 {
   "assigned_to": "agent:codex-c11-launch-cwd",
   "branch_links": [],
-  "comment_count": 5,
+  "comment_count": 8,
   "complexity": null,
   "created_at": "2026-08-06T06:10:02Z",
   "created_by": "agent:ace791-implementer",
@@ -43,11 +43,31 @@
       "id": "art_01KZC0QMCQR14DXAW6MGTJP5NN",
       "role": "validation",
       "source_type": "artifact"
+    },
+    {
+      "id": "ev_01KZC858C2HY2XFM58T2D1Y8PE",
+      "role": "review",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KZC858F18HQ506DY09RAD21R",
+      "role": "review",
+      "source_type": "artifact"
+    },
+    {
+      "id": "ev_01KZC858QRET6FZC8VXP3V6ZV2",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KZC858TPZTTGVW92DMQX6RRD",
+      "role": "validation",
+      "source_type": "artifact"
     }
   ],
   "id": "task_01KZAV2VHK2TPFPXE8C7S1YNQ8",
-  "last_event_id": "ev_01KZC3P8G4CCVP6Y3A56WADTJ5",
-  "last_status_changed_at": "2026-08-06T17:08:06Z",
+  "last_event_id": "ev_01KZC858XN1RP1ANK9EF8232QA",
+  "last_status_changed_at": "2026-08-06T19:17:48Z",
   "linked_files": [],
   "needs_human": null,
   "priority": "high",
@@ -60,13 +80,13 @@
       "type": "related_to"
     }
   ],
-  "reopened_count": 0,
+  "reopened_count": 1,
   "schema_version": 1,
   "short_id": "C11-193",
   "status": "pr_open",
   "tags": null,
   "title": "launch-agent: refuse to start an agent in another agent's linked worktree",
   "type": "task",
-  "updated_at": "2026-08-06T17:59:41Z",
+  "updated_at": "2026-08-06T19:17:48Z",
   "urgency": null
 }

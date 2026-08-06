@@ -1,7 +1,7 @@
 {
   "assigned_to": "agent:c11-191",
   "branch_links": [],
-  "comment_count": 4,
+  "comment_count": 5,
   "complexity": "medium",
   "created_at": "2026-08-04T19:12:55Z",
   "created_by": "agent:sentry-audit",
@@ -16,7 +16,7 @@
     }
   ],
   "id": "task_01KZ732X0HCW7C324718YBZFTR",
-  "last_event_id": "ev_01KZC3NEH9PMEW5TZXTV4C763T",
+  "last_event_id": "ev_01KZC41RJ74NPVA53Q0CD83FBN",
   "last_status_changed_at": "2026-08-04T20:32:10Z",
   "linked_files": [],
   "needs_human": null,
@@ -34,6 +34,6 @@
   ],
   "title": "Main thread wedges ~2.3s in the tab bar's SwiftUI preference pass (941 Sentry events, 11 users)",
   "type": "bug",
-  "updated_at": "2026-08-06T17:59:15Z",
+  "updated_at": "2026-08-06T18:05:58Z",
   "urgency": null
 }

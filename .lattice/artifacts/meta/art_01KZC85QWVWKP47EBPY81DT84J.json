@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-06T19:18:03Z",
+  "created_by": "agent:codex-c11-launch-cwd",
+  "custom_fields": {},
+  "id": "art_01KZC85QWVWKP47EBPY81DT84J",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KZC85QWVWKP47EBPY81DT84J.md",
+    "size_bytes": 750
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "Red-green decoy proof plus rooted, inherited, legacy, and no-config tagged runtime.",
+  "tags": [],
+  "title": "Final config provenance validation at 500158c5a",
+  "token_usage": null,
+  "type": "note"
+}

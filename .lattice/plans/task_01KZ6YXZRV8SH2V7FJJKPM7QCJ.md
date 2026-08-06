@@ -56,3 +56,5 @@ Key `ce836c6e3462a139dcd469f5e4d3ceec` is deactivated but one PUT reverses it, w
 Routed via `lattice needs-human` (see ticket flag): release vehicle for #401 (AC1); detector in-scope-vs-split (AC3); privacy fold-vs-split and org-vs-project (AC4); #401 code deviations fix-now-vs-file (Known deviations); fleet-share sizing (arithmetic above); demo-project delete-vs-deactivate (AC6); plus lower-priority surfaced items S6–S13 in `synthesis-action.md` (dSYM `SENTRY_PROJECT` slug mismatch in release.yml/nightly.yml is the sharpest of them).
 
 ## Reset 2026-08-04 by agent:trident-pane-C11-190
+
+## Reset 2026-08-06 by human:atin

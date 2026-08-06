@@ -133,7 +133,10 @@ c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     # priority missions only); --suppressed marks the worker parent-owned. Semantics:
     # the attention model in SKILL.md.
     # cwd precedence: explicit --cwd > workspace root > launching surface cwd.
-    # An inherited linked-worktree cwd is refused; explicit --cwd is the warned override.
+    # Linked-worktree cwd values proceed with a coded warning naming the worktree path.
+    # Explicit --cwd and workspace-root provenance count as explicit intent; a
+    # launching-surface cwd is inherited. warning_details carries code/path/source
+    # in --json, and the coded warning is also printed once to stderr.
 
 # Saved agent configs (the model picker's CLI, design §6)
 c11 config list [--json]                          # saved configs + default(mode) + most-recent

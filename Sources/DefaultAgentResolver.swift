@@ -4,16 +4,56 @@ enum AgentLaunchWorkingDirectorySource: String, Equatable {
     case explicit
     case workspaceRoot = "workspace_root"
     case launchingSurface = "launching_surface"
+
+    var isExplicitIntent: Bool {
+        switch self {
+        case .explicit, .workspaceRoot:
+            return true
+        case .launchingSurface:
+            return false
+        }
+    }
 }
 
 struct AgentLaunchWorkingDirectoryResolution: Equatable {
     let path: String?
     let source: AgentLaunchWorkingDirectorySource?
+
+    func projectConfigLookupCwd(processFallback: String) -> String {
+        path ?? processFallback
+    }
+}
+
+struct AgentLaunchWorkingDirectoryWarning: Equatable {
+    static let linkedWorktreeCode = "linked_worktree_cwd"
+
+    let code: String
+    let message: String
+    let cwd: String
+    let worktreePath: String
+    let worktreeBasename: String
+    let branch: String
+    let cwdSource: AgentLaunchWorkingDirectorySource?
+    let explicitIntent: Bool
+
+    var payload: [String: Any] {
+        [
+            "code": code,
+            "message": message,
+            "data": [
+                "cwd": cwd,
+                "worktree_path": worktreePath,
+                "worktree_basename": worktreeBasename,
+                "branch": branch,
+                "cwd_source": cwdSource?.rawValue ?? NSNull(),
+                "explicit_intent": explicitIntent,
+            ],
+        ]
+    }
 }
 
 enum AgentLaunchWorkingDirectoryDecision: Equatable {
-    case allow(warning: String?)
-    case reject(message: String)
+    case allow(warning: AgentLaunchWorkingDirectoryWarning?)
 }
 
 /// Pure launch-cwd precedence and linked-worktree policy. Git discovery stays
@@ -40,17 +80,34 @@ enum AgentLaunchWorkingDirectoryResolver {
         for resolution: AgentLaunchWorkingDirectoryResolution,
         gitContext: ResolvedGitContext?
     ) -> AgentLaunchWorkingDirectoryDecision {
-        guard case .linkedWorktree(_, _, let branch)? = gitContext?.outer else {
+        guard case .linkedWorktree(let basename, let absolutePath, let branch)? = gitContext?.outer else {
             return .allow(warning: nil)
         }
+        let cwd = resolution.path ?? absolutePath
         let branchLabel = displayLabel(for: branch)
-        if resolution.source == .explicit {
-            return .allow(
-                warning: "explicit --cwd selects linked git worktree branch '\(branchLabel)'"
-            )
+        let sourceDescription: String
+        switch resolution.source {
+        case .explicit:
+            sourceDescription = "explicit --cwd"
+        case .workspaceRoot:
+            sourceDescription = "workspace root (explicit intent)"
+        case .launchingSurface:
+            sourceDescription = "launching-surface cwd (inherited)"
+        case nil:
+            sourceDescription = "resolved cwd"
         }
-        return .reject(
-            message: "cwd is a linked git worktree on '\(branchLabel)' — this is likely another agent's active tree. Pass --cwd explicitly to override."
+        let message = "\(sourceDescription) '\(cwd)' selects linked git worktree '\(absolutePath)' on '\(branchLabel)'; launch is proceeding."
+        return .allow(
+            warning: AgentLaunchWorkingDirectoryWarning(
+                code: AgentLaunchWorkingDirectoryWarning.linkedWorktreeCode,
+                message: message,
+                cwd: cwd,
+                worktreePath: absolutePath,
+                worktreeBasename: basename,
+                branch: branchLabel,
+                cwdSource: resolution.source,
+                explicitIntent: resolution.source?.isExplicitIntent ?? false
+            )
         )
     }
 

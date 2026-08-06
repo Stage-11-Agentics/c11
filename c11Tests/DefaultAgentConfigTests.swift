@@ -369,6 +369,52 @@ final class DefaultAgentConfigTests: XCTestCase {
         XCTAssertNotNil(DefaultAgentProjectConfig.find(from: nested.path))
     }
 
+    func testResolvedSurfaceCwdDrivesProjectConfigLookupInsteadOfProcessCwd() throws {
+        let project = try makeTempDir()
+        let processCwd = try makeTempDir()
+        defer {
+            try? FileManager.default.removeItem(at: project)
+            try? FileManager.default.removeItem(at: processCwd)
+        }
+
+        let dotDir = project.appendingPathComponent(".c11", isDirectory: true)
+        try FileManager.default.createDirectory(at: dotDir, withIntermediateDirectories: true)
+        var agents: [AgentType: AgentConfig] = [:]
+        agents[.codex] = AgentConfig(
+            command: "codex --from-resolved-project",
+            initialPrompt: "",
+            envOverridesText: ""
+        )
+        let config = DefaultAgentConfig(defaultAgent: .codex, agents: agents)
+        try JSONEncoder().encode(config).write(to: dotDir.appendingPathComponent("agents.json"))
+
+        let resolution = AgentLaunchWorkingDirectoryResolver.resolve(
+            explicitCwd: nil,
+            workspaceRoot: nil,
+            launchingSurfaceCwd: project.path
+        )
+        let lookupCwd = resolution.projectConfigLookupCwd(processFallback: processCwd.path)
+
+        XCTAssertEqual(lookupCwd, project.path)
+        XCTAssertNil(DefaultAgentProjectConfig.find(from: processCwd.path))
+        XCTAssertEqual(
+            DefaultAgentProjectConfig.find(from: lookupCwd)?.agents[.codex]?.command,
+            "codex --from-resolved-project"
+        )
+    }
+
+    func testProjectConfigLookupFallsBackOnlyWithoutAnyResolvedCwd() {
+        let resolution = AgentLaunchWorkingDirectoryResolver.resolve(
+            explicitCwd: nil,
+            workspaceRoot: nil,
+            launchingSurfaceCwd: nil
+        )
+        XCTAssertEqual(
+            resolution.projectConfigLookupCwd(processFallback: "/app/process/cwd"),
+            "/app/process/cwd"
+        )
+    }
+
     func testProjectConfigFindIgnoresMalformedFile() throws {
         let tmp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: tmp) }

@@ -2346,8 +2346,20 @@ struct CMUXCLI {
             // Accept --json in trailing position too (the documented form);
             // the global parser only consumes it before the subcommand.
             let launchJSONOut = jsonOutput || commandArgs.contains("--json")
-            if !launchJSONOut, let warnings = launchPayload["warnings"] as? [String] {
-                for warning in warnings where !warning.isEmpty {
+            let warningDetails = launchPayload["warning_details"] as? [[String: Any]] ?? []
+            var detailedMessages = Set<String>()
+            for warning in warningDetails {
+                guard let code = warning["code"] as? String,
+                      !code.isEmpty,
+                      let message = warning["message"] as? String,
+                      !message.isEmpty else { continue }
+                detailedMessages.insert(message)
+                FileHandle.standardError.write(
+                    Data(("warning[" + code + "]: " + message + "\n").utf8)
+                )
+            }
+            if let warnings = launchPayload["warnings"] as? [String] {
+                for warning in warnings where !warning.isEmpty && !detailedMessages.contains(warning) {
                     FileHandle.standardError.write(Data(("warning: " + warning + "\n").utf8))
                 }
             }

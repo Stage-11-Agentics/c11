@@ -130,10 +130,15 @@ Set a root during creation with `c11 new-workspace --root <path>` (or `--cwd`,
 which establishes the same root by default), then edit or clear it with
 `c11 set-workspace-root <path>` / `c11 set-workspace-root --clear`.
 
-An inherited cwd that resolves inside a linked git worktree is rejected with
-`linked_worktree_cwd`: it is likely another agent's active checkout. Passing
-that same path explicitly with `--cwd` is the deliberate override and proceeds
-with one warning.
+Any resolved cwd inside a linked git worktree proceeds with one coded warning.
+The warning names the absolute worktree path and carries code
+`linked_worktree_cwd`. Explicit `--cwd` remains permitted; a configured
+workspace root also counts as explicit intent. A launching-surface cwd is
+marked inherited, but is warning-only because linked worktrees are the normal
+Lattice delegator shape.
+
+Project `.c11/agents.json` discovery uses this same resolved cwd, so the config
+selected for a launch cannot silently come from the GUI app process's cwd.
 
 Launches never steal focus or selection —
 `agent.launch` is not a focus-intent method under the socket focus policy, so
@@ -195,6 +200,19 @@ Human-readable by default; `--json` prints one object:
   "surface_ref": "surface:341",
   "cwd": "/path/to/project",
   "cwd_source": "workspace_root",
+  "warnings": ["workspace root (explicit intent) '/path/to/project' selects linked git worktree '/path/to/project' on 'fix/example'; launch is proceeding."],
+  "warning_details": [{
+    "code": "linked_worktree_cwd",
+    "message": "workspace root (explicit intent) '/path/to/project' selects linked git worktree '/path/to/project' on 'fix/example'; launch is proceeding.",
+    "data": {
+      "cwd": "/path/to/project",
+      "worktree_path": "/path/to/project",
+      "worktree_basename": "project",
+      "branch": "fix/example",
+      "cwd_source": "workspace_root",
+      "explicit_intent": true
+    }
+  }],
   "workspace_id": "…", "pane_id": "…", "surface_id": "…"
 }
 ```
@@ -213,7 +231,6 @@ Errors are structured (`--json` gives `{"ok":false,"error":{"code":…,"message"
 | `system_prompt_unsupported` | a non-inherit `--system-prompt-mode` passed for a kind whose template declares no system-prompt syntax |
 | `invalid_effort` | value outside the template's declared allowed list |
 | `invalid_params` | bad `cwd`, or `new_workspace` combined with `pane_id`/`workspace_id` |
-| `linked_worktree_cwd` | inherited workspace/surface cwd is a linked worktree; pass `--cwd` explicitly to override |
 | `not_found` | target workspace or pane doesn't resolve |
 
 A conflicting `--prompt`/`--prompt-file` pair is rejected CLI-side before the
@@ -221,8 +238,10 @@ socket call. A launch binary that can't be found is a **warning**, not an
 error — the app-process PATH is poorer than the login-shell PATH a pane
 actually gets, so the result carries `"warnings": ["binary '<x>' not found …"]`
 and the launch proceeds (a truly missing binary shows the shell error in the
-pane). An explicit linked-worktree override is also reported once in this
-warnings array and on stderr in human-readable mode.
+pane). A linked-worktree cwd is also reported once in this legacy warnings
+array and as a structured `warning_details` entry with code
+`linked_worktree_cwd`. The CLI prints the coded warning once to stderr in both
+human and `--json` modes while the launch proceeds.
 
 ## Launch templates
 

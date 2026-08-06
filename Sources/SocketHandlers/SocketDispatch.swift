@@ -1171,23 +1171,20 @@ extension TerminalController {
         let gitContext = cwdResolution.path.flatMap {
             GitContextResolver.resolve(cwd: $0)
         }
-        let cwdWarning: String?
-        switch AgentLaunchWorkingDirectoryResolver.decision(
+        let cwdDecision = AgentLaunchWorkingDirectoryResolver.decision(
             for: cwdResolution,
             gitContext: gitContext
-        ) {
+        )
+        let cwdWarning: AgentLaunchWorkingDirectoryWarning?
+        switch cwdDecision {
         case .allow(let warning):
             cwdWarning = warning
-        case .reject(let message):
-            return .err(
-                code: "linked_worktree_cwd",
-                message: message,
-                data: cwdResolution.path.map { ["path": $0] }
-            )
         }
 
         // Config + (for custom kinds) template I/O happens here, off-main.
-        let lookupCwd = cwdResolution.path ?? FileManager.default.currentDirectoryPath
+        let lookupCwd = cwdResolution.projectConfigLookupCwd(
+            processFallback: FileManager.default.currentDirectoryPath
+        )
         let userDefault = DefaultAgentConfigStore.shared.current
         let projectConfig = DefaultAgentProjectConfig.find(from: lookupCwd)
         let userTemplate: UserAgentLaunchTemplate? =
@@ -1230,7 +1227,7 @@ extension TerminalController {
 
         var warnings = plan.warnings
         if let cwdWarning {
-            warnings.append(cwdWarning)
+            warnings.append(cwdWarning.message)
         }
         if let binaryWarning = Self.agentLaunchBinaryWarning(launchLine: plan.launchLine) {
             warnings.append(binaryWarning)
@@ -1407,7 +1404,8 @@ extension TerminalController {
                 "surface_ref": self.v2Ref(kind: .surface, uuid: panel.id),
                 "cwd": self.v2OrNull(cwdResolution.path),
                 "cwd_source": self.v2OrNull(cwdResolution.source?.rawValue),
-                "warnings": warnings
+                "warnings": warnings,
+                "warning_details": cwdWarning.map { [$0.payload] } ?? []
             ])
 
             // C11-178 rail-1: record the resolved launch. `plan` exposes model/

@@ -37,9 +37,9 @@ final class DefaultAgentResolverTests: XCTestCase {
         )
     }
 
-    func testInheritedLinkedWorktreeIsRejectedWithBranchAndOverride() {
+    func testInheritedLinkedWorktreeWarnsWithCodeAndPathThenProceeds() {
         let resolution = AgentLaunchWorkingDirectoryResolution(
-            path: "/tmp/agent-tree",
+            path: "/tmp/agent-tree/subdir",
             source: .launchingSurface
         )
         let context = ResolvedGitContext(
@@ -50,15 +50,31 @@ final class DefaultAgentResolverTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(
-            AgentLaunchWorkingDirectoryResolver.decision(for: resolution, gitContext: context),
-            .reject(
-                message: "cwd is a linked git worktree on 'feature/other-agent' — this is likely another agent's active tree. Pass --cwd explicitly to override."
-            )
-        )
+        guard case .allow(let warning?) = AgentLaunchWorkingDirectoryResolver.decision(
+            for: resolution,
+            gitContext: context
+        ) else {
+            return XCTFail("expected a warning-only linked-worktree decision")
+        }
+        XCTAssertEqual(warning.code, "linked_worktree_cwd")
+        XCTAssertEqual(warning.cwd, "/tmp/agent-tree/subdir")
+        XCTAssertEqual(warning.worktreePath, "/tmp/agent-tree")
+        XCTAssertEqual(warning.worktreeBasename, "agent-tree")
+        XCTAssertEqual(warning.branch, "feature/other-agent")
+        XCTAssertEqual(warning.cwdSource, .launchingSurface)
+        XCTAssertFalse(warning.explicitIntent)
+        XCTAssertTrue(warning.message.contains("/tmp/agent-tree"))
+        XCTAssertTrue(warning.message.contains("launch is proceeding"))
+
+        let payload = warning.payload
+        XCTAssertEqual(payload["code"] as? String, "linked_worktree_cwd")
+        let data = payload["data"] as? [String: Any]
+        XCTAssertEqual(data?["worktree_path"] as? String, "/tmp/agent-tree")
+        XCTAssertEqual(data?["cwd_source"] as? String, "launching_surface")
+        XCTAssertEqual(data?["explicit_intent"] as? Bool, false)
     }
 
-    func testWorkspaceRootLinkedWorktreeIsAlsoInheritedAndRejected() {
+    func testWorkspaceRootLinkedWorktreeCountsAsExplicitIntentAndWarns() {
         let resolution = AgentLaunchWorkingDirectoryResolution(
             path: "/tmp/root-tree",
             source: .workspaceRoot
@@ -71,14 +87,16 @@ final class DefaultAgentResolverTests: XCTestCase {
             )
         )
 
-        guard case .reject(let message) = AgentLaunchWorkingDirectoryResolver.decision(
+        guard case .allow(let warning?) = AgentLaunchWorkingDirectoryResolver.decision(
             for: resolution,
             gitContext: context
         ) else {
-            return XCTFail("expected inherited workspace root to be rejected")
+            return XCTFail("expected a warning-only workspace-root decision")
         }
-        XCTAssertTrue(message.contains("feature/root-tree"))
-        XCTAssertTrue(message.contains("Pass --cwd explicitly"))
+        XCTAssertEqual(warning.cwdSource, .workspaceRoot)
+        XCTAssertTrue(warning.explicitIntent)
+        XCTAssertTrue(warning.message.contains("workspace root (explicit intent)"))
+        XCTAssertTrue(warning.message.contains("/tmp/root-tree"))
     }
 
     func testExplicitLinkedWorktreeIsAllowedWithOneWarning() {
@@ -94,10 +112,40 @@ final class DefaultAgentResolverTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(
-            AgentLaunchWorkingDirectoryResolver.decision(for: resolution, gitContext: context),
-            .allow(warning: "explicit --cwd selects linked git worktree branch 'detached @ abc1234'")
+        guard case .allow(let warning?) = AgentLaunchWorkingDirectoryResolver.decision(
+            for: resolution,
+            gitContext: context
+        ) else {
+            return XCTFail("expected an explicit warning and allowed launch")
+        }
+        XCTAssertEqual(warning.code, "linked_worktree_cwd")
+        XCTAssertEqual(warning.branch, "detached @ abc1234")
+        XCTAssertEqual(warning.cwdSource, .explicit)
+        XCTAssertTrue(warning.explicitIntent)
+        XCTAssertTrue(warning.message.contains("explicit --cwd"))
+    }
+
+    func testNoBranchLinkedWorktreeStillCarriesNamedWarning() {
+        let resolution = AgentLaunchWorkingDirectoryResolution(
+            path: "/tmp/no-branch-tree",
+            source: .launchingSurface
         )
+        let context = ResolvedGitContext(
+            outer: .linkedWorktree(
+                basename: "no-branch-tree",
+                absolutePath: "/tmp/no-branch-tree",
+                branch: .noBranch
+            )
+        )
+
+        guard case .allow(let warning?) = AgentLaunchWorkingDirectoryResolver.decision(
+            for: resolution,
+            gitContext: context
+        ) else {
+            return XCTFail("expected no-branch warning")
+        }
+        XCTAssertEqual(warning.branch, "no branch")
+        XCTAssertEqual(warning.code, "linked_worktree_cwd")
     }
 
     func testMainCheckoutIsAllowedWithoutWarning() {

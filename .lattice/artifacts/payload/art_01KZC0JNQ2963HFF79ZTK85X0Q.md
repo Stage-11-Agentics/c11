@@ -1,0 +1,1 @@
+Reviewed main...d7c21ef4c with C11-194's workspace-root model, persistence, CLI/socket exposure, and cwd precedence in scope. The background-caller precedence finding was resolved in d7c21ef4c. Root persistence is backward compatible, no-root fallback is preserved, and tagged runtime evidence covers creation/edit/clear and JSON exposure. No remaining findings. Verdict: approve.

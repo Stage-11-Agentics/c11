@@ -1,24 +1,31 @@
 {
-  "assigned_to": null,
+  "assigned_to": "agent:c11-191",
   "branch_links": [],
-  "comment_count": 0,
+  "comment_count": 4,
   "complexity": "medium",
   "created_at": "2026-08-04T19:12:55Z",
   "created_by": "agent:sentry-audit",
   "custom_fields": {},
   "description": "The single highest-volume issue on c11's Sentry project. 941 events across 11 distinct users in one day (2026-07-25), all on release com.stage11.c11@0.58.0+116, environment production. Sentry issue C11-30, \"main thread hang 2335ms\".\n\nSTACK (from the hang watchdog's cross-thread capture; frames 0-21 of the wedged main thread):\n\n  0  c11              MiddleClickCapture...\n  1  SwiftUICore      _SizedShape\n  2  SwiftUICore      ExclusiveGesture\n  3  SwiftUICore      ExclusiveGesture\n  4  c11              Foundation.URL? outlined copy\n  5  c11              Bonsplit.TabBarView.horizontal...\n  6  SwiftUI          ScrollViewReader.body\n  7  SwiftUICore      DelayedPreferenceChild\n  8  SwiftUICore      AttributeGraph.syncMainIfReferences\n ...\n 17  AttributeGraph   AG::Graph::UpdateStack::update\n 21  SwiftUICore      GraphHost.updatePreferences\n\nREADING. Main is inside a SwiftUI preference-key update pass (GraphHost.updatePreferences -> DelayedPreferenceChild -> syncMainIfReferences) driven from Bonsplit's TabBarView horizontal scroll body, with MiddleClickCapture and ExclusiveGesture in the evaluated subtree. `syncMainIfReferences` in an AttributeGraph update is the SwiftUI shape that blocks the main thread while resolving references; a 2.3s stall there means the tab bar's preference/ScrollViewReader machinery is re-evaluating a large subtree synchronously.\n\nWHY IT MATTERS BEYOND THE STALL. CLAUDE.md already names TabItemView as a typing-latency hot path guarded by Equatable + .equatable() precisely so its body is not re-evaluated during typing. This stack is that guard failing (or being bypassed) at the container level: the cost is in TabBarView's own preference/gesture plumbing rather than in TabItemView's body. 11 of the operator base hit it in a single day.\n\nWHERE TO LOOK.\n  - vendor/bonsplit TabBarView horizontal scroll container: the ScrollViewReader + preference-key pair.\n  - MiddleClickCapture's placement in that subtree \u2014 a gesture/NSViewRepresentable in a preference-writing branch forces re-evaluation.\n  - The `Foundation.URL?` outlined copy at frame 4 suggests a URL-carrying value is being copied per tab per pass; a URL in a preference payload or Equatable key is worth ruling out.\n\nACCEPTANCE. A reproduction (many tabs + tab bar interaction) that stalls main >1s before the change and does not after; the Sentry issue does not recur on the next release with comparable install count. Note the outbound Sentry budget landed in #401, so recurrence now shows as fewer events, not zero: judge by issue presence and user count, not event count.\n\nFOUND BY. Sentry audit 2026-08-04. Related: C11-186 (make main-thread hangs survivable) covers reporting/recovery for hangs in general; this ticket is one specific cause.",
   "done_at": null,
-  "evidence_refs": [],
+  "evidence_refs": [
+    {
+      "id": "art_01KZ77JYAR8Y1XEGK6J7SQ1XFP",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
   "id": "task_01KZ732X0HCW7C324718YBZFTR",
-  "last_event_id": "ev_01KZ732X0NK06J7B2FKMB3VC4F",
-  "last_status_changed_at": "2026-08-04T19:12:55Z",
+  "last_event_id": "ev_01KZC3NEH9PMEW5TZXTV4C763T",
+  "last_status_changed_at": "2026-08-04T20:32:10Z",
   "linked_files": [],
+  "needs_human": null,
   "priority": "high",
   "relationships_out": [],
-  "reopened_count": 0,
+  "reopened_count": 1,
   "schema_version": 1,
   "short_id": "C11-191",
-  "status": "backlog",
+  "status": "in_planning",
   "tags": [
     "sentry",
     "hang",
@@ -27,6 +34,6 @@
   ],
   "title": "Main thread wedges ~2.3s in the tab bar's SwiftUI preference pass (941 Sentry events, 11 users)",
   "type": "bug",
-  "updated_at": "2026-08-04T19:12:55Z",
+  "updated_at": "2026-08-06T17:59:15Z",
   "urgency": null
 }

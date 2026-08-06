@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-04T20:31:35Z",
+  "created_by": "agent:trident-pane-C11-191",
+  "custom_fields": {},
+  "id": "art_01KZ77JYAR8Y1XEGK6J7SQ1XFP",
+  "model": null,
+  "payload": {
+    "content_type": "text/markdown",
+    "file": "art_01KZ77JYAR8Y1XEGK6J7SQ1XFP.md",
+    "size_bytes": 41033
+  },
+  "schema_version": 1,
+  "sensitive": false,
+  "summary": "9-agent trident plan review. FAIL plan-level: 7 blockers (B1 unanimous: drop-on-full + memo strands stale display link), 6 important, 3 mediums. S1 identification dispute -> needs-human. Full pack: notes/trident-review-C11-191-plan-pack-20260804-1613/",
+  "tags": [],
+  "title": "Trident plan review: action synthesis (rework-then-rereview)",
+  "token_usage": null,
+  "type": "file"
+}

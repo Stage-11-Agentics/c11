@@ -1,24 +1,38 @@
 {
-  "assigned_to": null,
+  "assigned_to": "agent:c11-192",
   "branch_links": [],
-  "comment_count": 0,
+  "c11_surface": "36285AD8-EC64-4A08-858C-F20D5283095A",
+  "c11_workspace": "7B4D2337-7CE2-4C91-A460-9633F016C8BC",
+  "comment_count": 7,
   "complexity": "medium",
   "created_at": "2026-08-04T19:13:16Z",
   "created_by": "agent:sentry-audit",
   "custom_fields": {},
   "description": "Second-highest-volume issue on c11's Sentry project and the longest stall: 875 events across 7 distinct users in one day (2026-07-25), all on release com.stage11.c11@0.58.0+116, environment production. Sentry issue C11-31, \"main thread hang 10422ms (persist)\".\n\nSTACK (wedged main thread, frames 0-21):\n\n  0  libswiftCore  _gatherGenericParameters\n  1  libswiftCore  DecodedMetadataBuilder::createBoundGenericType\n  2  libswiftCore  swift::Demangle::TypeDecoder\n  3  libswiftCore  swift_getTypeByMangledNodeImpl\n  4  libswiftCore  swift_getTypeByMangledNode\n  5  libswiftCore  swift_getTypeByMangledNameImpl\n  6  libswiftCore  swift_getTypeByMangledName\n  7  libswiftCore  swift_getOpaqueTypeMetadataImpl\n  8  SwiftUI       Button.body\n  9  SwiftUICore   ViewBodyAccessor.updateBody\n ...\n 17  SwiftUICore   GraphHost.runTransaction\n 18  SwiftUICore   GraphHost.flushTransactions\n 21  SwiftUI       NSHostingView.layout\n\nREADING. Main is inside the Swift runtime instantiating generic type metadata by demangling a mangled name, reached from an opaque return type (`some View`) on a Button's body, during an NSHostingView layout pass. This is the well-known cost of very deeply nested generic SwiftUI view trees: each distinct `some View` opaque type must have its metadata built at runtime, the demangler walks the whole nested generic structure, and the cache misses on first use. Ten seconds means the tree under that Button is enormous \u2014 likely a modifier chain multiplied across a ForEach.\n\nThis is a different mechanism from the 2.3s tab bar stall (see the sibling ticket) even though both surface as \"main thread hang\": that one is preference/AttributeGraph work, this one is runtime metadata instantiation. They need different fixes.\n\nWHERE TO LOOK.\n  - Find the Button whose body is that deep. `NSHostingView.layout` plus a Button in the graph points at chrome hosted in AppKit: tab bar, sidebar rows, or panel toolbars.\n  - The standard remedies, in order of bluntness: break the modifier chain with explicit `AnyView` at the deepest point (trades metadata cost for erasure), factor the subtree into a named `struct` conforming to `View` with a concrete body type, or hoist the repeated modifier stack out of a ForEach so one metadata instantiation serves every row.\n  - Verify with a Time Profiler trace filtered to `swift_getTypeByMangledName`; the fix is confirmed when that symbol stops appearing in layout passes.\n\nWHY IT MATTERS. Ten seconds is a beachball, not a stutter, and 7 users hit it. It is also self-inflicted and fixable purely by view-tree shape: no concurrency, no locking, no ghostty involvement.\n\nACCEPTANCE. A profile showing `swift_getTypeByMangledName` absent from (or under 100ms in) the layout pass that previously showed it; the Sentry issue does not recur on the next release with comparable install count. The outbound Sentry budget landed in #401, so judge recurrence by issue presence and user count, not event count.\n\nFOUND BY. Sentry audit 2026-08-04. Related: C11-186 (make main-thread hangs survivable) covers reporting/recovery in general; this is one specific cause.",
   "done_at": null,
-  "evidence_refs": [],
+  "evidence_refs": [
+    {
+      "id": "ev_01KZ77BYJ04ZR6N9NC1NSCFXXA",
+      "role": "validation",
+      "source_type": "comment"
+    },
+    {
+      "id": "art_01KZ77VRS97G3J1R5R7DKND152",
+      "role": "review",
+      "source_type": "artifact"
+    }
+  ],
   "id": "task_01KZ733HRN64WS7YSVCTT6WWRP",
-  "last_event_id": "ev_01KZ733HRQKZFRVEAY7FR6624T",
-  "last_status_changed_at": "2026-08-04T19:13:16Z",
+  "last_event_id": "ev_01KZC3NEMBY4W6V2YETB43JMMC",
+  "last_status_changed_at": "2026-08-04T20:37:00Z",
   "linked_files": [],
+  "needs_human": null,
   "priority": "high",
   "relationships_out": [],
-  "reopened_count": 0,
+  "reopened_count": 1,
   "schema_version": 1,
   "short_id": "C11-192",
-  "status": "backlog",
+  "status": "in_progress",
   "tags": [
     "sentry",
     "hang",
@@ -27,6 +41,6 @@
   ],
   "title": "Main thread wedges 10s in swift_getTypeByMangledName under SwiftUI.Button.body (875 Sentry events, 7 users)",
   "type": "bug",
-  "updated_at": "2026-08-04T19:13:16Z",
+  "updated_at": "2026-08-06T17:59:15Z",
   "urgency": null
 }

@@ -74,7 +74,7 @@ All dotted v2 methods, grouped by domain. Method names are stable identifiers; a
 
 ### Agents (`agent.*`) — 1
 
-- `agent.launch` — launch a typed coding agent into a new surface or fresh workspace: per-kind invocation, model/effort flags, identity env + metadata at birth, refs returned. See `docs/launch-agent-reference.md`.
+- `agent.launch` — launch a typed coding agent into a new surface or fresh workspace: per-kind invocation, model/effort flags, identity env + metadata at birth, refs returned. The result includes `cwd`, `cwd_source`, matched project `config_source` (or null), legacy `warnings`, and structured `warning_details`. See `docs/launch-agent-reference.md`.
 
 ### System (`system.*`) — 5
 

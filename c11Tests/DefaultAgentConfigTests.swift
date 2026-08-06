@@ -388,30 +388,70 @@ final class DefaultAgentConfigTests: XCTestCase {
         let config = DefaultAgentConfig(defaultAgent: .codex, agents: agents)
         try JSONEncoder().encode(config).write(to: dotDir.appendingPathComponent("agents.json"))
 
+        let decoyDotDir = processCwd.appendingPathComponent(".c11", isDirectory: true)
+        try FileManager.default.createDirectory(at: decoyDotDir, withIntermediateDirectories: true)
+        var decoyAgents: [AgentType: AgentConfig] = [:]
+        decoyAgents[.codex] = AgentConfig(
+            command: "codex --from-process-decoy",
+            initialPrompt: "",
+            envOverridesText: ""
+        )
+        let decoy = DefaultAgentConfig(defaultAgent: .codex, agents: decoyAgents)
+        try JSONEncoder().encode(decoy).write(to: decoyDotDir.appendingPathComponent("agents.json"))
+
         let resolution = AgentLaunchWorkingDirectoryResolver.resolve(
             explicitCwd: nil,
             workspaceRoot: nil,
             launchingSurfaceCwd: project.path
         )
-        let lookupCwd = resolution.projectConfigLookupCwd(processFallback: processCwd.path)
-
-        XCTAssertEqual(lookupCwd, project.path)
-        XCTAssertNil(DefaultAgentProjectConfig.find(from: processCwd.path))
+        let match = DefaultAgentProjectConfig.find(
+            for: resolution,
+            processFallback: processCwd.path
+        )
         XCTAssertEqual(
-            DefaultAgentProjectConfig.find(from: lookupCwd)?.agents[.codex]?.command,
+            match?.config.agents[.codex]?.command,
             "codex --from-resolved-project"
+        )
+        XCTAssertEqual(
+            match?.sourcePath,
+            dotDir.appendingPathComponent("agents.json").standardizedFileURL.path
+        )
+        XCTAssertEqual(
+            DefaultAgentProjectConfig.find(from: processCwd.path)?.agents[.codex]?.command,
+            "codex --from-process-decoy",
+            "negative control must prove the decoy config exists"
         )
     }
 
-    func testProjectConfigLookupFallsBackOnlyWithoutAnyResolvedCwd() {
+    func testNoResolvedCwdDoesNotConsultProcessCwd() throws {
+        let processCwd = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: processCwd) }
+        let decoyDotDir = processCwd.appendingPathComponent(".c11", isDirectory: true)
+        try FileManager.default.createDirectory(at: decoyDotDir, withIntermediateDirectories: true)
+        var agents: [AgentType: AgentConfig] = [:]
+        agents[.codex] = AgentConfig(
+            command: "codex --must-not-be-selected",
+            initialPrompt: "",
+            envOverridesText: ""
+        )
+        let decoy = DefaultAgentConfig(defaultAgent: .codex, agents: agents)
+        try JSONEncoder().encode(decoy).write(to: decoyDotDir.appendingPathComponent("agents.json"))
+
         let resolution = AgentLaunchWorkingDirectoryResolver.resolve(
             explicitCwd: nil,
             workspaceRoot: nil,
             launchingSurfaceCwd: nil
         )
+        XCTAssertNil(
+            DefaultAgentProjectConfig.find(
+                for: resolution,
+                processFallback: processCwd.path
+            )
+        )
         XCTAssertEqual(
-            resolution.projectConfigLookupCwd(processFallback: "/app/process/cwd"),
-            "/app/process/cwd"
+            DefaultAgentProjectConfig.find(from: processCwd.path)?.agents[.codex]?.command,
+            "codex --must-not-be-selected",
+            "negative control must prove the process-cwd decoy is valid"
         )
     }
 

@@ -137,6 +137,8 @@ c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     # Explicit --cwd and workspace-root provenance count as explicit intent; a
     # launching-surface cwd is inherited. warning_details carries code/path/source
     # in --json, and the coded warning is also printed once to stderr.
+    # Project .c11/agents.json lookup uses that resolved cwd (never the GUI process
+    # cwd); config_source reports the matched file path or null in --json.
 
 # Saved agent configs (the model picker's CLI, design §6)
 c11 config list [--json]                          # saved configs + default(mode) + most-recent

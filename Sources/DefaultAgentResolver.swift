@@ -18,10 +18,6 @@ enum AgentLaunchWorkingDirectorySource: String, Equatable {
 struct AgentLaunchWorkingDirectoryResolution: Equatable {
     let path: String?
     let source: AgentLaunchWorkingDirectorySource?
-
-    func projectConfigLookupCwd(processFallback: String) -> String {
-        path ?? processFallback
-    }
 }
 
 struct AgentLaunchWorkingDirectoryWarning: Equatable {
@@ -59,6 +55,21 @@ enum AgentLaunchWorkingDirectoryDecision: Equatable {
 /// Pure launch-cwd precedence and linked-worktree policy. Git discovery stays
 /// outside this type so tests can pass a deterministic `ResolvedGitContext`.
 enum AgentLaunchWorkingDirectoryResolver {
+    /// The legacy `default-agent launch --in-surface` rail has no workspace
+    /// root tier: an explicit cwd wins, otherwise the target surface supplies
+    /// the inherited cwd. Keeping that rule here gives tests and production a
+    /// single pure seam instead of reconstructing precedence at the socket.
+    static func resolveExistingSurface(
+        explicitCwd: String?,
+        targetSurfaceCwd: String?
+    ) -> AgentLaunchWorkingDirectoryResolution {
+        resolve(
+            explicitCwd: explicitCwd,
+            workspaceRoot: nil,
+            launchingSurfaceCwd: targetSurfaceCwd
+        )
+    }
+
     static func resolve(
         explicitCwd: String?,
         workspaceRoot: String?,

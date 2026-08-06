@@ -6,6 +6,10 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+### Fixed
+
+- **Agent launches now keep working-directory intent and project configuration aligned.** `launch-agent` resolves explicit cwd, workspace root, then launching surface; linked worktrees proceed with a named path-bearing warning on stderr and in JSON. Project `.c11/agents.json` lookup follows that same resolved cwd instead of the GUI app process, reports its matched `config_source`, and the legacy `default-agent launch --in-surface` rail follows the target surface too.
+
 ## [0.63.0] - 2026-07-31
 
 Headline: **The A button becomes a real agent launcher, and fleet attention stays truthful.** Launch the default agent in one click or open a keyboard-ready picker for saved configurations, while a thread-id guard stops a Codex sub-agent's completion from pulling its parent surface into Waiting.

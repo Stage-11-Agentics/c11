@@ -1182,11 +1182,9 @@ extension TerminalController {
         }
 
         // Config + (for custom kinds) template I/O happens here, off-main.
-        let lookupCwd = cwdResolution.projectConfigLookupCwd(
-            processFallback: FileManager.default.currentDirectoryPath
-        )
         let userDefault = DefaultAgentConfigStore.shared.current
-        let projectConfig = DefaultAgentProjectConfig.find(from: lookupCwd)
+        let projectConfigMatch = DefaultAgentProjectConfig.find(for: cwdResolution)
+        let projectConfig = projectConfigMatch?.config
         let userTemplate: UserAgentLaunchTemplate? =
             AgentType(rawValue: kindRaw) == nil ? UserAgentLaunchTemplate.load(kind: kindRaw) : nil
 
@@ -1404,6 +1402,7 @@ extension TerminalController {
                 "surface_ref": self.v2Ref(kind: .surface, uuid: panel.id),
                 "cwd": self.v2OrNull(cwdResolution.path),
                 "cwd_source": self.v2OrNull(cwdResolution.source?.rawValue),
+                "config_source": self.v2OrNull(projectConfigMatch?.sourcePath),
                 "warnings": warnings,
                 "warning_details": cwdWarning.map { [$0.payload] } ?? []
             ])

@@ -37,6 +37,30 @@ final class DefaultAgentResolverTests: XCTestCase {
         )
     }
 
+    func testExistingSurfaceLaunchCwdUsesExplicitThenTargetSurface() {
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.resolveExistingSurface(
+                explicitCwd: "/explicit",
+                targetSurfaceCwd: "/target-surface"
+            ),
+            AgentLaunchWorkingDirectoryResolution(path: "/explicit", source: .explicit)
+        )
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.resolveExistingSurface(
+                explicitCwd: nil,
+                targetSurfaceCwd: "/target-surface"
+            ),
+            AgentLaunchWorkingDirectoryResolution(path: "/target-surface", source: .launchingSurface)
+        )
+        XCTAssertEqual(
+            AgentLaunchWorkingDirectoryResolver.resolveExistingSurface(
+                explicitCwd: nil,
+                targetSurfaceCwd: nil
+            ),
+            AgentLaunchWorkingDirectoryResolution(path: nil, source: nil)
+        )
+    }
+
     func testInheritedLinkedWorktreeWarnsWithCodeAndPathThenProceeds() {
         let resolution = AgentLaunchWorkingDirectoryResolution(
             path: "/tmp/agent-tree/subdir",

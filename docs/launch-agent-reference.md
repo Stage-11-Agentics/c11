@@ -138,7 +138,12 @@ marked inherited, but is warning-only because linked worktrees are the normal
 Lattice delegator shape.
 
 Project `.c11/agents.json` discovery uses this same resolved cwd, so the config
-selected for a launch cannot silently come from the GUI app process's cwd.
+selected for a launch cannot silently come from the GUI app process's cwd. If
+no cwd resolves, project lookup is skipped and the user default applies. The
+walk remains deepest-first through ancestors toward `/`; this newly makes
+ancestor configs reachable from real project paths. A malformed config remains
+a silent miss. Project config is executable launch policy (`command` and env
+overrides); trust gating is pre-existing and remains outside this change.
 
 Launches never steal focus or selection —
 `agent.launch` is not a focus-intent method under the socket focus policy, so
@@ -200,6 +205,7 @@ Human-readable by default; `--json` prints one object:
   "surface_ref": "surface:341",
   "cwd": "/path/to/project",
   "cwd_source": "workspace_root",
+  "config_source": "/path/to/project/.c11/agents.json",
   "warnings": ["workspace root (explicit intent) '/path/to/project' selects linked git worktree '/path/to/project' on 'fix/example'; launch is proceeding."],
   "warning_details": [{
     "code": "linked_worktree_cwd",
@@ -336,14 +342,17 @@ same (resolve via `system.tree` or `c11 identify`).
 
 The handler performs resolution, surface creation, env injection, metadata
 stamping, and command typing **atomically server-side** — a caller never has to
-sequence create → stamp → send itself. Response is the JSON object above.
+sequence create → stamp → send itself. Response is the JSON object above;
+`config_source` is the matched `.c11/agents.json` path or null.
 Follows the socket threading policy (parse/validate off-main; UI mutation
 scheduled on main) and the no-focus-steal policy.
 
 ## Relationship to existing commands
 
-- `c11 default-agent launch` — unchanged; still "launch the operator's default."
-  Internally both share `DefaultAgentResolver` + `DefaultAgentLaunchComposition`.
+- `c11 default-agent launch` — still "launch the operator's default." Its
+  `--in-surface` rail now resolves project config from explicit `--cwd` or the
+  target surface's cwd, never the GUI app process cwd. Internally both share
+  `DefaultAgentResolver` + `DefaultAgentLaunchComposition`.
 - The A button — unchanged; same resolver, same stamping.
 - `$C11_DEFAULT_AGENT_LAUNCH` — unchanged; the per-shell export still reflects
   the operator's default agent only.

@@ -278,6 +278,106 @@ final class MainThreadHangSignatureTests: XCTestCase {
         }
         XCTAssertEqual(describe([]).cause, "unknown")
     }
+
+    // MARK: - What rides along in the payload
+
+    /// A 96-frame capture whose own-module frames all sit below the top window —
+    /// the shape 73% of one 1,231-event production sample arrived in, every frame
+    /// a system frame and the hang consequently unattributable.
+    private func deepSwiftUIStack() -> [String] {
+        var stack = (0..<40).map { "\($0)   SwiftUICore   0x\($0) $s7SwiftUI9GraphHostC16updatePreferencesyyF + \($0)" }
+        stack.append("40   c11   0xaa $s3c1119VerticalTabsSidebarV4bodyQrvg + 12")
+        stack += (41..<60).map { "\($0)   AppKit   0x\($0) -[NSView _layoutSubtreeWithOldSize:] + \($0)" }
+        stack.append("60   c11   0xbb $s3c1111ContentViewV4bodyQrvg + 44")
+        stack.append("61   c11   0xcc main + 64")
+        return stack
+    }
+
+    func testReportedStackCarriesOwnFramesFromBelowTheTopWindow() {
+        let reported = MainThreadHangSignature.reportedStack(deepSwiftUIStack(), ownModule: "c11")
+        XCTAssertTrue(
+            reported.contains { $0.contains("VerticalTabsSidebar") },
+            "the frame that names the workload sits at index 40 and is the whole point of the report"
+        )
+        XCTAssertTrue(reported.contains { $0.contains("ContentView") })
+        XCTAssertTrue(reported.contains { $0.contains("main + 64") })
+        // Nothing from the elided middle rides along.
+        XCTAssertFalse(reported.contains { $0.contains("_layoutSubtreeWithOldSize") })
+    }
+
+    func testReportedStackKeepsTrueIndicesAndMarksTheGap() {
+        let reported = MainThreadHangSignature.reportedStack(deepSwiftUIStack(), ownModule: "c11")
+        XCTAssertEqual(reported.prefix(24).count, 24)
+        XCTAssertTrue(reported[0].hasPrefix("0\t"))
+        XCTAssertTrue(reported[23].hasPrefix("23\t"))
+        guard let gap = reported.firstIndex(where: { $0.hasPrefix("\u{2026}\t") }) else {
+            return XCTFail("an elided run must be marked, or the two halves read as contiguous")
+        }
+        // 62 frames total, 24 kept up top, 3 own frames kept below.
+        XCTAssertEqual(reported[gap], "\u{2026}\t35 frames elided")
+        XCTAssertTrue(reported[gap + 1].hasPrefix("40\t"), "kept frames keep their capture index")
+    }
+
+    func testReportedStackIsUnchangedWhenTheCaptureFitsTheWindow() {
+        let stack = (0..<10).map { "\($0)   SwiftUI   0x\($0) frame\($0)" }
+        let reported = MainThreadHangSignature.reportedStack(stack, ownModule: "c11")
+        XCTAssertEqual(reported.count, 10)
+        XCTAssertFalse(reported.contains { $0.hasPrefix("\u{2026}") })
+        XCTAssertEqual(reported.last, "9\t\(stack[9])")
+    }
+
+    func testReportedStackBoundsHowManyOwnFramesItAppends() {
+        var stack = (0..<24).map { "\($0)   SwiftUI   0x\($0) frame\($0)" }
+        stack += (24..<44).map { "\($0)   c11   0x\($0) $s3c11deep\($0)" }
+        let reported = MainThreadHangSignature.reportedStack(stack, ownModule: "c11", ownFrames: 8)
+        XCTAssertEqual(reported.count, 24 + 1 + 8)
+        XCTAssertEqual(reported.last, "31\t\(stack[31])", "the own frames nearest the leaf are the useful ones")
+    }
+}
+
+/// The run-loop-idle reporting rule.
+///
+/// `runloop-idle` means main is parked at the top of the run loop with the
+/// watchdog's heartbeat still undelivered: a late ack, not a wedge. It was 46.5%
+/// of 5,311 local episodes and the largest single slice of the aggregate Sentry
+/// hang issue — and behind an unwatched window it is App Nap and timer coalescing
+/// working as designed, invisible to anyone.
+final class MainThreadHangVisibilityTests: XCTestCase {
+
+    private let watched = AppVisibility(appIsActive: true, hasVisibleWindow: true)
+
+    func testAnUnwatchedIdleRunLoopIsNotWorthReporting() {
+        for visibility in [
+            AppVisibility.unwatched,
+            AppVisibility(appIsActive: true, hasVisibleWindow: false),
+            AppVisibility(appIsActive: false, hasVisibleWindow: true),
+        ] {
+            XCTAssertFalse(MainThreadHangMonitor.isWorthReporting(
+                cause: MainThreadHangSignature.runLoopIdleCause, visibility: visibility
+            ))
+        }
+    }
+
+    func testAWatchedIdleRunLoopStillReports() {
+        // Same stack, but the window was in front of a human: the UI went dead
+        // while they were looking at it, which is a real report.
+        XCTAssertTrue(MainThreadHangMonitor.isWorthReporting(
+            cause: MainThreadHangSignature.runLoopIdleCause, visibility: watched
+        ))
+    }
+
+    func testEveryOtherCauseReportsRegardlessOfWhoWasLooking() {
+        for cause in ["swiftui-update", "appkit", "lock-wait", "xpc-sync-wait", "generic-metadata", "other", "unknown"] {
+            XCTAssertTrue(MainThreadHangMonitor.isWorthReporting(cause: cause, visibility: .unwatched), cause)
+        }
+    }
+
+    func testWatchedRequiresBothFrontmostAndOnScreen() {
+        XCTAssertTrue(watched.isWatched)
+        XCTAssertFalse(AppVisibility(appIsActive: true, hasVisibleWindow: false).isWatched)
+        XCTAssertFalse(AppVisibility(appIsActive: false, hasVisibleWindow: true).isWatched)
+        XCTAssertFalse(AppVisibility.unwatched.isWatched)
+    }
 }
 
 /// Pure, in-process tests for `SentryEventBudget` — the client-side ceiling on

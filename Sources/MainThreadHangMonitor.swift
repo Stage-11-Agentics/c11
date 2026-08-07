@@ -102,6 +102,11 @@ enum MainThreadHangSignature {
     /// How far down "which module is main working in" is decided.
     private static let moduleWindow = 8
 
+    /// Main parked at the top of the run loop. Named because the reporting path
+    /// treats it differently from every other cause: it is a late heartbeat, not
+    /// a wedged thread.
+    static let runLoopIdleCause = "runloop-idle"
+
     /// `backtrace_symbols` emits `"%-4d%-35s 0x%016lx %s + %lu"`. The load
     /// address is the only reliable delimiter: image names may contain spaces
     /// (`c11 DEV`), so splitting on whitespace alone mis-parses dev builds.
@@ -151,7 +156,7 @@ enum MainThreadHangSignature {
         // it can be judged separately from a thread wedged in compute.
         if leaf.symbol.contains("mach_msg2_trap"),
            window.contains(where: { $0.symbol.contains("CFRunLoopServiceMachPort") }) {
-            return "runloop-idle"
+            return runLoopIdleCause
         }
         let modules = frames.prefix(moduleWindow).map(\.module)
         if modules.contains(where: swiftUIModules.contains) { return "swiftui-update" }
@@ -164,6 +169,39 @@ enum MainThreadHangSignature {
             return rule.phase
         }
         return nil
+    }
+
+    /// The frames worth carrying in the outbound payload.
+    ///
+    /// The capture is up to 96 frames deep; the report is not. A straight prefix
+    /// loses exactly the frames that name the workload: SwiftUI's update spine is
+    /// routinely deeper than the window, so 73% of one 1,231-event production
+    /// sample arrived with *no* frame from our own binary — every frame a system
+    /// frame, and the hang unattributable no matter how many of them there were.
+    ///
+    /// So: the top window verbatim, then the own-module frames from below it, up
+    /// to `ownFrames`. Kept frames keep their true index and the gap is marked, so
+    /// the two runs can never be misread as contiguous.
+    static func reportedStack(
+        _ stack: [String],
+        ownModule: String,
+        topFrames: Int = 24,
+        ownFrames: Int = 8
+    ) -> [String] {
+        func line(_ index: Int) -> String { "\(index)\t\(stack[index])" }
+        guard stack.count > topFrames, topFrames >= 0 else {
+            return stack.indices.map(line)
+        }
+
+        var lines = (0..<topFrames).map(line)
+        let below = topFrames..<stack.count
+        let ownBelow = below.filter { parse(stack[$0])?.module == ownModule }.prefix(ownFrames)
+        let elided = below.count - ownBelow.count
+        if elided > 0 {
+            lines.append("\u{2026}\t\(elided) frame\(elided == 1 ? "" : "s") elided")
+        }
+        lines.append(contentsOf: ownBelow.map(line))
+        return lines
     }
 
     static func culprit(_ frames: [Frame], ownModule: String) -> String? {
@@ -241,6 +279,22 @@ struct MainThreadHangDetector {
     var isInEpisode: Bool { inEpisode }
 }
 
+/// Whether a human was in a position to see a stall.
+///
+/// Sampled on the main thread from AppKit notifications and read by the watchdog
+/// while main is wedged — AppKit is main-thread-only, and the value wanted is
+/// precisely the last one main managed to publish before it stopped answering.
+struct AppVisibility: Equatable {
+    let appIsActive: Bool
+    let hasVisibleWindow: Bool
+
+    /// Frontmost *and* showing something. Either alone is not a viewer: a
+    /// fully-occluded active app is as invisible as a backgrounded one.
+    var isWatched: Bool { appIsActive && hasVisibleWindow }
+
+    static let unwatched = AppVisibility(appIsActive: false, hasVisibleWindow: false)
+}
+
 /// Real-time main-thread watchdog.
 ///
 /// A dedicated background thread pings the main thread on a fixed heartbeat. When
@@ -267,6 +321,8 @@ final class MainThreadHangMonitor: @unchecked Sendable {
     private let lock = NSLock()
     private var lastAckUptime: TimeInterval = 0
     private var pingOutstanding = false
+    /// Written on main from AppKit notifications, read by the watchdog thread.
+    private var visibility: AppVisibility = .unwatched
 
     private var mainThread: thread_t = mach_port_t(MACH_PORT_NULL)
     private var installed = false
@@ -298,6 +354,7 @@ final class MainThreadHangMonitor: @unchecked Sendable {
         mainThread = pthread_mach_thread_np(pthread_self())
         let now = ProcessInfo.processInfo.systemUptime
         lock.lock(); lastAckUptime = now; lock.unlock()
+        observeVisibility()
 
         let thread = Thread { [weak self] in self?.runLoop() }
         thread.name = "com.stage11.c11.hang-monitor"
@@ -314,6 +371,40 @@ final class MainThreadHangMonitor: @unchecked Sendable {
         if env["XCTestConfigurationFilePath"] != nil { return false }
         if NSClassFromString("XCTestCase") != nil { return false }
         return true
+    }
+
+    // MARK: Visibility
+
+    /// Track "is a human looking at this window" on the main thread. Occlusion
+    /// covers the case AppKit activation misses: a frontmost app whose windows
+    /// are all behind something else.
+    private func observeVisibility() {
+        let center = NotificationCenter.default
+        for name in [
+            NSApplication.didBecomeActiveNotification,
+            NSApplication.didResignActiveNotification,
+            NSWindow.didChangeOcclusionStateNotification,
+            NSWindow.didBecomeKeyNotification,
+            NSWindow.didMiniaturizeNotification,
+            NSWindow.didDeminiaturizeNotification,
+        ] {
+            center.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { [weak self] _ in self?.refreshVisibility() }
+        }
+        refreshVisibility()
+    }
+
+    /// Main thread only.
+    private func refreshVisibility() {
+        let app = NSApplication.shared
+        let snapshot = AppVisibility(
+            appIsActive: app.isActive,
+            hasVisibleWindow: app.windows.contains {
+                $0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible)
+            }
+        )
+        lock.lock(); visibility = snapshot; lock.unlock()
     }
 
     // MARK: Watchdog loop (runs on the background thread)
@@ -363,9 +454,25 @@ final class MainThreadHangMonitor: @unchecked Sendable {
         if !recapture { reportedCurrentEpisode = false }
         let stack = captureMainBacktrace()
         let kind = recapture ? "hang.persist" : "hang.begin"
+        // `processName` is the "own binary" match for culprit extraction: it
+        // equals the Mach-O image name `backtrace_symbols` reports for both the
+        // shipped bundle (`c11`) and dev builds (`c11 DEV`). Best-effort anyway —
+        // absent whenever the capture window never reaches our code — so a
+        // mismatch degrades to no tag.
+        let signature = MainThreadHangSignature.describe(
+            stack: stack,
+            ownModule: ProcessInfo.processInfo.processName
+        )
+        lock.lock(); let visibility = self.visibility; lock.unlock()
 
         var lines: [String] = []
-        lines.append("=== c11 \(kind) \(Self.timestamp()) stalledMs=\(Int(gapMs)) pid=\(getpid()) ===")
+        // The header carries the classification so a forensic pass over months of
+        // log does not have to re-derive it from the frames.
+        lines.append(
+            "=== c11 \(kind) \(Self.timestamp()) stalledMs=\(Int(gapMs)) pid=\(getpid()) "
+                + "cause=\(signature.label) active=\(visibility.appIsActive ? 1 : 0) "
+                + "visible=\(visibility.hasVisibleWindow ? 1 : 0) ==="
+        )
         if stack.isEmpty {
             lines.append("  <no backtrace captured>")
         } else {
@@ -376,7 +483,13 @@ final class MainThreadHangMonitor: @unchecked Sendable {
         lines.append("")
         appendToLog(lines.joined(separator: "\n") + "\n")
 
-        reportTelemetry(gapMs: gapMs, recapture: recapture, stack: stack)
+        reportTelemetry(
+            gapMs: gapMs,
+            recapture: recapture,
+            stack: stack,
+            signature: signature,
+            visibility: visibility
+        )
     }
 
     private func handleRecovery(durationMs: Double) {
@@ -439,24 +552,26 @@ final class MainThreadHangMonitor: @unchecked Sendable {
 
     // MARK: Telemetry
 
-    private func reportTelemetry(gapMs: Double, recapture: Bool, stack: [String]) {
-        let top = stack.prefix(24).enumerated()
-            .map { "\($0.offset)\t\($0.element)" }
-            .joined(separator: "\n")
-        if shouldReportHangToSentry(gapMs: gapMs) {
-            // `processName` is the "own binary" match for culprit extraction:
-            // it equals the Mach-O image name `backtrace_symbols` reports for
-            // both the shipped bundle (`c11`) and dev builds (`c11 DEV`). The
-            // tag is best-effort anyway — absent whenever the capture window
-            // never reaches our code — so a mismatch degrades to no tag.
-            let signature = MainThreadHangSignature.describe(
-                stack: stack,
-                ownModule: ProcessInfo.processInfo.processName
-            )
+    private func reportTelemetry(
+        gapMs: Double,
+        recapture: Bool,
+        stack: [String],
+        signature: MainThreadHangDescriptor,
+        visibility: AppVisibility
+    ) {
+        if shouldReportHangToSentry(gapMs: gapMs, cause: signature.cause, visibility: visibility) {
+            let top = MainThreadHangSignature
+                .reportedStack(stack, ownModule: ProcessInfo.processInfo.processName)
+                .joined(separator: "\n")
             var tags = ["hang.cause": signature.cause, "hang.recapture": recapture ? "true" : "false"]
             tags["hang.phase"] = signature.phase
             tags["hang.culprit"] = signature.culprit
             tags["hang.top_symbol"] = signature.topSymbol
+            // Was anyone in a position to see it? A stall behind an occluded
+            // window and a stall under the operator's cursor are different bugs
+            // with identical stacks.
+            tags["hang.app_active"] = visibility.appIsActive ? "true" : "false"
+            tags["hang.window_visible"] = visibility.hasVisibleWindow ? "true" : "false"
             // The duration is not the grouping key, so it does not belong in
             // the title: the message names the cause and `stalled_ms` stays in
             // the event context.
@@ -476,7 +591,8 @@ final class MainThreadHangMonitor: @unchecked Sendable {
         PostHogAnalytics.shared.captureMainThreadHang(
             stalledMs: gapMs,
             recapture: recapture,
-            topFrame: stack.first ?? ""
+            topFrame: stack.first ?? "",
+            cause: signature.label
         )
     }
 
@@ -495,12 +611,33 @@ final class MainThreadHangMonitor: @unchecked Sendable {
     /// charging it here as well would spend two slots of the global allowance
     /// on every hang report.
     ///
+    /// `runloop-idle` never reports from behind an unwatched window: main is
+    /// parked at the top of the run loop with the heartbeat still undelivered,
+    /// which is a late ack, not a wedge. Off-screen that is App Nap and timer
+    /// coalescing doing their job. It was **46.5% of 5,311 local episodes** — the
+    /// single largest slice of what made the aggregate hang issue c11's
+    /// highest-volume report — and none of it was a freeze anyone could see. With
+    /// the window in front of a human the same stack does mean something (the UI
+    /// went dead while they watched), so that half still reports.
+    ///
     /// Called only from the watchdog thread, which captures serially.
-    private func shouldReportHangToSentry(gapMs: Double) -> Bool {
+    private func shouldReportHangToSentry(
+        gapMs: Double,
+        cause: String,
+        visibility: AppVisibility
+    ) -> Bool {
         guard gapMs >= sentryReportThresholdMs else { return false }
+        guard Self.isWorthReporting(cause: cause, visibility: visibility) else { return false }
         guard !reportedCurrentEpisode else { return false }
         reportedCurrentEpisode = true
         return true
+    }
+
+    /// Pure half of the rule above, so it can be tested without a watchdog.
+    /// Every cause but `runloop-idle` reports regardless of who was looking.
+    static func isWorthReporting(cause: String, visibility: AppVisibility) -> Bool {
+        guard cause == MainThreadHangSignature.runLoopIdleCause else { return true }
+        return visibility.isWatched
     }
 
     // MARK: Local log

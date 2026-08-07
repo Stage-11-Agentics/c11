@@ -83,13 +83,17 @@ final class PostHogAnalytics {
 
     /// Capture a main-thread hang detected by `MainThreadHangMonitor`. Self-gated
     /// on telemetry consent (`isEnabled`) and SDK start, like every other event.
-    func captureMainThreadHang(stalledMs: Double, recapture: Bool, topFrame: String) {
+    /// `cause` is the same signature label Sentry groups on, so the two surfaces
+    /// can be read against each other — PostHog keeps the whole population
+    /// (including the run-loop-idle episodes Sentry no longer hears about).
+    func captureMainThreadHang(stalledMs: Double, recapture: Bool, topFrame: String, cause: String) {
         dispatchAsyncOnWorkQueue { [weak self] in
             guard let self, self.didStart, self.isEnabled else { return }
             PostHogSDK.shared.capture("c11_main_thread_hang", properties: [
                 "stalled_ms": Int(stalledMs),
                 "recapture": recapture,
                 "top_frame": topFrame,
+                "cause": cause,
             ])
         }
     }
